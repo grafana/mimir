@@ -3854,6 +3854,12 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.notify-interval
 [notify_interval: <duration> | default = 0s]
 
+# (advanced) Size of the internal queue for messages received from other nodes.
+# Increasing this value may help to avoid dropping messages when the node is
+# processing a large number of messages from other nodes.
+# CLI flag: -memberlist.received-messages-queue-size
+[received_messages_queue_size: <int> | default = 1024]
+
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
 # CLI flag: -memberlist.advertise-addr

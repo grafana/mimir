@@ -62,6 +62,7 @@
 * [ENHANCEMENT] Query-frontend: Add support for blocking queries exceeding a time range duration with `time_range_longer_than`. #14609
 * [ENHANCEMENT] Distributor: Add zone-aware rate limiting via `-distributor.ring.instance-availability-zone`. When configured the global ingestion rate limit is divided by the number of zones and the number of distributors in the local zone, instead of the total number of distributors. #14515
 * [ENHANCEMENT] Memberlist: Add experimental propagation delay tracker to measure gossip propagation delay across the memberlist cluster. Enable with `-memberlist.propagation-delay-tracker.enabled=true`. #14312 #14406
+* [ENHANCEMENT] Memberlist: Add `-memberlist.received-messages-queue-size` to configure the size of the internal queue for messages received from other nodes. Increasing this value may help to avoid dropping messages when the node is processing a large number of messages from other nodes. #14995
 * [ENHANCEMENT] Compactor: Add 0-100% jitter to the first compaction interval to spread compactions when multiple compactors start simultaneously. #14280
 * [ENHANCEMENT] Compactor, Store-gateway: Remove experimental setting `-compactor.upload-sparse-index-headers` and always upload sparse index-headers. This improves lazy loading performance in the store-gateway. #13089 #13882
 * [ENHANCEMENT] Querier: Reduce memory consumption of queries samples for a single series are retrieved from multiple ingesters or store-gateways. #13806

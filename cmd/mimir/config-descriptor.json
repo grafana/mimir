@@ -18811,6 +18811,17 @@
         },
         {
           "kind": "field",
+          "name": "received_messages_queue_size",
+          "required": false,
+          "desc": "Size of the internal queue for messages received from other nodes. Increasing this value may help to avoid dropping messages when the node is processing a large number of messages from other nodes.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1024,
+          "fieldFlag": "memberlist.received-messages-queue-size",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "advertise_addr",
           "required": false,
           "desc": "Gossip address to advertise to other members in the cluster. Used for NAT traversal.",
