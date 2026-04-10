@@ -142,7 +142,7 @@ func newSplitAndCacheMiddleware(
 	})
 }
 
-// maxEstimatedMemoryConsumptionPerQuery computes the aggregate memory limit across tenants.
+// maxEstimatedMemoryConsumptionPerQuery computes the aggregate memory limit across tenants for individual queries.
 // Note that this is the same logic as in TenantQueryLimitsProvider and QueryLimitsProvider.
 func (s *splitAndCacheMiddleware) maxEstimatedMemoryConsumptionPerQuery(tenantIDs []string) uint64 {
 	var maxEstimatedMemoryConsumptionPerQuery uint64
