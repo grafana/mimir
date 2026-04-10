@@ -54,11 +54,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/cardinality"
-	"github.com/grafana/mimir/pkg/nautilus/assignment"
-	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
@@ -927,10 +927,11 @@ func (d *Distributor) running(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
 
-	var nautilusTicker *time.Ticker
+	var nautilusTickerChan <-chan time.Time
 	if d.nautilusRebalancerConn != nil {
-		nautilusTicker = time.NewTicker(10 * time.Second)
+		nautilusTicker := time.NewTicker(10 * time.Second)
 		defer nautilusTicker.Stop()
+		nautilusTickerChan = nautilusTicker.C
 		d.pollNautilusAssignments(ctx)
 	}
 
@@ -944,14 +945,9 @@ func (d *Distributor) running(ctx context.Context) error {
 
 		case err := <-d.subservicesWatcher.Chan():
 			return errors.Wrap(err, "distributor subservice failed")
-		}
 
-		if nautilusTicker != nil {
-			select {
-			case <-nautilusTicker.C:
-				d.pollNautilusAssignments(ctx)
-			default:
-			}
+		case <-nautilusTickerChan:
+			d.pollNautilusAssignments(ctx)
 		}
 	}
 }
@@ -963,7 +959,9 @@ func (d *Distributor) pollNautilusAssignments(ctx context.Context) {
 	}
 
 	client := rebalancer.NewNautilusRebalancerClient(conn)
-	resp, err := client.GetAssignments(ctx, &rebalancer.GetAssignmentsRequest{})
+	tctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	resp, err := client.GetAssignments(tctx, &rebalancer.GetAssignmentsRequest{})
 	if err != nil {
 		level.Warn(d.log).Log("msg", "failed to poll nautilus rebalancer", "err", err)
 		return
