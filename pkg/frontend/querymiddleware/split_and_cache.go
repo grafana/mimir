@@ -154,16 +154,15 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	var memoryTracker *limiter.MemoryConsumptionTracker
 	// Create a shared parent memory tracker across all time-split MQE sub-queries.
-	if s.memoryConsumptionTrackerFactory != nil {
-		maxEstimatedMemoryConsumptionPerQuery, err := s.queryLimits.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
-		if err != nil {
-			return nil, apierror.New(apierror.TypeBadData, err.Error())
-		}
-		memoryTracker = s.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, req.GetQuery())
-		defer s.memoryConsumptionTrackerFactory.Deregister(memoryTracker)
+	maxEstimatedMemoryConsumptionPerQuery, err := s.queryLimits.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
+	// Note - per modules.go where this memoryConsumptionTrackerFactory was created, depending on the downstream implementation this factory
+	// may return an unlimited tracker and ignore the maxEstimatedMemoryConsumptionPerQuery
+	memoryTracker := s.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, req.GetQuery())
+	defer s.memoryConsumptionTrackerFactory.Deregister(memoryTracker)
 
 	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
 	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
@@ -216,14 +215,12 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Count the cached response against the queries memory consumption tracker
-			if memoryTracker != nil {
-				for _, resp := range responses {
-					bytes := uint64(proto.Size(resp))
-					if err := memoryTracker.IncreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses); err != nil {
-						return nil, err
-					}
-					defer memoryTracker.DecreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses)
+			for _, resp := range responses {
+				bytes := uint64(proto.Size(resp))
+				if err := memoryTracker.IncreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses); err != nil {
+					return nil, err
 				}
+				defer memoryTracker.DecreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses)
 			}
 
 			if len(requests) == 0 {
@@ -660,9 +657,7 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, memoryTrack
 			req.AddSpanTags(span)
 			defer span.End()
 
-			if memoryTracker != nil {
-				childCtx = limiter.AddMemoryTrackerToContext(childCtx, memoryTracker)
-			}
+			childCtx = limiter.AddMemoryTrackerToContext(childCtx, memoryTracker)
 
 			resp, err := downstream.Do(childCtx, req)
 			queryStatistics.Merge(partialStats)

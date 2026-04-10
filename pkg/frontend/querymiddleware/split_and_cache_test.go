@@ -2281,9 +2281,9 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 	}
 }
 
-func TestSplitAndCacheMiddleware_NilMemoryConsumptionTrackerFactory(t *testing.T) {
-	// When not using MQE, the memoryConsumptionTrackerFactory is nil.
-	// The middleware must still work correctly without panicking.
+func TestSplitAndCacheMiddleware_UnlimitedMemoryConsumptionTrackerFactory(t *testing.T) {
+	// When not using MQE, the memoryConsumptionTrackerFactory will return unlimited memory trackers.
+	// The middleware must still work correctly.
 	var (
 		startTime = parseTimeRFC3339(t, "2021-10-14T00:00:00Z")
 		endTime   = parseTimeRFC3339(t, "2021-10-15T23:59:59Z")
@@ -2353,7 +2353,7 @@ func TestSplitAndCacheMiddleware_NilMemoryConsumptionTrackerFactory(t *testing.T
 				tc.shouldCacheReq,
 				log.NewNopLogger(),
 				nil,
-				nil, // No memory consumption tracker factory.
+				limiter.NewInflightUnlimitedMemoryConsumptionTracker(nil), // No memory consumption tracker factory.
 			)
 
 			rc := mw.Wrap(downstream)

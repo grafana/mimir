@@ -154,6 +154,17 @@ type InflightMemoryConsumptionTracker struct {
 	// This is an optional counter which is passed to each MemoryConsumptionTracker instance.
 	// This metric is not registered by this tracker. MemoryConsumptionTrackers may increment this.
 	queriesRejectedDueToPeakMemoryConsumption prometheus.Counter
+
+	// When true, all produced MemoryConsumptionTrackers will have unlimited allowed bytes
+	forceUnlimited bool
+}
+
+// NewInflightUnlimitedMemoryConsumptionTracker returns a new InflightMemoryConsumptionTracker. There should only be one instance of this per container.
+// All MemoryConsumptionTrackers returned from this instance will be unlimited memory consumption trackers.
+func NewInflightUnlimitedMemoryConsumptionTracker(reg prometheus.Registerer) *InflightMemoryConsumptionTracker {
+	t := NewInflightMemoryConsumptionTracker(reg, nil)
+	t.forceUnlimited = true
+	return t
 }
 
 // NewInflightMemoryConsumptionTracker returns a new InflightMemoryConsumptionTracker. There should only be one instance of this per container.
@@ -201,6 +212,9 @@ func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer, queriesRejec
 // However this new tracker will be included in the accumulated metrics managed by this InflightMemoryConsumptionTracker.
 // Ensure that you invoke Deregister(tracker) once the tracker is no longer required.
 func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, queryDescription string) *MemoryConsumptionTracker {
+	if t.forceUnlimited {
+		maxEstimatedMemoryConsumptionBytes = 0
+	}
 	tracker := NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionBytes, t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
 	id := t.nextID.Add(1)
 	tracker.trackingId = id
