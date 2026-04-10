@@ -243,6 +243,7 @@ type Distributor struct {
 
 	// nautilusRebalancerConn is the gRPC connection to the rebalancer.
 	nautilusRebalancerConn io.Closer
+	clusterValidationLabel string
 
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
@@ -551,6 +552,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		partitionsRing:              partitionsRing,
 		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount:       atomic.NewUint32(0),
+		clusterValidationLabel:      clientConfig.GRPCClientConfig.ClusterValidation.Label,
 		healthyInstancesInZoneCount: atomic.NewUint32(0),
 		ringZonesCount:              atomic.NewUint32(1),
 		limits:                      limits,
@@ -900,11 +902,17 @@ func (d *Distributor) starting(ctx context.Context) error {
 	}
 
 	if d.cfg.NautilusRebalancerAddress != "" {
-		// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
-		conn, err := grpc.DialContext(ctx, d.cfg.NautilusRebalancerAddress,
+		dialOpts := []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithBlock(),
-		)
+		}
+		if d.clusterValidationLabel != "" {
+			dialOpts = append(dialOpts, grpc.WithUnaryInterceptor(
+				middleware.ClusterUnaryClientInterceptor(d.clusterValidationLabel, middleware.NoOpInvalidClusterValidationReporter),
+			))
+		}
+		// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
+		conn, err := grpc.DialContext(ctx, d.cfg.NautilusRebalancerAddress, dialOpts...)
 		if err != nil {
 			return errors.Wrap(err, "connecting to nautilus rebalancer")
 		}
