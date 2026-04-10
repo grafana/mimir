@@ -503,48 +503,47 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		commoncfg.WithDialContextFunc(firewallDialer.DialContext),
 	}
 
-	slogger := utillog.SlogFromGoKit(logger)
 	for i, c := range nc.WebhookConfigs {
-		add("webhook", i, c, func(_ log.Logger) (notify.Notifier, error) { return webhook.New(c, tmpl, slogger, httpOps...) })
+		add("webhook", i, c, func(l log.Logger) (notify.Notifier, error) { return webhook.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.EmailConfigs {
-		add("email", i, c, func(_ log.Logger) (notify.Notifier, error) { return email.New(c, tmpl, slogger), nil })
+		add("email", i, c, func(l log.Logger) (notify.Notifier, error) { return email.New(c, tmpl, utillog.SlogFromGoKit(l)), nil })
 	}
 	for i, c := range nc.PagerdutyConfigs {
-		add("pagerduty", i, c, func(_ log.Logger) (notify.Notifier, error) { return pagerduty.New(c, tmpl, slogger, httpOps...) })
+		add("pagerduty", i, c, func(l log.Logger) (notify.Notifier, error) { return pagerduty.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.OpsGenieConfigs {
-		add("opsgenie", i, c, func(_ log.Logger) (notify.Notifier, error) { return opsgenie.New(c, tmpl, slogger, httpOps...) })
+		add("opsgenie", i, c, func(l log.Logger) (notify.Notifier, error) { return opsgenie.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.WechatConfigs {
-		add("wechat", i, c, func(_ log.Logger) (notify.Notifier, error) { return wechat.New(c, tmpl, slogger, httpOps...) })
+		add("wechat", i, c, func(l log.Logger) (notify.Notifier, error) { return wechat.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.SlackConfigs {
-		add("slack", i, c, func(_ log.Logger) (notify.Notifier, error) { return slack.New(c, tmpl, slogger, httpOps...) })
+		add("slack", i, c, func(l log.Logger) (notify.Notifier, error) { return slack.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.VictorOpsConfigs {
-		add("victorops", i, c, func(_ log.Logger) (notify.Notifier, error) { return victorops.New(c, tmpl, slogger, httpOps...) })
+		add("victorops", i, c, func(l log.Logger) (notify.Notifier, error) { return victorops.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.PushoverConfigs {
-		add("pushover", i, c, func(_ log.Logger) (notify.Notifier, error) { return pushover.New(c, tmpl, slogger, httpOps...) })
+		add("pushover", i, c, func(l log.Logger) (notify.Notifier, error) { return pushover.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.SNSConfigs {
-		add("sns", i, c, func(_ log.Logger) (notify.Notifier, error) { return sns.New(c, tmpl, slogger, httpOps...) })
+		add("sns", i, c, func(l log.Logger) (notify.Notifier, error) { return sns.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.TelegramConfigs {
-		add("telegram", i, c, func(_ log.Logger) (notify.Notifier, error) { return telegram.New(c, tmpl, slogger, httpOps...) })
+		add("telegram", i, c, func(l log.Logger) (notify.Notifier, error) { return telegram.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.DiscordConfigs {
-		add("discord", i, c, func(_ log.Logger) (notify.Notifier, error) { return discord.New(c, tmpl, slogger, httpOps...) })
+		add("discord", i, c, func(l log.Logger) (notify.Notifier, error) { return discord.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.WebexConfigs {
-		add("webex", i, c, func(_ log.Logger) (notify.Notifier, error) { return webex.New(c, tmpl, slogger, httpOps...) })
+		add("webex", i, c, func(l log.Logger) (notify.Notifier, error) { return webex.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.MSTeamsConfigs {
-		add("msteams", i, c, func(_ log.Logger) (notify.Notifier, error) { return msteams.New(c, tmpl, slogger, httpOps...) })
+		add("msteams", i, c, func(l log.Logger) (notify.Notifier, error) { return msteams.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	for i, c := range nc.MSTeamsV2Configs {
-		add("msteamsv2", i, c, func(_ log.Logger) (notify.Notifier, error) { return msteamsv2.New(c, tmpl, slogger, httpOps...) })
+		add("msteamsv2", i, c, func(l log.Logger) (notify.Notifier, error) { return msteamsv2.New(c, tmpl, utillog.SlogFromGoKit(l), httpOps...) })
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
 	if errs.Len() > 0 {
