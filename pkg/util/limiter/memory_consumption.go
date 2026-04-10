@@ -444,19 +444,11 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytesBySourc
 
 // IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error {
-	if l.parent != nil {
-		if err := l.parent.IncreaseMemoryConsumptionForLabels(lbls); err != nil {
-			return err
-		}
-	}
 	return l.IncreaseMemoryConsumption(lbls.ByteSize(), Labels)
 }
 
 // DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
-	if l.parent != nil {
-		l.parent.DecreaseMemoryConsumptionForLabels(lbls)
-	}
 	l.DecreaseMemoryConsumption(lbls.ByteSize(), Labels)
 }
 
