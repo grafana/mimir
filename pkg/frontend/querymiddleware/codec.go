@@ -1154,19 +1154,6 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 	return &resp, nil
 }
 
-// prometheusReadCloser wraps an io.Reader and executes finalizer on Close
-type prometheusReadCloser struct {
-	io.Reader
-	finalizer func()
-}
-
-func (prc *prometheusReadCloser) Close() error {
-	if prc.finalizer != nil {
-		prc.finalizer()
-	}
-	return nil
-}
-
 // countingWriter wraps an io.Writer and counts the bytes written.
 type countingWriter struct {
 	w io.Writer

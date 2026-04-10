@@ -175,10 +175,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 			httpResponse := &http.Response{
 				StatusCode: 200,
 				Header:     headers,
-				Body: &prometheusReadCloser{
-					Reader:    bytes.NewBuffer(body),
-					finalizer: func() {},
-				},
+				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
 			decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
@@ -209,10 +206,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 			httpResponse = &http.Response{
 				StatusCode: 200,
 				Header:     headers,
-				Body: &prometheusReadCloser{
-					Reader:    bytes.NewBuffer(body),
-					finalizer: func() {},
-				},
+				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
 
