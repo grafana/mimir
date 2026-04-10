@@ -34,7 +34,8 @@ func (c SigV4Config) IsConfigured() bool {
 		c.ServiceName != ""
 }
 
-// Validate returns an error if the SigV4 configuration is invalid.
+// Validate reports whether the configured SigV4 settings are valid.
+// It provides a useful public validation hook for callers outside this package.
 func (c SigV4Config) Validate() error {
 	if !c.IsConfigured() {
 		return nil

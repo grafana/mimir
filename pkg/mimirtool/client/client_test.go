@@ -266,3 +266,44 @@ func TestNewErrorsOnInvalidSigV4Config(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "sigv4 region must be configured")
 }
+
+func TestSigV4ConfigValidate(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		cfg         SigV4Config
+		expectedErr string
+	}{
+		{
+			name: "zero value is valid",
+			cfg:  SigV4Config{},
+		},
+		{
+			name: "configured settings are valid",
+			cfg: SigV4Config{
+				Region:      "ap-northeast-1",
+				AccessKey:   "test-access-key",
+				SecretKey:   "test-secret-key",
+				ServiceName: "execute-api",
+			},
+		},
+		{
+			name: "configured settings without region are invalid",
+			cfg: SigV4Config{
+				ServiceName: "execute-api",
+			},
+			expectedErr: "sigv4 region must be configured",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.Validate()
+
+			if tc.expectedErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedErr)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
