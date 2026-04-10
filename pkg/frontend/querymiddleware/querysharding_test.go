@@ -1178,11 +1178,13 @@ func TestQuerySharding_Annotations(t *testing.T) {
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				reg := prometheus.NewPedanticRegistry()
 				shardingware := newQueryShardingMiddleware(log.NewNopLogger(), eng, mockLimits{totalShards: numShards}, 0, reg)
+				splitLimits := mockLimits{}
 				splitware := newSplitAndCacheMiddleware(
 					true,
 					false, // Cache disabled.
 					splitInterval,
-					mockLimits{},
+					splitLimits,
+					newMockQueryLimitsProvider(&splitLimits),
 					newTestCodec(),
 					nil,
 					nil,

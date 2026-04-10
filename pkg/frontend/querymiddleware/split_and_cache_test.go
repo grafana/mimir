@@ -168,12 +168,15 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	downstreamURL, err := url.Parse(downstreamServer.URL)
 	require.NoError(t, err)
 
+	limits := mockLimits{}
+
 	reg := prometheus.NewPedanticRegistry()
 	splitCacheMiddleware := newSplitAndCacheMiddleware(
 		true,
 		false, // Cache disabled.
 		24*time.Hour,
-		mockLimits{},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		codec,
 		nil,
 		nil,
@@ -251,13 +254,14 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 
 func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
-
+	limits := mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL}
 	reg := prometheus.NewPedanticRegistry()
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
 		24*time.Hour,
-		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
@@ -439,12 +443,14 @@ func TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit(t *
 	//   1. first query  [Tmid, T1]  → returns histograms at Tmid and T1
 	//   2. second query [T0, Tmid]  → returns histograms at T0 and Tmid (partial cache miss)
 	downstreamCalls := 0
+	limits := mockLimits{resultsCacheTTL: resultsCacheTTL}
 	reg := prometheus.NewPedanticRegistry()
 	mw := newSplitAndCacheMiddleware(
 		false, // no time-splitting so that each query is a single cache key
 		true,
 		24*time.Hour,
-		mockLimits{resultsCacheTTL: resultsCacheTTL},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		cache.NewInstrumentedMockCache(),
 		DefaultCacheKeyGenerator{interval: day},
@@ -520,13 +526,14 @@ func TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit(t *
 
 func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
-
+	limits := mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL}
 	reg := prometheus.NewPedanticRegistry()
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
 		24*time.Hour,
-		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
@@ -654,11 +661,13 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	cacheBackend := cache.NewInstrumentedMockCache()
 	reg := prometheus.NewPedanticRegistry()
 
+	limits := mockLimits{maxCacheFreshness: 10 * time.Minute}
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
 		24*time.Hour,
-		mockLimits{maxCacheFreshness: 10 * time.Minute},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
@@ -779,6 +788,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		true,
 		24*time.Hour,
 		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
@@ -943,11 +953,13 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			keyGenerator := DefaultCacheKeyGenerator{interval: day}
 			reg := prometheus.NewPedanticRegistry()
 
+			limits := mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL}
 			mw := newSplitAndCacheMiddleware(
 				false, // No interval splitting.
 				true,
 				24*time.Hour,
-				mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+				limits,
+				newMockQueryLimitsProvider(&limits),
 				newTestCodec(),
 				cacheBackend,
 				keyGenerator,
@@ -1153,14 +1165,16 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 			t.Run(fmt.Sprintf("%s (concurrency: %d)", testName, maxConcurrency), func(t *testing.T) {
 				t.Parallel()
 				reg := prometheus.NewPedanticRegistry()
+				limits := mockLimits{
+					maxCacheFreshness:   testData.maxCacheFreshness,
+					maxQueryParallelism: testData.maxQueryParallelism,
+				}
 				mw := newSplitAndCacheMiddleware(
 					testData.splitEnabled,
 					testData.cacheEnabled,
 					24*time.Hour,
-					mockLimits{
-						maxCacheFreshness:   testData.maxCacheFreshness,
-						maxQueryParallelism: testData.maxQueryParallelism,
-					},
+					limits,
+					newMockQueryLimitsProvider(&limits),
 					newTestCodec(),
 					cache.NewMockCache(),
 					DefaultCacheKeyGenerator{interval: day},
@@ -1461,11 +1475,13 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 
 			logger := log.NewNopLogger()
 			reg := prometheus.NewPedanticRegistry()
+			limits := mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL}
 			mw := newSplitAndCacheMiddleware(
 				false, // No splitting.
 				true,
 				24*time.Hour,
-				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+				limits,
+				newMockQueryLimitsProvider(&limits),
 				newTestCodec(),
 				cacheBackend,
 				keyGenerator,
@@ -1524,15 +1540,17 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	cacheBackend := cache.NewMockCache()
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
+	limits := mockLimits{
+		resultsCacheTTL:                 1 * time.Hour,
+		resultsCacheOutOfOrderWindowTTL: 10 * time.Minute,
+		outOfOrderTimeWindow:            30 * time.Minute,
+	}
 	mw := newSplitAndCacheMiddleware(
 		false,
 		true,
 		24*time.Hour,
-		mockLimits{
-			resultsCacheTTL:                 1 * time.Hour,
-			resultsCacheOutOfOrderWindowTTL: 10 * time.Minute,
-			outOfOrderTimeWindow:            30 * time.Minute,
-		},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
@@ -1612,11 +1630,13 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 
 func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
+	limits := mockLimits{}
 	m := newSplitAndCacheMiddleware(
 		false,
 		true,
 		24*time.Hour,
-		mockLimits{},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		cache.NewMockCache(),
 		DefaultCacheKeyGenerator{interval: day},
@@ -2325,6 +2345,7 @@ func TestSplitAndCacheMiddleware_NilMemoryConsumptionTrackerFactory(t *testing.T
 				tc.cacheEnabled,
 				24*time.Hour,
 				tc.limits,
+				newMockQueryLimitsProvider(&tc.limits),
 				newTestCodec(),
 				tc.cache,
 				tc.splitter,
@@ -2422,7 +2443,7 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 	dayFiveEnd := parseTimeRFC3339(t, "2021-10-18T23:59:59Z")
 
 	tests := []struct {
-		name        string
+		name string
 		// When seedCache is true, we first run the seed query (days 1-4) with a large limit
 		// to populate the cache, then run the test query (days 1-5) with the configured
 		// memoryLimit. Days 1-4 are served from cache and tracked; day 5 goes downstream.
@@ -2485,6 +2506,7 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 				tc.seedCache,
 				24*time.Hour,
 				limits,
+				newMockQueryLimitsProvider(&limits),
 				newTestCodec(),
 				cacheBackend,
 				splitter,
@@ -2514,6 +2536,7 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 					true,
 					24*time.Hour,
 					seedLimits,
+					newMockQueryLimitsProvider(&seedLimits),
 					newTestCodec(),
 					cacheBackend,
 					splitter,
@@ -2561,16 +2584,18 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_CachedResponses
 	reg := prometheus.NewPedanticRegistry()
 	inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, nil)
 
+	limits := mockLimits{
+		maxCacheFreshness:                     10 * time.Minute,
+		resultsCacheTTL:                       resultsCacheTTL,
+		resultsCacheOutOfOrderWindowTTL:       resultsCacheLowerTTL,
+		maxEstimatedMemoryConsumptionPerQuery: memoryLimit,
+	}
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
 		24*time.Hour,
-		mockLimits{
-			maxCacheFreshness:                     10 * time.Minute,
-			resultsCacheTTL:                       resultsCacheTTL,
-			resultsCacheOutOfOrderWindowTTL:       resultsCacheLowerTTL,
-			maxEstimatedMemoryConsumptionPerQuery: memoryLimit,
-		},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},

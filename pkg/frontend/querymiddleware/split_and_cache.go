@@ -26,6 +26,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -82,8 +83,10 @@ func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCache
 // splitAndCacheMiddleware is a MetricsQueryMiddleware that can (optionally) split the query by interval
 // and run split queries through the results cache.
 type splitAndCacheMiddleware struct {
-	next    MetricsQueryHandler
-	limits  Limits
+	next        MetricsQueryHandler
+	limits      Limits
+	queryLimits streamingpromql.QueryLimitsProvider
+
 	merger  Merger
 	logger  log.Logger
 	metrics *splitAndCacheMiddlewareMetrics
@@ -112,6 +115,7 @@ func newSplitAndCacheMiddleware(
 	cacheEnabled bool,
 	splitInterval time.Duration,
 	limits Limits,
+	queryLimits streamingpromql.QueryLimitsProvider,
 	merger Merger,
 	cache cache.Cache,
 	splitter CacheKeyGenerator,
@@ -128,6 +132,7 @@ func newSplitAndCacheMiddleware(
 			cacheEnabled:                    cacheEnabled,
 			next:                            next,
 			limits:                          limits,
+			queryLimits:                     queryLimits,
 			merger:                          merger,
 			splitInterval:                   splitInterval,
 			metrics:                         metrics,
@@ -142,21 +147,6 @@ func newSplitAndCacheMiddleware(
 	})
 }
 
-// maxEstimatedMemoryConsumptionPerQuery computes the aggregate memory limit across tenants for individual queries.
-// Note that this is the same logic as in TenantQueryLimitsProvider and QueryLimitsProvider.
-func (s *splitAndCacheMiddleware) maxEstimatedMemoryConsumptionPerQuery(tenantIDs []string) uint64 {
-	var maxEstimatedMemoryConsumptionPerQuery uint64
-	for _, tenantID := range tenantIDs {
-		tenantLimit := s.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)
-		if tenantLimit == 0 {
-			maxEstimatedMemoryConsumptionPerQuery = 0
-			break
-		}
-		maxEstimatedMemoryConsumptionPerQuery += tenantLimit
-	}
-	return maxEstimatedMemoryConsumptionPerQuery
-}
-
 func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	spanLog := spanlogger.FromContext(ctx, s.logger)
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -165,9 +155,12 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	}
 
 	var memoryTracker *limiter.MemoryConsumptionTracker
-	// Create a shared parent memory tracker across all time-split sub-queries.
+	// Create a shared parent memory tracker across all time-split MQE sub-queries.
 	if s.memoryConsumptionTrackerFactory != nil {
-		maxEstimatedMemoryConsumptionPerQuery := s.maxEstimatedMemoryConsumptionPerQuery(tenantIDs)
+		maxEstimatedMemoryConsumptionPerQuery, err := s.queryLimits.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+		if err != nil {
+			return nil, apierror.New(apierror.TypeBadData, err.Error())
+		}
 		memoryTracker = s.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, req.GetQuery())
 		defer s.memoryConsumptionTrackerFactory.Deregister(memoryTracker)
 	}

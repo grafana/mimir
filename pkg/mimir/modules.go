@@ -894,6 +894,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
 		t.Overrides,
+		t.QueryLimitsProvider,
 		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
 		eng,

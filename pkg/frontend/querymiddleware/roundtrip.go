@@ -228,6 +228,7 @@ func NewTripperware(
 	cfg Config,
 	log log.Logger,
 	limits Limits,
+	queryLimits streamingpromql.QueryLimitsProvider,
 	codec Codec,
 	cacheExtractor Extractor,
 	engine promql.QueryEngine,
@@ -238,7 +239,7 @@ func NewTripperware(
 	registerer prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -252,6 +253,7 @@ func newQueryTripperware(
 	cfg Config,
 	log log.Logger,
 	limits Limits,
+	queryLimits streamingpromql.QueryLimitsProvider,
 	codec Codec,
 	cacheExtractor Extractor,
 	engine promql.QueryEngine,
@@ -284,6 +286,7 @@ func newQueryTripperware(
 		cfg,
 		log,
 		limits,
+		queryLimits,
 		codec,
 		c,
 		cacheKeyGenerator,
@@ -400,6 +403,7 @@ func newQueryMiddlewares(
 	cfg Config,
 	log log.Logger,
 	limits Limits,
+	queryLimits streamingpromql.QueryLimitsProvider,
 	codec Codec,
 	cacheClient cache.Cache,
 	cacheKeyGenerator CacheKeyGenerator,
@@ -518,6 +522,7 @@ func newQueryMiddlewares(
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
 			limits,
+			queryLimits,
 			codec,
 			cacheClient,
 			cacheKeyGenerator,

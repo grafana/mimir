@@ -957,6 +957,30 @@ func (m mockLimits) LabelsQueryOptimizerEnabled(string) bool {
 	return m.labelsQueryOptimizerEnabled
 }
 
+// mockQueryLimits implements QueryLimitsProvider
+type mockQueryLimitsProvider struct {
+	m *mockLimits
+}
+
+func newMockQueryLimitsProvider(m *mockLimits) mockQueryLimitsProvider {
+	return mockQueryLimitsProvider{m: m}
+}
+
+func (m mockQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
+	return m.m.maxEstimatedMemoryConsumptionPerQuery, nil
+}
+
+func (m mockQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context) (bool, error) {
+	return false, nil
+}
+
+func (m mockQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error) {
+	return m.m.outOfOrderTimeWindow, nil
+}
+func (m mockQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	return m.m.resultsCacheTTL, nil
+}
+
 type mockHandler struct {
 	mock.Mock
 }
