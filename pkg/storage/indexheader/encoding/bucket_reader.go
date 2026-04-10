@@ -113,13 +113,7 @@ func (bbr *BucketBufReader) ResetAt(off int) error {
 	if off > bbr.length {
 		return ErrInvalidSize
 	}
-
-	// Objstore hides the io.ReadSeekCloser, that the underlying bucket clients implement.
-	// So we reimplement it ourselves:
-	// 1. Close the r.rc
-	// 2. Re-read the object from new offset
-	// 3. Reset the r.buf and the rest of the state.
-	// TODO: evaluate if we need a more efficient approach
+	
 	if err := bbr.resetReader(off); err != nil {
 		return err
 	}
