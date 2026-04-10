@@ -42,39 +42,36 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 		return Decbuf{E: fmt.Errorf("offset greater than object size of %s: %w", bf.objectPath, err)}
 	}
 
-	// We do not know section length yet;
-	// use the lower-level BucketReader to scan the length data
-	metaReader := NewBucketReader(
-		bf.ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size),
-	)
-
-	// TODO: A particular index-header only has symbols and posting offsets. We should only need to read
-	//  the length of each of those a single time per index-header (DecbufFactory). Should the factory
-	//  cache the length? Should the table of contents be passed to the factory?
-
 	var contentLength int
 	bf.mu.Lock()
 	if cachedContentLength, ok := bf.sectionLenCache[offset]; ok {
+		// Section length is cached
 		contentLength = cachedContentLength
 	} else {
-		lengthBytes := make([]byte, 4)
+		// We do not know section length yet;
+		// use the lower-level BucketReader to scan the length data
+		metaReader := NewBucketReader(
+			bf.ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size),
+		)
+
+		lengthBytes := make([]byte, numLenBytes)
 		n, err := metaReader.Read(lengthBytes)
 		if err != nil {
 			return Decbuf{E: err}
 		}
-		if n != 4 {
-			return Decbuf{E: fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, 4, ErrInvalidSize)}
+		if n != numLenBytes {
+			return Decbuf{E: fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, numLenBytes, ErrInvalidSize)}
 		}
 		contentLength = int(binary.BigEndian.Uint32(lengthBytes))
 		bf.sectionLenCache[offset] = contentLength
 	}
 	bf.mu.Unlock()
 
-	bufferLength := 4 + contentLength + crc32.Size
+	bufferLength := numLenBytes + contentLength + crc32.Size
 
 	bufReader := NewBucketBufReader(bf.ctx, bf.bkt, bf.objectPath, offset, bufferLength)
 	// bufReader is expected start at base offset + 4 after consuming length bytes
-	err = bufReader.Skip(4)
+	err = bufReader.Skip(numLenBytes)
 	if err != nil {
 		return Decbuf{E: err}
 	}
@@ -86,7 +83,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 		}
 
 		// reset to the beginning of the content after reading it all for the CRC.
-		d.ResetAt(4)
+		d.ResetAt(numLenBytes)
 	}
 
 	return d
