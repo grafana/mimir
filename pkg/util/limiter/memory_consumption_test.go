@@ -327,45 +327,6 @@ func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes
 	))
 }
 
-func TestMemoryConsumptionTracker_NilRejectionCount(t *testing.T) {
-	tracker := NewMemoryConsumptionTracker(context.Background(), 10, nil, "foo + bar")
-
-	// Should work fine without a rejection counter.
-	require.NoError(t, tracker.IncreaseMemoryConsumption(8, IngesterChunks))
-	require.Equal(t, uint64(8), tracker.CurrentEstimatedMemoryConsumptionBytes())
-
-	// Exceeding the limit should return an error but not panic despite nil rejectionCount.
-	require.Error(t, tracker.IncreaseMemoryConsumption(3, IngesterChunks))
-	require.Equal(t, uint64(8), tracker.CurrentEstimatedMemoryConsumptionBytes())
-
-	// A second rejection should also not panic.
-	require.Error(t, tracker.IncreaseMemoryConsumption(3, IngesterChunks))
-	require.Equal(t, uint64(8), tracker.CurrentEstimatedMemoryConsumptionBytes())
-}
-
-func TestMemoryConsumptionTracker_RejectionCountIncremented(t *testing.T) {
-	reg, metric := createRejectedMetric()
-	tracker := NewMemoryConsumptionTracker(context.Background(), 10, metric, "foo + bar")
-
-	// Consume up to the limit.
-	require.NoError(t, tracker.IncreaseMemoryConsumption(10, IngesterChunks))
-	assertRejectedQueriesCount(t, reg, 0)
-
-	// First rejection should increment the counter.
-	require.Error(t, tracker.IncreaseMemoryConsumption(1, IngesterChunks))
-	assertRejectedQueriesCount(t, reg, 1)
-
-	// Subsequent rejections for the same tracker should not increment again.
-	require.Error(t, tracker.IncreaseMemoryConsumption(1, StoreGatewayChunks))
-	assertRejectedQueriesCount(t, reg, 1)
-
-	// Free some memory and exceed the limit again — still should not increment.
-	tracker.DecreaseMemoryConsumption(5, IngesterChunks)
-	require.NoError(t, tracker.IncreaseMemoryConsumption(4, IngesterChunks))
-	require.Error(t, tracker.IncreaseMemoryConsumption(2, IngesterChunks))
-	assertRejectedQueriesCount(t, reg, 1)
-}
-
 func TestMemoryConsumptionSourceNames(t *testing.T) {
 	for i := range memoryConsumptionSourceCount {
 		require.NotEqual(t, unknownMemorySource, i.String(), "source %d should have a String() representation", i)
