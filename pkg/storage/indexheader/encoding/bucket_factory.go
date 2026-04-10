@@ -13,7 +13,7 @@ import (
 )
 
 // BucketDecbufFactory creates new bucket-reader-backed Decbuf instances
-// for a specific index-header file in object storage
+// for a specific index file in object storage
 type BucketDecbufFactory struct {
 	ctx             context.Context
 	bkt             objstore.BucketReader
@@ -109,4 +109,12 @@ func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
 	)
 	d := Decbuf{r: r}
 	return d
+}
+
+// Close cleans up resources associated with this BucketDecbufFactory.
+// For bucket-based implementation, there are no resources to clean up;
+// the bucket client lifecycle is managed by parent components.
+func (bf *BucketDecbufFactory) Close() error {
+	// Nothing to do for bucket-based implementation
+	return nil
 }
