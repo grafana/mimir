@@ -410,6 +410,11 @@ func TestMemoryTrackerRefCounts(t *testing.T) {
 				factory.DecrementReferenceCount(childTracker)
 				require.True(t, factory.IsRegistered(tracker))
 				require.False(t, factory.IsRegistered(childTracker))
+
+				// DecrementReferenceCount is idempotent on the child tracker
+				factory.DecrementReferenceCount(childTracker)
+				require.True(t, factory.IsRegistered(tracker))
+				require.False(t, factory.IsRegistered(childTracker))
 				return nil
 			})
 		}

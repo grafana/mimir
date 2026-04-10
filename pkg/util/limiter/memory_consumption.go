@@ -242,6 +242,7 @@ func (t *InflightMemoryConsumptionTracker) NewWrappedMemoryConsumptionTracker(ct
 		queryDescription:                   queryDescription,
 		ctx:                                ctx,
 		parent:                             parent,
+		childDeregistered:                  atomic.Bool{},
 	}
 }
 
@@ -255,8 +256,10 @@ func (t *InflightMemoryConsumptionTracker) IncreaseReferenceCount(tracker *Memor
 // DecrementReferenceCount removes the tracking of this tracker.
 func (t *InflightMemoryConsumptionTracker) DecrementReferenceCount(tracker *MemoryConsumptionTracker) {
 	if tracker.parent != nil {
+		if tracker.childDeregistered.Swap(true) {
+			return
+		}
 		t.DecrementReferenceCount(tracker.parent)
-		tracker.parent = nil
 		return
 	}
 
@@ -272,6 +275,9 @@ func (t *InflightMemoryConsumptionTracker) DecrementReferenceCount(tracker *Memo
 // Only a registered tracker can have its reference decreased via DecrementReferenceCount()
 func (t *InflightMemoryConsumptionTracker) IsRegistered(tracker *MemoryConsumptionTracker) bool {
 	if tracker.parent != nil {
+		if tracker.childDeregistered.Load() {
+			return false
+		}
 		return t.IsRegistered(tracker.parent)
 	}
 	if tracker.trackingId == 0 {
@@ -313,7 +319,9 @@ func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) 
 //
 // It also tracks the peak number of in-memory bytes for use in query statistics.
 type MemoryConsumptionTracker struct {
-	parent *MemoryConsumptionTracker
+	parent            *MemoryConsumptionTracker
+	childDeregistered atomic.Bool
+
 	// maxEstimatedMemoryConsumptionBytes is the limit (if any). Any attempt to request more than this value will result in an error.
 	maxEstimatedMemoryConsumptionBytes uint64
 	// currentEstimatedMemoryConsumptionBytes is the current memory usage at this point in time.
