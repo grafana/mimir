@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
@@ -231,6 +232,7 @@ type Codec struct {
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
 	injector                                        propagation.Injector
+	logger                                          log.Logger
 }
 
 type formatter interface {
@@ -257,6 +259,7 @@ func NewCodec(
 	queryResultResponseFormat string,
 	propagateHeaders []string,
 	injector propagation.Injector,
+	logger log.Logger,
 ) Codec {
 	return Codec{
 		metrics:                            newCodecMetrics(registerer),
@@ -265,6 +268,7 @@ func NewCodec(
 		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
 		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
 		injector:                           injector,
+		logger:                             logger,
 	}
 }
 
@@ -1123,8 +1127,8 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		cw := &countingWriter{w: pw}
 		start := time.Now()
 		encErr = formatter.EncodeQueryResponseTo(cw, a)
-		encodeDuration := time.Since(start)
 		if encErr == nil {
+			encodeDuration := time.Since(start)
 			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
 			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
 			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
@@ -1133,6 +1137,9 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 			// As a result, encode_time_seconds in Server-Timing is always 0 for streaming responses;
 			// the Prometheus histogram metric (codec_duration_seconds) is unaffected.
 			queryStats.AddEncodeTime(encodeDuration)
+		} else {
+			user, _ := user.ExtractOrgID(ctx)
+			level.Warn(c.logger).Log("msg", "failed to encode metrics query response", "url", req.URL.Path, "user", user, "err", encErr)
 		}
 	}()
 
@@ -1225,6 +1232,13 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
 			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
 			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+		} else {
+			msg := "failed to encode labels query response"
+			if isSeriesResponse {
+				msg = "failed to encode series query response"
+			}
+			user, _ := user.ExtractOrgID(ctx)
+			level.Warn(c.logger).Log("msg", msg, "url", req.URL.Path, "user", user, "err", encErr)
 		}
 	}()
 

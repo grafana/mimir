@@ -2239,7 +2239,7 @@ func newTestCodecWithHeaders(propagateHeaders []string) Codec {
 }
 
 func newTestCodecWithFormatAndHeaders(format string, propagateHeaders []string) Codec {
-	return NewCodec(prometheus.NewPedanticRegistry(), streamingpromql.DefaultLookbackDelta, format, propagateHeaders, &api.ConsistencyInjector{})
+	return NewCodec(prometheus.NewPedanticRegistry(), streamingpromql.DefaultLookbackDelta, format, propagateHeaders, &api.ConsistencyInjector{}, log.NewNopLogger())
 }
 
 func mustSucceed[T any](value T, err error) T {
