@@ -39,11 +39,12 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 		return Decbuf{E: fmt.Errorf("get size from %s: %w", bf.objectPath, err)}
 	}
 	if offset > int(attrs.Size) {
-		return Decbuf{E: fmt.Errorf("offset greater than object size of %s: %w", bf.objectPath, err)}
+		return Decbuf{E: fmt.Errorf("offset greater than object size of %s", bf.objectPath)}
 	}
 
 	var contentLength int
 	bf.mu.Lock()
+	defer bf.mu.Unlock()
 	if cachedContentLength, ok := bf.sectionLenCache[offset]; ok {
 		// Section length is cached
 		contentLength = cachedContentLength
@@ -65,7 +66,6 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 		contentLength = int(binary.BigEndian.Uint32(lengthBytes))
 		bf.sectionLenCache[offset] = contentLength
 	}
-	bf.mu.Unlock()
 
 	bufferLength := numLenBytes + contentLength + crc32.Size
 
