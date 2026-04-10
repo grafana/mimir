@@ -287,13 +287,7 @@ func (m *MultiAggregatorInstanceOperator) computeGroups(unfilteredSeries []types
 }
 
 func (m *MultiAggregatorInstanceOperator) matchesSeries(series labels.Labels) bool {
-	for _, filter := range m.filters {
-		if !filter.Matches(series.Get(filter.Name)) {
-			return false
-		}
-	}
-
-	return true
+	return types.MatchersMatch(m.filters, series)
 }
 
 func (m *MultiAggregatorInstanceOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
