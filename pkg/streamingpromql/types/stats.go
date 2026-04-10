@@ -90,7 +90,8 @@ func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTrack
 // TrackSampleForInstantVectorSelector should be called for each output step of an instant vector selector, even if
 // the same underlying sample is used for multiple output steps.
 //
-// lbls is the label set of the series the sample belongs to, used to determine which subsets (if any) it belongs to.
+// matchesSubsets must be a bitmap with a value for each subset tracked by this instance. true indicates the samples
+// should be added to the corresponding subset.
 func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64, matchesSubsets []bool) {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
@@ -115,7 +116,8 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 // floats and histograms may contain samples beyond rangeEnd, these will be ignored.
 // floats and histograms must not contain samples before rangeStart.
 //
-// lbls is the label set of the series the samples belong to, used to determine which subsets (if any) they belong to.
+// matchesSubsets must be a bitmap with a value for each subset tracked by this instance. true indicates the samples
+// should be added to the corresponding subset.
 func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, matchesSubsets []bool) {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
