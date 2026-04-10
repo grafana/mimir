@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
@@ -73,6 +74,11 @@ func (r *Rebalancer) starting(_ context.Context) error {
 }
 
 func (r *Rebalancer) rebalance(ctx context.Context) error {
+	// The ingester client pool requires an org ID in the context
+	// (ClientUserHeaderInterceptor). Inject a synthetic one since
+	// rebalancer RPCs are not tenant-scoped.
+	ctx = user.InjectOrgID(ctx, "nautilus-rebalancer")
+
 	pRing := r.partitionRing.PartitionRing()
 	activePartitions := pRing.ActivePartitionIDs()
 	if len(activePartitions) == 0 {
