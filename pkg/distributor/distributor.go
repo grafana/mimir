@@ -2731,6 +2731,7 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, a *assignment.Ass
 
 		pid, ok := a.Lookup(key)
 		if !ok {
+			level.Warn(d.log).Log("msg", "key not found in assignment; falling back to partition ring", "key", key)
 			var err error
 			pid, err = pRing.ActivePartitionForKey(key)
 			if err != nil {
