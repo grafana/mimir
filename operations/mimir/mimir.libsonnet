@@ -43,7 +43,6 @@
 (import 'multi-zone-query-scheduler.libsonnet') +
 (import 'multi-zone-ruler.libsonnet') +
 (import 'multi-zone-ruler-remote-evaluation.libsonnet') +
-(import 'multi-zone-memberlist-bridge.libsonnet') +
 
 // Automated downscale of ingesters and store-gateways
 (import 'ingester-automated-downscale.libsonnet') +
@@ -62,4 +61,5 @@
 (import 'ingest-storage-migration.libsonnet') +
 
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
-(import 'memberlist.libsonnet')
+(import 'memberlist.libsonnet') +
+(import 'multi-zone-memberlist-bridge.libsonnet')

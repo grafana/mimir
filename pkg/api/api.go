@@ -46,6 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
@@ -58,6 +59,7 @@ type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.Hand
 type Config struct {
 	SkipLabelNameValidationHeader  bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 	SkipLabelCountValidationHeader bool `yaml:"skip_label_count_validation_header_enabled" category:"advanced"`
+	OTLPTranslationHeaders         bool `yaml:"otlp_translation_headers_enabled" category:"experimental"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
@@ -79,6 +81,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
 	f.BoolVar(&cfg.SkipLabelCountValidationHeader, "api.skip-label-count-validation-header-enabled", false, "Allows to disable enforcement of the label count limit \"max_label_names_per_series\" via X-Mimir-SkipLabelCountValidation header on the http write path. Allowing this for external clients allows any client to send invalid label counts. After enabling it, requests with a specific HTTP header set to true will not have label counts validated.")
+	f.BoolVar(&cfg.OTLPTranslationHeaders, "api.otlp-translation-headers-enabled", false, "Allows controlling OTLP metric name suffix addition and translation strategy via X-Mimir-OTLP-AddSuffixes and X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not recommended for general use.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
@@ -100,14 +103,15 @@ func (cfg *Config) Validate() error {
 type API struct {
 	AuthMiddleware middleware.Interface
 
-	cfg       Config
-	server    *server.Server
-	logger    log.Logger
-	sourceIPs *middleware.SourceIPExtractor
-	indexPage *IndexPageContent
+	cfg             Config
+	server          *server.Server
+	logger          log.Logger
+	sourceIPs       *middleware.SourceIPExtractor
+	indexPage       *IndexPageContent
+	activityTracker *activitytracker.ActivityTracker
 }
 
-func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Config, s *server.Server, logger log.Logger) (*API, error) {
+func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Config, s *server.Server, logger log.Logger, at *activitytracker.ActivityTracker) (*API, error) {
 	// Ensure the encoded path is used. Required for the rules API
 	s.HTTP.UseEncodedPath()
 
@@ -122,12 +126,13 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 	}
 
 	api := &API{
-		cfg:            cfg,
-		AuthMiddleware: cfg.HTTPAuthMiddleware,
-		server:         s,
-		logger:         logger,
-		sourceIPs:      sourceIPs,
-		indexPage:      newIndexPageContent(serverCfg.PathPrefix),
+		cfg:             cfg,
+		AuthMiddleware:  cfg.HTTPAuthMiddleware,
+		server:          s,
+		logger:          logger,
+		sourceIPs:       sourceIPs,
+		indexPage:       newIndexPageContent(serverCfg.PathPrefix),
+		activityTracker: at,
 	}
 
 	// If no authentication middleware is present in the config, use the default authentication middleware.
@@ -145,11 +150,11 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 
 // RegisterDeprecatedRoute behaves in a similar way to RegisterRoute. RegisterDeprecatedRoute also logs warnings on
 // invocations of the deprecated endpoints.
-func (a *API) RegisterDeprecatedRoute(path string, handler http.Handler, auth, gzipEnabled bool, method string, methods ...string) {
+func (a *API) RegisterDeprecatedRoute(path string, handler http.Handler, auth, gzipEnabled bool, method string, maxBodySizeIfAny int64, methods ...string) {
 	methods = append([]string{method}, methods...)
 	handler = a.deprecatedHandler(handler)
 	level.Debug(a.logger).Log("msg", "api: registering deprecated route", "methods", strings.Join(methods, ","), "path", path, "auth", auth, "gzip", gzipEnabled)
-	a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
+	a.newRoute(path, handler, false, auth, gzipEnabled, maxBodySizeIfAny, methods...)
 }
 
 func (a *API) deprecatedHandler(next http.Handler) http.Handler {
@@ -161,20 +166,24 @@ func (a *API) deprecatedHandler(next http.Handler) http.Handler {
 	})
 }
 
+func (a *API) RegisterRouteWithMaxBodySize(path string, handler http.Handler, auth, gzipEnabled bool, maxBodySizeIfAny int64, method string, methods ...string) {
+	methods = append([]string{method}, methods...)
+	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "path", path, "auth", auth, "gzip", gzipEnabled)
+	a.newRoute(path, handler, false, auth, gzipEnabled, maxBodySizeIfAny, methods...)
+}
+
 // RegisterRoute registers a single route enforcing HTTP methods. A single
 // route is expected to be specific about which HTTP methods are supported.
 func (a *API) RegisterRoute(path string, handler http.Handler, auth, gzipEnabled bool, method string, methods ...string) {
-	methods = append([]string{method}, methods...)
-	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "path", path, "auth", auth, "gzip", gzipEnabled)
-	a.newRoute(path, handler, false, auth, gzipEnabled, methods...)
+	a.RegisterRouteWithMaxBodySize(path, handler, auth, gzipEnabled, 0, method, methods...)
 }
 
-func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth, gzipEnabled bool, methods ...string) {
+func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth, gzipEnabled bool, maxBodySizeIfAny int64, methods ...string) {
 	level.Debug(a.logger).Log("msg", "api: registering route", "methods", strings.Join(methods, ","), "prefix", prefix, "auth", auth, "gzip", gzipEnabled)
-	a.newRoute(prefix, handler, true, auth, gzipEnabled, methods...)
+	a.newRoute(prefix, handler, true, auth, gzipEnabled, maxBodySizeIfAny, methods...)
 }
 
-func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
+func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, maxBodySizeIfAny int64, methods ...string) (route *mux.Route) {
 	// Propagate the consistency level on all HTTP routes.
 	// They are not used everywhere, but for consistency and less surprise it's added everywhere.
 	handler = propagation.Middleware(&querierapi.ConsistencyExtractor{}).Wrap(handler)
@@ -185,6 +194,15 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	if gzip {
 		handler = gziphandler.GzipHandler(handler, a.cfg.GzipCompressionLevel)
 	}
+
+	if a.activityTracker != nil {
+		handler = NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler)
+	}
+
+	if maxBodySizeIfAny > 0 {
+		handler = newMaxBodySizeHandler(handler, maxBodySizeIfAny)
+	}
+
 	if isPrefix {
 		route = a.server.HTTP.PathPrefix(path)
 	} else {
@@ -198,8 +216,21 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 	return route
 }
 
+// newMaxBodySizeHandler returns a handler that limits the request body to limit bytes.
+// It must be placed outside the activity tracking middleware so the limit is applied before
+// the activity tracker attempts to read the body.
+func newMaxBodySizeHandler(next http.Handler, limit int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			defer r.Body.Close()
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // RegisterAlertmanager registers endpoints that are associated with the alertmanager.
-func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, grafanaCompatEnabled bool, buildInfoHandler http.Handler) {
+func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
@@ -217,7 +248,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 	a.RegisterRoute(path.Join(a.cfg.AlertmanagerHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
 
 	// UI components lead to a large number of routes to support, utilize a path prefix instead
-	a.RegisterRoutesWithPrefix(a.cfg.AlertmanagerHTTPPrefix, am, true, true)
+	a.RegisterRoutesWithPrefix(a.cfg.AlertmanagerHTTPPrefix, am, true, true, 0)
 	level.Debug(a.logger).Log("msg", "api: registering alertmanager", "path_prefix", a.cfg.AlertmanagerHTTPPrefix)
 
 	// MultiTenant Alertmanager API routes
@@ -225,20 +256,6 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.GetUserConfig), true, true, "GET")
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.SetUserConfig), true, true, "POST")
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.DeleteUserConfig), true, true, "DELETE")
-
-		if grafanaCompatEnabled {
-			level.Info(a.logger).Log("msg", "enabled experimental grafana routes")
-
-			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.GetUserGrafanaConfig), true, true, http.MethodGet)
-			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.SetUserGrafanaConfig), true, true, http.MethodPost)
-			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.DeleteUserGrafanaConfig), true, true, http.MethodDelete)
-			a.RegisterRoute("/api/v1/grafana/config/status", http.HandlerFunc(am.GetGrafanaConfigStatus), true, true, http.MethodGet)
-
-			// These APIs are handled by the per-tenant Alertmanager, so they are handled by the distributor.
-			a.RegisterRoute("/api/v1/grafana/receivers", am, true, true, http.MethodGet)
-			a.RegisterRoute("/api/v1/grafana/receivers/test", am, true, true, http.MethodPost)
-			a.RegisterRoute("/api/v1/grafana/templates/test", am, true, true, http.MethodPost)
-		}
 	}
 }
 
@@ -251,7 +268,7 @@ func (a *API) RegisterAPI(actualCfg interface{}, defaultCfg interface{}, buildIn
 
 	a.RegisterRoute("/config", a.cfg.configHandler(actualCfg, defaultCfg), false, true, "GET")
 	a.RegisterRoute("/", indexHandler(a.indexPage), false, true, "GET")
-	a.RegisterRoutesWithPrefix("/static/", http.FileServer(http.FS(staticFiles)), false, true, "GET")
+	a.RegisterRoutesWithPrefix("/static/", http.FileServer(http.FS(staticFiles)), false, true, 0, "GET")
 	a.RegisterRoute("/debug/fgprof", fgprof.Handler(), false, true, "GET")
 	a.RegisterRoute("/api/v1/status/buildinfo", buildInfoHandler, false, true, "GET")
 	a.RegisterRoute("/api/v1/status/config", a.cfg.statusConfigHandler(), false, true, "GET")
@@ -293,7 +310,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	}
 
 	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(
-		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits,
+		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, a.cfg.OTLPTranslationHeaders, limits,
 		pushConfig.OTelResourceAttributePromotionConfig,
 		pushConfig.KeepIdentifyingOTelResourceAttributesConfig,
 		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares,
@@ -467,21 +484,21 @@ func (a *API) RegisterQueryable(distributor Distributor) {
 }
 
 // RegisterQueryAPI registers the Prometheus API routes with the provided handler.
-func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handler) {
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/read"), handler, true, true, "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_range"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_exemplars"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/labels"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/label/{name}/values"), handler, true, true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/series"), handler, true, true, "GET", "POST", "DELETE")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/metadata"), handler, true, true, "GET")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_names"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_values"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), handler, true, true, "GET", "POST")
-	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, "GET", "POST")
+func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handler, maxBodySizeIfAny int64) {
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/read"), handler, true, true, maxBodySizeIfAny, "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_range"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/query_exemplars"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/labels"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/label/{name}/values"), handler, true, true, maxBodySizeIfAny, "GET")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/series"), handler, true, true, maxBodySizeIfAny, "GET", "POST", "DELETE")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, maxBodySizeIfAny, "GET")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/metadata"), handler, true, true, maxBodySizeIfAny, "GET")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_names"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_values"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 }
 
 func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
@@ -491,8 +508,8 @@ func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
 // RegisterQueryFrontendHandler registers the Prometheus routes supported by the
 // Mimir querier service. Currently, this can not be registered simultaneously
 // with the Querier.
-func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
-	a.RegisterQueryAPI(h, buildInfoHandler)
+func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler, maxBodySizeIfAny int64) {
+	a.RegisterQueryAPI(h, buildInfoHandler, maxBodySizeIfAny)
 }
 
 func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {

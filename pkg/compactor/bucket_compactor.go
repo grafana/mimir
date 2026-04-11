@@ -552,7 +552,7 @@ func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objsto
 	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
 	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
 	logger = log.With(logger, "id", id)
-	br, err := indexheader.NewStreamBinaryReader(ctx, logger, bkt, dir, id, sampling, mets, cfg)
+	br, err := indexheader.NewStreamBinaryReader(ctx, id, bkt, dir, cfg, sampling, logger, mets)
 	if err != nil {
 		return err
 	}

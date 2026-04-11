@@ -231,6 +231,11 @@ type ConfigProvider interface {
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 	CompactorSplitAndMergeShards(userID string) int
 
+	// CompactorOOOSplitAndMergeShards returns the number of shards to use when splitting out-of-order blocks.
+	// Only applies to blocks/jobs with the out-of-order external label.
+	// If the value is 0 or not set, it falls back to CompactorSplitAndMergeShards.
+	CompactorOOOSplitAndMergeShards(userID string) int
+
 	// CompactorSplitGroups returns the number of groups that blocks used for splitting should
 	// be grouped into. Different groups are then split by different jobs.
 	CompactorSplitGroups(userID string) int
@@ -318,8 +323,10 @@ type MultitenantCompactor struct {
 	// so alerts need to be able to treat it with higher priority than other compaction errors.
 	outOfSpace prometheus.Counter
 
-	// schedulerLastContact tracks the last time a compactor successfully contacted the scheduler
+	// scheduler-mode specific metrics
 	schedulerLastContact prometheus.Gauge
+	compactionJobBytes   *prometheus.HistogramVec
+	jobDuration          *prometheus.HistogramVec
 
 	// invalidClusterValidation tracks the number of cluster validation errors during communication with the scheduler
 	invalidClusterValidation *prometheus.CounterVec
@@ -498,6 +505,20 @@ func newMultitenantCompactor(
 		Name: "cortex_compactor_last_scheduler_contact_timestamp_seconds",
 		Help: "Unix timestamp of the last successful contact with the scheduler. Only updated in scheduler mode.",
 	})
+	c.compactionJobBytes = promauto.With(schedulerReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_compactor_compaction_job_bytes",
+		Help:                            "Total bytes of blocks processed by completed compaction jobs.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
+	}, []string{"compaction_type"})
+	c.jobDuration = promauto.With(schedulerReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_compactor_job_duration_seconds",
+		Help:                            "Duration of successfully completed jobs.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
+	}, []string{"job_type", "compaction_type"})
 	c.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(schedulerReg, "compactor", util.GRPCProtocol)
 
 	return c, nil
@@ -760,29 +781,7 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 	// Delete local files for unowned tenants, if there are any. This cleans up
 	// leftover local files for tenants that belong to different compactors now,
 	// or have been deleted completely.
-	for userID := range c.listTenantsWithMetaSyncDirectories() {
-		if _, owned := ownedUsers[userID]; owned {
-			continue
-		}
-
-		dir := c.metaSyncDirForUser(userID)
-		s, err := os.Stat(dir)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				level.Warn(c.logger).Log("msg", "failed to stat local directory with user data", "dir", dir, "err", err)
-			}
-			continue
-		}
-
-		if s.IsDir() {
-			err := os.RemoveAll(dir)
-			if err == nil {
-				level.Info(c.logger).Log("msg", "deleted directory for user not owned by this shard", "dir", dir)
-			} else {
-				level.Warn(c.logger).Log("msg", "failed to delete directory for user not owned by this shard", "dir", dir, "err", err)
-			}
-		}
-	}
+	c.deleteUnownedMetaSyncDirs(ownedUsers)
 
 	succeeded = true
 }
@@ -1056,4 +1055,31 @@ func (c *MultitenantCompactor) listTenantsWithMetaSyncDirectories() map[string]s
 	}
 
 	return result
+}
+
+// deleteUnownedMetaSyncDirs deletes meta sync directories for tenants not present in ownedUsers.
+func (c *MultitenantCompactor) deleteUnownedMetaSyncDirs(ownedUsers map[string]struct{}) {
+	for userID := range c.listTenantsWithMetaSyncDirectories() {
+		if _, owned := ownedUsers[userID]; owned {
+			continue
+		}
+
+		dir := c.metaSyncDirForUser(userID)
+		s, err := os.Stat(dir)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				level.Warn(c.logger).Log("msg", "failed to stat meta sync directory", "dir", dir, "err", err)
+			}
+			continue
+		}
+
+		if s.IsDir() {
+			err := os.RemoveAll(dir)
+			if err == nil {
+				level.Info(c.logger).Log("msg", "deleted meta sync directory", "dir", dir)
+			} else {
+				level.Warn(c.logger).Log("msg", "failed to delete meta sync directory", "dir", dir, "err", err)
+			}
+		}
+	}
 }

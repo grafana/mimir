@@ -469,7 +469,7 @@
   "tempo":
     "command":
       - "-config.file=/etc/config/tempo.yaml"
-    "image": "grafana/tempo:latest"
+    "image": "grafana/tempo:2.10.3"
     "ports":
       - "3200"
       - "9095"

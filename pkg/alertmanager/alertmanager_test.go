@@ -7,24 +7,17 @@ package alertmanager
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/alerting/definition"
-	alertingmodels "github.com/grafana/alerting/models"
-	alertingReceivers "github.com/grafana/alerting/receivers"
-	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/alertmanager/silence/silencepb"
@@ -34,7 +27,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/time/rate"
+
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {
@@ -97,11 +91,10 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	var emailCfg alertingReceivers.EmailSenderConfig
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
+	tmpls := make([]*alertspb.TemplateDesc, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw))
 
 	now := time.Now()
 
@@ -183,11 +176,10 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	var emailCfg alertingReceivers.EmailSenderConfig
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
+	tmpls := make([]*alertspb.TemplateDesc, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -494,263 +486,4 @@ func TestSilenceLimits(t *testing.T) {
 	sils, _, err = am.silences.Query(silence.QState(types.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
-}
-
-func TestExperimentalReceiversAPI(t *testing.T) {
-	var buf concurrency.SyncBuffer
-	logger := log.NewLogfmtLogger(&buf)
-
-	user := "test"
-	reg := prometheus.NewPedanticRegistry()
-	am, err := New(&Config{
-		UserID:            user,
-		Logger:            logger,
-		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: 10},
-		Features:          featurecontrol.NoopFlags{},
-		TenantDataDir:     t.TempDir(),
-		ExternalURL:       &url.URL{Path: "/am"},
-		ShardingEnabled:   true,
-		Store:             prepareInMemoryAlertStore(),
-		Replicator:        &stubReplicator{},
-		ReplicationFactor: 1,
-		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, reg)
-	require.NoError(t, err)
-	defer am.StopAndWait()
-
-	cfgRaw := `receivers:
-- name: 'recv-1'
-  webhook_configs:
-  - url: http://example.com/
-    send_resolved: true
-
-- name: 'recv-2'
-  webhook_configs:
-  - url: http://example.com/
-    send_resolved: false
-
-route:
-  group_by: ['alertname']
-  group_wait: 10ms
-  group_interval: 10ms
-  receiver: 'recv-1'`
-
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
-	require.NoError(t, err)
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	var emailCfg alertingReceivers.EmailSenderConfig
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
-
-	doGetReceivers := func() []alertingmodels.ReceiverStatus {
-		rr := httptest.NewRecorder()
-		am.GetReceiversHandler(rr, nil)
-		require.Equal(t, http.StatusOK, rr.Code)
-		result := []alertingmodels.ReceiverStatus{}
-		err = json.Unmarshal(rr.Body.Bytes(), &result)
-		assert.NoError(t, err)
-		slices.SortFunc(result, func(a, b alertingmodels.ReceiverStatus) int {
-			return strings.Compare(a.Name, b.Name)
-		})
-		return result
-	}
-
-	// Check the API returns all receivers but without any notification status.
-
-	result := doGetReceivers()
-	assert.Equal(t, []alertingmodels.ReceiverStatus{
-		{
-			Name:   "recv-1",
-			Active: true,
-			Integrations: []alertingmodels.IntegrationStatus{
-				{
-					Name:                      "webhook",
-					LastNotifyAttemptDuration: "0s",
-					SendResolved:              true,
-				},
-			},
-		},
-		{
-			Name: "recv-2",
-			// Receiver not used in a route.
-			Active: false,
-			Integrations: []alertingmodels.IntegrationStatus{
-				{
-					Name:                      "webhook",
-					LastNotifyAttemptDuration: "0s",
-					// We configure send_resolved to false.
-					SendResolved: false,
-				},
-			},
-		},
-	}, result)
-
-	// Send an alert to cause a notification attempt.
-
-	now := time.Now()
-	inputAlerts := []*types.Alert{
-		{
-			Alert: model.Alert{
-				Labels: model.LabelSet{
-					"alertname": model.LabelValue("Alert-1"),
-					"a":         "b",
-				},
-				Annotations:  model.LabelSet{"templates": `{{ template "test" . }}`},
-				StartsAt:     now,
-				EndsAt:       now.Add(5 * time.Minute),
-				GeneratorURL: "http://example.com/prometheus",
-			},
-			UpdatedAt: now,
-			Timeout:   false,
-		},
-	}
-	require.NoError(t, am.alerts.Put(inputAlerts...))
-
-	// Wait for the API to tell us there was a notification attempt.
-
-	result = []alertingmodels.ReceiverStatus{}
-	require.Eventually(t, func() bool {
-		result = doGetReceivers()
-		return len(result) == 2 &&
-			len(result[0].Integrations) == 1 &&
-			len(result[1].Integrations) == 1 &&
-			!result[0].Integrations[0].LastNotifyAttempt.IsZero()
-	}, 5*time.Second, 100*time.Millisecond)
-
-	assert.Equal(t, "webhook", result[0].Integrations[0].Name)
-	assert.NotZero(t, result[0].Integrations[0].LastNotifyAttempt)
-	assert.Equal(t, errRateLimited.Error(), result[0].Integrations[0].LastNotifyAttemptError)
-
-	// Check the status of the other integration is not changed.
-
-	assert.Equal(t, "webhook", result[1].Integrations[0].Name)
-	assert.Zero(t, result[1].Integrations[0].LastNotifyAttempt)
-	assert.Equal(t, "", result[1].Integrations[0].LastNotifyAttemptError)
-}
-
-func TestGrafanaAlertmanager(t *testing.T) {
-	limits := mockAlertManagerLimits{
-		emailNotificationRateLimit: rate.Inf,
-	}
-
-	suffix := "-grafana"
-	am, err := New(&Config{
-		UserID:            "test" + suffix,
-		Logger:            log.NewNopLogger(),
-		Limits:            &limits,
-		Features:          featurecontrol.NoopFlags{},
-		TenantDataDir:     t.TempDir(),
-		ExternalURL:       &url.URL{Path: "/am"},
-		ShardingEnabled:   true,
-		Store:             prepareInMemoryAlertStore(),
-		Replicator:        &stubReplicator{},
-		ReplicationFactor: 1,
-		// We have to set this interval non-zero, though we don't need the persister to do anything.
-		PersisterConfig:                  PersisterConfig{Interval: time.Hour},
-		GrafanaAlertmanagerCompatibility: true,
-	}, prometheus.NewPedanticRegistry())
-	require.NoError(t, err)
-	defer am.StopAndWait()
-
-	// The webhook message should contain the executed Grafana template.
-	type notification struct {
-		*alertingTemplates.ExtendedData
-
-		Message string `json:"message"`
-	}
-	c := make(chan notification)
-	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		var got notification
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
-		defer func() {
-			require.NoError(t, r.Body.Close())
-		}()
-		c <- got
-	}))
-	defer s.Close()
-
-	cfgRaw := fmt.Sprintf(`{
-            "route": {
-                "receiver": "test_receiver",
-                "group_by": ["alertname"]
-            },
-            "receivers": [{
-                "name": "test_receiver",
-                "grafana_managed_receiver_configs": [{
-                    "uid": "",
-                    "name": "webhook test",
-                    "type": "webhook",
-                    "disableResolveMessage": true,
-                    "settings": {
-                        "url": %q,
-                        "message": %q
-                    },
-                }]
-            }],
-        }`, s.URL, `{{ template "test" . }}`)
-
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
-	require.NoError(t, err)
-	expMessage := `{"field":"value"}`
-	testTemplate := alertingTemplates.TemplateDefinition{
-		Name:     "test",
-		Template: `{{ define "test" -}} {{ coll.Dict "field" "value" | data.ToJSON }} {{- end }}`,
-		Kind:     alertingTemplates.GrafanaKind,
-	}
-
-	expectedImageURL := "http://example.com/image.png"
-
-	var emailCfg alertingReceivers.EmailSenderConfig
-	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
-
-	now := time.Now()
-	alert := types.Alert{
-		Alert: model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue("test-alert"),
-			},
-			Annotations: model.LabelSet{
-				// Check that the image URL is included in the message.
-				alertingmodels.ImageURLAnnotation: model.LabelValue(expectedImageURL),
-			},
-			StartsAt: now.Add(-5 * time.Minute),
-			EndsAt:   now.Add(5 * time.Minute),
-		},
-		UpdatedAt: now,
-	}
-	expected := testTemplate
-	expected.Kind = alertingTemplates.GrafanaKind // should patch kind
-	require.NoError(t, am.alerts.Put(&alert))
-	require.Equal(t, am.templates[0], expected)
-	require.Eventually(t, func() bool {
-		select {
-		case got := <-c:
-			return got.Message == expMessage && got.Alerts[0].ImageURL == expectedImageURL
-		default:
-			return false
-		}
-	}, 5*time.Second, 100*time.Millisecond)
-
-	// Ensure templates are correctly built for empty/noop/blackhole notifiers.
-	cfgRaw = `{
-            "route": {
-                "receiver": "empty_receiver",
-                "group_by": ["alertname"]
-            },
-            "receivers": [{
-                "name": "empty_receiver"
-            }],
-        }`
-
-	cfg, err = definition.LoadCompat([]byte(cfgRaw))
-	require.NoError(t, err)
-
-	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
-
-	// Now attempt to use a template function that doesn't exist. Ensure ApplyConfig fails to validate even if there are no non-empty receivers.
-	testTemplate = alertingTemplates.TemplateDefinition{
-		Name:     "test",
-		Template: `{{ define "test" -}} {{ DOESNTEXIST "field" "value" }} {{- end }}`,
-		Kind:     alertingTemplates.GrafanaKind,
-	}
-	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
 }

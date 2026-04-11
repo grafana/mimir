@@ -24,7 +24,7 @@ import (
 const (
 	deadlineExceededWrapMessage     = "exceeded configured distributor remote timeout"
 	failedPushingToIngesterMessage  = "failed pushing to ingester"
-	failedPushingToPartitionMessage = "failed pushing to partition"
+	failedPushingToPartitionMessage = "failed pushing to partitions"
 )
 
 var (
@@ -65,6 +65,12 @@ type Error interface {
 	Cause() mimirpb.ErrorCause
 	// IsSoft returns whether it's a soft type of error (didn't halt ingestion).
 	IsSoft() bool
+}
+
+// ErrorWithHTTPStatusCode is an optional interface that errors can implement
+// to override the default HTTP status code derived from the error cause.
+type ErrorWithHTTPStatusCode interface {
+	HTTPStatusCode() int
 }
 
 // replicasDidNotMatchError is an error stating that replicas do not match.
@@ -165,11 +171,12 @@ func (e reactiveLimiterExceededError) IsSoft() bool {
 
 var _ Error = reactiveLimiterExceededError{}
 
-func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit int) activeSeriesLimitedError {
+func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit, httpStatusCode int) activeSeriesLimitedError {
 	return activeSeriesLimitedError{
 		totalSeriesInThisRequest:      totalSeriesInThisRequest,
 		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
 		limit:                         limit,
+		httpStatusCode:                httpStatusCode,
 	}
 }
 
@@ -177,6 +184,7 @@ type activeSeriesLimitedError struct {
 	totalSeriesInThisRequest      int
 	rejectedSeriesFromThisRequest int
 	limit                         int
+	httpStatusCode                int
 }
 
 func (e activeSeriesLimitedError) Error() string {
@@ -191,8 +199,13 @@ func (e activeSeriesLimitedError) IsSoft() bool {
 	return false
 }
 
-// Ensure that activeSeriesLimitedError implements Error.
+func (e activeSeriesLimitedError) HTTPStatusCode() int {
+	return e.httpStatusCode
+}
+
+// Ensure that activeSeriesLimitedError implements Error and ErrorWithHTTPStatusCode.
 var _ Error = activeSeriesLimitedError{}
+var _ ErrorWithHTTPStatusCode = activeSeriesLimitedError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {
@@ -436,15 +449,13 @@ func wrapIngesterPushError(err error, ingesterID string) error {
 	return newIngesterPushError(stat, ingesterID)
 }
 
-func wrapPartitionPushError(err error, partitionID int32) error {
+func wrapPartitionsPushError(err error) error {
 	if err == nil {
 		return nil
 	}
 
-	// Add the partition ID to the error message.
-	err = errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+	err = errors.Wrap(err, failedPushingToPartitionMessage)
 
-	// Detect the cause.
 	cause := mimirpb.ERROR_CAUSE_UNKNOWN
 	if errors.Is(err, ingest.ErrWriteRequestDataItemTooLarge) {
 		cause = mimirpb.ERROR_CAUSE_BAD_DATA

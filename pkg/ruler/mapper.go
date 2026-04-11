@@ -149,7 +149,7 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 		return strings.Compare(b.Name, a.Name)
 	})
 
-	rgs := rulefmt.RuleGroups{Groups: groups}
+	rgs := rulefmt.RuleGroups{Groups: cleanRuleGroupExprs(groups)}
 
 	d, err := yaml.Marshal(&rgs)
 	if err != nil {
@@ -211,4 +211,21 @@ func (f FSLoader) parseFile(fs afero.Fs, file string, ignoreUnknownFields bool, 
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}
 	return rgs, errs
+}
+
+// cleanRuleGroupExprs returns a copy of groups with leading/trailing whitespace
+// trimmed from rule expressions. This avoids yaml.v3 emitting explicit
+// indentation indicators (e.g. "|4") for expressions that start with newlines
+// or whitespace, which can cause parsing failures when the file is read back.
+func cleanRuleGroupExprs(groups []rulefmt.RuleGroup) []rulefmt.RuleGroup {
+	cleaned := make([]rulefmt.RuleGroup, len(groups))
+	for i, g := range groups {
+		cleaned[i] = g
+		cleaned[i].Rules = make([]rulefmt.Rule, len(g.Rules))
+		for j, r := range g.Rules {
+			cleaned[i].Rules[j] = r
+			cleaned[i].Rules[j].Expr = strings.TrimSpace(r.Expr)
+		}
+	}
+	return cleaned
 }

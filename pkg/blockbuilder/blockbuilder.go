@@ -434,6 +434,25 @@ func (b *BlockBuilder) consumePartitionSection(
 		fetchPoller = &fetchWrapper{f}
 	}
 
+	// Prefetch records in a background goroutine so the next batch is at hand
+	// at the beginning of every consumption loop iteration below.
+	fetchCtx, fetchCancel := context.WithCancelCause(ctx)
+	fetches := make(chan kgo.Fetches)
+	defer func() {
+		fetchCancel(fmt.Errorf("%w: partition %d: done consuming", context.Canceled, partition))
+		<-fetches
+	}()
+	go func() {
+		defer close(fetches)
+		for {
+			select {
+			case fetches <- fetchPoller.PollFetches(fetchCtx):
+			case <-fetchCtx.Done():
+				return
+			}
+		}
+	}()
+
 	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
 
 	firstRecOffset := int64(-1)
@@ -443,13 +462,21 @@ func (b *BlockBuilder) consumePartitionSection(
 			return err
 		}
 
+		// Early head compaction is a safety net to try reducing number of in-memory series across all tenants.
+		// For the majority of cases it's a noop.
+		err := builder.CompactToReduceInMemorySeries(ctx)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to run early head compaction", "err", err)
+		}
+
 		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
 		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
 		// the iterations against the endOffset, so it retries the polling up until the expected end of the partition is reached.
-		fetches := fetchPoller.PollFetches(ctx)
+		fetchBatch := <-fetches
+
 		var fetchErr error
-		fetches.EachError(func(_ string, _ int32, err error) {
+		fetchBatch.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
 				b.blockBuilderMetrics.fetchErrors.WithLabelValues(fmt.Sprintf("%d", partition)).Inc()
@@ -477,7 +504,7 @@ func (b *BlockBuilder) consumePartitionSection(
 			}
 		}
 
-		records := recordsAll(fetches)
+		records := recordsAll(fetchBatch)
 		for rec := range records {
 			lastConsumedOffset = rec.Offset
 			if firstRecOffset == -1 {

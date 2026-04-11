@@ -38,7 +38,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
@@ -149,7 +148,7 @@ func newDefaultConfig() *Config {
 func (t *Mimir) initAPI() (services.Service, error) {
 	t.Cfg.API.ServerPrefix = t.Cfg.Server.PathPrefix
 
-	a, err := api.New(t.Cfg.API, t.Cfg.TenantFederation, t.Cfg.Server, t.Server, util_log.Logger)
+	a, err := api.New(t.Cfg.API, t.Cfg.TenantFederation, t.Cfg.Server, t.Server, util_log.Logger, t.ActivityTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -546,7 +545,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 		t.Cfg.Querier,
 		t.Overrides,
 		t.Distributor,
-		t.AdditionalStorageQueryables,
+		t.StoreQueryable,
 		registerer,
 		util_log.Logger,
 		t.ActivityTracker,
@@ -673,10 +672,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		&querierapi.ConsistencyExtractor{},
 	)
 
-	if t.Cfg.Querier.FilterQueryablesEnabled {
-		t.Extractors = append(t.Extractors, &querier.FilterQueryablesExtractor{})
-	}
-
 	extractor := &propagation.MultiExtractor{Extractors: t.Extractors}
 	metrics := querier.NewRequestMetrics(t.Registerer)
 	var dispatcher *querier.Dispatcher
@@ -707,7 +702,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// to ensure requests it processes use the default middleware instrumentation.
 	if !t.Cfg.isQuerySchedulerEnabled() && !t.Cfg.isQueryFrontendEnabled() {
 		// First, register the internal querier handler with the external HTTP server
-		t.API.RegisterQueryAPI(internalQuerierRouter, t.BuildInfoHandler)
+		t.API.RegisterQueryAPI(internalQuerierRouter, t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
 
 		// Second, set the http.Handler that the frontend worker will use to process requests to point to
 		// the external HTTP server. This will allow the querier to consolidate query metrics both external
@@ -746,7 +741,7 @@ func (t *Mimir) initStoreQueryable() (services.Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}
-	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier))
+	t.StoreQueryable = q
 	return q, nil
 }
 
@@ -819,6 +814,7 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 		t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat,
 		t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders,
 		&propagation.MultiInjector{Injectors: t.Injectors},
+		util_log.Logger,
 	)
 
 	return nil, nil
@@ -952,10 +948,10 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
 	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontend, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
 
-	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
+	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
 	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackExtractor{})
-	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
+	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
@@ -993,7 +989,7 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
-		analysisHandler := analysis.Handler(t.QuerierQueryPlanner, t.QueryLimitsProvider)
+		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, mqeOpts)
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
 
@@ -1032,7 +1028,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
-	analysisHandler := analysis.Handler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider)
+	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, mqeOpts)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
 	return nil, nil
@@ -1106,7 +1102,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			t.Cfg.Querier,
 			t.Overrides,
 			t.Distributor,
-			t.AdditionalStorageQueryables,
+			t.StoreQueryable,
 			rulerRegisterer,
 			util_log.Logger,
 			t.ActivityTracker,
@@ -1222,10 +1218,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
-	bCfg := bucketclient.BucketAlertStoreConfig{
-		FetchGrafanaConfig: t.Cfg.Alertmanager.GrafanaAlertmanagerCompatibilityEnabled,
-	}
-	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, bCfg, util_log.Logger, t.Registerer)
+	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}
@@ -1235,7 +1228,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 		return
 	}
 
-	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.Alertmanager.EnableAPI, t.Cfg.Alertmanager.GrafanaAlertmanagerCompatibilityEnabled, t.BuildInfoHandler)
+	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.Alertmanager.EnableAPI, t.BuildInfoHandler)
 	return t.Alertmanager, nil
 }
 
@@ -1520,7 +1513,7 @@ func (t *Mimir) setupModuleManager() error {
 	// Add dependencies
 	deps := map[string][]string{
 		//lint:sorted
-		API:                              {Server},
+		API:                              {Server, ActivityTracker},
 		AlertManager:                     {API, MemberlistKV, Overrides, Vault},
 		BlockBuilder:                     {API, Overrides},
 		BlockBuilderScheduler:            {API},
@@ -1539,10 +1532,10 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
 		QuerierLifecycler:                {API, RuntimeConfig, MemberlistKV, Vault},
-		QuerierQueryPlanner:              {API, ActivityTracker, Overrides},
+		QuerierQueryPlanner:              {API, Overrides},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendQueryPlanner:        {API, ActivityTracker, Overrides, QuerierRing},
+		QueryFrontendQueryPlanner:        {API, Overrides, QuerierRing},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},

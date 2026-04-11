@@ -97,10 +97,6 @@ const (
 	NativeHistogramCustomBucketsInvalid      ID = "native-histogram-custom-buckets-invalid"
 	NativeHistogramCustomBucketsInfinite     ID = "native-histogram-custom-buckets-infinite"
 	NativeHistogramCustomBucketsNotReducible ID = "native-histogram-custom-buckets-not-reducible"
-
-	// Alertmanager errors
-	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"
-	AlertmanagerMaxGrafanaStateSize  ID = "alertmanager-max-grafana-state-size"
 )
 
 // Message returns the provided msg, appending the error id.

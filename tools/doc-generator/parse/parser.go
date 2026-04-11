@@ -187,8 +187,10 @@ func config(block *ConfigBlock, cfg any, flags map[uintptr]*flag.Flag, rootBlock
 			continue
 		}
 
-		// Recursively re-iterate if it's a struct and it's not a custom type.
-		if _, custom := getFieldCustomType(field.Type); (field.Type.Kind() == reflect.Struct || field.Type.Kind() == reflect.Ptr) && !custom {
+		// Recursively re-iterate if it's a struct (or pointer to struct) and it's not a custom type.
+		if _, custom := getFieldCustomType(field.Type); !custom &&
+			(field.Type.Kind() == reflect.Struct || (field.Type.Kind() == reflect.Ptr && field.Type.Elem().Kind() == reflect.Struct)) {
+
 			// Check whether the sub-block is a root config block
 			rootName, rootDesc, isRoot := isRootBlock(field.Type, rootBlocks)
 
@@ -493,7 +495,12 @@ func getFieldFlag(field reflect.StructField, fieldValue reflect.Value, flags map
 	if isAbsentInCLI(field) {
 		return nil, nil
 	}
-	fieldPtr := fieldValue.Addr().Pointer()
+	var fieldPtr uintptr
+	if fieldValue.Kind() == reflect.Ptr && !fieldValue.IsNil() {
+		fieldPtr = fieldValue.Pointer()
+	} else {
+		fieldPtr = fieldValue.Addr().Pointer()
+	}
 	fieldFlag, ok := flags[fieldPtr]
 	if !ok {
 		return nil, nil

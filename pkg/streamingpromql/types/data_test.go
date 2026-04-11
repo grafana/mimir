@@ -481,3 +481,89 @@ func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryTimeRange_StepIndexing_RangeQuery(t *testing.T) {
+	// Steps at t = 0, 2, 4, 6, 8, 10 minutes (6 steps, 2-minute interval).
+	step := 2 * time.Minute
+	start := timestamp.Time(0)
+	end := start.Add(5 * step)
+	tr := NewRangeQueryTimeRange(start, end, step)
+
+	testCases := map[string]struct {
+		t                           int64
+		expectedFirstIndexAfter     int
+		expectedLastIndexAtOrBefore int
+	}{
+		"before start": {
+			t:                           timestamp.FromTime(start.Add(-1 * time.Minute)),
+			expectedFirstIndexAfter:     0,  // first step (t=0) is after any t before start
+			expectedLastIndexAtOrBefore: -1, // no step at or before this timestamp
+		},
+		"exactly at start": {
+			t:                           timestamp.FromTime(start),
+			expectedFirstIndexAfter:     1, // strictly greater than start, so first step after is idx 1 (t=2min)
+			expectedLastIndexAtOrBefore: 0, // step at t=0 is at or before t=0
+		},
+		"between two steps": {
+			t:                           timestamp.FromTime(start.Add(3 * time.Minute)),
+			expectedFirstIndexAfter:     2, // t=3min → first step strictly after is t=4min at idx 2
+			expectedLastIndexAtOrBefore: 1, // t=3min → last step at or before is t=2min at idx 1
+		},
+		"exactly on a step": {
+			t:                           timestamp.FromTime(start.Add(4 * time.Minute)),
+			expectedFirstIndexAfter:     3, // t=4min at idx 2; strictly after → idx 3 (t=6min)
+			expectedLastIndexAtOrBefore: 2, // step at t=4min is at idx 2
+		},
+		"exactly at end": {
+			t:                           timestamp.FromTime(end),
+			expectedFirstIndexAfter:     6, // no step strictly after end; returns StepCount
+			expectedLastIndexAtOrBefore: 5, // last step at idx 5 (t=10min)
+		},
+		"after end": {
+			t:                           timestamp.FromTime(end.Add(time.Minute)),
+			expectedFirstIndexAfter:     6, // no step strictly after; returns StepCount
+			expectedLastIndexAtOrBefore: 5, // still returns last step (idx 5)
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expectedFirstIndexAfter, tr.FirstPointIndexAfter(tc.t))
+			require.Equal(t, tc.expectedLastIndexAtOrBefore, tr.LastPointIndexAtOrBefore(tc.t))
+		})
+	}
+}
+
+func TestQueryTimeRange_StepIndexing_InstantQuery(t *testing.T) {
+	queryT := timestamp.Time(0)
+	tr := NewInstantQueryTimeRange(queryT)
+
+	testCases := map[string]struct {
+		t                           int64
+		expectedFirstIndexAfter     int
+		expectedLastIndexAtOrBefore int
+	}{
+		"before query time": {
+			t:                           timestamp.FromTime(queryT.Add(-time.Minute)),
+			expectedFirstIndexAfter:     0,  // the single step is after t
+			expectedLastIndexAtOrBefore: -1, // no step at or before t
+		},
+		"exactly at query time": {
+			t:                           timestamp.FromTime(queryT),
+			expectedFirstIndexAfter:     1, // no step strictly after query time; returns StepCount (1)
+			expectedLastIndexAtOrBefore: 0, // the single step is at query time
+		},
+		"after query time": {
+			t:                           timestamp.FromTime(queryT.Add(time.Minute)),
+			expectedFirstIndexAfter:     1, // no step strictly after query time; returns StepCount (1)
+			expectedLastIndexAtOrBefore: 0, // the single step is at or before t
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expectedFirstIndexAfter, tr.FirstPointIndexAfter(tc.t))
+			require.Equal(t, tc.expectedLastIndexAtOrBefore, tr.LastPointIndexAtOrBefore(tc.t))
+		})
+	}
+}
