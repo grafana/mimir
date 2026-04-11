@@ -281,14 +281,18 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	}
 
 	// --- Phase 1: build entries, reassign inactive partitions ----------
+	// Dead-partition slices are distributed round-robin across all
+	// active partitions (Slicer paper: "spread across remaining tasks").
 	entries := make([]rangeLoad, len(current.Entries))
+	rrIdx := 0
 	for i, e := range current.Entries {
 		entries[i] = rangeLoad{
 			entry: e,
 			load:  lookupRate(e.Range, rateMap),
 		}
 		if !activeSet[e.PartitionID] {
-			entries[i].entry.PartitionID = activePartitions[0]
+			entries[i].entry.PartitionID = activePartitions[rrIdx%numPartitions]
+			rrIdx++
 		}
 	}
 
@@ -364,51 +368,41 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 		entries[bestIdx].entry.PartitionID = coldestPID
 	}
 
-	// --- Phase 4: split hot slices on overloaded partitions -----------
-	// Only split when there's actual imbalance: find partitions above
-	// 110% of target and split their hottest slices to give the next
-	// round finer granularity for moves.
+	// --- Phase 4: split hot slices ----------------------------------------
+	// Per the Slicer paper: split any slice whose load exceeds 2x the
+	// mean slice load. This produces finer granularity for the next
+	// round's moves. The maxSlicesPerPartition cap prevents runaway growth.
 	maxTotal := maxSlicesPerPartition * numPartitions
 	if len(entries) < maxTotal {
-		postMoveLoads := computePartitionLoads(entries)
-		overloaded := make(map[int32]bool)
-		for _, pid := range activePartitions {
-			if postMoveLoads[pid] > targetLoad*1.1 {
-				overloaded[pid] = true
+		meanSliceLoad := totalLoad / float64(len(entries))
+		splitThreshold := 2.0 * meanSliceLoad
+
+		var newEntries []rangeLoad
+		for _, rl := range entries {
+			if len(newEntries) >= maxTotal {
+				newEntries = append(newEntries, rl)
+				continue
+			}
+			if rl.load > splitThreshold && rl.entry.Range.Size() > 1 {
+				mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
+				left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
+				right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
+				leftLoad := lookupRate(left, rateMap)
+				rightLoad := lookupRate(right, rateMap)
+				if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
+					leftFraction := float64(left.Size()) / float64(rl.entry.Range.Size())
+					leftLoad = rl.load * leftFraction
+					rightLoad = rl.load * (1 - leftFraction)
+				}
+				newEntries = append(newEntries,
+					rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad},
+					rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad},
+				)
+			} else {
+				newEntries = append(newEntries, rl)
 			}
 		}
-
-		if len(overloaded) > 0 {
-			meanSliceLoad := totalLoad / float64(len(entries))
-			splitThreshold := 2.0 * meanSliceLoad
-
-			var newEntries []rangeLoad
-			for _, rl := range entries {
-				if len(newEntries) >= maxTotal {
-					newEntries = append(newEntries, rl)
-					continue
-				}
-				if overloaded[rl.entry.PartitionID] && rl.load > splitThreshold && rl.entry.Range.Size() > 1 {
-					mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
-					left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
-					right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
-					leftLoad := lookupRate(left, rateMap)
-					rightLoad := lookupRate(right, rateMap)
-					if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
-						leftFraction := float64(left.Size()) / float64(rl.entry.Range.Size())
-						leftLoad = rl.load * leftFraction
-						rightLoad = rl.load * (1 - leftFraction)
-					}
-					newEntries = append(newEntries,
-						rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad},
-						rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad},
-					)
-				} else {
-					newEntries = append(newEntries, rl)
-				}
-			}
-			entries = newEntries
-		}
+		entries = newEntries
 	}
 
 	// --- Build result --------------------------------------------------
@@ -452,8 +446,14 @@ func lookupRate(hr assignment.HashRange, rateMap map[assignment.HashRange]float6
 	return 0
 }
 
-// mergeAdjacentCold merges adjacent slices on the same partition to
-// defragment the assignment. Follows the Slicer paper's constraints:
+// mergeAdjacentCold merges adjacent cold slices to defragment the
+// assignment, following the Slicer paper (Section 4.4.1, Phase 3).
+//
+// Same-partition adjacent slices are merged directly.
+// Cross-partition adjacent slices are merged by moving the smaller
+// slice onto the other's partition, then combining into one range.
+//
+// Constraints:
 //   - merged load < meanSliceLoad
 //   - receiving partition load stays below maxPartitionLoad (target * 1.5)
 //   - total churn stays within churnBudget
@@ -476,21 +476,57 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 		prev := &result[len(result)-1]
 		curr := entries[i]
 
-		if prev.entry.PartitionID == curr.entry.PartitionID &&
-			prev.entry.Range.Hi+1 == curr.entry.Range.Lo {
+		if prev.entry.Range.Hi+1 != curr.entry.Range.Lo {
+			result = append(result, curr)
+			continue
+		}
 
-			mergedLoad := prev.load + curr.load
-			if mergedLoad < meanSliceLoad && partitionLoads[prev.entry.PartitionID] <= maxPartitionLoad {
+		mergedLoad := prev.load + curr.load
+		if mergedLoad >= meanSliceLoad {
+			result = append(result, curr)
+			continue
+		}
+
+		if prev.entry.PartitionID == curr.entry.PartitionID {
+			if partitionLoads[prev.entry.PartitionID] <= maxPartitionLoad {
 				mergeCost := float64(curr.entry.Range.Size())
 				if churned+mergeCost <= churnBudget {
-					merged := assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
-					prev.entry.Range = merged
+					prev.entry.Range = assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
 					prev.load = mergedLoad
 					churned += mergeCost
 					continue
 				}
 			}
+		} else {
+			// Cross-partition merge: move the smaller slice onto the
+			// larger slice's partition, then merge the ranges.
+			var receiverPID, donorPID int32
+			var movedSize float64
+			var donorLoad float64
+			if prev.load >= curr.load {
+				receiverPID = prev.entry.PartitionID
+				donorPID = curr.entry.PartitionID
+				movedSize = float64(curr.entry.Range.Size())
+				donorLoad = curr.load
+			} else {
+				receiverPID = curr.entry.PartitionID
+				donorPID = prev.entry.PartitionID
+				movedSize = float64(prev.entry.Range.Size())
+				donorLoad = prev.load
+			}
+
+			if partitionLoads[receiverPID]+donorLoad <= maxPartitionLoad && churned+movedSize <= churnBudget {
+				partitionLoads[receiverPID] += donorLoad
+				partitionLoads[donorPID] -= donorLoad
+
+				prev.entry.Range = assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
+				prev.entry.PartitionID = receiverPID
+				prev.load = mergedLoad
+				churned += movedSize
+				continue
+			}
 		}
+
 		result = append(result, curr)
 	}
 	return result
