@@ -327,7 +327,7 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 			}
 		}
 
-		if hottestPID == coldestPID || hottestLoad <= targetLoad*1.1 {
+		if hottestPID == coldestPID || (hottestLoad-coldestLoad) <= targetLoad*0.05 {
 			break
 		}
 
@@ -364,38 +364,51 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 		entries[bestIdx].entry.PartitionID = coldestPID
 	}
 
-	// --- Phase 4: split hot slices (for next round) -------------------
+	// --- Phase 4: split hot slices on overloaded partitions -----------
+	// Only split when there's actual imbalance: find partitions above
+	// 110% of target and split their hottest slices to give the next
+	// round finer granularity for moves.
 	maxTotal := maxSlicesPerPartition * numPartitions
 	if len(entries) < maxTotal {
-		meanSliceLoad := totalLoad / float64(len(entries))
-		splitThreshold := 2.0 * meanSliceLoad
-
-		var newEntries []rangeLoad
-		for _, rl := range entries {
-			if len(newEntries) >= maxTotal {
-				newEntries = append(newEntries, rl)
-				continue
-			}
-			if rl.load > splitThreshold && rl.entry.Range.Size() > 1 {
-				mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
-				left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
-				right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
-				leftLoad := lookupRate(left, rateMap)
-				rightLoad := lookupRate(right, rateMap)
-				if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
-					leftFraction := float64(left.Size()) / float64(rl.entry.Range.Size())
-					leftLoad = rl.load * leftFraction
-					rightLoad = rl.load * (1 - leftFraction)
-				}
-				newEntries = append(newEntries,
-					rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad},
-					rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad},
-				)
-			} else {
-				newEntries = append(newEntries, rl)
+		postMoveLoads := computePartitionLoads(entries)
+		overloaded := make(map[int32]bool)
+		for _, pid := range activePartitions {
+			if postMoveLoads[pid] > targetLoad*1.1 {
+				overloaded[pid] = true
 			}
 		}
-		entries = newEntries
+
+		if len(overloaded) > 0 {
+			meanSliceLoad := totalLoad / float64(len(entries))
+			splitThreshold := 2.0 * meanSliceLoad
+
+			var newEntries []rangeLoad
+			for _, rl := range entries {
+				if len(newEntries) >= maxTotal {
+					newEntries = append(newEntries, rl)
+					continue
+				}
+				if overloaded[rl.entry.PartitionID] && rl.load > splitThreshold && rl.entry.Range.Size() > 1 {
+					mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
+					left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
+					right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
+					leftLoad := lookupRate(left, rateMap)
+					rightLoad := lookupRate(right, rateMap)
+					if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
+						leftFraction := float64(left.Size()) / float64(rl.entry.Range.Size())
+						leftLoad = rl.load * leftFraction
+						rightLoad = rl.load * (1 - leftFraction)
+					}
+					newEntries = append(newEntries,
+						rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad},
+						rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad},
+					)
+				} else {
+					newEntries = append(newEntries, rl)
+				}
+			}
+			entries = newEntries
+		}
 	}
 
 	// --- Build result --------------------------------------------------
