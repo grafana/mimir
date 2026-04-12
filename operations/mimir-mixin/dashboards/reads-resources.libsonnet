@@ -97,10 +97,10 @@ local filename = 'mimir-reads-resources.json';
         $.containerCPUUsagePanelByComponent('ingester'),
       )
       .addPanel(
-        $.containerGoHeapInUsePanelByComponent('ingester'),
+        $.containerMemoryWorkingSetPanelByComponent('ingester'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('ingester'),
+        $.containerGoHeapInUsePanelByComponent('ingester'),
       )
       .addPanel(
         $.containerEphemeralStoragePanelByComponent('ingester'),
