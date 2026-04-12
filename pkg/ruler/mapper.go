@@ -8,6 +8,7 @@ package ruler
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -206,7 +207,7 @@ func (f FSLoader) parseFile(fs afero.Fs, file string, ignoreUnknownFields bool, 
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme, f.parser)
+	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme, f.parser, slog.Default())
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}

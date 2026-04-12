@@ -7,6 +7,7 @@ package local
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -197,7 +198,7 @@ func newFileLoader() *fileLoader {
 }
 
 func (fl *fileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser)
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser, slog.Default())
 }
 
 func (fl *fileLoader) Parse(query string) (parser.Expr, error) {

@@ -58,7 +58,6 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	// Series schemas.
 	schemas.Set("SeriesOutputBody", b.labelsArrayResponseBodySchema())
 	schemas.Set("SeriesPostInputBody", b.seriesPostInputBodySchema())
-	schemas.Set("SeriesDeleteOutputBody", b.simpleResponseBodySchema())
 
 	// Resources schemas.
 	schemas.Set("ResourcesOutputBody", b.resourcesOutputBodySchema())

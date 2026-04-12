@@ -184,7 +184,7 @@ type LeveledCompactorOptions struct {
 	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
 	MergeFunc storage.VerticalChunkSeriesMergeFunc
 
-	// BlockExcludeFilter is used to decide which blocks are exluded from compactions.
+	// BlockExcludeFilter is used to decide which blocks are excluded from compactions.
 	BlockExcludeFilter BlockExcludeFilterFunc
 
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
@@ -966,7 +966,10 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 			return fmt.Errorf("write new tombstones file: %w", err)
 		}
 
-		// Merge and write series metadata (resources and scopes) from source blocks.
+		// Merge and write series metadata from source blocks.
+		// Each source block has different BlockSeriesRef values for the same series,
+		// so we resolve refs → labels via each block's index, merge by labels hash
+		// (transient in-memory key), then re-key with the new block's refs.
 		if c.enableNativeMetadata {
 			if err := c.mergeAndWriteSeriesMetadata(ob.tmpDir, blocks, ob.meta); err != nil {
 				return fmt.Errorf("merge and write series metadata: %w", err)
@@ -1166,10 +1169,6 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 		return fmt.Errorf("iterate postings for ref resolver: %w", err)
 	}
 
-	// HashFilter ensures only series present in this output block's index
-	// are written. In sharded compaction each shard only contains ~1/N of
-	// all series, so without filtering the RefResolver would fail for every
-	// cross-shard labelsHash, causing warn-level log spam.
 	writeStats := &seriesmetadata.WriteStats{}
 	wopts := seriesmetadata.WriterOptions{
 		EnableInvertedIndex:  c.enableResourceAttrIndex,
