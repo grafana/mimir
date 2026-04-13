@@ -1868,6 +1868,53 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 	)
 }
 
+func TestQuery_ExecDeregistersTrackerOnFailure(t *testing.T) {
+	// Verify that when Query.Exec() fails (e.g. memory limit exceeded), the tracker is
+	// deregistered from the InflightMemoryConsumptionTracker even if the caller never
+	// calls Query.Close(). This is important because some callers (e.g. the ruler's
+	// EngineQueryFunc) do not call Close().
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{idx="1"} 0+1x5
+			some_metric{idx="2"} 0+1x5
+			some_metric{idx="3"} 0+1x5
+			some_metric{idx="4"} 0+1x5
+			some_metric{idx="5"} 0+1x5
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	reg := prometheus.NewPedanticRegistry()
+	inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, nil)
+
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.Reg = reg
+	opts.Pedantic = false // We intentionally don't call Close(), so disable pedantic mode.
+	opts.MemoryConsumptionTrackerFactory = inflightTracker
+
+	limits := NewStaticQueryLimitsProvider()
+	limits.MaxEstimatedMemoryConsumptionPerQuery = 1 // 1 byte limit — any query will exceed this.
+	opts.Limits = limits
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(reg), planner)
+	require.NoError(t, err)
+
+	q, err := engine.NewInstantQuery(context.Background(), storage, nil, "some_metric", timestamp.Time(0))
+	require.NoError(t, err)
+
+	// The tracker should be registered before Exec.
+	require.True(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+
+	// Exec should fail due to memory limit.
+	res := q.Exec(context.Background())
+	require.Error(t, res.Err)
+
+	// The tracker must be deregistered even though we never called q.Close().
+	require.False(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+}
+
 type noopEvaluationObserver struct{}
 
 func (n noopEvaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, series []types.SeriesMetadata) error {
