@@ -193,6 +193,31 @@ func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
 	return clone, nil
 }
 
+// UseSubset replaces the unfiltered statistics on this instance with those from the given subset,
+// and removes all other subsets.
+func (s *OperatorEvaluationStats) UseSubset(idx int) {
+	s.allSeries.Close()
+
+	s.allSeries = s.subsets[idx]
+	s.subsets[idx] = nil
+
+	s.RemoveAllSubsets()
+}
+
+// RemoveAllSubsets removes all subsets from this instance, leaving only the unfiltered statistics.
+func (s *OperatorEvaluationStats) RemoveAllSubsets() {
+	for _, subset := range s.subsets {
+		if subset == nil {
+			// Don't bother trying to close a subset that was just removed by UseSubset.
+			continue
+		}
+
+		subset.Close()
+	}
+
+	s.subsets = nil
+}
+
 // ExtendStepInvariantToFullRange calculates the equivalent statistics for a step invariant
 // operation that is used for multiple steps in a range query.
 //
@@ -268,6 +293,32 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 	}
 
 	return result, nil
+}
+
+func (s *OperatorEvaluationStats) HasSubsets() bool {
+	return len(s.subsets) > 0
+}
+
+// GetSamplesProcessed returns the total count and per-step count of samples processed.
+//
+// The slice returned is returned to a pool when Close is called.
+func (s *OperatorEvaluationStats) GetSamplesProcessed() (int64, []int64) {
+	return sum(s.allSeries.samplesProcessedPerStep), s.allSeries.samplesProcessedPerStep
+}
+
+// GetSamplesRead returns the total count and per-step count of new samples read.
+//
+// The slice returned is returned to a pool when Close is called.
+func (s *OperatorEvaluationStats) GetSamplesRead() (int64, []int64) {
+	return sum(s.allSeries.newSamplesReadPerStep), s.allSeries.newSamplesReadPerStep
+}
+
+func sum(s []int64) int64 {
+	var sum int64
+	for _, v := range s {
+		sum += v
+	}
+	return sum
 }
 
 func (s *OperatorEvaluationStats) Close() {

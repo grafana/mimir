@@ -5,6 +5,7 @@ package commonsubexpressionelimination
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -346,17 +347,39 @@ func (b *InstantVectorDuplicationBuffer) QueryStats(ctx context.Context, consume
 	}
 
 	consumer.hasReadStats = true
-
-	// TODO: handle subsets
+	stats := b.stats
 
 	if b.allConsumersHaveReadStats() {
-		// Last consumer, return stats without cloning.
-		stats := b.stats
+		// Last consumer, return stats without cloning, and clear reference to existing stats.
 		b.stats = nil
-		return stats, nil
+	} else {
+		var err error
+		stats, err = stats.Clone() // FIXME: this is wasteful, we could just clone the subset needed
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return b.stats.Clone()
+	if len(consumer.filters) > 0 {
+		// This is intentionally not backwards compatible for simplicity and robustness:
+		//
+		// If the inner operator was remotely executed on a querier that does not report stats or subset stats,
+		// then the subset at the requested index won't be present.
+		//
+		// However, there's no good way to handle this case (would we report 0 samples for the subset? the full
+		// unfiltered sample count?), so rather than hide the problem, it's better to fail.
+		//
+		// Anyone upgrading can disable SSE temporarily until their queriers are running an up-to-date version.
+		if !stats.HasSubsets() {
+			return nil, fmt.Errorf("no subsets found in stats from inner operator of instant vector duplication buffer, expected subset index %d", consumer.subsetIndex)
+		}
+
+		stats.UseSubset(consumer.subsetIndex)
+	} else {
+		stats.RemoveAllSubsets()
+	}
+
+	return stats, nil
 }
 
 func (b *InstantVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
@@ -372,7 +395,8 @@ func (b *InstantVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
 type InstantVectorDuplicationConsumer struct {
 	Buffer *InstantVectorDuplicationBuffer
 
-	filters []*labels.Matcher
+	filters     []*labels.Matcher
+	subsetIndex int // If filters is non-empty, the index in the inner operator's stats that we expect to find the subset statistics for this consumer.
 
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this consumer's filters.
 	// If this consumer has no filters, this is nil.
@@ -404,8 +428,9 @@ type InstantVectorDuplicationConsumer struct {
 
 var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
 
-func (d *InstantVectorDuplicationConsumer) SetFilters(filters []*labels.Matcher) {
+func (d *InstantVectorDuplicationConsumer) SetFilters(filters []*labels.Matcher, subsetIndex int) {
 	d.filters = filters
+	d.subsetIndex = subsetIndex
 }
 
 func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
