@@ -762,12 +762,13 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		}
 
 		// There is no advantage to wrapping a query in a step invariant when the evaluation collapses
-		// to a single timestamp (either an instant query or a range query whose start == end).
+		// to zero or one timestamps (instant queries, range queries whose start == end, or empty
+		// subquery ranges with start > end).
 		// For range queries spanning multiple timestamps, preserve the wrapper even when the step count
 		// is 1 (i.e. the step is larger than the range), as it still affects query semantics — for example,
 		// whether warnings like "sort is ineffective for range queries" should be emitted by functions
 		// nested inside the step-invariant subtree.
-		if timeRange.StartT == timeRange.EndT {
+		if timeRange.StartT == timeRange.EndT || timeRange.StepCount == 0 {
 			return inner, nil
 		}
 

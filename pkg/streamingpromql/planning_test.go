@@ -40,6 +40,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
 	rangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(3000), timestamp.Time(5000), time.Second)
 	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
+	emptyRangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(5000), timestamp.Time(3000), time.Second)
+	emptyRangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 5000, EndT: 3000, IntervalMilliseconds: 1000}
 	lookbackDelta := 3 * time.Minute
 
 	testCases := map[string]struct {
@@ -156,6 +158,31 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						ChildrenLabels: []string{""},
 						Children:       []int64{0},
 						Type:           "StepInvariantExpression",
+					},
+				},
+			},
+		},
+		"vector selector with '@ 0' empty range query": {
+			expr:      `some_metric @ 0`,
+			timeRange: emptyRangeQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:     emptyRangeQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
+				Version:       0,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							Timestamp:          timestampOf(0),
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"} @ 0 (1970-01-01T00:00:00Z)`,
 					},
 				},
 			},
