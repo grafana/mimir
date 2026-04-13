@@ -232,7 +232,7 @@ local filename = 'mimir-block-builder.json';
       )
     )
     .addRow(
-      $.row('Scheduler resources')
+      $.row('Block-builder-scheduler resources')
       .addPanel(
         $.containerCPUUsagePanelByComponent('block_builder_scheduler'),
       )
