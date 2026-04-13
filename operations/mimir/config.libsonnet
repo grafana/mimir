@@ -36,6 +36,10 @@
     querier_max_concurrency: 8,
     ruler_querier_max_concurrency: $._config.querier_max_concurrency,
 
+    // Controls the ingester data-window.
+    querier_query_ingesters_within: '13h',
+    querier_query_store_after: $.util.formatDuration($.util.parseDuration($._config.querier_query_ingesters_within) - 3600),
+
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
