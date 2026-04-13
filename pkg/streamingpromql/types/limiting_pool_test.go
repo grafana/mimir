@@ -250,7 +250,7 @@ func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 		FPointSize,
 		false,
 		nil,
-		func(s []promql.FPoint, _ *limiter.MemoryConsumptionTracker) {
+		func(s []promql.FPoint, _ limiter.MemoryConsumptionTracker) {
 			onPutHookSlices = append(onPutHookSlices, s)
 		},
 	)

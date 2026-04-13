@@ -104,7 +104,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 	}
 }
 
-func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
+func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
 	d := types.InstantVectorSeriesData{}
 
 	if histograms {

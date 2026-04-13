@@ -28,7 +28,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	Right                    types.InstantVectorOperator
 	Op                       parser.ItemType
 	ReturnBool               bool
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 	VectorMatching           parser.VectorMatching
 
 	// We need to retain these so that NextSeries() can return an error message with the series labels when
@@ -107,7 +107,7 @@ func (g *oneToOneBinaryOperationRightSide) latestRightSeriesIndex() int {
 	return g.rightSeriesIndices[len(g.rightSeriesIndices)-1]
 }
 
-func (g *oneToOneBinaryOperationRightSide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *oneToOneBinaryOperationRightSide) Finalize(memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
 	types.IntSlicePool.Put(&g.leftSidePresence, memoryConsumptionTracker)
 
 	// If this right side was used for all of its corresponding output series, then mergedData will have already been returned to the pool by the evaluator's computeResult.
@@ -127,7 +127,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 	vectorMatching parser.VectorMatching,
 	op parser.ItemType,
 	returnBool bool,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,

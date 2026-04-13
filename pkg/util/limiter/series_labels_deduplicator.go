@@ -20,7 +20,7 @@ var (
 
 // SeriesLabelsDeduplicator is used to deduplicate series and track the unique series memory consumption.
 type SeriesLabelsDeduplicator interface {
-	Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error)
+	Deduplicate(newLabels labels.Labels, tracker MemoryConsumptionTracker) (labels.Labels, error)
 }
 
 type SeriesDeduplicatorMetrics struct {
@@ -81,7 +81,7 @@ func SeriesLabelsDeduplicatorFromContext(ctx context.Context) (SeriesLabelsDedup
 // If it's new, it returns the passed newLabels.
 //
 // This method handles hash collisions by checking label equality even when hashes match.
-func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
+func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker MemoryConsumptionTracker) (labels.Labels, error) {
 	fingerprint := sd.hashFunc(newLabels)
 
 	sd.uniqueSeriesMx.Lock()
@@ -119,7 +119,7 @@ func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 	return sd.trackNewLabels(newLabels, tracker)
 }
 
-func (sd *seriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
+func (sd *seriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker MemoryConsumptionTracker) (labels.Labels, error) {
 	err := tracker.IncreaseMemoryConsumptionForLabels(newLabels)
 	if err != nil {
 		return labels.EmptyLabels(), err

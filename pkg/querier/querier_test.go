@@ -2043,7 +2043,7 @@ func (t *increaseMemoryConsumptionLabelsQuerier) Close() error {
 
 type increaseMemoryConsumptionLabelsSeriesSet struct {
 	inner         storage.SeriesSet
-	memoryTracker *limiter.MemoryConsumptionTracker
+	memoryTracker limiter.MemoryConsumptionTracker
 }
 
 func (t *increaseMemoryConsumptionLabelsSeriesSet) Next() bool {

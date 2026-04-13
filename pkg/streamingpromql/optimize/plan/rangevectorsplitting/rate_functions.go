@@ -18,7 +18,7 @@ var SplitRate = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateComb
 
 var SplitIncrease = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(false), RateCodec, functions.Increase, functions.FUNCTION_INCREASE)
 
-func rateGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (RateIntermediate, bool, error) {
+func rateGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, _ limiter.MemoryConsumptionTracker) (RateIntermediate, bool, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	fCount := len(fHead) + len(fTail)
 
@@ -145,7 +145,7 @@ func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 		rangeStart int64,
 		rangeEnd int64,
 		emitAnnotation types.EmitAnnotationFunc,
-		_ *limiter.MemoryConsumptionTracker,
+		_ limiter.MemoryConsumptionTracker,
 	) (float64, bool, *histogram.FloatHistogram, error) {
 		if len(pieces) == 0 {
 			return 0, false, nil, nil

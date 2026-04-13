@@ -773,8 +773,8 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 }
 
 func TestExecutionResponses_Finalize(t *testing.T) {
-	responseCreators := map[string]func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
-		"scalar": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
+	responseCreators := map[string]func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
+		"scalar": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
 			frontend := &mockFrontend{stream: stream}
 			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
 			resp, err := group.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
@@ -783,7 +783,7 @@ func TestExecutionResponses_Finalize(t *testing.T) {
 
 			return resp
 		},
-		"instant vector": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
+		"instant vector": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
 			frontend := &mockFrontend{stream: stream}
 			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
 			resp, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
@@ -792,7 +792,7 @@ func TestExecutionResponses_Finalize(t *testing.T) {
 
 			return resp
 		},
-		"range vector": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
+		"range vector": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
 			frontend := &mockFrontend{stream: stream}
 			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
 			resp, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))

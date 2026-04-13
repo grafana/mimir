@@ -24,7 +24,7 @@ type SeriesMetadata struct {
 }
 
 // AppendSeriesMetadata appends base SeriesMetadataSlice with the provided otherSeriesMetadata.
-func AppendSeriesMetadata(tracker *limiter.MemoryConsumptionTracker, base []SeriesMetadata, otherSeriesMetadata ...SeriesMetadata) ([]SeriesMetadata, error) {
+func AppendSeriesMetadata(tracker limiter.MemoryConsumptionTracker, base []SeriesMetadata, otherSeriesMetadata ...SeriesMetadata) ([]SeriesMetadata, error) {
 	for _, metadata := range otherSeriesMetadata {
 		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
 		if err != nil {
@@ -47,7 +47,7 @@ type InstantVectorSeriesData struct {
 	Histograms []promql.HPoint
 }
 
-func (d InstantVectorSeriesData) Clone(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (InstantVectorSeriesData, error) {
+func (d InstantVectorSeriesData) Clone(memoryConsumptionTracker limiter.MemoryConsumptionTracker) (InstantVectorSeriesData, error) {
 	clone := InstantVectorSeriesData{}
 
 	var err error

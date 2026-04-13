@@ -22,7 +22,7 @@ import (
 type FunctionOverRangeVector struct {
 	Inner                    types.RangeVectorOperator
 	ScalarArgs               []types.ScalarOperator
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 	Func                     FunctionOverRangeVectorDefinition
 
 	Annotations *annotations.Annotations
@@ -45,7 +45,7 @@ var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 func NewFunctionOverRangeVector(
 	inner types.RangeVectorOperator,
 	scalarArgs []types.ScalarOperator,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	f FunctionOverRangeVectorDefinition,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,

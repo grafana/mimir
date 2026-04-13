@@ -279,14 +279,14 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 	rangeQueryTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(5*time.Minute), time.Minute)
 	instantQueryTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
 
-	createSimpleAggregation := func(op parser.ItemType) func(types.InstantVectorOperator, types.QueryTimeRange, *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
-		return func(inner types.InstantVectorOperator, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
+	createSimpleAggregation := func(op parser.ItemType) func(types.InstantVectorOperator, types.QueryTimeRange, limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
+		return func(inner types.InstantVectorOperator, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
 			return NewAggregation(inner, timeRange, []string{"group"}, false, op, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
 		}
 	}
 
 	testCases := map[string]struct {
-		createOperator                func(types.InstantVectorOperator, types.QueryTimeRange, *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error)
+		createOperator                func(types.InstantVectorOperator, types.QueryTimeRange, limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error)
 		instant                       bool
 		expectedSeries                []labels.Labels
 		allowExpectedSeriesInAnyOrder bool
@@ -312,7 +312,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			expectedSeries: expectedSimpleAggregationOutputSeries,
 		},
 		"quantile": {
-			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
+			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
 				param := scalars.NewScalarConstant(0.5, queryTimeRange, memoryConsumptionTracker, posrange.PositionRange{})
 				return NewQuantileAggregation(inner, param, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
 			},
@@ -331,7 +331,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			expectedSeries: expectedSimpleAggregationOutputSeries,
 		},
 		"count_values": {
-			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
+			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
 				labelName := operators.NewStringLiteral("value", queryTimeRange, memoryConsumptionTracker, posrange.PositionRange{})
 				return NewCountValues(inner, labelName, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, posrange.PositionRange{}), nil
 			},
@@ -598,7 +598,7 @@ func TestAggregation_RuntimeMatchersAdjusted(t *testing.T) {
 	}
 }
 
-func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
+func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
 	d := types.InstantVectorSeriesData{}
 
 	if histograms {

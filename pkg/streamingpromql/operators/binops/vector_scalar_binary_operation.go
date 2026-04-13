@@ -26,7 +26,7 @@ type VectorScalarBinaryOperation struct {
 	ScalarIsLeftSide         bool
 	Op                       parser.ItemType
 	ReturnBool               bool
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 	EnableDelayedNameRemoval bool
 
 	timeRange types.QueryTimeRange

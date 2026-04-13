@@ -19,7 +19,7 @@ var _ types.InstantVectorOperator = &Sort{}
 type Sort struct {
 	inner                    types.InstantVectorOperator
 	descending               bool
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker
 	expressionPosition       posrange.PositionRange
 
 	allData        []types.InstantVectorSeriesData // Series data, in the order to be returned
@@ -29,7 +29,7 @@ type Sort struct {
 func NewSort(
 	inner types.InstantVectorOperator,
 	descending bool,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *Sort {
 	return &Sort{

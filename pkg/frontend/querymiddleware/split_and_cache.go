@@ -162,7 +162,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	// Note - per modules.go where this memoryConsumptionTrackerFactory was created, depending on the downstream implementation this factory
 	// may return an unlimited tracker and ignore the maxEstimatedMemoryConsumptionPerQuery
 	memoryTracker := s.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, req.GetQuery())
-	defer s.memoryConsumptionTrackerFactory.DecrementReferenceCount(memoryTracker)
+	defer s.memoryConsumptionTrackerFactory.Deregister(memoryTracker)
 
 	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
 	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
@@ -259,7 +259,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	queryTime := s.currentTime()
 
 	if len(execReqs) > 0 {
-		execResps, err := doRequests(ctx, s.next, memoryTracker, execReqs)
+		execResps, err := doRequests(ctx, s.next, s.memoryConsumptionTrackerFactory, memoryTracker, execReqs)
 		if err != nil {
 			return nil, err
 		}
@@ -641,7 +641,7 @@ type requestResponse struct {
 }
 
 // doRequests executes a list of requests in parallel.
-func doRequests(ctx context.Context, downstream MetricsQueryHandler, memoryTracker *limiter.MemoryConsumptionTracker, reqs []MetricsQueryRequest) ([]requestResponse, error) {
+func doRequests(ctx context.Context, downstream MetricsQueryHandler, inflightMemoryTracker *limiter.InflightMemoryConsumptionTracker, memoryTracker limiter.MemoryConsumptionTracker, reqs []MetricsQueryRequest) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
@@ -657,7 +657,13 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, memoryTrack
 			req.AddSpanTags(span)
 			defer span.End()
 
-			childCtx = limiter.AddMemoryTrackerToContext(childCtx, memoryTracker)
+			// Note that we do not need to Deregister a wrapped tracker. The parent memory tracker will be reregistered once the full doRequests() has completed
+			// in the calling function.
+			wrappedTracker, err := inflightMemoryTracker.NewWrappedMemoryConsumptionTracker(childCtx, req.GetQuery(), memoryTracker)
+			if err != nil {
+				return err
+			}
+			childCtx = limiter.AddMemoryTrackerToContext(childCtx, wrappedTracker)
 
 			resp, err := downstream.Do(childCtx, req)
 			queryStatistics.Merge(partialStats)

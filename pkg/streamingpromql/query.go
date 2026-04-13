@@ -28,7 +28,7 @@ type Query struct {
 	evaluator                *Evaluator
 	statement                *parser.EvalStmt
 	engine                   *Engine
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker
 
 	originalExpression string
 
@@ -261,6 +261,10 @@ func (q *Query) Close() {
 			panic(fmt.Sprintf("Memory consumption tracker still estimates %d bytes used for %q. This indicates something has not been returned to a pool. Current memory consumption by type:\n%v", bytesUsed, q.originalExpression, q.memoryConsumptionTracker.DescribeCurrentMemoryConsumption()))
 		}
 	}
+
+	if q.engine.pedantic && q.engine.memoryConsumptionTrackerFactory.IsTracking(q.evaluator.MemoryConsumptionTracker) {
+		panic(fmt.Sprintf("Memory consumption tracker should have been deregistered: %v", q.memoryConsumptionTracker.DescribeCurrentMemoryConsumption()))
+	}
 }
 
 func (q *Query) returnResultToPool() {
@@ -291,6 +295,9 @@ func (q *Query) returnResultToPool() {
 
 	// And nothing to do for strings: these don't come from a pool.
 	q.string = nil
+
+	// This will also be called in the Evaluator.Close() - this is idempotent and safe to call multiple times
+	q.engine.memoryConsumptionTrackerFactory.Deregister(q.evaluator.MemoryConsumptionTracker)
 }
 
 func (q *Query) Statement() parser.Statement {

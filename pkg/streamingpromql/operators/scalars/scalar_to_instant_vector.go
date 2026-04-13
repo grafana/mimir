@@ -15,7 +15,7 @@ import (
 // ScalarToInstantVector is an operator that implements the vector() function.
 type ScalarToInstantVector struct {
 	Scalar                   types.ScalarOperator
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	consumed           bool
@@ -23,7 +23,7 @@ type ScalarToInstantVector struct {
 
 var _ types.InstantVectorOperator = &ScalarToInstantVector{}
 
-func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *ScalarToInstantVector {
+func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition posrange.PositionRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *ScalarToInstantVector {
 	return &ScalarToInstantVector{
 		Scalar:                   scalar,
 		expressionPosition:       expressionPosition,

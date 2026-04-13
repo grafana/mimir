@@ -28,7 +28,7 @@ type Operator struct {
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, New will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
@@ -221,7 +221,7 @@ func NewLimitK(
 	timeRange types.QueryTimeRange,
 	grouping []string,
 	without bool,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
@@ -246,7 +246,7 @@ func NewLimitRatio(
 	timeRange types.QueryTimeRange,
 	grouping []string,
 	without bool,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
@@ -277,7 +277,7 @@ func initGrouping(grouping []string, without bool) []string {
 type limitStepCounter struct {
 	// index by step --> number of series (which have a point at this step) we have included for the group
 	seriesIncludedAtStep     []int
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker
 }
 
 func (s *limitStepCounter) close() {
@@ -293,7 +293,7 @@ func (s *limitStepCounter) count(step int) int {
 	return s.seriesIncludedAtStep[step]
 }
 
-func newStepCounter(size int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*limitStepCounter, error) {
+func newStepCounter(size int, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (*limitStepCounter, error) {
 	intSlice, err := types.IntSlicePool.Get(size, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err

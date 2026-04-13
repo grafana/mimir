@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
@@ -48,7 +49,7 @@ func TestAddToContext(t *testing.T) {
 	require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512), IngesterChunks))
 
 	ctx = AddMemoryTrackerToContext(ctx, existing)
-	stored := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
+	stored := ctx.Value(memoryConsumptionTracker).(MemoryConsumptionTracker)
 	require.Equal(t, existing, stored)
 	require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
 	require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytesBySource(IngesterChunks))
@@ -286,14 +287,14 @@ func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 
 	assertTrackerTrackerMetrics(t, reg, float64(tracker1Limit+tracker2Limit), float64(tracker1Current+tracker2Current), float64(tracker1Peak+tracker2Peak), 2)
 
-	tt.DecrementReferenceCount(tracker1)
+	tt.Deregister(tracker1)
 	assertTrackerTrackerMetrics(t, reg, float64(tracker2Limit), float64(tracker2Current), float64(tracker2Peak), 1)
 
-	tt.DecrementReferenceCount(tracker2)
+	tt.Deregister(tracker2)
 	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
 
 	// idempotent
-	tt.DecrementReferenceCount(tracker2)
+	tt.Deregister(tracker2)
 	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
 }
 
@@ -301,7 +302,7 @@ func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedTracker(t *testing.
 	reg := prometheus.NewPedanticRegistry()
 	tt := NewInflightMemoryConsumptionTracker(reg, nil)
 	nonManagedTracker := NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3")
-	require.Panics(t, func() { tt.DecrementReferenceCount(nonManagedTracker) })
+	require.Panics(t, func() { tt.Deregister(nonManagedTracker) })
 }
 
 func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes, currentBytes, peakBytes float64, sampled int) {
@@ -363,95 +364,132 @@ func TestNewUnlimintedInflightMemoryConsumptionTracker(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestMemoryTrackerRefCounts(t *testing.T) {
+func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	factory := NewInflightMemoryConsumptionTracker(reg, nil)
 
-	t.Run("no ref count changes -decrementReferenceCount is successful", func(t *testing.T) {
+	t.Run("simple managed tracker is deregistered", func(t *testing.T) {
 		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
-		require.True(t, factory.IsRegistered(tracker))
-		factory.DecrementReferenceCount(tracker)
-		require.False(t, factory.IsRegistered(tracker))
-	})
-
-	t.Run("single ref count increase", func(t *testing.T) {
-		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
-		require.True(t, factory.IsRegistered(tracker))
-		factory.IncreaseReferenceCount(tracker)
-		require.True(t, factory.IsRegistered(tracker))
-		factory.DecrementReferenceCount(tracker)
-		require.True(t, factory.IsRegistered(tracker))
-		factory.DecrementReferenceCount(tracker)
-		require.False(t, factory.IsRegistered(tracker))
+		require.True(t, factory.IsTracking(tracker))
+		factory.Deregister(tracker)
+		require.False(t, factory.IsTracking(tracker))
+		// idempotent
+		factory.Deregister(tracker)
+		require.False(t, factory.IsTracking(tracker))
 	})
 
 	// This case simulates the split_and_cache usage of a parent tracker passed to multiple child goroutines
-	t.Run("ref counts in goroutines - no memory limits exceeded", func(t *testing.T) {
+	t.Run("wrapped managed trackers - no memory limits exceeded", func(t *testing.T) {
 		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
-		require.True(t, factory.IsRegistered(tracker))
+		require.True(t, factory.IsTracking(tracker))
 
 		routines := 5
 		g, _ := errgroup.WithContext(t.Context())
 		for i := range routines {
 			g.Go(func() error {
-				childTracker := factory.NewWrappedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
-				require.Equal(t, tracker.maxEstimatedMemoryConsumptionBytes, childTracker.maxEstimatedMemoryConsumptionBytes)
-				require.True(t, factory.IsRegistered(tracker))
-				require.True(t, factory.IsRegistered(childTracker))
+				childTracker, err := factory.NewWrappedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
+				require.NoError(t, err)
+				require.Equal(t, tracker.MaxEstimatedMemoryConsumptionLimitBytes(), childTracker.MaxEstimatedMemoryConsumptionLimitBytes())
+				require.True(t, factory.IsTracking(tracker))
+				require.False(t, factory.IsTracking(childTracker))
 				// do some work
 
 				// child reports just our memory allocation
 				require.NoError(t, childTracker.IncreaseMemoryConsumption(10, IngesterChunks))
 				childTracker.DecreaseMemoryConsumption(1, IngesterChunks)
 				require.Equal(t, uint64(9), childTracker.CurrentEstimatedMemoryConsumptionBytes())
-				require.Equal(t, fmt.Sprintf("child %d", i), childTracker.queryDescription)
+				require.Equal(t, fmt.Sprintf("child %d", i), childTracker.QueryDescription())
 				require.GreaterOrEqual(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), uint64(9))
 
-				factory.DecrementReferenceCount(childTracker)
-				require.True(t, factory.IsRegistered(tracker))
-				require.False(t, factory.IsRegistered(childTracker))
+				// This is safe to call but has no effect - as the parent is still being tracked
+				factory.Deregister(childTracker)
+				require.True(t, factory.IsTracking(tracker))
+				require.False(t, factory.IsTracking(childTracker))
 
-				// DecrementReferenceCount is idempotent on the child tracker
-				factory.DecrementReferenceCount(childTracker)
-				require.True(t, factory.IsRegistered(tracker))
-				require.False(t, factory.IsRegistered(childTracker))
+				// Idempotent
+				factory.Deregister(childTracker)
+				require.True(t, factory.IsTracking(tracker))
+				require.False(t, factory.IsTracking(childTracker))
 				return nil
 			})
 		}
 		require.NoError(t, g.Wait())
 
 		require.Equal(t, uint64(routines*9), tracker.CurrentEstimatedMemoryConsumptionBytes())
-		require.Equal(t, "foo + bar", tracker.queryDescription)
-		require.True(t, factory.IsRegistered(tracker))
+		require.Equal(t, "foo + bar", tracker.QueryDescription())
+		require.True(t, factory.IsTracking(tracker))
 
-		factory.DecrementReferenceCount(tracker)
-		require.False(t, factory.IsRegistered(tracker))
+		factory.Deregister(tracker)
+		require.False(t, factory.IsTracking(tracker))
+
+		// idempotent
+		factory.Deregister(tracker)
+		require.False(t, factory.IsTracking(tracker))
+	})
+
+	t.Run("wrapped managed trackers with label increases - no memory limits exceeded", func(t *testing.T) {
+		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
+		require.True(t, factory.IsTracking(tracker))
+
+		sizeAllLabels := labels.FromStrings("key", "value", "key2", "value2").ByteSize()
+		sizeSomeLabels := labels.FromStrings("key", "value").ByteSize()
+
+		routines := 5
+		g, _ := errgroup.WithContext(t.Context())
+		children := make([]MemoryConsumptionTracker, 0, routines)
+		for i := range routines {
+			g.Go(func() error {
+				childTracker, err := factory.NewWrappedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
+				children = append(children, childTracker)
+				require.NoError(t, err)
+				// do some work
+				require.NoError(t, childTracker.IncreaseMemoryConsumptionForLabels(labels.FromStrings("key", "value", "key2", "value2")))
+				require.Equal(t, sizeAllLabels, childTracker.CurrentEstimatedMemoryConsumptionBytes())
+				require.GreaterOrEqual(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), uint64(22))
+				return nil
+			})
+		}
+		require.NoError(t, g.Wait())
+		require.Equal(t, uint64(routines)*sizeAllLabels, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+		for _, child := range children {
+			child.DecreaseMemoryConsumptionForLabels(labels.FromStrings("key", "value"))
+			require.Equal(t, uint64(sizeAllLabels-sizeSomeLabels), child.CurrentEstimatedMemoryConsumptionBytes())
+			require.GreaterOrEqual(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), uint64(22))
+		}
+
+		require.Equal(t, uint64(routines)*(sizeAllLabels-sizeSomeLabels), tracker.CurrentEstimatedMemoryConsumptionBytes())
+		require.Equal(t, uint64(routines)*sizeAllLabels, tracker.PeakEstimatedMemoryConsumptionBytes())
+
+		factory.Deregister(tracker)
+		require.False(t, factory.IsTracking(tracker))
 	})
 
 	// As above, but this case simulates the goroutines exceeding the memory consumption
-	t.Run("ref counts in goroutines - with memory exceeded", func(t *testing.T) {
+	t.Run("wrapped managed trackers - with memory exceeded", func(t *testing.T) {
 		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 5, "foo + bar")
-		require.True(t, factory.IsRegistered(tracker))
+		require.True(t, factory.IsTracking(tracker))
 
 		routines := 5
 		g, _ := errgroup.WithContext(t.Context())
 		for range routines {
 			g.Go(func() error {
-				childTracker := factory.NewWrappedMemoryConsumptionTracker(context.Background(), "child", tracker)
+				childTracker, err := factory.NewWrappedMemoryConsumptionTracker(context.Background(), "child", tracker)
+				require.NoError(t, err)
 				// do some work
 				require.Error(t, childTracker.IncreaseMemoryConsumption(10, IngesterChunks)) // this will exceed the allow memory consumption
-				factory.DecrementReferenceCount(childTracker)
-				require.True(t, factory.IsRegistered(tracker))
-				require.False(t, factory.IsRegistered(childTracker))
+				factory.Deregister(childTracker)
+				require.True(t, factory.IsTracking(tracker))
+				require.False(t, factory.IsTracking(childTracker))
 				return nil
 			})
 		}
 		require.NoError(t, g.Wait())
 
 		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
-		require.True(t, factory.IsRegistered(tracker))
+		require.True(t, factory.IsTracking(tracker))
 
-		factory.DecrementReferenceCount(tracker)
-		require.False(t, factory.IsRegistered(tracker))
+		factory.Deregister(tracker)
+		require.False(t, factory.IsTracking(tracker))
 	})
 }

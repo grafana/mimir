@@ -19,7 +19,7 @@ import (
 )
 
 func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error) {
+	return func(seriesMetadata []types.SeriesMetadata, tracker limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error) {
 		dst := dstLabelOp.GetValue()
 		if !model.UTF8Validation.IsValidLabelName(dst) {
 			return nil, fmt.Errorf("invalid destination label name in label_join(): %s", dst)
@@ -70,7 +70,7 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 }
 
 func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error) {
+	return func(seriesMetadata []types.SeriesMetadata, tracker limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error) {
 		regexStr := regexOp.GetValue()
 		regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 		if err != nil {

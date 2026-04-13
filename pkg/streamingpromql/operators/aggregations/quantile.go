@@ -26,7 +26,7 @@ import (
 type QuantileAggregation struct {
 	Param                    types.ScalarOperator
 	Aggregation              *Aggregation
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 }
 
@@ -36,7 +36,7 @@ func NewQuantileAggregation(
 	timeRange types.QueryTimeRange,
 	grouping []string,
 	without bool,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*QuantileAggregation, error) {
@@ -147,7 +147,7 @@ var qGroupPool = types.NewLimitingBucketedPool(
 	nil,
 )
 
-func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint, mutatingDataAllowed bool) error {
+func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint, mutatingDataAllowed bool) error {
 	if len(data.Histograms) > 0 {
 		emitAnnotation(func(_ string, expressionPosition posrange.PositionRange) error {
 			return annotations.NewHistogramIgnoredInAggregationInfo("quantile", expressionPosition)
@@ -183,7 +183,7 @@ func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeri
 	return nil
 }
 
-func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	quantilePoints, err := types.FPointSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, false, err
@@ -203,7 +203,7 @@ func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, t
 	return types.InstantVectorSeriesData{Floats: quantilePoints}, false, nil
 }
 
-func (q *QuantileAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (q *QuantileAggregationGroup) Close(memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
 	for i := range q.qGroups {
 		types.Float64SlicePool.Put(&q.qGroups[i].points, memoryConsumptionTracker)
 	}

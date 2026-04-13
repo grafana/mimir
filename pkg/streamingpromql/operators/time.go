@@ -13,7 +13,7 @@ import (
 
 type Time struct {
 	TimeRange                types.QueryTimeRange
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 	expressionPosition       posrange.PositionRange
 }
 
@@ -21,7 +21,7 @@ var _ types.ScalarOperator = &Time{}
 
 func NewTime(
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *Time {
 	return &Time{

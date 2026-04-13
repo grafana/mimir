@@ -18,7 +18,7 @@ var Timestamp = FunctionOverInstantVectorDefinition{
 	SeriesDataFunc:         timestamp,
 }
 
-func timestamp(data types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func timestamp(data types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	output := types.InstantVectorSeriesData{}
 
 	defer types.HPointSlicePool.Put(&data.Histograms, memoryConsumptionTracker)

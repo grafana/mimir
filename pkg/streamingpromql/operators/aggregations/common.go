@@ -20,14 +20,14 @@ type AggregationGroup interface {
 	// remainingSeriesInGroup includes the current series (i.e., if data is the last series, then remainingSeriesInGroup is 1).
 	//
 	// The slices and points within data may be mutated by implementations if mutatingDataAllowed is true.
-	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint, mutatingDataAllowed bool) error
+	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint, mutatingDataAllowed bool) error
 
 	// ComputeOutputSeries does any final calculations and returns the grouped series data
-	ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
+	ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
 
 	// Close releases any resources held by the group.
 	// Close is guaranteed to be called at most once per group.
-	Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker)
+	Close(memoryConsumptionTracker limiter.MemoryConsumptionTracker)
 }
 
 type AggregationGroupFactory struct {

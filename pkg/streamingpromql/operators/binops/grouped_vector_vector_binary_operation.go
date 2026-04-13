@@ -32,7 +32,7 @@ type GroupedVectorVectorBinaryOperation struct {
 	Right                    types.InstantVectorOperator
 	Op                       parser.ItemType
 	ReturnBool               bool
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 
 	VectorMatching parser.VectorMatching
 
@@ -62,7 +62,7 @@ type groupedBinaryOperationOutputSeries struct {
 	oneSide  *oneSide
 }
 
-func (g *groupedBinaryOperationOutputSeries) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *groupedBinaryOperationOutputSeries) Finalize(memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
 	g.manySide.Finalize(memoryConsumptionTracker)
 	g.oneSide.Finalize(memoryConsumptionTracker)
 }
@@ -88,7 +88,7 @@ func (s *manySide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *manySide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *manySide) Finalize(memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 }
@@ -111,7 +111,7 @@ func (s *oneSide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *oneSide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *oneSide) Finalize(memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 
@@ -147,7 +147,7 @@ func NewGroupedVectorVectorBinaryOperation(
 	vectorMatching parser.VectorMatching,
 	op parser.ItemType,
 	returnBool bool,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,

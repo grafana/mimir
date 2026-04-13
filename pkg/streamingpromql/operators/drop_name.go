@@ -14,12 +14,12 @@ import (
 
 type DropNameInstant struct {
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 }
 
 var _ types.InstantVectorOperator = &DropNameInstant{}
 
-func NewDropNameInstant(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DropNameInstant {
+func NewDropNameInstant(inner types.InstantVectorOperator, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *DropNameInstant {
 	return &DropNameInstant{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
@@ -66,12 +66,12 @@ func (n *DropNameInstant) Close() {
 
 type DropNameRange struct {
 	Inner                    types.RangeVectorOperator
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 }
 
 var _ types.RangeVectorOperator = &DropNameRange{}
 
-func NewDropNameRange(inner types.RangeVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DropNameRange {
+func NewDropNameRange(inner types.RangeVectorOperator, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *DropNameRange {
 	return &DropNameRange{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
@@ -120,7 +120,7 @@ func (n *DropNameRange) Close() {
 	n.Inner.Close()
 }
 
-func dropNames(metadata []types.SeriesMetadata, mem *limiter.MemoryConsumptionTracker) error {
+func dropNames(metadata []types.SeriesMetadata, mem limiter.MemoryConsumptionTracker) error {
 	for i := range metadata {
 		if !metadata[i].DropName {
 			continue

@@ -29,7 +29,7 @@ type InstantQuery struct {
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, New will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 	IsTopK                   bool // If false, this is operator is for bottomk().
 
 	expressionPosition posrange.PositionRange

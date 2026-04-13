@@ -17,7 +17,7 @@ type OrBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
 	VectorMatching           parser.VectorMatching
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
@@ -43,7 +43,7 @@ func NewOrBinaryOperation(
 	left types.InstantVectorOperator,
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
@@ -417,7 +417,7 @@ type orGroup struct {
 }
 
 // AccumulateLeftSeriesPresence records the presence of samples on the left-hand side.
-func (g *orGroup) AccumulateLeftSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
+func (g *orGroup) AccumulateLeftSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
 	if g.leftSamplePresence == nil {
 		var err error
 		g.leftSamplePresence, err = types.BoolSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
@@ -442,10 +442,10 @@ func (g *orGroup) AccumulateLeftSeriesPresence(data types.InstantVectorSeriesDat
 
 // FilterRightSeries returns rightData filtered based on samples seen for the left-hand side.
 // The return value reuses the slices from rightData, and returns any unused slices to the pool.
-func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, memoryConsumptionTracker limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
 	return filterSeries(rightData, g.leftSamplePresence, false, memoryConsumptionTracker, timeRange)
 }
 
-func (g *orGroup) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *orGroup) Finalize(memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(&g.leftSamplePresence, memoryConsumptionTracker)
 }

@@ -34,7 +34,7 @@ type labelsTime struct {
 type InfoFunction struct {
 	Inner                    types.InstantVectorOperator
 	Info                     *selectors.InstantVectorSelector
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
@@ -60,7 +60,7 @@ type InfoFunction struct {
 func NewInfoFunction(
 	inner types.InstantVectorOperator,
 	info *selectors.InstantVectorSelector,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
 ) *InfoFunction {

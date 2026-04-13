@@ -38,7 +38,7 @@ import (
 // much memory used - the non-split version could use less memory as it wouldn't have duplicate series metadata the
 // same way the split version does, if multiple splits have the same series).
 type FunctionOverRangeVectorSplit[T any] struct {
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 	FuncId                   functions.Function
 	FuncDef                  functions.FunctionOverRangeVectorDefinition
 	Annotations              *annotations.Annotations
@@ -97,7 +97,7 @@ func NewSplittingFunctionOverRangeVector[T any](
 	codec cache.SplitCodec[T],
 	expressionPosition posrange.PositionRange,
 	annotations *annotations.Annotations,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
 	logger log.Logger,
 ) (*FunctionOverRangeVectorSplit[T], error) {

@@ -681,7 +681,7 @@ func TestInstantVectorOperator_Cloning(t *testing.T) {
 	require.NotSame(t, d1.Histograms[1].H, d2.Histograms[1].H, "consumers should not share second histogram")
 }
 
-func createTestInstantVectorOperator(t *testing.T, seriesCount int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*operators.TestOperator, []types.InstantVectorSeriesData) {
+func createTestInstantVectorOperator(t *testing.T, seriesCount int, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (*operators.TestOperator, []types.InstantVectorSeriesData) {
 	series := make([]labels.Labels, 0, seriesCount)
 	operatorData := make([]types.InstantVectorSeriesData, 0, seriesCount)
 	expectedData := make([]types.InstantVectorSeriesData, 0, seriesCount)

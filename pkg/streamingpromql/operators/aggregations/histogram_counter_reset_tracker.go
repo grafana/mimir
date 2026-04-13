@@ -11,10 +11,10 @@ import (
 
 type histogramCounterResetTracker struct {
 	resetHints               []histogram.CounterResetHint
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker
 }
 
-func newHistogramCounterResetTracker(size int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*histogramCounterResetTracker, error) {
+func newHistogramCounterResetTracker(size int, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (*histogramCounterResetTracker, error) {
 	g := &histogramCounterResetTracker{
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}

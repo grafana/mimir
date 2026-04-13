@@ -20,7 +20,7 @@ import (
 // RangeVectorDuplicationBuffer is not thread-safe, and only supports instant queries.
 type RangeVectorDuplicationBuffer struct {
 	Inner                    types.RangeVectorOperator
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
 
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
@@ -37,7 +37,7 @@ type RangeVectorDuplicationBuffer struct {
 	stats *types.OperatorEvaluationStats
 }
 
-func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RangeVectorDuplicationBuffer {
+func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *RangeVectorDuplicationBuffer {
 	return &RangeVectorDuplicationBuffer{
 		Inner:                        inner,
 		MemoryConsumptionTracker:     memoryConsumptionTracker,

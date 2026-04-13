@@ -48,7 +48,7 @@ func EquivalentFloatSampleCount(h *histogram.FloatHistogram) int64 {
 
 type OperatorEvaluationStats struct {
 	timeRange                QueryTimeRange
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker
 
 	allSeries *statsTracker
 	subsets   []*statsTracker
@@ -58,7 +58,7 @@ type OperatorEvaluationStats struct {
 //
 // subsetCount is the number of subsets to track. It is the caller's responsibility to track
 // which subset is which.
-func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
+func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
 	allSeries, err := newStatsTracker(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -282,10 +282,10 @@ type statsTracker struct {
 	samplesProcessedPerStep []int64
 	newSamplesReadPerStep   []int64
 
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker limiter.MemoryConsumptionTracker
 }
 
-func newStatsTracker(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*statsTracker, error) {
+func newStatsTracker(timeRange QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (*statsTracker, error) {
 	samplesProcessed, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err

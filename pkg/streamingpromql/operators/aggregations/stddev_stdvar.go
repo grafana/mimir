@@ -35,7 +35,7 @@ type StddevStdvarAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint, mutatingDataAllowed bool) error {
+func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint, mutatingDataAllowed bool) error {
 	// Native histograms are ignored for stddev and stdvar.
 	if len(data.Histograms) > 0 {
 		emitAnnotation(func(_ string, expressionPosition posrange.PositionRange) error {
@@ -82,7 +82,7 @@ func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVector
 	return nil
 }
 
-func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, sc := range g.groupSeriesCounts {
 		if sc > 0 {
@@ -117,7 +117,7 @@ func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, t
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
 }
 
-func (g *StddevStdvarAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *StddevStdvarAggregationGroup) Close(memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
 	types.Float64SlicePool.Put(&g.floats, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(&g.floatMeans, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(&g.groupSeriesCounts, memoryConsumptionTracker)

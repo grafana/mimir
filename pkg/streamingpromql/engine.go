@@ -310,8 +310,9 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	// All the time split queries must fit within a single memory consumption tracker.
 	// Note that we use a wrapped memory consumption tracker so we can still log the memory stats for this sub query, but still enforce
 	// the overall memory consumption tracking for the entire query.
-	if parentTracker, parentErr := limiter.MemoryConsumptionTrackerFromContext(ctx); parentErr == nil {
-		operatorParams.MemoryConsumptionTracker = e.memoryConsumptionTrackerFactory.NewWrappedMemoryConsumptionTracker(ctx, params.OriginalExpression, parentTracker)
+	if existingTracker, parentErr := limiter.MemoryConsumptionTrackerFromContext(ctx); parentErr == nil {
+		// Use the provided tracker. Note that the memoryConsumptionTrackerFactory ensures it is safe for Deregister() to be called with this inherited tracker.
+		operatorParams.MemoryConsumptionTracker = existingTracker
 	} else {
 		maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 		if err != nil {
@@ -324,8 +325,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	for idx, req := range nodeRequests {
 		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
 		if err != nil {
-			// Note - the MemoryConsumptionTracker maintains a ref count so inherited parent trackers will not be removed
-			e.memoryConsumptionTrackerFactory.DecrementReferenceCount(operatorParams.MemoryConsumptionTracker)
+			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 			return nil, err
 		}
 
@@ -334,8 +334,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	evaluator, err := NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
 	if err != nil {
-		// Note - the MemoryConsumptionTracker maintains a ref count so inherited parent trackers will not be removed
-		e.memoryConsumptionTrackerFactory.DecrementReferenceCount(operatorParams.MemoryConsumptionTracker)
+		e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 		return nil, err
 	}
 	return evaluator, nil

@@ -9,7 +9,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func computeFilterBitmap(unfilteredSeries []types.SeriesMetadata, filters []*labels.Matcher, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (nextUnfilteredSeriesIndex int, unfilteredSeriesBitmap []bool, filteredSeriesCount int, err error) {
+func computeFilterBitmap(unfilteredSeries []types.SeriesMetadata, filters []*labels.Matcher, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (nextUnfilteredSeriesIndex int, unfilteredSeriesBitmap []bool, filteredSeriesCount int, err error) {
 	if len(filters) == 0 {
 		return 0, nil, len(unfilteredSeries), nil
 	}
@@ -39,7 +39,7 @@ func computeFilterBitmap(unfilteredSeries []types.SeriesMetadata, filters []*lab
 	return nextUnfilteredSeriesIndex, unfilteredSeriesBitmap, filteredSeriesCount, nil
 }
 
-func applyFiltering(unfilteredSeries []types.SeriesMetadata, bitmap []bool, filteredSeriesCount int, isLastConsumer bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+func applyFiltering(unfilteredSeries []types.SeriesMetadata, bitmap []bool, filteredSeriesCount int, isLastConsumer bool, memoryConsumptionTracker limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 	if bitmap == nil {
 		// Fast path: no filters to apply.
 

@@ -34,7 +34,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	}
 
 	metadataFuncCalled := false
-	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker, _ bool) ([]types.SeriesMetadata, error) {
+	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ limiter.MemoryConsumptionTracker, _ bool) ([]types.SeriesMetadata, error) {
 		require.Equal(t, len(inner.Series), len(seriesMetadata))
 		metadataFuncCalled = true
 		return nil, nil
@@ -42,7 +42,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 
 	expectedSeriesDataFuncCalledTimes := 0
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, []types.ScalarData, types.QueryTimeRange, *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, []types.ScalarData, types.QueryTimeRange, limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		return types.InstantVectorSeriesData{}, nil
 	}
@@ -94,7 +94,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 
 	expectedSeriesDataFuncCalledTimes := 0
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(d types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ types.QueryTimeRange, _ *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(d types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ types.QueryTimeRange, _ limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		// Verify that the scalar arguments are correctly passed and in the order we expect
 		require.Equal(t, 2, len(scalarArgs))
