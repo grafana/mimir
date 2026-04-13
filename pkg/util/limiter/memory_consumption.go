@@ -237,7 +237,7 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 	}
 
 	if tracker.trackingId == 0 {
-		panic("cannot deregister non managed memory consumption tracker")
+		panic("cannot deregister a tracker not created via the InflightMemoryConsumptionTracker")
 	}
 
 	// This should never happen - as we expect there is only a single instance of a InflightMemoryConsumptionTracker per container.
@@ -268,13 +268,13 @@ func (t *InflightMemoryConsumptionTracker) IsTracking(tracker *MemoryConsumption
 //
 // Note that the accumulated metrics reported by the InflightMemoryConsumptionTracker will not include this MemoryConsumptionTracker. Only
 // the metrics on the parent trackers are included in the InflightMemoryConsumptionTracker accumulations.
-func (t *InflightMemoryConsumptionTracker) NewWrappedMemoryConsumptionTracker(ctx context.Context, queryDescription string, parent *MemoryConsumptionTracker) (*MemoryConsumptionTracker, error) {
+func (t *InflightMemoryConsumptionTracker) NewWrappedMemoryConsumptionTracker(ctx context.Context, queryDescription string, parent *MemoryConsumptionTracker) *MemoryConsumptionTracker {
 	if parent.trackingId == 0 || parent.parent != nil {
-		return nil, errors.New("only a managed memory consumption tracker can be wrapped")
+		panic("cannot wrap a tracker not created via the InflightMemoryConsumptionTracker")
 	}
 	tracker := NewMemoryConsumptionTracker(ctx, parent.MaxEstimatedMemoryConsumptionLimitBytes(), t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
 	tracker.parent = parent
-	return tracker, nil
+	return tracker
 }
 
 // Describe implements prometheus.Collector.
