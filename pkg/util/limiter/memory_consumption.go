@@ -249,8 +249,8 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 }
 
 // IsTracking returns true if the given tracker is being actively tracked by this InflightMemoryConsumptionTracker.
-// A tracked MemoryConsumptionTracker will be included in the accumulated metrics reported by the InflightMemoryConsumptionTracker.
-// Note that this function is only used by unit tests and does not consider child trackers
+// Note that this function is only used by unit tests and will only return true on managed trackers.
+// Unmanaged and wrapped trackers will always return false.
 func (t *InflightMemoryConsumptionTracker) IsTracking(tracker *MemoryConsumptionTracker) bool {
 	if tracker.trackingId == 0 {
 		return false
