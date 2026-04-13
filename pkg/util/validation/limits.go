@@ -1690,14 +1690,9 @@ func (o *Overrides) getOverridesForLimitsKey(limitsKey string) *Limits {
 
 	// The limitsKey includes metadata. Iterate KV pairs and merge limits.
 	dst := copyLimits(o.getOverridesForUser(userID))
-	tmpMd := tenant.NewMetadata()
-	for key, val := range tenantMd.Iter() {
-		tmpMd.Set(key, val)
-		full := tmpMd.WithTenant(userID)
-		suffix := full[len(userID):]
-		dst = mergeLimits(dst, o.tenantLimits.ByUserID(suffix))
-		dst = mergeLimits(dst, o.tenantLimits.ByUserID(full))
-		tmpMd.Remove(key)
+	for kv := range tenantMd.Divide() {
+		dst = mergeLimits(dst, o.tenantLimits.ByUserID(kv.Encode()))
+		dst = mergeLimits(dst, o.tenantLimits.ByUserID(kv.WithTenant(userID)))
 	}
 	dst = mergeLimits(dst, o.tenantLimits.ByUserID(limitsKey))
 	return dst

@@ -59,7 +59,7 @@ func TestTenantWithMetadataLimits(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	md := tenant.NewMetadata()
+	var md tenant.Metadata
 	md.Set(metadataKeySource, testSource)
 	sourcePlaceholderKey := md.WithTenant("")
 
@@ -194,7 +194,7 @@ overrides:
 		t.Logf("using tenant ID %q", orgID)
 		client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", orgID)
 		require.NoError(t, err)
-		writtenAfterLimit := pushSeriesUntilLimitOTLP(t, client, "unknown_test_metric", testRunDefaultSeriesLimit)
+		writtenAfterLimit := pushSeriesUntilLimitOTLP(t, client, "unknown_test_metric", mainTenantSeriesLimit)
 		t.Logf("wrote %d series after limit", writtenAfterLimit)
 		require.Less(t, writtenAfterLimit, mainTenantSeriesLimit/10, "should not be able to write beyond the limit")
 	})
