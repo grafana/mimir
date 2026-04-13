@@ -552,6 +552,12 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 }
 
 func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
+	defer func() {
+		for _, s := range stats {
+			s.Close()
+		}
+	}()
+
 	for _, batch := range o.instantVectorSeriesDataBatches {
 		if len(batch.unsentSeries) > 0 {
 			// Send any outstanding data now.

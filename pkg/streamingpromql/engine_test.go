@@ -1891,6 +1891,9 @@ func (n noopEvaluationObserver) StringEvaluated(ctx context.Context, evaluator *
 }
 
 func (n noopEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
+	for _, s := range stats {
+		s.Close()
+	}
 	return nil
 }
 

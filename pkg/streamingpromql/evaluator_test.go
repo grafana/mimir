@@ -187,5 +187,8 @@ func (l *loggingEvaluationObserver) StringEvaluated(ctx context.Context, evaluat
 
 func (l *loggingEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
 	l.events = append(l.events, evaluationObserverEvent{event: "EvaluationCompleted", details: fmt.Sprintf("annotations: %v, stats: %v", annotations, stats)})
+	for _, s := range stats {
+		s.Close()
+	}
 	return nil
 }
