@@ -284,7 +284,6 @@ func newMultiQueryable(
 			limits:       limits,
 			logger:       logger,
 		}, nil
-
 	})
 }
 

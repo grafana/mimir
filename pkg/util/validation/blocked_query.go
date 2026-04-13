@@ -3,13 +3,15 @@
 package validation
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
 )
 
 type BlockedQuery struct {
-	Pattern               string         `yaml:"pattern" doc:"description=PromQL expression pattern to match. Required; rules without a pattern are skipped."`
+	Pattern               string         `yaml:"pattern" doc:"description=PromQL expression pattern to match. Rules without a pattern are a configuration error."`
 	Regex                 bool           `yaml:"regex" doc:"description=If true, the pattern is treated as a regular expression. If false, the pattern is treated as a literal match."`
 	Reason                string         `yaml:"reason" doc:"description=Reason returned to clients when rejecting matching queries."`
 	UnalignedRangeQueries bool           `yaml:"unaligned_range_queries,omitempty" doc:"description=If true, only block the query if the query time range is not aligned to the step, meaning the query is not eligible for range query result caching. If enabled, instant queries and remote read requests will not be blocked."`
@@ -19,9 +21,18 @@ type BlockedQuery struct {
 
 type BlockedQueriesConfig []BlockedQuery
 
+func (lq BlockedQueriesConfig) Validate() error {
+	for i, q := range lq {
+		if strings.TrimSpace(q.Pattern) == "" {
+			return fmt.Errorf("blocked_queries[%d]: pattern is required", i)
+		}
+	}
+	return nil
+}
+
 func (lq *BlockedQueriesConfig) ExampleDoc() (comment string, yaml any) {
 	return `The following configuration shows various ways to block queries: by pattern, by time range, or by combining both. ` +
-			`Pattern is required for a rule to fire; use pattern: ".*" with regex: true to match all queries. ` +
+			`Rules without a pattern are a configuration error; use pattern: ".*" with regex: true to match all queries. ` +
 			`Time range filtering blocks queries with durations exceeding the specified threshold.`,
 		[]BlockedQuery{
 			{

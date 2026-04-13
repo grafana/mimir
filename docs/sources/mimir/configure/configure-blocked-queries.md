@@ -10,7 +10,7 @@ In certain situations, you might want to control what queries are being sent to 
 might be intentionally or unintentionally expensive to run, and they might affect the overall stability or cost of running
 your service.
 
-Each rule must include a `pattern` field; rules without a `pattern` are silently skipped.
+Each rule must include a `pattern` field; rules without a pattern are a configuration error.
 To match all queries, use `pattern: ".*"` with `regex: true`.
 Optional filter conditions (`time_range_longer_than`, `minimum_step_size`, `unaligned_range_queries`) narrow which matching queries are blocked; all configured conditions must be satisfied to block.
 
