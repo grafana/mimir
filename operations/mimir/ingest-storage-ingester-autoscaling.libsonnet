@@ -18,11 +18,11 @@
       1800000,
 
     // How long to wait before terminating an ingester after it has been notified about the scale down.
-    ingest_storage_ingester_downscale_delay: if 'querier.query-ingesters-within' in $.querier_args then
-      $.querier_args['querier.query-ingesters-within']
-    else
-      // The default -querier.query-ingesters-within in Mimir is 13 hours.
-      '13h',
+    ingest_storage_ingester_downscale_delay:
+      $.util.formatDuration(
+        $.util.parseDuration($._config.querier_query_ingesters_within) +
+        $.util.parseDuration($._config.ingester_extra_downscale_delay)
+      ),
 
     // Allow to fine-tune which components gets deployed. This is useful when following the procedure
     // to rollout ingesters autoscaling with no downtime.

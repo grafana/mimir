@@ -36,10 +36,12 @@
     querier_max_concurrency: 8,
     ruler_querier_max_concurrency: $._config.querier_max_concurrency,
 
-    // Controls the ingester data-window.
+    // Controls the ingester data window.
     querier_query_ingesters_within: '13h',
     querier_query_store_after: $.util.formatDuration($.util.parseDuration(self.querier_query_ingesters_within) - 3600),
     store_gateway_ignore_blocks_within: '10h',
+    // Allows ingesters to stick around longer than their data window, for evaluation purposes.
+    ingester_extra_downscale_delay: '0h',
 
     assert $.util.parseDuration(self.querier_query_store_after) < $.util.parseDuration(self.querier_query_ingesters_within) : 'querier_query_store_after must be strictly less than querier_query_ingesters_within.',
     assert $.util.parseDuration(self.querier_query_ingesters_within) >= 3600 : 'querier_query_ingesters_within must be greater than or equal to 1h.',
