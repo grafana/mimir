@@ -2497,7 +2497,7 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedSoft:       false,
 		},
 		"an activeSeriesLimitedError with overridden 400 gets translated into gRPC codes.ResourceExhausted and HTTP 400 statuses": {
-			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusBadRequest, 0),
+			err:                newActiveSeriesLimitedError(100, 100, 50, http.StatusBadRequest, 0),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedSoft:       false,

@@ -671,7 +671,7 @@ func TestActiveSeriesLimitedErrorHTTPStatusCode(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := newActiveSeriesLimitedError(100, 25, 50, tc.httpStatusCode, 0)
+			err := newActiveSeriesLimitedError(100, 100, 50, tc.httpStatusCode, 0)
 			assert.Equal(t, tc.expectedHTTPStatus, err.HTTPStatusCode())
 			assert.Equal(t, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED, err.Cause())
 			assert.False(t, err.IsSoft())
