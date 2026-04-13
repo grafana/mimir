@@ -475,7 +475,3 @@ func (l *MemoryConsumptionTracker) DescribeCurrentMemoryConsumption() string {
 
 	return b.String()
 }
-
-func (l *MemoryConsumptionTracker) WrappedParentIfAny() *MemoryConsumptionTracker {
-	return l.parent
-}
