@@ -443,17 +443,39 @@ func (b *RangeVectorDuplicationBuffer) QueryStats(ctx context.Context, consumer 
 	}
 
 	consumer.hasReadStats = true
-
-	// TODO: handle subsets
+	stats := b.stats
 
 	if b.allConsumersHaveReadStats() {
-		// Last consumer, return stats without cloning.
-		stats := b.stats
+		// Last consumer, return stats without cloning, and clear reference to existing stats.
 		b.stats = nil
-		return stats, nil
+	} else {
+		var err error
+		stats, err = stats.Clone() // FIXME: this is wasteful, we could just clone the subset needed
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return b.stats.Clone()
+	if len(consumer.filters) > 0 {
+		// This is intentionally not backwards compatible for simplicity and robustness:
+		//
+		// If the inner operator was remotely executed on a querier that does not report stats or subset stats,
+		// then the subset at the requested index won't be present.
+		//
+		// However, there's no good way to handle this case (would we report 0 samples for the subset? the full
+		// unfiltered sample count?), so rather than hide the problem, it's better to fail.
+		//
+		// Anyone upgrading can disable SSE temporarily until their queriers are running an up-to-date version.
+		if !stats.HasSubsets() {
+			return nil, fmt.Errorf("no subsets found in stats from inner operator of range vector duplication buffer, expected subset index %d", consumer.subsetIndex)
+		}
+
+		stats.UseSubset(consumer.subsetIndex)
+	} else {
+		stats.RemoveAllSubsets()
+	}
+
+	return stats, nil
 }
 
 func (b *RangeVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
@@ -511,7 +533,8 @@ func (d bufferedRangeVectorStepData) Close() {
 type RangeVectorDuplicationConsumer struct {
 	Buffer *RangeVectorDuplicationBuffer
 
-	filters []*labels.Matcher
+	filters     []*labels.Matcher
+	subsetIndex int
 
 	currentUnfilteredSeriesIndex int // -1 means the consumer hasn't advanced to the first series yet.
 	nextUnfilteredSeriesIndex    int
@@ -528,8 +551,9 @@ type RangeVectorDuplicationConsumer struct {
 
 var _ types.RangeVectorOperator = &RangeVectorDuplicationConsumer{}
 
-func (d *RangeVectorDuplicationConsumer) SetFilters(filters []*labels.Matcher) {
+func (d *RangeVectorDuplicationConsumer) SetFilters(filters []*labels.Matcher, subsetIndex int) {
 	d.filters = filters
+	d.subsetIndex = subsetIndex
 }
 
 func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
