@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -83,6 +84,22 @@ func (l LazyQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, 
 // Close implements Storage.Querier
 func (l LazyQuerier) Close() error {
 	return l.next.Close()
+}
+
+// GetResourceAt implements storage.ResourceQuerier by delegating to the underlying querier if it supports it.
+func (l LazyQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	if rq, ok := l.next.(storage.ResourceQuerier); ok {
+		return rq.GetResourceAt(labelsHash, timestamp)
+	}
+	return nil, false
+}
+
+// IterUniqueAttributeNames implements storage.ResourceQuerier by delegating to the underlying querier if it supports it.
+func (l LazyQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	if rq, ok := l.next.(storage.ResourceQuerier); ok {
+		return rq.IterUniqueAttributeNames(fn)
+	}
+	return nil
 }
 
 type lazySeriesSet struct {

@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -102,6 +103,15 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 
 	a.app = a.head.appender()
 	return a.app.UpdateMetadata(ref, l, m)
+}
+
+func (a *initAppender) UpdateResource(ref storage.SeriesRef, l labels.Labels, identifying, descriptive map[string]string, entities []storage.EntityData, t int64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.UpdateResource(ref, l, identifying, descriptive, entities, t)
+	}
+
+	a.app = a.head.appender()
+	return a.app.UpdateResource(ref, l, identifying, descriptive, entities, t)
 }
 
 func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, st int64) (storage.SeriesRef, error) {
@@ -191,6 +201,8 @@ func (h *Head) appender() *headAppender {
 			typesInBatch:          h.getTypeMap(),
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+			storeST:               h.opts.EnableSTStorage.Load(),
+			useXOR2:               h.opts.EnableXOR2Encoding.Load(),
 		},
 	}
 }
@@ -304,6 +316,32 @@ func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
 	h.metadataPool.Put(b[:0])
 }
 
+func (h *Head) getResourceBuffer() []record.RefResource {
+	b := h.resourcesPool.Get()
+	if b == nil {
+		return make([]record.RefResource, 0, 512)
+	}
+	return b
+}
+
+func (h *Head) putResourceBuffer(b []record.RefResource) {
+	clear(b)
+	h.resourcesPool.Put(b[:0])
+}
+
+func (h *Head) getScopeBuffer() []record.RefScope {
+	b := h.scopesPool.Get()
+	if b == nil {
+		return make([]record.RefScope, 0, 512)
+	}
+	return b
+}
+
+func (h *Head) putScopeBuffer(b []record.RefScope) {
+	clear(b)
+	h.scopesPool.Put(b[:0])
+}
+
 func (h *Head) getSeriesBuffer() []*memSeries {
 	b := h.seriesPool.Get()
 	if b == nil {
@@ -380,6 +418,10 @@ type appendBatch struct {
 	metadata             []record.RefMetadata             // New metadata held by this appender.
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
 	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
+	resources            []record.RefResource             // Pending resource updates held by this appender.
+	resourceSeries       []*memSeries                     // Series corresponding to the resource updates.
+	scopes               []record.RefScope                // Pending scope updates held by this appender.
+	scopeSeries          []*memSeries                     // Series corresponding to the scope updates.
 }
 
 // close returns all the slices to the pools in Head and nil's them.
@@ -402,6 +444,14 @@ func (b *appendBatch) close(h *Head) {
 	b.metadataSeries = nil
 	h.putExemplarBuffer(b.exemplars)
 	b.exemplars = nil
+	h.putResourceBuffer(b.resources)
+	b.resources = nil
+	h.putSeriesBuffer(b.resourceSeries)
+	b.resourceSeries = nil
+	h.putScopeBuffer(b.scopes)
+	b.scopes = nil
+	h.putSeriesBuffer(b.scopeSeries)
+	b.scopeSeries = nil
 }
 
 type headAppenderBase struct {
@@ -416,8 +466,18 @@ type headAppenderBase struct {
 
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
 
+	// resourceRefs tracks which series have already had their resource updated
+	// in this append batch to avoid redundant work.
+	resourceRefs map[chunks.HeadSeriesRef]struct{}
+
+	// scopeRefs tracks which series have already had their scope updated
+	// in this append batch to avoid redundant work.
+	scopeRefs map[chunks.HeadSeriesRef]struct{}
+
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
+	storeST                         bool
+	useXOR2                         bool
 }
 type headAppender struct {
 	headAppenderBase
@@ -577,6 +637,10 @@ func (a *headAppenderBase) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef
 			floatHistogramSeries: h.getSeriesBuffer(),
 			metadata:             h.getMetadataBuffer(),
 			metadataSeries:       h.getSeriesBuffer(),
+			resources:            h.getResourceBuffer(),
+			resourceSeries:       h.getSeriesBuffer(),
+			scopes:               h.getScopeBuffer(),
+			scopeSeries:          h.getSeriesBuffer(),
 		}
 
 		// Allocate the exemplars buffer only if exemplars are enabled.
@@ -1048,6 +1112,61 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	return ref, nil
 }
 
+// UpdateResource stores unified OTel resource data (attributes + entities) for the given series.
+// Supports versioning: if the resource changes, a new version is created.
+// If the resource is the same, the current version's time range is extended.
+// The update is buffered and applied during Commit().
+func (a *headAppender) UpdateResource(ref storage.SeriesRef, lset labels.Labels, identifying, descriptive map[string]string, entities []storage.EntityData, t int64) (storage.SeriesRef, error) {
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		s = a.head.series.getByHash(lset.Hash(), lset)
+		if s != nil {
+			ref = storage.SeriesRef(s.ref)
+		}
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown series when trying to add resource with HeadSeriesRef: %d and labels: %s", ref, lset)
+	}
+
+	// Deduplicate: skip if this series already had a resource update in this batch.
+	if a.resourceRefs == nil {
+		a.resourceRefs = make(map[chunks.HeadSeriesRef]struct{})
+	}
+	if _, ok := a.resourceRefs[s.ref]; ok {
+		return ref, nil
+	}
+
+	// Convert storage.EntityData to record.RefResourceEntity for WAL encoding.
+	walEntities := make([]record.RefResourceEntity, len(entities))
+	for i, e := range entities {
+		entityType := e.Type
+		if entityType == "" {
+			entityType = seriesmetadata.EntityTypeResource
+		}
+		walEntities[i] = record.RefResourceEntity{
+			Type:        entityType,
+			ID:          e.ID,
+			Description: e.Description,
+		}
+	}
+
+	// Buffer the resource update for commit-time application.
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.resources = append(b.resources, record.RefResource{
+		Ref:         s.ref,
+		MinTime:     t,
+		MaxTime:     t,
+		Identifying: identifying,
+		Descriptive: descriptive,
+		Entities:    walEntities,
+	})
+	b.resourceSeries = append(b.resourceSeries, s)
+
+	a.resourceRefs[s.ref] = struct{}{}
+
+	return ref, nil
+}
+
 var _ storage.GetRef = &headAppender{}
 
 func (a *headAppenderBase) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
@@ -1069,7 +1188,7 @@ func (a *headAppenderBase) log() error {
 	defer func() { a.head.putBytesBuffer(buf) }()
 
 	var rec []byte
-	var enc record.Encoder
+	enc := record.Encoder{EnableSTStorage: a.storeST}
 
 	if len(a.seriesRefs) > 0 {
 		rec = enc.Series(a.seriesRefs, buf)
@@ -1144,6 +1263,22 @@ func (a *headAppenderBase) log() error {
 				return fmt.Errorf("log exemplars: %w", err)
 			}
 		}
+		if len(b.resources) > 0 {
+			rec = enc.Resources(b.resources, buf)
+			buf = rec[:0]
+
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log resources: %w", err)
+			}
+		}
+		if len(b.scopes) > 0 && a.head.opts.EnableScopeMetadata {
+			rec = enc.Scopes(b.scopes, buf)
+			buf = rec[:0]
+
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log scopes: %w", err)
+			}
+		}
 	}
 	return nil
 }
@@ -1178,6 +1313,7 @@ type appenderCommitContext struct {
 	histoOOBRejected    int
 	inOrderMint         int64
 	inOrderMaxt         int64
+	appendChunkOpts     chunkOpts
 	oooMinT             int64
 	oooMaxT             int64
 	wblSamples          []record.RefSample
@@ -1187,8 +1323,7 @@ type appenderCommitContext struct {
 	oooMmapMarkersCount int
 	oooRecords          [][]byte
 	oooCapMax           int64
-	appendChunkOpts     chunkOpts
-	enc                 record.Encoder
+	oooEnc              record.Encoder
 }
 
 // commitExemplars adds all exemplars from the provided batch to the head's exemplar storage.
@@ -1238,31 +1373,31 @@ func (acc *appenderCommitContext) collectOOORecords(a *headAppenderBase) {
 				})
 			}
 		}
-		r := acc.enc.MmapMarkers(markers, a.head.getBytesBuffer())
+		r := acc.oooEnc.MmapMarkers(markers, a.head.getBytesBuffer())
 		acc.oooRecords = append(acc.oooRecords, r)
 	}
 
 	if len(acc.wblSamples) > 0 {
-		r := acc.enc.Samples(acc.wblSamples, a.head.getBytesBuffer())
+		r := acc.oooEnc.Samples(acc.wblSamples, a.head.getBytesBuffer())
 		acc.oooRecords = append(acc.oooRecords, r)
 	}
 	if len(acc.wblHistograms) > 0 {
-		r, customBucketsHistograms := acc.enc.HistogramSamples(acc.wblHistograms, a.head.getBytesBuffer())
+		r, customBucketsHistograms := acc.oooEnc.HistogramSamples(acc.wblHistograms, a.head.getBytesBuffer())
 		if len(r) > 0 {
 			acc.oooRecords = append(acc.oooRecords, r)
 		}
 		if len(customBucketsHistograms) > 0 {
-			r := acc.enc.CustomBucketsHistogramSamples(customBucketsHistograms, a.head.getBytesBuffer())
+			r := acc.oooEnc.CustomBucketsHistogramSamples(customBucketsHistograms, a.head.getBytesBuffer())
 			acc.oooRecords = append(acc.oooRecords, r)
 		}
 	}
 	if len(acc.wblFloatHistograms) > 0 {
-		r, customBucketsFloatHistograms := acc.enc.FloatHistogramSamples(acc.wblFloatHistograms, a.head.getBytesBuffer())
+		r, customBucketsFloatHistograms := acc.oooEnc.FloatHistogramSamples(acc.wblFloatHistograms, a.head.getBytesBuffer())
 		if len(r) > 0 {
 			acc.oooRecords = append(acc.oooRecords, r)
 		}
 		if len(customBucketsFloatHistograms) > 0 {
-			r := acc.enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, a.head.getBytesBuffer())
+			r := acc.oooEnc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, a.head.getBytesBuffer())
 			acc.oooRecords = append(acc.oooRecords, r)
 		}
 	}
@@ -1399,7 +1534,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.T, s.V, nil, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated, mmapRefs = series.insert(s.ST, s.T, s.V, nil, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1447,8 +1582,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 
 			newlyStale := !value.IsStaleNaN(series.lastValue) && value.IsStaleNaN(s.V)
 			staleToNonStale := value.IsStaleNaN(series.lastValue) && !value.IsStaleNaN(s.V)
-
-			ok, chunkCreated = series.append(s.T, s.V, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.append(s.ST, s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1509,7 +1643,8 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.T, 0, s.H, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			// TODO(krajorama,ywwg): Pass ST when available in WAL.
+			ok, chunkCreated, mmapRefs = series.insert(0, s.T, 0, s.H, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1557,7 +1692,8 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				newlyStale = newlyStale && !value.IsStaleNaN(series.lastHistogramValue.Sum)
 				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
 			}
-			ok, chunkCreated = series.appendHistogram(s.T, s.H, a.appendID, acc.appendChunkOpts)
+			// TODO(krajorama,ywwg): pass ST when available in WAL.
+			ok, chunkCreated = series.appendHistogram(0, s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1618,7 +1754,8 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.T, 0, nil, s.FH, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			// TODO(krajorama,ywwg): Pass ST when available in WAL.
+			ok, chunkCreated, mmapRefs = series.insert(0, s.T, 0, nil, s.FH, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1666,7 +1803,8 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				newlyStale = newlyStale && !value.IsStaleNaN(series.lastFloatHistogramValue.Sum)
 				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
 			}
-			ok, chunkCreated = series.appendFloatHistogram(s.T, s.FH, a.appendID, acc.appendChunkOpts)
+			// TODO(krajorama,ywwg): pass ST when available in WAL.
+			ok, chunkCreated = series.appendFloatHistogram(0, s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1711,6 +1849,113 @@ func commitMetadata(b *appendBatch) {
 	}
 }
 
+// refResourceEntitiesToCommitData converts WAL record entities to ResourceEntityData.
+func refResourceEntitiesToCommitData(entities []record.RefResourceEntity) []seriesmetadata.ResourceEntityData {
+	result := make([]seriesmetadata.ResourceEntityData, len(entities))
+	for i, e := range entities {
+		result[i] = seriesmetadata.ResourceEntityData{
+			Type:        e.Type,
+			ID:          e.ID,
+			Description: e.Description,
+		}
+	}
+	return result
+}
+
+// commitAndFilterResources commits resource data directly to the shared MemStore
+// (bypassing per-series storage) and filters out entries where the content was
+// unchanged — those need no WAL write. Returns the number of entries filtered out.
+func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
+	if a.head.seriesMeta == nil {
+		return 0
+	}
+	store := a.head.seriesMeta.ResourceStore()
+	n := 0
+	var keysBuf []string
+	for i, r := range b.resources {
+		s := b.resourceSeries[i]
+		s.Lock()
+		hash := labels.StableHash(s.lset)
+		ref := s.ref
+		s.stableHash = hash
+		s.Unlock()
+
+		var contentChanged bool
+		var oldVR, newVR *seriesmetadata.VersionedResource
+		contentChanged, oldVR, newVR, keysBuf = seriesmetadata.CommitResourceToStoreReusableWithRef(store, hash, seriesmetadata.ResourceCommitData{
+			Identifying: r.Identifying,
+			Descriptive: r.Descriptive,
+			Entities:    refResourceEntitiesToCommitData(r.Entities),
+			MinTime:     r.MinTime,
+			MaxTime:     r.MaxTime,
+			Owned:       true, // Maps are freshly allocated by the caller — safe to take ownership.
+		}, uint64(ref), keysBuf)
+
+		if !contentChanged {
+			continue
+		}
+		if oldVR == nil {
+			a.head.metrics.seriesmetadataInserts.WithLabelValues("resource").Inc()
+		}
+		a.head.metrics.seriesmetadataContentChanges.WithLabelValues("resource").Inc()
+		a.head.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
+		b.resources[n] = b.resources[i]
+		b.resourceSeries[n] = b.resourceSeries[i]
+		n++
+	}
+	filtered := len(b.resources) - n
+	b.resources = b.resources[:n]
+	b.resourceSeries = b.resourceSeries[:n]
+	return filtered
+}
+
+// commitAndFilterScopes commits scope data directly to the shared MemStore
+// (bypassing per-series storage) and filters out entries where the content was
+// unchanged. Returns the number of entries filtered out.
+func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
+	if a.head.seriesMeta == nil || !a.head.opts.EnableScopeMetadata {
+		return 0
+	}
+	store := a.head.seriesMeta.ScopeStore()
+	n := 0
+	var keysBuf []string
+	for i, sc := range b.scopes {
+		s := b.scopeSeries[i]
+		s.Lock()
+		hash := labels.StableHash(s.lset)
+		ref := s.ref
+		s.stableHash = hash
+		s.Unlock()
+
+		var contentChanged bool
+		var oldVS *seriesmetadata.VersionedScope
+		contentChanged, oldVS, _, keysBuf = seriesmetadata.CommitScopeToStoreReusableWithRef(store, hash, seriesmetadata.ScopeCommitData{
+			Name:      sc.Name,
+			Version:   sc.Version,
+			SchemaURL: sc.SchemaURL,
+			Attrs:     sc.Attrs,
+			MinTime:   sc.MinTime,
+			MaxTime:   sc.MaxTime,
+			Owned:     true, // Attrs map is freshly allocated by the caller — safe to take ownership.
+		}, uint64(ref), keysBuf)
+
+		if !contentChanged {
+			continue
+		}
+		if oldVS == nil {
+			a.head.metrics.seriesmetadataInserts.WithLabelValues("scope").Inc()
+		}
+		a.head.metrics.seriesmetadataContentChanges.WithLabelValues("scope").Inc()
+		b.scopes[n] = b.scopes[i]
+		b.scopeSeries[n] = b.scopeSeries[i]
+		n++
+	}
+	filtered := len(b.scopes) - n
+	b.scopes = b.scopes[:n]
+	b.scopeSeries = b.scopeSeries[:n]
+	return filtered
+}
+
 func (a *headAppenderBase) unmarkCreatedSeriesAsPendingCommit() {
 	for _, s := range a.series {
 		s.Lock()
@@ -1736,8 +1981,23 @@ func (a *headAppenderBase) Commit() (err error) {
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
+		a.resourceRefs = nil
+		a.scopeRefs = nil
 		a.closed = true
 	}()
+
+	// Count total resource/scope updates before commit+filter, then commit
+	// directly to the shared MemStore and filter out unchanged entries to
+	// avoid unnecessary WAL writes. Committing to MemStore before WAL is
+	// safe: MemStore is rebuilt from WAL on crash.
+	var resourcesTotal, scopesTotal int
+	var resourcesFiltered, scopesFiltered int
+	for _, b := range a.batches {
+		resourcesTotal += len(b.resources)
+		scopesTotal += len(b.scopes)
+		resourcesFiltered += a.commitAndFilterResources(b)
+		scopesFiltered += a.commitAndFilterScopes(b)
+	}
 
 	if err := a.log(); err != nil {
 		_ = a.Rollback() // Most likely the same error will happen again.
@@ -1758,6 +2018,10 @@ func (a *headAppenderBase) Commit() (err error) {
 			chunkDiskMapper: h.chunkDiskMapper,
 			chunkRange:      h.chunkRange.Load(),
 			samplesPerChunk: h.opts.SamplesPerChunk,
+			useXOR2:         a.useXOR2,
+		},
+		oooEnc: record.Encoder{
+			EnableSTStorage: a.storeST,
 		},
 	}
 
@@ -1796,6 +2060,10 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
+	h.metrics.resourceUpdatesCommitted.Add(float64(resourcesTotal))
+	h.metrics.scopeUpdatesCommitted.Add(float64(scopesTotal))
+	h.metrics.resourceUpdatesWALFiltered.Add(float64(resourcesFiltered))
+	h.metrics.scopeUpdatesWALFiltered.Add(float64(scopesFiltered))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
 	h.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
 
@@ -1813,18 +2081,18 @@ func (a *headAppenderBase) Commit() (err error) {
 }
 
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64, logger *slog.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, o chunkOpts, oooCapMax int64, logger *slog.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
 	if s.ooo == nil {
 		s.ooo = &memSeriesOOOFields{}
 	}
 	c := s.ooo.oooHeadChunk
 	if c == nil || c.chunk.NumSamples() == int(oooCapMax) {
 		// Note: If no new samples come in then we rely on compaction to clean up stale in-memory OOO chunks.
-		c, mmapRefs = s.cutNewOOOHeadChunk(t, chunkDiskMapper, logger)
+		c, mmapRefs = s.cutNewOOOHeadChunk(t, o, logger)
 		chunkCreated = true
 	}
 
-	ok := c.chunk.Insert(t, v, h, fh)
+	ok := c.chunk.Insert(st, t, v, h, fh)
 	if ok {
 		if chunkCreated || t < c.minTime {
 			c.minTime = t
@@ -1841,19 +2109,19 @@ type chunkOpts struct {
 	chunkDiskMapper *chunks.ChunkDiskMapper
 	chunkRange      int64
 	samplesPerChunk int
+	useXOR2         bool // Selects XOR2 encoding for float chunks.
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // Series lock must be held when calling.
-func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
+func (s *memSeries) append(st, t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.ValFloat.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	// TODO(krajorama): pass ST.
-	s.app.Append(0, t, v)
+	s.app.Append(st, t, v)
 
 	c.maxTime = t
 
@@ -1873,14 +2141,14 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sa
 // In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
 // To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
 // consistent, we return chunkCreated=false in this case.
-func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.EncHistogram, o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1895,8 +2163,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		prevApp = nil
 	}
 
-	// TODO(krajorama): pass ST.
-	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, 0, t, h, false) // false=request a new chunk if needed
+	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, st, t, h, false) // false=request a new chunk if needed
 
 	s.lastHistogramValue = h
 	s.lastFloatHistogramValue = nil
@@ -1931,14 +2198,14 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 // In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
 // To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
 // consistent, we return chunkCreated=false in this case.
-func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.EncFloatHistogram, o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1953,8 +2220,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		prevApp = nil
 	}
 
-	// TODO(krajorama): pass ST.
-	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, 0, t, fh, false) // False means request a new chunk if needed.
+	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, st, t, fh, false) // False means request a new chunk if needed.
 
 	s.lastHistogramValue = nil
 	s.lastFloatHistogramValue = fh
@@ -2205,8 +2471,8 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
 // The caller must ensure that s is locked and s.ooo is not nil.
-func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
-	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper, logger)
+func (s *memSeries) cutNewOOOHeadChunk(mint int64, o chunkOpts, logger *slog.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
+	ref := s.mmapCurrentOOOHeadChunk(o, logger)
 
 	s.ooo.oooHeadChunk = &oooHeadChunk{
 		chunk:   NewOOOChunk(),
@@ -2218,12 +2484,12 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 }
 
 // s must be locked when calling.
-func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) []chunks.ChunkDiskMapperRef {
+func (s *memSeries) mmapCurrentOOOHeadChunk(o chunkOpts, logger *slog.Logger) []chunks.ChunkDiskMapperRef {
 	if s.ooo == nil || s.ooo.oooHeadChunk == nil {
 		// OOO is not enabled or there is no head chunk, so nothing to m-map here.
 		return nil
 	}
-	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
+	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, o.useXOR2)
 	if err != nil {
 		handleChunkWriteError(err)
 		return nil
@@ -2234,7 +2500,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 			logger.Error("Too many OOO chunks, dropping data", "series", s.lset.String())
 			break
 		}
-		chunkRef := chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
+		chunkRef := o.chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
 		chunkRefs = append(chunkRefs, chunkRef)
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
@@ -2298,6 +2564,8 @@ func (a *headAppenderBase) Rollback() (err error) {
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
+		a.resourceRefs = nil
+		a.scopeRefs = nil
 	}()
 
 	var series *memSeries

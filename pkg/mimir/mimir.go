@@ -881,6 +881,7 @@ type Mimir struct {
 	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable                prom_storage.ExemplarQueryable
 	StoreQueryable                   prom_storage.Queryable
+	BlocksStoreQueryable             querier.ResourceAttributesBlocksQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
 	QuerierLifecycler                *ring.BasicLifecycler

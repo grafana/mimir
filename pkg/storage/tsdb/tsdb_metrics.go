@@ -69,6 +69,17 @@ type TSDBMetrics struct {
 
 	tsdbHeadStatisticsLastUpdate   *prometheus.Desc
 	tsdbHeadStatisticsTimeToUpdate *prometheus.Desc
+
+	tsdbSeriesmetadataResourceEntries   *prometheus.Desc
+	tsdbSeriesmetadataResourceVersions  *prometheus.Desc
+	tsdbSeriesmetadataResourceCanonical *prometheus.Desc
+	tsdbSeriesmetadataScopeEntries      *prometheus.Desc
+	tsdbSeriesmetadataScopeVersions     *prometheus.Desc
+	tsdbSeriesmetadataScopeCanonical    *prometheus.Desc
+	tsdbSeriesmetadataAttrIndexKeys     *prometheus.Desc
+	tsdbSeriesmetadataContentChanges    *prometheus.Desc
+	tsdbSeriesmetadataInserts           *prometheus.Desc
+	tsdbSeriesmetadataWALReplayDuration *prometheus.Desc
 }
 
 func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
@@ -267,6 +278,47 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 			"Time spent updating head statistics.",
 			[]string{"user"}, nil,
 		),
+
+		tsdbSeriesmetadataResourceEntries: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_resource_entries",
+			"Number of series with resource metadata in the head block.",
+			nil, nil),
+		tsdbSeriesmetadataResourceVersions: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_resource_versions",
+			"Total number of resource metadata versions across all series in the head block.",
+			nil, nil),
+		tsdbSeriesmetadataResourceCanonical: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_resource_canonical",
+			"Number of unique canonical resource metadata entries in the head block.",
+			nil, nil),
+		tsdbSeriesmetadataScopeEntries: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_scope_entries",
+			"Number of series with scope metadata in the head block.",
+			nil, nil),
+		tsdbSeriesmetadataScopeVersions: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_scope_versions",
+			"Total number of scope metadata versions across all series in the head block.",
+			nil, nil),
+		tsdbSeriesmetadataScopeCanonical: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_scope_canonical",
+			"Number of unique canonical scope metadata entries in the head block.",
+			nil, nil),
+		tsdbSeriesmetadataAttrIndexKeys: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_attr_index_keys",
+			"Number of distinct keys in the resource attribute inverted index.",
+			nil, nil),
+		tsdbSeriesmetadataContentChanges: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_content_changes_total",
+			"Total number of series metadata content changes (new version created).",
+			[]string{"kind"}, nil),
+		tsdbSeriesmetadataInserts: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_inserts_total",
+			"Total number of first-time series metadata inserts.",
+			[]string{"kind"}, nil),
+		tsdbSeriesmetadataWALReplayDuration: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_wal_replay_duration_seconds",
+			"Time spent replaying series metadata (resources and scopes) from the WAL.",
+			nil, nil),
 	}
 
 	if r != nil {
@@ -326,6 +378,17 @@ func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
 
 	out <- sm.tsdbHeadStatisticsLastUpdate
 	out <- sm.tsdbHeadStatisticsTimeToUpdate
+
+	out <- sm.tsdbSeriesmetadataResourceEntries
+	out <- sm.tsdbSeriesmetadataResourceVersions
+	out <- sm.tsdbSeriesmetadataResourceCanonical
+	out <- sm.tsdbSeriesmetadataScopeEntries
+	out <- sm.tsdbSeriesmetadataScopeVersions
+	out <- sm.tsdbSeriesmetadataScopeCanonical
+	out <- sm.tsdbSeriesmetadataAttrIndexKeys
+	out <- sm.tsdbSeriesmetadataContentChanges
+	out <- sm.tsdbSeriesmetadataInserts
+	out <- sm.tsdbSeriesmetadataWALReplayDuration
 }
 
 func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
@@ -376,6 +439,17 @@ func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, sm.tsdbWblReplayUnknownRefsTotal, "prometheus_tsdb_wbl_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
 	data.SendMaxOfGaugesPerTenant(out, sm.tsdbHeadStatisticsLastUpdate, "prometheus_tsdb_head_statistics_last_update_timestamp_seconds")
 	data.SendMaxOfGaugesPerTenant(out, sm.tsdbHeadStatisticsTimeToUpdate, "prometheus_tsdb_head_statistics_time_to_update_seconds")
+
+	data.SendSumOfGauges(out, sm.tsdbSeriesmetadataResourceEntries, "prometheus_tsdb_head_seriesmetadata_resource_entries")
+	data.SendSumOfGauges(out, sm.tsdbSeriesmetadataResourceVersions, "prometheus_tsdb_head_seriesmetadata_resource_versions")
+	data.SendSumOfGauges(out, sm.tsdbSeriesmetadataResourceCanonical, "prometheus_tsdb_head_seriesmetadata_resource_canonical")
+	data.SendSumOfGauges(out, sm.tsdbSeriesmetadataScopeEntries, "prometheus_tsdb_head_seriesmetadata_scope_entries")
+	data.SendSumOfGauges(out, sm.tsdbSeriesmetadataScopeVersions, "prometheus_tsdb_head_seriesmetadata_scope_versions")
+	data.SendSumOfGauges(out, sm.tsdbSeriesmetadataScopeCanonical, "prometheus_tsdb_head_seriesmetadata_scope_canonical")
+	data.SendSumOfGauges(out, sm.tsdbSeriesmetadataAttrIndexKeys, "prometheus_tsdb_head_seriesmetadata_attr_index_keys")
+	data.SendSumOfCountersWithLabels(out, sm.tsdbSeriesmetadataContentChanges, "prometheus_tsdb_head_seriesmetadata_content_changes_total", "kind")
+	data.SendSumOfCountersWithLabels(out, sm.tsdbSeriesmetadataInserts, "prometheus_tsdb_head_seriesmetadata_inserts_total", "kind")
+	data.SendSumOfGauges(out, sm.tsdbSeriesmetadataWALReplayDuration, "prometheus_tsdb_head_seriesmetadata_wal_replay_duration_seconds")
 }
 
 func (sm *TSDBMetrics) RegistryForTenant(userID string) *prometheus.Registry {

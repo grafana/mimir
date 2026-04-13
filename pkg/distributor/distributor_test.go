@@ -9276,6 +9276,73 @@ func TestDistributor_Push_SendMessageMetadata(t *testing.T) {
 	require.Equal(t, 1, ingesters[0].countCalls("Push"))
 }
 
+func TestDistributor_Push_PreservesResourceAndScopeTables(t *testing.T) {
+	const userID = "test"
+
+	distributors, ingesters, _, _ := prepare(t, prepConfig{
+		numIngesters:      1,
+		happyIngesters:    1,
+		numDistributors:   1,
+		replicationFactor: 1,
+	})
+
+	require.Len(t, distributors, 1)
+	require.Len(t, ingesters, 1)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	resourceTable := []mimirpb.ResourceAttributes{
+		{
+			Identifying: []mimirpb.AttributeEntry{{Key: "service.name", Value: "my-svc"}},
+			Descriptive: []mimirpb.AttributeEntry{{Key: "host.name", Value: "my-host"}},
+			Timestamp:   1000,
+		},
+	}
+	scopeTable := []mimirpb.ScopeAttributes{
+		{
+			Name:      "my-scope",
+			Version:   "1.0",
+			Timestamp: 1000,
+		},
+	}
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, "test_metric"}, makeSamples(time.Now().UnixMilli(), 1), nil, nil),
+		},
+		ResourceTable: resourceTable,
+		ScopeTable:    scopeTable,
+		Source:        mimirpb.OTLP,
+	}
+	req.Timeseries[0].ResourceRef = 1
+	req.Timeseries[0].ScopeRef = 1
+
+	_, err := distributors[0].Push(ctx, req)
+	require.NoError(t, err)
+
+	// Inspect the request received by the mock ingester (cloned via marshal/unmarshal in trackCall).
+	require.Equal(t, 1, ingesters[0].countCalls("Push"))
+	ingesters[0].assertCalledFunc("Push", func(args ...any) {
+		received := args[1].(*mimirpb.WriteRequest)
+
+		require.Len(t, received.ResourceTable, 1, "ResourceTable should survive distributor→ingester split")
+		assert.Equal(t, "service.name", received.ResourceTable[0].Identifying[0].Key)
+		assert.Equal(t, "my-svc", received.ResourceTable[0].Identifying[0].Value)
+		assert.Equal(t, "host.name", received.ResourceTable[0].Descriptive[0].Key)
+		assert.Equal(t, "my-host", received.ResourceTable[0].Descriptive[0].Value)
+
+		require.Len(t, received.ScopeTable, 1, "ScopeTable should survive distributor→ingester split")
+		assert.Equal(t, "my-scope", received.ScopeTable[0].Name)
+		assert.Equal(t, "1.0", received.ScopeTable[0].Version)
+
+		require.Len(t, received.Timeseries, 1)
+		assert.Equal(t, int32(1), received.Timeseries[0].ResourceRef)
+		assert.Equal(t, int32(1), received.Timeseries[0].ScopeRef)
+
+		assert.Equal(t, mimirpb.OTLP, received.Source)
+	})
+}
+
 func TestQueryIngestersRingZoneSorter(t *testing.T) {
 	testCases := map[string]struct {
 		instances []ring.InstanceDesc
@@ -9867,4 +9934,189 @@ func TestDistributor_replicaObserved(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResourceAttributesResponse_Add_FirstSeries(t *testing.T) {
+	res := newResourceAttributesResponse()
+
+	lbls := labels.FromStrings("__name__", "test_metric", "job", "test")
+	item := &client.SeriesResourceAttributes{
+		Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
+		Versions: []*client.ResourceVersionData{
+			{
+				Identifying: map[string]string{"service.name": "my-service"},
+				Descriptive: map[string]string{"service.version": "1.0"},
+				MinTimeMs:   1000,
+				MaxTimeMs:   2000,
+			},
+		},
+	}
+
+	res.add([]*client.SeriesResourceAttributes{item})
+
+	result := res.result()
+	require.Len(t, result, 1)
+
+	// Verify labels are correctly stored.
+	resultLabels := mimirpb.FromLabelAdaptersToLabels(result[0].Labels)
+	assert.True(t, labels.Equal(lbls, resultLabels))
+
+	// Verify versions are correctly stored.
+	require.Len(t, result[0].Versions, 1)
+	assert.Equal(t, int64(1000), result[0].Versions[0].MinTimeMs)
+	assert.Equal(t, int64(2000), result[0].Versions[0].MaxTimeMs)
+	assert.Equal(t, "my-service", result[0].Versions[0].Identifying["service.name"])
+}
+
+func TestResourceAttributesResponse_Add_MergeVersions(t *testing.T) {
+	res := newResourceAttributesResponse()
+
+	lbls := labels.FromStrings("__name__", "test_metric", "job", "test")
+
+	// First add from ingester 1.
+	item1 := &client.SeriesResourceAttributes{
+		Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
+		Versions: []*client.ResourceVersionData{
+			{Identifying: map[string]string{"service.name": "svc"}, MinTimeMs: 1000, MaxTimeMs: 2000},
+		},
+	}
+	res.add([]*client.SeriesResourceAttributes{item1})
+
+	// Second add from ingester 2 with a new version.
+	item2 := &client.SeriesResourceAttributes{
+		Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
+		Versions: []*client.ResourceVersionData{
+			{Identifying: map[string]string{"service.name": "svc-v2"}, MinTimeMs: 3000, MaxTimeMs: 4000},
+		},
+	}
+	res.add([]*client.SeriesResourceAttributes{item2})
+
+	result := res.result()
+	require.Len(t, result, 1, "same series should be merged, not duplicated")
+	require.Len(t, result[0].Versions, 2, "both versions should be present after merge")
+}
+
+func TestResourceAttributesResponse_Add_HashCollision(t *testing.T) {
+	// Test that the collision handling works correctly by manually constructing
+	// a state where two different label sets map to the same hash slot.
+	res := newResourceAttributesResponse()
+
+	lbls1 := labels.FromStrings("__name__", "metric_a", "job", "test")
+	lbls2 := labels.FromStrings("__name__", "metric_b", "job", "test")
+	hash := labels.StableHash(lbls1) // Use lbls1's hash for both
+
+	// Manually populate the response as if both had the same hash.
+	// First entry goes into the primary map.
+	res.series[hash] = &client.SeriesResourceAttributes{
+		Labels:   mimirpb.FromLabelsToLabelAdapters(lbls1),
+		Versions: []*client.ResourceVersionData{{MinTimeMs: 1000, MaxTimeMs: 2000}},
+	}
+	// Second entry with same hash but different labels goes into collisions.
+	res.collisions = map[uint64][]*client.SeriesResourceAttributes{
+		hash: {
+			{
+				Labels:   mimirpb.FromLabelsToLabelAdapters(lbls2),
+				Versions: []*client.ResourceVersionData{{MinTimeMs: 3000, MaxTimeMs: 4000}},
+			},
+		},
+	}
+
+	// Verify result() returns both series.
+	result := res.result()
+	require.Len(t, result, 2, "collision: both series should appear in results")
+
+	// Simulate a second ingester responding with the same collision entry.
+	// Manually call add with an item whose labels match lbls2 — but since
+	// add() hashes it to lbls2's own hash, we instead directly call
+	// mergeVersions to test the merge path for collision entries.
+	colEntry := res.collisions[hash][0]
+	newItem := &client.SeriesResourceAttributes{
+		Labels:   mimirpb.FromLabelsToLabelAdapters(lbls2),
+		Versions: []*client.ResourceVersionData{{MinTimeMs: 5000, MaxTimeMs: 6000}},
+	}
+	res.mergeVersions(colEntry, newItem)
+
+	result = res.result()
+	require.Len(t, result, 2, "still two series after merging into collision entry")
+
+	// Find the lbls2 entry and verify it has both versions.
+	for _, item := range result {
+		if mimirpb.FromLabelAdaptersToLabels(item.Labels).Get("__name__") == "metric_b" {
+			require.Len(t, item.Versions, 2, "collision entry should have merged versions")
+		}
+	}
+}
+
+func TestResourceAttributesResponse_MergeVersions_Dedup(t *testing.T) {
+	res := newResourceAttributesResponse()
+
+	lbls := labels.FromStrings("__name__", "test_metric", "job", "test")
+
+	// Add the same version from two ingesters — should be deduplicated.
+	for range 2 {
+		item := &client.SeriesResourceAttributes{
+			Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
+			Versions: []*client.ResourceVersionData{
+				{
+					Identifying: map[string]string{"service.name": "svc"},
+					MinTimeMs:   1000,
+					MaxTimeMs:   2000,
+				},
+			},
+		}
+		res.add([]*client.SeriesResourceAttributes{item})
+	}
+
+	result := res.result()
+	require.Len(t, result, 1)
+	assert.Len(t, result[0].Versions, 1, "duplicate version (same time range + identifying attrs) should be deduplicated")
+}
+
+func TestResourceAttributesResponse_MergeVersions_DifferentIdentifyingNotDeduped(t *testing.T) {
+	res := newResourceAttributesResponse()
+
+	lbls := labels.FromStrings("__name__", "test_metric", "job", "test")
+
+	// Same time range but different identifying attrs — should NOT be deduplicated.
+	item1 := &client.SeriesResourceAttributes{
+		Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
+		Versions: []*client.ResourceVersionData{
+			{Identifying: map[string]string{"service.name": "svc-a"}, MinTimeMs: 1000, MaxTimeMs: 2000},
+		},
+	}
+	item2 := &client.SeriesResourceAttributes{
+		Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
+		Versions: []*client.ResourceVersionData{
+			{Identifying: map[string]string{"service.name": "svc-b"}, MinTimeMs: 1000, MaxTimeMs: 2000},
+		},
+	}
+	res.add([]*client.SeriesResourceAttributes{item1})
+	res.add([]*client.SeriesResourceAttributes{item2})
+
+	result := res.result()
+	require.Len(t, result, 1)
+	assert.Len(t, result[0].Versions, 2, "same time range but different identifying attrs should be kept as separate versions")
+}
+
+func TestResourceAttributesResponse_ConcurrentAdd(t *testing.T) {
+	res := newResourceAttributesResponse()
+
+	// Verify thread safety by adding from multiple goroutines concurrently.
+	var wg sync.WaitGroup
+	for i := range 10 {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			lbls := labels.FromStrings("__name__", fmt.Sprintf("metric_%d", idx))
+			item := &client.SeriesResourceAttributes{
+				Labels:   mimirpb.FromLabelsToLabelAdapters(lbls),
+				Versions: []*client.ResourceVersionData{{MinTimeMs: int64(idx * 1000), MaxTimeMs: int64((idx + 1) * 1000)}},
+			}
+			res.add([]*client.SeriesResourceAttributes{item})
+		}(i)
+	}
+	wg.Wait()
+
+	result := res.result()
+	assert.Len(t, result, 10, "all 10 concurrent series should be present")
 }

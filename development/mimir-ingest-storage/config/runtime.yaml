@@ -3,3 +3,5 @@ overrides:
   anonymous:
     labels_query_optimizer_enabled: true
     ruler_evaluation_consistency_max_delay: 1m
+    # Enable experimental PromQL functions for the info() function demo.
+    enabled_promql_experimental_functions: all

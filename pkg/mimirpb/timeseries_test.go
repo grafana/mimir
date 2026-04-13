@@ -257,6 +257,54 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	assert.Len(t, dst.Histograms, 0)
 }
 
+func TestDeepCopyTimeseriesResourceRef(t *testing.T) {
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "__name__", Value: "test_metric"},
+			},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+			},
+			ResourceRef: 3,
+			ScopeRef:    5,
+		},
+	}
+
+	dst := PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src, false, false)
+
+	// Check that table refs are copied.
+	assert.Equal(t, int32(3), dst.ResourceRef)
+	assert.Equal(t, int32(5), dst.ScopeRef)
+
+	// Verify modifying src doesn't affect dst.
+	src.ResourceRef = 99
+	assert.Equal(t, int32(3), dst.ResourceRef)
+}
+
+func TestDeepCopyTimeseriesZeroResourceRef(t *testing.T) {
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "__name__", Value: "test_metric"},
+			},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+			},
+			ResourceRef: 0,
+			ScopeRef:    0,
+		},
+	}
+
+	dst := PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src, false, false)
+
+	// Check that zero refs remain zero.
+	assert.Equal(t, int32(0), dst.ResourceRef)
+	assert.Equal(t, int32(0), dst.ScopeRef)
+}
+
 func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 	src := PreallocTimeseries{
 		TimeSeries: &TimeSeries{
@@ -328,6 +376,8 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 			},
 			CreatedTimestamp:          1234567890,
 			SkipUnmarshalingExemplars: true,
+			ResourceRef:               1,
+			ScopeRef:                  2,
 		},
 	}
 
@@ -755,6 +805,9 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 				},
 			},
 		},
+		// ResourceRef/ScopeRef are int32 — no yoloString references to test.
+		ResourceRef: 1,
+		ScopeRef:    2,
 	}
 
 	ts.MakeReferencesSafeToRetain()
@@ -773,4 +826,7 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 			require.Equal(t, origLabelValue, l.Value)
 		}
 	}
+	// Table refs should be unchanged.
+	require.Equal(t, int32(1), ts.ResourceRef)
+	require.Equal(t, int32(2), ts.ScopeRef)
 }

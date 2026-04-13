@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -156,6 +157,22 @@ func (e errorTranslateQuerier) Close() error {
 func (e errorTranslateQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	s := e.q.Select(ctx, sortSeries, hints, matchers...)
 	return errorTranslateSeriesSet{s: s, fn: e.fn}
+}
+
+// GetResourceAt implements storage.ResourceQuerier by delegating to the underlying querier if it supports it.
+func (e errorTranslateQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	if rq, ok := e.q.(storage.ResourceQuerier); ok {
+		return rq.GetResourceAt(labelsHash, timestamp)
+	}
+	return nil, false
+}
+
+// IterUniqueAttributeNames implements storage.ResourceQuerier by delegating to the underlying querier if it supports it.
+func (e errorTranslateQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	if rq, ok := e.q.(storage.ResourceQuerier); ok {
+		return rq.IterUniqueAttributeNames(fn)
+	}
+	return nil
 }
 
 type errorTranslateChunkQuerier struct {

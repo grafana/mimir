@@ -513,6 +513,8 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 	t.Cfg.Distributor.PreferAvailabilityZones = t.Cfg.Querier.PreferAvailabilityZones
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
+	t.Cfg.Distributor.OTelPersistResourceAttributes = t.Cfg.BlocksStorage.TSDB.OTelPersistResourceAttributes
+	t.Cfg.Distributor.OTelPersistScopeAttributes = t.Cfg.BlocksStorage.TSDB.OTelPersistScopeAttributes
 	t.Cfg.Distributor.UsageTrackerEnabled = t.Cfg.UsageTracker.Enabled
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
@@ -690,6 +692,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.MetadataSupplier,
 		t.QuerierEngine,
 		t.Distributor,
+		t.BlocksStoreQueryable,
 		metrics,
 		t.Registerer,
 		util_log.Logger,
@@ -742,6 +745,7 @@ func (t *Mimir) initStoreQueryable() (services.Service, error) {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}
 	t.StoreQueryable = q
+	t.BlocksStoreQueryable = q
 	return q, nil
 }
 

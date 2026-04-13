@@ -49,7 +49,7 @@ func TimeseriesFromPool() *TimeSeries {
 
 	// Panic if the pool returns a TimeSeries that wasn't properly cleaned,
 	// which is indicative of a hard bug that we want to catch as soon as possible.
-	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars {
+	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars || ts.ResourceRef != 0 || ts.ScopeRef != 0 {
 		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
 	}
 
@@ -88,6 +88,11 @@ func ReuseTimeseries(ts *TimeSeries) {
 
 	ts.CreatedTimestamp = 0
 	ts.SkipUnmarshalingExemplars = false
+
+	// Clear table refs. String fields are now in WriteRequest.ResourceTable/ScopeTable,
+	// which are not pooled — no need to clear strings here.
+	ts.ResourceRef = 0
+	ts.ScopeRef = 0
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)

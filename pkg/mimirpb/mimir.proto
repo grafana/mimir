@@ -41,6 +41,11 @@ message WriteRequest {
 
   // Skip label count validation.
   bool skip_label_count_validation = 1001;
+
+  // Deduplicated resource/scope tables. TimeSeries reference entries by index.
+  // NOTE: These fields are manually added to mimir.pb.go and not auto-generated.
+  // repeated ResourceAttributes resource_table = 1002;
+  // repeated ScopeAttributes scope_table = 1003;
 }
 
 message WriteResponse {}
@@ -83,6 +88,12 @@ message TimeSeries {
   // Zero value means value not set. If you need to use exactly zero value for
   // the timestamp, use 1 millisecond before or after.
   int64 created_timestamp = 6;
+
+  // Mimir-specific fields for OTel resource/scope attributes (table refs).
+  // Uses high field numbers to avoid conflicts with upstream Prometheus fields.
+  // NOTE: These fields are manually added to mimir.pb.go and not auto-generated.
+  // int32 resource_ref = 1000; // Index into WriteRequest.resource_table
+  // int32 scope_ref = 1001;    // Index into WriteRequest.scope_table
 }
 
 message LabelPair {

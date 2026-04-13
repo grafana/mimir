@@ -172,8 +172,9 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 						limits := multiTenantMockLimits{
 							byTenant: map[string]mockLimits{
 								userID: {
-									resultsCacheTTLForCardinalityQuery: testData.cacheTTL,
-									resultsCacheTTLForLabelsQuery:      testData.cacheTTL,
+									resultsCacheTTLForCardinalityQuery:        testData.cacheTTL,
+									resultsCacheTTLForLabelsQuery:             testData.cacheTTL,
+									resultsCacheTTLForResourceAttributesQuery: testData.cacheTTL,
 								},
 							},
 						}

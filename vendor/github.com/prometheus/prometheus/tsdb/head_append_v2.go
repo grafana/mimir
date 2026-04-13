@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // initAppenderV2 is a helper to initialize the time bounds of the head
@@ -95,12 +96,20 @@ func (h *Head) appenderV2() *headAppenderV2 {
 			typesInBatch:          h.getTypeMap(),
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+			storeST:               h.opts.EnableSTStorage.Load(),
+			useXOR2:               h.opts.EnableXOR2Encoding.Load(),
 		},
 	}
 }
 
 type headAppenderV2 struct {
 	headAppenderBase
+
+	// Cached resource conversion to avoid redundant work when the same
+	// ResourceContext pointer is used for many series in a batch (e.g.
+	// histogram buckets and summary quantiles from the same OTLP resource).
+	cachedResourceCtx *storage.ResourceContext
+	cachedWALResource *record.RefResource
 }
 
 func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
@@ -140,7 +149,6 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		}
 	}
 
-	// TODO(bwplotka): Handle ST natively (as per PROM-60).
 	if a.head.opts.EnableSTAsZeroSample && st != 0 {
 		a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
 	}
@@ -177,7 +185,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// we do not need to check for the difference between "unknown
 			// series" and "known series with stNone".
 		}
-		appErr = a.appendFloat(s, t, v, opts.RejectOutOfOrder)
+		appErr = a.appendFloat(s, st, t, v, opts.RejectOutOfOrder)
 	}
 	// Handle append error, if any.
 	if appErr != nil {
@@ -207,18 +215,28 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		if metaChanged {
 			b := a.getCurrentBatch(stNone, s.ref)
 			b.metadata = append(b.metadata, record.RefMetadata{
-				Ref:  s.ref,
-				Type: record.GetMetricType(opts.Metadata.Type),
-				Unit: opts.Metadata.Unit,
-				Help: opts.Metadata.Help,
+				Ref:     s.ref,
+				Type:    record.GetMetricType(opts.Metadata.Type),
+				Unit:    opts.Metadata.Unit,
+				Help:    opts.Metadata.Help,
+				MinTime: t,
+				MaxTime: t,
 			})
 			b.metadataSeries = append(b.metadataSeries, s)
+		}
+	}
+	if a.head.opts.EnableNativeMetadata {
+		if opts.Resource != nil {
+			a.updateResource(s, t, opts.Resource)
+		}
+		if opts.Scope != nil {
+			a.updateScope(s, t, opts.Scope)
 		}
 	}
 	return storage.SeriesRef(s.ref), partialErr
 }
 
-func (a *headAppenderV2) appendFloat(s *memSeries, t int64, v float64, fastRejectOOO bool) error {
+func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastRejectOOO bool) error {
 	s.Lock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
@@ -239,7 +257,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, t int64, v float64, fastRejec
 	}
 
 	b := a.getCurrentBatch(stFloat, s.ref)
-	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: t, V: v})
+	b.floats = append(b.floats, record.RefSample{Ref: s.ref, ST: st, T: t, V: v})
 	b.floatSeries = append(b.floatSeries, s)
 	return nil
 }
@@ -366,7 +384,7 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 		}
 		err = a.appendHistogram(s, st, zeroHistogram, true)
 	default:
-		err = a.appendFloat(s, st, 0, true)
+		err = a.appendFloat(s, 0, st, 0, true)
 	}
 
 	if err != nil {
@@ -377,6 +395,80 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 		a.head.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", err)
 		return
 	}
+}
+
+// updateResource buffers a resource update for a series if not already done in this batch.
+// The actual mutation is deferred to Commit() time.
+func (a *headAppenderV2) updateResource(s *memSeries, t int64, rc *storage.ResourceContext) {
+	if a.resourceRefs == nil {
+		a.resourceRefs = make(map[chunks.HeadSeriesRef]struct{})
+	}
+	if _, ok := a.resourceRefs[s.ref]; ok {
+		return
+	}
+
+	// Cache the converted WAL record per ResourceContext pointer to avoid
+	// redundant entity conversion and allocations when the same resource is
+	// applied to many series (e.g. histogram sub-series share one ResourceContext).
+	if rc != a.cachedResourceCtx {
+		walEntities := make([]record.RefResourceEntity, len(rc.Entities))
+		for i, e := range rc.Entities {
+			entityType := e.Type
+			if entityType == "" {
+				entityType = seriesmetadata.EntityTypeResource
+			}
+			walEntities[i] = record.RefResourceEntity{
+				Type:        entityType,
+				ID:          e.ID,
+				Description: e.Description,
+			}
+		}
+		a.cachedWALResource = &record.RefResource{
+			MinTime:     t,
+			MaxTime:     t,
+			Identifying: rc.Identifying,
+			Descriptive: rc.Descriptive,
+			Entities:    walEntities,
+		}
+		a.cachedResourceCtx = rc
+	}
+
+	// Buffer the resource update in the current batch.
+	b := a.getCurrentBatch(stNone, s.ref)
+	rr := *a.cachedWALResource
+	rr.Ref = s.ref
+	rr.MinTime = t
+	rr.MaxTime = t
+	b.resources = append(b.resources, rr)
+	b.resourceSeries = append(b.resourceSeries, s)
+
+	a.resourceRefs[s.ref] = struct{}{}
+}
+
+// updateScope buffers a scope update for a series if not already done in this batch.
+// The actual mutation is deferred to Commit() time.
+func (a *headAppenderV2) updateScope(s *memSeries, t int64, sc *storage.ScopeContext) {
+	if a.scopeRefs == nil {
+		a.scopeRefs = make(map[chunks.HeadSeriesRef]struct{})
+	}
+	if _, ok := a.scopeRefs[s.ref]; ok {
+		return
+	}
+
+	// Buffer the scope update in the current batch.
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.scopes = append(b.scopes, record.RefScope{
+		Ref:       s.ref,
+		MinTime:   t,
+		MaxTime:   t,
+		Name:      sc.Name,
+		Version:   sc.Version,
+		SchemaURL: sc.SchemaURL,
+		Attrs:     sc.Attrs,
+	})
+	b.scopeSeries = append(b.scopeSeries, s)
+
+	a.scopeRefs[s.ref] = struct{}{}
 }
 
 var _ storage.GetRef = &headAppenderV2{}

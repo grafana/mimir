@@ -8,8 +8,11 @@ package ingester
 import (
 	"context"
 	"math"
+	"slices"
+	"strings"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/middleware"
@@ -20,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -33,8 +37,12 @@ import (
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
-	storage.Appender
+	storage.AppenderV2
 	storage.GetRef
+	// AppendExemplar appends an exemplar to an existing series. This is needed
+	// as a fallback for time series entries that contain exemplars but no samples,
+	// since AppenderV2.Append bundles exemplars with sample writes.
+	AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error)
 }
 
 type pushStats struct {
@@ -394,7 +402,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	}
 
 	// Walk the samples, appending them to the users database
-	app := db.Appender(ctx).(extendedAppender)
+	app := db.CombinedAppender(ctx)
 	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
 
 	var activeSeries *activeseries.ActiveSeries
@@ -417,6 +425,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		minAppendTimeAvailable,
 		minAppendTime,
 		req.Source == mimirpb.OTLP,
+		db.db,
+		req.ResourceTable,
+		req.ScopeTable,
 	); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
@@ -552,6 +563,9 @@ func (i *Ingester) pushSamplesToAppender(
 	minAppendTimeAvailable bool,
 	minAppendTime int64,
 	isOTLP bool,
+	tsdbDB *tsdb.DB,
+	resourceTable []mimirpb.ResourceAttributes,
+	scopeTable []mimirpb.ScopeAttributes,
 ) error {
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
@@ -565,6 +579,51 @@ func (i *Ingester) pushSamplesToAppender(
 
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
+	var entrySortBuf []mimirpb.AttributeEntry
+
+	// Pre-convert resource table entries: hash eagerly (zero-alloc), build context lazily.
+	type resourceTableEntry struct {
+		contentHash uint64
+		ra          *mimirpb.ResourceAttributes // raw proto ref (valid for request lifetime)
+		ctx         *storage.ResourceContext    // lazily built on first access
+	}
+	var resourceCache []resourceTableEntry
+	if len(resourceTable) > 0 {
+		resourceCache = make([]resourceTableEntry, len(resourceTable))
+		for ri := range resourceTable {
+			ra := &resourceTable[ri]
+			if len(ra.Identifying) > 0 {
+				contentHash, buf := hashResourceAttributesRaw(ra, entrySortBuf)
+				entrySortBuf = buf
+				resourceCache[ri] = resourceTableEntry{
+					contentHash: contentHash,
+					ra:          ra,
+				}
+			}
+		}
+	}
+
+	// Pre-convert scope table entries: hash eagerly (zero-alloc), build context lazily.
+	type scopeTableEntry struct {
+		contentHash uint64
+		sa          *mimirpb.ScopeAttributes // raw proto ref (valid for request lifetime)
+		ctx         *storage.ScopeContext    // lazily built on first access
+	}
+	var scopeCache []scopeTableEntry
+	if len(scopeTable) > 0 {
+		scopeCache = make([]scopeTableEntry, len(scopeTable))
+		for si := range scopeTable {
+			sa := &scopeTable[si]
+			if sa.Name != "" || sa.Version != "" || sa.SchemaURL != "" || len(sa.Attrs) > 0 {
+				contentHash, buf := hashScopeAttributesRaw(sa, entrySortBuf)
+				entrySortBuf = buf
+				scopeCache[si] = scopeTableEntry{
+					contentHash: contentHash,
+					sa:          sa,
+				}
+			}
+		}
+	}
 
 	// idx is used to decrease active series count in case of error for cost attribution.
 	idx := i.getTSDB(userID).Head().MustIndex()
@@ -638,6 +697,88 @@ func (i *Ingester) pushSamplesToAppender(
 
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
+		// Resolve resource and scope contexts from pre-built cache.
+		// labelsHash is computed once and reused for both resource and scope checks.
+		var resourceCtx *storage.ResourceContext
+		var scopeCtx *storage.ScopeContext
+		var labelsHash uint64
+		var labelsHashComputed bool
+
+		if ts.ResourceRef > 0 && int(ts.ResourceRef-1) < len(resourceCache) {
+			entry := &resourceCache[ts.ResourceRef-1]
+			if entry.ra != nil {
+				metricName := nonCopiedLabels.Get(model.MetricNameLabel)
+				if metricName != "target_info" {
+					labelsHash = labels.StableHash(nonCopiedLabels)
+					labelsHashComputed = true
+					if !tsdbDB.ResourceHasContentHash(labelsHash, entry.contentHash) {
+						if entry.ctx == nil {
+							entry.ctx = &storage.ResourceContext{
+								Identifying: entriesToMap(entry.ra.Identifying),
+								Descriptive: entriesToMap(entry.ra.Descriptive),
+								Entities:    convertResourceEntities(entry.ra.Entities),
+							}
+						}
+						resourceCtx = entry.ctx
+					}
+				}
+			}
+		}
+
+		if ts.ScopeRef > 0 && int(ts.ScopeRef-1) < len(scopeCache) {
+			entry := &scopeCache[ts.ScopeRef-1]
+			if entry.sa != nil {
+				if !labelsHashComputed {
+					labelsHash = labels.StableHash(nonCopiedLabels)
+					labelsHashComputed = true
+				}
+				if !tsdbDB.ScopeHasContentHash(labelsHash, entry.contentHash) {
+					if entry.ctx == nil {
+						entry.ctx = &storage.ScopeContext{
+							Name:      strings.Clone(entry.sa.Name),
+							Version:   strings.Clone(entry.sa.Version),
+							SchemaURL: strings.Clone(entry.sa.SchemaURL),
+							Attrs:     entriesToMap(entry.sa.Attrs),
+						}
+					}
+					scopeCtx = entry.ctx
+				}
+			}
+		}
+		_ = labelsHashComputed
+
+		// Pre-validate exemplars for attachment to the first successful sample.
+		// This ensures exemplars are committed atomically with samples in a single
+		// WAL operation (via opts.Exemplars) instead of a separate AppendExemplar call.
+		var validExemplars []exemplar.Exemplar
+		var validExemplarOriginals []mimirpb.Exemplar // parallel slice for error reporting
+		exemplarsAttached := false
+		hasExemplars := len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0
+		if hasExemplars {
+			for _, ex := range ts.Exemplars {
+				if ex.TimestampMs > maxTimestampMs {
+					stats.failedExemplarsCount++
+					updateFirstPartial(nil, func() softError {
+						return newExemplarTimestampTooFarInFutureError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+					})
+					continue
+				} else if ex.TimestampMs < minTimestampMs {
+					stats.failedExemplarsCount++
+					updateFirstPartial(nil, func() softError {
+						return newExemplarTimestampTooFarInPastError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+					})
+					continue
+				}
+				validExemplars = append(validExemplars, exemplar.Exemplar{
+					Value:  ex.Value,
+					Ts:     ex.TimestampMs,
+					HasTs:  true,
+					Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+				})
+				validExemplarOriginals = append(validExemplarOriginals, ex)
+			}
+		}
+
 		for _, s := range ts.Samples {
 			var err error
 
@@ -650,52 +791,71 @@ func (i *Ingester) pushSamplesToAppender(
 				continue
 			}
 
+			// Append ST zero sample (created timestamp) BEFORE the regular sample to maintain
+			// in-order writes (st < t). AppenderV2 writes to memSeries immediately, so order matters.
+			// RejectOutOfOrder prevents duplicate ST zeros from being accepted via the OOO path
+			// (matching v1 AppendSTZeroSample behavior where OOO ST zeros are always rejected).
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+				stOpts := storage.AppendV2Options{RejectOutOfOrder: true}
 				if ref != 0 {
-					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, stOpts)
 				} else {
-					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, stOpts)
 				}
 				if err == nil {
 					stats.succeededSamplesCount++
 				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// if the start time is unknown, then it should equal to the timestamp of the first sample,
-					// which will mean a created timestamp equal to the timestamp of the first sample for later
-					// samples. Thus we ignore if zero sample would cause duplicate.
-					// We also ignore out of order sample as created timestamp is out of order most of the time,
-					// except when written before the first sample.
+					// Duplicates and OOO ST zeros are expected (e.g. long-lived counters resend the same CT).
 					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
 
+			opts := storage.AppendV2Options{
+				Resource: resourceCtx,
+				Scope:    scopeCtx,
+			}
+			if !exemplarsAttached && len(validExemplars) > 0 {
+				opts.Exemplars = validExemplars
+			}
+
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
-					stats.succeededSamplesCount++
-					continue
-				}
+				_, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, opts)
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, opts)
+			}
+
+			if err != nil {
+				// AppendPartialError means the sample succeeded but some exemplars failed.
+				var partialErr *storage.AppendPartialError
+				if errors.As(err, &partialErr) {
 					stats.succeededSamplesCount++
+					if !exemplarsAttached && len(validExemplars) > 0 {
+						i.handleExemplarPartialErrors(partialErr, len(ts.Exemplars), validExemplarOriginals, ts, userID, stats, updateFirstPartial)
+						exemplarsAttached = true
+					}
 					continue
 				}
+
+				// If it's a soft error it will be returned back to the distributor later as a 400.
+				if errProcessor.ProcessErr(err, s.TimestampMs, ts.Labels) {
+					continue
+				}
+
+				// Otherwise, return a 500.
+				return err
 			}
 
-			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if errProcessor.ProcessErr(err, s.TimestampMs, ts.Labels) {
-				continue
+			stats.succeededSamplesCount++
+			if !exemplarsAttached && len(validExemplars) > 0 {
+				stats.succeededExemplarsCount += len(validExemplars)
+				exemplarsAttached = true
 			}
-
-			// Otherwise, return a 500.
-			return err
 		}
 
 		numNativeHistogramBuckets := -1
@@ -721,50 +881,85 @@ func (i *Ingester) pushSamplesToAppender(
 					ih = mimirpb.FromHistogramProtoToHistogram(&h)
 				}
 
+				// Append ST zero sample (created timestamp) BEFORE the regular histogram to maintain
+				// in-order writes (st < t). AppenderV2 writes to memSeries immediately, so order matters.
+				// RejectOutOfOrder prevents duplicate ST zeros from being accepted via the OOO path
+				// (matching v1 AppendHistogramSTZeroSample behavior where OOO ST zeros are always rejected).
 				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+					var zeroIH *histogram.Histogram
+					var zeroFH *histogram.FloatHistogram
+					if fh != nil {
+						zeroFH = &histogram.FloatHistogram{
+							CounterResetHint: histogram.CounterReset,
+							Schema:           fh.Schema,
+							ZeroThreshold:    fh.ZeroThreshold,
+							CustomValues:     fh.CustomValues,
+						}
+					} else if ih != nil {
+						zeroIH = &histogram.Histogram{
+							CounterResetHint: histogram.CounterReset,
+							Schema:           ih.Schema,
+							ZeroThreshold:    ih.ZeroThreshold,
+							CustomValues:     ih.CustomValues,
+						}
+					}
+					stOpts := storage.AppendV2Options{RejectOutOfOrder: true}
 					if ref != 0 {
-						_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zeroIH, zeroFH, stOpts)
 					} else {
-						// Copy the label set because both TSDB and the active series tracker may retain it.
 						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-						ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zeroIH, zeroFH, stOpts)
 					}
 					if err == nil {
 						stats.succeededSamplesCount++
 					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-						// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-						// if the start time is unknown, then it should equal to the timestamp of the first sample,
-						// which will mean a created timestamp equal to the timestamp of the first sample for later
-						// samples. Thus we ignore if zero sample would cause duplicate.
-						// We also ignore out of order sample as created timestamp is out of order most of the time,
-						// except when written before the first sample.
+						// Duplicates and OOO ST zeros are expected (e.g. long-lived counters resend the same CT).
 						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 					}
 					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 				}
 
+				opts := storage.AppendV2Options{
+					Resource: resourceCtx,
+					Scope:    scopeCtx,
+				}
+				if !exemplarsAttached && len(validExemplars) > 0 {
+					opts.Exemplars = validExemplars
+				}
+
 				// If the cached reference exists, we try to use it.
 				if ref != 0 {
-					if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
-						stats.succeededSamplesCount++
-						continue
-					}
+					_, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, opts)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-
 					// Retain the reference in case there are multiple samples for the series.
-					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+					ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, opts)
+				}
+
+				if err != nil {
+					var partialErr *storage.AppendPartialError
+					if errors.As(err, &partialErr) {
 						stats.succeededSamplesCount++
+						if !exemplarsAttached && len(validExemplars) > 0 {
+							i.handleExemplarPartialErrors(partialErr, len(ts.Exemplars), validExemplarOriginals, ts, userID, stats, updateFirstPartial)
+							exemplarsAttached = true
+						}
 						continue
 					}
+
+					if errProcessor.ProcessErr(err, h.Timestamp, ts.Labels) {
+						continue
+					}
+
+					return err
 				}
 
-				if errProcessor.ProcessErr(err, h.Timestamp, ts.Labels) {
-					continue
+				stats.succeededSamplesCount++
+				if !exemplarsAttached && len(validExemplars) > 0 {
+					stats.succeededExemplarsCount += len(validExemplars)
+					exemplarsAttached = true
 				}
-
-				return err
 			}
 			numNativeHistograms := len(ts.Histograms)
 			if numNativeHistograms > 0 {
@@ -780,69 +975,213 @@ func (i *Ingester) pushSamplesToAppender(
 			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
 		}
 
-		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
-			// app.AppendExemplar currently doesn't create the series, it must
-			// already exist.  If it does not then drop.
+		// Handle exemplars that weren't attached to any sample.
+		if hasExemplars && !exemplarsAttached {
 			if ref == 0 {
-				updateFirstPartial(nil, func() softError {
-					return newExemplarMissingSeriesError(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
-				})
-				stats.failedExemplarsCount += len(ts.Exemplars)
-			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
+				// No series reference exists, exemplars can't be ingested.
+				stats.failedExemplarsCount += len(validExemplars)
+				if len(ts.Exemplars) > 0 {
+					updateFirstPartial(nil, func() softError {
+						return newExemplarMissingSeriesError(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
+					})
+				}
+			} else if len(validExemplars) > 0 {
+				// Series exists from a previous push but no sample succeeded in this push.
+				// Use AppendExemplar fallback for this rare case. There is no atomicity concern
+				// because there are no new samples to be atomic with.
 				outOfOrderExemplars := 0
-				for _, ex := range ts.Exemplars {
-					if ex.TimestampMs > maxTimestampMs {
-						stats.failedExemplarsCount++
-						updateFirstPartial(nil, func() softError {
-							return newExemplarTimestampTooFarInFutureError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
-						})
-						continue
-					} else if ex.TimestampMs < minTimestampMs {
-						stats.failedExemplarsCount++
-						updateFirstPartial(nil, func() softError {
-							return newExemplarTimestampTooFarInPastError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
-						})
-						continue
-					}
-
-					e := exemplar.Exemplar{
-						Value:  ex.Value,
-						Ts:     ex.TimestampMs,
-						HasTs:  true,
-						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
-					}
-
-					var err error
-					if _, err = app.AppendExemplar(ref, labels.EmptyLabels(), e); err == nil {
+				for idx, e := range validExemplars {
+					orig := validExemplarOriginals[idx]
+					if _, err := app.AppendExemplar(ref, labels.EmptyLabels(), e); err == nil {
 						stats.succeededExemplarsCount++
 						continue
-					}
+					} else {
+						stats.failedExemplarsCount++
 
-					// We track the failed exemplars ingestion, whatever is the reason. This way, the sum of successfully
-					// and failed ingested exemplars is equal to the total number of processed ones.
-					stats.failedExemplarsCount++
-
-					isOOOExemplar := errors.Is(err, storage.ErrOutOfOrderExemplar)
-					if isOOOExemplar {
-						outOfOrderExemplars++
-						// Only report out of order exemplars if all are out of order, otherwise this was a partial update
-						// to some existing set of exemplars.
-						if outOfOrderExemplars < len(ts.Exemplars) {
-							continue
+						isOOOExemplar := errors.Is(err, storage.ErrOutOfOrderExemplar)
+						if isOOOExemplar {
+							outOfOrderExemplars++
+							if outOfOrderExemplars < len(ts.Exemplars) {
+								continue
+							}
 						}
-					}
 
-					// Error adding exemplar. Do not report to client if the error was out of order and we ignore such error.
-					if !isOOOExemplar || !i.limits.IgnoreOOOExemplars(userID) {
-						updateFirstPartial(nil, func() softError {
-							return newTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
-						})
+						if !isOOOExemplar || !i.limits.IgnoreOOOExemplars(userID) {
+							updateFirstPartial(nil, func() softError {
+								return newTSDBIngestExemplarErr(err, model.Time(orig.TimestampMs), ts.Labels, orig.Labels)
+							})
+						}
 					}
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// handleExemplarPartialErrors processes exemplar errors from an AppendPartialError returned
+// by AppenderV2.Append when some exemplars failed TSDB validation (e.g. out-of-order).
+// validOriginals is a parallel slice to the validExemplars passed to opts.Exemplars, used
+// for error reporting with the original exemplar timestamps and labels.
+func (i *Ingester) handleExemplarPartialErrors(
+	partialErr *storage.AppendPartialError,
+	numTotal int,
+	validOriginals []mimirpb.Exemplar,
+	ts mimirpb.PreallocTimeseries,
+	userID string,
+	stats *pushStats,
+	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction),
+) {
+	exemplarErrs := partialErr.ExemplarErrors
+	stats.failedExemplarsCount += len(exemplarErrs)
+	stats.succeededExemplarsCount += len(validOriginals) - len(exemplarErrs)
+
+	outOfOrderExemplars := 0
+	for _, eerr := range exemplarErrs {
+		if errors.Is(eerr, storage.ErrOutOfOrderExemplar) {
+			outOfOrderExemplars++
+			// Only report out-of-order exemplars if all are out of order,
+			// otherwise this was a partial update to some existing set of exemplars.
+			if outOfOrderExemplars < numTotal {
+				continue
+			}
+		}
+		isOOO := errors.Is(eerr, storage.ErrOutOfOrderExemplar)
+		if !isOOO || !i.limits.IgnoreOOOExemplars(userID) {
+			// Use the last valid exemplar's details for the error message. When all
+			// exemplars are OOO, this matches the old per-exemplar loop behavior which
+			// reported on the last exemplar processed.
+			lastOrig := validOriginals[len(validOriginals)-1]
+			updateFirstPartial(nil, func() softError {
+				return newTSDBIngestExemplarErr(eerr, model.Time(lastOrig.TimestampMs), ts.Labels, lastOrig.Labels)
+			})
+		}
+	}
+}
+
+// entriesToMap converts a slice of AttributeEntry to a map, cloning all strings
+// to ensure safety. The input entries may contain UnsafeMutableStrings backed
+// by a gRPC buffer that is returned to the pool after the request is processed
+// (see CLAUDE.md "Unsafe memory tricks").
+func entriesToMap(entries []mimirpb.AttributeEntry) map[string]string {
+	if len(entries) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		m[strings.Clone(e.Key)] = strings.Clone(e.Value)
+	}
+	return m
+}
+
+// hashAttributeEntries computes the same hash as seriesmetadata.hashAttrs produces
+// for the equivalent map[string]string, without creating the map. Entries are sorted
+// by key for determinism, matching hashAttrs' sorted-keys approach.
+func hashAttributeEntries(h *xxhash.Digest, entries []mimirpb.AttributeEntry, sortBuf []mimirpb.AttributeEntry) []mimirpb.AttributeEntry {
+	// Reuse sort buffer to avoid allocation.
+	sortBuf = sortBuf[:0]
+	if cap(sortBuf) < len(entries) {
+		sortBuf = make([]mimirpb.AttributeEntry, 0, len(entries))
+	}
+	sortBuf = append(sortBuf, entries...)
+	slices.SortFunc(sortBuf, func(a, b mimirpb.AttributeEntry) int {
+		if a.Key < b.Key {
+			return -1
+		}
+		if a.Key > b.Key {
+			return 1
+		}
+		return 0
+	})
+	for _, e := range sortBuf {
+		_, _ = h.WriteString(e.Key)
+		_, _ = h.Write([]byte{0})
+		_, _ = h.WriteString(e.Value)
+		_, _ = h.Write([]byte{0})
+	}
+	return sortBuf
+}
+
+// hashResourceAttributesRaw computes a content hash from raw ResourceAttributes
+// that matches hashResourceCommitDataReusable for equivalent data.
+// Zero-allocation on the hot path (reuses sortBuf).
+func hashResourceAttributesRaw(ra *mimirpb.ResourceAttributes, sortBuf []mimirpb.AttributeEntry) (uint64, []mimirpb.AttributeEntry) {
+	var h xxhash.Digest
+
+	sortBuf = hashAttributeEntries(&h, ra.Identifying, sortBuf)
+	_, _ = h.Write([]byte{1})
+	sortBuf = hashAttributeEntries(&h, ra.Descriptive, sortBuf)
+	_, _ = h.Write([]byte{1})
+
+	// Sort entities by type, matching hashResourceCommitDataReusable.
+	entities := ra.Entities
+	if len(entities) > 1 {
+		slices.SortFunc(entities, func(a, b mimirpb.ResourceEntity) int {
+			at, bt := a.Type, b.Type
+			if at == "" {
+				at = "resource"
+			}
+			if bt == "" {
+				bt = "resource"
+			}
+			if at < bt {
+				return -1
+			}
+			if at > bt {
+				return 1
+			}
+			return 0
+		})
+	}
+	for _, e := range entities {
+		entityType := e.Type
+		if entityType == "" {
+			entityType = "resource"
+		}
+		_, _ = h.WriteString(entityType)
+		_, _ = h.Write([]byte{0})
+		sortBuf = hashAttributeEntries(&h, e.ID, sortBuf)
+		_, _ = h.Write([]byte{1})
+		sortBuf = hashAttributeEntries(&h, e.Description, sortBuf)
+		_, _ = h.Write([]byte{1})
+	}
+
+	return h.Sum64(), sortBuf
+}
+
+// hashScopeAttributesRaw computes a content hash from raw ScopeAttributes
+// that matches hashScopeCommitDataReusable for equivalent data.
+// Zero-allocation on the hot path (reuses sortBuf).
+func hashScopeAttributesRaw(sa *mimirpb.ScopeAttributes, sortBuf []mimirpb.AttributeEntry) (uint64, []mimirpb.AttributeEntry) {
+	var h xxhash.Digest
+
+	_, _ = h.WriteString(sa.Name)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(sa.Version)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(sa.SchemaURL)
+	_, _ = h.Write([]byte{0})
+	sortBuf = hashAttributeEntries(&h, sa.Attrs, sortBuf)
+
+	return h.Sum64(), sortBuf
+}
+
+// convertResourceEntities converts ResourceEntity slice to storage.EntityData slice.
+// All strings are deep-copied via entriesToMap (which clones) to avoid retaining
+// references to the gRPC buffer pool.
+func convertResourceEntities(entities []mimirpb.ResourceEntity) []storage.EntityData {
+	if len(entities) == 0 {
+		return nil
+	}
+	result := make([]storage.EntityData, len(entities))
+	for i, e := range entities {
+		result[i] = storage.EntityData{
+			Type:        strings.Clone(e.Type),
+			ID:          entriesToMap(e.ID),
+			Description: entriesToMap(e.Description),
+		}
+	}
+	return result
 }
 
 // PushToStorageAndReleaseRequest implements ingest.Pusher interface for ingestion via ingest-storage.

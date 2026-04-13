@@ -562,7 +562,7 @@ func TestMimirAppender(t *testing.T) {
 						}
 					}
 
-					series, metadata := appender.GetResult()
+					series, metadata, _, _ := appender.GetResult()
 					series = testutil.RemoveEmptyObjectFromSeries(series)
 					require.Equal(t, expectedTimeseries, series)
 					require.Equal(t, tc.expectMetadata, metadata)
@@ -575,6 +575,270 @@ func TestMimirAppender(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMimirAppender_ResourceContext(t *testing.T) {
+	testCases := map[string]struct {
+		persistResourceAttributes bool
+		resource                  *storage.ResourceContext
+		appends                   func(*testing.T, *MimirAppender, *storage.ResourceContext)
+		expectResourceAttrs       *mimirpb.ResourceAttributes
+	}{
+		"resource attributes disabled": {
+			persistResourceAttributes: false,
+			resource: &storage.ResourceContext{
+				Identifying: map[string]string{"service.name": "myservice"},
+				Descriptive: map[string]string{"host.name": "myhost"},
+			},
+			appends: func(t *testing.T, ca *MimirAppender, res *storage.ResourceContext) {
+				_, err := ca.Append(0,
+					labels.FromStrings(model.MetricNameLabel, "my_metric"),
+					0, 1000, 42.0, nil, nil,
+					storage.AppendV2Options{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+						MetricFamilyName: "my_metric",
+						Resource:         res,
+					})
+				require.NoError(t, err)
+			},
+			expectResourceAttrs: nil, // Disabled, so no attrs
+		},
+		"resource attributes enabled with identifying attrs": {
+			persistResourceAttributes: true,
+			resource: &storage.ResourceContext{
+				Identifying: map[string]string{"service.name": "myservice"},
+				Descriptive: map[string]string{"host.name": "myhost"},
+			},
+			appends: func(t *testing.T, ca *MimirAppender, res *storage.ResourceContext) {
+				_, err := ca.Append(0,
+					labels.FromStrings(model.MetricNameLabel, "my_metric"),
+					0, 1000, 42.0, nil, nil,
+					storage.AppendV2Options{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+						MetricFamilyName: "my_metric",
+						Resource:         res,
+					})
+				require.NoError(t, err)
+			},
+			expectResourceAttrs: &mimirpb.ResourceAttributes{
+				Identifying: []mimirpb.AttributeEntry{
+					{Key: "service.name", Value: "myservice"},
+				},
+				Descriptive: []mimirpb.AttributeEntry{
+					{Key: "host.name", Value: "myhost"},
+				},
+				Timestamp: 1000,
+			},
+		},
+		"target_info metric skips resource attributes": {
+			persistResourceAttributes: true,
+			resource: &storage.ResourceContext{
+				Identifying: map[string]string{"service.name": "myservice"},
+			},
+			appends: func(t *testing.T, ca *MimirAppender, res *storage.ResourceContext) {
+				_, err := ca.Append(0,
+					labels.FromStrings(model.MetricNameLabel, "target_info"),
+					0, 1000, 1.0, nil, nil,
+					storage.AppendV2Options{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeInfo},
+						MetricFamilyName: "target_info",
+						Resource:         res,
+					})
+				require.NoError(t, err)
+			},
+			expectResourceAttrs: nil, // target_info should not have resource attrs
+		},
+		"nil resource context": {
+			persistResourceAttributes: true,
+			resource:                  nil,
+			appends: func(t *testing.T, ca *MimirAppender, res *storage.ResourceContext) {
+				_, err := ca.Append(0,
+					labels.FromStrings(model.MetricNameLabel, "my_metric"),
+					0, 1000, 42.0, nil, nil,
+					storage.AppendV2Options{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+						MetricFamilyName: "my_metric",
+						Resource:         res,
+					})
+				require.NoError(t, err)
+			},
+			expectResourceAttrs: nil,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			appender := NewCombinedAppender()
+			appender.PersistResourceAttributes = tc.persistResourceAttributes
+
+			tc.appends(t, appender, tc.resource)
+
+			series, _, resourceTable, _ := appender.GetResult()
+			require.Len(t, series, 1)
+
+			if tc.expectResourceAttrs == nil {
+				require.Equal(t, int32(0), series[0].ResourceRef)
+			} else {
+				require.Greater(t, series[0].ResourceRef, int32(0))
+				resAttrs := resourceTable[series[0].ResourceRef-1]
+				// Check identifying attrs
+				require.Equal(t, len(tc.expectResourceAttrs.Identifying), len(resAttrs.Identifying))
+				for i, expected := range tc.expectResourceAttrs.Identifying {
+					require.Equal(t, expected.Key, resAttrs.Identifying[i].Key)
+					require.Equal(t, expected.Value, resAttrs.Identifying[i].Value)
+				}
+				// Check descriptive attrs
+				require.Equal(t, len(tc.expectResourceAttrs.Descriptive), len(resAttrs.Descriptive))
+				for i, expected := range tc.expectResourceAttrs.Descriptive {
+					require.Equal(t, expected.Key, resAttrs.Descriptive[i].Key)
+					require.Equal(t, expected.Value, resAttrs.Descriptive[i].Value)
+				}
+				require.Equal(t, tc.expectResourceAttrs.Timestamp, resAttrs.Timestamp)
+			}
+		})
+	}
+}
+
+func TestMimirAppender_ScopeContext(t *testing.T) {
+	testCases := map[string]struct {
+		persistScopeAttributes bool
+		scope                  *storage.ScopeContext
+		expectScopeAttrs       *mimirpb.ScopeAttributes
+	}{
+		"scope attributes disabled": {
+			persistScopeAttributes: false,
+			scope: &storage.ScopeContext{
+				Name:    "github.com/example/payment",
+				Version: "1.2.0",
+			},
+			expectScopeAttrs: nil,
+		},
+		"scope attributes enabled with name and version": {
+			persistScopeAttributes: true,
+			scope: &storage.ScopeContext{
+				Name:    "github.com/example/payment",
+				Version: "1.2.0",
+			},
+			expectScopeAttrs: &mimirpb.ScopeAttributes{
+				Name:      "github.com/example/payment",
+				Version:   "1.2.0",
+				Timestamp: 1000,
+			},
+		},
+		"scope attributes enabled with all fields": {
+			persistScopeAttributes: true,
+			scope: &storage.ScopeContext{
+				Name:      "github.com/example/payment",
+				Version:   "1.2.0",
+				SchemaURL: "https://opentelemetry.io/schemas/1.24.0",
+				Attrs:     map[string]string{"library.language": "go"},
+			},
+			expectScopeAttrs: &mimirpb.ScopeAttributes{
+				Name:      "github.com/example/payment",
+				Version:   "1.2.0",
+				SchemaURL: "https://opentelemetry.io/schemas/1.24.0",
+				Attrs: []mimirpb.AttributeEntry{
+					{Key: "library.language", Value: "go"},
+				},
+				Timestamp: 1000,
+			},
+		},
+		"nil scope context": {
+			persistScopeAttributes: true,
+			scope:                  nil,
+			expectScopeAttrs:       nil,
+		},
+		"empty scope context": {
+			persistScopeAttributes: true,
+			scope:                  &storage.ScopeContext{},
+			expectScopeAttrs:       nil, // All fields empty, so not stored
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			appender := NewCombinedAppender()
+			appender.PersistScopeAttributes = tc.persistScopeAttributes
+
+			_, err := appender.Append(0,
+				labels.FromStrings(model.MetricNameLabel, "my_metric"),
+				0, 1000, 42.0, nil, nil,
+				storage.AppendV2Options{
+					Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+					MetricFamilyName: "my_metric",
+					Scope:            tc.scope,
+				})
+			require.NoError(t, err)
+
+			series, _, _, scopeTable := appender.GetResult()
+			require.Len(t, series, 1)
+
+			if tc.expectScopeAttrs == nil {
+				require.Equal(t, int32(0), series[0].ScopeRef)
+			} else {
+				require.Greater(t, series[0].ScopeRef, int32(0))
+				scopeAttrs := scopeTable[series[0].ScopeRef-1]
+				require.Equal(t, tc.expectScopeAttrs.Name, scopeAttrs.Name)
+				require.Equal(t, tc.expectScopeAttrs.Version, scopeAttrs.Version)
+				require.Equal(t, tc.expectScopeAttrs.SchemaURL, scopeAttrs.SchemaURL)
+				require.Equal(t, tc.expectScopeAttrs.Timestamp, scopeAttrs.Timestamp)
+				require.Equal(t, len(tc.expectScopeAttrs.Attrs), len(scopeAttrs.Attrs))
+				for i, expected := range tc.expectScopeAttrs.Attrs {
+					require.Equal(t, expected.Key, scopeAttrs.Attrs[i].Key)
+					require.Equal(t, expected.Value, scopeAttrs.Attrs[i].Value)
+				}
+			}
+		})
+	}
+}
+
+func TestMimirAppender_TableTimestampUpdatedToMax(t *testing.T) {
+	resource := &storage.ResourceContext{
+		Identifying: map[string]string{"service.name": "myservice"},
+	}
+	scope := &storage.ScopeContext{
+		Name:    "github.com/example/payment",
+		Version: "1.2.0",
+	}
+
+	appender := NewCombinedAppender()
+	appender.PersistResourceAttributes = true
+	appender.PersistScopeAttributes = true
+
+	// Append first series at t=1000.
+	_, err := appender.Append(0,
+		labels.FromStrings(model.MetricNameLabel, "metric_a", "a", "1"),
+		0, 1000, 1.0, nil, nil,
+		storage.AppendV2Options{
+			Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+			MetricFamilyName: "metric_a",
+			Resource:         resource,
+			Scope:            scope,
+		})
+	require.NoError(t, err)
+
+	// Append second series at t=2000 with the same resource/scope pointers.
+	_, err = appender.Append(0,
+		labels.FromStrings(model.MetricNameLabel, "metric_b", "a", "1"),
+		0, 2000, 2.0, nil, nil,
+		storage.AppendV2Options{
+			Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+			MetricFamilyName: "metric_b",
+			Resource:         resource,
+			Scope:            scope,
+		})
+	require.NoError(t, err)
+
+	series, _, resourceTable, scopeTable := appender.GetResult()
+	require.Len(t, series, 2)
+
+	// Both series should reference the same table entries.
+	require.Equal(t, series[0].ResourceRef, series[1].ResourceRef)
+	require.Equal(t, series[0].ScopeRef, series[1].ScopeRef)
+
+	// The table entry timestamps should be the max (2000).
+	require.Equal(t, int64(2000), resourceTable[series[0].ResourceRef-1].Timestamp)
+	require.Equal(t, int64(2000), scopeTable[series[0].ScopeRef-1].Timestamp)
 }
 
 // adapted from pkg/distributor/distributor_test.go

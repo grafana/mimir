@@ -3,6 +3,9 @@
 package otlpappender
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -27,6 +30,10 @@ const defaultIntervalForStartTimestamps = int64(300_000)
 type MimirAppender struct {
 	EnableCreatedTimestampZeroIngestion        bool
 	ValidIntervalCreatedTimestampZeroIngestion int64
+	// PersistResourceAttributes enables storing OTel resource attributes per series.
+	PersistResourceAttributes bool
+	// PersistScopeAttributes enables storing OTel scope attributes per series.
+	PersistScopeAttributes bool
 
 	series   []mimirpb.PreallocTimeseries
 	metadata []*mimirpb.MetricMetadata
@@ -39,30 +46,40 @@ type MimirAppender struct {
 	// This is needed to not send metadata duplicates all the time.
 	// We could get rid of this if we switched to RW2 all the way through.
 	metricFamilies map[string]metadata.Metadata
+
+	// Dedup tables for resource/scope attributes. TimeSeries carry an int32 index
+	// into these tables instead of inline *ResourceAttributes/*ScopeAttributes.
+	resourceTable    []mimirpb.ResourceAttributes
+	resourceTableMap map[*storage.ResourceContext]int32
+	scopeTable       []mimirpb.ScopeAttributes
+	scopeTableMap    map[*storage.ScopeContext]int32
 }
 
 func NewCombinedAppender() *MimirAppender {
 	return &MimirAppender{
 		ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-		series:         mimirpb.PreallocTimeseriesSliceFromPool(),
-		refs:           make(map[uint64]labelsIdx),
-		collisionRefs:  make(map[uint64][]labelsIdx),
-		metricFamilies: make(map[string]metadata.Metadata),
+		series:           mimirpb.PreallocTimeseriesSliceFromPool(),
+		refs:             make(map[uint64]labelsIdx),
+		collisionRefs:    make(map[uint64][]labelsIdx),
+		metricFamilies:   make(map[string]metadata.Metadata),
+		resourceTableMap: make(map[*storage.ResourceContext]int32),
+		scopeTableMap:    make(map[*storage.ScopeContext]int32),
 	}
 }
 
-// GetResult returns the created timeseries and metadata.
-func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
-	return c.series, c.metadata
+// GetResult returns the created timeseries, metadata, and dedup tables.
+func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, []mimirpb.ResourceAttributes, []mimirpb.ScopeAttributes) {
+	return c.series, c.metadata, c.resourceTable, c.scopeTable
 }
 
-func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AppendV2Options) (storage.SeriesRef, error) {
-	ct = c.recalcCreatedTimestamp(t, ct)
+// Append implements storage.AppenderV2.
+func (c *MimirAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AppendV2Options) (storage.SeriesRef, error) {
+	st = c.recalcCreatedTimestamp(t, st)
 
 	hash, idx, collisionIdx, seenSeries := c.processLabelsAndMetadata(ls)
 
-	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
-		c.createNewSeries(&idx, collisionIdx, hash, ls, ct)
+	if !seenSeries || c.ctRequiresNewSeries(idx.idx, st) {
+		c.createNewSeries(&idx, collisionIdx, hash, ls, st, t, opts)
 	}
 
 	switch {
@@ -79,7 +96,10 @@ func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int6
 	return 0, nil
 }
 
-func (c *MimirAppender) Commit() error   { return nil }
+// Commit implements storage.AppenderV2. No-op for Mimir (uses GetResult instead).
+func (c *MimirAppender) Commit() error { return nil }
+
+// Rollback implements storage.AppenderV2. No-op for Mimir (uses GetResult instead).
 func (c *MimirAppender) Rollback() error { return nil }
 
 func (c *MimirAppender) recalcCreatedTimestamp(t, ct int64) int64 {
@@ -139,10 +159,58 @@ func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64,
 	return
 }
 
-func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
+func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64, t int64, opts storage.AppendV2Options) {
 	ts := mimirpb.TimeseriesFromPool()
 	ts.Labels = mimirpb.FromLabelsToLabelAdapters(ls)
 	ts.CreatedTimestamp = ct
+
+	metricName := ls.Get(model.MetricNameLabel)
+
+	// Attach resource attributes via table ref if enabled and we have any.
+	// Skip target_info series since it's synthesized from resource attributes.
+	if c.PersistResourceAttributes && metricName != "target_info" && opts.Resource != nil && len(opts.Resource.Identifying) > 0 {
+		ref, ok := c.resourceTableMap[opts.Resource]
+		if !ok {
+			ref = int32(len(c.resourceTable)) + 1 // 1-based; 0 means "no resource"
+			c.resourceTable = append(c.resourceTable, mimirpb.ResourceAttributes{
+				Identifying: mapToAttributeEntries(opts.Resource.Identifying),
+				Descriptive: mapToAttributeEntries(opts.Resource.Descriptive),
+				Entities:    entityDataToResourceEntities(opts.Resource.Entities),
+				Timestamp:   t,
+			})
+			c.resourceTableMap[opts.Resource] = ref
+		}
+		ts.ResourceRef = ref
+		// Update timestamp to latest seen across all series using this entry.
+		if entry := &c.resourceTable[ref-1]; t > entry.Timestamp {
+			entry.Timestamp = t
+		}
+	}
+
+	// Attach scope attributes via table ref if enabled and we have any.
+	// Skip target_info series since it's synthesized from resource attributes.
+	if c.PersistScopeAttributes && metricName != "target_info" && opts.Scope != nil {
+		if opts.Scope.Name != "" || opts.Scope.Version != "" || opts.Scope.SchemaURL != "" || len(opts.Scope.Attrs) > 0 {
+			ref, ok := c.scopeTableMap[opts.Scope]
+			if !ok {
+				ref = int32(len(c.scopeTable)) + 1 // 1-based; 0 means "no scope"
+				c.scopeTable = append(c.scopeTable, mimirpb.ScopeAttributes{
+					Name:      opts.Scope.Name,
+					Version:   opts.Scope.Version,
+					SchemaURL: opts.Scope.SchemaURL,
+					Attrs:     mapToAttributeEntries(opts.Scope.Attrs),
+					Timestamp: t,
+				})
+				c.scopeTableMap[opts.Scope] = ref
+			}
+			ts.ScopeRef = ref
+			// Update timestamp to latest seen across all series using this entry.
+			if entry := &c.scopeTable[ref-1]; t > entry.Timestamp {
+				entry.Timestamp = t
+			}
+		}
+	}
+
 	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
 	idx.idx = len(c.series) - 1
 
@@ -151,6 +219,37 @@ func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash u
 		return
 	}
 	c.collisionRefs[hash][collisionIdx] = *idx
+}
+
+// mapToAttributeEntries converts a map[string]string to a sorted slice of AttributeEntry.
+func mapToAttributeEntries(m map[string]string) []mimirpb.AttributeEntry {
+	if len(m) == 0 {
+		return nil
+	}
+	entries := make([]mimirpb.AttributeEntry, 0, len(m))
+	for k, v := range m {
+		entries = append(entries, mimirpb.AttributeEntry{Key: k, Value: v})
+	}
+	slices.SortFunc(entries, func(a, b mimirpb.AttributeEntry) int {
+		return strings.Compare(a.Key, b.Key)
+	})
+	return entries
+}
+
+// entityDataToResourceEntities converts a slice of storage.EntityData to a slice of ResourceEntity.
+func entityDataToResourceEntities(entities []storage.EntityData) []mimirpb.ResourceEntity {
+	if len(entities) == 0 {
+		return nil
+	}
+	result := make([]mimirpb.ResourceEntity, 0, len(entities))
+	for _, e := range entities {
+		result = append(result, mimirpb.ResourceEntity{
+			Type:        e.Type,
+			ID:          mapToAttributeEntries(e.ID),
+			Description: mapToAttributeEntries(e.Description),
+		})
+	}
+	return result
 }
 
 // appendExemplars appends exemplars to the time series at the given index.

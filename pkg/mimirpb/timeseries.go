@@ -649,6 +649,99 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 		}
 	}
 
+	// Copy the table refs (simple int32 values).
+	dstTs.ResourceRef = srcTs.ResourceRef
+	dstTs.ScopeRef = srcTs.ScopeRef
+
+	return dst
+}
+
+// DeepCopyResourceAttributes creates a deep copy of ResourceAttributes.
+func DeepCopyResourceAttributes(src *ResourceAttributes) *ResourceAttributes {
+	if src == nil {
+		return nil
+	}
+
+	dst := &ResourceAttributes{
+		Timestamp: src.Timestamp,
+	}
+
+	// Copy identifying attributes.
+	if len(src.Identifying) > 0 {
+		dst.Identifying = make([]AttributeEntry, len(src.Identifying))
+		for i, e := range src.Identifying {
+			dst.Identifying[i] = AttributeEntry{
+				Key:   strings.Clone(e.Key),
+				Value: strings.Clone(e.Value),
+			}
+		}
+	}
+
+	// Copy descriptive attributes.
+	if len(src.Descriptive) > 0 {
+		dst.Descriptive = make([]AttributeEntry, len(src.Descriptive))
+		for i, e := range src.Descriptive {
+			dst.Descriptive[i] = AttributeEntry{
+				Key:   strings.Clone(e.Key),
+				Value: strings.Clone(e.Value),
+			}
+		}
+	}
+
+	// Copy entities.
+	if len(src.Entities) > 0 {
+		dst.Entities = make([]ResourceEntity, len(src.Entities))
+		for i, e := range src.Entities {
+			dst.Entities[i] = ResourceEntity{
+				Type: strings.Clone(e.Type),
+			}
+			if len(e.ID) > 0 {
+				dst.Entities[i].ID = make([]AttributeEntry, len(e.ID))
+				for j, attr := range e.ID {
+					dst.Entities[i].ID[j] = AttributeEntry{
+						Key:   strings.Clone(attr.Key),
+						Value: strings.Clone(attr.Value),
+					}
+				}
+			}
+			if len(e.Description) > 0 {
+				dst.Entities[i].Description = make([]AttributeEntry, len(e.Description))
+				for j, attr := range e.Description {
+					dst.Entities[i].Description[j] = AttributeEntry{
+						Key:   strings.Clone(attr.Key),
+						Value: strings.Clone(attr.Value),
+					}
+				}
+			}
+		}
+	}
+
+	return dst
+}
+
+// DeepCopyScopeAttributes creates a deep copy of ScopeAttributes.
+func DeepCopyScopeAttributes(src *ScopeAttributes) *ScopeAttributes {
+	if src == nil {
+		return nil
+	}
+
+	dst := &ScopeAttributes{
+		Name:      strings.Clone(src.Name),
+		Version:   strings.Clone(src.Version),
+		SchemaURL: strings.Clone(src.SchemaURL),
+		Timestamp: src.Timestamp,
+	}
+
+	if len(src.Attrs) > 0 {
+		dst.Attrs = make([]AttributeEntry, len(src.Attrs))
+		for i, e := range src.Attrs {
+			dst.Attrs[i] = AttributeEntry{
+				Key:   strings.Clone(e.Key),
+				Value: strings.Clone(e.Value),
+			}
+		}
+	}
+
 	return dst
 }
 
@@ -779,6 +872,8 @@ func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 		Metadata:            metadata,
 		Source:              m.Source,
 		SkipLabelValidation: m.SkipLabelValidation,
+		ResourceTable:       m.ResourceTable,
+		ScopeTable:          m.ScopeTable,
 	}
 }
 
@@ -801,4 +896,7 @@ func (ts *TimeSeries) MakeReferencesSafeToRetain() {
 			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
 		}
 	}
+	// ResourceRef/ScopeRef are int32 table indices — no strings to clone.
+	// The table entries in WriteRequest.ResourceTable/ScopeTable have their
+	// own string lifecycle managed at the WriteRequest level.
 }

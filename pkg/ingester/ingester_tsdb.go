@@ -218,6 +218,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		HeadPostingsForMatchersCacheFactory:  i.headPostingsForMatchersCacheFactory,
 		BlockPostingsForMatchersCacheFactory: i.blockPostingsForMatchersCacheFactory,
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
+		EnableSTAsZeroSample:                 false, // Handled manually for proper counting.
+		EnableNativeMetadata:                 i.cfg.BlocksStorageConfig.TSDB.OTelPersistResourceAttributes,
+		EnableScopeMetadata:                  i.cfg.BlocksStorageConfig.TSDB.OTelPersistScopeAttributes,
+		EnableResourceAttrIndex:              i.cfg.BlocksStorageConfig.TSDB.OTelResourceAttrIndexEnabled,
+		IndexedResourceAttrs:                 stringSliceToSet(i.cfg.BlocksStorageConfig.TSDB.OTelIndexedResourceAttributes),
 		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
 		IndexLookupPlannerFunc:               userDB.getIndexLookupPlannerFunc(),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
@@ -295,6 +300,18 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	return userDB, nil
+}
+
+// stringSliceToSet converts a string slice to a set (map[string]struct{}).
+func stringSliceToSet(s []string) map[string]struct{} {
+	if len(s) == 0 {
+		return nil
+	}
+	m := make(map[string]struct{}, len(s))
+	for _, v := range s {
+		m[v] = struct{}{}
+	}
+	return m
 }
 
 // createBlockChunkQuerier creates a BlockChunkQuerier that wraps the default querier with stats tracking

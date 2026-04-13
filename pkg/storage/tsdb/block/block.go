@@ -37,6 +37,8 @@ const (
 	IndexHeaderFilename = "index-header"
 	// SparseIndexHeaderFilename is the canonical name for sparse index header file that stores abbreviated slices of index-header.
 	SparseIndexHeaderFilename = "sparse-index-header"
+	// SeriesMetadataFilename is the known parquet filename for series metadata (metric metadata and resource attributes).
+	SeriesMetadataFilename = "series_metadata.parquet"
 	// ChunksDirname is the known dir name for chunks with compressed samples.
 	ChunksDirname = "chunks"
 
@@ -50,6 +52,7 @@ const (
 	FileTypeMeta              FileType = "meta"
 	FileTypeIndex             FileType = "index"
 	FileTypeSparseIndexHeader FileType = "sparse_index_header"
+	FileTypeSeriesMetadata    FileType = "series_metadata"
 	FileTypeChunks            FileType = "chunks"
 	FileTypeUnknown           FileType = "unknown"
 )
@@ -177,6 +180,25 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		})
 	} else {
 		level.Debug(logger).Log("msg", "sparse index header entry not found, skipping upload", "block", id.String())
+	}
+
+	hasSeriesMetadata := false
+	for _, f := range meta.Thanos.Files {
+		if f.RelPath == SeriesMetadataFilename {
+			hasSeriesMetadata = true
+			break
+		}
+	}
+
+	if hasSeriesMetadata {
+		eg.Go(func() (err error) {
+			if err := objstore.UploadFile(uctx, logger, bkt, filepath.Join(blockDir, SeriesMetadataFilename), path.Join(id.String(), SeriesMetadataFilename)); err != nil {
+				return &UploadError{err, FileTypeSeriesMetadata}
+			}
+			return nil
+		})
+	} else {
+		level.Debug(logger).Log("msg", "series metadata entry not found, skipping upload", "block", id.String())
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -383,6 +405,17 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 		}
 	} else {
 		res = append(res, File{RelPath: sparseHeaderInfo.Name(), SizeBytes: sparseHeaderInfo.Size()})
+	}
+
+	// series metadata files are optional, they contain metric metadata and resource attributes
+	// not adding entry if file does not exist, Upload of series metadata is skipped in this case
+	seriesMetadataInfo, err := os.Stat(filepath.Join(blockDir, SeriesMetadataFilename))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, SeriesMetadataFilename))
+		}
+	} else {
+		res = append(res, File{RelPath: seriesMetadataInfo.Name(), SizeBytes: seriesMetadataInfo.Size()})
 	}
 
 	metaFile, err := os.Stat(filepath.Join(blockDir, MetaFilename))
