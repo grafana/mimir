@@ -22,7 +22,7 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude, v.Subsets)
 
 	if v.ReturnSampleTimestamps {
 		d = d + ", return sample timestamps"
@@ -72,6 +72,7 @@ func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
+		slices.EqualFunc(v.Subsets, otherVectorSelector.Subsets, subsetsEqual) &&
 		v.EquivalentToIgnoringMatchersAndHints(otherVectorSelector)
 }
 

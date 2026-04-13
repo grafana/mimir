@@ -146,6 +146,8 @@ message VectorSelectorDetails {
   bool projectionInclude = 8;
   repeated string projectionLabels = 9;
   bool returnSampleTimestampsPreserveHistograms = 10;
+
+  repeated SubsetMatchers subsets = 11 [(gogoproto.nullable) = false];
 }
 
 message MatrixSelectorDetails {
@@ -166,6 +168,14 @@ message MatrixSelectorDetails {
   bool counterAware = 9;
   bool projectionInclude = 10;
   repeated string projectionLabels = 11;
+
+  repeated SubsetMatchers subsets = 12 [(gogoproto.nullable) = false];
+}
+
+// SubsetMatchers defines a subset for a selector to report in its statistics.
+// It does not affect the series returned by a selector.
+message SubsetMatchers {
+  repeated LabelMatcher matchers = 1;
 }
 
 message SubqueryDetails {

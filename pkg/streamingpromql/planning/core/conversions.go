@@ -155,6 +155,10 @@ func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher,
 	return converted, nil
 }
 
+func subsetsEqual(a, b SubsetMatchers) bool {
+	return slices.EqualFunc(a.Matchers, b.Matchers, matchersEqual)
+}
+
 func matchersEqual(a, b *LabelMatcher) bool {
 	return a.Equal(b)
 }
