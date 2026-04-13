@@ -92,7 +92,47 @@ func (cfg *MetadataCacheConfig) Validate() error {
 	return cfg.BackendConfig.Validate()
 }
 
-func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+// NewBlocksStoreQueryableCachingBucket creates a caching bucket for the blocks store queryable (querier).
+// It only configures metadata caching; the querier does not read chunk data directly.
+func NewBlocksStoreQueryableCachingBucket(metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+	cfg := bucketcache.NewCachingBucketConfig()
+	cachingConfigured := false
+
+	metadataCache, err := cache.CreateClient("metadata-cache", metadataConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	if err != nil {
+		return nil, errors.Wrapf(err, "metadata-cache")
+	}
+	if metadataCache != nil {
+		cachingConfigured = true
+		metadataCache = cache.NewSpanlessTracingCache(metadataCache, logger, tenant.NewMultiResolver())
+
+		cfg.CacheExists("metafile", metadataCache, isMetaFile, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
+		cfg.CacheGet("metafile", metadataCache, isMetaFile, metadataConfig.MetafileMaxSize, metadataConfig.MetafileContentTTL, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
+		cfg.CacheAttributes("metafile", metadataCache, isMetaFile, metadataConfig.MetafileAttributesTTL)
+		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
+		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
+
+		codec := bucketcache.SnappyIterCodec{IterCodec: bucketcache.JSONIterCodec{}}
+		cfg.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataConfig.TenantsListTTL, codec)
+		cfg.CacheIter("tenant-blocks-iter", metadataCache, isTenantBlocksDir, metadataConfig.TenantBlocksListTTL, codec)
+		cfg.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataConfig.ChunksListTTL, codec)
+	}
+
+	if !cachingConfigured {
+		// No caching is configured.
+		return bkt, nil
+	}
+
+	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
+	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
+	// ID. This is still fine, as far as all other caching bucket implementations specify their
+	// own unique ID.
+	return bucketcache.NewCachingBucket("", bkt, cfg, logger, reg)
+}
+
+// NewBucketBlockCachingBucket creates a caching bucket for the store-gateway.
+// It configures both metadata caching and, if chunksCache is non-nil, chunks caching.
+func NewBucketBlockCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
 	cfg := bucketcache.NewCachingBucketConfig()
 	cachingConfigured := false
 

@@ -100,7 +100,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrapf(err, "chunks-cache")
 	}
 
-	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
+	cachingBucket, err := tsdb.NewBucketBlockCachingBucket(chunksCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
