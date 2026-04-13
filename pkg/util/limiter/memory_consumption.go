@@ -308,6 +308,19 @@ func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) 
 // MemoryConsumptionTracker tracks the current memory utilisation of a single query, and applies any max in-memory bytes limit.
 //
 // It also tracks the peak number of in-memory bytes for use in query statistics.
+//
+// Note that there are three types of trackers.
+//
+// Trackers allocated via NewMemoryConsumptionTracker() - these are unmanaged trackers and are not included in the InflightMemoryConsumptionTracker accumulated metrics.
+// It is invalid to use these trackers with the InflightMemoryConsumptionTracker.
+//
+// Trackers allocated via InflightMemoryConsumptionTracker.NewMemoryConsumptionTracker() - these are managed trackers and their values are included in the InflightMemoryConsumptionTracker accumulated metrics.
+// It is important that these trackers are deregistered with the InflightMemoryConsumptionTracker when their lifecycle is complete.
+// These trackers will have a trackingId and instanceId set.
+//
+// Trackers allocated via InflightMemoryConsumptionTracker.NewWrappedMemoryConsumptionTracker() - these trackers wrap a managed tracker. Any memory changes are first passed through the parent tracker.
+// These trackers do not need to be deregistered, but it is safe to call Deregister() with a wrapped tracker argument.
+// These trackers will have a parent set, but do not themselves have a trackingId or instanceId set.
 type MemoryConsumptionTracker struct {
 	maxEstimatedMemoryConsumptionBytes     uint64
 	currentEstimatedMemoryConsumptionBytes uint64
