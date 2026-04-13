@@ -4549,7 +4549,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 #         time_range_longer_than: 3w
 blocked_queries:
   - # PromQL expression pattern to match. Rules without a pattern are a
-# configuration error.
+    # configuration error.
     [pattern: <string> | default = ""]
 
     # If true, the pattern is treated as a regular expression. If false, the
