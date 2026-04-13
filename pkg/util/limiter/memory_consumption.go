@@ -145,7 +145,7 @@ var globalInflightMemoryConsumptionTrackerId = atomic.Uint64{}
 
 // InflightMemoryConsumptionTracker exposes metrics related to the cumulative in-flight MemoryConsumptionTrackers.
 type InflightMemoryConsumptionTracker struct {
-	inflight   sync.Map // map[uint64]*managedMemoryConsumptionTracker
+	inflight   sync.Map // map[uint64]*MemoryConsumptionTracker
 	instanceID uint64
 	nextID     atomic.Uint64
 
