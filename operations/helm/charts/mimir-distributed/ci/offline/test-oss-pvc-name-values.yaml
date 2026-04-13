@@ -1,0 +1,5 @@
+ingester:
+  enabled: true
+  persistentVolume:
+    enabled: true
+    name: custom-volume
