@@ -5463,6 +5463,54 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	}
 }
 
+func TestHaDedupeMiddleware_DedupedSamplesMetric(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	const replica1 = "replicaA"
+	const replica2 = "replicaB"
+	const cluster1 = "clusterA"
+
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	limits.AcceptHASamples = true
+	limits.MaxLabelValueLength = 15
+
+	ds, _, regs, _ := prepare(t, prepConfig{
+		numDistributors: 1,
+		limits:          &limits,
+		enableTracker:   true,
+	})
+
+	next := func(_ context.Context, pushReq *Request) error {
+		pushReq.CleanUp()
+		return nil
+	}
+	middleware := ds[0].prePushHaDedupeMiddleware(next)
+
+	// First request establishes replica1 as elected for cluster1.
+	req1 := makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+	pushReq1 := NewParsedRequest(req1, req1.Size())
+	require.NoError(t, middleware(ctx, pushReq1))
+
+	// Second request from replica2 should be deduped.
+	req2 := makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil)
+	pushReq2 := NewParsedRequest(req2, req2.Size())
+	err := middleware(ctx, pushReq2)
+	require.Error(t, err)
+
+	// Count expected deduped samples (samples + histograms across all timeseries).
+	var expectedDeduped float64
+	for _, ts := range req2.Timeseries {
+		expectedDeduped += float64(len(ts.Samples) + len(ts.Histograms))
+	}
+	require.Positive(t, expectedDeduped)
+
+	assert.Equal(t, expectedDeduped, testutil.ToFloat64(
+		ds[0].dedupedSamples.WithLabelValues("user", cluster1),
+	), "cortex_distributor_deduped_samples_total should count deduped samples")
+
+	_ = regs
+}
+
 func TestHaDedupeMiddleware_PushErrorNotMaskedByDedupError(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	const replica1 = "replicaA"

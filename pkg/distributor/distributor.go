@@ -1213,8 +1213,8 @@ type replicaInfo struct {
 func (d *Distributor) replicaObserved(ctx context.Context, userID string, replica haReplica, ts int64) (replicaState, error) {
 	isAccepted, err := d.checkSample(ctx, userID, replica.cluster, replica.replica, ts)
 	if err != nil {
-		var replicasDidNotMatch *replicasDidNotMatchError
-		var tooManyClusters *tooManyClustersError
+		var replicasDidNotMatch replicasDidNotMatchError
+		var tooManyClusters tooManyClustersError
 		switch {
 		case errors.As(err, &replicasDidNotMatch):
 			// These samples have been deduped.
