@@ -388,7 +388,7 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 		for i := range routines {
 			g.Go(func() error {
 				childTracker := factory.NewWrappedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
-				require.Equal(t, tracker.MaxEstimatedMemoryConsumptionLimitBytes(), childTracker.MaxEstimatedMemoryConsumptionLimitBytes())
+				require.Equal(t, tracker.maxEstimatedMemoryConsumptionBytes, childTracker.maxEstimatedMemoryConsumptionBytes)
 				require.True(t, factory.IsTracking(tracker))
 				require.False(t, factory.IsTracking(childTracker))
 				// do some work
@@ -397,7 +397,7 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 				require.NoError(t, childTracker.IncreaseMemoryConsumption(10, IngesterChunks))
 				childTracker.DecreaseMemoryConsumption(1, IngesterChunks)
 				require.Equal(t, uint64(9), childTracker.CurrentEstimatedMemoryConsumptionBytes())
-				require.Equal(t, fmt.Sprintf("child %d", i), childTracker.QueryDescription())
+				require.Equal(t, fmt.Sprintf("child %d", i), childTracker.queryDescription)
 				require.GreaterOrEqual(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), uint64(9))
 
 				// This is safe to call but has no effect - as the parent is still being tracked
@@ -415,7 +415,7 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 		require.NoError(t, g.Wait())
 
 		require.Equal(t, uint64(routines*9), tracker.CurrentEstimatedMemoryConsumptionBytes())
-		require.Equal(t, "foo + bar", tracker.QueryDescription())
+		require.Equal(t, "foo + bar", tracker.queryDescription)
 		require.True(t, factory.IsTracking(tracker))
 
 		factory.Deregister(tracker)

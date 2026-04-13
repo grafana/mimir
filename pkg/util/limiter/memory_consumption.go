@@ -272,7 +272,7 @@ func (t *InflightMemoryConsumptionTracker) NewWrappedMemoryConsumptionTracker(ct
 	if parent.trackingId == 0 || parent.parent != nil {
 		panic("cannot wrap a tracker not created via the InflightMemoryConsumptionTracker")
 	}
-	tracker := NewMemoryConsumptionTracker(ctx, parent.MaxEstimatedMemoryConsumptionLimitBytes(), t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
+	tracker := NewMemoryConsumptionTracker(ctx, parent.maxEstimatedMemoryConsumptionBytes, t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
 	tracker.parent = parent
 	return tracker
 }
@@ -292,7 +292,7 @@ func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) 
 	sampled := 0
 	t.inflight.Range(func(key, value any) bool {
 		tracker := value.(*MemoryConsumptionTracker)
-		maxBytes += float64(tracker.MaxEstimatedMemoryConsumptionLimitBytes())
+		maxBytes += float64(tracker.maxEstimatedMemoryConsumptionBytes)
 		currentBytes += float64(tracker.CurrentEstimatedMemoryConsumptionBytes())
 		peakBytes += float64(tracker.PeakEstimatedMemoryConsumptionBytes())
 		sampled++
@@ -434,13 +434,6 @@ func (l *MemoryConsumptionTracker) PeakEstimatedMemoryConsumptionBytes() uint64 
 	return l.peakEstimatedMemoryConsumptionBytes
 }
 
-func (l *MemoryConsumptionTracker) MaxEstimatedMemoryConsumptionLimitBytes() uint64 {
-	l.mtx.Lock()
-	defer l.mtx.Unlock()
-
-	return l.maxEstimatedMemoryConsumptionBytes
-}
-
 // CurrentEstimatedMemoryConsumptionBytes returns the current memory consumption in bytes.
 func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint64 {
 	l.mtx.Lock()
@@ -481,11 +474,4 @@ func (l *MemoryConsumptionTracker) DescribeCurrentMemoryConsumption() string {
 	}
 
 	return b.String()
-}
-
-func (l *MemoryConsumptionTracker) QueryDescription() string {
-	l.mtx.Lock()
-	defer l.mtx.Unlock()
-
-	return l.queryDescription
 }
