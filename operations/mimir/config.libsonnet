@@ -39,9 +39,11 @@
     // Controls the ingester data-window.
     querier_query_ingesters_within: '13h',
     querier_query_store_after: $.util.formatDuration($.util.parseDuration(self.querier_query_ingesters_within) - 3600),
+    store_gateway_ignore_blocks_within: '10h',
 
     assert $.util.parseDuration(self.querier_query_store_after) < $.util.parseDuration(self.querier_query_ingesters_within) : 'querier_query_store_after must be strictly less than querier_query_ingesters_within.',
     assert $.util.parseDuration(self.querier_query_ingesters_within) >= 3600 : 'querier_query_ingesters_within must be greater than or equal to 1h.',
+    assert $.util.parseDuration(self.store_gateway_ignore_blocks_within) < $.util.parseDuration(self.querier_query_store_after) : 'store_gateway_ignore_blocks_within must be strictly less than querier_query_store_after.',
 
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
