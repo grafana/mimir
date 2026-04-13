@@ -8,6 +8,7 @@ package ingester
 import (
 	"context"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -542,7 +544,18 @@ func (i *Ingester) pushSamplesToAppender(
 	idx := i.getTSDB(userID).Head().MustIndex()
 	defer idx.Close()
 
+	hasher := series.NewProjectionHasher()
+
 	for _, ts := range timeseries {
+		// TODO(56quarters): Explain
+		if i.cfg.EnableSeriesHashWrite {
+			h, pos := hasher.SeriesHash(ts.Labels)
+			ts.SetLabels(slices.Insert(ts.Labels, pos, mimirpb.LabelAdapter{
+				Name:  series.HashLabelName,
+				Value: h,
+			}))
+		}
+
 		// Fast path in case we only have samples and they are all out of bound
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to

@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -573,7 +574,33 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	selectHints := initSelectHints(int64(from), int64(through))
 	selectHints = configSelectHintsWithShard(selectHints, shard)
-	selectHints = configSelectHintsWithProjections(selectHints, req.ProjectionInclude, req.ProjectionLabels)
+
+	// We can only use projections when the range of the entire query can be served
+	// from the TSDB head. Otherwise, we ignore them since we'd be adding __series_hash__
+	// to series which the same series in the local blocks or blocks in object storage
+	// won't have.
+	head := db.Head()
+	headMinT := model.Time(head.MinTime())
+
+	// Projection parameters are potentially set on the request by the querier if this query
+	// only touches ingesters. We need to do additional validation here to ensure we only pass
+	// the hints along when the query only touches the HEAD.
+	projectionsMsg := "skipping projections for query"
+	if i.cfg.EnableSeriesHashWrite && i.cfg.EnableSeriesHashRead && from.After(headMinT) {
+		selectHints = configSelectHintsWithProjections(selectHints, req.ProjectionInclude, req.ProjectionLabels)
+		projectionsMsg = "propagating projections for query via hints"
+	}
+
+	spanlog.DebugLog(
+		"msg", projectionsMsg,
+		"enabled_write", i.cfg.EnableSeriesHashWrite,
+		"enabled_read", i.cfg.EnableSeriesHashRead,
+		"min_time", from.Time(),
+		"head_min_time", headMinT.Time(),
+		"include", req.ProjectionInclude,
+		"labels", fmt.Sprintf("%+v", req.ProjectionLabels),
+	)
+
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	selectHints = configSelectHintsWithDisabledTrimming(selectHints)
@@ -596,11 +623,15 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
-	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
+
+	if hints.ProjectionInclude {
+		q, err = db.ChunkQuerierForProjections(hints.Start, hints.End)
+	} else if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
 		q, err = db.UnorderedChunkQuerier(hints.Start, hints.End)
 	} else {
 		q, err = db.ChunkQuerier(hints.Start, hints.End)
 	}
+
 	if err != nil {
 		return 0, 0, err
 	}
@@ -717,10 +748,8 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 
 		if hints.ProjectionInclude {
 			originalLabelBytes += lbls.ByteSize()
-			reduced := projections.Reduce(lbls)
-			// Estimate the size of the series hash label and value since we aren't generating
-			// series hash on ingest currently.
-			reducedLabelBytes += reduced.ByteSize() + uint64(len(series.HashLabelName)) + 42 /* 256-bit hash as base64 */
+			lbls = projections.Reduce(lbls)
+			reducedLabelBytes += lbls.ByteSize()
 		} else {
 			skippedLabelBytes += lbls.ByteSize()
 		}

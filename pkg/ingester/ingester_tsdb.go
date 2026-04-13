@@ -208,8 +208,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		EnableBiggerOOOBlockForOldSamples:    i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
 		IsolationDisabled:                    true,
 		HeadChunksWriteQueueSize:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		EnableOverlappingCompaction:          false,                // always false since Mimir only uploads lvl 1 compacted blocks
-		EnableSharding:                       true,                 // Always enable query sharding support.
+		EnableOverlappingCompaction:          false, // always false since Mimir only uploads lvl 1 compacted blocks
+		EnableSharding:                       true,  // Always enable query sharding support.
+		EnableSeriesHash:                     i.cfg.EnableSeriesHashHead,
 		OutOfOrderTimeWindow:                 oooTW.Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMax:                     int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 		TimelyCompaction:                     i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,

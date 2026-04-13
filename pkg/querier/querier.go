@@ -295,8 +295,9 @@ type multiQuerier struct {
 	queryMetrics *stats.QueryMetrics
 	cfg          Config
 	minT, maxT   int64
-	queriers     []storage.Querier
-	queriersMtx  sync.Mutex
+
+	queriers    []storage.Querier
+	queriersMtx sync.Mutex
 
 	limits *validation.Overrides
 
@@ -305,7 +306,7 @@ type multiQuerier struct {
 
 // getQueriers returns a context with per-tenant query limits applied, queriers applicable to the provided
 // time range, and the possibly adjusted min and max times.
-func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64) (context.Context, []storage.Querier, int64, int64, error) {
+func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64) (context.Context, []storage.Querier, int64, int64, bool, error) {
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.getQueriers")
 	defer spanLog.Finish()
 
@@ -313,7 +314,7 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64) (cont
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, nil, 0, 0, err
+		return nil, nil, 0, 0, false, err
 	}
 
 	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(
@@ -326,26 +327,32 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64) (cont
 
 	minT, maxT, err = validateQueryTimeRange(tenantID, minT, maxT, now.UnixMilli(), mq.limits, spanlogger.FromContext(ctx, mq.logger))
 	if err != nil {
-		return nil, nil, 0, 0, err
+		return nil, nil, 0, 0, false, err
 	}
 
-	var queriers []storage.Querier
+	var (
+		queriers        []storage.Querier
+		queryIngesters  bool
+		queryBlockStore bool
+	)
 
 	if mq.distributor != nil && ShouldQueryIngesters(mq.limits.QueryIngestersWithin(tenantID), now, maxT) {
 		q, err := mq.distributor.Querier(minT, maxT)
 		if err != nil {
-			return nil, nil, 0, 0, err
+			return nil, nil, 0, 0, false, err
 		}
 		queriers = append(queriers, q)
+		queryIngesters = true
 		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("ingester").Inc()
 	}
 
 	if mq.blockStore != nil && ShouldQueryBlockStore(mq.cfg.QueryStoreAfter, now, minT) {
 		q, err := mq.blockStore.Querier(minT, maxT)
 		if err != nil {
-			return nil, nil, 0, 0, err
+			return nil, nil, 0, 0, false, err
 		}
 		queriers = append(queriers, q)
+		queryBlockStore = true
 		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("store-gateway").Inc()
 	}
 
@@ -355,7 +362,7 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64) (cont
 	// when methods are initially called: we need to wait until the results are
 	// consumed and the caller of this querier closes it.
 	mq.storeQueriers(queriers)
-	return ctx, queriers, minT, maxT, nil
+	return ctx, queriers, minT, maxT, queryIngesters && !queryBlockStore, nil
 }
 
 // Select implements storage.Querier interface.
@@ -364,7 +371,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.Select")
 	defer spanLog.Finish()
 
-	ctx, queriers, minT, maxT, err := mq.getQueriers(ctx, mq.minT, mq.maxT)
+	ctx, queriers, minT, maxT, ingesterOnly, err := mq.getQueriers(ctx, mq.minT, mq.maxT)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.EmptySeriesSet()
 	}
@@ -382,6 +389,13 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		scp := *sp
 		sp = &scp
 	}
+
+	// TODO(56quarters): Terrible
+	if !ingesterOnly {
+		sp.ProjectionInclude = false
+		sp.ProjectionLabels = nil
+	}
+
 	now := time.Now()
 
 	level.Debug(spanLog).Log(
@@ -528,7 +542,7 @@ func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *sto
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.LabelValues")
 	defer spanLog.Finish()
 
-	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT)
+	ctx, queriers, _, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
 	}
@@ -595,7 +609,7 @@ func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHint
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.LabelNames")
 	defer spanLog.Finish()
 
-	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT)
+	ctx, queriers, _, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
 	}

@@ -3,11 +3,49 @@
 package series
 
 import (
+	"crypto/sha3"
+	"encoding/base64"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-const HashLabelName = "__series_hash__"
+const (
+	HashLabelName = "__series_hash__"
+
+	hashOutputSize = 16
+)
+
+type ProjectionHasher struct {
+	buf  []byte
+	hash *sha3.SHAKE
+}
+
+func NewProjectionHasher() *ProjectionHasher {
+	return &ProjectionHasher{
+		buf:  make([]byte, hashOutputSize),
+		hash: sha3.NewSHAKE256(),
+	}
+}
+
+func (p *ProjectionHasher) SeriesHash(lbls []mimirpb.LabelAdapter) (string, int) {
+	p.hash.Reset()
+	pos := 0
+
+	for labelIdx, l := range lbls {
+		if l.Name < HashLabelName {
+			pos = labelIdx
+		}
+
+		_, _ = p.hash.Write([]byte(l.Name))
+		_, _ = p.hash.Write([]byte(l.Value))
+	}
+
+	_, _ = p.hash.Read(p.buf)
+	return base64.RawURLEncoding.EncodeToString(p.buf), pos + 1
+}
 
 // ProjectionLabels modifies label sets for series to only retain labels required
 // for a query and to ensure the set of labels continues to sort correctly compared

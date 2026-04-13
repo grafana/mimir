@@ -203,6 +203,10 @@ func (u *userTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
 	return u.db.Querier(mint, maxt)
 }
 
+func (u *userTSDB) ChunkQuerierForProjections(mint, maxt int64) (storage.ChunkQuerier, error) {
+	return u.db.ChunkQuerierForProjections(mint, maxt)
+}
+
 func (u *userTSDB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	return u.db.ChunkQuerier(mint, maxt)
 }

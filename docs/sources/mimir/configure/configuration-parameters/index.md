@@ -1694,6 +1694,22 @@ read_reactive_limiter:
   # current inflight requests, after which all requests are rejected
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
+
+# (experimental) Allow the TSDB head to remove unique ID from series before
+# blocks are persisted and at query time when not needed. This is required if
+# the unique ID is being generated or if it was in the past (within the range of
+# the TSDB head).
+# CLI flag: -ingester.enable-series-hash-head
+[enable_series_hash_head: <boolean> | default = false]
+
+# (experimental) Enables generating a unique ID for each series on ingestion.
+# CLI flag: -ingester.enable-series-hash-write
+[enable_series_hash_write: <boolean> | default = false]
+
+# (experimental) Enables using a unique ID for the MQE projections optimization
+# at query time.
+# CLI flag: -ingester.enable-series-hash-read
+[enable_series_hash_read: <boolean> | default = false]
 ```
 
 ### querier

@@ -1635,6 +1635,12 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction. (default 15)
   -ingester.early-head-compaction-owned-series-threshold int
     	[experimental] When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.
+  -ingester.enable-series-hash-head
+    	[experimental] Allow the TSDB head to remove unique ID from series before blocks are persisted and at query time when not needed. This is required if the unique ID is being generated or if it was in the past (within the range of the TSDB head).
+  -ingester.enable-series-hash-read
+    	[experimental] Enables using a unique ID for the MQE projections optimization at query time.
+  -ingester.enable-series-hash-write
+    	[experimental] Enables generating a unique ID for each series on ingestion.
   -ingester.error-sample-rate int
     	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
   -ingester.ignore-ooo-exemplars

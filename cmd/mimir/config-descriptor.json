@@ -5322,6 +5322,39 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "enable_series_hash_head",
+          "required": false,
+          "desc": "Allow the TSDB head to remove unique ID from series before blocks are persisted and at query time when not needed. This is required if the unique ID is being generated or if it was in the past (within the range of the TSDB head).",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.enable-series-hash-head",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_series_hash_write",
+          "required": false,
+          "desc": "Enables generating a unique ID for each series on ingestion.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.enable-series-hash-write",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_series_hash_read",
+          "required": false,
+          "desc": "Enables using a unique ID for the MQE projections optimization at query time.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.enable-series-hash-read",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

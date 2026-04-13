@@ -188,6 +188,10 @@ type Config struct {
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
+	EnableSeriesHashHead  bool `yaml:"enable_series_hash_head" category:"experimental"`
+	EnableSeriesHashWrite bool `yaml:"enable_series_hash_write" category:"experimental"`
+	EnableSeriesHashRead  bool `yaml:"enable_series_hash_read" category:"experimental"`
+
 	// This config is dynamically injected because defined outside the ingester config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
 
@@ -218,6 +222,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
+	f.BoolVar(&cfg.EnableSeriesHashHead, "ingester.enable-series-hash-head", false, "Allow the TSDB head to remove unique ID from series before blocks are persisted and at query time when not needed. This is required if the unique ID is being generated or if it was in the past (within the range of the TSDB head).")
+	f.BoolVar(&cfg.EnableSeriesHashWrite, "ingester.enable-series-hash-write", false, "Enables generating a unique ID for each series on ingestion.")
+	f.BoolVar(&cfg.EnableSeriesHashRead, "ingester.enable-series-hash-read", false, "Enables using a unique ID for the MQE projections optimization at query time.")
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
