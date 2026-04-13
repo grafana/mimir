@@ -28,7 +28,7 @@ spec:
     - apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: storage
+        name: custom-volume
       spec:
         accessModes:
           - ReadWriteOnce
@@ -88,7 +88,7 @@ spec:
               mountPath: /etc/mimir
             - name: runtime-config
               mountPath: /var/mimir
-            - name: storage
+            - name: custom-volume
               mountPath: "/data"
             - name: active-queries
               mountPath: /active-query-tracker

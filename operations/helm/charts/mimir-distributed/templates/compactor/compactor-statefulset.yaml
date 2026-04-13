@@ -104,7 +104,7 @@ spec:
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
         {{- if not .Values.compactor.persistentVolume.enabled }}
-        - name: storage
+        - name: {{ .Values.compactor.persistentVolume.name }}
           emptyDir: {}
         {{- end }}
         {{- if .Values.compactor.extraVolumes }}
@@ -140,7 +140,7 @@ spec:
               mountPath: /etc/mimir
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
-            - name: storage
+            - name: {{ .Values.compactor.persistentVolume.name }}
               mountPath: "/data"
               {{- if .Values.compactor.persistentVolume.subPath }}
               subPath: {{ .Values.compactor.persistentVolume.subPath }}

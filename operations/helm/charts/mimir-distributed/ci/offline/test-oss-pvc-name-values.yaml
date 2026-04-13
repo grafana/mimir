@@ -1,3 +1,8 @@
+compactor:
+  persistentVolume:
+    enabled: true
+    name: custom-volume
+
 ingester:
   enabled: true
   persistentVolume:
