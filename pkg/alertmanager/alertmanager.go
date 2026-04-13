@@ -282,7 +282,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		Registry: am.registry,
 		Logger:   utillog.SlogFromGoKit(log.With(am.logger, "component", "api")),
 		// RequestDuration is required by the upstream alertmanager API (it panics if nil),
-		// but Mimir already tracks request durations via dskit's cortex_request_duration_seconds.
+		// but Mimir already tracks request durations via cortex_request_duration_seconds.
 		// Passing a nil registerer so the metric is created but never collected.
 		RequestDuration: promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "alertmanager_http_request_duration_seconds",
