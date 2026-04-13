@@ -375,6 +375,7 @@
 * [ENHANCEMENT] Multi-zone: Add config validation for `-querier.prefer-availability-zones` flag on querier and ruler-querier deployments. #14539
 * [ENHANCEMENT] Distributor: render the experimental `-distributor.max-active-series-per-user` flag on distributor if `$._config.limits.max_active_series_per_user` is set. #14636
 * [ENHANCEMENT] Ingester: Add `$._config.ingest_storage_set_client_rack` to pass `-ingest-storage.kafka.client-rack` when zone-aware replication is enabled. #14654
+* [ENHANCEMENT] Ingester: Add `$._config.multi_zone_ingester_multi_az_zone_(a|b|c)_enabled` to simplify migrations not using a temporary zone-c. #15000
 * [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation
