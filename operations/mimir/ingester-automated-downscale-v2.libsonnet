@@ -25,11 +25,7 @@
     ingester_automated_downscale_v2_replicas_per_zone: std.ceil($._config.multi_zone_ingester_replicas / $._config.ingester_automated_downscale_v2_ingester_zones),
 
     // How long to wait before terminating an ingester after it has been notified about the scale down.
-    ingester_automated_downscale_v2_delay:
-      $.util.formatDuration(
-        $.util.parseDuration($._config.querier_query_ingesters_within) +
-        $.util.parseDuration($._config.ingester_extra_downscale_delay)
-      ),
+    ingester_automated_downscale_v2_delay: $.ingester_rollout_downscale_delay,
   },
 
   // Validate the configuration.

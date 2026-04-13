@@ -116,7 +116,7 @@
     $.ingest_storage_ingester_args +
     {
       // How long to wait before deleting an inactive partition, that doesn't have an owner.
-      'ingester.partition-ring.delete-inactive-partition-after': $._config.querier_query_ingesters_within,
+      'ingester.partition-ring.delete-inactive-partition-after': $.ingester_rollout_downscale_delay,
     } + (
       if $._config.ingest_storage_ingester_ring_tokens_enabled then {} else {
         'ingester.ring.num-tokens': 0,
