@@ -30,6 +30,9 @@
       'mem-ballast-size-bytes': 1 << 28,  // 256M
 
       'querier.store-gateway-client.grpc-max-recv-msg-size': $._config.store_gateway_grpc_max_query_response_size_bytes,
+
+      'querier.query-ingesters-within': $._config.querier_query_ingesters_within,
+      'querier.query-store-after': $._config.querier_query_store_after,
     },
 
   // CLI flags that are applied only to queriers, and not ruler-queriers.
