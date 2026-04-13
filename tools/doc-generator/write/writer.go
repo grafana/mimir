@@ -138,7 +138,8 @@ func (w *specWriter) writeComment(comment string, firstLineIndent, continuationI
 		return
 	}
 
-	wrapped := wordwrap.WrapString(comment, uint(maxLineWidth-firstLineIndent-innerIndent-2))
+	maxIndent := max(firstLineIndent, continuationIndent)
+	wrapped := wordwrap.WrapString(comment, uint(maxLineWidth-maxIndent-innerIndent-2))
 	w.writeWrappedString(wrapped, firstLineIndent, continuationIndent, innerIndent)
 }
 

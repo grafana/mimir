@@ -41,8 +41,8 @@ nested_struct:
 
 # The nested list
 nested_slice:
-  - # A long description that will wrap onto a second line when rendered inside a
-    # slice item element
+  - # A long description that will wrap onto a second line when rendered inside
+    # a slice item element
     [long_desc: <string> | default = ""]
 
     # The username

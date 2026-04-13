@@ -4599,7 +4599,8 @@ limited_queries:
 #           limit:
 #               value: "100"
 blocked_requests:
-  - # Path to match, including leading slash (/). Leave blank to match all paths.
+  - # Path to match, including leading slash (/). Leave blank to match all
+    # paths.
     [path: <string> | default = ""]
 
     # HTTP method to match. Leave blank to match all methods.
