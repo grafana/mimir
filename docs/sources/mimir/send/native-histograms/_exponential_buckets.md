@@ -228,7 +228,6 @@ To ease the migration process, you can keep the custom bucket definition of a cl
 1. Modify dashboards to use the native histograms metrics. Refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) for more information.
 
    Use one of the following strategies to update dashboards.
-
    - (Recommended) Add new dashboards with the new native histograms queries. This solution requires looking at different dashboards for data before and after the migration, until data before the migration is removed due to passing its retention time. You can publish the new dashboard when sufficient time has passed to serve users with the new data.
    - Add a dashboard variable to your dashboard to enable switching between classic histograms and native histograms. There isn't support for selectively enabling and disabling queries in Grafana ([issue 79848](https://github.com/grafana/grafana/issues/79848)). As a workaround, add the dashboard variable `latency_metrics`, for example, and assign it a value of either `-1` or `1`. Then, add the following two queries to the panel:
 
@@ -268,7 +267,6 @@ To ease the migration process, you can keep the custom bucket definition of a cl
    For example, if you have an alert that calculates the rate of requests, such as `sum(rate(http_request_duration_seconds[7d]))`, this query looks at the data from the last seven days plus the Prometheus [lookback period](https://prometheus.io/docs/prometheus/latest/querying/basics/#staleness). When you start sending native histograms, the data isn't there for the entire seven days, and therefore, the results might be unreliable for alerting.
 
 1. After configuring native histogram collection, choose one of the following ways to stop collecting classic histograms.
-
    - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation. In Java, also use the `nativeOnly()` option. Refer to the examples in [Instrument application with Prometheus client libraries](#instrument-application-with-prometheus-client-libraries).
    - Drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.relabel) at the time of scraping.
    - Stop scraping the classic histogram version of metrics. This option applies to all metrics of a scrape target.
@@ -285,25 +283,25 @@ Native histogram with exponential buckets samples have three different kind of b
 
 <!--- LaTeX equation source: -threshold \leq v \leq threshold -->
 
-![Zero threshold definition](zero-threshold-def.svg)
+![Zero threshold definition](../zero-threshold-def.svg)
 
 - Positive buckets, which contain the count of observations with a positive value that is greater than the lower bound and less or equal to the upper bound of a bucket.
 
 <!--- LaTeX equation source: {\left( 2^{2^{-schema}} \right)}^{index-1} < v \leq {\left( 2^{2^{-schema}}\right)}^{index} -->
 
-![Positive bucket definition](pos-bucket-def.svg)
+![Positive bucket definition](../pos-bucket-def.svg)
 
 where the _index_ can be a positive or negative integer resulting in boundaries above 1 and fractions below 1. The _schema_ either directly specified out of `[-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]` at instrumentation time or it is the largest number chosen from the list in such way that
 
 <!--- LaTeX equation source: 2^{2^{-schema}} <= factor -->
 
-![Factor equation](factor-equation.svg)
+![Factor equation](../factor-equation.svg)
 
 for example for factor `1.1`:
 
 <!--- Latex equation source: 2^{2^{-3}}\simeq1.09<=1.1 -->
 
-![Factor 1.1 equation](factor-1.1-equation.svg)
+![Factor 1.1 equation](../factor-1.1-equation.svg)
 
 Table of schema to factor:
 | _schema_ | _factor_ | | _schema_ | _factor_ |
@@ -320,7 +318,7 @@ Table of schema to factor:
 
 <!--- LaTeX equation source: -{\left( 2^{2^{-schema}} \right)}^{index} \leq v < -{\left( 2^{2^{-schema}}\right)}^{index-1} -->
 
-![Negative bucket definition](neg-bucket-def.svg)
+![Negative bucket definition](../neg-bucket-def.svg)
 
 where the `schema` is chosen as above.
 
