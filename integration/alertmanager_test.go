@@ -334,7 +334,7 @@ func TestAlertmanagerV1Deprecated(t *testing.T) {
 		}{}
 		require.NoError(t, json.NewDecoder(res.Body).Decode(&response))
 		require.Equal(t, "deprecated", response.Status)
-		require.Equal(t, "The Alertmanager v1 API was deprecated in version 0.16.0 and is removed as of version 0.28.0 - please use the equivalent route in the v2 API", response.Error)
+		require.Equal(t, "The Alertmanager v1 API was deprecated in version 0.16.0 and is removed as of version 0.27.0 - please use the equivalent route in the v2 API", response.Error)
 	}
 }
 
