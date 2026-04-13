@@ -579,8 +579,6 @@
     service_ignored_labels:: [self.gossip_member_label],
   },
 
-  // Matches rollout-operator delayed ingester downscale (query window + optional extra delay).
-  // Used for partition-ring inactive partition cleanup when ingest storage is enabled.
   ingester_rollout_downscale_delay:: $.util.formatDuration(
     $.util.parseDuration($._config.querier_query_ingesters_within) +
     $.util.parseDuration($._config.ingester_extra_downscale_delay)
