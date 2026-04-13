@@ -2623,8 +2623,10 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_CachedResponses
 	rc := mw.Wrap(HandlerFunc(func(ctx context.Context, _ MetricsQueryRequest) (Response, error) {
 		// Capture the peak memory during evaluation to verify cached responses were tracked.
 		tracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+		require.NotNil(t, tracker.WrappedParentIfAny())
 		if err == nil {
-			peakMemoryDuringDownstream = tracker.CurrentEstimatedMemoryConsumptionBytes()
+			// Use the parent memory as this will include the cached data
+			peakMemoryDuringDownstream = tracker.WrappedParentIfAny().CurrentEstimatedMemoryConsumptionBytes()
 		}
 		return expectedResponse, nil
 	}))
