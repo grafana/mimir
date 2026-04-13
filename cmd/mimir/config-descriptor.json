@@ -2659,6 +2659,17 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "enable_remove_statically_empty_expressions",
+              "required": false,
+              "desc": "Enable removing expressions that are guaranteed to produce no results.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-remove-statically-empty-expressions",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "range_vector_splitting",
               "required": false,

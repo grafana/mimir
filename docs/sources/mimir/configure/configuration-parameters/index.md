@@ -1987,6 +1987,11 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
   [enable_multi_aggregation: <boolean> | default = true]
 
+  # (experimental) Enable removing expressions that are guaranteed to produce no
+  # results.
+  # CLI flag: -querier.mimir-query-engine.enable-remove-statically-empty-expressions
+  [enable_remove_statically_empty_expressions: <boolean> | default = true]
+
   range_vector_splitting:
     # (experimental) Enable splitting function over range vectors queries into
     # smaller blocks for caching.

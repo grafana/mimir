@@ -200,6 +200,8 @@ message DeduplicateAndMergeDetails {
 
 message DropNameDetails {}
 
+message NoOpDetails {}
+
 message VectorMatchFillValues {
   double rhs = 1;
   double lhs = 2;

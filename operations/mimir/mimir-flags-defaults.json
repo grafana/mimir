@@ -177,6 +177,7 @@
   "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge": true,
   "querier.mimir-query-engine.enable-reduce-matchers": true,
   "querier.mimir-query-engine.enable-multi-aggregation": true,
+  "querier.mimir-query-engine.enable-remove-statically-empty-expressions": true,
   "querier.mimir-query-engine.range-vector-splitting.split-interval": 7200000000000,
   "querier.mimir-query-engine.range-vector-splitting.backend": "",
   "querier.mimir-query-engine.range-vector-splitting.memcached.addresses": "",

@@ -4403,6 +4403,14 @@ spec:
         rollout-group: ingester
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -4497,6 +4505,11 @@ spec:
       securityContext:
         runAsUser: 0
       terminationGracePeriodSeconds: 1200
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       volumes:
       - configMap:
           name: overrides
