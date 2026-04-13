@@ -4,11 +4,11 @@ package alertmanager
 
 import (
 	"bytes"
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
