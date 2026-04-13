@@ -1,3 +1,8 @@
+alertmanager:
+  persistentVolume:
+    enabled: true
+    name: custom-volume
+
 store_gateway:
   persistentVolume:
     enabled: true
