@@ -15,7 +15,7 @@ type StringLiteral struct {
 	Value string
 
 	timeRange                types.QueryTimeRange
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	expressionPosition       posrange.PositionRange
 }
 
@@ -24,7 +24,7 @@ var _ types.StringOperator = &StringLiteral{}
 func NewStringLiteral(
 	value string,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *StringLiteral {
 	return &StringLiteral{

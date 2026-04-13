@@ -19,7 +19,7 @@ type SortByLabel struct {
 	inner                    types.InstantVectorOperator
 	descending               bool
 	labels                   []string
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	expressionPosition       posrange.PositionRange
 
 	seriesIndex     int
@@ -33,7 +33,7 @@ func NewSortByLabel(
 	inner types.InstantVectorOperator,
 	descending bool,
 	labels []string,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 
 ) *SortByLabel {

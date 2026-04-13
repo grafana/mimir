@@ -19,7 +19,7 @@ type ScalarScalarBinaryOperation struct {
 	Left                     types.ScalarOperator
 	Right                    types.ScalarOperator
 	Op                       parser.ItemType
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	opFunc             binaryOperationFunc
 	emitAnnotation     types.EmitAnnotationFunc
@@ -32,7 +32,7 @@ var _ types.ScalarOperator = &ScalarScalarBinaryOperation{}
 func NewScalarScalarBinaryOperation(
 	left, right types.ScalarOperator,
 	op parser.ItemType,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*ScalarScalarBinaryOperation, error) {

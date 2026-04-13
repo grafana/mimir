@@ -310,9 +310,9 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	// All the time split queries must fit within a single memory consumption tracker.
 	// Note that we use a wrapped memory consumption tracker so we can still log the memory stats for this sub query, but still enforce
 	// the overall memory consumption tracking for the entire query.
-	if existingTracker, parentErr := limiter.MemoryConsumptionTrackerFromContext(ctx); parentErr == nil {
-		// Use the provided tracker. Note that the memoryConsumptionTrackerFactory ensures it is safe for Deregister() to be called with this inherited tracker.
-		operatorParams.MemoryConsumptionTracker = existingTracker
+	if parentTracker, parentErr := limiter.MemoryConsumptionTrackerFromContext(ctx); parentErr == nil {
+		// Note that it is safe for this to parent tracker to be passed to memoryConsumptionTrackerFactory.Deregister()
+		operatorParams.MemoryConsumptionTracker = parentTracker
 	} else {
 		maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 		if err != nil {

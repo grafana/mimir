@@ -16,12 +16,12 @@ import (
 // statically be determined to return no results.
 type NoOp struct {
 	timeRange                types.QueryTimeRange
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 var _ types.InstantVectorOperator = &NoOp{}
 
-func NewNoOp(timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *NoOp {
+func NewNoOp(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *NoOp {
 	return &NoOp{
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,

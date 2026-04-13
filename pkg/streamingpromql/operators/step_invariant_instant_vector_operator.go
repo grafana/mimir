@@ -16,10 +16,10 @@ import (
 type StepInvariantInstantVectorOperator struct {
 	inner                    types.InstantVectorOperator
 	originalTimeRange        types.QueryTimeRange
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func NewStepInvariantInstantVectorOperator(op types.InstantVectorOperator, originalTimeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *StepInvariantInstantVectorOperator {
+func NewStepInvariantInstantVectorOperator(op types.InstantVectorOperator, originalTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *StepInvariantInstantVectorOperator {
 	return &StepInvariantInstantVectorOperator{
 		inner:                    op,
 		originalTimeRange:        originalTimeRange,

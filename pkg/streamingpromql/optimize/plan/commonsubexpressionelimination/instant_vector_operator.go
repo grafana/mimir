@@ -19,7 +19,7 @@ import (
 // InstantVectorDuplicationBuffer is not thread-safe.
 type InstantVectorDuplicationBuffer struct {
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
@@ -35,7 +35,7 @@ type InstantVectorDuplicationBuffer struct {
 	stats *types.OperatorEvaluationStats
 }
 
-func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *InstantVectorDuplicationBuffer {
+func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorDuplicationBuffer {
 	return &InstantVectorDuplicationBuffer{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,

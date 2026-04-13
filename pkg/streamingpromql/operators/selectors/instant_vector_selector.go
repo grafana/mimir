@@ -24,7 +24,7 @@ import (
 
 type InstantVectorSelector struct {
 	Selector                                 *Selector
-	MemoryConsumptionTracker                 limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker                 *limiter.MemoryConsumptionTracker
 	QueryStats                               *types.QueryStats
 	ReturnSampleTimestamps                   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps.
 	ReturnSampleTimestampsPreserveHistograms bool // Used for info() function to preserve histograms in info metrics while making the floats reflect timestamps.
@@ -36,7 +36,7 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
-func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
 	return &InstantVectorSelector{
 		Selector:                                 selector,
 		QueryStats:                               stats,

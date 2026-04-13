@@ -28,12 +28,12 @@ type limitRatioArgument struct {
 	annotations                     *annotations.Annotations
 	haveEmittedRatioAboveAnnotation bool
 	haveEmittedRatioBelowAnnotation bool
-	memoryConsumptionTracker        limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker        *limiter.MemoryConsumptionTracker
 	stepCount                       int
 	param                           types.ScalarOperator
 }
 
-func newLimitRatioArgument(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*limitRatioArgument, int, error) {
+func newLimitRatioArgument(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*limitRatioArgument, int, error) {
 	r := &limitRatioArgument{
 		annotations:              annotations,
 		memoryConsumptionTracker: memoryConsumptionTracker,
@@ -110,12 +110,12 @@ type limitkArgument struct {
 	k    []int64 // The k value for each step - only used when ratio==false
 	kMax int64   // The max(k) across all steps
 
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	stepCount                int
 	param                    types.ScalarOperator
 }
 
-func newLimitkArgument(ctx context.Context, memoryConsumptionTracker limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*limitkArgument, int, error) {
+func newLimitkArgument(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*limitkArgument, int, error) {
 	r := &limitkArgument{
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		stepCount:                stepCount,

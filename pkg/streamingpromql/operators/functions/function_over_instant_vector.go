@@ -23,7 +23,7 @@ type FunctionOverInstantVector struct {
 	Inner types.InstantVectorOperator
 	// Any scalar arguments will be read once and passed to Func.SeriesDataFunc.
 	ScalarArgs               []types.ScalarOperator
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Func                     FunctionOverInstantVectorDefinition
 
 	// scalarArgsData stores the processed ScalarArgs during SeriesMetadata.
@@ -41,7 +41,7 @@ var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
 func NewFunctionOverInstantVector(
 	inner types.InstantVectorOperator,
 	scalarArgs []types.ScalarOperator,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	f FunctionOverInstantVectorDefinition,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,

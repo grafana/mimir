@@ -42,7 +42,7 @@ var Year = timeWrapperFunc(func(t time.Time) float64 {
 })
 
 func timeWrapperFunc(f func(t time.Time) float64) InstantVectorSeriesFunction {
-	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 
 		// we don't do time based function on histograms
 		types.HPointSlicePool.Put(&seriesData.Histograms, memoryConsumptionTracker)

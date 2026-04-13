@@ -20,14 +20,14 @@ import (
 // (see: https://github.com/grafana/mimir/pull/8508#discussion_r1654668995)
 
 type HPointRingBuffer struct {
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	points                   []promql.HPoint
 	pointsIndexMask          int // Bitmask used to calculate indices into points efficiently. Computing modulo is relatively expensive, but points is always sized as a power of two, so we can a bitmask to calculate remainders cheaply.
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
 }
 
-func NewHPointRingBuffer(memoryConsumptionTracker limiter.MemoryConsumptionTracker) *HPointRingBuffer {
+func NewHPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *HPointRingBuffer {
 	return &HPointRingBuffer{memoryConsumptionTracker: memoryConsumptionTracker}
 }
 

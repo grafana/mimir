@@ -17,7 +17,7 @@ var errVectorContainsMetricsWithSameLabels = errors.New("vector cannot contain m
 
 type DeduplicateAndMerge struct {
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	// If true, there are definitely no duplicate series from the inner operator, so we can just
 	// return them as-is.
@@ -30,7 +30,7 @@ type DeduplicateAndMerge struct {
 
 var _ types.InstantVectorOperator = &DeduplicateAndMerge{}
 
-func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *DeduplicateAndMerge {
+func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DeduplicateAndMerge {
 	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 

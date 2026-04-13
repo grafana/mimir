@@ -641,7 +641,7 @@ type requestResponse struct {
 }
 
 // doRequests executes a list of requests in parallel.
-func doRequests(ctx context.Context, downstream MetricsQueryHandler, inflightMemoryTracker *limiter.InflightMemoryConsumptionTracker, memoryTracker limiter.MemoryConsumptionTracker, reqs []MetricsQueryRequest) ([]requestResponse, error) {
+func doRequests(ctx context.Context, downstream MetricsQueryHandler, inflightTracker *limiter.InflightMemoryConsumptionTracker, memoryTracker *limiter.MemoryConsumptionTracker, reqs []MetricsQueryRequest) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
@@ -657,13 +657,12 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, inflightMem
 			req.AddSpanTags(span)
 			defer span.End()
 
-			// Note that we do not need to Deregister a wrapped tracker. The parent memory tracker will be reregistered once the full doRequests() has completed
-			// in the calling function.
-			wrappedTracker, err := inflightMemoryTracker.NewWrappedMemoryConsumptionTracker(childCtx, req.GetQuery(), memoryTracker)
+			// Note this is not a managed tracker do we do not need to deregister it.
+			childTracker, err := inflightTracker.NewWrappedMemoryConsumptionTracker(childCtx, req.GetQuery(), memoryTracker)
 			if err != nil {
 				return err
 			}
-			childCtx = limiter.AddMemoryTrackerToContext(childCtx, wrappedTracker)
+			childCtx = limiter.AddMemoryTrackerToContext(childCtx, childTracker)
 
 			resp, err := downstream.Do(childCtx, req)
 			queryStatistics.Merge(partialStats)

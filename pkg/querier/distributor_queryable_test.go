@@ -821,7 +821,7 @@ func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []
 
 type mockDistributor struct {
 	mock.Mock
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {

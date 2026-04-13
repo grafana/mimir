@@ -40,7 +40,7 @@ func NewAggregation(
 	grouping []string,
 	without bool,
 	op parser.ItemType,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*Aggregation, error) {
@@ -222,7 +222,7 @@ func newAggregationMismatchedCustomBucketsHistogramInfo(_ string, expressionPosi
 type Aggregator struct {
 	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 	TimeRange                types.QueryTimeRange
 
@@ -252,7 +252,7 @@ func NewAggregator(
 	op parser.ItemType,
 	grouping []string,
 	without bool,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	timeRange types.QueryTimeRange,
 	innerExpressionPosition posrange.PositionRange,

@@ -491,7 +491,7 @@ func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context
 	})
 }
 
-func combineSlices[T any](head, tail []T, pool *types.LimitingBucketedPool[[]T, T], memoryConsumptionTracker limiter.MemoryConsumptionTracker) ([]T, func(), error) {
+func combineSlices[T any](head, tail []T, pool *types.LimitingBucketedPool[[]T, T], memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]T, func(), error) {
 	if len(head) == 0 {
 		return tail, nil, nil
 	}

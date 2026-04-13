@@ -23,7 +23,7 @@ type Absent struct {
 	TimeRange                types.QueryTimeRange
 	Labels                   labels.Labels
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	presence           []bool
@@ -33,7 +33,7 @@ type Absent struct {
 var _ types.InstantVectorOperator = &Absent{}
 
 // NewAbsent creates a new Absent.
-func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) *Absent {
+func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) *Absent {
 	return &Absent{
 		TimeRange:                timeRange,
 		Inner:                    inner,

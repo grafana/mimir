@@ -34,7 +34,7 @@ type StreamingSeriesSource struct {
 	SeriesIndex  uint64
 }
 
-func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker limiter.MemoryConsumptionTracker, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
+func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		ctx:                 ctx,
 		client:              client,
@@ -54,7 +54,7 @@ type SeriesChunksStreamReader struct {
 	client              Ingester_QueryStreamClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
-	memoryTracker       limiter.MemoryConsumptionTracker
+	memoryTracker       *limiter.MemoryConsumptionTracker
 	cleanup             func()
 	log                 log.Logger
 

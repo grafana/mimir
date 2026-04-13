@@ -49,7 +49,7 @@ func TestAddToContext(t *testing.T) {
 	require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512), IngesterChunks))
 
 	ctx = AddMemoryTrackerToContext(ctx, existing)
-	stored := ctx.Value(memoryConsumptionTracker).(MemoryConsumptionTracker)
+	stored := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	require.Equal(t, existing, stored)
 	require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
 	require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytesBySource(IngesterChunks))
@@ -436,11 +436,11 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 
 		routines := 5
 		g, _ := errgroup.WithContext(t.Context())
-		children := make([]MemoryConsumptionTracker, 0, routines)
+		children := make([]*MemoryConsumptionTracker, routines)
 		for i := range routines {
 			g.Go(func() error {
 				childTracker, err := factory.NewWrappedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
-				children = append(children, childTracker)
+				children[i] = childTracker
 				require.NoError(t, err)
 				// do some work
 				require.NoError(t, childTracker.IncreaseMemoryConsumptionForLabels(labels.FromStrings("key", "value", "key2", "value2")))
@@ -454,7 +454,7 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 
 		for _, child := range children {
 			child.DecreaseMemoryConsumptionForLabels(labels.FromStrings("key", "value"))
-			require.Equal(t, uint64(sizeAllLabels-sizeSomeLabels), child.CurrentEstimatedMemoryConsumptionBytes())
+			require.Equal(t, sizeAllLabels-sizeSomeLabels, child.CurrentEstimatedMemoryConsumptionBytes())
 			require.GreaterOrEqual(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), uint64(22))
 		}
 

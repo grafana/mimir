@@ -152,7 +152,7 @@ var (
 		SeriesMetadataSize,
 		true,
 		nil,
-		func(sms []SeriesMetadata, tracker limiter.MemoryConsumptionTracker) {
+		func(sms []SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) {
 			// When putting SeriesMetadata slices back to the pool, we decrease the memory consumption for each label in the metadata.
 			for _, sm := range sms {
 				tracker.DecreaseMemoryConsumptionForLabels(sm.Labels)
@@ -195,10 +195,10 @@ type LimitingBucketedPool[S ~[]E, E any] struct {
 	elementSize uint64
 	clearOnGet  bool
 	mangle      func(E) E
-	onPutHook   func(S, limiter.MemoryConsumptionTracker)
+	onPutHook   func(S, *limiter.MemoryConsumptionTracker)
 }
 
-func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], source limiter.MemoryConsumptionSource, elementSize uint64, clearOnGet bool, mangle func(E) E, onPutHook func(S, limiter.MemoryConsumptionTracker)) *LimitingBucketedPool[S, E] {
+func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], source limiter.MemoryConsumptionSource, elementSize uint64, clearOnGet bool, mangle func(E) E, onPutHook func(S, *limiter.MemoryConsumptionTracker)) *LimitingBucketedPool[S, E] {
 	return &LimitingBucketedPool[S, E]{
 		inner:       inner,
 		source:      source,
@@ -214,7 +214,7 @@ func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], sour
 // If the capacity of the returned slice would cause the max memory consumption limit to be exceeded, then an error is returned.
 //
 // Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
-func (p *LimitingBucketedPool[S, E]) Get(size int, tracker limiter.MemoryConsumptionTracker) (S, error) {
+func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiter.MemoryConsumptionTracker) (S, error) {
 	// We don't bother checking the limit before we get the slice for a couple of reasons:
 	// - we prefer to enforce the limit based on the capacity of the returned slices, not the requested size, to more accurately capture the true memory utilisation
 	// - we expect that the vast majority of the time, the limit won't be hit, so the extra caution just slows things down
@@ -239,7 +239,7 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker limiter.MemoryConsump
 }
 
 // Put returns a slice of E to the pool and updates the current memory consumption.
-func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker limiter.MemoryConsumptionTracker) {
+func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptionTracker) {
 	if s == nil {
 		return
 	}
@@ -262,7 +262,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker limiter.MemoryConsumption
 // AppendToSlice appends items to a slice retrieved from the pool and tracks any slice capacity growth.
 // If the capacity is insufficient, it gets a new slice from the pool and returns the old one.
 // On error, the input slice s is returned to the pool and should not continue to be used.
-func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker limiter.MemoryConsumptionTracker, items ...E) (S, error) {
+func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker *limiter.MemoryConsumptionTracker, items ...E) (S, error) {
 	requiredLen := len(s) + len(items)
 
 	if cap(s) >= requiredLen {
@@ -288,7 +288,7 @@ func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker limiter.MemoryCo
 }
 
 // PutInstantVectorSeriesData is equivalent to calling FPointSlicePool.Put(d.Floats) and HPointSlicePool.Put(d.Histograms).
-func PutInstantVectorSeriesData(d InstantVectorSeriesData, tracker limiter.MemoryConsumptionTracker) {
+func PutInstantVectorSeriesData(d InstantVectorSeriesData, tracker *limiter.MemoryConsumptionTracker) {
 	FPointSlicePool.Put(&d.Floats, tracker)
 	HPointSlicePool.Put(&d.Histograms, tracker)
 }

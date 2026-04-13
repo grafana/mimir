@@ -16,10 +16,10 @@ import (
 type StepInvariantScalarOperator struct {
 	inner                    types.ScalarOperator
 	originalTimeRange        types.QueryTimeRange
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func NewStepInvariantScalarOperator(op types.ScalarOperator, originalTimeRange types.QueryTimeRange, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *StepInvariantScalarOperator {
+func NewStepInvariantScalarOperator(op types.ScalarOperator, originalTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *StepInvariantScalarOperator {
 	return &StepInvariantScalarOperator{
 		inner:                    op,
 		originalTimeRange:        originalTimeRange,

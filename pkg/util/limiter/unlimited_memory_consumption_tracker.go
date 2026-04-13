@@ -16,7 +16,7 @@ import (
 // pass an unlimited MemoryConsumptionTracker, specifically in the Exec call.
 type UnlimitedMemoryTrackingQuery struct {
 	inner                    promql.Query
-	memoryConsumptionTracker MemoryConsumptionTracker
+	memoryConsumptionTracker *MemoryConsumptionTracker
 }
 
 func (u *UnlimitedMemoryTrackingQuery) Exec(ctx context.Context) *promql.Result {
@@ -44,7 +44,7 @@ func (u *UnlimitedMemoryTrackingQuery) String() string {
 	return u.inner.String()
 }
 
-func newUnlimitedMemoryTrackingQuery(query promql.Query, memoryConsumptionTracker MemoryConsumptionTracker) *UnlimitedMemoryTrackingQuery {
+func newUnlimitedMemoryTrackingQuery(query promql.Query, memoryConsumptionTracker *MemoryConsumptionTracker) *UnlimitedMemoryTrackingQuery {
 	return &UnlimitedMemoryTrackingQuery{
 		inner:                    query,
 		memoryConsumptionTracker: memoryConsumptionTracker,

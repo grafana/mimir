@@ -22,7 +22,7 @@ import (
 type RangeVectorSelector struct {
 	Selector                 *Selector
 	QueryStats               *types.QueryStats
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	rangeMilliseconds int64
 	chunkIterator     chunkenc.Iterator
@@ -39,7 +39,7 @@ type RangeVectorSelector struct {
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker limiter.MemoryConsumptionTracker, stats *types.QueryStats) *RangeVectorSelector {
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats) *RangeVectorSelector {
 
 	rangeVectorSelector := RangeVectorSelector{
 		Selector:                 selector,

@@ -49,7 +49,7 @@ var ConcatFunction = &parser.Function{
 
 type Concat struct {
 	Inner                    []types.InstantVectorOperator
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	seriesCounts      []int // One entry per inner operator, value is the number of series left to read from that operator.
 	nextOperatorIndex int
@@ -59,7 +59,7 @@ func (c *Concat) Stats(ctx context.Context) (*types.OperatorEvaluationStats, err
 	return types.CombineStats(ctx, c.Inner...)
 }
 
-func NewConcat(inner []types.InstantVectorOperator, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (*Concat, error) {
+func NewConcat(inner []types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*Concat, error) {
 	if len(inner) == 0 {
 		return nil, errors.New("no inner operators passed to NewConcat")
 	}

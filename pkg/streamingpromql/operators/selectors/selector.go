@@ -51,7 +51,7 @@ type Selector struct {
 	ProjectionInclude bool
 	ProjectionLabels  []string
 
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	querier   storage.Querier
 	seriesSet storage.SeriesSet
@@ -237,10 +237,10 @@ type seriesList struct {
 	lastSeriesBatch *seriesBatch
 
 	length                   int
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func newSeriesList(memoryConsumptionTracker limiter.MemoryConsumptionTracker) *seriesList {
+func newSeriesList(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *seriesList {
 	firstBatch := getSeriesBatch()
 
 	return &seriesList{

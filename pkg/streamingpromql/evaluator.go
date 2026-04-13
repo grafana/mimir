@@ -26,7 +26,7 @@ type Evaluator struct {
 	engine             *Engine
 	originalExpression string
 
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	annotations *annotations.Annotations
 	stats       *types.QueryStats
@@ -373,7 +373,6 @@ func (e *Evaluator) Close() {
 	if e.cancel != nil {
 		e.cancel(errQueryClosed)
 	}
-	// This is idempotent - it may already have been reregistered by a Query
 	e.engine.memoryConsumptionTrackerFactory.Deregister(e.MemoryConsumptionTracker)
 }
 

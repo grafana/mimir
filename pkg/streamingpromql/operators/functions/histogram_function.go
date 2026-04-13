@@ -41,7 +41,7 @@ type HistogramFunction struct {
 	f                        histogramFunction
 	inner                    types.InstantVectorOperator
 	currentInnerSeriesIndex  int
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	timeRange                types.QueryTimeRange
 	enableDelayedNameRemoval bool
 
@@ -149,7 +149,7 @@ var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
 func NewHistogramQuantileFunction(
 	phArg types.ScalarOperator,
 	inner types.InstantVectorOperator,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
@@ -180,7 +180,7 @@ func NewHistogramFractionFunction(
 	lower types.ScalarOperator,
 	upper types.ScalarOperator,
 	inner types.InstantVectorOperator,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
@@ -605,7 +605,7 @@ type histogramQuantile struct {
 	phArg    types.ScalarOperator
 	phValues types.ScalarData
 
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	innerSeriesMetricNames   *operators.MetricNames
 	innerExpressionPosition  posrange.PositionRange
@@ -691,7 +691,7 @@ type histogramFraction struct {
 	lowerValues types.ScalarData
 	upperValues types.ScalarData
 
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	innerSeriesMetricNames   *operators.MetricNames
 	innerExpressionPosition  posrange.PositionRange
 }

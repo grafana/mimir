@@ -17,7 +17,7 @@ import (
 type InstantVectorToScalar struct {
 	Inner                    types.InstantVectorOperator
 	TimeRange                types.QueryTimeRange
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 }
@@ -27,7 +27,7 @@ var _ types.ScalarOperator = &InstantVectorToScalar{}
 func NewInstantVectorToScalar(
 	inner types.InstantVectorOperator,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *InstantVectorToScalar {
 	return &InstantVectorToScalar{

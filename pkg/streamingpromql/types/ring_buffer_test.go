@@ -1145,17 +1145,17 @@ func setupRingBufferTestingPools(t *testing.T) {
 	originalGetHPointSlice := getHPointSliceForRingBuffer
 	originalPutHPointSlice := putHPointSliceForRingBuffer
 
-	getFPointSliceForRingBuffer = func(size int, _ limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
+	getFPointSliceForRingBuffer = func(size int, _ *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
 		return make([]promql.FPoint, 0, size), nil
 	}
 
-	putFPointSliceForRingBuffer = func(_ *[]promql.FPoint, _ limiter.MemoryConsumptionTracker) {}
+	putFPointSliceForRingBuffer = func(_ *[]promql.FPoint, _ *limiter.MemoryConsumptionTracker) {}
 
-	getHPointSliceForRingBuffer = func(size int, _ limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
+	getHPointSliceForRingBuffer = func(size int, _ *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
 		return make([]promql.HPoint, 0, size), nil
 	}
 
-	putHPointSliceForRingBuffer = func(_ *[]promql.HPoint, _ limiter.MemoryConsumptionTracker) {}
+	putHPointSliceForRingBuffer = func(_ *[]promql.HPoint, _ *limiter.MemoryConsumptionTracker) {}
 
 	t.Cleanup(func() {
 		getFPointSliceForRingBuffer = originalGetFPointSlice

@@ -29,7 +29,7 @@ type Subquery struct {
 	histograms        *types.HPointRingBuffer
 	stepData          *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
 
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 var _ types.RangeVectorOperator = &Subquery{}
@@ -42,7 +42,7 @@ func NewSubquery(
 	subqueryOffset time.Duration,
 	subqueryRange time.Duration,
 	expressionPosition posrange.PositionRange,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (*Subquery, error) {
 	return &Subquery{
 		Inner:                    inner,

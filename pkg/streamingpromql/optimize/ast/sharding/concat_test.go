@@ -169,7 +169,7 @@ func TestConcat_InnerOperatorsWithNoSeries(t *testing.T) {
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all memory to be released, but still have:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
-func createMockData(t *testing.T, idx int, memoryConsumptionTracker limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
+func createMockData(t *testing.T, idx int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
 	floats, err := types.FPointSlicePool.Get(2, memoryConsumptionTracker)
 	require.NoError(t, err)
 
@@ -188,7 +188,7 @@ func createMockData(t *testing.T, idx int, memoryConsumptionTracker limiter.Memo
 	}
 }
 
-func putAllSeriesData(data []types.InstantVectorSeriesData, memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
+func putAllSeriesData(data []types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	for _, d := range data {
 		types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 	}

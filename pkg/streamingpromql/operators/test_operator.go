@@ -22,7 +22,7 @@ type TestOperator struct {
 	Finalized                bool
 	Closed                   bool
 	Position                 posrange.PositionRange
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	MatchersProvided types.Matchers
 }
@@ -101,7 +101,7 @@ func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesD
 	return d, nil
 }
 
-func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
+func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	for _, d := range t.Data {
 		types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 	}
@@ -148,12 +148,12 @@ type TestRangeOperator struct {
 	Closed           bool
 	MatchersProvided types.Matchers
 
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 var _ types.RangeVectorOperator = &TestRangeOperator{}
 
-func NewTestRangeOperator(series []labels.Labels, dropName []bool, data []types.InstantVectorSeriesData, stepRange time.Duration, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *TestRangeOperator {
+func NewTestRangeOperator(series []labels.Labels, dropName []bool, data []types.InstantVectorSeriesData, stepRange time.Duration, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *TestRangeOperator {
 	return &TestRangeOperator{
 		Series:                   series,
 		DropName:                 dropName,

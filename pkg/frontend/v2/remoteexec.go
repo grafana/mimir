@@ -36,7 +36,7 @@ var errUnexpectedEndOfStream = errors.New("expected EvaluateQueryResponse, got e
 var _ remoteexec.GroupEvaluator = &RemoteExecutionGroupEvaluator{}
 
 func RegisterRemoteExecutionMaterializers(engine *streamingpromql.Engine, frontend ProtobufFrontend, cfg Config) error {
-	groupEvaluatorFactory := func(eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker limiter.MemoryConsumptionTracker) remoteexec.GroupEvaluator {
+	groupEvaluatorFactory := func(eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.GroupEvaluator {
 		return NewRemoteExecutionGroupEvaluator(frontend, cfg, eagerLoad, queryParameters, memoryConsumptionTracker)
 	}
 
@@ -64,7 +64,7 @@ type RemoteExecutionGroupEvaluator struct {
 	cfg                      Config
 	eagerLoad                bool
 	queryParameters          *planning.QueryParameters
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	stream      ResponseStream
 	nodeStreams *remoteExecutionNodeStreamsCollection
@@ -85,7 +85,7 @@ type remoteExecutionNodeStreamState struct {
 // We use a different type to make it harder to accidentally confuse it with a node index in the query plan.
 type remoteExecutionNodeStreamIndex int
 
-func NewRemoteExecutionGroupEvaluator(frontend ProtobufFrontend, cfg Config, eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *RemoteExecutionGroupEvaluator {
+func NewRemoteExecutionGroupEvaluator(frontend ProtobufFrontend, cfg Config, eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RemoteExecutionGroupEvaluator {
 	return &RemoteExecutionGroupEvaluator{
 		frontend:                 frontend,
 		cfg:                      cfg,
@@ -392,10 +392,10 @@ func (g *RemoteExecutionGroupEvaluator) onAllStreamsFinished() {
 type remoteExecutionNodeStreamsCollection struct {
 	streams                       []*remoteExecutionNodeStreamState
 	requestNodeIndexToStreamState map[int64]*remoteExecutionNodeStreamState
-	memoryConsumptionTracker      limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker      *limiter.MemoryConsumptionTracker
 }
 
-func newRemoteExecutionNodeStreamsCollection(memoryConsumptionTracker limiter.MemoryConsumptionTracker) *remoteExecutionNodeStreamsCollection {
+func newRemoteExecutionNodeStreamsCollection(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *remoteExecutionNodeStreamsCollection {
 	return &remoteExecutionNodeStreamsCollection{
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
@@ -453,11 +453,11 @@ type ResponseStream interface {
 type scalarExecutionResponse struct {
 	group                    *RemoteExecutionGroupEvaluator
 	nodeStreamIndex          remoteExecutionNodeStreamIndex
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	closed                   bool
 }
 
-func newScalarExecutionResponse(group *RemoteExecutionGroupEvaluator, nodeStreamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *scalarExecutionResponse {
+func newScalarExecutionResponse(group *RemoteExecutionGroupEvaluator, nodeStreamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *scalarExecutionResponse {
 	return &scalarExecutionResponse{
 		group:                    group,
 		nodeStreamIndex:          nodeStreamIndex,
@@ -513,12 +513,12 @@ func (r *scalarExecutionResponse) Close() {
 type instantVectorExecutionResponse struct {
 	group                    *RemoteExecutionGroupEvaluator
 	nodeStreamIndex          remoteExecutionNodeStreamIndex
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	currentBatch             []querierpb.InstantVectorSeriesData
 	closed                   bool
 }
 
-func newInstantVectorExecutionResponse(group *RemoteExecutionGroupEvaluator, nodeStreamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *instantVectorExecutionResponse {
+func newInstantVectorExecutionResponse(group *RemoteExecutionGroupEvaluator, nodeStreamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *instantVectorExecutionResponse {
 	return &instantVectorExecutionResponse{
 		group:                    group,
 		nodeStreamIndex:          nodeStreamIndex,
@@ -601,7 +601,7 @@ func (r *instantVectorExecutionResponse) Close() {
 type rangeVectorExecutionResponse struct {
 	group                    *RemoteExecutionGroupEvaluator
 	nodeStreamIndex          remoteExecutionNodeStreamIndex
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	currentSeriesIndex       int64
 	floats                   *types.FPointRingBuffer
 	histograms               *types.HPointRingBuffer
@@ -609,7 +609,7 @@ type rangeVectorExecutionResponse struct {
 	closed                   bool
 }
 
-func newRangeVectorExecutionResponse(group *RemoteExecutionGroupEvaluator, nodeStreamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *rangeVectorExecutionResponse {
+func newRangeVectorExecutionResponse(group *RemoteExecutionGroupEvaluator, nodeStreamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *rangeVectorExecutionResponse {
 	return &rangeVectorExecutionResponse{
 		group:                    group,
 		nodeStreamIndex:          nodeStreamIndex,
@@ -705,7 +705,7 @@ func (r *rangeVectorExecutionResponse) Close() {
 	r.closed = true
 }
 
-func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluator, nodeStreamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluator, nodeStreamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 	resp, releaseMessage, err := group.getNextMessageForStream(ctx, nodeStreamIndex)
 	if err != nil {
 		return nil, err
@@ -755,7 +755,7 @@ func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvalua
 	return &annos, msg.Stats
 }
 
-func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumptionTracker limiter.MemoryConsumptionTracker) error {
+func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
 	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(points))*types.FPointSize, limiter.FPointSlices); err != nil {
 		return err
 	}
@@ -763,7 +763,7 @@ func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumption
 	return nil
 }
 
-func accountForHPointMemoryConsumption(points []promql.HPoint, memoryConsumptionTracker limiter.MemoryConsumptionTracker) error {
+func accountForHPointMemoryConsumption(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
 	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(points))*types.HPointSize, limiter.HPointSlices); err != nil {
 		return err
 	}
@@ -778,7 +778,7 @@ func accountForHPointMemoryConsumption(points []promql.HPoint, memoryConsumption
 //
 // This exists because many places in MQE assume that slices have come from our pools and always have a capacity that is a power of two.
 // For example, the ring buffer implementations rely on the fact that slices have a capacity that is a power of two.
-func ensureFPointSliceCapacityIsPowerOfTwo(points []promql.FPoint, memoryConsumptionTracker limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
+func ensureFPointSliceCapacityIsPowerOfTwo(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
 	if pool.IsPowerOfTwo(cap(points)) {
 		return points, nil
 	}
@@ -800,7 +800,7 @@ func ensureFPointSliceCapacityIsPowerOfTwo(points []promql.FPoint, memoryConsump
 }
 
 // ensureHPointSliceCapacityIsPowerOfTwo is like ensureFPointSliceCapacityIsPowerOfTwo, but for HPoint slices.
-func ensureHPointSliceCapacityIsPowerOfTwo(points []promql.HPoint, memoryConsumptionTracker limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
+func ensureHPointSliceCapacityIsPowerOfTwo(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
 	if pool.IsPowerOfTwo(cap(points)) {
 		return points, nil
 	}
@@ -830,7 +830,7 @@ type eagerLoadingResponseStream struct {
 	newDataAvailable chan struct{}
 }
 
-func newEagerLoadingResponseStream(ctx context.Context, inner ResponseStream, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *eagerLoadingResponseStream {
+func newEagerLoadingResponseStream(ctx context.Context, inner ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *eagerLoadingResponseStream {
 	stream := &eagerLoadingResponseStream{
 		inner:  inner,
 		mtx:    &sync.Mutex{},
@@ -959,7 +959,7 @@ type responseStreamBuffer struct {
 	startIndex int
 	length     int
 
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 type bufferedMessage struct {
@@ -967,7 +967,7 @@ type bufferedMessage struct {
 	err     error
 }
 
-func newResponseStreamBuffer(memoryConsumptionTracker limiter.MemoryConsumptionTracker) *responseStreamBuffer {
+func newResponseStreamBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *responseStreamBuffer {
 	return &responseStreamBuffer{
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}

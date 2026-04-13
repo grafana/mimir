@@ -14,7 +14,7 @@ import (
 type ScalarConstant struct {
 	Value                    float64
 	TimeRange                types.QueryTimeRange
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 }
@@ -24,7 +24,7 @@ var _ types.ScalarOperator = &ScalarConstant{}
 func NewScalarConstant(
 	value float64,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *ScalarConstant {
 	return &ScalarConstant{

@@ -26,7 +26,7 @@ type InstantVectorOperatorBuffer struct {
 	seriesUsed          []bool
 	lastSeriesIndexUsed int
 
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	// Stores series read but required for later series.
 	buffer map[int]types.InstantVectorSeriesData
@@ -35,7 +35,7 @@ type InstantVectorOperatorBuffer struct {
 	output []types.InstantVectorSeriesData
 }
 
-func NewInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, lastSeriesIndexUsed int, memoryConsumptionTracker limiter.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
+func NewInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, lastSeriesIndexUsed int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
 	return &InstantVectorOperatorBuffer{
 		source:                   source,
 		seriesUsed:               seriesUsed,

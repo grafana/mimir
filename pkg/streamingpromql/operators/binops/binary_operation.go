@@ -142,7 +142,7 @@ func formatConflictError(
 // Samples in data where mask has value desiredMaskValue are returned.
 //
 // The return value reuses the slices from data, and returns any unused slices to the pool.
-func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskValue bool, memoryConsumptionTracker limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskValue bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
 	filteredData := types.InstantVectorSeriesData{}
 	nextOutputFloatIndex := 0
 
@@ -215,7 +215,7 @@ type vectorVectorBinaryOperationEvaluator struct {
 	opFunc                   binaryOperationFunc
 	leftIterator             types.InstantVectorSeriesDataIterator
 	rightIterator            types.InstantVectorSeriesDataIterator
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	expressionPosition       posrange.PositionRange
 	emitAnnotation           types.EmitAnnotationFunc
@@ -224,7 +224,7 @@ type vectorVectorBinaryOperationEvaluator struct {
 func newVectorVectorBinaryOperationEvaluator(
 	op parser.ItemType,
 	returnBool bool,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (vectorVectorBinaryOperationEvaluator, error) {

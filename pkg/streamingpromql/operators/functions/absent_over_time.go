@@ -21,7 +21,7 @@ type AbsentOverTime struct {
 	TimeRange                types.QueryTimeRange
 	Labels                   labels.Labels
 	Inner                    types.RangeVectorOperator
-	MemoryConsumptionTracker limiter.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	presence           []bool
@@ -34,7 +34,7 @@ func NewAbsentOverTime(
 	inner types.RangeVectorOperator,
 	labels labels.Labels,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *AbsentOverTime {
 	return &AbsentOverTime{

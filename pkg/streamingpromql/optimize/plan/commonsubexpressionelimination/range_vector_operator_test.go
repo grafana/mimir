@@ -841,7 +841,7 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 	requireEqualDataAndReturnToPool(t, series, d1, memoryConsumptionTracker)
 }
 
-func requireEqualDataAndReturnToPool(t *testing.T, expected types.InstantVectorSeriesData, actual *types.RangeVectorStepData, memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
+func requireEqualDataAndReturnToPool(t *testing.T, expected types.InstantVectorSeriesData, actual *types.RangeVectorStepData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	actualFloats, err := actual.Floats.CopyPoints()
 	require.NoError(t, err)
 	require.Equal(t, expected.Floats, actualFloats)
@@ -853,7 +853,7 @@ func requireEqualDataAndReturnToPool(t *testing.T, expected types.InstantVectorS
 	types.HPointSlicePool.Put(&actualHistograms, memoryConsumptionTracker)
 }
 
-func createTestRangeVectorOperator(t *testing.T, seriesCount int, memoryConsumptionTracker limiter.MemoryConsumptionTracker) (*operators.TestRangeOperator, []types.InstantVectorSeriesData) {
+func createTestRangeVectorOperator(t *testing.T, seriesCount int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*operators.TestRangeOperator, []types.InstantVectorSeriesData) {
 	series := make([]labels.Labels, 0, seriesCount)
 	dropName := make([]bool, 0, seriesCount)
 	data := make([]types.InstantVectorSeriesData, 0, seriesCount)
@@ -960,7 +960,7 @@ func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 type failingRangeVectorOperator struct {
 	series                   []types.SeriesMetadata
 	returnErrorAtSeriesIdx   int
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	floats     *types.FPointRingBuffer
 	floatsView *types.FPointRingBufferView
@@ -1057,6 +1057,6 @@ func (o *failingRangeVectorOperator) Stats(_ context.Context) (*types.OperatorEv
 	panic("not implemented")
 }
 
-func requireNoMemoryConsumption(t *testing.T, memoryConsumptionTracker limiter.MemoryConsumptionTracker) {
+func requireNoMemoryConsumption(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }

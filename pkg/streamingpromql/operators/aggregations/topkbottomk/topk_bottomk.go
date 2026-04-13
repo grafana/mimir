@@ -24,7 +24,7 @@ func New(
 	grouping []string,
 	without bool,
 	isTopK bool,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {

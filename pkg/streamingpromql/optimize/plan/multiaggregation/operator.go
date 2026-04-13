@@ -17,7 +17,7 @@ import (
 
 type MultiAggregatorGroupEvaluator struct {
 	inner                    types.InstantVectorOperator
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	instances []*MultiAggregatorInstanceOperator
 
@@ -32,7 +32,7 @@ type MultiAggregatorGroupEvaluator struct {
 
 func NewMultiAggregatorGroupEvaluator(
 	inner types.InstantVectorOperator,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) *MultiAggregatorGroupEvaluator {
 	return &MultiAggregatorGroupEvaluator{
 		inner:                    inner,
@@ -197,7 +197,7 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	grouping []string,
 	without bool,
 	filters []*labels.Matcher,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,

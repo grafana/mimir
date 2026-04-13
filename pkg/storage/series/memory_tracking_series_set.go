@@ -22,12 +22,12 @@ import (
 // duplicate series, memory tracking will be inaccurate.
 type MemoryTrackingSeriesSet struct {
 	inner                    storage.SeriesSet
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	// This flag prevents multiple decrements for the same series position when At() is called multiple times.
 	memoryDecreased bool
 }
 
-func NewMemoryTrackingSeriesSet(inner storage.SeriesSet, memoryConsumptionTracker limiter.MemoryConsumptionTracker) storage.SeriesSet {
+func NewMemoryTrackingSeriesSet(inner storage.SeriesSet, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) storage.SeriesSet {
 	return &MemoryTrackingSeriesSet{
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,

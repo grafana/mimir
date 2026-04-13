@@ -264,7 +264,7 @@ type RemoteExecutionGroupMaterializer struct {
 	groupEvaluatorFactory GroupEvaluatorFactory
 }
 
-type GroupEvaluatorFactory func(eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker limiter.MemoryConsumptionTracker) GroupEvaluator
+type GroupEvaluatorFactory func(eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) GroupEvaluator
 
 func NewRemoteExecutionGroupMaterializer(groupEvaluatorFactory GroupEvaluatorFactory) planning.NodeMaterializer {
 	return &RemoteExecutionGroupMaterializer{groupEvaluatorFactory: groupEvaluatorFactory}

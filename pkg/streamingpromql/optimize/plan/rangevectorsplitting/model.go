@@ -29,7 +29,7 @@ type Range struct {
 type SplitGenerateFunc[T any] func(
 	step *types.RangeVectorStepData,
 	emitAnnotation types.EmitAnnotationFunc,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (t T, hasValue bool, err error)
 
 // SplitCombineFunc combines intermediate results from multiple split ranges.
@@ -40,7 +40,7 @@ type SplitCombineFunc[T any] func(
 	rangeStart int64,
 	rangeEnd int64,
 	emitAnnotation types.EmitAnnotationFunc,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
 
 type SplitOperatorFactory func(
@@ -52,7 +52,7 @@ type SplitOperatorFactory func(
 	irCache *cache.CacheFactory,
 	expressionPosition posrange.PositionRange,
 	annotations *annotations.Annotations,
-	memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
 	logger log.Logger,
 ) (types.Operator, error)
@@ -73,7 +73,7 @@ func NewSplitOperatorFactory[T any](
 		irCache *cache.CacheFactory,
 		expressionPosition posrange.PositionRange,
 		annotations *annotations.Annotations,
-		memoryConsumptionTracker limiter.MemoryConsumptionTracker,
+		memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 		enableDelayedNameRemoval bool,
 		logger log.Logger,
 	) (types.Operator, error) {
