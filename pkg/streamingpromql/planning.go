@@ -768,7 +768,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		// is 1 (i.e. the step is larger than the range), as it still affects query semantics — for example,
 		// whether warnings like "sort is ineffective for range queries" should be emitted by functions
 		// nested inside the step-invariant subtree.
-		if timeRange.StartT == timeRange.EndT || timeRange.StepCount == 0 {
+		if timeRange.StartT >= timeRange.EndT {
 			return inner, nil
 		}
 
