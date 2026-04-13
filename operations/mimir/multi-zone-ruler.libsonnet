@@ -33,7 +33,7 @@
   assert !isMultiZoneEnabled || $._config.multi_zone_memcached_enabled : 'ruler multi-zone deployment requires memcached multi-zone to be enabled',
 
   local rulerQueryFrontendClientZoneArgs(zone) = {
-    'ruler.query-frontend.address': 'dns:///ruler-query-frontend-zone-%(zone)s.%(namespace)s.svc.%(cluster_domain)s:9095' % ($._config { zone: zone }),
+    'ruler.query-frontend.address': 'dns:///ruler-query-frontend-zone-%(zone)s-headless.%(namespace)s.svc.%(cluster_domain)s:9095' % ($._config { zone: zone }),
   },
 
   ruler_zone_a_args:: $.ruler_args + $.ruler_storage_zone_a_caching_config + $.blocks_metadata_zone_a_caching_config + rulerQueryFrontendClientZoneArgs('a'),

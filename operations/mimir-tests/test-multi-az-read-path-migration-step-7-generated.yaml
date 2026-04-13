@@ -1480,6 +1480,27 @@ metadata:
   name: ruler-query-frontend
   namespace: default
 spec:
+  ports:
+  - name: ruler-query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-query-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-frontend
+  name: ruler-query-frontend-headless
+  namespace: default
+spec:
   clusterIP: None
   ports:
   - name: ruler-query-frontend-http-metrics
@@ -1502,6 +1523,27 @@ metadata:
   name: ruler-query-frontend-zone-a
   namespace: default
 spec:
+  ports:
+  - name: ruler-query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-query-frontend-zone-a
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-frontend-zone-a
+  name: ruler-query-frontend-zone-a-headless
+  namespace: default
+spec:
   clusterIP: None
   ports:
   - name: ruler-query-frontend-http-metrics
@@ -1522,6 +1564,27 @@ metadata:
   labels:
     name: ruler-query-frontend-zone-b
   name: ruler-query-frontend-zone-b
+  namespace: default
+spec:
+  ports:
+  - name: ruler-query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-query-frontend-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-frontend-zone-b
+  name: ruler-query-frontend-zone-b-headless
   namespace: default
 spec:
   clusterIP: None
@@ -4164,7 +4227,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-a.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-a-headless.default.svc.cluster.local.:9095
         - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
@@ -4291,7 +4354,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-b.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-b-headless.default.svc.cluster.local.:9095
         - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
