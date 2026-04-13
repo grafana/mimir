@@ -960,6 +960,13 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 						queryExpr: parseQuery(t, "sum(bar1)"),
 					}
 
+					// Need to ensure that both engines have the same InflightMemoryConsumptionTracker otherwise we get an error
+					// with a managed MemoryConsumptionTracker being deregistered against the wrong factory.
+					// In a production environment we only have 1 instance of InflightMemoryConsumptionTracker
+					memoryConsumptionFactory := limiter.NewUnlimintedInflightMemoryConsumptionTracker(nil)
+					tc.engineShardingOpts = append(tc.engineShardingOpts, withMemoryConsumptionTrackerFactory(memoryConsumptionFactory))
+					tc.engineDownstreamOpts = append(tc.engineDownstreamOpts, withMemoryConsumptionTrackerFactory(memoryConsumptionFactory))
+
 					_, engineSharding := newEngineForTesting(t, engineType, tc.engineShardingOpts...)
 					_, engineDownstream := newEngineForTesting(t, engineType, tc.engineDownstreamOpts...)
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -308,6 +309,12 @@ func TestNewMockShardedQueryable(t *testing.T) {
 }
 
 type engineOpt func(o *streamingpromql.EngineOpts)
+
+func withMemoryConsumptionTrackerFactory(factory *limiter.InflightMemoryConsumptionTracker) engineOpt {
+	return func(o *streamingpromql.EngineOpts) {
+		o.MemoryConsumptionTrackerFactory = factory
+	}
+}
 
 func withTimeout(timeout time.Duration) engineOpt {
 	return func(o *streamingpromql.EngineOpts) {
