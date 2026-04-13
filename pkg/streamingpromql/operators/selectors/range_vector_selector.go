@@ -26,6 +26,7 @@ type RangeVectorSelector struct {
 
 	rangeMilliseconds int64
 	chunkIterator     chunkenc.Iterator
+	matchesSubsets    []bool
 	nextStepT         int64
 	floats            *types.FPointRingBuffer
 	histograms        *types.HPointRingBuffer
@@ -75,7 +76,7 @@ func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context, matchers types
 
 func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	var err error
-	m.chunkIterator, err = m.Selector.Next(ctx, m.chunkIterator)
+	m.chunkIterator, m.matchesSubsets, err = m.Selector.Next(ctx, m.chunkIterator)
 	if err != nil {
 		return err
 	}
@@ -162,7 +163,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	// Update query stats before we perform any mutations for the anchored or smoothed modifier.
-	m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, nil)
+	m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, m.matchesSubsets)
 
 	if m.Selector.Anchored || m.Selector.Smoothed {
 		// Histograms are not supported for these modified range queries
@@ -259,7 +260,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 
 func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	m.evaluationStats, err = types.NewOperatorEvaluationStats(m.Selector.TimeRange, m.MemoryConsumptionTracker, 0)
+	m.evaluationStats, err = types.NewOperatorEvaluationStats(m.Selector.TimeRange, m.MemoryConsumptionTracker, len(m.Selector.Subsets))
 	if err != nil {
 		return err
 	}

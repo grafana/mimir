@@ -136,6 +136,24 @@ func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
 	return converted
 }
 
+func SubsetsToPrometheusType(subsets []SubsetMatchers) ([][]*labels.Matcher, error) {
+	if len(subsets) == 0 {
+		return nil, nil
+	}
+
+	converted := make([][]*labels.Matcher, 0, len(subsets))
+	for _, subset := range subsets {
+		m, err := LabelMatchersToPrometheusType(subset.Matchers)
+		if err != nil {
+			return nil, err
+		}
+
+		converted = append(converted, m)
+	}
+
+	return converted, nil
+}
+
 func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
 	if len(matchers) == 0 {
 		return nil, nil

@@ -135,6 +135,11 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		selectorOffset = overrideTimeParams.Offset.Milliseconds()
 	}
 
+	subsets, err := SubsetsToPrometheusType(m.Subsets)
+	if err != nil {
+		return nil, err
+	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
@@ -151,6 +156,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		CounterAware:             m.CounterAware,
 		ProjectionInclude:        m.ProjectionInclude,
 		ProjectionLabels:         m.ProjectionLabels,
+		Subsets:                  subsets,
 	}
 
 	if m.Anchored || m.Smoothed {

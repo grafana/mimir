@@ -113,6 +113,11 @@ func (v *VectorSelector) ChildrenLabels() []string {
 }
 
 func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	subsets, err := SubsetsToPrometheusType(v.Subsets)
+	if err != nil {
+		return nil, err
+	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
@@ -127,6 +132,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		Smoothed:                 v.Smoothed,
 		ProjectionInclude:        v.ProjectionInclude,
 		ProjectionLabels:         v.ProjectionLabels,
+		Subsets:                  subsets,
 	}
 
 	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps, v.ReturnSampleTimestampsPreserveHistograms)), nil
