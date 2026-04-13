@@ -302,7 +302,9 @@ func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedTracker(t *testing.
 	reg := prometheus.NewPedanticRegistry()
 	tt := NewInflightMemoryConsumptionTracker(reg, nil)
 	nonManagedTracker := NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3")
-	require.Panics(t, func() { tt.Deregister(nonManagedTracker) })
+	require.False(t, tt.IsTracking(nonManagedTracker))
+	tt.Deregister(nonManagedTracker)
+	require.False(t, tt.IsTracking(nonManagedTracker))
 }
 
 func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes, currentBytes, peakBytes float64, sampled int) {

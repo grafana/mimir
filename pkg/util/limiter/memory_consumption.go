@@ -232,15 +232,15 @@ func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx conte
 
 // Deregister will remove the tracker from being reported in the accumulated metrics.
 func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumptionTracker) {
-	if tracker.parent != nil {
+	// It is intentional to return silently in we are given a non managed tracker.
+	// There are still a range of test code paths which inject unlimited memory consumption trackers into the context which would cause this to fail.
+	// It is not a problem if a non managed tracker is requested to be deregistered.
+	if tracker.parent != nil || tracker.trackingId == 0 {
 		return
 	}
 
-	if tracker.trackingId == 0 {
-		panic("cannot deregister a tracker not created via the InflightMemoryConsumptionTracker")
-	}
-
 	// This should never happen - as we expect there is only a single instance of a InflightMemoryConsumptionTracker per container.
+	// This will catch misconfigurations which could occur in unit tests.
 	if tracker.instanceId != t.instanceID {
 		panic("cannot deregister inflight memory consumption tracker - the given tracker was allocated by another InflightMemoryConsumptionTracker")
 	}
@@ -312,7 +312,7 @@ func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) 
 // Note that there are three types of trackers.
 //
 // Trackers allocated via NewMemoryConsumptionTracker() - these are unmanaged trackers and are not included in the InflightMemoryConsumptionTracker accumulated metrics.
-// It is invalid to use these trackers with the InflightMemoryConsumptionTracker.
+// It is invalid to use these trackers with the InflightMemoryConsumptionTracker. Although it is noted that is safe to call Deregister() with a non managed tracker.
 //
 // Trackers allocated via InflightMemoryConsumptionTracker.NewMemoryConsumptionTracker() - these are managed trackers and their values are included in the InflightMemoryConsumptionTracker accumulated metrics.
 // It is important that these trackers are deregistered with the InflightMemoryConsumptionTracker when their lifecycle is complete.
