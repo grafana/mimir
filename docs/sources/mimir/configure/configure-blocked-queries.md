@@ -52,7 +52,7 @@ overrides:
 
 The blocking is enforced on instant and range queries as well as remote read queries.
 
-For instant and range queries the pattern is evaluated against the query; for remote read requests, the pattern is evaluated against each set of matchers, as if the matchers formed a vector selector. If any set of matchers is blocked, the whole remote read request is rejected.
+For instant and range queries, the pattern is evaluated against the query. For remote read requests, the pattern is evaluated against each set of matchers, as if the matchers formed a vector selector. If any set of matchers is blocked, the whole remote read request is rejected.
 
 Setting `time_range_longer_than` on a rule blocks queries where the time range duration (calculated as `end - start`) exceeds the specified threshold.
 Instant queries are never blocked by this filter.
