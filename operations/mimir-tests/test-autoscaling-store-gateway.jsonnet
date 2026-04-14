@@ -22,6 +22,10 @@ mimir {
     multi_zone_store_gateway_enabled: true,
     multi_zone_store_gateway_replicas: 3,
 
+    autoscaling_store_gateway_enabled: true,
+    autoscaling_store_gateway_min_replicas_per_zone: 1,
+    autoscaling_store_gateway_max_replicas_per_zone: 6,
+
     // not relevant to this test
     zpdb_custom_resource_definition_enabled: false,
   },
