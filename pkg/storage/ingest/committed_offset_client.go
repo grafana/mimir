@@ -15,33 +15,39 @@ import (
 // CommittedOffsetClient fetches the last committed offset for a consumer group and partition.
 type CommittedOffsetClient struct {
 	admin *kadm.Client
-	topic string
+
+	consumerGroup string
+	topic         string
+	partition     int32
 }
 
-func NewCommittedOffsetClient(client *kgo.Client, topic string) *CommittedOffsetClient {
+func NewCommittedOffsetClient(client *kgo.Client, consumerGroup, topic string, partitionID int32) *CommittedOffsetClient {
 	return &CommittedOffsetClient{
 		admin: kadm.NewClient(client),
-		topic: topic,
+
+		consumerGroup: consumerGroup,
+		topic:         topic,
+		partition:     partitionID,
 	}
 }
 
-// FetchLastCommittedOffset returns the last committed offset for the given consumer group and partition.
-// Returns exists=false if the consumer group or partition has no committed offset.
-func (c *CommittedOffsetClient) FetchLastCommittedOffset(ctx context.Context, consumerGroup string, partitionID int32) (offset int64, exists bool, _ error) {
-	offsets, err := c.admin.FetchOffsets(ctx, consumerGroup)
+// FetchLastCommittedOffset returns the last committed offset.
+// Returns exists=false if the client's consumer group or partition has no committed offset.
+func (c *CommittedOffsetClient) FetchLastCommittedOffset(ctx context.Context) (offset int64, exists bool, _ error) {
+	offsets, err := c.admin.FetchOffsets(ctx, c.consumerGroup)
 	if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
 		return 0, false, nil
 	}
 	if err != nil {
-		return 0, false, fmt.Errorf("unable to fetch group offsets: %w", err)
+		return 0, false, fmt.Errorf("fetch group %s offsets: %w", c.consumerGroup, err)
 	}
 
-	offsetRes, exists := offsets.Lookup(c.topic, partitionID)
+	offsetRes, exists := offsets.Lookup(c.topic, c.partition)
 	if !exists {
 		return 0, false, nil
 	}
 	if offsetRes.Err != nil {
-		return 0, false, offsetRes.Err
+		return 0, false, fmt.Errorf("fetch group %s offset: topic %s, partition %d: %w", c.consumerGroup, c.topic, c.partition, offsetRes.Err)
 	}
 
 	return offsetRes.At, true, nil
