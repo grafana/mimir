@@ -100,6 +100,7 @@ const (
 	IngesterPartitionRing            string = "ingester-partitions-ring"
 	IngesterRing                     string = "ingester-ring"
 	IngesterService                  string = "ingester-service"
+	NullIngester                     string = "null-ingester"
 	MemberlistKV                     string = "memberlist-kv"
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
@@ -802,6 +803,12 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 	return nil, nil
 }
 
+func (t *Mimir) initNullIngester() (serv services.Service, err error) {
+	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
+
+	return ingester.NewNullIngester(t.Cfg.Ingester, util_log.Logger, t.Registerer)
+}
+
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
@@ -1496,6 +1503,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
+	mm.RegisterModule(NullIngester, t.initNullIngester)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
@@ -1543,6 +1551,7 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
 		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
+		NullIngester:                     {API},
 		MemberlistKV:                     {API, Vault},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
