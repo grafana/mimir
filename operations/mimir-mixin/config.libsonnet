@@ -221,6 +221,12 @@
     // Controls whether dashboards show classic or native latency histograms. Allowed values: 'classic' (default), 'native'.
     dashboards_default_latency_mode: 'classic',
 
+    // URL template for "Block this query in limits-operator" link in the slow queries table.
+    // Set to a non-empty string to enable the link. The URL can use Grafana variable interpolation
+    // (e.g. $namespace) and data field references (e.g. ${__data.fields["Tenant ID"]}, ${__data.fields.Query}).
+    // Example: 'https://example.com/directory-mimir/$namespace/limits-operator/tenant/${__data.fields["Tenant ID"]}/query-blocking?pattern=${__data.fields.Query:percentencode}&regex=true'
+    slow_queries_query_blocking_url: '',
+
     // Used to add extra labels to all alerts. Careful: takes precedence over default labels.
     alert_extra_labels: {},
 

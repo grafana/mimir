@@ -319,7 +319,21 @@ local filename = 'mimir-slow-queries.json';
                   properties: [{ id: 'unit', value: 's' }],
                 }
                 for fieldName in secondsFields
-              ],
+              ] +
+              // Add a "Block this query in limits-operator" data link to the Query column if configured.
+              (if $._config.slow_queries_query_blocking_url != '' then [
+                 {
+                   matcher: { id: 'byName', options: 'Query' },
+                   properties: [{
+                     id: 'links',
+                     value: [{
+                       title: 'Block this query in limits-operator',
+                       url: $._config.slow_queries_query_blocking_url,
+                       targetBlank: true,
+                     }],
+                   }],
+                 },
+               ] else []),
           },
         },
       )
