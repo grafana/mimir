@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
-	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -1176,162 +1175,6 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 
 }
 
-type replicaState int
-
-const (
-	// replicaRejectedUnknown sample is rejected due to an unknown error.
-	replicaRejectedUnknown replicaState = 0
-	// replicaIsPrimary sample is from the elected primary replica and should be accepted.
-	replicaIsPrimary replicaState = 1 << iota
-	// replicaNotHA sample doesn't have both HA labels and should be accepted.
-	replicaNotHA
-	// replicaDeduped sample is from a non-primary replica and should be deduplicated.
-	replicaDeduped
-	// replicaRejectedTooManyClusters sample is rejected because the tenant has too many HA clusters.
-	replicaRejectedTooManyClusters
-
-	replicaAccepted = replicaIsPrimary | replicaNotHA
-)
-
-func (r replicaState) equals(other replicaState) bool {
-	if other == replicaRejectedUnknown {
-		return r == replicaRejectedUnknown
-	}
-	return r&other != 0
-}
-
-type haReplica struct {
-	cluster, replica string
-}
-
-type replicaInfo struct {
-	state       replicaState
-	sampleCount int
-}
-
-// replicaObserved checks if a sample from a given replica should be accepted for ingestion based on HA deduplication rules.
-func (d *Distributor) replicaObserved(ctx context.Context, userID string, replica haReplica, ts int64) (replicaState, error) {
-	isAccepted, err := d.checkSample(ctx, userID, replica.cluster, replica.replica, ts)
-	if err != nil {
-		var replicasDidNotMatch *replicasDidNotMatchError
-		var tooManyClusters *tooManyClustersError
-		switch {
-		case errors.As(err, &replicasDidNotMatch):
-			// These samples have been deduped.
-			return replicaDeduped, err
-		case errors.As(err, &tooManyClusters):
-			return replicaRejectedTooManyClusters, err
-		default:
-			return replicaRejectedUnknown, err
-		}
-	}
-
-	if isAccepted {
-		return replicaIsPrimary, nil
-	}
-	// If there wasn't an error but isAccepted is false that means we didn't find both HA labels.
-	return replicaNotHA, nil
-}
-
-func getEarliestSampleTimestamp(req *mimirpb.WriteRequest, defaultTimestamp int64) int64 {
-	earliestSampleTimestamp := defaultTimestamp
-	for _, ts := range req.Timeseries {
-		if len(ts.Samples) > 0 {
-			tsms := ts.Samples[0].TimestampMs
-			if tsms < earliestSampleTimestamp {
-				earliestSampleTimestamp = tsms
-			}
-		}
-		if len(ts.Histograms) > 0 {
-			tsms := ts.Histograms[0].Timestamp
-			if tsms < earliestSampleTimestamp {
-				earliestSampleTimestamp = tsms
-			}
-		}
-	}
-	return earliestSampleTimestamp
-}
-
-func (d *Distributor) processHaReplicas(ctx context.Context, userID string, sampleTimestamp int64, replicaInfos map[haReplica]*replicaInfo) (map[replicaState]int, error) {
-	var rejectionErrs, dedupErrs multierror.MultiError
-	samplesPerState := make(map[replicaState]int)
-	for replicaKey, info := range replicaInfos {
-		if info.state.equals(replicaRejectedUnknown) {
-			state, replicaErr := d.replicaObserved(ctx, userID, replicaKey, sampleTimestamp)
-			if replicaErr != nil {
-				// Collect rejection errors before dedup errors so that toErrorWithGRPCStatus
-				// deterministically picks the higher-severity gRPC status code.
-				if state == replicaDeduped {
-					dedupErrs.Add(replicaErr)
-				} else {
-					rejectionErrs.Add(replicaErr)
-				}
-			}
-			info.state = state
-		}
-		samplesPerState[info.state] += info.sampleCount
-	}
-
-	var errs multierror.MultiError
-	for _, err := range rejectionErrs {
-		errs.Add(err)
-	}
-	for _, err := range dedupErrs {
-		errs.Add(err)
-	}
-	return samplesPerState, errs.Err()
-}
-
-var haReplicaSlicePool = sync.Pool{
-	New: func() interface{} {
-		s := make([]haReplica, 0, 2500)
-		return &s
-	},
-}
-
-func getReplicasAndInfos(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLabel string) (*[]haReplica, map[haReplica]*replicaInfo) {
-	count := len(req.Timeseries)
-	replicasPtr := haReplicaSlicePool.Get().(*[]haReplica)
-	if cap(*replicasPtr) < count {
-		*replicasPtr = make([]haReplica, count)
-	} else {
-		*replicasPtr = (*replicasPtr)[:count]
-	}
-
-	replicas := *replicasPtr
-	replicaInfos := make(map[haReplica]*replicaInfo)
-
-	var previousReplica haReplica
-	var previousInfo *replicaInfo
-
-	for i, ts := range req.Timeseries {
-		currentReplica := findHALabels(haReplicaLabel, haClusterLabel, ts.Labels)
-		replicas[i] = currentReplica
-
-		// If the current replica is the same as the previous one
-		// we skip the map lookup and update the count directly.
-		if i > 0 && currentReplica == previousReplica {
-			previousInfo.sampleCount += len(ts.Samples) + len(ts.Histograms)
-			continue
-		}
-
-		info, found := replicaInfos[currentReplica]
-		if !found {
-			// The replica info is stored in a map where the key is the replica itself.
-			// The replica labels are references to the request buffer, which will be reused.
-			// To safely use the replica as map key, we need to clone its labels.
-			currentReplica.cluster = strings.Clone(currentReplica.cluster)
-			currentReplica.replica = strings.Clone(currentReplica.replica)
-			info = &replicaInfo{}
-			replicaInfos[currentReplica] = info
-		}
-		info.sampleCount += len(ts.Samples) + len(ts.Histograms)
-		previousReplica = currentReplica
-		previousInfo = info
-	}
-	return replicasPtr, replicaInfos
-}
-
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
@@ -1349,176 +1192,75 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
-		haClusterLabel := d.limits.HAClusterLabel(userID)
-
-		replicasPtr, replicaInfos := getReplicasAndInfos(req, haReplicaLabel, haClusterLabel)
-		replicas := *replicasPtr
-		defer func() {
-			var zero haReplica
-			for i := range replicas {
-				replicas[i] = zero
-			}
-			haReplicaSlicePool.Put(replicasPtr)
-		}()
+		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
 
 		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(
+			attribute.String("cluster", cluster),
+			attribute.String("replica", replica),
+		)
 
+		numSamples := 0
 		now := time.Now()
-
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
 		sampleTimestamp := timestamp.FromTime(now)
 		if d.limits.HATrackerUseSampleTimeForFailover(userID) {
-			sampleTimestamp = getEarliestSampleTimestamp(req, sampleTimestamp)
-		}
-
-		var errs multierror.MultiError
-
-		if span.IsRecording() {
-			var clustersAsStrings, replicasAsStrings strings.Builder
-			isFirst := true
-			for replicaKey := range replicaInfos {
-				if !isFirst {
-					clustersAsStrings.WriteString(", ")
-					replicasAsStrings.WriteString(", ")
+			earliestSampleTimestamp := sampleTimestamp
+			for _, ts := range req.Timeseries {
+				if len(ts.Samples) > 0 {
+					tsms := ts.Samples[0].TimestampMs
+					if tsms < earliestSampleTimestamp {
+						earliestSampleTimestamp = tsms
+					}
 				}
-				clustersAsStrings.WriteString(replicaKey.cluster)
-				replicasAsStrings.WriteString(replicaKey.replica)
-				isFirst = false
+				if len(ts.Histograms) > 0 {
+					tsms := ts.Histograms[0].Timestamp
+					if tsms < earliestSampleTimestamp {
+						earliestSampleTimestamp = tsms
+					}
+				}
 			}
-			span.SetAttributes(
-				attribute.String("clusters", clustersAsStrings.String()),
-				attribute.String("replicas", replicasAsStrings.String()),
-			)
+			sampleTimestamp = earliestSampleTimestamp
+		}
+		for _, ts := range req.Timeseries {
+			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
 
-		samplesPerState, processErr := d.processHaReplicas(ctx, userID, sampleTimestamp, replicaInfos)
-		if processErr != nil {
-			errs.Add(processErr)
-		}
-
-		// Capture labels before sortByAccepted reorders timeseries and mixes rejection types.
-		var tooManyClustersLabels []mimirpb.LabelAdapter
-		if samplesPerState[replicaRejectedTooManyClusters] > 0 {
-			tooManyClustersLabels = findLabelsForRejectedTooManyClusters(replicaInfos, replicas, req)
-		}
-
-		lastAccepted := sortByAccepted(req, replicaInfos, replicas)
-		removeHAReplicaLabels(req, lastAccepted, replicas, replicaInfos, haReplicaLabel)
-
-		// We don't want to send samples beyond the last accepted sample - that was deduplicated
-		d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, tooManyClustersLabels)
-
-		// Free the unaccepted (deduplicated/rejected) timeseries immediately and truncate
-		// the slice so downstream middleware only sees accepted timeseries. We must NOT
-		// defer restoration of the original slice header because downstream middleware
-		// (e.g., validation, relabeling) may compact req.Timeseries via RemoveSliceIndexes,
-		// which shifts elements in the backing array. Restoring the original header would
-		// then expose duplicate references, causing double-frees when ReuseSlice runs.
-		for i := lastAccepted + 1; i < len(req.Timeseries); i++ {
-			mimirpb.ReusePreallocTimeseries(&req.Timeseries[i])
-		}
-		req.Timeseries = req.Timeseries[:lastAccepted+1]
-
-		if len(req.Timeseries) > 0 {
-			if pushErr := next(ctx, pushReq); pushErr != nil {
-				// Return only the push error: combining it with dedup errors in a multierror
-				// would let errors.As find replicasDidNotMatchError first, masking 5xx with 202.
-				return pushErr
+		removeReplica, err := d.checkSample(ctx, userID, cluster, replica, sampleTimestamp)
+		if err != nil {
+			if errors.As(err, &replicasDidNotMatchError{}) {
+				// These samples have been deduped.
+				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
 			}
+
+			if errors.As(err, &tooManyClustersError{}) {
+				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
+				d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(numSamples), reasonTooManyHAClusters, now)
+			}
+
+			return err
 		}
 
-		return errs.Err()
+		if removeReplica {
+			// If we found both the cluster and replica labels, we only want to include the cluster label when
+			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
+			// series we're trying to dedupe when HA tracking moves over to a different replica.
+			for ix := range req.Timeseries {
+				req.Timeseries[ix].RemoveLabel(haReplicaLabel)
+			}
+		} else {
+			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
+			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+		}
+
+		return next(ctx, pushReq)
 	})
-}
-
-func removeHAReplicaLabels(req *mimirpb.WriteRequest, lastAccepted int, replicas []haReplica, replicaInfos map[haReplica]*replicaInfo, haReplicaLabel string) {
-	for i := 0; i <= lastAccepted; i++ {
-		r := replicas[i]
-		if !replicaInfos[r].state.equals(replicaIsPrimary) {
-			continue
-		}
-		// If we found both the cluster and replica labels, we only want to include the cluster label when
-		// storing series in Mimir. If we kept the replica label we would end up with another series for the same
-		// series we're trying to dedupe when HA tracking moves over to a different replica.
-		req.Timeseries[i].RemoveLabel(haReplicaLabel)
-	}
-}
-
-// updateHADedupeMetrics updates metrics related to HA deduplication.
-func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos map[haReplica]*replicaInfo, samplesPerState map[replicaState]int, tooManyClustersLabels []mimirpb.LabelAdapter) {
-	for replica, info := range replicaInfos {
-		if info.state.equals(replicaDeduped) && info.sampleCount > 0 {
-			cluster := strings.Clone(replica.cluster) // Make a copy of this, since it may be retained as labels on our metrics
-			d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(info.sampleCount))
-		}
-	}
-	if samplesPerState[replicaNotHA] > 0 {
-		d.nonHASamples.WithLabelValues(userID).Add(float64(samplesPerState[replicaNotHA]))
-	}
-	if samplesPerState[replicaRejectedTooManyClusters] > 0 {
-		d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(tooManyClustersLabels, float64(samplesPerState[replicaRejectedTooManyClusters]), reasonTooManyHAClusters, time.Now())
-		d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(samplesPerState[replicaRejectedTooManyClusters]))
-	}
-}
-
-// findLabelsForRejectedTooManyClusters finds labels from a timeseries whose replica was rejected for too many clusters.
-func findLabelsForRejectedTooManyClusters(replicaInfos map[haReplica]*replicaInfo, replicas []haReplica, req *mimirpb.WriteRequest) []mimirpb.LabelAdapter {
-	var rejectedReplica haReplica
-	for replica, info := range replicaInfos {
-		if info.state.equals(replicaRejectedTooManyClusters) {
-			rejectedReplica = replica
-			break
-		}
-	}
-	for i, r := range replicas {
-		if r == rejectedReplica {
-			return req.Timeseries[i].Labels
-		}
-	}
-	return nil
-}
-
-// sortByAccepted returns the index of the last accepted timeseries in the write request based on the ha dedup states of the replicas
-func sortByAccepted(req *mimirpb.WriteRequest, replicaInfos map[haReplica]*replicaInfo, replicas []haReplica) int {
-	left := 0
-	right := len(replicas) - 1
-	for left < right {
-		for left < right && replicaInfos[replicas[left]].state.equals(replicaAccepted) {
-			left++
-		}
-		for right > left && !replicaInfos[replicas[right]].state.equals(replicaAccepted) {
-			right--
-		}
-		if left == right {
-			break
-		}
-		req.Timeseries[left], req.Timeseries[right] = req.Timeseries[right], req.Timeseries[left]
-		replicas[left], replicas[right] = replicas[right], replicas[left]
-		left++
-		right--
-	}
-
-	// At this point:
-	// - All elements before left are accepted
-	// - All elements after right are rejected
-	// - If left == right, we need to check that element
-	// - If left > right, partition is complete and right is the last accepted index
-
-	if left == right {
-		// Check the element at the meeting point
-		if replicaInfos[replicas[left]].state.equals(replicaAccepted) {
-			return left
-		}
-		return left - 1
-	}
-
-	// left > right, so right is the index of the last accepted element
-	return right
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
-
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
