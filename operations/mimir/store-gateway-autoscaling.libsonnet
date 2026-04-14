@@ -49,7 +49,7 @@
           metric_name: 'mimir_%s_replicas_hpa_%s' % [std.strReplace(name_and_zone, '-', '_'), std.strReplace($._config.namespace, '-', '_')],
           query: qry % {
             namespace: $._config.namespace,
-            extra_matchers: extra_matchers,
+            extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
             pvc_name_pattern: pat,
           },
           metric_type: 'Value',
