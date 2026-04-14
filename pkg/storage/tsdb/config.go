@@ -473,6 +473,7 @@ type BucketStoreConfig struct {
 // RegisterFlags registers the BucketStore flags
 func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.IndexCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-cache.")
+	cfg.IndexHeaderCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header-cache.")
 	cfg.ChunksCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.chunks-cache.")
 	cfg.MetadataCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.metadata-cache.")
 	cfg.BucketIndex.RegisterFlagsWithPrefix(f, bucketIndexFlagPrefix)

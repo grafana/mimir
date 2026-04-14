@@ -5610,6 +5610,36 @@ bucket_store:
       # CLI flag: -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes
       [max_size_bytes: <int> | default = 1073741824]
 
+  index_header_cache:
+    # (experimental) Enable caching of reads for TSDB index-header sections from
+    # object storage, utilizing the index-cache backend.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.enabled
+    [enabled: <boolean> | default = true]
+
+    # (experimental) How long to cache attributes of the block index as utilized
+    # by the index-header reader.  If the metadata cache is configured,
+    # attributes will be stored in the metadata cache backend, otherwise
+    # attributes are stored in the index cache backend.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-ttl
+    [attributes_ttl: <duration> | default = 168h]
+
+    # (experimental) TTL for caching individual subranges.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-ttl
+    [subrange_ttl: <duration> | default = 24h]
+
+    # (experimental) Maximum number of individual subrange items to keep in a
+    # first level in-memory LRU cache. Subranges will be stored and fetched
+    # in-memory before hitting the cache backend. 0 to disable the in-memory
+    # cache.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items
+    [subrange_in_memory_max_items: <int> | default = 0]
+
+    # (experimental) Maximum number of sub-GetRange requests that a single
+    # GetRange request can be split into when fetching index-header sections.
+    # Zero or negative value = unlimited number of sub-requests.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.max-get-range-requests
+    [max_get_range_requests: <int> | default = 3]
+
   chunks_cache:
     # Backend for chunks cache, if not empty. Supported values: memcached.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.backend
