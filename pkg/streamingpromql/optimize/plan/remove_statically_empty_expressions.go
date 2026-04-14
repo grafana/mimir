@@ -60,7 +60,7 @@ func NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg prometheus.Register
 }
 
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Name() string {
-	return "remove statically empty expressions"
+	return "Remove statically empty expressions"
 }
 
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
