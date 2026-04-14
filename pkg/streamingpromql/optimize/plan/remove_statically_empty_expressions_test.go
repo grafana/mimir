@@ -13,11 +13,16 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -213,5 +218,70 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				`, expectedModified)), "cortex_mimir_query_engine_remove_statically_empty_expressions_attempted_total", "cortex_mimir_query_engine_remove_statically_empty_expressions_modified_total",
 			))
 		})
+	}
+}
+
+func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
+	// This test confirms that expressions rewritten by Adaptive Metrics are correctly optimised away.
+	// Expressions like timestamp(foo) < C are rewritten to wrapper(timestamp(foo)) < C.
+
+	reg := prometheus.NewPedanticRegistry()
+	opts := streamingpromql.NewTestEngineOpts()
+	optimizationPass := plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg, opts.Logger)
+
+	for _, function := range []functions.Function{functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2} {
+		// We have to manually create the query plan instead of parsing it from an expression because the Adaptive Metrics wrapper
+		// functions aren't registered in open source Mimir.
+		selector := &core.VectorSelector{
+			VectorSelectorDetails: &core.VectorSelectorDetails{
+				Matchers: []*core.LabelMatcher{
+					{
+						Type:  labels.MatchEqual,
+						Name:  model.MetricNameLabel,
+						Value: "metric",
+					},
+				},
+			},
+		}
+
+		timestampFunctionCall := &core.FunctionCall{
+			FunctionCallDetails: &core.FunctionCallDetails{
+				Function: functions.FUNCTION_TIMESTAMP,
+			},
+			Args: []planning.Node{selector},
+		}
+
+		adaptiveMetricsWrapper := &core.FunctionCall{
+			FunctionCallDetails: &core.FunctionCallDetails{
+				Function: function,
+			},
+			Args: []planning.Node{
+				timestampFunctionCall,
+			},
+		}
+
+		scalar := &core.NumberLiteral{
+			NumberLiteralDetails: &core.NumberLiteralDetails{
+				Value: 1000,
+			},
+		}
+
+		queryPlan := &planning.QueryPlan{
+			Root: &core.BinaryExpression{
+				LHS: adaptiveMetricsWrapper,
+				RHS: scalar,
+				BinaryExpressionDetails: &core.BinaryExpressionDetails{
+					Op: core.BINARY_LTE,
+				},
+			},
+			Parameters: &planning.QueryParameters{
+				TimeRange: types.NewInstantQueryTimeRange(time.Unix(2000, 0)),
+			},
+		}
+
+		optimizedPlan, err := optimizationPass.Apply(context.Background(), queryPlan, planning.MaximumSupportedQueryPlanVersion)
+		require.NoError(t, err)
+
+		require.Equal(t, "- NoOp", optimizedPlan.String())
 	}
 }
