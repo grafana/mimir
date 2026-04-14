@@ -14,11 +14,13 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
@@ -134,6 +136,23 @@ func TestBlockBuilder(t *testing.T) {
 					expSamples, nil,
 					labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 				)
+
+				// Verify that every uploaded block has the expected SourceOffsets.
+				entries, err := os.ReadDir(tenantBucketDir)
+				require.NoError(t, err)
+				var blockCount int
+				for _, entry := range entries {
+					if _, ok := block.IsBlockDir(entry.Name()); !ok {
+						continue
+					}
+					blockCount++
+					blockDir := path.Join(tenantBucketDir, entry.Name())
+					meta, err := block.ReadMetaFromDir(blockDir)
+					require.NoError(t, err)
+					assert.Equal(t, block.NewSingleSourceOffset(1, c.endOffset-1), meta.Thanos.SourceOffsets)
+					assert.Equal(t, block.BlockBuilderSource, meta.Thanos.Source)
+				}
+				require.Greater(t, blockCount, 0, "expected at least one block for tenant %s", tenant)
 			}
 		})
 	}

@@ -131,6 +131,10 @@ type ThanosMeta struct {
 	SourceOffsets map[int32]int64 `json:"source_offsets,omitempty"`
 }
 
+func NewSingleSourceOffset(partition int32, lastConsumedOffset int64) map[int32]int64 {
+	return map[int32]int64{partition: lastConsumedOffset}
+}
+
 type Matchers []*labels.Matcher
 
 func (m *Matchers) UnmarshalYAML(value *yaml.Node) (err error) {

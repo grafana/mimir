@@ -523,7 +523,9 @@ func (b *BlockBuilder) consumePartitionSection(
 		return
 	}
 	var err error
-	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
+	blockMetas, err = builder.CompactAndUpload(ctx, func(ctx context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta) error {
+		return b.uploadBlocks(ctx, tenantID, dbDir, metas, block.NewSingleSourceOffset(partition, lastConsumedOffset))
+	})
 	if err != nil {
 		return err
 	}
@@ -533,7 +535,7 @@ func (b *BlockBuilder) consumePartitionSection(
 	return nil
 }
 
-func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta) error {
+func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta, sourceOffsets map[int32]int64) error {
 	buc := bucket.NewUserBucketClient(tenantID, b.bucketClient, b.limits)
 	for _, m := range metas {
 		if m.Stats.NumSamples == 0 {
@@ -547,6 +549,7 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 
 		meta.Thanos.Source = block.BlockBuilderSource
 		meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
+		meta.Thanos.SourceOffsets = sourceOffsets
 
 		if meta.Compaction.FromOutOfOrder() && b.limits.OutOfOrderBlocksExternalLabelEnabled(tenantID) {
 			// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag

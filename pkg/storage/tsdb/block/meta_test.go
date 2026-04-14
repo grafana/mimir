@@ -85,7 +85,7 @@ func TestThanosMeta_SourceOffsets(t *testing.T) {
 	}
 
 	t.Run("round-trip with source offsets", func(t *testing.T) {
-		original := newMeta(map[int32]int64{68: 1500})
+		original := newMeta(NewSingleSourceOffset(68, 1500))
 
 		encoded := writeMetaJSON(t, original)
 		assert.Contains(t, encoded, `"source_offsets"`)
