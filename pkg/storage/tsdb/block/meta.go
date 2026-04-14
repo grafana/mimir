@@ -125,6 +125,10 @@ type ThanosMeta struct {
 	// Useful to avoid API call to get size of each file, as well as for debugging purposes.
 	// Optional, added in v0.17.0.
 	Files []File `json:"files,omitempty"`
+
+	// SourceOffsets stores the highest Kafka offset consumed per partition
+	// among the requests that produced the block. Not guaranteed to be set.
+	SourceOffsets map[int32]int64 `json:"source_offsets,omitempty"`
 }
 
 type Matchers []*labels.Matcher
