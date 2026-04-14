@@ -439,6 +439,7 @@ type BucketStoreConfig struct {
 	BlockSyncConcurrency                   int                         `yaml:"block_sync_concurrency" category:"advanced"`
 	MetaSyncConcurrency                    int                         `yaml:"meta_sync_concurrency" category:"advanced"`
 	IndexCache                             indexcache.IndexCacheConfig `yaml:"index_cache"`
+	IndexHeaderCache                       IndexHeaderCacheConfig      `yaml:"index_header_cache"`
 	ChunksCache                            ChunksCacheConfig           `yaml:"chunks_cache"`
 	MetadataCache                          MetadataCacheConfig         `yaml:"metadata_cache"`
 	IgnoreDeletionMarksInStoreGatewayDelay time.Duration               `yaml:"ignore_deletion_mark_delay" category:"advanced"`
