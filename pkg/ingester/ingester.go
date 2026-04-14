@@ -624,7 +624,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			if err != nil {
 				return nil, fmt.Errorf("creating kafka client for committed offset reader: %w", err)
 			}
-			i.committedOffsetClient = ingest.NewCommittedOffsetClient(cl, kafkaCfg.Topic)
+			i.committedOffsetClient = ingest.NewCommittedOffsetClient(cl, consumerGroup, kafkaCfg.Topic, i.ingestPartitionID)
 		}
 	}
 

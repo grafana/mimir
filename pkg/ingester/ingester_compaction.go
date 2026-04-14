@@ -211,17 +211,20 @@ func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
 }
 
 func (i *Ingester) updateCommittedOffset(ctx context.Context) error {
-	consumerGroup := i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroup
-	offset, exists, err := i.committedOffsetClient.FetchLastCommittedOffset(ctx, consumerGroup, i.ingestPartitionID)
+	if !i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		return nil
+	}
+
+	offset, exists, err := i.committedOffsetClient.FetchLastCommittedOffset(ctx)
 	if err != nil {
-		level.Warn(i.logger).Log("msg", "failed to fetch committed offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "err", err)
+		level.Warn(i.logger).Log("msg", "failed to fetch committed offset", "err", err)
 		return nil
 	}
 	if !exists {
 		return nil
 	}
 
-	level.Info(i.logger).Log("msg", "updating committed offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "offset", offset)
+	level.Info(i.logger).Log("msg", "updating committed offset", "partition", i.ingestPartitionID, "offset", offset)
 
 	i.tsdbsMtx.RLock()
 	defer i.tsdbsMtx.RUnlock()

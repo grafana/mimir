@@ -24,8 +24,8 @@ func TestCommittedOffsetClient_FetchLastCommittedOffset(t *testing.T) {
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
 		client := createTestKafkaClient(t, kafkaCfg)
 
-		c := NewCommittedOffsetClient(client, topicName)
-		_, exists, err := c.FetchLastCommittedOffset(t.Context(), consumerGroup, partitionID)
+		c := NewCommittedOffsetClient(client, consumerGroup, topicName, partitionID)
+		_, exists, err := c.FetchLastCommittedOffset(t.Context())
 		require.NoError(t, err)
 		require.False(t, exists)
 	})
@@ -45,8 +45,8 @@ func TestCommittedOffsetClient_FetchLastCommittedOffset(t *testing.T) {
 		_, err := adm.CommitOffsets(ctx, consumerGroup, offsets)
 		require.NoError(t, err)
 
-		c := NewCommittedOffsetClient(client, topicName)
-		offset, exists, err := c.FetchLastCommittedOffset(ctx, consumerGroup, partitionID)
+		c := NewCommittedOffsetClient(client, consumerGroup, topicName, partitionID)
+		offset, exists, err := c.FetchLastCommittedOffset(ctx)
 		require.NoError(t, err)
 		require.True(t, exists)
 		require.Equal(t, int64(1), offset)
@@ -67,9 +67,9 @@ func TestCommittedOffsetClient_FetchLastCommittedOffset(t *testing.T) {
 		_, err := adm.CommitOffsets(ctx, consumerGroup, offsets)
 		require.NoError(t, err)
 
-		c := NewCommittedOffsetClient(client, topicName)
 		// Partition 99 was never committed.
-		_, exists, err := c.FetchLastCommittedOffset(ctx, consumerGroup, int32(99))
+		c := NewCommittedOffsetClient(client, consumerGroup, topicName, int32(99))
+		_, exists, err := c.FetchLastCommittedOffset(ctx)
 		require.NoError(t, err)
 		require.False(t, exists)
 	})
