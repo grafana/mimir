@@ -217,7 +217,7 @@ func unwrap(node planning.Node) planning.Node {
 		case *core.StepInvariantExpression:
 			node = n.Inner
 		case *core.FunctionCall:
-			if n.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1 || n.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2 {
+			if (n.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1 || n.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2) && len(n.Args) > 0 {
 				// The Adaptive Metrics query rewriting can wrap a timestamp() call (eg. expression becomes wrapper(timestamp(...)) < T), so unwrap it.
 				node = n.Args[0]
 			} else {
