@@ -109,10 +109,9 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	}
 
 	// Init the index cache.
-	// If the index cache uses a memcached backend,
-	// the same cache backend will be used for the index-header bucket cache.
+	// If the index cache uses a memcached backend, the same client is used for the index-header bucket cache.
 	// The in-memory index cache implementation does not provide a compatible cache.Cache backend.
-	var indexCacheClient *cache.MemcachedClient
+	var indexCacheClient cache.Cache //
 	var indexCache indexcache.IndexCache
 	switch cfg.BucketStore.IndexCache.Backend {
 	case indexcache.BackendInMemory:
@@ -121,18 +120,20 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 			return nil, errors.Wrap(err, "create index cache")
 		}
 	case indexcache.BackendMemcached:
-		indexCacheClient, err = cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.BucketStore.IndexCache.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+		indexMemcachedClient, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.BucketStore.IndexCache.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 		if err != nil {
 			return nil, errors.Wrap(err, "create index cache memcached client")
 		}
-		indexCache, err = indexcache.NewMemcachedIndexCache(indexCacheClient, logger, reg)
+		indexCache, err = indexcache.NewMemcachedIndexCache(indexMemcachedClient, logger, reg)
 		if err != nil {
 			return nil, errors.Wrap(err, "create index cache")
 		}
+		indexCacheClient = indexMemcachedClient
 	default:
 		return nil, errors.Wrap(indexcache.ErrUnsupportedIndexCacheBackend, "create index cache")
 	}
-	// Index-header caching bucket uses the memcached client from index cache, if enabled.
+
+	// Init index-header caching bucket with the memcached client from index cache, if enabled.
 	indexHeaderCachingBucket, err := tsdb.NewIndexHeaderCachingBucket(
 		metadataCache, cachingBucketConfig, indexCacheClient, cfg.BucketStore.IndexHeaderCache, bucketClient, logger, reg,
 	)
