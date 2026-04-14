@@ -5,7 +5,7 @@
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
 FROM alpine/helm:4.1.1@sha256:b5c85b997d83e89d9e8ff9215a14b03864274143981af45eb3fe729cdf782c73 AS helm
-FROM golang:1.25.8-trixie@sha256:bc16125656839ffe56154c675f7a9662bec2ef7d4060177239914e7c6d2fd8a8
+FROM golang:1.25.9-trixie@sha256:091e6099f4a58e9393b8cc5615622a59c1cef64481b0ffcf349ec1574449059e
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
