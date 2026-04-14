@@ -671,10 +671,29 @@ func TestActiveSeriesLimitedErrorHTTPStatusCode(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := newActiveSeriesLimitedError(100, 25, 50, tc.httpStatusCode)
+			err := newActiveSeriesLimitedError(100, 100, 50, tc.httpStatusCode, 0)
 			assert.Equal(t, tc.expectedHTTPStatus, err.HTTPStatusCode())
 			assert.Equal(t, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED, err.Cause())
 			assert.False(t, err.IsSoft())
+		})
+	}
+}
+
+func TestActiveSeriesLimitedError_IsSoft(t *testing.T) {
+	tests := map[string]struct {
+		total    int
+		rejected int
+		soft     bool
+	}{
+		"all rejected":  {total: 10, rejected: 10, soft: false},
+		"some rejected": {total: 10, rejected: 3, soft: true},
+		"one rejected":  {total: 10, rejected: 1, soft: true},
+		"none rejected": {total: 10, rejected: 0, soft: false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := newActiveSeriesLimitedError(tc.total, tc.rejected, 100, http.StatusTooManyRequests, 5)
+			assert.Equal(t, tc.soft, err.IsSoft())
 		})
 	}
 }

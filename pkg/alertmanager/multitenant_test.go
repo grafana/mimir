@@ -68,6 +68,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
+	utillog "github.com/grafana/mimir/pkg/util/log"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -280,6 +281,14 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	utiltest.VerifyNoLeak(t,
 		// This package's init() function statically starts a singleton goroutine that runs forever.
 		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+		// Upstream alertmanager's Inhibitor.Stop() and Dispatcher.Stop() signal
+		// cancellation but don't fully wait for all spawned goroutines to return.
+		// These goroutines exit eventually, but may still be draining when goleak
+		// checks after a prior test's deferred StopAndWait.
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*Dispatcher).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*aggrGroup).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/inhibit.(*Inhibitor).run"),
+		goleak.IgnoreTopFunction("github.com/oklog/run.(*Group).Run"),
 	)
 
 	ctx := context.Background()
@@ -2419,12 +2428,13 @@ receivers:
 	require.NotNil(t, uam)
 
 	ctx = notify.WithReceiverName(ctx, "email")
+	ctx = notify.WithRouteID(ctx, "default-route")
 	ctx = notify.WithGroupKey(ctx, "key")
 	ctx = notify.WithRepeatInterval(ctx, time.Minute)
 	ctx = notify.WithNow(ctx, time.Now())
 
 	// Verify that rate-limiter is in place for email notifier.
-	_, _, err = uam.lastPipeline.Exec(ctx, log.NewNopLogger(), &types.Alert{})
+	_, _, err = uam.lastPipeline.Exec(ctx, utillog.SlogFromGoKit(log.NewNopLogger()), &types.Alert{})
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), errRateLimited.Error())
 }

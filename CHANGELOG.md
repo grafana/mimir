@@ -182,6 +182,8 @@
 * [ENHANCEMENT] Activity tracker: Added `activity_tracker_unfinished_activities_loaded` metric to report the number of unfinished activities detected on startup. #14860
 * [ENHANCEMENT] Distributor now uses record validation time as Kafka record timestamp to reduce rejections among consumers. #14921
 * [ENHANCEMENT] MQE: Add optimisation pass to optimise away expressions containing comparisons with `timestamp()` that can't produce results due to the query time range. #14989
+* [ENHANCEMENT] Distributor: OTLP endpoint now returns partial success (HTTP 200) instead of HTTP 429 when the usage tracker rejects some series due to the active series limit but other series are successfully ingested. The `RejectedDataPoints` field reports the count of distributor-side rejections (usage tracker filtering). #14789
+* [BUGFIX] Distributor: OTLP partial success responses now correctly populate `RejectedDataPoints` with the actual count of rejected samples, instead of always reporting 0. In classical architecture, this includes rejected samples propagated from the ingester. #14789
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Store-gateway: Fix `cortex_bucket_store_series_data_touched{data_type="series", stage="returned"}` metric observing negative values when series-for-postings cache is hit and pending matchers filter out some series. #14655
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426

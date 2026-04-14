@@ -1927,23 +1927,34 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
 
+		var discardedSamples int
 		if len(rejectedHashes) > 0 {
-			discardedSamples := filterOutRejectedSeries(req, seriesHashes, rejectedHashes)
+			discardedSamples = filterOutRejectedSeries(req, seriesHashes, rejectedHashes)
 			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
 		}
 
 		if len(req.Timeseries) == 0 {
 			// All series have been rejected, no need to talk to ingesters.
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
 		}
 
 		// If there's an error coming from the ingesters, prioritize that one.
 		if err := next(ctx, pushReq); err != nil {
+			if len(rejectedHashes) > 0 {
+				// The ingester also returned an error. If it's a soft ingesterPushError,
+				// combine the pre-filtered discardedSamples with the ingester's rejected count.
+				var ingErr ingesterPushError
+				if errors.As(err, &ingErr) && ingErr.IsSoft() {
+					ingErr.rejectedSamples += int64(discardedSamples)
+					return ingErr
+				}
+			}
+
 			return err
 		}
 
 		if len(rejectedHashes) > 0 {
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
 		}
 
 		return nil
