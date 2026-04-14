@@ -254,15 +254,17 @@ func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
 }
 
 func (i *Ingester) updateCommittedOffset(ctx context.Context) error {
-	consumerGroup := i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroup
+	if !i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled {
+		return nil
+	}
 
 	// Each Kafka cluster has an independent offset space.
 	offsets := make([]int64, len(i.committedOffsetClients))
 	anyExists := false
 	for clusterID, c := range i.committedOffsetClients {
-		offset, exists, err := c.FetchLastCommittedOffset(ctx, consumerGroup, i.ingestPartitionID)
+		offset, exists, err := c.FetchLastCommittedOffset(ctx)
 		if err != nil {
-			level.Warn(i.logger).Log("msg", "failed to fetch committed offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "write_compartment", clusterID, "err", err)
+			level.Warn(i.logger).Log("msg", "failed to fetch committed offset", "write_compartment", clusterID, "err", err)
 			return nil
 		}
 		if !exists {
@@ -277,7 +279,7 @@ func (i *Ingester) updateCommittedOffset(ctx context.Context) error {
 	}
 	committed := kmeta.NewMultiClusterPartitionOffsets(offsets)
 
-	level.Info(i.logger).Log("msg", "updating committed offset", "consumer_group", consumerGroup, "partition", i.ingestPartitionID, "offsets", committed)
+	level.Info(i.logger).Log("msg", "updating committed offset", "partition", i.ingestPartitionID, "offsets", committed)
 
 	i.tsdbsMtx.RLock()
 	defer i.tsdbsMtx.RUnlock()
