@@ -9833,8 +9833,8 @@ func TestDistributor_replicaObserved(t *testing.T) {
 
 	testConfig := prepConfig{numDistributors: 1, enableTracker: true}
 
-	replicasDidNotMatch := &replicasDidNotMatchError{}
-	tooManyClusters := &tooManyClustersError{}
+	replicasDidNotMatch := replicasDidNotMatchError{}
+	tooManyClusters := tooManyClustersError{}
 	unknownErr := errors.New("unknown")
 
 	tests := []struct {
