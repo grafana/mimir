@@ -69,8 +69,6 @@ func (f *batchCachingMetaFetcher) FetchMetasFromListing(ctx context.Context, max
 		if err != nil {
 			metrics.SyncFailures.Inc()
 		}
-		metrics.Synced.WithLabelValues(block.LoadedMeta).Set(float64(len(metas)))
-		metrics.Submit()
 	}()
 
 	blockIDs, noCompact, err := f.discoverBlocks(ctx, maxLookback, metrics.Synced)
@@ -80,13 +78,17 @@ func (f *batchCachingMetaFetcher) FetchMetasFromListing(ctx context.Context, max
 
 	metas, stats, err := f.innerFetchMetas(ctx, blockIDs, false, true, metrics.Synced, filters)
 	stats.updateMetrics(metrics)
-
+	if err != nil {
+		return nil, err
+	}
 	// Filter blocks marked as no-compact after innerFetchMetas to not get in the front of deduplication
 	beforeLen := len(metas)
 	filterMapIfMarked(metas, noCompact)
 	metrics.Synced.WithLabelValues(block.MarkedForNoCompactionMeta).Set(float64(beforeLen - len(metas)))
+	metrics.Synced.WithLabelValues(block.LoadedMeta).Set(float64(len(metas)))
+	metrics.Submit()
 
-	return metas, err
+	return metas, nil
 }
 
 // FetchMetasFromIDs fetches metadata for specific block IDs using the cache where possible.
