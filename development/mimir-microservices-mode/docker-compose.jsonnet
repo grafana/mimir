@@ -1,11 +1,12 @@
 std.manifestYamlDoc({
   _config:: {
-    // If true, all Mimir services are run under Delve debugger (that can be attached to via remote-debugging
-    // session) and debug_targets is ignored.
+    // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
     debug: false,
 
-    // When debug is false, only these specific targets are run under Delve.
+    // When debug is true, controls which targets run under Delve.
+    // If empty, all components run under Delve.
+    // If non-empty, only the listed components run under Delve.
     // Example: ['querier', 'ingester'] to debug only querier and ingester.
     // Available targets: distributor, ingester, querier, query-frontend, query-scheduler, compactor, ruler, alertmanager, store-gateway, continuous-test.
     debug_targets: [],
@@ -256,7 +257,7 @@ std.manifestYamlDoc({
     local command = if isLocalImage then ['/bin/sh', '-c', std.join(' ', [
       // some of the following expressions use "... else null", which std.join seem to ignore.
       (if $._config.sleep_seconds > 0 then 'sleep %d &&' % [$._config.sleep_seconds] else null),
-      (if $._config.debug || std.member($._config.debug_targets, options.target) then 'exec /bin/dlv exec /bin/mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec /bin/mimir'),
+      (if $._config.debug && (std.length($._config.debug_targets) == 0 || std.member($._config.debug_targets, options.target)) then 'exec /bin/dlv exec /bin/mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec /bin/mimir'),
     ] + flags)] else flags,
 
     build: if isLocalImage then {
@@ -270,7 +271,7 @@ std.manifestYamlDoc({
     // Only publish HTTP and debug port, but not gRPC one.
     ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
            ['%d:%d' % [options.memberlistBindPort, options.memberlistBindPort]] +
-           if $._config.debug || std.member($._config.debug_targets, options.target) then [
+           if $._config.debug && (std.length($._config.debug_targets) == 0 || std.member($._config.debug_targets, options.target)) then [
              '%d:%d' % [options.debugPort, options.debugPort],
            ] else [],
     depends_on: options.dependsOn,
