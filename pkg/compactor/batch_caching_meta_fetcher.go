@@ -73,13 +73,19 @@ func (f *batchCachingMetaFetcher) FetchMetasFromListing(ctx context.Context, max
 		metrics.Submit()
 	}()
 
-	blockIDs, err := f.discoverBlocks(ctx, maxLookback, metrics.Synced)
+	blockIDs, noCompact, err := f.discoverBlocks(ctx, maxLookback, metrics.Synced)
 	if err != nil {
 		return nil, err
 	}
 
 	metas, stats, err := f.innerFetchMetas(ctx, blockIDs, false, true, metrics.Synced, filters)
 	stats.updateMetrics(metrics)
+
+	// Filter blocks marked as no-compact after innerFetchMetas to not get in the front of deduplication
+	beforeLen := len(metas)
+	filterMapIfMarked(metas, noCompact)
+	metrics.Synced.WithLabelValues(block.MarkedForNoCompactionMeta).Set(float64(beforeLen - len(metas)))
+
 	return metas, err
 }
 
@@ -191,12 +197,11 @@ func (f *batchCachingMetaFetcher) innerFetchMetas(ctx context.Context, blockIDs 
 
 // discoverBlocks lists blocks and block markers to discover which blocks are relevant for compaction planning.
 // It sets discovery-related synced metrics on the provided synced gauge vec.
-func (f *batchCachingMetaFetcher) discoverBlocks(ctx context.Context, maxLookback time.Duration, synced block.GaugeVec) ([]ulid.ULID, error) {
-	var lookbackExcluded, deletionMarked, noCompactMarked float64
+func (f *batchCachingMetaFetcher) discoverBlocks(ctx context.Context, maxLookback time.Duration, synced block.GaugeVec) ([]ulid.ULID, map[ulid.ULID]struct{}, error) {
+	var lookbackExcluded, deletionMarked float64
 	defer func() {
 		synced.WithLabelValues(block.LookbackExcludedMeta).Set(lookbackExcluded)
 		synced.WithLabelValues(block.MarkedForDeletionMeta).Set(deletionMarked)
-		synced.WithLabelValues(block.MarkedForNoCompactionMeta).Set(noCompactMarked)
 	}()
 
 	var minAllowedBlockID ulid.ULID
@@ -204,7 +209,7 @@ func (f *batchCachingMetaFetcher) discoverBlocks(ctx context.Context, maxLookbac
 		var err error
 		minAllowedBlockID, err = ulid.New(ulid.Timestamp(time.Now().Add(-maxLookback)), nil)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -244,23 +249,39 @@ func (f *batchCachingMetaFetcher) discoverBlocks(ctx context.Context, maxLookbac
 		return nil
 	})
 	if err := g.Wait(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	beforeLen := len(blockIDs)
+	blockIDs = filterSliceIfMarked(blockIDs, deletionMarks)
+	deletionMarked = float64(beforeLen - len(blockIDs))
+	return blockIDs, noCompactMarks, nil
+}
 
+func filterSliceIfMarked(blockIDs []ulid.ULID, marks map[ulid.ULID]struct{}) []ulid.ULID {
+	if len(marks) == 0 {
+		return blockIDs
+	}
 	unmarked := blockIDs[:0]
 	for _, id := range blockIDs {
-		if _, marked := deletionMarks[id]; marked {
-			deletionMarked++
-			continue
-		}
-		if _, marked := noCompactMarks[id]; marked {
-			noCompactMarked++
+		if _, marked := marks[id]; marked {
 			continue
 		}
 		unmarked = append(unmarked, id)
 	}
+	return unmarked
+}
 
-	return unmarked, nil
+func filterMapIfMarked(metas map[ulid.ULID]*block.Meta, marks map[ulid.ULID]struct{}) {
+	if len(marks) == 0 {
+		return
+	}
+	for id := range marks {
+		if _, ok := metas[id]; ok {
+			delete(metas, id)
+		}
+	}
+
+	return
 }
 
 func (f *batchCachingMetaFetcher) runFilters(ctx context.Context, metas map[ulid.ULID]*block.Meta, synced block.GaugeVec, filters []block.MetadataFilter) (map[ulid.ULID]*block.Meta, error) {

@@ -193,7 +193,6 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 var (
 	ErrorSyncMetaNotFound  = errors.New("meta.json not found")
 	ErrorSyncMetaCorrupted = errors.New("meta.json corrupted")
-	errNoBlocksProvided    = errors.New("no block metadata provided")
 )
 
 // loadMeta returns metadata from object storage or error.
