@@ -13,7 +13,30 @@ import (
 )
 
 type QueryStreamResponse struct {
-	Chunkseries []QueryStreamChunkseries `json:"chunkseries"`
+	StreamingSeries       []QueryStreamSeries       `json:"streamingSeries"`
+	StreamingSeriesChunks []QueryStreamSeriesChunks `json:"streamingSeriesChunks"`
+	IsEndOfSeriesStream   bool                      `json:"isEndOfSeriesStream"`
+}
+
+type QueryStreamSeries struct {
+	Labels     []Label `json:"labels"`
+	ChunkCount string  `json:"chunkCount"`
+}
+
+type QueryStreamSeriesChunks struct {
+	SeriesIndexStr string  `json:"seriesIndex"`
+	Chunks         []Chunk `json:"chunks"`
+}
+
+func (s QueryStreamSeriesChunks) SeriesIndex() int {
+	if s.SeriesIndexStr == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(s.SeriesIndexStr)
+	if err != nil {
+		panic(err)
+	}
+	return value
 }
 
 type QueryStreamChunkseries struct {

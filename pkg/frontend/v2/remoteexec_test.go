@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"sync"
@@ -2263,8 +2264,10 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	})
 
 	handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
-	_, err = querymiddleware.NewLimitedParallelismRoundTripper(handler, codec, limits, true, middleware).RoundTrip(httpRequest)
+	resp, err := querymiddleware.NewLimitedParallelismRoundTripper(handler, codec, limits, true, middleware).RoundTrip(httpRequest)
 	require.NoError(t, err)
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 	require.NotZero(t, maxConcurrent, "expected at least one query to be executed")
 	require.LessOrEqualf(t, maxConcurrent, maxQueryParallelism, "max query parallelism %v went over the configured limit of %v", maxConcurrent, maxQueryParallelism)
 }

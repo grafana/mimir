@@ -149,6 +149,13 @@ api:
   # CLI flag: -api.skip-label-count-validation-header-enabled
   [skip_label_count_validation_header_enabled: <boolean> | default = false]
 
+  # (experimental) Allows controlling OTLP metric name suffix addition and
+  # translation strategy via X-Mimir-OTLP-AddSuffixes and
+  # X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not
+  # recommended for general use.
+  # CLI flag: -api.otlp-translation-headers-enabled
+  [otlp_translation_headers_enabled: <boolean> | default = false]
+
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
   # CLI flag: -http.alertmanager-http-prefix
@@ -1980,6 +1987,11 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
   [enable_multi_aggregation: <boolean> | default = true]
 
+  # (experimental) Enable removing expressions that are guaranteed to produce no
+  # results.
+  # CLI flag: -querier.mimir-query-engine.enable-remove-statically-empty-expressions
+  [enable_remove_statically_empty_expressions: <boolean> | default = true]
+
   range_vector_splitting:
     # (experimental) Enable splitting function over range vectors queries into
     # smaller blocks for caching.
@@ -3044,10 +3056,9 @@ sharding_ring:
 [enable_api: <boolean> | default = true]
 
 # (experimental) Duration to wait before shutting down an idle Alertmanager
-# using an unpromoted or default configuration when strict initialization is
-# enabled.
-# CLI flag: -alertmanager.grafana-alertmanager-grace-period
-[grafana_alertmanager_idle_grace_period: <duration> | default = 5m]
+# using a default/empty configuration when strict initialization is enabled.
+# CLI flag: -alertmanager.strict-initialization-idle-grace-period
+[strict_initialization_idle_grace_period: <duration> | default = 5m]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
@@ -3248,10 +3259,6 @@ alertmanager_client:
 # with UTF-8 strict mode.
 # CLI flag: -alertmanager.utf8-migration-logging-enabled
 [utf8_migration_logging: <boolean> | default = false]
-
-# (experimental) Enable pre-notification hooks.
-# CLI flag: -alertmanager.notify-hooks-enabled
-[enable_notify_hooks: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
@@ -3851,6 +3858,12 @@ The `memberlist` block configures the Gossip memberlist.
 # CPU activity in large memberlist deployments. 0 to notify without delay.
 # CLI flag: -memberlist.notify-interval
 [notify_interval: <duration> | default = 0s]
+
+# (advanced) Size of the internal queue for messages received from other nodes.
+# Increasing this value may help to avoid dropping messages when the node is
+# processing a large number of messages from other nodes.
+# CLI flag: -memberlist.received-messages-queue-size
+[received_messages_queue_size: <int> | default = 1024]
 
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
@@ -4552,6 +4565,10 @@ blocked_queries:
     # disable.
     [time_range_longer_than: <duration> | default = ]
 
+    # Block queries where the step is smaller than this duration. Instant
+    # queries and queries with no step are not blocked. Set to 0 to disable.
+    [minimum_step_size: <duration> | default = ]
+
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
 #   The following configuration limits the query "rate(metric_counter[5m])" to
@@ -4895,6 +4912,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
+# The number of shards to use when splitting out-of-order blocks. 0 to use the
+# value of -compactor.split-and-merge-shards. Only applies to blocks with the
+# out-of-order external label, see
+# -ingester.out-of-order-blocks-external-label-enabled.
+# CLI flag: -compactor.ooo-split-and-merge-shards
+[compactor_ooo_split_and_merge_shards: <int> | default = 0]
+
 # Number of groups that blocks for splitting should be grouped into. Each group
 # of blocks is then split separately. Number of output split shards is
 # controlled by -compactor.split-and-merge-shards.
@@ -4984,11 +5008,6 @@ ruler_alertmanager_client_config:
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
-# Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no
-# limit.
-# CLI flag: -alertmanager.max-grafana-config-size-bytes
-[alertmanager_max_grafana_config_size_bytes: <int> | default = 0B]
-
 # Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
@@ -5030,19 +5049,6 @@ ruler_alertmanager_client_config:
 # alerts will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
-
-# URL of a hook to invoke before a notification is sent. empty = no hook.
-# CLI flag: -alertmanager.notify-hook-url
-[alertmanager_notify_hook_url: <string> | default = ""]
-
-# List of receivers to enable notify hooks for. empty = all receivers.
-# CLI flag: -alertmanager.notify-hook-receivers
-[alertmanager_notify_hook_receivers: <string> | default = ""]
-
-# Maximum amount of time to wait for a hook to complete before timing out. 0 =
-# no timeout.
-# CLI flag: -alertmanager.notify-hook-timeout
-[alertmanager_notify_hook_timeout: <duration> | default = 30s]
 
 # (advanced) Whether to enable automatic suffixes to names of metrics ingested
 # through OTLP.
@@ -5167,10 +5173,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-timeout
   [write_timeout: <duration> | default = 10s]
 
-  # The number of Kafka clients used by producers. When the configured number of
-  # clients is greater than 1, partitions are sharded among Kafka clients. A
-  # higher number of clients may provide higher write throughput at the cost of
-  # additional Metadata requests pressure to Kafka.
+  # (deprecated) The number of Kafka clients used by producers. When the
+  # configured number of clients is greater than 1, partitions are sharded among
+  # Kafka clients. A higher number of clients may provide higher write
+  # throughput at the cost of additional Metadata requests pressure to Kafka.
+  # Deprecated: has no effect (Mimir always uses a single Kafka write client).
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
@@ -5806,9 +5813,9 @@ bucket_store:
       [enabled: <boolean> | default = false]
 
       # (experimental) Index sections to read from object storage instead of
-      # local disk. Valid sections: all
+      # local disk. Valid sections: postings-offsets-table
       # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
-      [index_sections: <string> | default = "all"]
+      [index_sections: <string> | default = "postings-offsets-table"]
 
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.
@@ -6059,7 +6066,7 @@ tsdb:
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch
     [label_cardinality_for_larger_sketch: <int> | default = 1000000]
 
-    # (advanced) Number of series for a label name above which smaller count-min
+    # (advanced) Number of series for a label name below which smaller count-min
     # sketches are used for that label.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch
     [label_cardinality_for_smaller_sketch: <int> | default = 1000]
@@ -6080,6 +6087,17 @@ tsdb:
     # in query execution optimization. 0 to disable.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency
     [statistics_collection_frequency: <duration> | default = 1h]
+
+  offset_catalogue:
+    # (experimental) Controls the maintaining of kafka offset catalogue per
+    # block.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) Maximum number of tenants concurrently syncing offset
+    # catalogue to disk.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.sync-concurrency
+    [sync_concurrency: <int> | default = 10]
 ```
 
 ### compactor

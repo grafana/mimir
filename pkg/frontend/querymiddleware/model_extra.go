@@ -160,12 +160,18 @@ func (r *PrometheusRangeQueryRequest) GetParsedQuery() parser.Expr {
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMinT() int64 {
+	if r.minT == 0 {
+		r.updateMinMaxT()
+	}
 	return r.minT
 }
 
 // GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
 // as determined from the end timestamp and any offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMaxT() int64 {
+	if r.maxT == 0 {
+		r.updateMinMaxT()
+	}
 	return r.maxT
 }
 
@@ -389,12 +395,18 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
 func (r *PrometheusInstantQueryRequest) GetMinT() int64 {
+	if r.minT == 0 {
+		r.updateMinMaxT()
+	}
 	return r.minT
 }
 
 // GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
 // as determined from the end timestamp and any offset in the query.
 func (r *PrometheusInstantQueryRequest) GetMaxT() int64 {
+	if r.maxT == 0 {
+		r.updateMinMaxT()
+	}
 	return r.maxT
 }
 

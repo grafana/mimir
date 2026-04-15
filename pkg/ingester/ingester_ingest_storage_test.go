@@ -241,7 +241,7 @@ func TestIngester_Start(t *testing.T) {
 
 		partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 		require.NoError(t, err)
-		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
+		require.NoError(t, writer.WriteSync(ctx, cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
 
 		// Add the ingester in LEAVING state in the ring, in order to simulate an ingester restart.
 		// This will make the owned series tracker to correctly work at ingester startup.
@@ -330,7 +330,7 @@ func TestIngester_Start(t *testing.T) {
 
 		// Write one more request to Kafka. This will cause the ingester to consume up until the
 		// "last produced offset" returned by the mocked Kafka, and so consider the catch up complete.
-		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series2}, Source: mimirpb.API}))
+		require.NoError(t, writer.WriteSync(ctx, cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series2}, Source: mimirpb.API}))
 
 		// We expect the ingester to catch up, and then switch to Running state.
 		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
@@ -445,7 +445,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 			partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 			require.NoError(t, err)
-			require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
+			require.NoError(t, writer.WriteSync(ctx, cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
 
 			// Run a query in a separate goroutine and collect the result.
 			var (

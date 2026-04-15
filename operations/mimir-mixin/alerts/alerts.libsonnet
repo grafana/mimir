@@ -177,11 +177,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             count without(sha256) (
                 count by (%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)
-                unless
+                unless on (%(alert_aggregation_labels)s, sha256)
                 # Don't include config hashes that are still being rolled out.
                 # Kubernetes configmap propagation can be slow,
                 # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
-                (changes((count by (%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
+                (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
             )  > 1
           ||| % $._config,
           'for': '1h',
@@ -214,26 +214,43 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
-            sum by (%(group_by)s, %(job_label)s) (min_over_time(cortex_query_scheduler_queue_length[%(range_interval)s])) > 0
+            # There are some queries in the queue.
+            (sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length) > 0)
+
+            # And the queue size doesn't decrease. We compute the delta with an higher frequency (so a lower step
+            # in the subquery) to increase chances of detecting even short-term downward variations.
+            and (
+              min_over_time(
+                delta(
+                  sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length)
+                  [%(range_interval)s:%(range_subinterval)s]
+                )
+                [%(range_interval)s:%(range_subinterval)s]
+              ) >= 0
+            )
           ||| % {
             group_by: $._config.alert_aggregation_labels,
             job_label: $._config.per_job_label,
             range_interval: $.alertRangeInterval(1),
+            range_subinterval: $.alertRangeInterval(0.25),
           },
           'for': '7m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
           },
-          annotations: {
-                         message: |||
-                           There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
-                         ||| % $._config,
-                       }
-                       // Alternative dashboards for investigation:
-                       //   - Mimir / Remote ruler reads (mimir-remote-ruler-reads.json)
-                       //   - Mimir / Reads Resources (mimir-reads-resources.json)
-                       //   - Mimir / Slow Queries (mimir-slow-queries.json)
-                       + $.dashboardURLAnnotation('mimir-reads.json'),
+          annotations: (
+            {
+              message: |||
+                There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
+              ||| % $._config,
+            }
+          ) + (
+            // Alternative dashboards for investigation:
+            //   - Mimir / Remote ruler reads (mimir-remote-ruler-reads.json)
+            //   - Mimir / Reads Resources (mimir-reads-resources.json)
+            //   - Mimir / Slow Queries (mimir-slow-queries.json)
+            $.dashboardURLAnnotation('mimir-reads.json')
+          ),
         },
         {
           alert: $.alertName('CacheRequestErrors'),
@@ -449,8 +466,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
-              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
+              (
+                avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
+                != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
+              )
+              unless on(%(alert_aggregation_labels)s)
+              (
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_replicas{statefulset=~".*ingester.*"})
+                  !=
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_status_replicas_updated{statefulset=~".*ingester.*"})
+              )
             )
             and
             (

@@ -12,13 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/pprof"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,8 +29,6 @@ import (
 	"github.com/gogo/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
-	"github.com/grafana/alerting/definition"
-	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -72,6 +68,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
+	utillog "github.com/grafana/mimir/pkg/util/log"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -89,7 +86,6 @@ receivers:
 receivers:
   - name: dummy2`
 
-	grafanaConfig     = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
 	simpleTemplateOne = `{{ define "some.template.one" }}{{ end }}`
 	simpleTemplateTwo = `{{ define "some.template.two" }}{{ end }}`
 	badConfig         = `
@@ -285,6 +281,14 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	utiltest.VerifyNoLeak(t,
 		// This package's init() function statically starts a singleton goroutine that runs forever.
 		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+		// Upstream alertmanager's Inhibitor.Stop() and Dispatcher.Stop() signal
+		// cancellation but don't fully wait for all spawned goroutines to return.
+		// These goroutines exit eventually, but may still be draining when goleak
+		// checks after a prior test's deferred StopAndWait.
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*Dispatcher).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*aggrGroup).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/inhibit.(*Inhibitor).run"),
+		goleak.IgnoreTopFunction("github.com/oklog/run.(*Group).Run"),
 	)
 
 	ctx := context.Background()
@@ -316,7 +320,7 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 
 	currentConfigFp, cfgExists := am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint(), currentConfigFp)
+	require.Equal(t, fingerprint(user1Cfg), currentConfigFp)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -356,7 +360,7 @@ templates:
 	require.True(t, dirExists(t, user3Dir))
 	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
-	require.Equal(t, amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
+	require.Equal(t, fingerprint(user3Cfg), finalUserCfgFp)
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
@@ -378,7 +382,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	expectedFp := amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp := fingerprint(user1Cfg)
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Ensure the config is reloaded if only templates changed
@@ -402,7 +406,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	expectedFp = amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp = fingerprint(user1Cfg)
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Test Delete User, ensure config is removed and the resources are freed.
@@ -435,7 +439,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user3"]
 	require.True(t, cfgExists)
-	expectedFp = amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp = fingerprint(user3Cfg)
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	_, cfgExists = am.alertmanagers["user3"]
@@ -1314,8 +1318,7 @@ receivers:
 }
 
 func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T) {
-	const testGrafanaUser = "user1"
-	const testMimirUser = "user2"
+	const testUser = "user"
 
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
@@ -1332,59 +1335,28 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	reg := prometheus.NewPedanticRegistry()
 	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
-	// Create a tenant with a default Grafana and an empty Mimir config.
-	// It should be skipped by the MOA.
+	// Create a tenant with an empty config - it should be skipped by the MOA.
 	ctx := context.Background()
 	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-		User: testGrafanaUser,
-	}))
-	smtpConfig := &alertspb.SmtpConfig{
-		EhloIdentity:   "test-identity",
-		FromAddress:    "test@test.com",
-		FromName:       "Test Name",
-		Host:           "test:8080",
-		Password:       "test password",
-		SkipVerify:     true,
-		StartTlsPolicy: "test",
-		StaticHeaders:  map[string]string{"test-key": "test-value"},
-		User:           "test-user",
-	}
-	require.NoError(t, store.SetGrafanaAlertConfig(ctx, alertspb.GrafanaAlertConfigDesc{
-		User:       testGrafanaUser,
-		RawConfig:  grafanaConfig,
-		Promoted:   true,
-		Default:    true,
-		SmtpConfig: smtpConfig,
+		User: testUser,
 	}))
 
-	// Create another tenant with an empty Mimir config.
-	// It should be skipped by the MOA.
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-		User: testMimirUser,
-	}))
-
-	// Sync configurations, the Alertmanagers shouldn't be initialized.
+	// Sync configurations - the Alertmanager shouldn't be initialized.
 	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 0)
 
-	// Make requests as the users. The Alertmanagers should be initialized.
+	// Make requests as the users - the Alertmanager should be initialized.
 	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	w := httptest.NewRecorder()
 
 	require.NoError(t, err)
-	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testGrafanaUser)))
+	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testUser)))
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Len(t, am.alertmanagers, 1)
 
-	w = httptest.NewRecorder()
-	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testMimirUser)))
-	require.Equal(t, http.StatusOK, w.Result().StatusCode)
-	require.Len(t, am.alertmanagers, 2)
-
-	// Set the idle period to 0.
-	// The Alertmanagers should be turned off after the next sync.
-	am.cfg.GrafanaAlertmanagerIdleGracePeriod = 0
+	// Set the idle period to 0 - the Alertmanager should be turned off after the next sync.
+	am.cfg.StrictInitializationIdleGracePeriod = 0
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 0)
@@ -2456,12 +2428,13 @@ receivers:
 	require.NotNil(t, uam)
 
 	ctx = notify.WithReceiverName(ctx, "email")
+	ctx = notify.WithRouteID(ctx, "default-route")
 	ctx = notify.WithGroupKey(ctx, "key")
 	ctx = notify.WithRepeatInterval(ctx, time.Minute)
 	ctx = notify.WithNow(ctx, time.Now())
 
 	// Verify that rate-limiter is in place for email notifier.
-	_, _, err = uam.lastPipeline.Exec(ctx, log.NewNopLogger(), &types.Alert{})
+	_, _, err = uam.lastPipeline.Exec(ctx, utillog.SlogFromGoKit(log.NewNopLogger()), &types.Alert{})
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), errRateLimited.Error())
 }
@@ -2505,91 +2478,73 @@ func TestShouldStartAM(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		cfg        alertspb.AlertConfigDescs
+		cfg        alertspb.AlertConfigDesc
 		expStartAM bool
 	}{
 		{
-			name: "custom mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      testTenant,
-					RawConfig: simpleConfigOne,
-				},
+			name: "custom config",
+			cfg: alertspb.AlertConfigDesc{
+				User:      testTenant,
+				RawConfig: simpleConfigOne,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "custom mimir config, receiving requests",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequests,
-					RawConfig: simpleConfigOne,
-				},
+			name: "custom config, receiving requests",
+			cfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: simpleConfigOne,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "custom mimir config, idle Alertmanager",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequestsExpired,
-					RawConfig: simpleConfigOne,
-				},
+			name: "custom config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: simpleConfigOne,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "default mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      testTenant,
-					RawConfig: am.fallbackConfig,
-				},
+			name: "default config",
+			cfg: alertspb.AlertConfigDesc{
+				User:      testTenant,
+				RawConfig: am.fallbackConfig,
 			},
 		},
 		{
-			name: "default mimir config, receiving requests",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequests,
-					RawConfig: am.fallbackConfig,
-				},
+			name: "default config, receiving requests",
+			cfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: am.fallbackConfig,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "default mimir config, idle Alertmanager",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequestsExpired,
-					RawConfig: am.fallbackConfig,
-				},
+			name: "default config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: am.fallbackConfig,
 			},
 			expStartAM: false,
 		},
 		{
-			name: "empty mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: testTenant,
-				},
+			name: "empty config",
+			cfg: alertspb.AlertConfigDesc{
+				User: testTenant,
 			},
 		},
 		{
-			name: "empty mimir config, receiving requests",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: tenantReceivingRequests,
-				},
+			name: "empty config, receiving requests",
+			cfg: alertspb.AlertConfigDesc{
+				User: tenantReceivingRequests,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "empty mimir config, idle Alertmanager",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: tenantReceivingRequestsExpired,
-				},
+			name: "empty config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDesc{
+				User: tenantReceivingRequestsExpired,
 			},
 			expStartAM: false,
 		},
@@ -2608,8 +2563,8 @@ func TestShouldStartAM(t *testing.T) {
 	}
 }
 
-func Test_amConfigFingerprint(t *testing.T) {
-	const expectedTotalFields = 24 // Total fields: 3 (PostableApiTemplate) + 15 (EmailSenderConfig) + 6 (amConfig)
+func Test_fingerprint(t *testing.T) {
+	const expectedTotalFields = 5 // Total fields: 2 (TemplateDesc) + 3 (AlertConfigDesc)
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
 		// Helper function to get field count of a struct
 		getFieldCount := func(v interface{}) int {
@@ -2622,50 +2577,28 @@ func Test_amConfigFingerprint(t *testing.T) {
 
 		// Calculate total fields across all structs
 		totalFields := 0
-		totalFields += getFieldCount(definition.PostableApiTemplate{})
-		totalFields += getFieldCount(alertingReceivers.EmailSenderConfig{})
-		totalFields += getFieldCount(amConfig{})
+		totalFields += getFieldCount(alertspb.TemplateDesc{})
+		totalFields += getFieldCount(alertspb.AlertConfigDesc{})
 
 		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
 	})
 
-	url, err := url.Parse("http://localhost")
-	require.NoError(t, err)
-
-	fullConfig := amConfig{
-		User:      "user-grafana",
+	fullConfig := alertspb.AlertConfigDesc{
+		User:      "user",
 		RawConfig: simpleConfigOne,
-		Templates: []definition.PostableApiTemplate{
+		Templates: []*alertspb.TemplateDesc{
 			{
-				Name:    "test",
-				Content: "test",
-				Kind:    definition.MimirTemplateKind,
+				Filename: "test",
+				Body:     "test",
 			},
 			{
-				Name:    "test2",
-				Content: "test2",
-				Kind:    definition.GrafanaTemplateKind,
+				Filename: "test2",
+				Body:     "test2",
 			},
 			{
-				Name:    "test3",
-				Content: "test3",
-				Kind:    definition.GrafanaTemplateKind,
+				Filename: "test3",
+				Body:     "test3",
 			},
-		},
-		TmplExternalURL: url,
-		EmailConfig: alertingReceivers.EmailSenderConfig{
-			AuthPassword:   "custom-password",
-			AuthUser:       "custom-user",
-			ContentTypes:   []string{"text/html", "text/plain"},
-			EhloIdentity:   "custom-identity",
-			ExternalURL:    "http://custom-url",
-			FromAddress:    "custom@address.com",
-			FromName:       "Custom From Name",
-			Host:           "custom-host",
-			SentBy:         "Mimir vunknown",
-			SkipVerify:     true,
-			StartTLSPolicy: "custom-policy",
-			StaticHeaders:  map[string]string{"test": "test", "test2": "test2", "test3": "test3"},
 		},
 	}
 
@@ -2673,31 +2606,22 @@ func Test_amConfigFingerprint(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("fingerprint should be stable", func(t *testing.T) {
-		expected := fullConfig.fingerprint()
+		expected := fingerprint(fullConfig)
 
-		// do it many times to make sure order of elements in the map does not affect fingerprint
+		// Do it many times to make sure order of elements in the map does not affect fingerprint
 		for i := 0; i < 100; i++ {
-			cfg2 := amConfig{}
+			cfg2 := alertspb.AlertConfigDesc{}
 			require.NoError(t, json.Unmarshal(jsonCfg, &cfg2)) // copy structure
-			assert.Empty(t, cmp.Diff(fullConfig, cfg2, cmp.AllowUnexported(amConfig{})))
+			assert.Empty(t, cmp.Diff(fullConfig, cfg2, cmp.AllowUnexported(alertspb.AlertConfigDesc{})))
 			rand.Shuffle(len(cfg2.Templates), func(i, j int) {
 				cfg2.Templates[i], cfg2.Templates[j] = cfg2.Templates[j], cfg2.Templates[i]
 			})
-			// copy map to shuffle elements
-			cp := map[string]string{}
-			maps.Copy(cp, cfg2.EmailConfig.StaticHeaders)
-			cfg2.EmailConfig.StaticHeaders = cp
-
-			rand.Shuffle(len(cfg2.EmailConfig.ContentTypes), func(i, j int) {
-				cfg2.EmailConfig.ContentTypes[i], cfg2.EmailConfig.ContentTypes[j] = cfg2.EmailConfig.ContentTypes[j], cfg2.EmailConfig.ContentTypes[i]
-			})
-
-			require.Equal(t, expected, cfg2.fingerprint())
+			require.Equal(t, expected, fingerprint(cfg2))
 		}
 	})
 
 	t.Run("fingerprint should change", func(t *testing.T) {
-		cfg := amConfig{}
+		cfg := alertspb.AlertConfigDesc{}
 		require.NoError(t, json.Unmarshal(jsonCfg, &cfg)) // copy structure
 		notChecked := expectedTotalFields
 		setStringFieldsWithRandomValue := func(val reflect.Value, callback func(fieldName string)) {
@@ -2721,43 +2645,22 @@ func Test_amConfigFingerprint(t *testing.T) {
 			}
 		}
 
-		lastFingerprint := cfg.fingerprint()
+		lastFingerprint := fingerprint(cfg)
 		assertField := func(prefix string) func(fieldName string) {
 			return func(fieldName string) {
-				newFP := cfg.fingerprint()
+				newFP := fingerprint(cfg)
 				assert.NotEqualf(t, lastFingerprint, newFP, "Changes in fields [%s%s] did not cause fingerprint to change", prefix, fieldName)
 				lastFingerprint = newFP
 			}
 		}
 
 		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg).Elem(), assertField(""))
-		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.EmailConfig).Elem(), assertField("EmailConfig."))
-		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.Templates[1]).Elem(), assertField("Templates[1]."))
-		cfg.Templates = append(cfg.Templates, definition.PostableApiTemplate{
-			Name:    "test3",
-			Content: "test3",
-			Kind:    definition.GrafanaTemplateKind,
+		setStringFieldsWithRandomValue(reflect.ValueOf(cfg.Templates[1]).Elem(), assertField("Templates[1]."))
+		cfg.Templates = append(cfg.Templates, &alertspb.TemplateDesc{
+			Filename: "test3",
+			Body:     "test3",
 		})
 		assertField("")("Templates")
-		notChecked--
-
-		cfg.TmplExternalURL = nil
-		assertField("")("TmplExternalURL")
-		cfg.TmplExternalURL, err = url.Parse("http://new-url")
-		require.NoError(t, err)
-		assertField("")("TmplExternalURL")
-		notChecked--
-
-		cfg.EmailConfig.ContentTypes = []string{"text/plain"}
-		assertField("EmailConfig.")("ContentTypes")
-		notChecked--
-
-		cfg.EmailConfig.StaticHeaders = map[string]string{"test2": "test", "test": "test2", "test3": "test3"}
-		assertField("EmailConfig.")("StaticHeaders")
-		notChecked--
-
-		cfg.EmailConfig = alertingReceivers.EmailSenderConfig{}
-		assertField("")("EmailConfig")
 		notChecked--
 
 		require.Equal(t, 0, notChecked)
@@ -2814,12 +2717,9 @@ func (f *passthroughAlertmanagerClientPool) GetClientFor(addr string) (Client, e
 }
 
 type mockAlertManagerLimits struct {
-	notifyHooksLimits
-
 	emailNotificationRateLimit     rate.Limit
 	emailNotificationBurst         int
 	maxConfigSize                  int
-	maxGrafanaConfigSize           int
 	maxSilencesCount               int
 	maxSilenceSizeBytes            int
 	maxTemplatesCount              int
@@ -2834,10 +2734,6 @@ type mockAlertManagerLimits struct {
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(string) int {
 	return m.maxConfigSize
-}
-
-func (m *mockAlertManagerLimits) AlertmanagerMaxGrafanaConfigSize(string) int {
-	return m.maxGrafanaConfigSize
 }
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxSilencesCount(string) int { return m.maxSilencesCount }

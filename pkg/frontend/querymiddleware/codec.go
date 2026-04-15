@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
@@ -231,12 +232,13 @@ type Codec struct {
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
 	injector                                        propagation.Injector
+	logger                                          log.Logger
 }
 
 type formatter interface {
-	EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error)
-	EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]byte, error)
-	EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error)
+	EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error
+	EncodeLabelsResponseTo(w io.Writer, resp *PrometheusLabelsResponse) error
+	EncodeSeriesResponseTo(w io.Writer, resp *PrometheusSeriesResponse) error
 	DecodeQueryResponse([]byte) (*PrometheusResponse, error)
 	DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error)
 	DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error)
@@ -257,6 +259,7 @@ func NewCodec(
 	queryResultResponseFormat string,
 	propagateHeaders []string,
 	injector propagation.Injector,
+	logger log.Logger,
 ) Codec {
 	return Codec{
 		metrics:                            newCodecMetrics(registerer),
@@ -265,6 +268,7 @@ func NewCodec(
 		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
 		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
 		injector:                           injector,
+		logger:                             logger,
 	}
 }
 
@@ -1090,7 +1094,12 @@ func findFormatter(contentType string) formatter {
 // EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
 func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.End()
+	endTraceSpan := true
+	defer func() {
+		if endTraceSpan {
+			sp.End()
+		}
+	}()
 
 	a, ok := res.GetPrometheusResponse()
 	if !ok {
@@ -1105,30 +1114,42 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
-	start := time.Now()
-	b, err := formatter.EncodeQueryResponse(a)
-	if err != nil {
-		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-	}
-
-	encodeDuration := time.Since(start)
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.SetAttributes(attribute.Int("bytes", len(b)))
-
 	queryStats := stats.FromContext(ctx)
-	queryStats.AddEncodeTime(encodeDuration)
+	pr, pw := io.Pipe()
+	endTraceSpan = false
+	go func() {
+		var encErr error
+		defer func() {
+			_ = pw.CloseWithError(encErr)
+			res.Close()
+			sp.End()
+		}()
+		cw := &countingWriter{w: pw}
+		start := time.Now()
+		encErr = formatter.EncodeQueryResponseTo(cw, a)
+		if encErr == nil {
+			encodeDuration := time.Since(start)
+			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
+			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+			// AddEncodeTime is called here, after encoding completes, but the handler has already
+			// read the stats to build the Server-Timing header before io.Copy drained this pipe.
+			// As a result, encode_time_seconds in Server-Timing is always 0 for streaming responses;
+			// the Prometheus histogram metric (codec_duration_seconds) is unaffected.
+			queryStats.AddEncodeTime(encodeDuration)
+		} else {
+			user, _ := user.ExtractOrgID(ctx)
+			level.Warn(c.logger).Log("msg", "failed to encode metrics query response", "url", req.URL.Path, "user", user, "err", encErr)
+		}
+	}()
 
 	resp := http.Response{
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body: &prometheusReadCloser{
-			Reader:    bytes.NewBuffer(b),
-			finalizer: res.Close,
-		},
+		Body:          pr,
 		StatusCode:    http.StatusOK,
-		ContentLength: int64(len(b)),
+		ContentLength: -1, // unknown: body is streamed without buffering
 	}
 	return &resp, nil
 }
@@ -1146,21 +1167,36 @@ func (prc *prometheusReadCloser) Close() error {
 	return nil
 }
 
+// countingWriter wraps an io.Writer and counts the bytes written.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (cw *countingWriter) Write(p []byte) (int, error) {
+	n, err := cw.w.Write(p)
+	cw.n += int64(n)
+	return n, err
+}
+
 // EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
 func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.End()
+	endTraceSpan := true
+	defer func() {
+		if endTraceSpan {
+			sp.End()
+		}
+	}()
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
-	var start time.Time
-	var b []byte
+	var encodeFunc func(cw *countingWriter) error
 
-	switch isSeriesResponse {
-	case false:
+	if !isSeriesResponse {
 		a, ok := res.(*PrometheusLabelsResponse)
 		if !ok {
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -1168,14 +1204,8 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		if a.Data != nil {
 			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
-
-		start = time.Now()
-		var err error
-		b, err = formatter.EncodeLabelsResponse(a)
-		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-		}
-	case true:
+		encodeFunc = func(cw *countingWriter) error { return formatter.EncodeLabelsResponseTo(cw, a) }
+	} else {
 		a, ok := res.(*PrometheusSeriesResponse)
 		if !ok {
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -1183,26 +1213,42 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		if a.Data != nil {
 			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
-
-		start = time.Now()
-		var err error
-		b, err = formatter.EncodeSeriesResponse(a)
-		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-		}
+		encodeFunc = func(cw *countingWriter) error { return formatter.EncodeSeriesResponseTo(cw, a) }
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.SetAttributes(attribute.Int("bytes", len(b)))
+	pr, pw := io.Pipe()
+	endTraceSpan = false
+	go func() {
+		var encErr error
+		defer func() {
+			_ = pw.CloseWithError(encErr)
+			res.Close()
+			sp.End()
+		}()
+		cw := &countingWriter{w: pw}
+		start := time.Now()
+		encErr = encodeFunc(cw)
+		if encErr == nil {
+			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
+			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+		} else {
+			msg := "failed to encode labels query response"
+			if isSeriesResponse {
+				msg = "failed to encode series query response"
+			}
+			user, _ := user.ExtractOrgID(ctx)
+			level.Warn(c.logger).Log("msg", msg, "url", req.URL.Path, "user", user, "err", encErr)
+		}
+	}()
 
 	resp := http.Response{
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body:          io.NopCloser(bytes.NewBuffer(b)),
+		Body:          pr,
 		StatusCode:    http.StatusOK,
-		ContentLength: int64(len(b)),
+		ContentLength: -1, // unknown: body is streamed without buffering
 	}
 	return &resp, nil
 }

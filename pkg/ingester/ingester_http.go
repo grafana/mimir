@@ -38,6 +38,7 @@ func (i *Ingester) Flush() {
 
 	// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
 	i.compactBlocks(ctx, true, math.MaxInt64, nil)
+	i.offsetCataloguesSync(ctx)
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		i.shipBlocks(ctx, nil)
 	}

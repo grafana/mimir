@@ -1238,7 +1238,7 @@ type backendTestConfig struct {
 
 // newTestQueryDecoder creates a decoder instance for use in tests
 func newTestQueryDecoder() QueryRequestDecoder {
-	return querymiddleware.NewCodec(nil, 5*time.Minute, "json", nil, &propagation.NoopInjector{})
+	return querymiddleware.NewCodec(nil, 5*time.Minute, "json", nil, &propagation.NoopInjector{}, log.NewNopLogger())
 }
 
 func TestProxy_ReadyEndpoint(t *testing.T) {

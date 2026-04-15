@@ -98,6 +98,17 @@
         },
         {
           "kind": "field",
+          "name": "otlp_translation_headers_enabled",
+          "required": false,
+          "desc": "Allows controlling OTLP metric name suffix addition and translation strategy via X-Mimir-OTLP-AddSuffixes and X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not recommended for general use.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "api.otlp-translation-headers-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_http_prefix",
           "required": false,
           "desc": "HTTP URL path under which the Alertmanager ui and api will be served.",
@@ -2644,6 +2655,17 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-multi-aggregation",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_remove_statically_empty_expressions",
+              "required": false,
+              "desc": "Enable removing expressions that are guaranteed to produce no results.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-remove-statically-empty-expressions",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -6095,6 +6117,15 @@
                 "fieldValue": null,
                 "fieldDefaultValue": null,
                 "fieldType": "duration"
+              },
+              {
+                "kind": "field",
+                "name": "minimum_step_size",
+                "required": false,
+                "desc": "Block queries where the step is smaller than this duration. Instant queries and queries with no step are not blocked. Set to 0 to disable.",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "duration"
               }
             ],
             "fieldValue": null,
@@ -6777,6 +6808,16 @@
         },
         {
           "kind": "field",
+          "name": "compactor_ooo_split_and_merge_shards",
+          "required": false,
+          "desc": "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.ooo-split-and-merge-shards",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "compactor_split_groups",
           "required": false,
           "desc": "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.",
@@ -6937,16 +6978,6 @@
         },
         {
           "kind": "field",
-          "name": "alertmanager_max_grafana_config_size_bytes",
-          "required": false,
-          "desc": "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.",
-          "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldFlag": "alertmanager.max-grafana-config-size-bytes",
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
           "name": "alertmanager_max_config_size_bytes",
           "required": false,
           "desc": "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.",
@@ -7024,36 +7055,6 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-alerts-size-bytes",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "alertmanager_notify_hook_url",
-          "required": false,
-          "desc": "URL of a hook to invoke before a notification is sent. empty = no hook.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.notify-hook-url",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
-          "name": "alertmanager_notify_hook_receivers",
-          "required": false,
-          "desc": "List of receivers to enable notify hooks for. empty = all receivers.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.notify-hook-receivers",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
-          "name": "alertmanager_notify_hook_timeout",
-          "required": false,
-          "desc": "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.",
-          "fieldValue": null,
-          "fieldDefaultValue": 30000000000,
-          "fieldFlag": "alertmanager.notify-hook-timeout",
-          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -8813,11 +8814,12 @@
               "kind": "field",
               "name": "write_clients",
               "required": false,
-              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
+              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client).",
               "fieldValue": null,
               "fieldDefaultValue": 1,
               "fieldFlag": "ingest-storage.kafka.write-clients",
-              "fieldType": "int"
+              "fieldType": "int",
+              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -11591,9 +11593,9 @@
                       "kind": "field",
                       "name": "index_sections",
                       "required": false,
-                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: all",
+                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table",
                       "fieldValue": null,
-                      "fieldDefaultValue": "all",
+                      "fieldDefaultValue": "postings-offsets-table",
                       "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.index-sections",
                       "fieldType": "string",
                       "fieldCategory": "experimental"
@@ -12086,7 +12088,7 @@
                   "kind": "field",
                   "name": "label_cardinality_for_smaller_sketch",
                   "required": false,
-                  "desc": "Number of series for a label name above which smaller count-min sketches are used for that label.",
+                  "desc": "Number of series for a label name below which smaller count-min sketches are used for that label.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1000,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch",
@@ -12124,6 +12126,38 @@
                   "fieldDefaultValue": 3600000000000,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency",
                   "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "offset_catalogue",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "Controls the maintaining of kafka offset catalogue per block.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.tsdb.offset-catalogue.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "sync_concurrency",
+                  "required": false,
+                  "desc": "Maximum number of tenants concurrently syncing offset catalogue to disk.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "blocks-storage.tsdb.offset-catalogue.sync-concurrency",
+                  "fieldType": "int",
                   "fieldCategory": "experimental"
                 }
               ],
@@ -17140,12 +17174,12 @@
         },
         {
           "kind": "field",
-          "name": "grafana_alertmanager_idle_grace_period",
+          "name": "strict_initialization_idle_grace_period",
           "required": false,
-          "desc": "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.",
+          "desc": "Duration to wait before shutting down an idle Alertmanager using a default/empty configuration when strict initialization is enabled.",
           "fieldValue": null,
           "fieldDefaultValue": 300000000000,
-          "fieldFlag": "alertmanager.grafana-alertmanager-grace-period",
+          "fieldFlag": "alertmanager.strict-initialization-idle-grace-period",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },
@@ -17528,17 +17562,6 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "enable_notify_hooks",
-          "required": false,
-          "desc": "Enable pre-notification hooks.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "alertmanager.notify-hooks-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
@@ -18795,6 +18818,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "memberlist.notify-interval",
           "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "received_messages_queue_size",
+          "required": false,
+          "desc": "Size of the internal queue for messages received from other nodes. Increasing this value may help to avoid dropping messages when the node is processing a large number of messages from other nodes.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1024,
+          "fieldFlag": "memberlist.received-messages-queue-size",
+          "fieldType": "int",
           "fieldCategory": "advanced"
         },
         {

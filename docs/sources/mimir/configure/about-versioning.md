@@ -59,8 +59,6 @@ The following features are currently experimental:
   - Configure the cost attribution cleanup process run interval
     - `-cost-attribution.cleanup-interval`
 - Alertmanager
-  - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
-    - `-alertmanager.grafana-alertmanager-compatibility-enabled`
   - Health check grace period for connections to other replicas (`-alertmanager.alertmanager-client.health-check-grace-period`)
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
@@ -110,6 +108,8 @@ The following features are currently experimental:
     - `-validation.name-validation-scheme`
   - Configure metric and label name translation strategy in OTLP endpoint
     - `-distributor.otel-translation-strategy`
+  - Allow controlling OTLP translation via request headers
+    - `-api.otlp-translation-headers-enabled`
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
@@ -300,3 +300,4 @@ The following features or configuration parameters are currently deprecated and 
 The following features or configuration parameters were deprecated in Mimir 3.1 and will be removed in Mimir 3.3:
 
 - Considering cached results when calculating the number of processed samples reported in query stats (`-query-frontend.cache-samples-processed-stats=true`).
+- The `-ingest-storage.kafka.write-clients` CLI flag is deprecated and has no effect. Mimir always uses a single Kafka write client.

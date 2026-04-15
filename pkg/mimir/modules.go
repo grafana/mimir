@@ -26,7 +26,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/featurecontrol"
-	"github.com/prometheus/alertmanager/matchers/compat"
+	"github.com/prometheus/alertmanager/matcher/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -814,6 +814,7 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 		t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat,
 		t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders,
 		&propagation.MultiInjector{Injectors: t.Injectors},
+		util_log.Logger,
 	)
 
 	return nil, nil
@@ -988,7 +989,7 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
-		analysisHandler := analysis.Handler(t.QuerierQueryPlanner, t.QueryLimitsProvider)
+		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, mqeOpts)
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
 
@@ -1027,7 +1028,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
-	analysisHandler := analysis.Handler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider)
+	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, mqeOpts)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
 	return nil, nil
@@ -1205,14 +1206,14 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	} else {
 		level.Info(util_log.Logger).Log("msg", "Starting Alertmanager in classic mode")
 	}
-	features, err := featurecontrol.NewFlags(util_log.Logger, mode)
+	features, err := featurecontrol.NewFlags(util_log.SlogFromGoKit(util_log.Logger), mode)
 	util_log.CheckFatal("initializing Alertmanager feature flags", err)
 
 	compatLogger := log.NewNopLogger()
 	if t.Cfg.Alertmanager.LogParsingLabelMatchers {
 		compatLogger = util_log.Logger
 	}
-	compat.InitFromFlags(compatLogger, features)
+	compat.InitFromFlags(util_log.SlogFromGoKit(compatLogger), features)
 
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)

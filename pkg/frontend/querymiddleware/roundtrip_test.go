@@ -100,7 +100,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		path, expectedBody string
 	}{
 		{"/foo", "got request for non-query URL"},
-		{query, responseBody},
+		{query, responseBody + "\n"},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			req, err := http.NewRequest("GET", tc.path, http.NoBody)

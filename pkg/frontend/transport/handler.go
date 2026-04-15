@@ -262,8 +262,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk {
-		cl, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
-		parts = append(parts, getResponseQueryStats(queryResponseTime, cl, queryDetails)...)
+		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, queryDetails)...)
 	}
 
 	if len(parts) > 0 {
@@ -527,13 +526,14 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 }
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int, details *querymiddleware.QueryDetails) []string {
+// contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querymiddleware.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
 	stats := details.QuerierStats
-	return []string{
-		statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()),
+
+	statsResponse := []string{
 		statsValue(estimatedSeriesCount, stats.LoadEstimatedSeriesCount()),
 		statsValue(fetchedChunkBytes, stats.LoadFetchedChunkBytes()),
 		statsValue(fetchedChunksCount, stats.LoadFetchedChunks()),
@@ -549,6 +549,15 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		statsValue(splitQueries, stats.LoadSplitQueries()),
 		statsValue(remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount()),
 	}
+
+	if contentLengthBytes >= 0 {
+		// encode_time_seconds is always 0 for streaming responses: encoding runs concurrently with body
+		// streaming, so the encode time is not available until after the headers have been sent.
+		// We only insert this if we are in a non-streaming response.
+		statsResponse = append(statsResponse, statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()))
+	}
+
+	return statsResponse
 }
 
 func statsValue(name string, val interface{}) string {

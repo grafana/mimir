@@ -99,7 +99,6 @@
   store_gateway_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   query_scheduler_ports+:: if !querySchedulerMemberlistEnabled then [] else [gossipPort],
   query_frontend_ports+:: if !queryFrontendMemberlistEnabled then [] else [gossipPort],
-  memberlist_bridge_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
 
   // Don't add label to matcher, only to pod labels.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
@@ -149,9 +148,6 @@
   store_gateway_zone_a_statefulset: overrideSuperIfExists('store_gateway_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   store_gateway_zone_b_statefulset: overrideSuperIfExists('store_gateway_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   store_gateway_zone_c_statefulset: overrideSuperIfExists('store_gateway_zone_c_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
-  memberlist_bridge_zone_a_deployment: overrideSuperIfExists('memberlist_bridge_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
-  memberlist_bridge_zone_b_deployment: overrideSuperIfExists('memberlist_bridge_zone_b_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
-  memberlist_bridge_zone_c_deployment: overrideSuperIfExists('memberlist_bridge_zone_c_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:

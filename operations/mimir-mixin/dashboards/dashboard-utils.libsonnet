@@ -261,7 +261,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
-  local qpsPanelColors = {
+  qpsPanelColors:: {
     '1xx': $._colors.warning,
     '2xx': $._colors.success,
     '3xx': '#6ED0E0',
@@ -276,7 +276,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
-    $.aliasColors(qpsPanelColors) + {
+    $.aliasColors($.qpsPanelColors) + {
       fieldConfig+: {
         defaults+: { unit: 'reqps' },
       },
@@ -284,7 +284,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   qpsPanelNativeHistogram(metricName, selector, statusLabelName='status_code', nativeOnly=false)::
     super.qpsPanelNativeHistogram(metricName, selector, statusLabelName, nativeOnly) +
-    $.aliasColors(qpsPanelColors) + {
+    $.aliasColors($.qpsPanelColors) + {
       fieldConfig+: {
         defaults+: {
           unit: 'reqps',
@@ -295,15 +295,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  latencyPanel(metricName, selector, multiplier='1e3')::
+  latencyPanel(metricName, selector, multiplier='')::
     super.latencyPanel(metricName, selector, multiplier) + {
       fieldConfig+: {
-        defaults+: { unit: 'ms' },
+        defaults+: { unit: 's' },
       },
     },
 
-  ncLatencyPanel(metricName, selector, multiplier='1e3', quantile=[99, 50])::
-    super.latencyPanelNativeHistogram(metricName, selector, multiplier, quantile),
+  ncLatencyPanel(metricName, selector, multiplier='', quantile=[99, 50])::
+    super.latencyPanelNativeHistogram(metricName, selector, multiplier, quantile) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
 
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
   // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
@@ -552,6 +556,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack +
     $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerEphemeralStoragePanelByComponent(componentName)::
+    $.containerEphemeralStoragePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerEphemeralStoragePanel(instanceName, containerName)::
+    if $._config.deployment_type == 'kubernetes' then
+      $.timeseriesPanel('Ephemeral Storage (log fs)') +
+      $.queryPanel($.resourceUtilizationAndLimitQueries('ephemeral_storage', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+      $.showAllTooltip +
+      {
+        fieldConfig+: {
+          overrides+: [
+            resourceRequestStyle,
+            resourceLimitStyle,
+          ],
+          defaults+: {
+            unit: 'bytes',
+            custom+: {
+              fillOpacity: 0,
+            },
+          },
+        },
+      }
+    else {},  // Nothing to render for non-kubernetes deployments
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
@@ -911,19 +942,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
         metrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.
       |||
-    ),
-
-  cpuBasedAutoScalingRow(componentTitle)::
-    local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
-    super.row('%s – autoscaling' % [componentTitle])
-    .addPanel(
-      $.autoScalingActualReplicas(componentName)
-    )
-    .addPanel(
-      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'CPU', 'cpu')
-    )
-    .addPanel(
-      $.autoScalingFailuresPanel(componentName)
     ),
 
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::
@@ -1364,7 +1382,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     includeAverage=true,
     labels=[],
     labelReplaceArgSets=[{}],
-    multiplier='1e3',
+    multiplier='',
   )::
     assert 0 <= std.length(percentiles) && std.length(percentiles) <= 1 : 'latencyPanelLabelBreakout currently only supports a single percentile due to fixed refId';
     local labelReplace = $.wrapMultiLabelReplace(labelReplaceArgSets=labelReplaceArgSets);
@@ -1416,29 +1434,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
     {
       targets: targets,
       fieldConfig+: {
-        defaults+: { unit: 'ms', noValue: 0 },
+        defaults+: { unit: 's', noValue: 0 },
       },
     },
 
-  latencyRecordingRulePanel(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
+  latencyRecordingRulePanel(metric, selectors, extra_selectors=[], multiplier='', sum_by=[])::
     utils.latencyRecordingRulePanel(metric, selectors, extra_selectors, multiplier, sum_by) + {
       // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
       yaxes:: super.yaxes,
       fieldConfig+: {
         defaults+: {
-          unit: 'ms',
+          unit: 's',
           min: 0,
         },
       },
     },
 
-  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[], nativeOnly=false)::
+  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='', sum_by=[], nativeOnly=false)::
     utils.latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors, multiplier, sum_by, nativeOnly) + {
       // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
       yaxes:: super.yaxes,
       fieldConfig+: {
         defaults+: {
-          unit: 'ms',
+          unit: 's',
           min: 0,
         },
       },
@@ -1447,10 +1465,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
   requestAddedLatencyPanelNativeHistogram(metric, selector)::
     $.queryPanel(
       [
-        'histogram_quantile(0.99, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
-        'histogram_quantile(0.50, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
-        'histogram_quantile(0.01, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
-        'histogram_avg(sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
+        'histogram_quantile(0.99, sum(rate(%s{%s}[$__rate_interval])))' % [metric, selector],
+        'histogram_quantile(0.50, sum(rate(%s{%s}[$__rate_interval])))' % [metric, selector],
+        'histogram_quantile(0.01, sum(rate(%s{%s}[$__rate_interval])))' % [metric, selector],
+        'histogram_avg(sum(rate(%s{%s}[$__rate_interval])))' % [metric, selector],
       ],
       [
         '99th percentile',
@@ -1464,7 +1482,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) + {
       fieldConfig+: {
         defaults+: {
-          unit: 'ms',
+          unit: 's',
           min: 0,
         },
       },

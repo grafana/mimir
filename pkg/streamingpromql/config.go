@@ -36,14 +36,15 @@ type EngineOpts struct {
 
 	Limits QueryLimitsProvider `yaml:"-"`
 
-	EnablePruneToggles                   bool `yaml:"enable_prune_toggles" category:"experimental"`
-	EnableCommonSubexpressionElimination bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
-	EnableSubsetSelectorElimination      bool `yaml:"enable_subset_selector_elimination" category:"experimental"`
-	EnableNarrowBinarySelectors          bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
-	EnableEliminateDeduplicateAndMerge   bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
-	EnableReduceMatchers                 bool `yaml:"enable_reduce_matchers" category:"experimental"`
-	EnableProjectionPushdown             bool `yaml:"enable_projection_pushdown" category:"experimental"`
-	EnableMultiAggregation               bool `yaml:"enable_multi_aggregation" category:"experimental"`
+	EnablePruneToggles                     bool `yaml:"enable_prune_toggles" category:"experimental"`
+	EnableCommonSubexpressionElimination   bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
+	EnableSubsetSelectorElimination        bool `yaml:"enable_subset_selector_elimination" category:"experimental"`
+	EnableNarrowBinarySelectors            bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
+	EnableEliminateDeduplicateAndMerge     bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
+	EnableReduceMatchers                   bool `yaml:"enable_reduce_matchers" category:"experimental"`
+	EnableProjectionPushdown               bool `yaml:"enable_projection_pushdown" category:"experimental"`
+	EnableMultiAggregation                 bool `yaml:"enable_multi_aggregation" category:"experimental"`
+	EnableRemoveStaticallyEmptyExpressions bool `yaml:"enable_remove_statically_empty_expressions" category:"experimental"`
 
 	RangeVectorSplitting RangeVectorSplittingConfig `yaml:"range_vector_splitting" category:"experimental"`
 }
@@ -72,6 +73,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
 	f.BoolVar(&o.EnableProjectionPushdown, "querier.mimir-query-engine.enable-projection-pushdown", false, "Enable projection pushdown to only fetch labels required for the query from storage.")
 	f.BoolVar(&o.EnableMultiAggregation, "querier.mimir-query-engine.enable-multi-aggregation", true, "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.")
+	f.BoolVar(&o.EnableRemoveStaticallyEmptyExpressions, "querier.mimir-query-engine.enable-remove-statically-empty-expressions", true, "Enable removing expressions that are guaranteed to produce no results.")
 
 	o.RangeVectorSplitting.RegisterFlags(f)
 }

@@ -20,6 +20,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -80,12 +81,13 @@ type Head struct {
 	// This should be typecasted to chunks.ChunkDiskMapperRef after loading.
 	minOOOMmapRef atomic.Uint64
 
-	metrics             *headMetrics
-	opts                *HeadOptions
-	wal, wbl            *wlog.WL
-	exemplarMetrics     *ExemplarMetrics
-	exemplars           ExemplarStorage
-	logger              *slog.Logger
+	metrics         *headMetrics
+	opts            *HeadOptions
+	wal, wbl        *wlog.WL
+	exemplarMetrics *ExemplarMetrics
+	exemplars       ExemplarStorage
+	logger          *slog.Logger
+	// TODO(bwplotka): Consider using record.Pools that's reused with WAL watchers.
 	refSeriesPool       zeropool.Pool[[]record.RefSeries]
 	floatsPool          zeropool.Pool[[]record.RefSample]
 	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
@@ -137,6 +139,10 @@ type Head struct {
 	closedMtx sync.Mutex
 	closed    bool
 
+	// For running the background goroutine which updates series_state.json.
+	seriesStateQuit chan struct{}
+	seriesStateWg   sync.WaitGroup
+
 	stats *HeadStats
 	reg   prometheus.Registerer
 
@@ -163,6 +169,15 @@ type HeadOptions struct {
 
 	OutOfOrderTimeWindow atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
+
+	// EnableSTStorage determines whether databases (WAL/WBL, tsdb,
+	// agent) should set a Start Time value per sample.
+	// Represents 'st-storage' feature flag.
+	EnableSTStorage atomic.Bool
+
+	// EnableXOR2Encoding enables XOR2 chunk encoding for float samples.
+	// Represents 'xor2-encoding' feature flag.
+	EnableXOR2Encoding atomic.Bool
 
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
@@ -219,6 +234,9 @@ type HeadOptions struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableMetadataWALRecords bool
+
+	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
+	EnableFastStartup bool
 }
 
 const (
@@ -317,6 +335,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		reg:               r,
 		secondaryHashFunc: shf,
 		pfmc:              opts.PostingsForMatchersCacheFactory.NewPostingsForMatchersCache([]attribute.KeyValue{attribute.String("block", headULID.String())}),
+		seriesStateQuit:   make(chan struct{}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -787,7 +806,7 @@ func (h *Head) Init(minValidTime int64) error {
 			snapIdx, snapOffset = -1, 0
 
 			// If this fails, data will be recovered from WAL.
-			// Hence we wont lose any data (given WAL is not corrupt).
+			// Hence we won't lose any data (given WAL is not corrupt).
 			mmappedChunks, oooMmappedChunks, lastMmapRef, err = h.removeCorruptedMmappedChunks(err)
 			if err != nil {
 				return err
@@ -815,6 +834,28 @@ func (h *Head) Init(minValidTime int64) error {
 	_, endAt, e := wlog.Segments(h.wal.Dir())
 	if e != nil {
 		return fmt.Errorf("finding WAL segments: %w", e)
+	}
+
+	if h.opts.EnableFastStartup {
+		state, err := h.readSeriesStateFile()
+		if err != nil && !os.IsNotExist(err) {
+			h.logger.Warn("Failed to read series state file, skipping the fast startup", "err", err)
+		}
+		if err == nil {
+			if state.CleanShutdown {
+				h.lastSeriesID.Store(state.LastSeriesID)
+				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "last_series_id", state.LastSeriesID)
+			} else {
+				h.logger.Info("Fast startup: unclean shutdown detected, performing WAL scan", "from_segment", state.LastWALSegment, "to_segment", endAt)
+				id, scanErr := h.findLastSeriesID(state, endAt)
+				if scanErr != nil {
+					h.logger.Error("Fast startup: WAL scan failed, skipping fast startup", "err", scanErr)
+				} else {
+					h.lastSeriesID.Store(id)
+					h.logger.Info("Fast startup: WAL scan completed", "last_series_id", id)
+				}
+			}
+		}
 	}
 
 	h.startWALReplayStatus(startFrom, endAt)
@@ -922,6 +963,13 @@ func (h *Head) Init(minValidTime int64) error {
 		"mmap_chunk_replay_duration", mmapChunkReplayDuration.String(),
 		"total_replay_duration", totalReplayDuration.String(),
 	)
+
+	// TODO(RushabhMehta2005): Remove this 'if' block and always run the series state ticker when the feature is fully implemented.
+	if h.opts.EnableFastStartup {
+		// Start the background goroutine that writes to series_state.json.
+		h.seriesStateWg.Add(1)
+		go h.runSeriesStateTicker()
+	}
 
 	return nil
 }
@@ -1418,7 +1466,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		var cerr *chunks.CorruptionErr
 		if errors.As(err, &cerr) {
@@ -1712,7 +1760,7 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 	}
 
 	if h.wal != nil {
-		var enc record.Encoder
+		enc := record.Encoder{EnableSTStorage: h.opts.EnableSTStorage.Load()}
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
 			return err
 		}
@@ -1849,6 +1897,15 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
+
+	// Stop the background series_state.json writer.
+	if h.opts.EnableFastStartup && h.seriesStateQuit != nil {
+		close(h.seriesStateQuit)
+		h.seriesStateWg.Wait()
+		h.seriesStateQuit = nil
+		// Flush the final clean state.
+		h.writeSeriesState(true)
+	}
 
 	// mmap all but last chunk in case we're performing snapshot since that only
 	// takes samples from most recent head chunk.
@@ -2218,15 +2275,24 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	)
 
 	for _, ref := range refs {
+		// Delete the reference from the series map.
+		// Copying getByID here to avoid locking and unlocking twice.
 		refShard := int(ref) & (h.series.size - 1)
 		h.series.locks[refShard].Lock()
-
-		// Copying getByID here to avoid locking and unlocking twice.
 		series := h.series.series[refShard][ref]
 		if series == nil {
 			h.series.locks[refShard].Unlock()
 			continue
 		}
+		delete(h.series.series[refShard], series.ref)
+		h.series.locks[refShard].Unlock()
+
+		// Delete the reference from the hash.
+		hash := series.lset.Hash()
+		hashShard := int(hash) & (h.series.size - 1)
+		h.series.locks[hashShard].Lock()
+		h.series.hashes[hashShard].del(hash, series.ref)
+		h.series.locks[hashShard].Unlock()
 
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
@@ -2234,28 +2300,17 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 			staleSeriesDeleted++
 		}
 
-		hash := series.lset.Hash()
-		hashShard := int(hash) & (h.series.size - 1)
-
 		chunksRemoved += len(series.mmappedChunks)
 		if series.headChunks != nil {
 			chunksRemoved += series.headChunks.len()
 		}
+		// Clear to prevent a double-subtraction from the chunksRemoved gauge if
+		// resetSeriesWithMMappedChunks is queued on the same WAL-replay processor
+		// after this deletion (it would otherwise subtract len(mmappedChunks) again).
+		series.mmappedChunks = nil
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
-
-		// Acquire hashShard lock if it differs from refShard to safely access hashes[hashShard].
-		if hashShard != refShard {
-			h.series.locks[hashShard].Lock()
-		}
-		h.series.hashes[hashShard].del(hash, series.ref)
-		delete(h.series.series[refShard], series.ref)
-		if hashShard != refShard {
-			h.series.locks[hashShard].Unlock()
-		}
-
-		h.series.locks[refShard].Unlock()
 	}
 
 	h.metrics.seriesRemoved.Add(float64(len(deleted)))
