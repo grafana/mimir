@@ -6086,7 +6086,7 @@
                 "kind": "field",
                 "name": "regex",
                 "required": false,
-                "desc": "If true, the pattern is treated as a regular expression. If false, the pattern is treated as a literal match.",
+                "desc": "If true, the pattern is treated as a regular expression; an invalid regular expression is a configuration error. If false, the pattern is treated as a literal match.",
                 "fieldValue": null,
                 "fieldDefaultValue": false,
                 "fieldType": "boolean"

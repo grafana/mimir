@@ -11,6 +11,7 @@ might be intentionally or unintentionally expensive to run, and they might affec
 your service.
 
 Each rule must include a `pattern` field; rules without a pattern are a configuration error.
+Rules with `regex: true` must have a valid regular expression pattern; an invalid pattern is also a configuration error.
 To match all queries, use `pattern: ".*"` with `regex: true`.
 Optional filter conditions (`time_range_longer_than`, `minimum_step_size`, `unaligned_range_queries`) narrow which matching queries are blocked; all configured conditions must be satisfied to block.
 

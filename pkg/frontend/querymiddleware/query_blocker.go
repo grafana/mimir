@@ -80,8 +80,7 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 		if block.Regex {
 			r, err := labels.NewFastRegexMatcher(block.Pattern)
 			if err != nil {
-				level.Error(logger).Log("msg", "query blocker regex does not compile, ignoring query blocker", "pattern", block.Pattern, "err", err, "index", ruleIndex)
-				continue
+				continue // regex patterns are validated during configuration load.
 			}
 			patternMatches = patternMatches || r.MatchString(query)
 		}

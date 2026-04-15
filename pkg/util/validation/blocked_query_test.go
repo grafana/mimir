@@ -3,7 +3,6 @@
 package validation
 
 import (
-	"errors"
 	"testing"
 	"time"
 
@@ -13,32 +12,50 @@ import (
 
 func TestBlockedQueriesConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
-		input    BlockedQueriesConfig
-		expected error
+		input          BlockedQueriesConfig
+		expectedErrMsg string
 	}{
 		"no rules": {},
-		"valid rule with pattern": {
+		"literal pattern": {
 			input: BlockedQueriesConfig{
-				{Pattern: ".*", Regex: true},
+				{Pattern: "rate(metric_counter[5m])", Regex: false},
 			},
+			expectedErrMsg: "", // none
 		},
-		"rule with empty pattern": {
+		"empty pattern": {
 			input: BlockedQueriesConfig{
 				{TimeRangeLongerThan: model.Duration(24 * time.Hour)},
 			},
-			expected: errors.New("blocked_queries[0]: pattern is required"),
+			expectedErrMsg: "blocked_queries[0]: pattern is required",
 		},
-		"second rule with empty pattern": {
+		"empty pattern second rule": {
 			input: BlockedQueriesConfig{
-				{Pattern: ".*", Regex: true},
+				{Pattern: "rate(metric_counter[5m])", Regex: false},
 				{Pattern: "", TimeRangeLongerThan: model.Duration(24 * time.Hour)},
 			},
-			expected: errors.New("blocked_queries[1]: pattern is required"),
+			expectedErrMsg: "blocked_queries[1]: pattern is required",
+		},
+		"valid regex": {
+			input: BlockedQueriesConfig{
+				{Pattern: ".*expensive.*", Regex: true},
+			},
+			expectedErrMsg: "", // none
+		},
+		"invalid regex": {
+			input: BlockedQueriesConfig{
+				{Pattern: "[a-9}", Regex: true},
+			},
+			expectedErrMsg: `blocked_queries[0]: invalid regex pattern "[a-9}"`,
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, tc.input.Validate())
+			err := tc.input.Validate()
+			if tc.expectedErrMsg == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorContains(t, err, tc.expectedErrMsg)
+			}
 		})
 	}
 }
