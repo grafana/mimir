@@ -241,6 +241,7 @@ std.manifestYamlDoc({
     // and has `/bin/mimir` set as an entrypoint. That requires passing CLI flags in 'command' instead
     // of a string that will be passed to a shell.
     local isLocalImage = options.image == 'mimir',
+    local useDelve = $._config.debug && (std.length($._config.debug_targets) == 0 || std.member($._config.debug_targets, options.target)),
     local flags = [
       '-config.file=/etc/mimir/mimir.yaml',
       '-target=%(target)s' % options,
@@ -257,7 +258,7 @@ std.manifestYamlDoc({
     local command = if isLocalImage then ['/bin/sh', '-c', std.join(' ', [
       // some of the following expressions use "... else null", which std.join seem to ignore.
       (if $._config.sleep_seconds > 0 then 'sleep %d &&' % [$._config.sleep_seconds] else null),
-      (if $._config.debug && (std.length($._config.debug_targets) == 0 || std.member($._config.debug_targets, options.target)) then 'exec /bin/dlv exec /bin/mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec /bin/mimir'),
+      (if useDelve then 'exec /bin/dlv exec /bin/mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec /bin/mimir'),
     ] + flags)] else flags,
 
     build: if isLocalImage then {
@@ -271,7 +272,7 @@ std.manifestYamlDoc({
     // Only publish HTTP and debug port, but not gRPC one.
     ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
            ['%d:%d' % [options.memberlistBindPort, options.memberlistBindPort]] +
-           if $._config.debug && (std.length($._config.debug_targets) == 0 || std.member($._config.debug_targets, options.target)) then [
+           if useDelve then [
              '%d:%d' % [options.debugPort, options.debugPort],
            ] else [],
     depends_on: options.dependsOn,
