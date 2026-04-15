@@ -57,6 +57,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 		lengthBytes := make([]byte, numLenBytes)
 		n, err := metaReader.Read(lengthBytes)
 		if err != nil {
+			bf.mu.Unlock()
 			return Decbuf{E: err}
 		}
 		if n != numLenBytes {
@@ -74,6 +75,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	// bufReader is expected start at base offset + 4 after consuming length bytes
 	err = bufReader.Skip(numLenBytes)
 	if err != nil {
+		_ = bufReader.Close()
 		return Decbuf{E: err}
 	}
 	d := Decbuf{r: bufReader}
