@@ -39,27 +39,7 @@ func newTestBufReader(t *testing.T, base, length int) (*BucketBufReader, *tracki
 	objectData = append(objectData, testBucketContents...)
 	bkt := newTrackingBucket(t, objectData)
 
-	reader := NewBucketReader(ctx, bkt, testBucketObjectName, base, length)
-	bufioReader := testBucketBufPool.Get().(*bufio.Reader)
-	bufioReader.Reset(reader)
-
-	bufReader := &BucketBufReader{
-		ctx:    ctx,
-		bkt:    bkt,
-		name:   testBucketObjectName,
-		base:   base,
-		length: length,
-		r:      reader,
-		buf:    bufioReader,
-	}
-
-	resetReader := func(off int) error {
-		r := NewBucketReader(ctx, bkt, testBucketObjectName, base+off, length)
-		bufReader.r = r
-		return nil
-	}
-	bufReader.resetReader = resetReader
-	return bufReader, bkt
+	return newBucketBufReader(ctx, &testBucketBufPool, bkt, testBucketObjectName, base, length), bkt
 }
 
 func newFailingBufReader(t *testing.T, sentinel error) *BucketBufReader {

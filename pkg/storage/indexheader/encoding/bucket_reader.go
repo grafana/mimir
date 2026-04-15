@@ -90,11 +90,29 @@ type BucketBufReader struct {
 	buf         *bufio.Reader
 }
 
+func resetReaderFunc(bufReader *BucketBufReader) func(off int) error {
+	return func(off int) error {
+		r := NewBucketReader(bufReader.ctx, bufReader.bkt, bufReader.name, bufReader.base, bufReader.length)
+		_, err := r.Seek(int64(off), io.SeekStart)
+		if err != nil {
+			return err
+		}
+		bufReader.r = r
+		return nil
+	}
+}
+
 func NewBucketBufReader(
 	ctx context.Context, bkt objstore.BucketReader, name string, base int, length int,
 ) *BucketBufReader {
+	return newBucketBufReader(ctx, &bucketBufPool, bkt, name, base, length)
+}
+
+func newBucketBufReader(
+	ctx context.Context, bufioPool *sync.Pool, bkt objstore.BucketReader, name string, base int, length int,
+) *BucketBufReader {
 	reader := NewBucketReader(ctx, bkt, name, base, length)
-	bufioReader := bucketBufPool.Get().(*bufio.Reader)
+	bufioReader := bufioPool.Get().(*bufio.Reader)
 	bufioReader.Reset(reader)
 
 	bufReader := &BucketBufReader{
@@ -107,16 +125,7 @@ func NewBucketBufReader(
 		buf:    bufioReader,
 	}
 
-	resetReader := func(off int) error {
-		r := NewBucketReader(ctx, bkt, name, base, length)
-		_, err := r.Seek(int64(off), io.SeekStart)
-		if err != nil {
-			return err
-		}
-		bufReader.r = r
-		return nil
-	}
-	bufReader.resetReader = resetReader
+	bufReader.resetReader = resetReaderFunc(bufReader)
 	return bufReader
 }
 
@@ -127,6 +136,11 @@ func (bbr *BucketBufReader) Reset() error {
 func (bbr *BucketBufReader) ResetAt(off int) error {
 	if off > bbr.length {
 		return ErrInvalidSize
+	}
+
+	if dist := off - bbr.off; dist > 0 && dist < bbr.Buffered() {
+		// skip ahead by discarding the distance bytes
+		return bbr.Skip(dist)
 	}
 
 	if err := bbr.resetReader(off); err != nil {
