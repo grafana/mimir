@@ -49,7 +49,7 @@ envFrom:
   {{- toYaml . | nindent 2 -}}
 {{- end }}
 {{- with $componentSection.extraEnvFrom }}
-  {{- toYaml . | nindent 12 }}
+  {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end }}
 {{- end -}}
