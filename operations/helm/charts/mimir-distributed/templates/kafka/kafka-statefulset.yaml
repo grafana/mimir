@@ -65,7 +65,30 @@ spec:
             - containerPort: 9093
               name: controller
               protocol: TCP
-          {{- include "mimir.kafka.containerEnv" (dict "ctx" $ "replicas" $replicas) | nindent 10 }}
+          {{- $kafkaName     := include "mimir.resourceName" (dict "ctx" $ "component" "kafka") -}}
+          {{- $clusterDomain := $.Values.global.clusterDomain -}}
+          {{- $namespace     := $.Release.Namespace -}}
+          {{- $quorumVoters  := list -}}
+          {{- range $i := until (int $replicas) -}}
+            {{- $quorumVoters = append $quorumVoters (printf "%d@%s-%d.%s-headless.%s.svc.%s:9093" $i $kafkaName $i $kafkaName $namespace (trimSuffix "." $clusterDomain)) -}}
+          {{- end -}}
+          {{- $defaultEnv := list
+              (dict "name" "_POD_NAME" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.name")))
+              (dict "name" "KAFKA_CLUSTER_ID" "value" (.clusterId | default ""))
+              (dict "name" "KAFKA_NODE_ID" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.labels['apps.kubernetes.io/pod-index']")))
+              (dict "name" "KAFKA_PROCESS_ROLES" "value" "broker,controller")
+              (dict "name" "KAFKA_LISTENERS" "value" "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093")
+              (dict "name" "KAFKA_ADVERTISED_LISTENERS" "value" (printf "PLAINTEXT://$(_POD_NAME).%s-headless.%s.svc.%s:9092" $kafkaName $namespace $clusterDomain))
+              (dict "name" "KAFKA_CONTROLLER_QUORUM_VOTERS" "value" (join "," $quorumVoters))
+              (dict "name" "KAFKA_CONTROLLER_LISTENER_NAMES" "value" "CONTROLLER")
+              (dict "name" "KAFKA_INTER_BROKER_LISTENER_NAME" "value" "PLAINTEXT")
+              (dict "name" "KAFKA_LOG_DIRS" "value" "/var/lib/kafka/data")
+              (dict "name" "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR" "value" (min 3 $replicas | toString))
+              (dict "name" "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR" "value" (min 3 $replicas | toString))
+              (dict "name" "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR" "value" (min 2 $replicas | toString))
+              (dict "name" "KAFKA_LOG_RETENTION_HOURS" "value" (.logRetentionHours | default 24 | toString))
+          -}}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" $ "component" "kafka" "env" $defaultEnv) | nindent 10 }}
           resources:
             {{- toYaml .resources | nindent 12 }}
           securityContext:
