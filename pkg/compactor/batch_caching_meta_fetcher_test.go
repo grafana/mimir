@@ -171,7 +171,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		data, err := json.Marshal(block2Meta)
 		require.NoError(t, err)
 		key := tenantMetaCacheKey(tenant, block1Meta.ULID)
-		c.Set(ctx, key, data, 24*time.Hour)
+		require.NoError(t, c.Set(ctx, key, data, 24*time.Hour))
 
 		metas, fetchErr := fetcher.FetchMetasFromListing(ctx, 0, nil, metrics)
 
@@ -422,7 +422,7 @@ func uploadToCache(t *testing.T, c *cache.MockCache, tenant string, meta *block.
 	data, err := json.Marshal(meta)
 	require.NoError(t, err)
 	key := tenantMetaCacheKey(tenant, meta.ULID)
-	c.Set(context.Background(), key, data, 24*time.Hour)
+	require.NoError(t, c.Set(context.Background(), key, data, 24*time.Hour))
 }
 
 // removeBlockFilter is a MetadataFilter that removes a specific block from metas

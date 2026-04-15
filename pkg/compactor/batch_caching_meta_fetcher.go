@@ -276,12 +276,8 @@ func filterMapIfMarked(metas map[ulid.ULID]*block.Meta, marks map[ulid.ULID]stru
 		return
 	}
 	for id := range marks {
-		if _, ok := metas[id]; ok {
-			delete(metas, id)
-		}
+		delete(metas, id)
 	}
-
-	return
 }
 
 func (f *batchCachingMetaFetcher) runFilters(ctx context.Context, metas map[ulid.ULID]*block.Meta, synced block.GaugeVec, filters []block.MetadataFilter) (map[ulid.ULID]*block.Meta, error) {
