@@ -479,6 +479,57 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"logical or with ignoring should not have hints added": {
+			// 'or' is in disallowedOperations regardless of whether 'on' or 'ignoring' is used.
+			expr: `
+				first_metric
+				or ignoring (zone)
+				second_metric
+			`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or ignoring (zone) RHS
+						- LHS: VectorSelector: {__name__="first_metric"}
+						- RHS: VectorSelector: {__name__="second_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"logical unless with ignoring and aggregation LHS: non-excluded grouping label used as hint": {
+			// 'unless' was previously disallowed but is now permitted. For ignoring(zone),
+			// the excluded label (zone) is added to the 'created' set so it cannot appear in
+			// hints. The aggregation groups by env (not zone), so env passes through as the hint.
+			expr: `
+				sum by (env) (first_metric)
+				unless ignoring (zone)
+				second_metric
+			`,
+			expectedPlan: `
+				- BinaryExpression: LHS unless ignoring (zone) RHS, hints (env)
+					- LHS: AggregateExpression: sum by (env)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: VectorSelector: {__name__="second_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"logical unless with ignoring where excluded label matches grouping label yields no hints": {
+			// The aggregation groups by the same label that ignoring() excludes, so after
+			// filterLabels removes zone from the candidate hints, nothing is left.
+			expr: `
+				sum by (zone) (first_metric)
+				unless ignoring (zone)
+				second_metric
+			`,
+			expectedPlan: `
+				- BinaryExpression: LHS unless ignoring (zone) RHS
+					- LHS: AggregateExpression: sum by (zone)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: VectorSelector: {__name__="second_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
 	}
 
 	for name, testCase := range testCases {
