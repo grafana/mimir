@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [BUGFIX] Ruler: Fix parsing of rule expressions with leading newlines. #14947
+* [BUGFIX] Ruler: Fix parsing of rule expressions with leading newlines. #14947 #15032
 
 ## 2.17.9
 
