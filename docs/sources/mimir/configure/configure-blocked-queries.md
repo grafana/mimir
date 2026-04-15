@@ -46,7 +46,7 @@ overrides:
         minimum_step_size: 1m
         reason: "step resolution too fine-grained"
 
-      # match this query only when the time range is not aligned to the step
+      # match this query only when the time range is not a multiple of the step
       - pattern: 'sum(rate(node_cpu_seconds_total{env="prod"}[1m]))'
         unaligned_range_queries: true
 ```
@@ -56,17 +56,19 @@ The blocking is enforced on instant and range queries as well as remote read que
 For instant and range queries, the pattern is evaluated against the query. For remote read requests, the pattern is evaluated against each set of matchers, as if the matchers formed a vector selector. If any set of matchers is blocked, the whole remote read request is rejected.
 
 Setting `time_range_longer_than` on a rule blocks queries where the time range duration (calculated as `end - start`) exceeds the specified threshold.
-Instant queries are never blocked by this filter.
+`time_range_longer_than` does not apply to instant queries.
 
 Setting `minimum_step_size` on a rule blocks queries where the step is smaller than the configured duration.
-Instant queries and queries with no step are never blocked by this filter.
+`minimum_step_size` does not apply to instant queries or queries without a step.
 
-Setting `unaligned_range_queries: true` on a rule limits it to range queries where the time range is not aligned to the step.
+Setting `unaligned_range_queries: true` on a rule limits it to range queries where the time range is not a multiple of the step.
 Such queries are not eligible for [range query result caching](https://grafana.com/docs/mimir/latest/references/architecture/components/query-frontend/#caching) by default.
 This can be useful to discourage unaligned queries without impacting clients that already send aligned requests.
-Instant queries and remote read requests are not blocked.
+`unaligned_range_queries` does not apply to instant queries, aligned range queries, or remote read requests.
 
-For remote read requests, each set of matchers is evaluated as a vector selector. For example, a matcher on `__name__` regex-matched to `foo.*` is interpreted as `{__name__=~"foo.*"}`. To restrict the blocking to such selectors, include the curly braces in your pattern, e.g. `\{.*foo.*\}`.
+For remote read requests, each set of matchers is evaluated as a vector selector.
+For example, a matcher on `__name__` regex-matched to `foo.*` is interpreted as `{__name__=~"foo.*"}`.
+To restrict the blocking to such selectors, use a regex pattern with the curly braces escaped, e.g. `pattern: '\{.*foo.*\}'` with `regex: true`.
 
 To set up runtime overrides, refer to [runtime configuration](../about-runtime-configuration/).
 
@@ -128,3 +130,9 @@ rate(metric_counter[15m]) / rate(other_counter[15m])
 Blocked queries are logged with `msg="query blocked"` at info level, including the query text, duration, step, rule index, and reason. Use these fields to identify which rule matched and why.
 
 Blocked queries are also counted in the `cortex_query_frontend_rejected_queries_total` metric per tenant (`user` label) with `reason="blocked"`. Note that the same metric tracks rate-limited queries under `reason="limited"`.
+
+To see the rate of blocked queries by tenant:
+
+```promql
+sum by (user, reason) (rate(cortex_query_frontend_rejected_queries_total[$__interval]))
+```
