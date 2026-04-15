@@ -36,6 +36,17 @@
     querier_max_concurrency: 8,
     ruler_querier_max_concurrency: $._config.querier_max_concurrency,
 
+    // Controls the ingester data window.
+    querier_query_ingesters_within: '13h',
+    querier_query_store_after: $.util.formatDuration($.util.parseDuration(self.querier_query_ingesters_within) - 3600),
+    store_gateway_ignore_blocks_within: '10h',
+    // Allows ingesters to stick around longer than their data window, for evaluation purposes.
+    ingester_extra_downscale_delay: '0h',
+
+    assert $.util.parseDuration(self.querier_query_store_after) < $.util.parseDuration(self.querier_query_ingesters_within) : 'querier_query_store_after must be strictly less than querier_query_ingesters_within.',
+    assert $.util.parseDuration(self.querier_query_ingesters_within) >= 3600 : 'querier_query_ingesters_within must be greater than or equal to 1h.',
+    assert $.util.parseDuration(self.store_gateway_ignore_blocks_within) <= $.util.parseDuration(self.querier_query_store_after) : 'store_gateway_ignore_blocks_within must be less than or equal to querier_query_store_after.',
+
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
@@ -567,6 +578,11 @@
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],
   },
+
+  ingester_rollout_downscale_delay:: $.util.formatDuration(
+    $.util.parseDuration($._config.querier_query_ingesters_within) +
+    $.util.parseDuration($._config.ingester_extra_downscale_delay)
+  ),
 
   local configMap = $.core.v1.configMap,
 

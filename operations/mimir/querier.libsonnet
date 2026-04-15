@@ -30,7 +30,19 @@
       'mem-ballast-size-bytes': 1 << 28,  // 256M
 
       'querier.store-gateway-client.grpc-max-recv-msg-size': $._config.store_gateway_grpc_max_query_response_size_bytes,
-    },
+    } + (
+      local s = $.util.parseDuration($._config.querier_query_ingesters_within);
+      local d = $.util.getFlagDefaultSeconds('querier.query-ingesters-within');
+      if d == null || s != d then
+        { 'querier.query-ingesters-within': $._config.querier_query_ingesters_within }
+      else {}
+    ) + (
+      local s = $.util.parseDuration($._config.querier_query_store_after);
+      local d = $.util.getFlagDefaultSeconds('querier.query-store-after');
+      if d == null || s != d then
+        { 'querier.query-store-after': $._config.querier_query_store_after }
+      else {}
+    ),
 
   // CLI flags that are applied only to queriers, and not ruler-queriers.
   // Values take precedence over querier_args.

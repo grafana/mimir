@@ -116,10 +116,7 @@
     $.ingest_storage_ingester_args +
     {
       // How long to wait before deleting an inactive partition, that doesn't have an owner.
-      'ingester.partition-ring.delete-inactive-partition-after': if 'querier.query-ingesters-within' in $.querier_args then
-        $.querier_args['querier.query-ingesters-within']
-      else
-        '13h',  // The default -querier.query-ingesters-within in Mimir is 13 hours.
+      'ingester.partition-ring.delete-inactive-partition-after': $.ingester_rollout_downscale_delay,
     } + (
       if $._config.ingest_storage_ingester_ring_tokens_enabled then {} else {
         'ingester.ring.num-tokens': 0,

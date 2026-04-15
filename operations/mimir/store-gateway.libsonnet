@@ -45,7 +45,14 @@
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
     $.bucket_index_config +
-    $.mimirRuntimeConfigFile,
+    $.mimirRuntimeConfigFile +
+    (
+      local s = $.util.parseDuration($._config.store_gateway_ignore_blocks_within);
+      local d = $.util.getFlagDefaultSeconds('blocks-storage.bucket-store.ignore-blocks-within');
+      if d == null || s != d then
+        { 'blocks-storage.bucket-store.ignore-blocks-within': $._config.store_gateway_ignore_blocks_within }
+      else {}
+    ),
 
   store_gateway_ports:: $.util.defaultPorts,
 

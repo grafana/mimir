@@ -25,11 +25,7 @@
     ingester_automated_downscale_v2_replicas_per_zone: std.ceil($._config.multi_zone_ingester_replicas / $._config.ingester_automated_downscale_v2_ingester_zones),
 
     // How long to wait before terminating an ingester after it has been notified about the scale down.
-    ingester_automated_downscale_v2_delay: if 'querier.query-ingesters-within' in $.querier_args then
-      $.querier_args['querier.query-ingesters-within']
-    else
-      // The default -querier.query-ingesters-within in Mimir is 13 hours.
-      '13h',
+    ingester_automated_downscale_v2_delay: $.ingester_rollout_downscale_delay,
   },
 
   // Validate the configuration.
