@@ -88,6 +88,8 @@ type BucketBufReader struct {
 	r           *BucketReader
 	resetReader func(off int) error
 	buf         *bufio.Reader
+	// Hold a reference to the pool for returning on Close - allows tests to use different pool.
+	bufPool *sync.Pool
 }
 
 func resetReaderFunc(bufReader *BucketBufReader) func(off int) error {
@@ -116,13 +118,14 @@ func newBucketBufReader(
 	bufioReader.Reset(reader)
 
 	bufReader := &BucketBufReader{
-		ctx:    ctx,
-		bkt:    bkt,
-		name:   name,
-		base:   base,
-		length: length,
-		r:      reader,
-		buf:    bufioReader,
+		ctx:     ctx,
+		bkt:     bkt,
+		name:    name,
+		base:    base,
+		length:  length,
+		r:       reader,
+		buf:     bufioReader,
+		bufPool: bufioPool,
 	}
 
 	bufReader.resetReader = resetReaderFunc(bufReader)
@@ -226,7 +229,7 @@ func (bbr *BucketBufReader) Buffered() int {
 func (bbr *BucketBufReader) Close() error {
 	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
 	// we reset the buffer when we retrieve it from the pool instead.
-	bucketBufPool.Put(bbr.buf)
+	bbr.bufPool.Put(bbr.buf)
 	// The BucketReader does not need closed -
 	// it closes the reader generated from bkt.GetRange on each Read call.
 	return nil

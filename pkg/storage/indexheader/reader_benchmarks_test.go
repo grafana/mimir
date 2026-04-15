@@ -246,6 +246,9 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 	ctx := context.Background()
 	tests, blockID, blockDir, bkt := labelValuesTestCases(test.NewTB(b))
+	b.Cleanup(func() {
+		require.NoError(b, bkt.Close())
+	})
 
 	sortedTests := make([]struct {
 		name string
@@ -272,9 +275,6 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 		for _, tc := range sortedTest.tcs {
 			bucketReg := prometheus.NewPedanticRegistry()
 			instrBkt := objstore.WrapWithMetrics(objstore.WithNoopInstr(bkt), prometheus.WrapRegistererWithPrefix("thanos_", bucketReg), "")
-			b.Cleanup(func() {
-				require.NoError(b, bkt.Close())
-			})
 
 			// Initialize the first index-header reader,
 			// configured to read all index-header sections from the on-disk index-header.
