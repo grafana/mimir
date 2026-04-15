@@ -197,7 +197,9 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidC
 	// since grpc.Dial() creates the connection immediately and connects lazily.
 	executor.schedulerClient, executor.schedulerConn, err = executor.makeSchedulerClient()
 	if err != nil {
-		metadataCache.Stop()
+		if metadataCache != nil {
+			metadataCache.Stop()
+		}
 		return nil, err
 	}
 
