@@ -164,7 +164,7 @@ type schedulerExecutor struct {
 }
 
 func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidClusterValidation *prometheus.CounterVec, reg prometheus.Registerer) (*schedulerExecutor, error) {
-	metadataCache, err := cache.CreateClient("compactor-metadata-cache", cfg.MetadataCacheConfig.BackendConfig, logger, reg)
+	metadataCache, err := cache.CreateClient("compactor-metadata-cache", cfg.MetadataCacheConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metadata cache: %w", err)
 	}
