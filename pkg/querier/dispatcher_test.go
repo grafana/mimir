@@ -565,7 +565,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				enableDelayedNameRemoval,
 				2,
-				[]string{"BinaryExpression: LHS + RHS", `LHS: DuplicateFilter: {idx=~"(0|1|2)"}`},
+				[]string{"BinaryExpression: LHS + RHS", `LHS: DuplicateFilter: {idx=~"(0|1|2)"}, subset index: 0`},
 				[]string{"BinaryExpression: LHS + RHS", `RHS: Duplicate`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
