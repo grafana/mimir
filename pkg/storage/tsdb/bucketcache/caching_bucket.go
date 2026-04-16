@@ -873,7 +873,7 @@ func composeCachingKey(op, bucketID string, values ...string) string {
 
 // ContentKey builds a cache key for content so callers may access
 // a cache directly outside of the caching bucket flow when needed.
-// Example cases are a MultiGet or a read without population on miss.
+// Example cases are a GetMulti or a read without population on miss.
 func ContentKey(bucketID, name string) string {
 	return newCacheKeyBuilder(bucketID, name).content()
 }
