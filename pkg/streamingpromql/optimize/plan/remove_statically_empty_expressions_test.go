@@ -5,7 +5,6 @@ package plan_test
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,7 +14,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -30,7 +28,8 @@ import (
 func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	const lookbackDelta = 5 * time.Minute
 	const constant = 1000
-	thresholdMs := (constant*time.Second + lookbackDelta).Milliseconds()
+	selectorThresholdMs := (constant*time.Second + lookbackDelta).Milliseconds() // Note that the lookback window is left-open.
+	nonSelectorThresholdMs := (constant * time.Second).Milliseconds()
 
 	testCases := map[string]struct {
 		expr            string
@@ -40,80 +39,137 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	}{
 		"timestamp(v) < C: query time range is on threshold, should optimize": {
 			expr:       "timestamp(metric) < CONSTANT",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs - 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"timestamp(v) < bool C: would optimise because query time range is on threshold, but skipped due to bool modifier": {
 			expr:            "timestamp(metric) < bool CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs),
+			queryStart:      time.UnixMilli(selectorThresholdMs - 1),
 			expectUnchanged: true,
 		},
 		"timestamp(v) < C: query time range overlaps threshold, should not optimize": {
 			expr:            "timestamp(metric) < CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs - 1),
+			queryStart:      time.UnixMilli(selectorThresholdMs - 2),
 			expectUnchanged: true,
 		},
+		"timestamp(v offset -1ms) < C: query time range does not overlaps threshold, should optimize": {
+			expr:       "timestamp(metric offset -1ms) < CONSTANT",
+			queryStart: time.UnixMilli(selectorThresholdMs - 1),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(v offset 1ms) < C: query time range overlaps threshold, should not optimize": {
+			expr:            "timestamp(metric offset 1ms) < CONSTANT",
+			queryStart:      time.UnixMilli(selectorThresholdMs - 1),
+			expectUnchanged: true,
+		},
+		"timestamp(abs(v)) < C: query time range is on threshold, should optimize": {
+			expr:       "timestamp(abs(v)) < CONSTANT",
+			queryStart: time.UnixMilli(nonSelectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(abs(v)) < C: query time range is above threshold, should optimize": {
+			expr:       "timestamp(abs(v)) < CONSTANT",
+			queryStart: time.UnixMilli(nonSelectorThresholdMs + 1),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(abs(v offset 1ms)) < C: query time range is above threshold, should optimize (offset and lookback delta ignored)": {
+			expr:       "timestamp(abs(v offset 1ms)) < CONSTANT",
+			queryStart: time.UnixMilli(nonSelectorThresholdMs + 1),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+
 		"timestamp(v) <= C: query range starts just above threshold, should optimize": {
 			expr:       "timestamp(metric) <= CONSTANT",
-			queryStart: time.UnixMilli(thresholdMs + 1),
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"timestamp(v) <= C: query range starts exactly at threshold, should not optimize": {
+		"timestamp(v) <= C: query range starts exactly at threshold, should optimize": {
+			expr:       "timestamp(metric) <= CONSTANT",
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(v) <= C: query range starts below threshold, should not optimize": {
 			expr:            "timestamp(metric) <= CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs),
+			queryStart:      time.UnixMilli(selectorThresholdMs - 1),
 			expectUnchanged: true,
 		},
-		"C > timestamp(v): query range at threshold, should optimize": {
-			expr:       "metric and CONSTANT > timestamp(metric)",
-			queryStart: time.UnixMilli(thresholdMs),
+		"C > timestamp(v): query range starts at threshold, should optimize": {
+			expr:       "CONSTANT > timestamp(metric)",
+			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"C > timestamp(v): query range before threshold, should not optimize": {
-			expr:            "metric and CONSTANT > timestamp(metric)",
-			queryStart:      time.UnixMilli(thresholdMs - 1),
-			expectUnchanged: true,
-		},
-		"C >= timestamp(v): query range just above threshold, should optimize": {
-			expr:       "metric and CONSTANT >= timestamp(metric)",
-			queryStart: time.UnixMilli(thresholdMs + 1),
+		"C > timestamp(v): query range starts before threshold, should optimize": {
+			expr:       "CONSTANT > timestamp(metric)",
+			queryStart: time.UnixMilli(selectorThresholdMs - 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"C >= timestamp(v): query range exactly at threshold, should not optimize": {
-			expr:            "metric and CONSTANT >= timestamp(metric)",
-			queryStart:      time.UnixMilli(thresholdMs),
+		"C >= timestamp(v): query range starts just above threshold, should optimize": {
+			expr:       "CONSTANT >= timestamp(metric)",
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"C >= timestamp(v): query range starts exactly at threshold, should optimize": {
+			expr:       "CONSTANT >= timestamp(metric)",
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"C >= timestamp(v): query range starts just below threshold, should not optimize": {
+			expr:            "CONSTANT >= timestamp(metric)",
+			queryStart:      time.UnixMilli(selectorThresholdMs - 1),
 			expectUnchanged: true,
 		},
 
 		"non-timestamp comparison: should not optimize": {
 			expr:            "metric2 < CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs),
+			queryStart:      time.UnixMilli(selectorThresholdMs),
 			expectUnchanged: true,
 		},
 
-		"timestamp(v) < C with and: query range starts exactly at threshold, should optimize": {
+		"timestamp(v) < C with and: query range starts after threshold, should optimize": {
 			expr:       "metric and timestamp(metric) < CONSTANT",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"timestamp(v) < C with and: query range starts just before before threshold, should not optimize": {
+		"timestamp(v) < C with and: query range starts at threshold, should optimize": {
+			expr:       "metric and timestamp(metric) < CONSTANT",
+			queryStart: time.UnixMilli(selectorThresholdMs - 1),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(v) < C with and: query range starts before threshold, should not optimize": {
 			expr:            "metric and timestamp(metric) < CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs - 1),
+			queryStart:      time.UnixMilli(selectorThresholdMs - 2),
 			expectUnchanged: true,
 		},
 
 		"timestamp condition on LHS of and: should optimize": {
 			expr:       "timestamp(metric) < CONSTANT and metric",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
@@ -123,19 +179,19 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			// The inner "and" has the timestamp filter → replaced with NoOp.
 			// The outer "and" then has NoOp as its LHS → also replaced with NoOp.
 			expr:       "(metric and timestamp(metric) < CONSTANT) and metric2",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"nested and expressions: inner not optimized because not a no-op": {
 			expr:            "(metric and timestamp(metric) < CONSTANT) and metric2",
-			queryStart:      time.UnixMilli(thresholdMs - 1),
+			queryStart:      time.UnixMilli(selectorThresholdMs - 2),
 			expectUnchanged: true,
 		},
 		"nested and expressions: should optimize as far as possible": {
 			expr:       "(metric and timestamp(metric) < CONSTANT) or metric2",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
 				- DeduplicateAndMerge
 					- BinaryExpression: LHS or RHS
@@ -146,14 +202,14 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 
 		"complex expression inside timestamp() that is a no-op: should optimize": {
 			expr:       `foo and timestamp(sum(metric)) < CONSTANT`,
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(nonSelectorThresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"complex expression inside timestamp() that is not a no-op: should not optimize": {
 			expr:            `foo and timestamp(sum(metric)) < CONSTANT`,
-			queryStart:      time.UnixMilli(thresholdMs - 1),
+			queryStart:      time.UnixMilli(nonSelectorThresholdMs - 1),
 			expectUnchanged: true,
 		},
 
@@ -161,7 +217,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			// The "and timestamp(metric) < CONSTANT" is outside the subquery, so it is evaluated
 			// at the outer query time range, which is after the threshold.
 			expr:       "avg_over_time(metric[5m:1m]) and timestamp(metric) < CONSTANT",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
@@ -196,7 +252,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			testCase.expr = strings.ReplaceAll(testCase.expr, "CONSTANT", strconv.Itoa(constant))
 
-			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, timestamp.Time(math.MaxInt64), time.Minute)
+			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, testCase.queryStart.Add(24*time.Hour), time.Minute)
 			expectedModified := 1
 
 			if testCase.expectUnchanged {
