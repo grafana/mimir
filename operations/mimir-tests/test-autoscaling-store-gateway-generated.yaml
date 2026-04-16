@@ -2030,7 +2030,6 @@ metadata:
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 1
   selector:
     matchLabels:
       name: store-gateway-zone-a
@@ -2478,6 +2477,46 @@ webhooks:
     scope: Namespaced
   sideEffects: NoneOnDryRun
   timeoutSeconds: 10
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: store-gateway-zone-a
+  namespace: default
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          policies:
+          - periodSeconds: 600
+            type: Pods
+            value: 1
+          stabilizationWindowSeconds: 3600
+        scaleUp:
+          policies:
+          - periodSeconds: 600
+            type: Percent
+            value: 50
+          stabilizationWindowSeconds: 1800
+  maxReplicaCount: 6
+  minReplicaCount: 1
+  pollingInterval: 10
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: store-gateway-zone-a
+  triggers:
+  - metadata:
+      ignoreNullValues: "false"
+      metricName: mimir_store_gateway_zone_a_replicas_hpa_default
+      query: (1 - (min(kubelet_volume_stats_available_bytes{namespace="default", persistentvolumeclaim=~"store-gateway-.*"}/kubelet_volume_stats_capacity_bytes{namespace="default",
+        persistentvolumeclaim=~"store-gateway-.*"}))) * 100
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "77"
+    metricType: Value
+    name: mimir_store_gateway_zone_a_replicas_hpa_default
+    type: prometheus
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration

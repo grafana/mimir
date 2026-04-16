@@ -184,6 +184,7 @@
 * [ENHANCEMENT] MQE: Add optimisation pass to optimise away expressions containing comparisons with `timestamp()` that can't produce results due to the query time range. #14989
 * [ENHANCEMENT] Distributor: OTLP endpoint now returns partial success (HTTP 200) instead of HTTP 429 when the usage tracker rejects some series due to the active series limit but other series are successfully ingested. The `RejectedDataPoints` field reports the count of distributor-side rejections (usage tracker filtering). #14789
 * [ENHANCEMENT] MQE: Skip fetching and computation for results that aren't used in Binary Operations (such as the RHS of and/unless). #15034
+* [BUGFIX] Update to Go v1.25.9. #15030
 * [BUGFIX] Distributor: OTLP partial success responses now correctly populate `RejectedDataPoints` with the actual count of rejected samples, instead of always reporting 0. In classical architecture, this includes rejected samples propagated from the ingester. #14789
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Store-gateway: Fix `cortex_bucket_store_series_data_touched{data_type="series", stage="returned"}` metric observing negative values when series-for-postings cache is hit and pending matchers filter out some series. #14655
@@ -318,6 +319,7 @@
 * [ENHANCEMENT] Recording rules: add a low-cardinality recorded version of usage_tracker_active_series. #14901
 * [ENHANCEMENT] Alerts: Fix `MimirSchedulerQueriesStuck` false positives by only looking for cases where the number of enqueued queries doesn't decrease. #14943
 * [ENHANCEMENT] Dashboards: Add ephemeral storage panels to "Resources" dashboards. #14999
+* [ENHANCEMENT] Dashboards: Add disk utilization panels to experimental Block-builder dashboard. #15029
 * [BUGFIX] Dashboards: Fix compactor dashboard to exclude instances without the last successful run metric in the "Last successful run per-compactor replica" table. #14784
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
@@ -347,6 +349,7 @@
 * [CHANGE] Ingester: Change default ingestion concurrency configuration used by ingest storage architecture, to maximize throughput when consuming records from Kafka. #14668
 * [CHANGE] Memberlist: when the multi-zone memberlist bridge is enabled (`multi_zone_memberlist_bridge_enabled`), Mimir components now use memberlist-bridge pods as seed nodes by default, instead of the shared gossip ring service. This reduces inter-AZ data transfer. The new `memberlist_bridge_seed_nodes_enabled` configuration option can be used to disable this behavior. #14994
 * [CHANGE] Ruler remote evaluation: Split the ruler-query-frontend service into a ClusterIP service (for HTTP load balancing) and a headless service (for gRPC client-side load balancing by rulers). The ruler now connects to the headless service. #15001
+* [CHANGE] Memberlist bridge: Changed default value of `memberlist_bridge_replicas_per_zone` from 2 to 3. #14667
 * [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636 #13915 #14260 #14301
 * [FEATURE] Add deletion protection support for ingesters and store-gateways StatefulSet. It can be enabled by setting `ingester_deletion_protection_enabled` and `store_gateway_deletion_protection_enabled` in the `_config` block. #13819
 * [FEATURE] Shuffle sharding: Add the following configuration options to enable the experimental per-zone store-gateway shard size: #13908 #13941
@@ -355,7 +358,11 @@
   * `$._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled` (takes precedence over `store_gateway_shard_size_per_zone_enabled`)
 * [FEATURE] Ruler: Add `$._config.multi_zone_ruler_balanced_autoscaling_enabled` option to ensure equally balanced replica counts across ruler zones in multi-AZ deployments by using aggregate metrics for autoscaling. #14198
 * [FEATURE] Add `query_engine_range_vector_splitting_enabled` configuration option to enable experimental range vector splitting with memcached cache. #14435
-* [CHANGE] Memberlist bridge: Changed default value of `memberlist_bridge_replicas_per_zone` from 2 to 3. #14667
+* [FEATURE] Store-gateway: Add the ability to autoscale store-gateways based on disk usage when automated downscale is enabled. #15019
+  * `$._config.autoscaling_store_gateway_enabled`
+  * `$._config.autoscaling_store_gateway_disk_usage_threshold`
+  * `$._config.autoscaling_store_gateway_min_replicas_per_zone`
+  * `$._config.autoscaling_store_gateway_max_replicas_per_zone`
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Ingester: Increase `$._config.ingester_tsdb_head_early_compaction_min_in_memory_series` default when Mimir is running with the ingest storage architecture. #13450
 * [ENHANCEMENT] Memberlist bridge: Add `memberlist_bridge_replicas_per_zone` configuration option (default: 2). #13727

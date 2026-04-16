@@ -218,6 +218,18 @@ local filename = 'mimir-block-builder.json';
       )
       .splitIntoLines([4, 1])  // Puts "in-memory series" panel below the rest of the resources
     )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.containerDiskWritesPanelByComponent('block_builder')
+      )
+      .addPanel(
+        $.containerDiskReadsPanelByComponent('block_builder')
+      )
+      .addPanel(
+        $.containerDiskSpaceUtilizationPanelByComponent('block_builder'),
+      )
+    )
     .addRowIf(
       $._config.autoscaling.block_builder.enabled,
       $.row('Block builder - autoscaling')
