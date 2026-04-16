@@ -188,9 +188,8 @@ func (a *MultiAggregationInstance) Describe() string {
 		builder.WriteString(", filters: ")
 		core.FormatMatchers(builder, a.Filters)
 
-		builder.WriteString(" (subset index: ")
+		builder.WriteString(", subset index: ")
 		builder.WriteString(strconv.FormatInt(a.SubsetIndex, 10))
-		builder.WriteString(")")
 	}
 
 	return builder.String()
