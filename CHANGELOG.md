@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## 2.17.10
 
 ### Grafana Mimir
 
