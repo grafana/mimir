@@ -140,10 +140,10 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			i.compactBlocks(ctx, false, 0, nil)
 
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
-			i.compactBlocksToReduceInMemorySeries(ctx, i.activeSeriesNow())
+			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
 			// Check if any TSDB Head should be compacted based on per-tenant owned series thresholds.
-			i.compactBlocksToReducePerTenantOwnedSeries(ctx, i.activeSeriesNow())
+			i.compactBlocksToReducePerTenantOwnedSeries(ctx, time.Now())
 
 			// Decrement the counter after compaction is complete
 			i.numCompactionsInProgress.Dec()
