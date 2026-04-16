@@ -5,6 +5,7 @@ package commonsubexpressionelimination
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -212,6 +213,9 @@ func (f *DuplicateFilter) Describe() string {
 	builder := &strings.Builder{}
 	core.FormatMatchers(builder, f.Filters)
 
+	builder.WriteString(", subset index: ")
+	builder.WriteString(strconv.FormatInt(f.SubsetIndex, 10))
+
 	return builder.String()
 }
 
@@ -255,11 +259,11 @@ func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Mater
 		return nil, err
 	}
 
-	filterable.SetFilters(filters)
+	filterable.SetFilters(filters, int(f.SubsetIndex))
 
 	return planning.NewSingleUseOperatorFactory(operator), nil
 }
 
 type Filterable interface {
-	SetFilters(filters []*labels.Matcher)
+	SetFilters(filters []*labels.Matcher, subsetIndex int)
 }
