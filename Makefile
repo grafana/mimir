@@ -191,7 +191,15 @@ images: ## Print all image names.
 
 # Generating proto code is automated.
 # Proto files compiled by wiresmith (new compiler).
-WIRESMITH_PROTOS := ./pkg/distributor/ha_tracker.proto
+WIRESMITH_PROTOS := \
+	./pkg/distributor/ha_tracker.proto \
+	./pkg/streamingpromql/operators/functions/functions.proto \
+	./pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node.proto \
+	./pkg/streamingpromql/optimize/plan/multiaggregation/node.proto \
+	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.proto \
+	./pkg/streamingpromql/optimize/plan/remoteexec/node.proto \
+	./pkg/storegateway/hintspb/hints.proto \
+	./pkg/alertmanager/alertspb/alerts.proto
 WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
 
 # Proto files compiled by protoc+gogoslick (legacy).
@@ -291,11 +299,13 @@ ifeq ($(GENERATE_FILES),true)
 		--proto_path=$(@D) \
 		--proto_path=./vendor/github.com/gogo/protobuf \
 		--proto_path=./vendor \
+		--proto_path=$(GOPATH)/src \
 		--proto_path=$(shell brew --prefix protobuf 2>/dev/null)/include \
 		--out=$(dir $(@D:%/=%)) \
 		--module=github.com/grafana/mimir/$(dir $(@D:%/=%)) \
 		--helpers_import=github.com/grafana/wiresmith/gen/protohelpers \
-		--gogo_compat
+		--gogo_compat \
+		./$<
 else
 	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
 endif

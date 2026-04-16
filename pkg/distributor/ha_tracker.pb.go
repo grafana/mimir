@@ -13,17 +13,17 @@ import (
 type ReplicaDesc struct {
 	Replica string `protobuf:"bytes,1,opt,name=replica,proto3" json:"replica,omitempty"`
 	// Unix timestamp in milliseconds when we have last received request from this replica.
-	ReceivedAt int64 `protobuf:"varint,2,opt,name=received_at,json=receivedAt,proto3" json:"receivedAt,omitempty"`
+	ReceivedAt int64 `protobuf:"varint,2,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
 	// Unix timestamp in milliseconds when this entry was marked for deletion.
 	// Reason for doing marking first, and delete later, is to make sure that distributors
 	// watching the prefix will receive notification on "marking" -- at which point they can
 	// already remove entry from memory. Actual deletion from KV store does *not* trigger
 	// "watch" notification with a key for all KV stores.
-	DeletedAt int64 `protobuf:"varint,3,opt,name=deleted_at,json=deletedAt,proto3" json:"deletedAt,omitempty"`
+	DeletedAt int64 `protobuf:"varint,3,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`
 	// This is the most recent timestamp when this replica was elected as the leader.
-	ElectedAt int64 `protobuf:"varint,4,opt,name=elected_at,json=electedAt,proto3" json:"electedAt,omitempty"`
+	ElectedAt int64 `protobuf:"varint,4,opt,name=elected_at,json=electedAt,proto3" json:"elected_at,omitempty"`
 	// This is incremented every time a new replica is elected as the leader.
-	ElectedChanges int64 `protobuf:"varint,5,opt,name=elected_changes,json=electedChanges,proto3" json:"electedChanges,omitempty"`
+	ElectedChanges int64 `protobuf:"varint,5,opt,name=elected_changes,json=electedChanges,proto3" json:"elected_changes,omitempty"`
 }
 
 func (m *ReplicaDesc) Size() int {
