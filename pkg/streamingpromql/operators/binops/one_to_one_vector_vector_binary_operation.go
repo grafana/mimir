@@ -321,6 +321,14 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 			rightSide.outputSeriesCount++
 
+			// Account for the memory consumption from the labels now. This helps protect against
+			// queries that return many series from this operator.
+			// All series in outputSeriesMap will be returned, so this doesn't lead to over-counting
+			// of memory consumption.
+			if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+				return nil, nil, nil, -1, nil, -1, err
+			}
+
 			outputSeries = oneToOneBinaryOperationOutputSeriesWithLabels{
 				labels: outputSeriesLabels,
 				series: &oneToOneBinaryOperationOutputSeries{rightSide: rightSide},
@@ -342,11 +350,9 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, outputSeries := range outputSeriesMap {
-		allMetadata, err = types.AppendSeriesMetadata(b.MemoryConsumptionTracker, allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
-		if err != nil {
-			return nil, nil, nil, -1, nil, -1, err
-		}
-
+		// Note that we deliberately don't use types.AppendSeriesMetadata here as we've already
+		// accounted for the memory consumption of every set of labels in outputSeriesMap above.
+		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
 		allSeries = append(allSeries, outputSeries.series)
 	}
 
