@@ -47,6 +47,7 @@ type aggregateOverDuplicate struct {
 	aggregateParent          planning.Node
 	indexOfAggregateInParent int
 	filters                  []*core.LabelMatcher
+	subsetIndex              int64
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
@@ -102,6 +103,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 
 			duplicate, isDuplicate := aggregate.Inner.(*commonsubexpressionelimination.Duplicate)
 			var filters []*core.LabelMatcher
+			var subsetIndex int64
 
 			if !isDuplicate {
 				if !filteringSupported {
@@ -115,6 +117,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 				}
 
 				filters = duplicateFilter.Filters
+				subsetIndex = duplicateFilter.SubsetIndex
 				duplicate = duplicateFilter.Inner
 			}
 
@@ -127,6 +130,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 				aggregateParent:          node,
 				indexOfAggregateInParent: idx,
 				filters:                  filters,
+				subsetIndex:              subsetIndex,
 			})
 		}
 
@@ -169,6 +173,7 @@ func (o *OptimizationPass) replaceWithMultiAggregation(duplicate *commonsubexpre
 			MultiAggregationInstanceDetails: &MultiAggregationInstanceDetails{
 				Aggregation: aggregateOverDuplicate.aggregate.AggregateExpressionDetails,
 				Filters:     aggregateOverDuplicate.filters,
+				SubsetIndex: aggregateOverDuplicate.subsetIndex,
 			},
 			Group: group,
 		}

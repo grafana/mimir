@@ -345,9 +345,9 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `sum(foo{status="success"}) / sum(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
-					- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+					- LHS: MultiAggregationInstance: sum, filters: {status="success"}, subset index: 0
 						- ref#1 MultiAggregationGroup
-							- VectorSelector: {__name__="foo"}
+							- VectorSelector: {__name__="foo"}, subsets: {status="success"}
 					- RHS: MultiAggregationInstance: sum
 						- ref#1 MultiAggregationGroup ...
 			`,
@@ -360,9 +360,9 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- DeduplicateAndMerge
 					- BinaryExpression: LHS / RHS
-						- LHS: MultiAggregationInstance: sum by (region), filters: {status="success"}
+						- LHS: MultiAggregationInstance: sum by (region), filters: {status="success"}, subset index: 0
 							- ref#1 MultiAggregationGroup
-								- VectorSelector: {__name__="foo"}
+								- VectorSelector: {__name__="foo"}, subsets: {status="success"}
 						- RHS: FunctionCall: scalar(...)
 							- MultiAggregationInstance: sum
 								- ref#1 MultiAggregationGroup ...
@@ -375,9 +375,9 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `sum(foo{status="success"}) / count(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
-					- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+					- LHS: MultiAggregationInstance: sum, filters: {status="success"}, subset index: 0
 						- ref#1 MultiAggregationGroup
-							- VectorSelector: {__name__="foo"}
+							- VectorSelector: {__name__="foo"}, subsets: {status="success"}
 					- RHS: MultiAggregationInstance: count
 						- ref#1 MultiAggregationGroup ...
 			`,
@@ -390,12 +390,12 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
 					- LHS: BinaryExpression: LHS / RHS
-						- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+						- LHS: MultiAggregationInstance: sum, filters: {status="success"}, subset index: 0
 							- ref#1 MultiAggregationGroup
-								- VectorSelector: {__name__="foo"}
+								- VectorSelector: {__name__="foo"}, subsets: {status="success"}, {status="error"}
 						- RHS: MultiAggregationInstance: sum
 							- ref#1 MultiAggregationGroup ...
-					- RHS: MultiAggregationInstance: count, filters: {status="error"}
+					- RHS: MultiAggregationInstance: count, filters: {status="error"}, subset index: 1
 						- ref#1 MultiAggregationGroup ...
 			`,
 			expectedDuplicateNodesExaminedCount:   1,
@@ -406,11 +406,11 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `sum(rate(foo{status="success"}[5m])) / sum(rate(foo[5m]))`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
-					- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+					- LHS: MultiAggregationInstance: sum, filters: {status="success"}, subset index: 0
 						- ref#1 MultiAggregationGroup
 							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="foo"}[5m0s]
+									- MatrixSelector: {__name__="foo"}[5m0s], subsets: {status="success"}
 					- RHS: MultiAggregationInstance: sum
 						- ref#1 MultiAggregationGroup ...
 			`,
@@ -471,9 +471,9 @@ func TestOptimizationPass_SupportedQueryPlanVersionTooLow_Filtering(t *testing.T
 	expected := `
 		- BinaryExpression: LHS / RHS
 			- LHS: AggregateExpression: sum
-				- DuplicateFilter: {status="success"}
+				- DuplicateFilter: {status="success"}, subset index: 0
 					- ref#1 Duplicate
-						- VectorSelector: {__name__="foo"}
+						- VectorSelector: {__name__="foo"}, subsets: {status="success"}
 			- RHS: AggregateExpression: min
 				- ref#1 Duplicate ...
 	`
