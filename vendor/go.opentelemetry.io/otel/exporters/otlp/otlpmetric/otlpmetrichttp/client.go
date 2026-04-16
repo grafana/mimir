@@ -151,7 +151,7 @@ func (c *client) UploadMetrics(ctx context.Context, protoMetrics *metricpb.Resou
 		return err
 	}
 
-	return errors.Join(uploadErr, c.requestFunc(ctx, func(iCtx context.Context) error {
+	err = c.requestFunc(ctx, func(iCtx context.Context) error {
 		select {
 		case <-iCtx.Done():
 			return iCtx.Err()
@@ -240,7 +240,8 @@ func (c *client) UploadMetrics(ctx context.Context, protoMetrics *metricpb.Resou
 			// Non-retryable failure.
 			return fmt.Errorf("failed to send metrics to %s: %s (%w)", request.URL, resp.Status, bodyErr)
 		}
-	}))
+	})
+	return errors.Join(uploadErr, err)
 }
 
 var gzPool = sync.Pool{
