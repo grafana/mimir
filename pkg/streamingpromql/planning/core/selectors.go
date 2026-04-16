@@ -76,15 +76,13 @@ func describeSelector(
 	}
 
 	if len(subsets) > 0 {
-		builder.WriteString(", subsets ")
+		builder.WriteString(", subsets: ")
 
 		for i, subset := range subsets {
 			if i > 0 {
 				builder.WriteString(", ")
 			}
 
-			builder.WriteString(strconv.Itoa(i))
-			builder.WriteString(": ")
 			FormatMatchers(builder, subset.Matchers)
 		}
 	}

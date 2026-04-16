@@ -118,7 +118,7 @@ func TestVectorSelector_Describe(t *testing.T) {
 					},
 				},
 			},
-			expected: `{__name__="foo"}, subsets 0: {env="prod"}`,
+			expected: `{__name__="foo"}, subsets: {env="prod"}`,
 		},
 		"two subsets": {
 			node: &VectorSelector{
@@ -130,7 +130,7 @@ func TestVectorSelector_Describe(t *testing.T) {
 					},
 				},
 			},
-			expected: `{__name__="foo"}, subsets 0: {env="prod"}, 1: {env="test"}`,
+			expected: `{__name__="foo"}, subsets: {env="prod"}, {env="test"}`,
 		},
 	}
 
