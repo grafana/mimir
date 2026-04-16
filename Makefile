@@ -199,7 +199,10 @@ WIRESMITH_PROTOS := \
 	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.proto \
 	./pkg/streamingpromql/optimize/plan/remoteexec/node.proto \
 	./pkg/storegateway/hintspb/hints.proto \
-	./pkg/alertmanager/alertspb/alerts.proto
+	./pkg/alertmanager/alertspb/alerts.proto \
+	./pkg/storegateway/storepb/types.proto \
+	./pkg/storegateway/storepb/cache.proto \
+	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto
 WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
 
 # Proto files compiled by protoc+gogoslick (legacy).
