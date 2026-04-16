@@ -229,7 +229,7 @@ func MaterializeMultiAggregationGroup(node *MultiAggregationGroup, materializer 
 		return nil, err
 	}
 
-	evaluator := NewMultiAggregatorGroupEvaluator(inner, params.MemoryConsumptionTracker)
+	evaluator := NewMultiAggregatorGroupEvaluator(inner, params.MemoryConsumptionTracker, timeRange, params.Logger)
 
 	return &MultiAggregationInstanceFactory{group: evaluator}, nil
 }

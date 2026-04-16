@@ -5,9 +5,10 @@ package commonsubexpressionelimination
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -21,6 +22,9 @@ import (
 type InstantVectorDuplicationBuffer struct {
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+
+	timeRange types.QueryTimeRange
+	logger    log.Logger
 
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
@@ -36,10 +40,12 @@ type InstantVectorDuplicationBuffer struct {
 	stats *types.OperatorEvaluationStats
 }
 
-func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorDuplicationBuffer {
+func NewInstantVectorDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange, logger log.Logger) *InstantVectorDuplicationBuffer {
 	return &InstantVectorDuplicationBuffer{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
+		timeRange:                timeRange,
+		logger:                   logger,
 		buffer:                   &SeriesDataRingBuffer[types.InstantVectorSeriesData]{},
 	}
 }
@@ -361,17 +367,16 @@ func (b *InstantVectorDuplicationBuffer) QueryStats(ctx context.Context, consume
 	}
 
 	if len(consumer.filters) > 0 {
-		// This is intentionally not backwards compatible for simplicity and robustness:
-		//
 		// If the inner operator was remotely executed on a querier that does not report stats or subset stats,
 		// then the subset at the requested index won't be present.
 		//
-		// However, there's no good way to handle this case (would we report 0 samples for the subset? the full
-		// unfiltered sample count?), so rather than hide the problem, it's better to fail.
-		//
-		// Anyone upgrading can disable SSE temporarily until their queriers are running an up-to-date version.
+		// For simplicity during upgrades, and for consistency with remote execution's behaviour during the same circumstances,
+		// we return an empty set of stats.
 		if !stats.HasSubsets() {
-			return nil, fmt.Errorf("no subsets found in stats from inner operator of instant vector duplication buffer, expected subset index %d", consumer.subsetIndex)
+			stats.Close()
+
+			level.Warn(b.logger).Log("msg", "InstantVectorDuplicationBuffer expected subset statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
+			return types.NewOperatorEvaluationStats(b.timeRange, b.MemoryConsumptionTracker, 0)
 		}
 
 		stats.UseSubset(consumer.subsetIndex)

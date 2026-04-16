@@ -5,8 +5,9 @@ package multiaggregation
 import (
 	"context"
 	"errors"
-	"fmt"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -20,6 +21,8 @@ import (
 type MultiAggregatorGroupEvaluator struct {
 	inner                    types.InstantVectorOperator
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	timeRange                types.QueryTimeRange
+	logger                   log.Logger
 
 	instances []*MultiAggregatorInstanceOperator
 
@@ -34,10 +37,14 @@ type MultiAggregatorGroupEvaluator struct {
 func NewMultiAggregatorGroupEvaluator(
 	inner types.InstantVectorOperator,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	timeRange types.QueryTimeRange,
+	logger log.Logger,
 ) *MultiAggregatorGroupEvaluator {
 	return &MultiAggregatorGroupEvaluator{
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
+		timeRange:                timeRange,
+		logger:                   logger,
 	}
 }
 
@@ -167,17 +174,16 @@ func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context, instance
 	}
 
 	if len(instance.filters) > 0 {
-		// This is intentionally not backwards compatible for simplicity and robustness:
-		//
 		// If the inner operator was remotely executed on a querier that does not report stats or subset stats,
 		// then the subset at the requested index won't be present.
 		//
-		// However, there's no good way to handle this case (would we report 0 samples for the subset? the full
-		// unfiltered sample count?), so rather than hide the problem, it's better to fail.
-		//
-		// Anyone upgrading can disable SSE temporarily until their queriers are running an up-to-date version.
+		// For simplicity during upgrades, and for consistency with remote execution's behaviour during the same circumstances,
+		// we return an empty set of stats.
 		if !stats.HasSubsets() {
-			return nil, fmt.Errorf("no subsets found in stats from inner operator of multi-aggregation group, expected subset index %d", instance.subsetIndex)
+			stats.Close()
+
+			level.Warn(m.logger).Log("msg", "MultiAggregatorGroupEvaluator expected subset statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
+			return types.NewOperatorEvaluationStats(m.timeRange, m.memoryConsumptionTracker, 0)
 		}
 
 		stats.UseSubset(instance.subsetIndex)

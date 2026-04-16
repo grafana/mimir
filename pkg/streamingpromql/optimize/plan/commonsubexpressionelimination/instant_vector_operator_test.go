@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -30,7 +31,7 @@ func TestInstantVectorOperator_Buffering_NoFiltering(t *testing.T) {
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -134,7 +135,7 @@ func TestInstantVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")}, 0)
@@ -220,7 +221,7 @@ func TestInstantVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesM
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")}, 0)
@@ -300,7 +301,7 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForFinalizedCons
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")}, 0)
@@ -365,7 +366,7 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyFor
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer1.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "0")}, 0)
 	consumer2 := buffer.AddConsumer()
@@ -416,7 +417,7 @@ func TestInstantVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 4, memoryConsumptionTracker)
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "0")}, 0)
@@ -507,7 +508,7 @@ func TestInstantVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer1.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "1|2|5")}, 0)
 
@@ -534,7 +535,7 @@ func TestInstantVectorOperator_FinalizedWithBufferedData_NoFiltering(t *testing.
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -593,7 +594,7 @@ func TestInstantVectorOperator_FinalizedWithBufferedData_Filtering(t *testing.T)
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "idx", "0|2")}, 0)
@@ -657,7 +658,7 @@ func TestInstantVectorOperator_Cloning(t *testing.T) {
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
 
-	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -729,7 +730,7 @@ func TestInstantVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "test_series")})
 	require.NoError(t, err)
 
-	buffer := NewInstantVectorDuplicationBuffer(&failingInstantVectorOperator{series: series}, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(&failingInstantVectorOperator{series: series}, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -758,7 +759,7 @@ func TestInstantVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "test_series_2")})
 	require.NoError(t, err)
 
-	buffer := NewInstantVectorDuplicationBuffer(&failingInstantVectorOperator{series: series, returnErrorAtSeriesIdx: 1}, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(&failingInstantVectorOperator{series: series, returnErrorAtSeriesIdx: 1}, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
@@ -846,10 +847,11 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 	}
 
 	stats := types.NewQueryStats()
+	timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
 	selector := selectors.NewInstantVectorSelector(
 		&selectors.Selector{
 			Queryable:                storage,
-			TimeRange:                types.NewInstantQueryTimeRange(timestamp.Time(0)),
+			TimeRange:                timeRange,
 			LookbackDelta:            5 * time.Minute,
 			Matchers:                 types.Matchers{types.Matcher{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "metric"}},
 			MemoryConsumptionTracker: memoryConsumptionTracker,
@@ -861,7 +863,7 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 		false,
 	)
 
-	buffer := NewInstantVectorDuplicationBuffer(selector, memoryConsumptionTracker)
+	buffer := NewInstantVectorDuplicationBuffer(selector, memoryConsumptionTracker, timeRange, log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 	consumer2.SetFilters(subset, 0)

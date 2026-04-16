@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -28,7 +29,7 @@ func TestOperator_FinalizeAndCloseBehaviour(t *testing.T) {
 	ctx := context.Background()
 	inner := &operators.TestOperator{}
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	group := NewMultiAggregatorGroupEvaluator(inner, memoryConsumptionTracker)
+	group := NewMultiAggregatorGroupEvaluator(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
 
 	instance1 := group.AddInstance()
 	instance2 := group.AddInstance()
@@ -81,7 +82,7 @@ func TestOperator_Stats(t *testing.T) {
 		false,
 	)
 
-	group := NewMultiAggregatorGroupEvaluator(selector, memoryConsumptionTracker)
+	group := NewMultiAggregatorGroupEvaluator(selector, memoryConsumptionTracker, timeRange, log.NewNopLogger())
 
 	instance1 := group.AddInstance()
 	require.NoError(t, instance1.Configure(parser.SUM, nil, false, nil, -1, memoryConsumptionTracker, nil, timeRange, posrange.PositionRange{}))
