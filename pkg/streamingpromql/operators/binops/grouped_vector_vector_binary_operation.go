@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var errMultipleMatchesOnManySide = errors.New("multiple matches for labels: grouping labels must ensure unique matches")
@@ -39,6 +41,8 @@ type GroupedVectorVectorBinaryOperation struct {
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
+	hints              *Hints
+	logger             log.Logger
 
 	evaluator       vectorVectorBinaryOperationEvaluator
 	remainingSeries []*groupedBinaryOperationOutputSeries
@@ -151,6 +155,8 @@ func NewGroupedVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	hints *Hints,
+	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -169,6 +175,8 @@ func NewGroupedVectorVectorBinaryOperation(
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
 		timeRange:          timeRange,
+		hints:              hints,
+		logger:             logger,
 	}
 
 	switch g.VectorMatching.Card {
@@ -244,25 +252,71 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
 
+	// Only pass matchers for labels that are part of this operation's matching to child
+	// operators. See the equivalent comment in OneToOneVectorVectorBinaryOperation.SeriesMetadata
+	// for the full rationale.
+	filteredMatchers := filterMatchersForVectorMatching(matchers, g.VectorMatching)
+
+	// Always load the left side first so we can use its metadata to build hint-based
+	// matchers for the right side (mirrors the approach in OneToOneVectorVectorBinaryOperation).
+	//
+	// We assign left metadata to the appropriate struct field immediately after loading
+	// so that Finalize() can return it to the pool even if we bail early when the right
+	// side turns out to be empty.
 	var err error
-	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, matchers)
+	var leftMetadata []types.SeriesMetadata
+	leftMetadata, err = g.Left.SeriesMetadata(ctx, filteredMatchers)
 	if err != nil {
 		return false, err
 	}
 
-	if len(g.oneSideMetadata) == 0 {
-		// No series on left-hand side, we'll never have any output series.
+	if len(leftMetadata) == 0 {
 		return false, nil
 	}
 
-	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, matchers)
+	switch g.VectorMatching.Card {
+	case parser.CardOneToMany:
+		g.oneSideMetadata = leftMetadata
+	case parser.CardManyToOne:
+		g.manySideMetadata = leftMetadata
+	}
+
+	// Use the LHS series to narrow the data we need to fetch on the RHS.
+	// When hints have been set by the optimization pass, build matchers from the LHS
+	// metadata. Otherwise fall back to the same filtered matchers used for the LHS.
+	var rhsMatchers types.Matchers
+	if g.hints != nil {
+		rhsMatchers = BuildMatchers(leftMetadata, g.hints)
+
+		sl := spanlogger.FromContext(ctx, g.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing additional matchers to RHS",
+			"fields", g.hints.Include,
+			"hint_matchers", len(rhsMatchers),
+			"ignored_matchers", len(matchers),
+		)
+	} else if !g.VectorMatching.On && len(g.VectorMatching.MatchingLabels) > 0 {
+		// 'without' matching: build matchers from LHS for all non-excluded labels at runtime.
+		rhsMatchers = buildMatchersForWithout(leftMetadata, g.VectorMatching.MatchingLabels)
+	} else {
+		rhsMatchers = filteredMatchers
+	}
+
+	var rightMetadata []types.SeriesMetadata
+	rightMetadata, err = g.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {
 		return false, err
 	}
 
-	if len(g.manySideMetadata) == 0 {
-		// No series on right-hand side, we'll never have any output series.
+	if len(rightMetadata) == 0 {
 		return false, nil
+	}
+
+	switch g.VectorMatching.Card {
+	case parser.CardOneToMany:
+		g.manySideMetadata = rightMetadata
+	case parser.CardManyToOne:
+		g.oneSideMetadata = rightMetadata
 	}
 
 	return true, nil

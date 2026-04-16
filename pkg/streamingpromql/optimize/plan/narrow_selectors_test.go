@@ -427,15 +427,104 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 0,
 		},
-		"logical unless binary expression should not have hints added": {
+		"logical unless binary expression should have hints added": {
 			expr: `
 				first_metric
 				unless on (env, region)
 				second_metric
 			`,
 			expectedPlan: `
-				- BinaryExpression: LHS unless on (env, region) RHS
+				- BinaryExpression: LHS unless on (env, region) RHS, hints (env, region)
 					- LHS: VectorSelector: {__name__="first_metric"}
+					- RHS: VectorSelector: {__name__="second_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"without binary expression aggregation LHS: excluded label is not included in hints": {
+			// region is in both the aggregation grouping and the without exclusion list.
+			// The hint should only include zone, not region, because region is not a match key.
+			expr: `sum by (zone, region) (some_metric) / ignoring (region) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / ignoring (region) RHS, hints (zone)
+					- LHS: AggregateExpression: sum by (zone, region)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"without binary expression aggregation LHS: all grouping labels excluded yields no hints": {
+			// All labels from the aggregation are also in the without exclusion list.
+			// No useful hint labels remain, so no hints are set.
+			expr: `sum by (region) (some_metric) / ignoring (region) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / ignoring (region) RHS
+					- LHS: AggregateExpression: sum by (region)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"without binary expression aggregation LHS: non-overlapping labels pass through": {
+			// zone is NOT in the without exclusion list, so it is a valid hint label.
+			expr: `sum by (zone) (some_metric) / ignoring (region) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / ignoring (region) RHS, hints (zone)
+					- LHS: AggregateExpression: sum by (zone)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"logical or with ignoring should not have hints added": {
+			// 'or' is in disallowedOperations regardless of whether 'on' or 'ignoring' is used.
+			expr: `
+				first_metric
+				or ignoring (zone)
+				second_metric
+			`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or ignoring (zone) RHS
+						- LHS: VectorSelector: {__name__="first_metric"}
+						- RHS: VectorSelector: {__name__="second_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"logical unless with ignoring and aggregation LHS: non-excluded grouping label used as hint": {
+			// 'unless' was previously disallowed but is now permitted. For ignoring(zone),
+			// the excluded label (zone) is added to the 'created' set so it cannot appear in
+			// hints. The aggregation groups by env (not zone), so env passes through as the hint.
+			expr: `
+				sum by (env) (first_metric)
+				unless ignoring (zone)
+				second_metric
+			`,
+			expectedPlan: `
+				- BinaryExpression: LHS unless ignoring (zone) RHS, hints (env)
+					- LHS: AggregateExpression: sum by (env)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: VectorSelector: {__name__="second_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"logical unless with ignoring where excluded label matches grouping label yields no hints": {
+			// The aggregation groups by the same label that ignoring() excludes, so after
+			// filterLabels removes zone from the candidate hints, nothing is left.
+			expr: `
+				sum by (zone) (first_metric)
+				unless ignoring (zone)
+				second_metric
+			`,
+			expectedPlan: `
+				- BinaryExpression: LHS unless ignoring (zone) RHS
+					- LHS: AggregateExpression: sum by (zone)
+						- VectorSelector: {__name__="first_metric"}
 					- RHS: VectorSelector: {__name__="second_metric"}
 			`,
 			expectedAttempts: 1,

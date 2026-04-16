@@ -777,6 +777,63 @@ type Hints struct {
 	Include []string
 }
 
+// filterMatchersForVectorMatching returns the subset of matchers that are relevant to the
+// matching labels of a binary operation, dropping any matchers for labels that are not part
+// of the match. This prevents a parent binary operation from incorrectly narrowing the series
+// returned by a child binary operation via matchers that don't apply to its matching labels.
+//
+// For an 'on' binary operation, only matchers for labels in the 'on' list are kept.
+// For a 'without' binary operation, matchers for the excluded labels are dropped.
+// For default (implied 'without ()') matching, all matchers are returned unchanged.
+func filterMatchersForVectorMatching(matchers types.Matchers, vm parser.VectorMatching) types.Matchers {
+	if len(matchers) == 0 {
+		return matchers
+	}
+
+	if vm.On {
+		if len(vm.MatchingLabels) == 0 {
+			// on () — nothing is a matching label, so no matchers are relevant.
+			return nil
+		}
+
+		matchingSet := make(map[string]struct{}, len(vm.MatchingLabels))
+		for _, l := range vm.MatchingLabels {
+			matchingSet[l] = struct{}{}
+		}
+
+		filtered := make(types.Matchers, 0, len(matchers))
+		for _, m := range matchers {
+			if _, ok := matchingSet[m.Name]; ok {
+				filtered = append(filtered, m)
+			}
+		}
+
+		return filtered
+	}
+
+	if len(vm.MatchingLabels) > 0 {
+		// 'without' case: all labels except those listed (and __name__) are matching labels.
+		excludeSet := make(map[string]struct{}, len(vm.MatchingLabels)+1)
+		excludeSet[model.MetricNameLabel] = struct{}{}
+		for _, l := range vm.MatchingLabels {
+			excludeSet[l] = struct{}{}
+		}
+
+		filtered := make(types.Matchers, 0, len(matchers))
+		for _, m := range matchers {
+			if _, ok := excludeSet[m.Name]; !ok {
+				filtered = append(filtered, m)
+			}
+		}
+
+		return filtered
+	}
+
+	// Default matching (implied 'without ()'): all non-__name__ labels are matching labels.
+	// Pass matchers through unchanged.
+	return matchers
+}
+
 const (
 	maxHintMatcherValues = 64
 )
@@ -789,7 +846,7 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 	var matchers []types.Matcher
 
 	for _, label := range hints.Include {
-		values := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
+		values, hasAbsent := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
 
 		if len(values) > 0 {
 			ordered := make([]string, 0, len(values))
@@ -800,6 +857,13 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 			// It's important that the values we're matching against for each matcher are in the
 			// same order because we deduplicate matchers before passing them to a queryable.
 			slices.Sort(ordered)
+
+			if hasAbsent {
+				// Some LHS series lack this label entirely. Include the empty string so that
+				// RHS series which also lack the label are not filtered out — absent labels
+				// are compared as "" by the matcher engine.
+				ordered = append([]string{""}, ordered...)
+			}
 
 			matchers = append(matchers, types.Matcher{
 				Type:  labels.MatchRegexp,
@@ -812,22 +876,63 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 	return matchers
 }
 
-func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]struct{} {
+// buildMatchersForWithout builds matchers from LHS series for all label names that appear
+// in the LHS but are NOT in excludedLabels (and not __name__). This allows 'without' binary
+// operations to narrow the RHS at runtime in the same way 'on' operations do via plan-time
+// hints.
+func buildMatchersForWithout(series []types.SeriesMetadata, excludedLabels []string) types.Matchers {
+	excludeSet := make(map[string]struct{}, len(excludedLabels)+1)
+	excludeSet[model.MetricNameLabel] = struct{}{}
+	for _, l := range excludedLabels {
+		excludeSet[l] = struct{}{}
+	}
+
+	includedNames := make(map[string]struct{})
+	for _, m := range series {
+		m.Labels.Range(func(l labels.Label) {
+			if _, excluded := excludeSet[l.Name]; !excluded {
+				includedNames[l.Name] = struct{}{}
+			}
+		})
+	}
+
+	if len(includedNames) == 0 {
+		return nil
+	}
+
+	include := make([]string, 0, len(includedNames))
+	for name := range includedNames {
+		include = append(include, name)
+	}
+	slices.Sort(include)
+
+	return BuildMatchers(series, &Hints{Include: include})
+}
+
+// getUniqueLabelValues returns the set of distinct non-empty values for label
+// across metadata, capped at maxValues (returning an empty set when the cap is
+// exceeded). The second return value reports whether at least one series was
+// missing the label (i.e. had an empty value), which callers can use to decide
+// whether absent-label matches should also be allowed.
+func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) (map[string]struct{}, bool) {
 	values := make(map[string]struct{})
+	hasAbsent := false
 
 	for _, series := range metadata {
 		// Stop getting values from each series if we're past the max number of
 		// values that we'll include in a matcher. In this case, we can't use the
 		// values collected so far to build a matcher.
 		if len(values) >= maxValues {
-			return map[string]struct{}{}
+			return map[string]struct{}{}, false
 		}
 
 		val := series.Labels.Get(label)
 		if val != "" {
 			values[val] = struct{}{}
+		} else {
+			hasAbsent = true
 		}
 	}
 
-	return values
+	return values, hasAbsent
 }

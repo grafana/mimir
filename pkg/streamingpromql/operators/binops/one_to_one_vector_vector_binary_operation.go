@@ -179,7 +179,16 @@ func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.Posi
 // avoid.)
 func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	var err error
-	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, matchers)
+
+	// Only pass matchers for labels that are part of this operation's matching to child
+	// operators. Matchers from a parent binary operation may refer to labels that are not
+	// matching labels here, and passing them through could incorrectly filter out series
+	// that are needed (e.g. a parent using on(region) generating region=us matchers, passed
+	// to a child using on(zone), where b{region=eu,zone=1} could legitimately match
+	// a{region=us,zone=1} on zone).
+	lhsMatchers := filterMatchersForVectorMatching(matchers, b.VectorMatching)
+
+	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, lhsMatchers)
 	if err != nil {
 		return nil, err
 	} else if len(b.leftMetadata) == 0 {
@@ -191,28 +200,29 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		return nil, nil
 	}
 
-	// If there are labels that this binary operation selects on or aggregations being done
-	// on the LHS, we can use the series and their values for those labels to reduce the amount
-	// of data fetched on the RHS.
+	// Use the LHS series to narrow the data we need to fetch on the RHS.
+	// When hints have been set by the optimization pass, use them to build matchers from the
+	// LHS metadata (e.g. for aggregation-based hints). Otherwise fall back to the same
+	// filtered matchers used for the LHS.
+	var rhsMatchers types.Matchers
 	if b.hints != nil {
-		// Note we are reassigning `matchers` here before passing to the RHS and dropping any
-		// other extra matchers passed to this binary operation. Hints from the optimization
-		// pass are set specifically for each binary operation and include only fields that are
-		// valid to be passed to its RHS. We drop existing extra matchers since they may refer
-		// to labels that don't exist on the RHS of this binary operation.
-		ignored := matchers
-		matchers = BuildMatchers(b.leftMetadata, b.hints)
+		rhsMatchers = BuildMatchers(b.leftMetadata, b.hints)
 
 		sl := spanlogger.FromContext(ctx, b.logger)
 		sl.DebugLog(
 			"msg", "binary operator passing additional matchers to RHS",
 			"fields", b.hints.Include,
-			"hint_matchers", len(matchers),
-			"ignored_matchers", len(ignored),
+			"hint_matchers", len(rhsMatchers),
+			"ignored_matchers", len(matchers),
 		)
+	} else if !b.VectorMatching.On && len(b.VectorMatching.MatchingLabels) > 0 {
+		// 'without' matching: build matchers from LHS for all non-excluded labels at runtime.
+		rhsMatchers = buildMatchersForWithout(b.leftMetadata, b.VectorMatching.MatchingLabels)
+	} else {
+		rhsMatchers = lhsMatchers
 	}
 
-	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)
+	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {
 		return nil, err
 	} else if len(b.rightMetadata) == 0 {
