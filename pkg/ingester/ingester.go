@@ -349,22 +349,6 @@ type Ingester struct {
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
-	// latestKafkaRecordTimestamp tracks the most recent Kafka record timestamp
-	// seen by the ingester (unix milliseconds). Used to provide a Kafka-time-aware
-	// "now" for active series purging when ingest storage is enabled.
-	latestKafkaRecordTimestamp atomic.Int64
-
-	// lastKafkaActiveSeriesUpdate tracks the last Kafka time (unix milliseconds) at which
-	// updateActiveSeries was triggered inline during record consumption. This ensures
-	// active series are purged at approximately UpdatePeriod intervals in Kafka time,
-	// even when records are replayed faster than real-time.
-	lastKafkaActiveSeriesUpdate atomic.Int64
-
-	// activeSeriesStartMs tracks when the ingester started receiving samples (unix milliseconds).
-	// For classic mode this is wall-clock time when the ticker starts; for Kafka mode it is the
-	// first Kafka record timestamp. Used to determine when active series counts become accurate.
-	activeSeriesStartMs atomic.Int64
-
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
 }
