@@ -262,14 +262,17 @@ func TestBuildMatchersForWithout(t *testing.T) {
 		"heterogeneous series: union of all non-excluded labels across all series": {
 			// Series 1 has zone+region; series 2 has zone+pod. After excluding zone, both
 			// region and pod are included even though neither appears in all series.
+			// Because pod is absent from series 1 and region is absent from series 2, the
+			// matchers must also allow the empty/absent case so that RHS series which
+			// legitimately lack one of those labels are not incorrectly filtered out.
 			series: []types.SeriesMetadata{
 				{Labels: labels.FromStrings("__name__", "metric", "region", "us", "zone", "1")},
 				{Labels: labels.FromStrings("__name__", "metric", "pod", "a", "zone", "2")},
 			},
 			excludedLabels: []string{"zone"},
 			expected: types.Matchers{
-				{Type: labels.MatchRegexp, Name: "pod", Value: "a"},
-				{Type: labels.MatchRegexp, Name: "region", Value: "us"},
+				{Type: labels.MatchRegexp, Name: "pod", Value: "|a"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "|us"},
 			},
 		},
 		"multiple excluded labels": {

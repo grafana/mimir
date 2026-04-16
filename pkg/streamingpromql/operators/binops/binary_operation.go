@@ -846,7 +846,7 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 	var matchers []types.Matcher
 
 	for _, label := range hints.Include {
-		values := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
+		values, hasAbsent := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
 
 		if len(values) > 0 {
 			ordered := make([]string, 0, len(values))
@@ -857,6 +857,13 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 			// It's important that the values we're matching against for each matcher are in the
 			// same order because we deduplicate matchers before passing them to a queryable.
 			slices.Sort(ordered)
+
+			if hasAbsent {
+				// Some LHS series lack this label entirely. Include the empty string so that
+				// RHS series which also lack the label are not filtered out — absent labels
+				// are compared as "" by the matcher engine.
+				ordered = append([]string{""}, ordered...)
+			}
 
 			matchers = append(matchers, types.Matcher{
 				Type:  labels.MatchRegexp,
@@ -902,22 +909,30 @@ func buildMatchersForWithout(series []types.SeriesMetadata, excludedLabels []str
 	return BuildMatchers(series, &Hints{Include: include})
 }
 
-func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]struct{} {
+// getUniqueLabelValues returns the set of distinct non-empty values for label
+// across metadata, capped at maxValues (returning an empty set when the cap is
+// exceeded). The second return value reports whether at least one series was
+// missing the label (i.e. had an empty value), which callers can use to decide
+// whether absent-label matches should also be allowed.
+func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) (map[string]struct{}, bool) {
 	values := make(map[string]struct{})
+	hasAbsent := false
 
 	for _, series := range metadata {
 		// Stop getting values from each series if we're past the max number of
 		// values that we'll include in a matcher. In this case, we can't use the
 		// values collected so far to build a matcher.
 		if len(values) >= maxValues {
-			return map[string]struct{}{}
+			return map[string]struct{}{}, false
 		}
 
 		val := series.Labels.Get(label)
 		if val != "" {
 			values[val] = struct{}{}
+		} else {
+			hasAbsent = true
 		}
 	}
 
-	return values
+	return values, hasAbsent
 }
