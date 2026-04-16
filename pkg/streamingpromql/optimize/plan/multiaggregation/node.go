@@ -5,6 +5,7 @@ package multiaggregation
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -166,7 +167,8 @@ func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other pl
 		a.Aggregation.EquivalentTo(otherInstance.Aggregation) &&
 		slices.EqualFunc(a.Filters, otherInstance.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
 			return a.Equal(b)
-		})
+		}) &&
+		a.SubsetIndex == otherInstance.SubsetIndex
 }
 
 func (a *MultiAggregationInstance) MergeHints(other planning.Node) error {
@@ -185,6 +187,10 @@ func (a *MultiAggregationInstance) Describe() string {
 	if len(a.Filters) > 0 {
 		builder.WriteString(", filters: ")
 		core.FormatMatchers(builder, a.Filters)
+
+		builder.WriteString(" (subset index: ")
+		builder.WriteString(strconv.FormatInt(a.SubsetIndex, 10))
+		builder.WriteString(")")
 	}
 
 	return builder.String()
@@ -263,6 +269,7 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		node.Aggregation.Grouping,
 		node.Aggregation.Without,
 		matchers,
+		int(node.SubsetIndex),
 		params.MemoryConsumptionTracker,
 		params.Annotations,
 		timeRange,

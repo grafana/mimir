@@ -20,4 +20,5 @@ message MultiAggregationInstanceDetails {
   core.AggregateExpressionDetails aggregation = 1;
 
   repeated core.LabelMatcher filters = 2;
+  int64 subsetIndex = 3; // If filters is non-empty, the index in the inner operator's stats that we expect to find the subset statistics for this consumer.
 }

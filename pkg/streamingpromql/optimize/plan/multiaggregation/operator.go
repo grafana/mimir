@@ -4,6 +4,8 @@ package multiaggregation
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -26,8 +28,7 @@ type MultiAggregatorGroupEvaluator struct {
 	prepareCalled              bool
 	afterPrepareCalled         bool
 
-	cachedQueryStats    *types.OperatorEvaluationStats
-	queryStatsCallCount int
+	cachedQueryStats *types.OperatorEvaluationStats
 }
 
 func NewMultiAggregatorGroupEvaluator(
@@ -134,10 +135,16 @@ func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context) error {
 	return m.inner.Finalize(ctx)
 }
 
-func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	// TODO: handle subsets
+func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, error) {
+	if !m.allInstancesFinalized() {
+		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats when one or more instances are not finalized")
+	}
 
-	if m.queryStatsCallCount == 0 {
+	if instance.hasReadStats {
+		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats twice for the same instance")
+	}
+
+	if m.cachedQueryStats == nil {
 		var err error
 		m.cachedQueryStats, err = m.inner.Stats(ctx)
 		if err != nil {
@@ -145,17 +152,60 @@ func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context) (*types.
 		}
 	}
 
-	m.queryStatsCallCount++
+	instance.hasReadStats = true
+	stats := m.cachedQueryStats
 
-	if m.queryStatsCallCount == len(m.instances) {
-		// Last call: return the cached stats directly, transferring ownership to the caller.
-		stats := m.cachedQueryStats
+	if m.allInstancesHaveReadStats() {
+		// Last call: return stats without cloning, and clear reference to existing stats.
 		m.cachedQueryStats = nil
-		return stats, nil
+	} else {
+		var err error
+		stats, err = stats.Clone() // FIXME: this is wasteful, we could just clone the subset needed
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Not the last call: return a clone so the cached copy remains available.
-	return m.cachedQueryStats.Clone()
+	if len(instance.filters) > 0 {
+		// This is intentionally not backwards compatible for simplicity and robustness:
+		//
+		// If the inner operator was remotely executed on a querier that does not report stats or subset stats,
+		// then the subset at the requested index won't be present.
+		//
+		// However, there's no good way to handle this case (would we report 0 samples for the subset? the full
+		// unfiltered sample count?), so rather than hide the problem, it's better to fail.
+		//
+		// Anyone upgrading can disable SSE temporarily until their queriers are running an up-to-date version.
+		if !stats.HasSubsets() {
+			return nil, fmt.Errorf("no subsets found in stats from inner operator of multi-aggregation group, expected subset index %d", instance.subsetIndex)
+		}
+
+		stats.UseSubset(instance.subsetIndex)
+	} else {
+		stats.RemoveAllSubsets()
+	}
+
+	return stats, nil
+}
+
+func (m *MultiAggregatorGroupEvaluator) allInstancesFinalized() bool {
+	for _, instance := range m.instances {
+		if !instance.finalized {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (m *MultiAggregatorGroupEvaluator) allInstancesHaveReadStats() bool {
+	for _, instance := range m.instances {
+		if !instance.hasReadStats {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (m *MultiAggregatorGroupEvaluator) Close() {
@@ -178,7 +228,9 @@ type MultiAggregatorInstanceOperator struct {
 	group              *MultiAggregatorGroupEvaluator
 	expressionPosition posrange.PositionRange
 	aggregator         *aggregations.Aggregator
-	filters            []*labels.Matcher
+
+	filters     []*labels.Matcher
+	subsetIndex int // If filters is non-empty, the index in the inner operator's stats that we expect to find the subset statistics for this instance.
 
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this instance's filters.
 	// If this instance has no filters, this is nil.
@@ -186,8 +238,9 @@ type MultiAggregatorInstanceOperator struct {
 
 	outputSeriesMetadata []types.SeriesMetadata
 
-	finalized bool
-	closed    bool
+	finalized    bool
+	hasReadStats bool
+	closed       bool
 }
 
 var _ types.InstantVectorOperator = (*MultiAggregatorInstanceOperator)(nil)
@@ -197,6 +250,7 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	grouping []string,
 	without bool,
 	filters []*labels.Matcher,
+	subsetIndex int,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	timeRange types.QueryTimeRange,
@@ -210,6 +264,7 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 
 	m.expressionPosition = expressionPosition
 	m.filters = filters
+	m.subsetIndex = subsetIndex
 
 	return nil
 }
@@ -335,7 +390,7 @@ func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
 }
 
 func (m *MultiAggregatorInstanceOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return m.group.QueryStats(ctx)
+	return m.group.QueryStats(ctx, m)
 }
 
 func (m *MultiAggregatorInstanceOperator) Close() {
