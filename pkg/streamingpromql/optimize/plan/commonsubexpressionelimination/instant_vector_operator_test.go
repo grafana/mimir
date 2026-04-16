@@ -831,7 +831,7 @@ func (o *failingInstantVectorOperator) Close() {
 
 func TestInstantVectorOperator_Stats(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	storage := promqltest.LoadedStorage(t, `
 		load 1m

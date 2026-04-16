@@ -1066,7 +1066,7 @@ func requireNoMemoryConsumption(t *testing.T, memoryConsumptionTracker *limiter.
 
 func TestRangeVectorOperator_Stats(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
