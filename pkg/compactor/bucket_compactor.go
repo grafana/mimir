@@ -412,6 +412,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
 	uploadBlocksCount := len(blocksToUpload)
+	mergedSourceOffsets := block.MergeSourceOffsets(toCompact)
 
 	// update labels and verify all blocks
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
@@ -426,10 +427,11 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		blocksToUpload[idx].labels = newLabels
 
 		newMeta, err := block.InjectThanosMeta(jobLogger, bdir, block.ThanosMeta{
-			Labels:       newLabels,
-			Downsample:   block.ThanosDownsample{Resolution: job.Resolution()},
-			Source:       block.CompactorSource,
-			SegmentFiles: block.GetSegmentFiles(bdir),
+			Labels:        newLabels,
+			Downsample:    block.ThanosDownsample{Resolution: job.Resolution()},
+			Source:        block.CompactorSource,
+			SegmentFiles:  block.GetSegmentFiles(bdir),
+			SourceOffsets: mergedSourceOffsets,
 		})
 
 		if err != nil {

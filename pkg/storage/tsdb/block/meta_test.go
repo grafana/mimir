@@ -121,3 +121,53 @@ func TestThanosMeta_SourceOffsets(t *testing.T) {
 		assert.Nil(t, decoded.Thanos.SourceOffsets)
 	})
 }
+
+func TestMergeSourceOffsets(t *testing.T) {
+	metaWithOffsets := func(offsets map[int32]int64) *Meta {
+		return &Meta{
+			BlockMeta: tsdb.BlockMeta{ULID: ULID(1), MinTime: 1000, MaxTime: 2000, Version: TSDBVersion1},
+			Thanos:    ThanosMeta{SourceOffsets: offsets},
+		}
+	}
+
+	tests := map[string]struct {
+		blocks   []*Meta
+		expected map[int32]int64
+	}{
+		"no input blocks": {
+			blocks:   nil,
+			expected: nil,
+		},
+		"all inputs have nil offsets": {
+			blocks:   []*Meta{metaWithOffsets(nil), metaWithOffsets(nil)},
+			expected: nil,
+		},
+		"single input with offsets": {
+			blocks:   []*Meta{metaWithOffsets(map[int32]int64{0: 100})},
+			expected: map[int32]int64{0: 100},
+		},
+		"disjoint partitions": {
+			blocks:   []*Meta{metaWithOffsets(map[int32]int64{0: 100}), metaWithOffsets(map[int32]int64{1: 200})},
+			expected: map[int32]int64{0: 100, 1: 200},
+		},
+		"overlapping partition takes max": {
+			blocks:   []*Meta{metaWithOffsets(map[int32]int64{0: 100}), metaWithOffsets(map[int32]int64{0: 250})},
+			expected: map[int32]int64{0: 250},
+		},
+		"mix of blocks with and without offsets": {
+			blocks:   []*Meta{metaWithOffsets(map[int32]int64{0: 100, 1: 200}), metaWithOffsets(nil)},
+			expected: map[int32]int64{0: 100, 1: 200},
+		},
+		"multiple blocks with overlapping and disjoint partitions": {
+			blocks:   []*Meta{metaWithOffsets(map[int32]int64{0: 100, 1: 200}), metaWithOffsets(map[int32]int64{1: 150, 2: 300})},
+			expected: map[int32]int64{0: 100, 1: 200, 2: 300},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			result := MergeSourceOffsets(tc.blocks)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}

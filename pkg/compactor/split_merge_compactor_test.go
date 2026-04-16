@@ -807,3 +807,204 @@ func convertMetasMapToSlice(metas map[ulid.ULID]*block.Meta) []*block.Meta {
 	}
 	return out
 }
+
+func TestMultitenantCompactor_ShouldPreserveSourceOffsetsThroughCompaction(t *testing.T) {
+	const (
+		userID     = "user-1"
+		numSeries  = 100
+		blockRange = 2 * time.Hour
+	)
+
+	var (
+		blockRangeMillis = blockRange.Milliseconds()
+		compactionRanges = mimir_tsdb.DurationList{blockRange, 2 * blockRange}
+	)
+
+	tests := map[string]struct {
+		numShards int
+		setup     func(t *testing.T, bkt objstore.Bucket, storageDir string) []block.Meta
+	}{
+		"split compaction preserves merged source offsets on all output shards": {
+			numShards: 2,
+			setup: func(t *testing.T, bkt objstore.Bucket, storageDir string) []block.Meta {
+				block1 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{})
+				block2 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{})
+
+				setSourceOffsetsOnBlock(t, storageDir, userID, block1, map[int32]int64{0: 100})
+				setSourceOffsetsOnBlock(t, storageDir, userID, block2, map[int32]int64{1: 200})
+
+				expectedOffsets := map[int32]int64{0: 100, 1: 200}
+				return []block.Meta{
+					{
+						BlockMeta: tsdb.BlockMeta{MinTime: blockRangeMillis, MaxTime: 2 * blockRangeMillis},
+						Thanos: block.ThanosMeta{
+							Labels:        map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"},
+							SourceOffsets: expectedOffsets,
+						},
+					},
+					{
+						BlockMeta: tsdb.BlockMeta{MinTime: blockRangeMillis, MaxTime: 2 * blockRangeMillis},
+						Thanos: block.ThanosMeta{
+							Labels:        map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"},
+							SourceOffsets: expectedOffsets,
+						},
+					},
+				}
+			},
+		},
+		"split compaction merges overlapping partitions by taking max offset": {
+			numShards: 2,
+			setup: func(t *testing.T, bkt objstore.Bucket, storageDir string) []block.Meta {
+				block1 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{})
+				block2 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{})
+
+				setSourceOffsetsOnBlock(t, storageDir, userID, block1, map[int32]int64{0: 100})
+				setSourceOffsetsOnBlock(t, storageDir, userID, block2, map[int32]int64{0: 250})
+
+				expectedOffsets := map[int32]int64{0: 250}
+				return []block.Meta{
+					{
+						BlockMeta: tsdb.BlockMeta{MinTime: blockRangeMillis, MaxTime: 2 * blockRangeMillis},
+						Thanos: block.ThanosMeta{
+							Labels:        map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"},
+							SourceOffsets: expectedOffsets,
+						},
+					},
+					{
+						BlockMeta: tsdb.BlockMeta{MinTime: blockRangeMillis, MaxTime: 2 * blockRangeMillis},
+						Thanos: block.ThanosMeta{
+							Labels:        map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"},
+							SourceOffsets: expectedOffsets,
+						},
+					},
+				}
+			},
+		},
+		"merge compaction preserves merged source offsets": {
+			numShards: 2,
+			setup: func(t *testing.T, bkt objstore.Bucket, storageDir string) []block.Meta {
+				block1 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"})
+				block2 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"})
+				block3 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"})
+				block4 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"})
+
+				setSourceOffsetsOnBlock(t, storageDir, userID, block1, map[int32]int64{0: 100})
+				setSourceOffsetsOnBlock(t, storageDir, userID, block2, map[int32]int64{1: 200})
+				setSourceOffsetsOnBlock(t, storageDir, userID, block3, map[int32]int64{2: 300})
+				setSourceOffsetsOnBlock(t, storageDir, userID, block4, map[int32]int64{2: 150, 3: 400})
+
+				return []block.Meta{
+					{
+						BlockMeta: tsdb.BlockMeta{MinTime: blockRangeMillis, MaxTime: 2 * blockRangeMillis},
+						Thanos: block.ThanosMeta{
+							Labels:        map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"},
+							SourceOffsets: map[int32]int64{0: 100, 1: 200},
+						},
+					},
+					{
+						BlockMeta: tsdb.BlockMeta{MinTime: blockRangeMillis, MaxTime: 2 * blockRangeMillis},
+						Thanos: block.ThanosMeta{
+							Labels:        map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"},
+							SourceOffsets: map[int32]int64{2: 300, 3: 400},
+						},
+					},
+				}
+			},
+		},
+		"blocks without source offsets produce output without source offsets": {
+			numShards: 2,
+			setup: func(t *testing.T, bkt objstore.Bucket, storageDir string) []block.Meta {
+				createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{})
+				createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, map[string]string{})
+
+				return []block.Meta{
+					{
+						BlockMeta: tsdb.BlockMeta{MinTime: blockRangeMillis, MaxTime: 2 * blockRangeMillis},
+						Thanos: block.ThanosMeta{
+							Labels:        map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"},
+							SourceOffsets: nil,
+						},
+					},
+					{
+						BlockMeta: tsdb.BlockMeta{MinTime: blockRangeMillis, MaxTime: 2 * blockRangeMillis},
+						Thanos: block.ThanosMeta{
+							Labels:        map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"},
+							SourceOffsets: nil,
+						},
+					},
+				}
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			workDir := t.TempDir()
+			storageDir := t.TempDir()
+			fetcherDir := t.TempDir()
+
+			storageCfg := mimir_tsdb.BlocksStorageConfig{}
+			flagext.DefaultValues(&storageCfg)
+			storageCfg.Bucket.Backend = bucket.Filesystem
+			storageCfg.Bucket.Filesystem.Directory = storageDir
+
+			compactorCfg := prepareConfig(t)
+			compactorCfg.DataDir = workDir
+			compactorCfg.BlockRanges = compactionRanges
+
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.splitAndMergeShards[userID] = testData.numShards
+
+			logger := log.NewLogfmtLogger(os.Stdout)
+			reg := prometheus.NewPedanticRegistry()
+			ctx := context.Background()
+
+			bucketClient, err := bucket.NewClient(ctx, storageCfg.Bucket, "test", logger, nil)
+			require.NoError(t, err)
+			expected := testData.setup(t, bucketClient, storageDir)
+
+			c, err := NewMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, reg)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+			})
+
+			test.Poll(t, 15*time.Second, nil, func() interface{} {
+				return testutil.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+					# TYPE cortex_compactor_runs_completed_total counter
+					cortex_compactor_runs_completed_total 1
+				`), "cortex_compactor_runs_completed_total")
+			})
+
+			userBucket := bucket.NewUserBucketClient(userID, bucketClient, nil)
+			fetcher, err := block.NewMetaFetcher(logger, 1, userBucket, fetcherDir, reg, nil, 0)
+			require.NoError(t, err)
+			metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
+			require.NoError(t, err)
+			require.Empty(t, partials)
+
+			actual := sortMetasByMinTime(convertMetasMapToSlice(metas))
+
+			require.Len(t, actual, len(expected))
+			for i, e := range expected {
+				assert.Equal(t, e.MinTime, actual[i].MinTime)
+				assert.Equal(t, e.MaxTime, actual[i].MaxTime)
+				assert.Equal(t, e.Thanos.Labels, actual[i].Thanos.Labels)
+				assert.Equal(t, e.Thanos.SourceOffsets, actual[i].Thanos.SourceOffsets)
+			}
+		})
+	}
+}
+
+// setSourceOffsetsOnBlock updates the meta.json of a block stored in a
+// filesystem-backed bucket to include the given SourceOffsets.
+func setSourceOffsetsOnBlock(t *testing.T, storageDir, userID string, blockID ulid.ULID, offsets map[int32]int64) {
+	t.Helper()
+	blockDir := filepath.Join(storageDir, userID, blockID.String())
+	meta, err := block.ReadMetaFromDir(blockDir)
+	require.NoError(t, err)
+	meta.Thanos.SourceOffsets = offsets
+	require.NoError(t, meta.WriteToDir(log.NewNopLogger(), blockDir))
+}

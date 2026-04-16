@@ -135,6 +135,23 @@ func NewSingleSourceOffset(partition int32, lastConsumedOffset int64) map[int32]
 	return map[int32]int64{partition: lastConsumedOffset}
 }
 
+// MergeSourceOffsets merges SourceOffsets from multiple block metas, taking
+// the maximum offset per partition.
+func MergeSourceOffsets(blocks []*Meta) map[int32]int64 {
+	var merged map[int32]int64
+	for _, b := range blocks {
+		for partition, offset := range b.Thanos.SourceOffsets {
+			if merged == nil {
+				merged = make(map[int32]int64)
+			}
+			if existing, ok := merged[partition]; !ok || offset > existing {
+				merged[partition] = offset
+			}
+		}
+	}
+	return merged
+}
+
 type Matchers []*labels.Matcher
 
 func (m *Matchers) UnmarshalYAML(value *yaml.Node) (err error) {
