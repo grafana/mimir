@@ -190,8 +190,13 @@ images: ## Print all image names.
 	@echo > /dev/null
 
 # Generating proto code is automated.
-PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
-PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
+# Proto files compiled by wiresmith (new compiler).
+WIRESMITH_PROTOS := ./pkg/distributor/ha_tracker.proto
+WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
+
+# Proto files compiled by protoc+gogoslick (legacy).
+PROTO_DEFS := $(filter-out $(WIRESMITH_PROTOS),$(shell find . $(DONT_FIND) -type f -name '*.proto' -print))
+PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS)) $(WIRESMITH_GOS)
 
 PROMQL_TESTS := $(shell find pkg/streamingpromql/testdata/ours pkg/streamingpromql/testdata/ours-only $(DONT_FIND) -type f -path '*.test' -print)
 
@@ -276,6 +281,26 @@ protos: $(PROTO_GOS)
 
 GENERATE_FILES ?= true
 
+# Wiresmith compilation rule for proto files in WIRESMITH_PROTOS.
+# wiresmith appends the proto package dir to --out, so we set --out to the
+# parent of the target directory. E.g. for pkg/distributor/ha_tracker.pb.go
+# with package "distributor", --out=pkg produces pkg/distributor/ha_tracker.go.
+$(WIRESMITH_GOS): %.pb.go: %.proto
+ifeq ($(GENERATE_FILES),true)
+	wiresmith \
+		--proto_path=$(@D) \
+		--proto_path=./vendor/github.com/gogo/protobuf \
+		--proto_path=./vendor \
+		--proto_path=$(shell brew --prefix protobuf 2>/dev/null)/include \
+		--out=$(dir $(@D:%/=%)) \
+		--module=github.com/grafana/mimir/$(dir $(@D:%/=%)) \
+		--helpers_import=github.com/grafana/mimir/pkg/util/protohelpers \
+		--gogo_compat
+else
+	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
+endif
+
+# Gogoslick compilation rule for remaining proto files.
 %.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
 	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
