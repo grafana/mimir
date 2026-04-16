@@ -259,16 +259,23 @@ func TestBuildMatchersForWithout(t *testing.T) {
 				{Type: labels.MatchRegexp, Name: "region", Value: "us"},
 			},
 		},
-		"heterogeneous series: union of all non-excluded labels across all series": {
-			// Series 1 has zone+region; series 2 has zone+pod. After excluding zone, both
-			// region and pod are included even though neither appears in all series.
+		"heterogeneous series only uses labels shared by all series": {
+			// Series 1 has zone+region; series 2 has zone+pod. After excluding zone, there
+			// are no remaining labels shared by all series, so no matchers are produced.
 			series: []types.SeriesMetadata{
 				{Labels: labels.FromStrings("__name__", "metric", "region", "us", "zone", "1")},
 				{Labels: labels.FromStrings("__name__", "metric", "pod", "a", "zone", "2")},
 			},
 			excludedLabels: []string{"zone"},
+			expected:       nil,
+		},
+		"heterogeneous series keeps labels shared by all series": {
+			series: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "metric", "region", "us", "pod", "a", "zone", "1")},
+				{Labels: labels.FromStrings("__name__", "metric", "region", "us", "zone", "2")},
+			},
+			excludedLabels: []string{"zone"},
 			expected: types.Matchers{
-				{Type: labels.MatchRegexp, Name: "pod", Value: "a"},
 				{Type: labels.MatchRegexp, Name: "region", Value: "us"},
 			},
 		},

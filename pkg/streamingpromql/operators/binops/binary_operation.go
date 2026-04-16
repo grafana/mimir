@@ -869,10 +869,11 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 	return matchers
 }
 
-// buildMatchersForWithout builds matchers from LHS series for all label names that appear
-// in the LHS but are NOT in excludedLabels (and not __name__). This allows 'without' binary
-// operations to narrow the RHS at runtime in the same way 'on' operations do via plan-time
-// hints.
+// buildMatchersForWithout builds matchers from LHS series for label names that are present in
+// every LHS series and are NOT in excludedLabels (and not __name__). Restricting to labels that
+// exist on all LHS series avoids over-filtering RHS series when LHS label sets are heterogeneous.
+// This allows 'without' binary operations to narrow the RHS at runtime in the same way 'on'
+// operations do via plan-time hints.
 func buildMatchersForWithout(series []types.SeriesMetadata, excludedLabels []string) types.Matchers {
 	excludeSet := make(map[string]struct{}, len(excludedLabels)+1)
 	excludeSet[model.MetricNameLabel] = struct{}{}
@@ -880,23 +881,25 @@ func buildMatchersForWithout(series []types.SeriesMetadata, excludedLabels []str
 		excludeSet[l] = struct{}{}
 	}
 
-	includedNames := make(map[string]struct{})
+	includedNameCounts := make(map[string]int)
 	for _, m := range series {
 		m.Labels.Range(func(l labels.Label) {
 			if _, excluded := excludeSet[l.Name]; !excluded {
-				includedNames[l.Name] = struct{}{}
+				includedNameCounts[l.Name]++
 			}
 		})
 	}
 
-	if len(includedNames) == 0 {
+	include := make([]string, 0, len(includedNameCounts))
+	for name, count := range includedNameCounts {
+		if count == len(series) {
+			include = append(include, name)
+		}
+	}
+	if len(include) == 0 {
 		return nil
 	}
 
-	include := make([]string, 0, len(includedNames))
-	for name := range includedNames {
-		include = append(include, name)
-	}
 	slices.Sort(include)
 
 	return BuildMatchers(series, &Hints{Include: include})
