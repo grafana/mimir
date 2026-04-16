@@ -739,6 +739,9 @@ github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
 ## explicit; go 1.21
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
+# github.com/grafana/wiresmith v0.0.0-20260416135656-59d4396359f0
+## explicit; go 1.25.9
+github.com/grafana/wiresmith/gen/protohelpers
 # github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0
 ## explicit; go 1.24.0
 github.com/grpc-ecosystem/grpc-gateway/v2/internal/httprule

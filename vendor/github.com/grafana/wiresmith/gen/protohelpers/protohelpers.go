@@ -1,5 +1,5 @@
 // Package protohelpers provides encoding helpers for reverse-write protobuf marshaling.
-// Based on github.com/grafana/wiresmith/gen/protohelpers (Apache 2.0 license).
+// Based on github.com/planetscale/vtprotobuf/protohelpers (Apache 2.0 license).
 package protohelpers
 
 import "math/bits"

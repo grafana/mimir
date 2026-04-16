@@ -6,7 +6,7 @@ package distributor
 import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/mimir/pkg/util/protohelpers"
+	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 

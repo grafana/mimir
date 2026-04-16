@@ -294,7 +294,7 @@ ifeq ($(GENERATE_FILES),true)
 		--proto_path=$(shell brew --prefix protobuf 2>/dev/null)/include \
 		--out=$(dir $(@D:%/=%)) \
 		--module=github.com/grafana/mimir/$(dir $(@D:%/=%)) \
-		--helpers_import=github.com/grafana/mimir/pkg/util/protohelpers \
+		--helpers_import=github.com/grafana/wiresmith/gen/protohelpers \
 		--gogo_compat
 else
 	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
