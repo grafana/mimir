@@ -39,8 +39,9 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	defer ingestionRateTicker.Stop()
 
 	var activeSeriesTickerChan <-chan time.Time
-	if i.cfg.ActiveSeriesMetrics.Enabled && !i.cfg.IngestStorageConfig.Enabled {
-		i.activeSeriesStartMs.Store(time.Now().UnixMilli())
+	var activeSeriesStartedAt time.Time
+	if i.cfg.ActiveSeriesMetrics.Enabled {
+		activeSeriesStartedAt = time.Now()
 		t := time.NewTicker(i.cfg.ActiveSeriesMetrics.UpdatePeriod)
 		activeSeriesTickerChan = t.C
 		defer t.Stop()
@@ -64,7 +65,12 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 			}
 			i.tsdbsMtx.RUnlock()
 		case <-activeSeriesTickerChan:
-			i.updateActiveSeries(i.activeSeriesNow())
+			now := time.Now()
+			if !activeSeriesStartedAt.IsZero() && now.Sub(activeSeriesStartedAt) >= i.cfg.ActiveSeriesMetrics.IdleTimeout {
+				i.metrics.activeSeriesLoading.Set(0)
+				activeSeriesStartedAt = time.Time{} // Only flip once.
+			}
+			i.updateActiveSeries(now)
 		case <-usageStatsUpdateTicker.C:
 			i.updateUsageStats()
 		case <-limitMetricsUpdateTicker.C:
@@ -75,23 +81,7 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) activeSeriesNow() time.Time {
-	if i.cfg.IngestStorageConfig.Enabled {
-		if tsMs := i.latestKafkaRecordTimestamp.Load(); tsMs > 0 {
-			return time.UnixMilli(tsMs)
-		}
-	}
-	return time.Now()
-}
-
 func (i *Ingester) updateActiveSeries(now time.Time) {
-	if startMs := i.activeSeriesStartMs.Load(); startMs > 0 &&
-		now.UnixMilli()-startMs >= i.cfg.ActiveSeriesMetrics.IdleTimeout.Milliseconds() {
-		// Active series counts has passed the warm up.
-		// Mark the loading phase off to signal the counts are now accurate.
-		i.metrics.activeSeriesLoading.Set(0)
-	}
-
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
