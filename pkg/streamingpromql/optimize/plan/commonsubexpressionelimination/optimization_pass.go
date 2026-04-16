@@ -511,15 +511,24 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 	duplicatedExpression, _ := basisPath.NodeAtOffsetFromLeaf(duplicatedExpressionOffset)
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
+	leaf, _ := basisPath.NodeAtOffsetFromLeaf(0)
 
 	for pathIdx, path := range group.Paths {
 		parentOfDuplicate, _ := path.NodeAtOffsetFromLeaf(duplicatePathLength)
 		var newChild planning.Node = duplicate
 
 		if filters := group.getFilterForPath(pathIdx); len(filters) > 0 {
+			subsetIndex, err := e.findOrAddSubsetToSelector(leaf, filters)
+			if err != nil {
+				return false, err
+			}
+
 			newChild = &DuplicateFilter{
-				Inner:                  duplicate,
-				DuplicateFilterDetails: &DuplicateFilterDetails{Filters: filters},
+				Inner: duplicate,
+				DuplicateFilterDetails: &DuplicateFilterDetails{
+					Filters:     filters,
+					SubsetIndex: int64(subsetIndex),
+				},
 			}
 		}
 
@@ -535,6 +544,36 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 	}
 
 	return false, nil
+}
+
+func (e *OptimizationPass) findOrAddSubsetToSelector(selector planning.Node, subset []*core.LabelMatcher) (int, error) {
+	switch selector := selector.(type) {
+	case *core.VectorSelector:
+		var subsetIndex int
+		selector.Subsets, subsetIndex = e.findOrAddSubsetToList(selector.Subsets, subset)
+		return subsetIndex, nil
+	case *core.MatrixSelector:
+		var subsetIndex int
+		selector.Subsets, subsetIndex = e.findOrAddSubsetToList(selector.Subsets, subset)
+		return subsetIndex, nil
+	default:
+		return -1, fmt.Errorf("expected a selector type to add subsets to, but got %T", selector)
+	}
+}
+
+func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, subset []*core.LabelMatcher) ([]core.SubsetMatchers, int) {
+	idx := slices.IndexFunc(subsets, func(e core.SubsetMatchers) bool {
+		return slices.EqualFunc(e.Matchers, subset, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
+			return a.Equal(b)
+		})
+	})
+
+	if idx != -1 {
+		return subsets, idx
+	}
+
+	idx = len(subsets)
+	return append(subsets, core.SubsetMatchers{Matchers: subset}), idx
 }
 
 // findCommonSubexpressionLength returns the length of the common expression present at the end of each path
