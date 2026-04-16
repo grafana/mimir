@@ -153,7 +153,6 @@
 * [ENHANCEMENT] Querier: Add new config flag `querier.enable-delayed-name-removal-prometheus-engine` to enable delayed name removal for Prometheus engine. #14349
 * [ENHANCEMENT] Ingester: reduce heap usage during streaming chunk queries by releasing series label memory after each batch is sent rather than holding it until chunk streaming completes. #14422
 * [ENHANCEMENT] Ingester: Eliminate 20-minute active series metrics loading period when custom tracker or cost attribution configuration changes. Active series counts are now immediately correct after a config reload. #14537
-* [ENHANCEMENT] Ingester: Use Kafka record timestamps instead of wall-clock time for active series tracking, grace period validation, and purging when ingest storage is enabled. This prevents premature purging or stale series caused by lag between record production and consumption. #14611 #14744
 * [ENHANCEMENT] Ingester: Export `cortex_ingester_active_series_loading` gauge metric that is `1` while active series counts are still warming up after ingester startup, and `0` once they are accurate (after IdleTimeout has elapsed). #14783
 * [ENHANCEMENT] Ingest storage: Skip kotel tracing hooks for unsampled traces in the franz-go Kafka client, significantly reducing CPU and memory overhead. #14852
 * [ENHANCEMENT] Distributor: Reduced CPU utilization when writing to ingest storage with a large number of partitions by batching all partitions into a single Kafka produce call instead of one per partition. #14898
