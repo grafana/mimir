@@ -202,6 +202,7 @@ WIRESMITH_PROTOS := \
 	./pkg/alertmanager/alertspb/alerts.proto \
 	./pkg/storegateway/storepb/types.proto \
 	./pkg/storegateway/storepb/cache.proto \
+	./pkg/querier/querierpb/querier.proto \
 	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto
 WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
 
