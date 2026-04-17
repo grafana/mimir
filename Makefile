@@ -213,7 +213,10 @@ WIRESMITH_PROTOS := \
 	./pkg/distributor/distributorpb/distributor.proto \
 	./pkg/blockbuilder/schedulerpb/scheduler.proto \
 	./pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler.proto \
-	./pkg/usagetracker/usagetrackerpb/usagetracker.proto
+	./pkg/usagetracker/usagetrackerpb/usagetracker.proto \
+	./pkg/alertmanager/alertmanagerpb/alertmanager.proto \
+	./pkg/storegateway/storegatewaypb/gateway.proto \
+	./pkg/scheduler/schedulerpb/scheduler.proto
 WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
 
 # Proto files compiled by protoc+gogoslick (legacy).
@@ -314,6 +317,7 @@ ifeq ($(GENERATE_FILES),true)
 		--proto_path=./vendor/github.com/gogo/protobuf \
 		--proto_path=./vendor \
 		--proto_path=$(GOPATH)/src \
+		--proto_path=./pkg/storegateway/storepb \
 		--proto_path=$(shell brew --prefix protobuf 2>/dev/null)/include \
 		--out=$(dir $(@D:%/=%)) \
 		--module=github.com/grafana/mimir/$(dir $(@D:%/=%)) \
