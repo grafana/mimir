@@ -59,7 +59,7 @@ type OperatorEvaluationStats struct {
 // subsetCount is the number of subsets to track. It is the caller's responsibility to track
 // which subset is which.
 func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
-	allSeries, err := newStatsTracker(timeRange, memoryConsumptionTracker)
+	allSeries, err := newSubsetStats(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +275,54 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 	return result, nil
 }
 
+// Encode returns the encoded form of this instance, suitable for serialization.
+// The encoded form may share memory with this instance, and so may be modified
+// if this instance is modified, and becomes invalid when this instance is closed.
+func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
+	encoded := &EncodedOperatorEvaluationStats{
+		AllSeries: s.allSeries.Encode(),
+	}
+
+	if len(s.subsets) > 0 {
+		// Only bother allocating a slice for subsets if there are any.
+		encoded.Subsets = make([]EncodedSubsetStats, 0, len(s.subsets))
+		for _, subset := range s.subsets {
+			encoded.Subsets = append(encoded.Subsets, subset.Encode())
+		}
+	}
+
+	return encoded
+}
+
+func (e *EncodedOperatorEvaluationStats) Decode(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+	allSeries, err := e.AllSeries.decode(timeRange, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	decoded := &OperatorEvaluationStats{
+		timeRange:                timeRange,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+		allSeries:                allSeries,
+	}
+
+	if len(e.Subsets) > 0 {
+		// Only bother allocating a slice for subsets if there are any.
+		decoded.subsets = make([]*subsetStats, 0, len(e.Subsets))
+
+		for _, encodedSubset := range e.Subsets {
+			decodedSubset, err := encodedSubset.decode(timeRange, memoryConsumptionTracker)
+			if err != nil {
+				return nil, err
+			}
+
+			decoded.subsets = append(decoded.subsets, decodedSubset)
+		}
+	}
+
+	return decoded, nil
+}
+
 func (s *OperatorEvaluationStats) Close() {
 	s.allSeries.Close()
 
@@ -333,6 +381,33 @@ func (s *subsetStats) SetFromStepInvariant(samplesProcessed int64, newSamplesRea
 func (s *subsetStats) CopyFrom(source *subsetStats) {
 	copy(s.samplesProcessedPerStep, source.samplesProcessedPerStep)
 	copy(s.newSamplesReadPerStep, source.newSamplesReadPerStep)
+}
+
+func (s *subsetStats) Encode() EncodedSubsetStats {
+	return EncodedSubsetStats{
+		SamplesProcessedPerStep: s.samplesProcessedPerStep,
+		NewSamplesReadPerStep:   s.newSamplesReadPerStep,
+	}
+}
+
+func (e *EncodedSubsetStats) decode(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*subsetStats, error) {
+	if len(e.SamplesProcessedPerStep) != timeRange.StepCount {
+		return nil, fmt.Errorf("number of samples processed steps in encoded form (%d) does not match expected (%d)", len(e.SamplesProcessedPerStep), timeRange.StepCount)
+	}
+
+	if len(e.NewSamplesReadPerStep) != timeRange.StepCount {
+		return nil, fmt.Errorf("number of new samples read steps in encoded form (%d) does not match expected (%d)", len(e.NewSamplesReadPerStep), timeRange.StepCount)
+	}
+
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(e.SamplesProcessedPerStep)+cap(e.NewSamplesReadPerStep))*Int64Size, limiter.Int64Slices); err != nil {
+		return nil, err
+	}
+
+	return &subsetStats{
+		samplesProcessedPerStep:  e.SamplesProcessedPerStep,
+		newSamplesReadPerStep:    e.NewSamplesReadPerStep,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}, nil
 }
 
 func (s *subsetStats) Close() {
