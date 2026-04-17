@@ -1328,6 +1328,7 @@
   "alertmanager-storage.local.path": "",
   "runtime-config.reload-period": 10000000000,
   "runtime-config.file": "",
+  "runtime-config.http-client-timeout": 30000000000,
   "memberlist.nodename": "",
   "memberlist.randomize-node-name": true,
   "memberlist.stream-timeout": 2000000000,

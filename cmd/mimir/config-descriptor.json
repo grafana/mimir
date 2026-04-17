@@ -18683,11 +18683,22 @@
           "kind": "field",
           "name": "file",
           "required": false,
-          "desc": "Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.",
+          "desc": "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "runtime-config.file",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "http_client_timeout",
+          "required": false,
+          "desc": "HTTP client timeout when fetching runtime config from URLs.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "runtime-config.http-client-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,

@@ -342,10 +342,15 @@ runtime_config:
   # CLI flag: -runtime-config.reload-period
   [period: <duration> | default = 10s]
 
-  # Comma separated list of yaml files with the configuration that can be
-  # updated at runtime. Runtime config files will be merged from left to right.
+  # Comma separated list of yaml files or URLs with the configuration that can
+  # be updated at runtime. Runtime config files will be merged from left to
+  # right.
   # CLI flag: -runtime-config.file
   [file: <string> | default = ""]
+
+  # (advanced) HTTP client timeout when fetching runtime config from URLs.
+  # CLI flag: -runtime-config.http-client-timeout
+  [http_client_timeout: <duration> | default = 30s]
 
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
