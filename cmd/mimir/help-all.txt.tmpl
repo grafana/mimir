@@ -2591,6 +2591,8 @@ Usage of ./cmd/mimir/mimir:
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -query-frontend.remote-execution-batch-size uint
     	[experimental] Maximum number of series to send in a single remote execution response from a querier. (default 128)
+  -query-frontend.remote-execution-series-metadata-batch-size uint
+    	[experimental] Maximum number of series metadata entries to send in a single remote execution response from a querier. (default 128)
   -query-frontend.results-cache-ttl duration
     	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration

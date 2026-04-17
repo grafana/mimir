@@ -2170,6 +2170,11 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.remote-execution-batch-size
 [remote_execution_batch_size: <int> | default = 128]
 
+# (experimental) Maximum number of series metadata entries to send in a single
+# remote execution response from a querier.
+# CLI flag: -query-frontend.remote-execution-series-metadata-batch-size
+[remote_execution_series_metadata_batch_size: <int> | default = 128]
+
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
 # it.

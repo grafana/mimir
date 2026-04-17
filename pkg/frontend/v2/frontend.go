@@ -74,7 +74,8 @@ type Config struct {
 	Addr string `yaml:"address" category:"advanced"`
 	Port int    `category:"advanced"`
 
-	RemoteExecutionBatchSize uint64 `yaml:"remote_execution_batch_size" category:"experimental"`
+	RemoteExecutionBatchSize               uint64 `yaml:"remote_execution_batch_size" category:"experimental"`
+	RemoteExecutionSeriesMetadataBatchSize uint64 `yaml:"remote_execution_series_metadata_batch_size" category:"experimental"`
 
 	// These configuration options are injected internally.
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
@@ -94,6 +95,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.Port, "query-frontend.instance-port", 0, "Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).")
 
 	f.Uint64Var(&cfg.RemoteExecutionBatchSize, "query-frontend.remote-execution-batch-size", 128, "Maximum number of series to send in a single remote execution response from a querier.")
+	f.Uint64Var(&cfg.RemoteExecutionSeriesMetadataBatchSize, "query-frontend.remote-execution-series-metadata-batch-size", 128, "Maximum number of series metadata entries to send in a single remote execution response from a querier.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
@@ -106,6 +108,10 @@ func (cfg *Config) Validate() error {
 
 	if cfg.RemoteExecutionBatchSize <= 0 {
 		return fmt.Errorf("remote execution batch size must be greater than 0")
+	}
+
+	if cfg.RemoteExecutionSeriesMetadataBatchSize <= 0 {
+		return fmt.Errorf("remote execution series metadata batch size must be greater than 0")
 	}
 
 	return cfg.GRPCClientConfig.Validate()
