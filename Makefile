@@ -209,7 +209,11 @@ WIRESMITH_PROTOS := \
 	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto \
 	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto \
 	./pkg/ruler/rulespb/rules.proto \
-	./pkg/storage/indexheader/indexheaderpb/sparse.proto
+	./pkg/storage/indexheader/indexheaderpb/sparse.proto \
+	./pkg/distributor/distributorpb/distributor.proto \
+	./pkg/blockbuilder/schedulerpb/scheduler.proto \
+	./pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler.proto \
+	./pkg/usagetracker/usagetrackerpb/usagetracker.proto
 WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
 
 # Proto files compiled by protoc+gogoslick (legacy).
