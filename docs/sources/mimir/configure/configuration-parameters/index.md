@@ -4285,8 +4285,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.ignore-ooo-exemplars
 [ignore_ooo_exemplars: <boolean> | default = false]
 
-# (experimental) When the number of owned series for a tenant exceeds this
-# threshold, trigger early head compaction. 0 to disable.
+# (experimental) When the number of owned series for a tenant across the cluster
+# exceeds this threshold, trigger early head compaction. 0 to disable.
 # CLI flag: -ingester.early-head-compaction-owned-series-threshold
 [early_head_compaction_owned_series_threshold: <int> | default = 0]
 
