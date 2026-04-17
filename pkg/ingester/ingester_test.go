@@ -7186,6 +7186,83 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 	}
 }
 
+func TestIngester_WipeTSDBDirOnStartup(t *testing.T) {
+	t.Parallel()
+
+	const witnessName = "wipe_tsdb_dir_on_startup_witness.txt"
+	const witnessContent = "witness-content"
+
+	setupPriorData := func(t *testing.T, dir string) {
+		t.Helper()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, witnessName), []byte(witnessContent), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "user-with-prior-data", "dummy"), 0o700))
+	}
+
+	t.Run("should remove TSDB directory contents when enabled", func(t *testing.T) {
+		t.Parallel()
+
+		tempDir := t.TempDir()
+		setupPriorData(t, tempDir)
+
+		ingesterCfg := defaultIngesterTestConfig(t)
+		ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
+		ingesterCfg.BlocksStorageConfig.TSDB.WipeTSDBDirOnStartup = true
+		ingesterCfg.BlocksStorageConfig.TSDB.WALReplayConcurrency = 10
+		ingesterCfg.BlocksStorageConfig.Bucket.Backend = "s3"
+		ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
+
+		ingester, err := New(ingesterCfg, validation.NewOverrides(defaultLimitsTestConfig(), nil), createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, nil, log.NewNopLogger())
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = services.StopAndAwaitTerminated(context.Background(), ingester)
+			ingester.closeAllTSDB()
+			ingester.subservicesWatcher.Close()
+		})
+
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
+
+		_, err = os.Stat(filepath.Join(tempDir, witnessName))
+		require.True(t, os.IsNotExist(err), "witness file should be removed when wipe is enabled")
+
+		_, err = os.Stat(filepath.Join(tempDir, "user-with-prior-data"))
+		require.True(t, os.IsNotExist(err), "prior user directory should be removed when wipe is enabled")
+
+		require.Zero(t, len(ingester.tsdbs))
+	})
+
+	t.Run("should preserve TSDB directory contents when disabled", func(t *testing.T) {
+		t.Parallel()
+
+		tempDir := t.TempDir()
+		setupPriorData(t, tempDir)
+
+		ingesterCfg := defaultIngesterTestConfig(t)
+		ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
+		ingesterCfg.BlocksStorageConfig.TSDB.WipeTSDBDirOnStartup = false
+		ingesterCfg.BlocksStorageConfig.TSDB.WALReplayConcurrency = 10
+		ingesterCfg.BlocksStorageConfig.Bucket.Backend = "s3"
+		ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
+
+		ingester, err := New(ingesterCfg, validation.NewOverrides(defaultLimitsTestConfig(), nil), createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, nil, log.NewNopLogger())
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = services.StopAndAwaitTerminated(context.Background(), ingester)
+			ingester.closeAllTSDB()
+			ingester.subservicesWatcher.Close()
+		})
+
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
+
+		got, err := os.ReadFile(filepath.Join(tempDir, witnessName))
+		require.NoError(t, err)
+		require.Equal(t, witnessContent, string(got))
+
+		fi, err := os.Stat(filepath.Join(tempDir, "user-with-prior-data", "dummy"))
+		require.NoError(t, err)
+		require.True(t, fi.IsDir())
+	})
+}
+
 func getWALReplayConcurrencyFromTSDBHeadOptions(userTSDB *userTSDB) int {
 	head := reflect.ValueOf(userTSDB.db.Head()).Elem()
 	opts := head.FieldByName("opts").Elem()
