@@ -511,6 +511,9 @@ const (
 func ContextWithRequestHintsAndOptions(ctx context.Context, hints *Hints, options Options) context.Context {
 	ctx = context.WithValue(ctx, requestHintsKey, hints)
 	ctx = context.WithValue(ctx, requestOptionsKey, options)
+	// Mirror CacheDisabled onto the context so mqe packages (e.g. rangevectorsplitting) can read it without importing
+	// querymiddleware and causing an import cycle.
+	ctx = streamingpromql.ContextWithCacheDisabled(ctx, options.CacheDisabled)
 	return ctx
 }
 

@@ -252,6 +252,7 @@ type OperatorParameters struct {
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
 	EagerLoadSelectors       bool
+	CacheDisabled            bool
 	QueryParameters          *QueryParameters
 	Logger                   log.Logger
 }

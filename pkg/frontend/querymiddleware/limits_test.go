@@ -1600,3 +1600,37 @@ func (c *contextCapturingQuerier) LabelValues(ctx context.Context, name string, 
 func (c *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	panic("not supported")
 }
+
+func TestContextWithRequestHintsAndOptions(t *testing.T) {
+	tests := map[string]struct {
+		hints               *Hints
+		options             Options
+		expectCacheDisabled bool
+	}{
+		"cache disabled": {
+			hints:               &Hints{TotalQueries: 4},
+			options:             Options{CacheDisabled: true},
+			expectCacheDisabled: true,
+		},
+		"cache enabled": {
+			hints:               &Hints{TotalQueries: 1},
+			options:             Options{CacheDisabled: false},
+			expectCacheDisabled: false,
+		},
+		"nil hints": {
+			hints:               nil,
+			options:             Options{CacheDisabled: true},
+			expectCacheDisabled: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := ContextWithRequestHintsAndOptions(context.Background(), tc.hints, tc.options)
+
+			require.Equal(t, tc.hints, RequestHintsFromContext(ctx))
+			require.Equal(t, tc.options, RequestOptionsFromContext(ctx))
+			require.Equal(t, tc.expectCacheDisabled, streamingpromql.CacheDisabledFromContext(ctx))
+		})
+	}
+}
