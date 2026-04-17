@@ -27,10 +27,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/util/validation"
-
 	"github.com/grafana/mimir/pkg/ingester/client"
 	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestIngester_filterUsersToCompactToReduceInMemorySeries(t *testing.T) {
