@@ -170,7 +170,7 @@ func (c *httpClient) uploadLogs(ctx context.Context, data []*logpb.ResourceLogs)
 		defer func() { op.End(uploadErr, statusCode) }()
 	}
 
-	return errors.Join(uploadErr, c.requestFunc(ctx, func(iCtx context.Context) error {
+	requestErr := c.requestFunc(ctx, func(iCtx context.Context) error {
 		select {
 		case <-iCtx.Done():
 			return iCtx.Err()
@@ -260,7 +260,8 @@ func (c *httpClient) uploadLogs(ctx context.Context, data []*logpb.ResourceLogs)
 			// Non-retryable failure.
 			return fmt.Errorf("failed to send logs to %s: %s (%w)", request.URL, resp.Status, bodyErr)
 		}
-	}))
+	})
+	return errors.Join(uploadErr, requestErr)
 }
 
 var gzPool = sync.Pool{
