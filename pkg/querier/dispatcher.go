@@ -372,8 +372,10 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 		batchSize = len(series)
 	}
 
+	sentOne := false
+
 	// Note the slightly unusual condition: we always send at least one message, even when there are no series.
-	for startIdx := 0; startIdx == 0 || startIdx < len(series); startIdx += batchSize {
+	for startIdx := 0; startIdx < len(series) || (len(series) == 0 && !sentOne); startIdx += batchSize {
 		endIdx := min(startIdx+batchSize, len(series))
 		batch := series[startIdx:endIdx]
 
@@ -396,6 +398,8 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 		}); err != nil {
 			return err
 		}
+
+		sentOne = true
 	}
 
 	return nil

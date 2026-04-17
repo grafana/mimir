@@ -1102,6 +1102,74 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
+
+		"query that returns an instant vector with no series, metadata batching disabled": {
+			req: createQueryRequest(`my_non_existent_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second)),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(3, 0),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   0,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with no series, metadata batching enabled": {
+			req: createQueryRequestWithBatchSize(`my_non_existent_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 3),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(3, 0),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   0,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns a range vector with no series, metadata batching disabled": {
+			req: createQueryRequest(`my_non_existent_series[2h]`, types.NewInstantQueryTimeRange(startT)),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(0, 0),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   0,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an range vector with no series, metadata batching enabled": {
+			req: createQueryRequestWithBatchSize(`my_non_existent_series[2h]`, types.NewInstantQueryTimeRange(startT), 3),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(0, 0),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   0,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
 	}
 
 	for name, testCase := range testCases {
