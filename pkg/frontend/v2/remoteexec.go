@@ -732,7 +732,7 @@ func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluato
 				return -1, err
 			}
 		} else if len(combinedMetadata)+len(msg.Series) > cap(combinedMetadata) {
-			return -1, fmt.Errorf("expected %d series metadata, but got at least %d", len(combinedMetadata), len(combinedMetadata))
+			return -1, fmt.Errorf("expected %d series metadata, but got at least %d", cap(combinedMetadata), len(combinedMetadata)+len(msg.Series))
 		}
 
 		for _, s := range msg.Series {
