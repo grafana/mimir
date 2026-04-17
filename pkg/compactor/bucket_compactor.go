@@ -997,8 +997,8 @@ func (c *BucketCompactor) compactOnce(ctx context.Context, syncer *metaSyncer, m
 		mtx                    sync.Mutex
 	)
 
-	defer workCtxCancel(errCompactionIterationCancelled)
 	defer func() {
+		workCtxCancel(errCompactionIterationCancelled)
 		if !jobChanClosed {
 			close(jobChan)
 			wg.Wait()
