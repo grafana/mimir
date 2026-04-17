@@ -203,7 +203,11 @@ WIRESMITH_PROTOS := \
 	./pkg/storegateway/storepb/types.proto \
 	./pkg/storegateway/storepb/cache.proto \
 	./pkg/querier/querierpb/querier.proto \
-	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto
+	./pkg/querier/stats/stats.proto \
+	./pkg/streamingpromql/planning/core/core.proto \
+	./pkg/streamingpromql/planning/plan.proto \
+	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto \
+	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto
 WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
 
 # Proto files compiled by protoc+gogoslick (legacy).
