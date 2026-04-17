@@ -185,6 +185,7 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) er
 //nolint:revive
 type TSDBConfig struct {
 	Dir                                 string        `yaml:"dir"`
+	WipeTSDBDirOnStartup                bool          `yaml:"wipe_tsdb_dir_on_startup" category:"advanced"`
 	BlockRanges                         DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
 	Retention                           time.Duration `yaml:"retention_period"`
 	ShipInterval                        time.Duration `yaml:"ship_interval" category:"advanced"`
@@ -303,6 +304,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	}
 
 	f.StringVar(&cfg.Dir, "blocks-storage.tsdb.dir", "./tsdb/", "Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts.")
+	f.BoolVar(&cfg.WipeTSDBDirOnStartup, "blocks-storage.tsdb.wipe-tsdb-dir-on-startup", false, "If true, the TSDB directory will be wiped entirely on startup before any data is loaded. This is destructive and will remove all existing WAL and block data.")
 	f.Var(&cfg.BlockRanges, "blocks-storage.tsdb.block-ranges-period", "TSDB blocks range period.")
 	f.DurationVar(&cfg.Retention, "blocks-storage.tsdb.retention-period", 13*time.Hour, "TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks.")
 	f.DurationVar(&cfg.ShipInterval, "blocks-storage.tsdb.ship-interval", 1*time.Minute, "How frequently the TSDB blocks are scanned and new ones are shipped to the storage. 0 means shipping is disabled.")

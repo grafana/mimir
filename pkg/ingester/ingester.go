@@ -636,6 +636,13 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		}
 	}()
 
+	if i.cfg.BlocksStorageConfig.TSDB.WipeTSDBDirOnStartup {
+		level.Warn(i.logger).Log("msg", "wiping TSDB directory on startup as configured", "dir", i.cfg.BlocksStorageConfig.TSDB.Dir)
+		if err := os.RemoveAll(i.cfg.BlocksStorageConfig.TSDB.Dir); err != nil {
+			return errors.Wrap(err, "failed to wipe TSDB directory on startup")
+		}
+	}
+
 	// Ensure the TSDB directory exists before checking for markers.
 	// This is required for ingesters starting with empty disks to support operations
 	// like scale down that need to write markers even when no TSDBs have been created yet.
