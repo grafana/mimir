@@ -690,6 +690,7 @@
       reads: true,
       tenants: true,
       top_tenants: true,
+      active_series_billing_estimate: true,
     },
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.

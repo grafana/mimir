@@ -16,6 +16,7 @@
     (import 'dashboards/overrides.libsonnet') +
     (import 'dashboards/tenants.libsonnet') +
     (import 'dashboards/top-tenants.libsonnet') +
+    (import 'dashboards/active-series-billing-estimate.libsonnet') +
     (import 'dashboards/overview.libsonnet') +
 
     (if $._config.deployment_type != 'kubernetes' || $._config.singleBinary == true || !$._config.rollout_operator_dashboard_enable then {} else
