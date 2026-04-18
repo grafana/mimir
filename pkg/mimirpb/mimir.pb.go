@@ -976,10 +976,10 @@ func (m *MetadataRW2) Size() int {
 
 func (m *WriteRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1067,10 +1067,10 @@ func (m *WriteRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *WriteResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1090,10 +1090,10 @@ func (m *WriteResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *ErrorDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1133,10 +1133,10 @@ func (m *ErrorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *TimeSeries) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1203,10 +1203,10 @@ func (m *TimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelPair) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1240,10 +1240,10 @@ func (m *LabelPair) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *Sample) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1274,10 +1274,10 @@ func (m *Sample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *MetricMetadata) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1323,10 +1323,10 @@ func (m *MetricMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *Metric) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1358,10 +1358,10 @@ func (m *Metric) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *Exemplar) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1404,10 +1404,10 @@ func (m *Exemplar) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *Histogram) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1545,10 +1545,10 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *FloatHistogram) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1651,10 +1651,10 @@ func (m *FloatHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *BucketSpan) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1684,10 +1684,10 @@ func (m *BucketSpan) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *FloatHistogramPair) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1722,10 +1722,10 @@ func (m *FloatHistogramPair) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *SampleHistogram) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1767,10 +1767,10 @@ func (m *SampleHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *HistogramBucket) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1813,10 +1813,10 @@ func (m *HistogramBucket) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *SampleHistogramPair) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1851,10 +1851,10 @@ func (m *SampleHistogramPair) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *QueryResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1943,10 +1943,10 @@ func (m *QueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *StringData) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1978,10 +1978,10 @@ func (m *StringData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *VectorData) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2021,10 +2021,10 @@ func (m *VectorData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *VectorSample) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2062,10 +2062,10 @@ func (m *VectorSample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *VectorHistogram) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2109,10 +2109,10 @@ func (m *VectorHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *ScalarData) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2143,10 +2143,10 @@ func (m *ScalarData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *MatrixData) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2176,10 +2176,10 @@ func (m *MatrixData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *MatrixSeries) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2226,10 +2226,10 @@ func (m *MatrixSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *WriteRequestRW2) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2266,10 +2266,10 @@ func (m *WriteRequestRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *TimeSeriesRW2) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2346,10 +2346,10 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *ExemplarRW2) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2390,10 +2390,10 @@ func (m *ExemplarRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *MetadataRW2) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2516,6 +2516,7 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 		}
 	}
 	var metadata metadataSet
+	seenFirstSymbol := false
 
 	for len(b) > 0 {
 		num, typ, tagLen := protowire.ConsumeTag(b)
@@ -2525,6 +2526,8 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 		b = b[tagLen:]
 		switch num {
 		case 1: // timeseries
+			if m.unmarshalFromRW2 { return errorUnexpectedRW1Timeseries }
+
 			if typ != protowire.BytesType {
 				n, err := skipField_Mimir(b, num, typ)
 				if err != nil {
@@ -2538,9 +2541,9 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 				return fmt.Errorf("invalid bytes")
 			}
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
 
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			b = b[n:]
@@ -2560,6 +2563,8 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			m.Source = WriteRequest_SourceEnum(v)
 			b = b[n:]
 		case 3: // metadata
+			if m.unmarshalFromRW2 { return errorUnexpectedRW1Metadata }
+
 			if typ != protowire.BytesType {
 				n, err := skipField_Mimir(b, num, typ)
 				if err != nil {
@@ -2578,6 +2583,8 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			}
 			b = b[n:]
 		case 4: // symbolsRW2
+			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Symbols }
+
 			if typ != protowire.BytesType {
 				n, err := skipField_Mimir(b, num, typ)
 				if err != nil {
@@ -2586,13 +2593,16 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 				b = b[n:]
 				continue
 			}
-			v, n := protowire.ConsumeString(b)
-			if n < 0 {
-				return fmt.Errorf("invalid string")
-			}
-			m.SymbolsRW2 = append(m.SymbolsRW2, v)
+			v, n := protowire.ConsumeBytes(b)
+			if n < 0 { return fmt.Errorf("invalid bytes") }
+			if !seenFirstSymbol && len(v) > 0 { return errorInvalidFirstSymbol }
+			seenFirstSymbol = true
+			m.rw2symbols.append(yoloString(v))
 			b = b[n:]
+
 		case 5: // timeseriesRW2
+			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Timeseries }
+
 			if typ != protowire.BytesType {
 				n, err := skipField_Mimir(b, num, typ)
 				if err != nil {
@@ -2605,10 +2615,13 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			if n < 0 {
 				return fmt.Errorf("invalid bytes")
 			}
-			m.TimeseriesRW2 = append(m.TimeseriesRW2, TimeSeriesRW2{})
-			if err := m.TimeseriesRW2[len(m.TimeseriesRW2)-1].Unmarshal(v); err != nil {
+			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
+			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
+			if metadata == nil { metadata = metadataSetFromSettings(m.skipDeduplicateMetadata) }
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
+
 			b = b[n:]
 		case 1000: // skip_label_validation
 			if typ != protowire.VarintType {
@@ -2648,6 +2661,11 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			b = b[n:]
 		}
 	}
+	if m.unmarshalFromRW2 {
+		if metadata != nil { m.Metadata = metadata.slice() }
+		m.rw2symbols.releasePages()
+	}
+
 	return nil
 }
 
