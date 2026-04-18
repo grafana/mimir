@@ -9,6 +9,8 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"math/bits"
+	"strings"
 )
 
 type SeriesRequestHints struct {
@@ -129,10 +131,10 @@ func (m *LabelValuesResponseHints) Size() int {
 
 func (m *SeriesRequestHints) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -179,10 +181,10 @@ func (m *SeriesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *SeriesResponseHints) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -212,10 +214,10 @@ func (m *SeriesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *Block) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -242,10 +244,10 @@ func (m *Block) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelNamesRequestHints) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -275,10 +277,10 @@ func (m *LabelNamesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 
 func (m *LabelNamesResponseHints) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -308,10 +310,10 @@ func (m *LabelNamesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error)
 
 func (m *LabelValuesRequestHints) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -341,10 +343,10 @@ func (m *LabelValuesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error)
 
 func (m *LabelValuesResponseHints) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -372,7 +374,7 @@ func (m *LabelValuesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error
 	return len(dAtA) - i, nil
 }
 
-func skipField(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
+func skipField_Hints(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
 	switch typ {
 	case protowire.VarintType:
 		_, n := protowire.ConsumeVarint(b)
@@ -458,7 +460,7 @@ func (m *SeriesRequestHints) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // block_matchers
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Hints(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -476,7 +478,7 @@ func (m *SeriesRequestHints) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 2: // projection_include
 			if typ != protowire.VarintType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Hints(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -491,7 +493,7 @@ func (m *SeriesRequestHints) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 3: // projection_labels
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Hints(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -505,7 +507,7 @@ func (m *SeriesRequestHints) Unmarshal(b []byte) error {
 			m.ProjectionLabels = append(m.ProjectionLabels, v)
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Hints(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -560,7 +562,7 @@ func (m *SeriesResponseHints) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // queried_blocks
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Hints(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -577,7 +579,7 @@ func (m *SeriesResponseHints) Unmarshal(b []byte) error {
 			}
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Hints(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -597,7 +599,7 @@ func (m *Block) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // id
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Hints(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -611,7 +613,7 @@ func (m *Block) Unmarshal(b []byte) error {
 			m.Id = v
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Hints(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -666,7 +668,7 @@ func (m *LabelNamesRequestHints) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // block_matchers
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Hints(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -683,7 +685,7 @@ func (m *LabelNamesRequestHints) Unmarshal(b []byte) error {
 			}
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Hints(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -738,7 +740,7 @@ func (m *LabelNamesResponseHints) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // queried_blocks
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Hints(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -755,7 +757,7 @@ func (m *LabelNamesResponseHints) Unmarshal(b []byte) error {
 			}
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Hints(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -810,7 +812,7 @@ func (m *LabelValuesRequestHints) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // block_matchers
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Hints(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -827,7 +829,7 @@ func (m *LabelValuesRequestHints) Unmarshal(b []byte) error {
 			}
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Hints(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -882,7 +884,7 @@ func (m *LabelValuesResponseHints) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // queried_blocks
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Hints(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -899,7 +901,7 @@ func (m *LabelValuesResponseHints) Unmarshal(b []byte) error {
 			}
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Hints(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -1123,6 +1125,85 @@ func (this *LabelValuesResponseHints) Equal(that interface{}) bool {
 		}
 	}
 	return true
+}
+
+func (this *SeriesRequestHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&hintspb.SeriesRequestHints{")
+	s = append(s, "BlockMatchers: "+fmt.Sprintf("%#v", this.BlockMatchers)+",\n")
+	s = append(s, "ProjectionInclude: "+fmt.Sprintf("%#v", this.ProjectionInclude)+",\n")
+	s = append(s, "ProjectionLabels: "+fmt.Sprintf("%#v", this.ProjectionLabels)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *SeriesResponseHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&hintspb.SeriesResponseHints{")
+	s = append(s, "QueriedBlocks: "+fmt.Sprintf("%#v", this.QueriedBlocks)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *Block) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&hintspb.Block{")
+	s = append(s, "Id: "+fmt.Sprintf("%#v", this.Id)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *LabelNamesRequestHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&hintspb.LabelNamesRequestHints{")
+	s = append(s, "BlockMatchers: "+fmt.Sprintf("%#v", this.BlockMatchers)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *LabelNamesResponseHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&hintspb.LabelNamesResponseHints{")
+	s = append(s, "QueriedBlocks: "+fmt.Sprintf("%#v", this.QueriedBlocks)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *LabelValuesRequestHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&hintspb.LabelValuesRequestHints{")
+	s = append(s, "BlockMatchers: "+fmt.Sprintf("%#v", this.BlockMatchers)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *LabelValuesResponseHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&hintspb.LabelValuesResponseHints{")
+	s = append(s, "QueriedBlocks: "+fmt.Sprintf("%#v", this.QueriedBlocks)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
 }
 
 func (m *SeriesRequestHints) Reset()      { *m = SeriesRequestHints{} }
@@ -1404,6 +1485,115 @@ func (m *LabelValuesResponseHints) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_LabelValuesResponseHints proto.InternalMessageInfo
+
+func sovHints(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozHints(x uint64) (n int) {
+	return sovHints(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintHints(dAtA []byte, offset int, v uint64) int {
+	offset -= sovHints(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipHints(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthHints
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipHints(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthHints
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthHints        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowHints          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupHints = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*SeriesRequestHints)(nil), "hintspb.SeriesRequestHints")

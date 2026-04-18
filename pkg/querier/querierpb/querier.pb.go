@@ -11,10 +11,11 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"math/bits"
 	"strings"
 )
 
-type EvaluateQueryResponse_Message interface {
+type isEvaluateQueryResponse_Message interface {
 	isEvaluateQueryResponse_Message()
 }
 
@@ -55,18 +56,26 @@ type EvaluateQueryResponse_EvaluationCompleted struct {
 func (*EvaluateQueryResponse_EvaluationCompleted) isEvaluateQueryResponse_Message() {}
 
 type EvaluateQueryRequest struct {
-	Plan      planning.EncodedQueryPlan `protobuf:"bytes,1,opt,name=plan,proto3" json:"plan,omitempty"`
+	Plan      planning.EncodedQueryPlan `protobuf:"bytes,1,opt,name=plan,proto3" json:"plan"`
 	Nodes     []EvaluationNode          `protobuf:"bytes,2,rep,name=nodes,proto3" json:"nodes"`
 	BatchSize uint64                    `protobuf:"varint,4,opt,name=batchSize,proto3" json:"batchSize,omitempty"`
 }
 
 type EvaluationNode struct {
 	NodeIndex int64                          `protobuf:"varint,1,opt,name=nodeIndex,proto3" json:"nodeIndex,omitempty"`
-	TimeRange planning.EncodedQueryTimeRange `protobuf:"bytes,2,opt,name=timeRange,proto3" json:"timeRange,omitempty"`
+	TimeRange planning.EncodedQueryTimeRange `protobuf:"bytes,2,opt,name=timeRange,proto3" json:"timeRange"`
 }
 
 type EvaluateQueryResponse struct {
-	Message EvaluateQueryResponse_Message `protobuf_oneof:"message"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*EvaluateQueryResponse_SeriesMetadata
+	//	*EvaluateQueryResponse_StringValue
+	//	*EvaluateQueryResponse_ScalarValue
+	//	*EvaluateQueryResponse_InstantVectorSeriesData
+	//	*EvaluateQueryResponse_RangeVectorStepData
+	//	*EvaluateQueryResponse_EvaluationCompleted
+	Message isEvaluateQueryResponse_Message `protobuf_oneof:"message"`
 }
 
 type EvaluateQueryResponseSeriesMetadata struct {
@@ -116,8 +125,8 @@ type Error struct {
 }
 
 type EvaluateQueryResponseEvaluationCompleted struct {
-	Annotations Annotations `protobuf:"bytes,1,opt,name=annotations,proto3" json:"annotations,omitempty"`
-	Stats       stats.Stats `protobuf:"bytes,2,opt,name=stats,proto3" json:"stats,omitempty"`
+	Annotations Annotations `protobuf:"bytes,1,opt,name=annotations,proto3" json:"annotations"`
+	Stats       stats.Stats `protobuf:"bytes,2,opt,name=stats,proto3" json:"stats"`
 }
 
 type Annotations struct {
@@ -323,10 +332,10 @@ func (m *Annotations) Size() int {
 
 func (m *EvaluateQueryRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -373,10 +382,10 @@ func (m *EvaluateQueryRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *EvaluationNode) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -413,10 +422,10 @@ func (m *EvaluationNode) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *EvaluateQueryResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -492,10 +501,10 @@ func (m *EvaluateQueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *EvaluateQueryResponseSeriesMetadata) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -530,10 +539,10 @@ func (m *EvaluateQueryResponseSeriesMetadata) MarshalToSizedBuffer(dAtA []byte) 
 
 func (m *SeriesMetadata) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -575,10 +584,10 @@ func (m *SeriesMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *EvaluateQueryResponseStringValue) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -610,10 +619,10 @@ func (m *EvaluateQueryResponseStringValue) MarshalToSizedBuffer(dAtA []byte) (in
 
 func (m *EvaluateQueryResponseScalarValue) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -648,10 +657,10 @@ func (m *EvaluateQueryResponseScalarValue) MarshalToSizedBuffer(dAtA []byte) (in
 
 func (m *EvaluateQueryResponseInstantVectorSeriesData) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -686,10 +695,10 @@ func (m *EvaluateQueryResponseInstantVectorSeriesData) MarshalToSizedBuffer(dAtA
 
 func (m *InstantVectorSeriesData) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -729,10 +738,10 @@ func (m *InstantVectorSeriesData) MarshalToSizedBuffer(dAtA []byte) (int, error)
 
 func (m *EvaluateQueryResponseRangeVectorStepData) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -797,10 +806,10 @@ func (m *EvaluateQueryResponseRangeVectorStepData) MarshalToSizedBuffer(dAtA []b
 
 func (m *Error) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -832,10 +841,10 @@ func (m *Error) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *EvaluateQueryResponseEvaluationCompleted) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -879,10 +888,10 @@ func (m *EvaluateQueryResponseEvaluationCompleted) MarshalToSizedBuffer(dAtA []b
 
 func (m *Annotations) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2128,7 +2137,7 @@ func (m *EvaluationNode) GetTimeRange() planning.EncodedQueryTimeRange {
 	return planning.EncodedQueryTimeRange{}
 }
 
-func (m *EvaluateQueryResponse) GetMessage() EvaluateQueryResponse_Message {
+func (m *EvaluateQueryResponse) GetMessage() isEvaluateQueryResponse_Message {
 	if m != nil {
 		return m.Message
 	}
@@ -3474,6 +3483,115 @@ func (m *Annotations) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_Annotations proto.InternalMessageInfo
+
+func sovQuerier(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozQuerier(x uint64) (n int) {
+	return sovQuerier(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintQuerier(dAtA []byte, offset int, v uint64) int {
+	offset -= sovQuerier(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipQuerier(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthQuerier
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipQuerier(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthQuerier
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthQuerier        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowQuerier          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupQuerier = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*EvaluateQueryRequest)(nil), "querierpb.EvaluateQueryRequest")

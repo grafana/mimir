@@ -10,6 +10,8 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"math/bits"
+	"strings"
 )
 
 type Chunk_Encoding int32
@@ -59,7 +61,7 @@ type StreamingChunksEstimate struct {
 type AggrChunk struct {
 	MinTime int64 `protobuf:"varint,1,opt,name=min_time,json=minTime,proto3" json:"min_time,omitempty"`
 	MaxTime int64 `protobuf:"varint,2,opt,name=max_time,json=maxTime,proto3" json:"max_time,omitempty"`
-	Raw     Chunk `protobuf:"bytes,3,opt,name=raw,proto3" json:"raw,omitempty"`
+	Raw     Chunk `protobuf:"bytes,3,opt,name=raw,proto3" json:"raw"`
 }
 
 // Matcher specifies a rule, which can match or set of labels or not.
@@ -163,10 +165,10 @@ func (m *LabelMatcher) Size() int {
 
 func (m *Chunk) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -203,10 +205,10 @@ func (m *Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *StreamingSeries) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -238,10 +240,10 @@ func (m *StreamingSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *StreamingSeriesBatch) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -281,10 +283,10 @@ func (m *StreamingSeriesBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *StreamingChunks) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -319,10 +321,10 @@ func (m *StreamingChunks) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *StreamingChunksBatch) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -352,10 +354,10 @@ func (m *StreamingChunksBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *StreamingChunksEstimate) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -380,10 +382,10 @@ func (m *StreamingChunksEstimate) MarshalToSizedBuffer(dAtA []byte) (int, error)
 
 func (m *AggrChunk) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -425,10 +427,10 @@ func (m *AggrChunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelMatcher) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1272,6 +1274,101 @@ func (this *LabelMatcher) Equal(that interface{}) bool {
 	return true
 }
 
+func (this *Chunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&storepb.Chunk{")
+	s = append(s, "Type: "+fmt.Sprintf("%#v", this.Type)+",\n")
+	s = append(s, "Data: "+fmt.Sprintf("%#v", this.Data)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *StreamingSeries) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.StreamingSeries{")
+	s = append(s, "Labels: "+fmt.Sprintf("%#v", this.Labels)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *StreamingSeriesBatch) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&storepb.StreamingSeriesBatch{")
+	s = append(s, "Series: "+fmt.Sprintf("%#v", this.Series)+",\n")
+	s = append(s, "IsEndOfSeriesStream: "+fmt.Sprintf("%#v", this.IsEndOfSeriesStream)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *StreamingChunks) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&storepb.StreamingChunks{")
+	s = append(s, "SeriesIndex: "+fmt.Sprintf("%#v", this.SeriesIndex)+",\n")
+	s = append(s, "Chunks: "+fmt.Sprintf("%#v", this.Chunks)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *StreamingChunksBatch) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.StreamingChunksBatch{")
+	s = append(s, "Series: "+fmt.Sprintf("%#v", this.Series)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *StreamingChunksEstimate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.StreamingChunksEstimate{")
+	s = append(s, "EstimatedChunkCount: "+fmt.Sprintf("%#v", this.EstimatedChunkCount)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *AggrChunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&storepb.AggrChunk{")
+	s = append(s, "MinTime: "+fmt.Sprintf("%#v", this.MinTime)+",\n")
+	s = append(s, "MaxTime: "+fmt.Sprintf("%#v", this.MaxTime)+",\n")
+	s = append(s, "Raw: "+fmt.Sprintf("%#v", this.Raw)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *LabelMatcher) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&storepb.LabelMatcher{")
+	s = append(s, "Type: "+fmt.Sprintf("%#v", this.Type)+",\n")
+	s = append(s, "Name: "+fmt.Sprintf("%#v", this.Name)+",\n")
+	s = append(s, "Value: "+fmt.Sprintf("%#v", this.Value)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
 func (m *Chunk) Reset()      { *m = Chunk{} }
 func (*Chunk) ProtoMessage() {}
 func (m *Chunk) String() string {
@@ -1591,6 +1688,115 @@ func (m *LabelMatcher) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_LabelMatcher proto.InternalMessageInfo
+
+func sovTypes(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozTypes(x uint64) (n int) {
+	return sovTypes(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintTypes(dAtA []byte, offset int, v uint64) int {
+	offset -= sovTypes(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipTypes(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthTypes
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipTypes(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthTypes
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthTypes        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowTypes          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupTypes = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*Chunk)(nil), "thanos.Chunk")

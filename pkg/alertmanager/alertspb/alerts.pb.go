@@ -9,6 +9,8 @@ import (
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"google.golang.org/protobuf/encoding/protowire"
+	"math/bits"
+	"strings"
 )
 
 type AlertConfigDesc struct {
@@ -63,10 +65,10 @@ func (m *FullStateDesc) Size() int {
 
 func (m *AlertConfigDesc) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -110,10 +112,10 @@ func (m *AlertConfigDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *TemplateDesc) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -147,10 +149,10 @@ func (m *TemplateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *FullStateDesc) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -178,7 +180,7 @@ func (m *FullStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func skipField(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
+func skipField_Alerts(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
 	switch typ {
 	case protowire.VarintType:
 		_, n := protowire.ConsumeVarint(b)
@@ -258,7 +260,7 @@ func (m *AlertConfigDesc) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // user
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Alerts(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -273,7 +275,7 @@ func (m *AlertConfigDesc) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 2: // raw_config
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Alerts(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -288,7 +290,7 @@ func (m *AlertConfigDesc) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 3: // templates
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Alerts(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -305,7 +307,7 @@ func (m *AlertConfigDesc) Unmarshal(b []byte) error {
 			}
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Alerts(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -325,7 +327,7 @@ func (m *TemplateDesc) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // filename
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Alerts(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -340,7 +342,7 @@ func (m *TemplateDesc) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 2: // body
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Alerts(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -354,7 +356,7 @@ func (m *TemplateDesc) Unmarshal(b []byte) error {
 			m.Body = v
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Alerts(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -374,7 +376,7 @@ func (m *FullStateDesc) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // state
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Alerts(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -393,7 +395,7 @@ func (m *FullStateDesc) Unmarshal(b []byte) error {
 			}
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Alerts(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -507,6 +509,42 @@ func (this *TemplateDesc) Equal(that interface{}) bool {
 		return false
 	}
 	return true
+}
+
+func (this *AlertConfigDesc) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&alertspb.AlertConfigDesc{")
+	s = append(s, "User: "+fmt.Sprintf("%#v", this.User)+",\n")
+	s = append(s, "RawConfig: "+fmt.Sprintf("%#v", this.RawConfig)+",\n")
+	s = append(s, "Templates: "+fmt.Sprintf("%#v", this.Templates)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *TemplateDesc) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&alertspb.TemplateDesc{")
+	s = append(s, "Filename: "+fmt.Sprintf("%#v", this.Filename)+",\n")
+	s = append(s, "Body: "+fmt.Sprintf("%#v", this.Body)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *FullStateDesc) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&alertspb.FullStateDesc{")
+	s = append(s, "State: "+fmt.Sprintf("%#v", this.State)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
 }
 
 func (m *AlertConfigDesc) Reset()      { *m = AlertConfigDesc{} }
@@ -628,6 +666,115 @@ func (m *FullStateDesc) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_FullStateDesc proto.InternalMessageInfo
+
+func sovAlerts(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozAlerts(x uint64) (n int) {
+	return sovAlerts(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintAlerts(dAtA []byte, offset int, v uint64) int {
+	offset -= sovAlerts(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipAlerts(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthAlerts
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipAlerts(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthAlerts
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthAlerts        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowAlerts          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupAlerts = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*AlertConfigDesc)(nil), "alerts.AlertConfigDesc")

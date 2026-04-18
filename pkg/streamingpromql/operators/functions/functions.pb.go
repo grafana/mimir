@@ -101,7 +101,7 @@ const (
 	FUNCTION_SHARDING_CONCAT             Function = 87
 )
 
-func skipField(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
+func skipField_Functions(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
 	switch typ {
 	case protowire.VarintType:
 		_, n := protowire.ConsumeVarint(b)

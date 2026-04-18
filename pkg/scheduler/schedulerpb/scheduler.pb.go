@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
+	"math/bits"
 	"strings"
 )
 
@@ -34,7 +35,7 @@ const (
 	SHUTTING_DOWN                SchedulerToFrontendStatus = 3
 )
 
-type SchedulerToQuerier_Payload interface {
+type isSchedulerToQuerier_Payload interface {
 	isSchedulerToQuerier_Payload()
 }
 
@@ -50,7 +51,7 @@ type SchedulerToQuerier_ProtobufRequest struct {
 
 func (*SchedulerToQuerier_ProtobufRequest) isSchedulerToQuerier_Payload() {}
 
-type FrontendToScheduler_Payload interface {
+type isFrontendToScheduler_Payload interface {
 	isFrontendToScheduler_Payload()
 }
 
@@ -75,8 +76,12 @@ type QuerierToScheduler struct {
 type SchedulerToQuerier struct {
 	// Query ID as reported by frontend. When querier sends the response back to frontend (using frontendAddress),
 	// it identifies the query by using this ID.
-	QueryID uint64                     `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
-	Payload SchedulerToQuerier_Payload `protobuf_oneof:"payload"`
+	QueryID uint64 `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*SchedulerToQuerier_HttpRequest
+	//	*SchedulerToQuerier_ProtobufRequest
+	Payload isSchedulerToQuerier_Payload `protobuf_oneof:"payload"`
 	// Where should querier send HTTP Response to (using FrontendForQuerier interface).
 	FrontendAddress string `protobuf:"bytes,3,opt,name=frontendAddress,proto3" json:"frontendAddress,omitempty"`
 	// User who initiated the request. Needed to send reply back to frontend.
@@ -109,10 +114,14 @@ type FrontendToScheduler struct {
 	// Each frontend manages its own queryIDs. Different frontends may use same set of query IDs.
 	QueryID uint64 `protobuf:"varint,3,opt,name=queryID,proto3" json:"queryID,omitempty"`
 	// Following are used by ENQUEUE only.
-	UserID                    string                      `protobuf:"bytes,4,opt,name=userID,proto3" json:"userID,omitempty"`
-	Payload                   FrontendToScheduler_Payload `protobuf_oneof:"payload"`
-	StatsEnabled              bool                        `protobuf:"varint,6,opt,name=statsEnabled,proto3" json:"statsEnabled,omitempty"`
-	AdditionalQueueDimensions []string                    `protobuf:"bytes,7,rep,name=additionalQueueDimensions,proto3" json:"additionalQueueDimensions,omitempty"`
+	UserID string `protobuf:"bytes,4,opt,name=userID,proto3" json:"userID,omitempty"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*FrontendToScheduler_HttpRequest
+	//	*FrontendToScheduler_ProtobufRequest
+	Payload                   isFrontendToScheduler_Payload `protobuf_oneof:"payload"`
+	StatsEnabled              bool                          `protobuf:"varint,6,opt,name=statsEnabled,proto3" json:"statsEnabled,omitempty"`
+	AdditionalQueueDimensions []string                      `protobuf:"bytes,7,rep,name=additionalQueueDimensions,proto3" json:"additionalQueueDimensions,omitempty"`
 }
 
 type SchedulerToFrontend struct {
@@ -244,10 +253,10 @@ func (m *NotifyQuerierShutdownResponse) Size() int {
 
 func (m *QuerierToScheduler) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -274,10 +283,10 @@ func (m *QuerierToScheduler) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *SchedulerToQuerier) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -351,10 +360,10 @@ func (m *SchedulerToQuerier) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *ProtobufRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -394,10 +403,10 @@ func (m *ProtobufRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *MetadataItem) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -431,10 +440,10 @@ func (m *MetadataItem) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *FrontendToScheduler) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -515,10 +524,10 @@ func (m *FrontendToScheduler) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *SchedulerToFrontend) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -550,10 +559,10 @@ func (m *SchedulerToFrontend) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *NotifyQuerierShutdownRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -580,10 +589,10 @@ func (m *NotifyQuerierShutdownRequest) MarshalToSizedBuffer(dAtA []byte) (int, e
 
 func (m *NotifyQuerierShutdownResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1511,18 +1520,11 @@ func (m *QuerierToScheduler) GetQuerierID() string {
 	return ""
 }
 
-func (m *SchedulerToQuerier) GetPayload() SchedulerToQuerier_Payload {
+func (m *SchedulerToQuerier) GetPayload() isSchedulerToQuerier_Payload {
 	if m != nil {
 		return m.Payload
 	}
 	return nil
-}
-
-func (m *SchedulerToQuerier) GetQueryID() uint64 {
-	if m != nil {
-		return m.QueryID
-	}
-	return 0
 }
 
 func (m *SchedulerToQuerier) GetHttpRequest() *httpgrpc.HTTPRequest {
@@ -1537,6 +1539,13 @@ func (m *SchedulerToQuerier) GetProtobufRequest() *ProtobufRequest {
 		return x.ProtobufRequest
 	}
 	return nil
+}
+
+func (m *SchedulerToQuerier) GetQueryID() uint64 {
+	if m != nil {
+		return m.QueryID
+	}
+	return 0
 }
 
 func (m *SchedulerToQuerier) GetFrontendAddress() string {
@@ -1595,9 +1604,23 @@ func (m *MetadataItem) GetValue() []string {
 	return nil
 }
 
-func (m *FrontendToScheduler) GetPayload() FrontendToScheduler_Payload {
+func (m *FrontendToScheduler) GetPayload() isFrontendToScheduler_Payload {
 	if m != nil {
 		return m.Payload
+	}
+	return nil
+}
+
+func (m *FrontendToScheduler) GetHttpRequest() *httpgrpc.HTTPRequest {
+	if x, ok := m.GetPayload().(*FrontendToScheduler_HttpRequest); ok {
+		return x.HttpRequest
+	}
+	return nil
+}
+
+func (m *FrontendToScheduler) GetProtobufRequest() *ProtobufRequest {
+	if x, ok := m.GetPayload().(*FrontendToScheduler_ProtobufRequest); ok {
+		return x.ProtobufRequest
 	}
 	return nil
 }
@@ -1628,20 +1651,6 @@ func (m *FrontendToScheduler) GetUserID() string {
 		return m.UserID
 	}
 	return ""
-}
-
-func (m *FrontendToScheduler) GetHttpRequest() *httpgrpc.HTTPRequest {
-	if x, ok := m.GetPayload().(*FrontendToScheduler_HttpRequest); ok {
-		return x.HttpRequest
-	}
-	return nil
-}
-
-func (m *FrontendToScheduler) GetProtobufRequest() *ProtobufRequest {
-	if x, ok := m.GetPayload().(*FrontendToScheduler_ProtobufRequest); ok {
-		return x.ProtobufRequest
-	}
-	return nil
 }
 
 func (m *FrontendToScheduler) GetStatsEnabled() bool {
@@ -2357,6 +2366,115 @@ func (m *NotifyQuerierShutdownResponse) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_NotifyQuerierShutdownResponse proto.InternalMessageInfo
+
+func sovScheduler(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozScheduler(x uint64) (n int) {
+	return sovScheduler(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintScheduler(dAtA []byte, offset int, v uint64) int {
+	offset -= sovScheduler(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipScheduler(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthScheduler
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipScheduler(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthScheduler
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthScheduler        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowScheduler          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupScheduler = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*QuerierToScheduler)(nil), "schedulerpb.QuerierToScheduler")

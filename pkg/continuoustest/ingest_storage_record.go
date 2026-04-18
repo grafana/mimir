@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"reflect"
 	"sync"
 	"time"
 
@@ -653,7 +654,7 @@ func HistogramEqual(this *mimirpb.Histogram, that interface{}) bool {
 		}
 	} else if this.Count == nil {
 		return false
-	} else if !this.Count.Equal(that1.Count) {
+	} else if !reflect.DeepEqual(this.Count, that1.Count) {
 		return false
 	}
 	if !floatEqualsEquateNaN(this.Sum, that1.Sum) {
@@ -671,7 +672,7 @@ func HistogramEqual(this *mimirpb.Histogram, that interface{}) bool {
 		}
 	} else if this.ZeroCount == nil {
 		return false
-	} else if !this.ZeroCount.Equal(that1.ZeroCount) {
+	} else if !reflect.DeepEqual(this.ZeroCount, that1.ZeroCount) {
 		return false
 	}
 	if len(this.NegativeSpans) != len(that1.NegativeSpans) {

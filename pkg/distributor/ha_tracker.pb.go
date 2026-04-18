@@ -8,6 +8,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"math/bits"
+	"strings"
 )
 
 type ReplicaDesc struct {
@@ -48,10 +50,10 @@ func (m *ReplicaDesc) Size() int {
 
 func (m *ReplicaDesc) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -96,7 +98,7 @@ func (m *ReplicaDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func skipField(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
+func skipField_HaTracker(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
 	switch typ {
 	case protowire.VarintType:
 		_, n := protowire.ConsumeVarint(b)
@@ -141,7 +143,7 @@ func (m *ReplicaDesc) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // replica
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_HaTracker(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -156,7 +158,7 @@ func (m *ReplicaDesc) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 2: // received_at
 			if typ != protowire.VarintType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_HaTracker(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -171,7 +173,7 @@ func (m *ReplicaDesc) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 3: // deleted_at
 			if typ != protowire.VarintType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_HaTracker(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -186,7 +188,7 @@ func (m *ReplicaDesc) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 4: // elected_at
 			if typ != protowire.VarintType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_HaTracker(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -201,7 +203,7 @@ func (m *ReplicaDesc) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 5: // elected_changes
 			if typ != protowire.VarintType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_HaTracker(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -215,7 +217,7 @@ func (m *ReplicaDesc) Unmarshal(b []byte) error {
 			m.ElectedChanges = int64(v)
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_HaTracker(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -297,6 +299,21 @@ func (this *ReplicaDesc) Equal(that interface{}) bool {
 	return true
 }
 
+func (this *ReplicaDesc) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 9)
+	s = append(s, "&distributor.ReplicaDesc{")
+	s = append(s, "Replica: "+fmt.Sprintf("%#v", this.Replica)+",\n")
+	s = append(s, "ReceivedAt: "+fmt.Sprintf("%#v", this.ReceivedAt)+",\n")
+	s = append(s, "DeletedAt: "+fmt.Sprintf("%#v", this.DeletedAt)+",\n")
+	s = append(s, "ElectedAt: "+fmt.Sprintf("%#v", this.ElectedAt)+",\n")
+	s = append(s, "ElectedChanges: "+fmt.Sprintf("%#v", this.ElectedChanges)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
 func (m *ReplicaDesc) Reset()      { *m = ReplicaDesc{} }
 func (*ReplicaDesc) ProtoMessage() {}
 func (m *ReplicaDesc) String() string {
@@ -336,6 +353,115 @@ func (m *ReplicaDesc) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_ReplicaDesc proto.InternalMessageInfo
+
+func sovHaTracker(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozHaTracker(x uint64) (n int) {
+	return sovHaTracker(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintHaTracker(dAtA []byte, offset int, v uint64) int {
+	offset -= sovHaTracker(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipHaTracker(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthHaTracker
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipHaTracker(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthHaTracker
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthHaTracker        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowHaTracker          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupHaTracker = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*ReplicaDesc)(nil), "distributor.ReplicaDesc")

@@ -8,6 +8,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"math/bits"
+	"strings"
 )
 
 type SplitFunctionCallDetails struct {
@@ -52,10 +54,10 @@ func (m *SplitRange) Size() int {
 
 func (m *SplitFunctionCallDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -92,10 +94,10 @@ func (m *SplitFunctionCallDetails) MarshalToSizedBuffer(dAtA []byte) (int, error
 
 func (m *SplitRange) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -133,7 +135,7 @@ func (m *SplitRange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func skipField(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
+func skipField_Node(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
 	switch typ {
 	case protowire.VarintType:
 		_, n := protowire.ConsumeVarint(b)
@@ -213,7 +215,7 @@ func (m *SplitFunctionCallDetails) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // splitRanges
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Node(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -231,7 +233,7 @@ func (m *SplitFunctionCallDetails) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 2: // innerNodeCacheKey
 			if typ != protowire.BytesType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Node(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -245,7 +247,7 @@ func (m *SplitFunctionCallDetails) Unmarshal(b []byte) error {
 			m.InnerNodeCacheKey = v
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Node(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -265,7 +267,7 @@ func (m *SplitRange) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // start
 			if typ != protowire.VarintType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Node(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -280,7 +282,7 @@ func (m *SplitRange) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 2: // end
 			if typ != protowire.VarintType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Node(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -295,7 +297,7 @@ func (m *SplitRange) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 3: // cacheable
 			if typ != protowire.VarintType {
-				n, err := skipField(b, num, typ)
+				n, err := skipField_Node(b, num, typ)
 				if err != nil {
 					return err
 				}
@@ -309,7 +311,7 @@ func (m *SplitRange) Unmarshal(b []byte) error {
 			m.Cacheable = v != 0
 			b = b[n:]
 		default:
-			n, err := skipField(b, num, typ)
+			n, err := skipField_Node(b, num, typ)
 			if err != nil {
 				return err
 			}
@@ -352,6 +354,31 @@ func (m *SplitRange) GetCacheable() bool {
 		return m.Cacheable
 	}
 	return false
+}
+
+func (this *SplitFunctionCallDetails) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&rangevectorsplitting.SplitFunctionCallDetails{")
+	s = append(s, "SplitRanges: "+fmt.Sprintf("%#v", this.SplitRanges)+",\n")
+	s = append(s, "InnerNodeCacheKey: "+fmt.Sprintf("%#v", this.InnerNodeCacheKey)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *SplitRange) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&rangevectorsplitting.SplitRange{")
+	s = append(s, "Start: "+fmt.Sprintf("%#v", this.Start)+",\n")
+	s = append(s, "End: "+fmt.Sprintf("%#v", this.End)+",\n")
+	s = append(s, "Cacheable: "+fmt.Sprintf("%#v", this.Cacheable)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
 }
 
 func (m *SplitFunctionCallDetails) Reset()      { *m = SplitFunctionCallDetails{} }
@@ -433,6 +460,115 @@ func (m *SplitRange) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_SplitRange proto.InternalMessageInfo
+
+func sovNode(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozNode(x uint64) (n int) {
+	return sovNode(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintNode(dAtA []byte, offset int, v uint64) int {
+	offset -= sovNode(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipNode(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthNode
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipNode(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthNode
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthNode        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowNode          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupNode = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*SplitFunctionCallDetails)(nil), "rangevectorsplitting.SplitFunctionCallDetails")

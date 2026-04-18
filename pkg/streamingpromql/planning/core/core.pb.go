@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"google.golang.org/protobuf/encoding/protowire"
 	"math"
+	"math/bits"
 	"strings"
 	"time"
 )
@@ -505,10 +506,10 @@ func (m *VectorMatchFillValues) Size() int {
 
 func (m *PositionRange) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -538,10 +539,10 @@ func (m *PositionRange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *BinaryExpressionHints) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -568,10 +569,10 @@ func (m *BinaryExpressionHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *AggregateExpressionDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -625,10 +626,10 @@ func (m *AggregateExpressionDetails) MarshalToSizedBuffer(dAtA []byte) (int, err
 
 func (m *BinaryExpressionDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -695,10 +696,10 @@ func (m *BinaryExpressionDetails) MarshalToSizedBuffer(dAtA []byte) (int, error)
 
 func (m *VectorMatching) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -759,10 +760,10 @@ func (m *VectorMatching) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *FunctionCallDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -811,10 +812,10 @@ func (m *FunctionCallDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *NumberLiteralDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -852,10 +853,10 @@ func (m *NumberLiteralDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *StringLiteralDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -894,10 +895,10 @@ func (m *StringLiteralDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *UnaryExpressionDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -934,10 +935,10 @@ func (m *UnaryExpressionDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 
 func (m *VectorSelectorDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1056,10 +1057,10 @@ func (m *VectorSelectorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *MatrixSelectorDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1188,10 +1189,10 @@ func (m *MatrixSelectorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *SubqueryDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1263,10 +1264,10 @@ func (m *SubqueryDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *StepInvariantExpressionDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1286,10 +1287,10 @@ func (m *StepInvariantExpressionDetails) MarshalToSizedBuffer(dAtA []byte) (int,
 
 func (m *LabelMatcher) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1328,10 +1329,10 @@ func (m *LabelMatcher) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *DeduplicateAndMergeDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1351,10 +1352,10 @@ func (m *DeduplicateAndMergeDetails) MarshalToSizedBuffer(dAtA []byte) (int, err
 
 func (m *DropNameDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1374,10 +1375,10 @@ func (m *DropNameDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *NoOpDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1397,10 +1398,10 @@ func (m *NoOpDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *VectorMatchFillValues) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -4374,6 +4375,115 @@ func (m *VectorMatchFillValues) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_VectorMatchFillValues proto.InternalMessageInfo
+
+func sovCore(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozCore(x uint64) (n int) {
+	return sovCore(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintCore(dAtA []byte, offset int, v uint64) int {
+	offset -= sovCore(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipCore(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthCore
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipCore(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthCore
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthCore        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowCore          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupCore = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*PositionRange)(nil), "core.PositionRange")

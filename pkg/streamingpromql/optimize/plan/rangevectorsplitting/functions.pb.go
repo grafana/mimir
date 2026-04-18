@@ -11,6 +11,8 @@ import (
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"math"
+	"math/bits"
+	"strings"
 )
 
 type SumOverTimeIntermediate struct {
@@ -281,10 +283,10 @@ func (m *AvgOverTimeIntermediateList) Size() int {
 
 func (m *SumOverTimeIntermediate) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -336,10 +338,10 @@ func (m *SumOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error)
 
 func (m *SumOverTimeIntermediateList) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -369,10 +371,10 @@ func (m *SumOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, er
 
 func (m *CountOverTimeIntermediate) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -408,10 +410,10 @@ func (m *CountOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, erro
 
 func (m *CountOverTimeIntermediateList) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -441,10 +443,10 @@ func (m *CountOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, 
 
 func (m *MinMaxOverTimeIntermediate) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -490,10 +492,10 @@ func (m *MinMaxOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, err
 
 func (m *MinMaxOverTimeIntermediateList) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -523,10 +525,10 @@ func (m *MinMaxOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int,
 
 func (m *RateIntermediate) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -639,10 +641,10 @@ func (m *RateIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *RateIntermediateList) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -672,10 +674,10 @@ func (m *RateIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *FirstLastOverTimeIntermediate) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -721,10 +723,10 @@ func (m *FirstLastOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, 
 
 func (m *FirstLastOverTimeIntermediateList) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -754,10 +756,10 @@ func (m *FirstLastOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (i
 
 func (m *AvgOverTimeIntermediate) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -836,10 +838,10 @@ func (m *AvgOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error)
 
 func (m *AvgOverTimeIntermediateList) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -2358,6 +2360,163 @@ func (this *AvgOverTimeIntermediateList) Equal(that interface{}) bool {
 	return true
 }
 
+func (this *SumOverTimeIntermediate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&rangevectorsplitting.SumOverTimeIntermediate{")
+	s = append(s, "SumF: "+fmt.Sprintf("%#v", this.SumF)+",\n")
+	s = append(s, "HasFloat: "+fmt.Sprintf("%#v", this.HasFloat)+",\n")
+	s = append(s, "SumC: "+fmt.Sprintf("%#v", this.SumC)+",\n")
+	s = append(s, "SumH: "+fmt.Sprintf("%#v", this.SumH)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *SumOverTimeIntermediateList) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rangevectorsplitting.SumOverTimeIntermediateList{")
+	s = append(s, "Results: "+fmt.Sprintf("%#v", this.Results)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *CountOverTimeIntermediate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&rangevectorsplitting.CountOverTimeIntermediate{")
+	s = append(s, "F: "+fmt.Sprintf("%#v", this.F)+",\n")
+	s = append(s, "HasFloat: "+fmt.Sprintf("%#v", this.HasFloat)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *CountOverTimeIntermediateList) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rangevectorsplitting.CountOverTimeIntermediateList{")
+	s = append(s, "Results: "+fmt.Sprintf("%#v", this.Results)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *MinMaxOverTimeIntermediate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&rangevectorsplitting.MinMaxOverTimeIntermediate{")
+	s = append(s, "F: "+fmt.Sprintf("%#v", this.F)+",\n")
+	s = append(s, "HasFloat: "+fmt.Sprintf("%#v", this.HasFloat)+",\n")
+	s = append(s, "HasHistogram: "+fmt.Sprintf("%#v", this.HasHistogram)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *MinMaxOverTimeIntermediateList) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rangevectorsplitting.MinMaxOverTimeIntermediateList{")
+	s = append(s, "Results: "+fmt.Sprintf("%#v", this.Results)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *RateIntermediate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 15)
+	s = append(s, "&rangevectorsplitting.RateIntermediate{")
+	s = append(s, "SampleCount: "+fmt.Sprintf("%#v", this.SampleCount)+",\n")
+	s = append(s, "IsHistogram: "+fmt.Sprintf("%#v", this.IsHistogram)+",\n")
+	s = append(s, "FirstSample: "+fmt.Sprintf("%#v", this.FirstSample)+",\n")
+	s = append(s, "LastSample: "+fmt.Sprintf("%#v", this.LastSample)+",\n")
+	s = append(s, "Delta: "+fmt.Sprintf("%#v", this.Delta)+",\n")
+	s = append(s, "FirstHistogram: "+fmt.Sprintf("%#v", this.FirstHistogram)+",\n")
+	s = append(s, "LastHistogram: "+fmt.Sprintf("%#v", this.LastHistogram)+",\n")
+	s = append(s, "DeltaHistogram: "+fmt.Sprintf("%#v", this.DeltaHistogram)+",\n")
+	s = append(s, "FirstHistogramTimestamp: "+fmt.Sprintf("%#v", this.FirstHistogramTimestamp)+",\n")
+	s = append(s, "LastHistogramTimestamp: "+fmt.Sprintf("%#v", this.LastHistogramTimestamp)+",\n")
+	s = append(s, "ForceEmptyResult: "+fmt.Sprintf("%#v", this.ForceEmptyResult)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *RateIntermediateList) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rangevectorsplitting.RateIntermediateList{")
+	s = append(s, "Results: "+fmt.Sprintf("%#v", this.Results)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *FirstLastOverTimeIntermediate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&rangevectorsplitting.FirstLastOverTimeIntermediate{")
+	s = append(s, "F: "+fmt.Sprintf("%#v", this.F)+",\n")
+	s = append(s, "HasFloat: "+fmt.Sprintf("%#v", this.HasFloat)+",\n")
+	s = append(s, "H: "+fmt.Sprintf("%#v", this.H)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *FirstLastOverTimeIntermediateList) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rangevectorsplitting.FirstLastOverTimeIntermediateList{")
+	s = append(s, "Results: "+fmt.Sprintf("%#v", this.Results)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *AvgOverTimeIntermediate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 12)
+	s = append(s, "&rangevectorsplitting.AvgOverTimeIntermediate{")
+	s = append(s, "SumF: "+fmt.Sprintf("%#v", this.SumF)+",\n")
+	s = append(s, "IncrementalAvg: "+fmt.Sprintf("%#v", this.IncrementalAvg)+",\n")
+	s = append(s, "CountF: "+fmt.Sprintf("%#v", this.CountF)+",\n")
+	s = append(s, "UseIncrementalCalc: "+fmt.Sprintf("%#v", this.UseIncrementalCalc)+",\n")
+	s = append(s, "CompF: "+fmt.Sprintf("%#v", this.CompF)+",\n")
+	s = append(s, "AvgH: "+fmt.Sprintf("%#v", this.AvgH)+",\n")
+	s = append(s, "CountH: "+fmt.Sprintf("%#v", this.CountH)+",\n")
+	s = append(s, "ForceEmptyResult: "+fmt.Sprintf("%#v", this.ForceEmptyResult)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
+func (this *AvgOverTimeIntermediateList) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rangevectorsplitting.AvgOverTimeIntermediateList{")
+	s = append(s, "Results: "+fmt.Sprintf("%#v", this.Results)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+
 func (m *SumOverTimeIntermediate) Reset()      { *m = SumOverTimeIntermediate{} }
 func (*SumOverTimeIntermediate) ProtoMessage() {}
 func (m *SumOverTimeIntermediate) String() string {
@@ -2837,6 +2996,115 @@ func (m *AvgOverTimeIntermediateList) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_AvgOverTimeIntermediateList proto.InternalMessageInfo
+
+func sovFunctions(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozFunctions(x uint64) (n int) {
+	return sovFunctions(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintFunctions(dAtA []byte, offset int, v uint64) int {
+	offset -= sovFunctions(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipFunctions(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthFunctions
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipFunctions(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthFunctions
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthFunctions        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowFunctions          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupFunctions = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*SumOverTimeIntermediate)(nil), "rangevectorsplitting.SumOverTimeIntermediate")

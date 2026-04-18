@@ -189,45 +189,9 @@ images: ## Print all image names.
 	$(info $(IMAGE_NAMES))
 	@echo > /dev/null
 
-# Generating proto code is automated.
-# Proto files compiled by wiresmith (new compiler).
-WIRESMITH_PROTOS := \
-	./pkg/distributor/ha_tracker.proto \
-	./pkg/streamingpromql/operators/functions/functions.proto \
-	./pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node.proto \
-	./pkg/streamingpromql/optimize/plan/multiaggregation/node.proto \
-	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.proto \
-	./pkg/streamingpromql/optimize/plan/remoteexec/node.proto \
-	./pkg/storegateway/hintspb/hints.proto \
-	./pkg/alertmanager/alertspb/alerts.proto \
-	./pkg/storegateway/storepb/types.proto \
-	./pkg/storegateway/storepb/cache.proto \
-	./pkg/querier/querierpb/querier.proto \
-	./pkg/querier/stats/stats.proto \
-	./pkg/streamingpromql/planning/core/core.proto \
-	./pkg/streamingpromql/planning/plan.proto \
-	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto \
-	./pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto \
-	./pkg/ruler/rulespb/rules.proto \
-	./pkg/storage/indexheader/indexheaderpb/sparse.proto \
-	./pkg/distributor/distributorpb/distributor.proto \
-	./pkg/blockbuilder/schedulerpb/scheduler.proto \
-	./pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler.proto \
-	./pkg/usagetracker/usagetrackerpb/usagetracker.proto \
-	./pkg/alertmanager/alertmanagerpb/alertmanager.proto \
-	./pkg/storegateway/storegatewaypb/gateway.proto \
-	./pkg/scheduler/schedulerpb/scheduler.proto \
-	./pkg/storegateway/storepb/rpc.proto \
-	./pkg/ruler/ruler.proto \
-	./pkg/frontend/v2/frontendv2pb/frontend.proto \
-	./pkg/frontend/querymiddleware/model.proto \
-	./pkg/ingester/client/ingester.proto \
-	./pkg/mimirpb/mimir.proto
-WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
-
-# Proto files compiled by protoc+gogoslick (legacy).
-PROTO_DEFS := $(filter-out $(WIRESMITH_PROTOS),$(shell find . $(DONT_FIND) -type f -name '*.proto' -print))
-PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS)) $(WIRESMITH_GOS)
+# Generating proto code is automated. All proto files are compiled by wiresmith.
+PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
+PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
 PROMQL_TESTS := $(shell find pkg/streamingpromql/testdata/ours pkg/streamingpromql/testdata/ours-only $(DONT_FIND) -type f -path '*.test' -print)
 
@@ -312,11 +276,11 @@ protos: $(PROTO_GOS)
 
 GENERATE_FILES ?= true
 
-# Wiresmith compilation rule for proto files in WIRESMITH_PROTOS.
-# wiresmith appends the proto package dir to --out, so we set --out to the
+# Wiresmith compilation rule for all proto files.
+# wiresmith appends the go_package dir to --out, so we set --out to the
 # parent of the target directory. E.g. for pkg/distributor/ha_tracker.pb.go
-# with package "distributor", --out=pkg produces pkg/distributor/ha_tracker.go.
-$(WIRESMITH_GOS): %.pb.go: %.proto
+# with package "distributor", --out=pkg produces pkg/distributor/ha_tracker.pb.go.
+%.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
 	wiresmith \
 		--proto_path=$(@D) \
@@ -332,15 +296,6 @@ ifeq ($(GENERATE_FILES),true)
 		./$<
 else
 	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
-endif
-
-# Gogoslick compilation rule for remaining proto files.
-%.pb.go: %.proto
-ifeq ($(GENERATE_FILES),true)
-	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
-else
-	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
-	@echo "If this is unexpected, check if the last modified timestamps on $@ and $(patsubst %.pb.go,%.proto,$@) are correct."
 endif
 
 lint-packaging-scripts: packaging/nfpm/mimir/postinstall.sh packaging/nfpm/mimir/preremove.sh
