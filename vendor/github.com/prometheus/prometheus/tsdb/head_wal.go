@@ -639,6 +639,10 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	// We do not reset oooHeadChunk because that is being replayed from a different WAL
 	// and has not been replayed here.
 	mSeries.nextAt = 0
+	if mSeries.headChunkCount.Load() >= 2 {
+		stripe := uint64(mSeries.ref) & uint64(h.series.size-1)
+		h.series.mmapReady[stripe].Add(-1)
+	}
 	mSeries.headChunks = nil
 	mSeries.headChunkCount.Store(0)
 	mSeries.app = nil
@@ -1727,7 +1731,12 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
 				series.headChunks = csr.mc
-				series.headChunkCount.Store(uint32(csr.mc.len()))
+				chunkCount := uint32(csr.mc.len())
+				series.headChunkCount.Store(chunkCount)
+				if chunkCount >= 2 {
+					stripe := uint64(series.ref) & uint64(h.series.size-1)
+					h.series.mmapReady[stripe].Add(1)
+				}
 				series.lastValue = csr.lastValue
 				series.lastHistogramValue = csr.lastHistogramValue
 				series.lastFloatHistogramValue = csr.lastFloatHistogramValue

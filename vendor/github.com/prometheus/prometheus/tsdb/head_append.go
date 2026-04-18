@@ -1474,6 +1474,10 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
+			if series.headChunkCount.Load() == 2 {
+				stripe := uint64(series.ref) & uint64(a.head.series.size-1)
+				a.head.series.mmapReady[stripe].Add(1)
+			}
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1585,6 +1589,10 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
+			if series.headChunkCount.Load() == 2 {
+				stripe := uint64(series.ref) & uint64(a.head.series.size-1)
+				a.head.series.mmapReady[stripe].Add(1)
+			}
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1696,6 +1704,10 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
+			if series.headChunkCount.Load() == 2 {
+				stripe := uint64(series.ref) & uint64(a.head.series.size-1)
+				a.head.series.mmapReady[stripe].Add(1)
+			}
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)

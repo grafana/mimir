@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	stdatomic "sync/atomic" //nolint:depguard
@@ -1059,6 +1060,10 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			// The head chunk was completed and was m-mapped after taking the snapshot.
 			// Hence remove this chunk.
 			ms.nextAt = 0
+			if ms.headChunkCount.Load() >= 2 {
+				stripe := uint64(ms.ref) & uint64(h.series.size-1)
+				h.series.mmapReady[stripe].Add(-1)
+			}
 			ms.headChunks = nil
 			ms.headChunkCount.Store(0)
 			ms.app = nil
@@ -1988,6 +1993,10 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 func (h *Head) mmapHeadChunks() {
 	var count int
 	for i := range h.series.size {
+		if h.series.mmapReady[i].Load() == 0 {
+			continue // No series in this stripe need mmapping.
+		}
+
 		h.series.locks[i].RLock()
 		for _, series := range h.series.series[i] {
 			if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
@@ -1995,8 +2004,12 @@ func (h *Head) mmapHeadChunks() {
 			}
 
 			series.Lock()
-			count += series.mmapChunks(h.chunkDiskMapper)
+			n := series.mmapChunks(h.chunkDiskMapper)
 			series.Unlock()
+			if n > 0 {
+				count += n
+				h.series.mmapReady[i].Add(-1)
+			}
 		}
 		h.series.locks[i].RUnlock()
 	}
@@ -2109,6 +2122,7 @@ type stripeSeries struct {
 	series                  []map[chunks.HeadSeriesRef]*memSeries // Sharded by ref. A series ref is the value of `size` when the series was being newly added.
 	hashes                  []seriesHashmap                       // Sharded by label hash.
 	locks                   []stripeLock                          // Sharded by ref for series access, by label hash for hashes access.
+	mmapReady               []paddedAtomicInt32                   // Per-stripe count of series with headChunkCount >= 2 (ready for mmapping).
 	seriesLifecycleCallback SeriesLifecycleCallback
 }
 
@@ -2118,12 +2132,20 @@ type stripeLock struct {
 	_ [40]byte
 }
 
+// paddedAtomicInt32 is an atomic int32 padded to 64 bytes to avoid false sharing.
+type paddedAtomicInt32 struct {
+	stdatomic.Int32
+	// Padding to avoid multiple counters being on the same cache line.
+	_ [60]byte
+}
+
 func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *stripeSeries {
 	s := &stripeSeries{
 		size:                    stripeSize,
 		series:                  make([]map[chunks.HeadSeriesRef]*memSeries, stripeSize),
 		hashes:                  make([]seriesHashmap, stripeSize),
 		locks:                   make([]stripeLock, stripeSize),
+		mmapReady:               make([]paddedAtomicInt32, stripeSize),
 		seriesLifecycleCallback: seriesCallback,
 	}
 
@@ -2161,7 +2183,12 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		series.Lock()
 		defer series.Unlock()
 
+		wasMmapReady := series.headChunkCount.Load() >= 2
 		rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef)
+		if wasMmapReady && series.headChunkCount.Load() < 2 {
+			stripe := uint64(series.ref) & uint64(s.size-1)
+			s.mmapReady[stripe].Add(-1)
+		}
 
 		if len(series.mmappedChunks) > 0 {
 			seq, _ := series.mmappedChunks[0].ref.Unpack()
@@ -2305,6 +2332,9 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		if series.headChunks != nil {
 			chunksRemoved += series.headChunks.len()
 		}
+		if series.headChunkCount.Load() >= 2 {
+			h.series.mmapReady[refShard].Add(-1)
+		}
 		// Clear to prevent a double-subtraction from the chunksRemoved gauge if
 		// resetSeriesWithMMappedChunks is queued on the same WAL-replay processor
 		// after this deletion (it would otherwise subtract len(mmappedChunks) again).
@@ -2367,6 +2397,10 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 			rmChunks += series.headChunks.len()
 		}
 		rmChunks += len(series.mmappedChunks)
+		if series.headChunkCount.Load() >= 2 {
+			stripe := uint64(series.ref) & uint64(s.size-1)
+			s.mmapReady[stripe].Add(-1)
+		}
 
 		// The series is gone entirely. We need to keep the series lock
 		// and make sure we have acquired the stripe locks for hash and ID of the
@@ -2707,6 +2741,22 @@ func (mc *memChunk) len() (count int) {
 		elem = elem.prev
 	}
 	return count
+}
+
+func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
+	if head == nil {
+		return buf
+	}
+	// Single walk: append newest-to-oldest (following prev pointers), then
+	// reverse to oldest-to-newest. Pointer-chasing the linked list is the
+	// expensive part; slices.Reverse on a contiguous array is essentially
+	// free by comparison.
+	hc := buf
+	for elem := head; elem != nil; elem = elem.prev {
+		hc = append(hc, elem)
+	}
+	slices.Reverse(hc)
+	return hc
 }
 
 // oldest returns the oldest element on the list.
