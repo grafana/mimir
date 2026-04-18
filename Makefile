@@ -216,7 +216,8 @@ WIRESMITH_PROTOS := \
 	./pkg/usagetracker/usagetrackerpb/usagetracker.proto \
 	./pkg/alertmanager/alertmanagerpb/alertmanager.proto \
 	./pkg/storegateway/storegatewaypb/gateway.proto \
-	./pkg/scheduler/schedulerpb/scheduler.proto
+	./pkg/scheduler/schedulerpb/scheduler.proto \
+	./pkg/storegateway/storepb/rpc.proto
 WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
 
 # Proto files compiled by protoc+gogoslick (legacy).
