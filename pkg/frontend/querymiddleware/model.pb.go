@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"math/bits"
 	"strings"
 )
 
@@ -267,10 +268,10 @@ func (m *CachedHTTPHeader) Size() int {
 
 func (m *PrometheusHeader) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -304,10 +305,10 @@ func (m *PrometheusHeader) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *PrometheusResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -382,10 +383,10 @@ func (m *PrometheusResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *PrometheusData) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -422,10 +423,10 @@ func (m *PrometheusData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *SampleStream) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -477,10 +478,10 @@ func (m *SampleStream) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *CachedError) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -521,10 +522,10 @@ func (m *CachedError) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *CachedResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -561,10 +562,10 @@ func (m *CachedResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *Extent) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -616,10 +617,10 @@ func (m *Extent) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *Options) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -664,10 +665,10 @@ func (m *Options) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *QueryStatistics) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -699,10 +700,10 @@ func (m *QueryStatistics) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *CachedHTTPResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -751,10 +752,10 @@ func (m *CachedHTTPResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *CachedHTTPHeader) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -3046,6 +3047,115 @@ func (m *CachedHTTPHeader) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_CachedHTTPHeader proto.InternalMessageInfo
+
+func sovModel(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozModel(x uint64) (n int) {
+	return sovModel(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintModel(dAtA []byte, offset int, v uint64) int {
+	offset -= sovModel(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipModel(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthModel
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipModel(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthModel
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthModel        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowModel          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupModel = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*PrometheusHeader)(nil), "queryrange.PrometheusHeader")

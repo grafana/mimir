@@ -1,6 +1,6 @@
 --- a/pkg/ruler/ruler.pb.go
 +++ b/pkg/ruler/ruler.pb.go
-@@ -40,9 +40,6 @@
+@@ -41,9 +41,6 @@
  }
  
  type RulesResponse struct {

@@ -8,12 +8,13 @@
  	"github.com/grafana/wiresmith/gen/protohelpers"
  	"google.golang.org/grpc"
  	"google.golang.org/grpc/codes"
-@@ -55,8 +54,6 @@
+@@ -56,9 +55,6 @@
  }
  
  type QueryResultStreamRequest struct {
+-	// Keep reference to buffer for unsafe references.
 -	mimirpb.BufferHolder
 -
- 	QueryID uint64                        `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
- 	Data    QueryResultStreamRequest_Data `protobuf_oneof:"data"`
- }
+ 	QueryID uint64 `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
+ 	// Types that are valid to be assigned to Data:
+ 	//

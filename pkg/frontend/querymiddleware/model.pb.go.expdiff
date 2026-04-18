@@ -1,6 +1,6 @@
 --- a/pkg/frontend/querymiddleware/model.pb.go
 +++ b/pkg/frontend/querymiddleware/model.pb.go
-@@ -20,9 +20,6 @@
+@@ -21,9 +21,6 @@
  }
  
  type PrometheusResponse struct {

@@ -8,17 +8,16 @@
  	"github.com/grafana/wiresmith/gen/protohelpers"
  	"github.com/prometheus/prometheus/model/histogram"
  	"google.golang.org/protobuf/encoding/protowire"
-@@ -165,9 +164,6 @@
+@@ -165,8 +164,6 @@
  func (*QueryResponse_Matrix) isQueryResponse_Data() {}
  
  type WriteRequest struct {
 -	BufferHolder
 -	sourceBufferHolders map[uintptr]BufferHolder
--
  	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
  	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3" json:"Source,omitempty"`
  	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
-@@ -179,12 +175,6 @@
+@@ -178,11 +175,6 @@
  	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
  	// Skip label count validation.
  	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
@@ -27,68 +26,61 @@
 -	skipDeduplicateMetadata bool
 -	unmarshalFromRW2 bool
 -	rw2symbols       rw2PagedSymbols
--
  }
  
  type WriteResponse struct {
-@@ -208,8 +198,6 @@
+@@ -206,7 +198,6 @@
  	// Zero value means value not set. If you need to use exactly zero value for
  	// the timestamp, use 1 millisecond before or after.
  	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
 -	SkipUnmarshalingExemplars bool
--
  }
  
  type LabelPair struct {
-@@ -2515,9 +2503,6 @@
+@@ -2526,8 +2517,6 @@
  			m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, field5count)
  		}
  	}
 -	var metadata metadataSet
 -	seenFirstSymbol := false
--
  	for len(b) > 0 {
  		num, typ, tagLen := protowire.ConsumeTag(b)
  		if tagLen < 0 {
-@@ -2526,8 +2511,6 @@
+@@ -2536,7 +2525,6 @@
  		b = b[tagLen:]
  		switch num {
  		case 1: // timeseries
 -			if m.unmarshalFromRW2 { return errorUnexpectedRW1Timeseries }
--
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2541,9 +2524,7 @@
+@@ -2550,8 +2538,7 @@
  				return fmt.Errorf("invalid bytes")
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 -			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
--
 -			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 +			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v); err != nil {
  				return err
  			}
  			b = b[n:]
-@@ -2563,8 +2544,6 @@
+@@ -2571,7 +2558,6 @@
  			m.Source = WriteRequest_SourceEnum(v)
  			b = b[n:]
  		case 3: // metadata
 -			if m.unmarshalFromRW2 { return errorUnexpectedRW1Metadata }
--
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2583,8 +2562,6 @@
+@@ -2590,7 +2576,6 @@
  			}
  			b = b[n:]
  		case 4: // symbolsRW2
 -			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Symbols }
--
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2593,15 +2570,13 @@
+@@ -2599,14 +2584,13 @@
  				b = b[n:]
  				continue
  			}
@@ -105,11 +97,10 @@
  			b = b[n:]
  		case 5: // timeseriesRW2
 -			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Timeseries }
--
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2614,10 +2589,8 @@
+@@ -2619,10 +2603,8 @@
  			if n < 0 {
  				return fmt.Errorf("invalid bytes")
  			}
@@ -122,7 +113,7 @@
  				return err
  			}
  			b = b[n:]
-@@ -2659,11 +2632,6 @@
+@@ -2664,10 +2646,6 @@
  			b = b[n:]
  		}
  	}
@@ -130,11 +121,10 @@
 -		if metadata != nil { m.Metadata = metadata.slice() }
 -		m.rw2symbols.releasePages()
 -	}
--
  	return nil
  }
  
-@@ -2860,11 +2828,9 @@
+@@ -2864,11 +2842,9 @@
  			if n < 0 {
  				return fmt.Errorf("invalid bytes")
  			}
@@ -149,7 +139,7 @@
  			}
  			b = b[n:]
  		case 4: // histograms
-@@ -9369,594 +9335,3 @@
+@@ -9373,594 +9349,3 @@
  func init() {
  	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)
  }

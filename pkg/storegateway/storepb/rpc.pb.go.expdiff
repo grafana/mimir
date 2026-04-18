@@ -7,14 +7,14 @@
 -	"github.com/grafana/mimir/pkg/mimirpb"
  	"github.com/grafana/wiresmith/gen/protohelpers"
  	"google.golang.org/protobuf/encoding/protowire"
- 	"strings"
-@@ -109,9 +108,6 @@
+ 	"math/bits"
+@@ -110,9 +109,6 @@
  }
  
  type SeriesResponse struct {
 -	// Keep reference to buffer for unsafe references.
 -	mimirpb.BufferHolder
 -
- 	Result SeriesResponse_Result `protobuf_oneof:"result"`
- }
- 
+ 	// Types that are valid to be assigned to Result:
+ 	//
+ 	//	*SeriesResponse_Warning

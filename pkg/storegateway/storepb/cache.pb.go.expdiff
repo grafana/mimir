@@ -1,6 +1,6 @@
 --- a/pkg/storegateway/storepb/cache.pb.go
 +++ b/pkg/storegateway/storepb/cache.pb.go
-@@ -14,9 +14,6 @@
+@@ -15,9 +15,6 @@
  )
  
  type CachedSeries struct {

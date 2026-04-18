@@ -167,7 +167,6 @@ func (*QueryResponse_Matrix) isQueryResponse_Data() {}
 type WriteRequest struct {
 	BufferHolder
 	sourceBufferHolders map[uintptr]BufferHolder
-
 	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
 	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3" json:"Source,omitempty"`
 	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
@@ -184,7 +183,6 @@ type WriteRequest struct {
 	skipDeduplicateMetadata bool
 	unmarshalFromRW2 bool
 	rw2symbols       rw2PagedSymbols
-
 }
 
 type WriteResponse struct {
@@ -209,7 +207,6 @@ type TimeSeries struct {
 	// the timestamp, use 1 millisecond before or after.
 	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
 	SkipUnmarshalingExemplars bool
-
 }
 
 type LabelPair struct {
@@ -243,6 +240,10 @@ type Exemplar struct {
 
 // This is based on https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
 type Histogram struct {
+	// Types that are valid to be assigned to Count:
+	//
+	//	*Histogram_CountInt
+	//	*Histogram_CountFloat
 	Count isHistogram_Count `protobuf_oneof:"count"`
 	Sum   float64           `protobuf:"fixed64,3,opt,name=sum,proto3" json:"sum,omitempty"`
 	// The schema defines the bucket schema. Currently, valid numbers
@@ -252,9 +253,13 @@ type Histogram struct {
 	// bucket boundary is the previous boundary times 2^(2^-n). In the
 	// future, more bucket schemas may be added using numbers < -4 or >
 	// 8.
-	Schema        int32                 `protobuf:"zigzag32,4,opt,name=schema,proto3" json:"schema,omitempty"`
-	ZeroThreshold float64               `protobuf:"fixed64,5,opt,name=zero_threshold,json=zeroThreshold,proto3" json:"zero_threshold,omitempty"`
-	ZeroCount     isHistogram_ZeroCount `protobuf_oneof:"zero_count"`
+	Schema        int32   `protobuf:"zigzag32,4,opt,name=schema,proto3" json:"schema,omitempty"`
+	ZeroThreshold float64 `protobuf:"fixed64,5,opt,name=zero_threshold,json=zeroThreshold,proto3" json:"zero_threshold,omitempty"`
+	// Types that are valid to be assigned to ZeroCount:
+	//
+	//	*Histogram_ZeroCountInt
+	//	*Histogram_ZeroCountFloat
+	ZeroCount isHistogram_ZeroCount `protobuf_oneof:"zero_count"`
 	// Negative Buckets.
 	NegativeSpans []BucketSpan `protobuf:"bytes,8,rep,name=negative_spans,json=negativeSpans,proto3" json:"negative_spans"`
 	// Use either "negative_deltas" or "negative_counts", the former for
@@ -339,12 +344,18 @@ type SampleHistogramPair struct {
 }
 
 type QueryResponse struct {
-	Status    QueryStatus          `protobuf:"varint,1,opt,name=status,proto3" json:"status,omitempty"`
-	ErrorType QueryErrorType       `protobuf:"varint,2,opt,name=error_type,json=errorType,proto3" json:"error_type,omitempty"`
-	Error     string               `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
-	Data      isQueryResponse_Data `protobuf_oneof:"data"`
-	Warnings  []string             `protobuf:"bytes,8,rep,name=warnings,proto3" json:"warnings,omitempty"`
-	Infos     []string             `protobuf:"bytes,9,rep,name=infos,proto3" json:"infos,omitempty"`
+	Status    QueryStatus    `protobuf:"varint,1,opt,name=status,proto3" json:"status,omitempty"`
+	ErrorType QueryErrorType `protobuf:"varint,2,opt,name=error_type,json=errorType,proto3" json:"error_type,omitempty"`
+	Error     string         `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	// Types that are valid to be assigned to Data:
+	//
+	//	*QueryResponse_String_
+	//	*QueryResponse_Vector
+	//	*QueryResponse_Scalar
+	//	*QueryResponse_Matrix
+	Data     isQueryResponse_Data `protobuf_oneof:"data"`
+	Warnings []string             `protobuf:"bytes,8,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	Infos    []string             `protobuf:"bytes,9,rep,name=infos,proto3" json:"infos,omitempty"`
 }
 
 type StringData struct {
@@ -2517,7 +2528,6 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 	}
 	var metadata metadataSet
 	seenFirstSymbol := false
-
 	for len(b) > 0 {
 		num, typ, tagLen := protowire.ConsumeTag(b)
 		if tagLen < 0 {
@@ -2527,7 +2537,6 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 		switch num {
 		case 1: // timeseries
 			if m.unmarshalFromRW2 { return errorUnexpectedRW1Timeseries }
-
 			if typ != protowire.BytesType {
 				n, err := skipField_Mimir(b, num, typ)
 				if err != nil {
@@ -2542,7 +2551,6 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			}
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
-
 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
@@ -2564,7 +2572,6 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 3: // metadata
 			if m.unmarshalFromRW2 { return errorUnexpectedRW1Metadata }
-
 			if typ != protowire.BytesType {
 				n, err := skipField_Mimir(b, num, typ)
 				if err != nil {
@@ -2584,7 +2591,6 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 4: // symbolsRW2
 			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Symbols }
-
 			if typ != protowire.BytesType {
 				n, err := skipField_Mimir(b, num, typ)
 				if err != nil {
@@ -2601,7 +2607,6 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			b = b[n:]
 		case 5: // timeseriesRW2
 			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Timeseries }
-
 			if typ != protowire.BytesType {
 				n, err := skipField_Mimir(b, num, typ)
 				if err != nil {
@@ -2663,7 +2668,6 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 		if metadata != nil { m.Metadata = metadata.slice() }
 		m.rw2symbols.releasePages()
 	}
-
 	return nil
 }
 

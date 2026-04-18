@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 	"math"
+	"math/bits"
 	"strings"
 )
 
@@ -186,8 +187,8 @@ type MetricsForLabelMatchersResponse struct {
 }
 
 type MetricsMetadataRequest struct {
-	Limit          int32  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
-	LimitPerMetric int32  `protobuf:"varint,2,opt,name=limit_per_metric,json=limitPerMetric,proto3" json:"limit_per_metric,omitempty"`
+	Limit          int32  `protobuf:"zigzag32,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	LimitPerMetric int32  `protobuf:"zigzag32,2,opt,name=limit_per_metric,json=limitPerMetric,proto3" json:"limit_per_metric,omitempty"`
 	Metric         string `protobuf:"bytes,3,opt,name=metric,proto3" json:"metric,omitempty"`
 }
 
@@ -614,10 +615,10 @@ func (m *LabelMatcher) Size() int {
 
 func (m *LabelNamesAndValuesRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -652,10 +653,10 @@ func (m *LabelNamesAndValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, err
 
 func (m *LabelNamesAndValuesResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -685,10 +686,10 @@ func (m *LabelNamesAndValuesResponse) MarshalToSizedBuffer(dAtA []byte) (int, er
 
 func (m *LabelValues) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -722,10 +723,10 @@ func (m *LabelValues) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelValuesCardinalityRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -767,10 +768,10 @@ func (m *LabelValuesCardinalityRequest) MarshalToSizedBuffer(dAtA []byte) (int, 
 
 func (m *LabelValuesCardinalityResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -800,10 +801,10 @@ func (m *LabelValuesCardinalityResponse) MarshalToSizedBuffer(dAtA []byte) (int,
 
 func (m *LabelValueSeriesCount_LabelValueSeriesEntry) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -835,10 +836,10 @@ func (m *LabelValueSeriesCount_LabelValueSeriesEntry) MarshalToSizedBuffer(dAtA 
 
 func (m *LabelValueSeriesCount) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -882,10 +883,10 @@ func (m *LabelValueSeriesCount) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *QueryRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -949,10 +950,10 @@ func (m *QueryRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *ExemplarQueryRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -992,10 +993,10 @@ func (m *ExemplarQueryRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *ActiveSeriesRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1030,10 +1031,10 @@ func (m *ActiveSeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *QueryStreamResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1083,10 +1084,10 @@ func (m *QueryStreamResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *QueryStreamSeries) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1123,10 +1124,10 @@ func (m *QueryStreamSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *QueryStreamSeriesChunks) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1161,10 +1162,10 @@ func (m *QueryStreamSeriesChunks) MarshalToSizedBuffer(dAtA []byte) (int, error)
 
 func (m *ExemplarQueryResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1194,10 +1195,10 @@ func (m *ExemplarQueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelValuesRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1249,10 +1250,10 @@ func (m *LabelValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelValuesResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1279,10 +1280,10 @@ func (m *LabelValuesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelNamesRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1327,10 +1328,10 @@ func (m *LabelNamesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelNamesResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1357,10 +1358,10 @@ func (m *LabelNamesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *UserStatsRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1385,10 +1386,10 @@ func (m *UserStatsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *UserStatsResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1431,10 +1432,10 @@ func (m *UserStatsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *UserIDStatsResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1471,10 +1472,10 @@ func (m *UserIDStatsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *UsersStatsResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1504,10 +1505,10 @@ func (m *UsersStatsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *MetricsForLabelMatchersRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1552,10 +1553,10 @@ func (m *MetricsForLabelMatchersRequest) MarshalToSizedBuffer(dAtA []byte) (int,
 
 func (m *MetricsForLabelMatchersResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1585,10 +1586,10 @@ func (m *MetricsForLabelMatchersResponse) MarshalToSizedBuffer(dAtA []byte) (int
 
 func (m *MetricsMetadataRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1625,10 +1626,10 @@ func (m *MetricsMetadataRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 
 func (m *MetricsMetadataResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1658,10 +1659,10 @@ func (m *MetricsMetadataResponse) MarshalToSizedBuffer(dAtA []byte) (int, error)
 
 func (m *ActiveSeriesResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1701,10 +1702,10 @@ func (m *ActiveSeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *Chunk) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1751,10 +1752,10 @@ func (m *Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelMatchers) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -1784,10 +1785,10 @@ func (m *LabelMatchers) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 
 func (m *LabelMatcher) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	if size == 0 {
-		return nil, nil
-	}
 	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
@@ -7968,6 +7969,115 @@ func (m *LabelMatcher) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_LabelMatcher proto.InternalMessageInfo
+
+func sovIngester(x uint64) (n int) {
+	return (bits.Len64(x|1) + 6) / 7
+}
+
+func sozIngester(x uint64) (n int) {
+	return sovIngester(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+
+func encodeVarintIngester(dAtA []byte, offset int, v uint64) int {
+	offset -= sovIngester(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func skipIngester(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, fmt.Errorf("proto: unexpected EOF")
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, fmt.Errorf("proto: unexpected EOF")
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthIngester
+			}
+			iNdEx += length
+		case 3:
+			for {
+				var innerWire uint64
+				for shift := uint(0); ; shift += 7 {
+					if iNdEx >= l {
+						return 0, fmt.Errorf("proto: unexpected EOF")
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if int(innerWire&0x7) == 4 {
+					break
+				}
+				next, err := skipIngester(dAtA[iNdEx:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx += next
+			}
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthIngester
+		}
+		return iNdEx, nil
+	}
+	return 0, fmt.Errorf("proto: unexpected EOF")
+}
+
+var (
+	ErrInvalidLengthIngester        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowIngester          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupIngester = fmt.Errorf("proto: unexpected end of group")
+)
 
 func init() {
 	proto.RegisterType((*LabelNamesAndValuesRequest)(nil), "cortex.LabelNamesAndValuesRequest")

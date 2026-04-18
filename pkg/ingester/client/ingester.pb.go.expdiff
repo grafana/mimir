@@ -1,6 +1,6 @@
 --- a/pkg/ingester/client/ingester.pb.go
 +++ b/pkg/ingester/client/ingester.pb.go
-@@ -103,9 +103,6 @@
+@@ -104,9 +104,6 @@
  //
  // Only one of these two options will be populated.
  type QueryStreamResponse struct {
@@ -10,7 +10,7 @@
  	StreamingSeries       []QueryStreamSeries       `protobuf:"bytes,3,rep,name=streaming_series,json=streamingSeries,proto3" json:"streaming_series"`
  	IsEndOfSeriesStream   bool                      `protobuf:"varint,4,opt,name=is_end_of_series_stream,json=isEndOfSeriesStream,proto3" json:"is_end_of_series_stream,omitempty"`
  	StreamingSeriesChunks []QueryStreamSeriesChunks `protobuf:"bytes,5,rep,name=streaming_series_chunks,json=streamingSeriesChunks,proto3" json:"streaming_series_chunks"`
-@@ -122,9 +119,6 @@
+@@ -123,9 +120,6 @@
  }
  
  type ExemplarQueryResponse struct {
@@ -20,7 +20,7 @@
  	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
  }
  
-@@ -179,9 +173,6 @@
+@@ -180,9 +174,6 @@
  }
  
  type MetricsForLabelMatchersResponse struct {
@@ -30,7 +30,7 @@
  	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
  }
  
-@@ -196,9 +187,6 @@
+@@ -197,9 +188,6 @@
  }
  
  type ActiveSeriesResponse struct {
