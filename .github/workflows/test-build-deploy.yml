@@ -93,8 +93,10 @@ jobs:
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
         run: make BUILD_IN_CONTAINER=false mod-check
-      - name: Check Protos
-        run: make BUILD_IN_CONTAINER=false check-protos
+      # TODO(wiresmith): Temporarily disabled because wiresmith (github.com/grafana/wiresmith)
+      # is a private repository and CI cannot install it. Uncomment once wiresmith is public.
+      # - name: Check Protos
+      #   run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
       - name: Check Reference Help Documentation
