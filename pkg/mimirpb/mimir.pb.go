@@ -2862,9 +2862,11 @@ func (m *TimeSeries) Unmarshal(b []byte) error {
 			if n < 0 {
 				return fmt.Errorf("invalid bytes")
 			}
-			m.Exemplars = append(m.Exemplars, Exemplar{})
-			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(v); err != nil {
-				return err
+			if !m.SkipUnmarshalingExemplars {
+				m.Exemplars = append(m.Exemplars, Exemplar{})
+				if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(v); err != nil {
+					return err
+				}
 			}
 			b = b[n:]
 		case 4: // histograms
@@ -9960,4 +9962,3 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
 	}
 	return nil
 }
-

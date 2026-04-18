@@ -138,11 +138,25 @@
  	return nil
  }
  
-@@ -9368,596 +9334,4 @@
- 
+@@ -2862,11 +2828,9 @@
+ 			if n < 0 {
+ 				return fmt.Errorf("invalid bytes")
+ 			}
+-			if !m.SkipUnmarshalingExemplars {
+-				m.Exemplars = append(m.Exemplars, Exemplar{})
+-				if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(v); err != nil {
+-					return err
+-				}
++			m.Exemplars = append(m.Exemplars, Exemplar{})
++			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(v); err != nil {
++				return err
+ 			}
+ 			b = b[n:]
+ 		case 4: // histograms
+@@ -9371,594 +9335,3 @@
  func init() {
  	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)
--}
+ }
 -func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 -	var metricName string
 -	l := len(dAtA)
@@ -435,7 +449,7 @@
 -		return io.ErrUnexpectedEOF
 -	}
 -	return nil
- }
+-}
 -
 -func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, metricName string, skipNormalizeMetricName bool) error {
 -	var (
@@ -734,4 +748,3 @@
 -	}
 -	return nil
 -}
--
