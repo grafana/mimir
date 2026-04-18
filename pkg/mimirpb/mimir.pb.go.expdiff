@@ -88,7 +88,7 @@
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2593,16 +2570,13 @@
+@@ -2593,15 +2570,13 @@
  				b = b[n:]
  				continue
  			}
@@ -103,14 +103,13 @@
 +			}
 +			m.SymbolsRW2 = append(m.SymbolsRW2, v)
  			b = b[n:]
--
  		case 5: // timeseriesRW2
 -			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Timeseries }
 -
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2615,13 +2589,10 @@
+@@ -2614,10 +2589,8 @@
  			if n < 0 {
  				return fmt.Errorf("invalid bytes")
  			}
@@ -122,11 +121,8 @@
 +			if err := m.TimeseriesRW2[len(m.TimeseriesRW2)-1].Unmarshal(v); err != nil {
  				return err
  			}
--
  			b = b[n:]
- 		case 1000: // skip_label_validation
- 			if typ != protowire.VarintType {
-@@ -2661,11 +2632,6 @@
+@@ -2659,11 +2632,6 @@
  			b = b[n:]
  		}
  	}
@@ -138,7 +134,7 @@
  	return nil
  }
  
-@@ -2862,11 +2828,9 @@
+@@ -2860,11 +2828,9 @@
  			if n < 0 {
  				return fmt.Errorf("invalid bytes")
  			}
@@ -153,7 +149,7 @@
  			}
  			b = b[n:]
  		case 4: // histograms
-@@ -9371,594 +9335,3 @@
+@@ -9369,594 +9335,3 @@
  func init() {
  	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)
  }

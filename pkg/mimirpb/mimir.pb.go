@@ -140,11 +140,11 @@ type isQueryResponse_Data interface {
 	isQueryResponse_Data()
 }
 
-type QueryResponse_String struct {
-	String *StringData
+type QueryResponse_String_ struct {
+	String_ *StringData
 }
 
-func (*QueryResponse_String) isQueryResponse_Data() {}
+func (*QueryResponse_String_) isQueryResponse_Data() {}
 
 type QueryResponse_Vector struct {
 	Vector *VectorData
@@ -784,8 +784,8 @@ func (m *QueryResponse) Size() int {
 		n += 1 + protowire.SizeVarint(uint64(len(m.Error))) + len(m.Error)
 	}
 	switch v := m.Data.(type) {
-	case *QueryResponse_String:
-		s := v.String.Size()
+	case *QueryResponse_String_:
+		s := v.String_.Size()
 		n += 1 + protowire.SizeVarint(uint64(s)) + s
 	case *QueryResponse_Vector:
 		s := v.Vector.Size()
@@ -1911,8 +1911,8 @@ func (m *QueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
-	case *QueryResponse_String:
-		size, err := v.String.MarshalToSizedBuffer(dAtA[:i])
+	case *QueryResponse_String_:
+		size, err := v.String_.MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
@@ -2599,7 +2599,6 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			seenFirstSymbol = true
 			m.rw2symbols.append(yoloString(v))
 			b = b[n:]
-
 		case 5: // timeseriesRW2
 			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Timeseries }
 
@@ -2621,7 +2620,6 @@ func (m *WriteRequest) Unmarshal(b []byte) error {
 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
-
 			b = b[n:]
 		case 1000: // skip_label_validation
 			if typ != protowire.VarintType {
@@ -4398,7 +4396,7 @@ func (m *QueryResponse) Unmarshal(b []byte) error {
 			if err := msg.Unmarshal(v); err != nil {
 				return err
 			}
-			m.Data = &QueryResponse_String{String: &msg}
+			m.Data = &QueryResponse_String_{String_: &msg}
 			b = b[n:]
 		case 5: // vector
 			if typ != protowire.BytesType {
@@ -6005,9 +6003,9 @@ func (m *QueryResponse) GetData() isQueryResponse_Data {
 	return nil
 }
 
-func (m *QueryResponse) GetString() *StringData {
-	if x, ok := m.GetData().(*QueryResponse_String); ok {
-		return x.String
+func (m *QueryResponse) GetString_() *StringData {
+	if x, ok := m.GetData().(*QueryResponse_String_); ok {
+		return x.String_
 	}
 	return nil
 }
