@@ -10,9 +10,13 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"strings"
 )
 
 type CachedSeries struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Series              []mimirpb.PreallocatingMetric `protobuf:"bytes,1,rep,name=series,proto3" json:"series"`
 	DiffEncodedPostings []byte                        `protobuf:"bytes,5,opt,name=diffEncodedPostings,proto3" json:"diffEncodedPostings,omitempty"`
 }
@@ -224,6 +228,18 @@ func (this *CachedSeries) Equal(that interface{}) bool {
 		return false
 	}
 	return true
+}
+
+func (this *CachedSeries) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&storepb.CachedSeries{")
+	s = append(s, "Series: "+fmt.Sprintf("%#v", this.Series)+",\n")
+	s = append(s, "DiffEncodedPostings: "+fmt.Sprintf("%#v", this.DiffEncodedPostings)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
 }
 
 func (m *CachedSeries) Reset()      { *m = CachedSeries{} }
