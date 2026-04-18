@@ -219,7 +219,9 @@ WIRESMITH_PROTOS := \
 	./pkg/scheduler/schedulerpb/scheduler.proto \
 	./pkg/storegateway/storepb/rpc.proto \
 	./pkg/ruler/ruler.proto \
-	./pkg/frontend/v2/frontendv2pb/frontend.proto
+	./pkg/frontend/v2/frontendv2pb/frontend.proto \
+	./pkg/frontend/querymiddleware/model.proto \
+	./pkg/ingester/client/ingester.proto
 WIRESMITH_GOS := $(patsubst %.proto,%.pb.go,$(WIRESMITH_PROTOS))
 
 # Proto files compiled by protoc+gogoslick (legacy).
