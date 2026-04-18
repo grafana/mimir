@@ -1,13 +1,13 @@
---- a/pkg/mimirpb/mimir.pb.go
-+++ b/pkg/mimirpb/mimir.pb.go
-@@ -8,7 +8,6 @@
- 	"encoding/binary"
+--- a/pkg/mimirpb/mimir.pb.go	2026-04-18 21:59:44
++++ b/pkg/mimirpb/mimir.pb.go	2026-04-18 21:59:11
+@@ -9,7 +9,6 @@
  	"fmt"
  	"github.com/gogo/protobuf/proto"
--	"io"
  	"github.com/grafana/wiresmith/gen/protohelpers"
+-	"io"
  	"github.com/prometheus/prometheus/model/histogram"
  	"google.golang.org/protobuf/encoding/protowire"
+ 	"math"
 @@ -165,8 +164,6 @@
  func (*QueryResponse_Matrix) isQueryResponse_Data() {}
  
@@ -139,10 +139,12 @@
  			}
  			b = b[n:]
  		case 4: // histograms
-@@ -9373,594 +9349,3 @@
+@@ -9372,596 +9348,4 @@
+ 
  func init() {
  	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)
- }
+-}
+-
 -func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 -	var metricName string
 -	l := len(dAtA)
@@ -435,7 +437,7 @@
 -		return io.ErrUnexpectedEOF
 -	}
 -	return nil
--}
+ }
 -
 -func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, metricName string, skipNormalizeMetricName bool) error {
 -	var (

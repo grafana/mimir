@@ -1,13 +1,13 @@
---- a/pkg/frontend/v2/frontendv2pb/frontend.pb.go
-+++ b/pkg/frontend/v2/frontendv2pb/frontend.pb.go
-@@ -11,7 +11,6 @@
- 	"github.com/grafana/dskit/httpgrpc"
+--- a/pkg/frontend/v2/frontendv2pb/frontend.pb.go	2026-04-18 21:59:44
++++ b/pkg/frontend/v2/frontendv2pb/frontend.pb.go	2026-04-18 21:59:08
+@@ -12,7 +12,6 @@
  	"github.com/grafana/mimir/pkg/querier/querierpb"
  	"github.com/grafana/mimir/pkg/querier/stats"
--	"github.com/grafana/mimir/pkg/mimirpb"
  	"github.com/grafana/wiresmith/gen/protohelpers"
+-	"github.com/grafana/mimir/pkg/mimirpb"
  	"google.golang.org/grpc"
  	"google.golang.org/grpc/codes"
+ 	"google.golang.org/grpc/status"
 @@ -56,9 +55,6 @@
  }
  

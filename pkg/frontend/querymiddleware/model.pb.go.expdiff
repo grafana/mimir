@@ -1,5 +1,5 @@
---- a/pkg/frontend/querymiddleware/model.pb.go
-+++ b/pkg/frontend/querymiddleware/model.pb.go
+--- a/pkg/frontend/querymiddleware/model.pb.go	2026-04-18 21:59:44
++++ b/pkg/frontend/querymiddleware/model.pb.go	2026-04-18 21:59:07
 @@ -21,9 +21,6 @@
  }
  

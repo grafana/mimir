@@ -1,5 +1,5 @@
---- a/pkg/ingester/client/ingester.pb.go
-+++ b/pkg/ingester/client/ingester.pb.go
+--- a/pkg/ingester/client/ingester.pb.go	2026-04-18 21:59:44
++++ b/pkg/ingester/client/ingester.pb.go	2026-04-18 21:59:10
 @@ -104,9 +104,6 @@
  //
  // Only one of these two options will be populated.

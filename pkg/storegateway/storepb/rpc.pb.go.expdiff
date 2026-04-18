@@ -1,13 +1,13 @@
---- a/pkg/storegateway/storepb/rpc.pb.go
-+++ b/pkg/storegateway/storepb/rpc.pb.go
-@@ -7,7 +7,6 @@
- 	"fmt"
+--- a/pkg/storegateway/storepb/rpc.pb.go	2026-04-18 21:59:44
++++ b/pkg/storegateway/storepb/rpc.pb.go	2026-04-18 21:59:26
+@@ -8,7 +8,6 @@
  	"github.com/gogo/protobuf/proto"
  	"github.com/gogo/protobuf/types"
--	"github.com/grafana/mimir/pkg/mimirpb"
  	"github.com/grafana/wiresmith/gen/protohelpers"
+-	"github.com/grafana/mimir/pkg/mimirpb"
  	"google.golang.org/protobuf/encoding/protowire"
  	"math/bits"
+ 	"strings"
 @@ -110,9 +109,6 @@
  }
  

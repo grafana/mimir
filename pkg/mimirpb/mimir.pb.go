@@ -8,8 +8,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"io"
 	"github.com/grafana/wiresmith/gen/protohelpers"
+	"io"
 	"github.com/prometheus/prometheus/model/histogram"
 	"google.golang.org/protobuf/encoding/protowire"
 	"math"
@@ -9373,6 +9373,7 @@ func (x MetadataRW2_MetricType) String() string {
 func init() {
 	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)
 }
+
 func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 	var metricName string
 	l := len(dAtA)
