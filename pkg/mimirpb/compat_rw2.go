@@ -18,7 +18,7 @@ var (
 	errorOddNumberOfExemplarLabelRefs = errors.New("proto: Remote Write 2.0 odd number of exemplar label references")
 	errorInvalidLabelRef              = errors.New("proto: Remote Write 2.0 invalid label reference")
 	errorInvalidExemplarLabelRef      = errors.New("proto: Remote Write 2.0 invalid exemplar label reference")
-	errorInvalidHelpRef = errors.New("proto: Remote Write 2.0 invalid help reference")
+	errorInvalidHelpRef               = errors.New("proto: Remote Write 2.0 invalid help reference")
 	errorInvalidUnitRef               = errors.New("proto: Remote Write 2.0 invalid unit reference")
 	errorInvalidFirstSymbol           = errors.New("proto: Remote Write 2.0 symbols must start with empty string")
 )
