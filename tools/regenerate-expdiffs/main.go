@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // regenerate-expdiffs regenerates all .pb.go.expdiff files from clean wiresmith output.
 //
 // Run after wiresmith output changes (new features, struct tag format changes, etc.)
