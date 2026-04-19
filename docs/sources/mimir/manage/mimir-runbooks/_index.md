@@ -3299,7 +3299,7 @@ This error only occurs when an administrator has explicitly define a blocked lis
 **Write path**:
 
 - `/distributor.Distributor/Push`
-- `/cortex.Ingester/Push`
+- `/ingesterpb.Ingester/Push`
 - `api_v1_push`
 - `api_v1_push_influx_write`
 - `otlp_v1_metrics`
@@ -3307,8 +3307,8 @@ This error only occurs when an administrator has explicitly define a blocked lis
 **Read path**:
 
 - `/schedulerpb.SchedulerForFrontend/FrontendLoop`
-- `/cortex.Ingester/QueryStream`
-- `/cortex.Ingester/QueryExemplars`
+- `/ingesterpb.Ingester/QueryStream`
+- `/ingesterpb.Ingester/QueryExemplars`
 - `/gatewaypb.StoreGateway/Series`
 - `api_prom_api_v1_label_name_values`
 - `api_prom_api_v1_labels`
