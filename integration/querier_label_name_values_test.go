@@ -388,7 +388,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 					e2e.Equals(1),
 					[]string{"cortex_request_duration_seconds"},
 					e2e.WithMetricCount,
-					e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/LabelValuesCardinality"))))
+					e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "route", "/ingesterpb.Ingester/LabelValuesCardinality"))))
 			}
 
 			// Make sure the resultant label names are sorted
