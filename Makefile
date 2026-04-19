@@ -271,8 +271,15 @@ $(EXES_RACE):
 	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: ## Generates protobuf files.
+# TODO(wiresmith): Once wiresmith is public and installed in the build image, remove
+# the wiresmith availability check — it will always be available.
+ifneq (,$(shell which wiresmith 2>/dev/null))
 protos: $(PROTO_GOS)
 	@./tools/apply-expected-diffs.sh $(PROTO_GOS)
+else
+protos:
+	@echo "wiresmith not found in PATH; skipping proto regeneration (committed .pb.go files are used as-is)"
+endif
 
 GENERATE_FILES ?= true
 
