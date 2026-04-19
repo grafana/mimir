@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"io"
 	"math/bits"
 	"strings"
 )
@@ -107,148 +108,305 @@ func (m *MultiAggregationInstanceDetails) MarshalToSizedBuffer(dAtA []byte) (int
 	return len(dAtA) - i, nil
 }
 
-func skipField_Node(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
-	switch typ {
-	case protowire.VarintType:
-		_, n := protowire.ConsumeVarint(b)
-		if n < 0 {
-			return 0, fmt.Errorf("invalid varint")
+func skipNode(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	depth := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
 		}
-		return n, nil
-	case protowire.Fixed32Type:
-		if len(b) < 4 {
-			return 0, fmt.Errorf("truncated fixed32")
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, fmt.Errorf("negative length")
+			}
+			iNdEx += length
+		case 3:
+			depth++
+		case 4:
+			if depth == 0 {
+				return 0, fmt.Errorf("proto: unexpected end of group")
+			}
+			depth--
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
-		return 4, nil
-	case protowire.Fixed64Type:
-		if len(b) < 8 {
-			return 0, fmt.Errorf("truncated fixed64")
+		if iNdEx < 0 {
+			return 0, fmt.Errorf("negative index")
 		}
-		return 8, nil
-	case protowire.BytesType:
-		_, n := protowire.ConsumeBytes(b)
-		if n < 0 {
-			return 0, fmt.Errorf("invalid bytes")
+		if depth == 0 {
+			return iNdEx, nil
 		}
-		return n, nil
-	case protowire.StartGroupType:
-		_, n := protowire.ConsumeGroup(num, b)
-		if n < 0 {
-			return 0, fmt.Errorf("invalid group")
-		}
-		return n, nil
-	default:
-		return 0, fmt.Errorf("unknown wire type %d", typ)
 	}
+	return 0, io.ErrUnexpectedEOF
 }
 
-func (m *MultiAggregationGroupDetails) Unmarshal(b []byte) error {
-	for len(b) > 0 {
-		num, typ, tagLen := protowire.ConsumeTag(b)
-		if tagLen < 0 {
-			return fmt.Errorf("invalid tag")
+func (m *MultiAggregationGroupDetails) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		_ = preIndex
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return fmt.Errorf("proto: integer overflow")
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
 		}
-		b = b[tagLen:]
-		switch num {
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MultiAggregationGroupDetails: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MultiAggregationGroupDetails: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
 		default:
-			n, err := skipField_Node(b, num, typ)
+			iNdEx = preIndex
+			skippy, err := skipNode(dAtA[iNdEx:])
 			if err != nil {
 				return err
 			}
-			b = b[n:]
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return fmt.Errorf("invalid skip")
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
 		}
+	}
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
 	}
 	return nil
 }
 
-func (m *MultiAggregationInstanceDetails) Unmarshal(b []byte) error {
-	if len(b) >= 256 {
-		tmp := b
+func (m *MultiAggregationInstanceDetails) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	if l >= 256 {
+		var preIdx int
 		var field2count int
-		for len(tmp) > 0 {
-			num, typ, tagLen := protowire.ConsumeTag(tmp)
-			if tagLen < 0 {
-				break
+		for preIdx < l {
+			var preWire uint64
+			for shift := uint(0); ; shift += 7 {
+				if preIdx >= l {
+					break
+				}
+				b := dAtA[preIdx]
+				preIdx++
+				preWire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			tmp = tmp[tagLen:]
-			switch num {
+			preNum := int32(preWire >> 3)
+			preTyp := int(preWire & 0x7)
+			switch preNum {
 			case 2:
 				field2count++
 			}
-			var skip int
-			switch typ {
-			case protowire.VarintType:
-				_, skip = protowire.ConsumeVarint(tmp)
-			case protowire.Fixed32Type:
-				skip = 4
-			case protowire.Fixed64Type:
-				skip = 8
-			case protowire.BytesType:
-				_, skip = protowire.ConsumeBytes(tmp)
-			case protowire.StartGroupType:
-				_, skip = protowire.ConsumeGroup(num, tmp)
-			}
-			if skip < 0 || skip > len(tmp) {
+			switch preTyp {
+			case 0:
+				for preIdx < l {
+					preIdx++
+					if dAtA[preIdx-1] < 0x80 {
+						break
+					}
+				}
+			case 1:
+				preIdx += 8
+			case 2:
+				var preLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if preIdx >= l {
+						break
+					}
+					b := dAtA[preIdx]
+					preIdx++
+					preLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				preIdx += int(preLen)
+			case 5:
+				preIdx += 4
+			default:
 				break
 			}
-			tmp = tmp[skip:]
+			if preIdx < 0 || preIdx > l {
+				break
+			}
 		}
 		if field2count > 0 {
 			m.Filters = make([]*core.LabelMatcher, 0, field2count)
 		}
 	}
-	for len(b) > 0 {
-		num, typ, tagLen := protowire.ConsumeTag(b)
-		if tagLen < 0 {
-			return fmt.Errorf("invalid tag")
-		}
-		b = b[tagLen:]
-		switch num {
-		case 1: // aggregation
-			if typ != protowire.BytesType {
-				n, err := skipField_Node(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+	for iNdEx < l {
+		preIndex := iNdEx
+		_ = preIndex
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return fmt.Errorf("proto: integer overflow")
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MultiAggregationInstanceDetails: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MultiAggregationInstanceDetails: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1: // aggregation
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Aggregation", wireType)
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
 			}
 			if m.Aggregation == nil {
 				m.Aggregation = &core.AggregateExpressionDetails{}
 			}
-			if err := m.Aggregation.Unmarshal(v); err != nil {
+			if err := m.Aggregation.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 2: // filters
-			if typ != protowire.BytesType {
-				n, err := skipField_Node(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Filters", wireType)
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
 			}
 			m.Filters = append(m.Filters, &core.LabelMatcher{})
-			if err := m.Filters[len(m.Filters)-1].Unmarshal(v); err != nil {
+			if err := m.Filters[len(m.Filters)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		default:
-			n, err := skipField_Node(b, num, typ)
+			iNdEx = preIndex
+			skippy, err := skipNode(dAtA[iNdEx:])
 			if err != nil {
 				return err
 			}
-			b = b[n:]
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return fmt.Errorf("invalid skip")
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
 		}
+	}
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
 	}
 	return nil
 }
@@ -395,89 +553,6 @@ func encodeVarintNode(dAtA []byte, offset int, v uint64) int {
 	}
 	dAtA[offset] = uint8(v)
 	return base
-}
-
-func skipNode(dAtA []byte) (n int, err error) {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if iNdEx >= l {
-				return 0, fmt.Errorf("proto: unexpected EOF")
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		wireType := int(wire & 0x7)
-		switch wireType {
-		case 0:
-			for shift := uint(0); ; shift += 7 {
-				if iNdEx >= l {
-					return 0, fmt.Errorf("proto: unexpected EOF")
-				}
-				iNdEx++
-				if dAtA[iNdEx-1] < 0x80 {
-					break
-				}
-			}
-		case 1:
-			iNdEx += 8
-		case 2:
-			var length int
-			for shift := uint(0); ; shift += 7 {
-				if iNdEx >= l {
-					return 0, fmt.Errorf("proto: unexpected EOF")
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				length |= (int(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if length < 0 {
-				return 0, ErrInvalidLengthNode
-			}
-			iNdEx += length
-		case 3:
-			for {
-				var innerWire uint64
-				for shift := uint(0); ; shift += 7 {
-					if iNdEx >= l {
-						return 0, fmt.Errorf("proto: unexpected EOF")
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					innerWire |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				if int(innerWire&0x7) == 4 {
-					break
-				}
-				next, err := skipNode(dAtA[iNdEx:])
-				if err != nil {
-					return 0, err
-				}
-				iNdEx += next
-			}
-		case 5:
-			iNdEx += 4
-		default:
-			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
-		}
-		if iNdEx < 0 {
-			return 0, ErrInvalidLengthNode
-		}
-		return iNdEx, nil
-	}
-	return 0, fmt.Errorf("proto: unexpected EOF")
 }
 
 var (

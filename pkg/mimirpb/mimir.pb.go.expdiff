@@ -1,14 +1,6 @@
---- a/pkg/mimirpb/mimir.pb.go	2026-04-19 08:04:17
-+++ b/pkg/mimirpb/mimir.pb.go	2026-04-19 08:04:16
-@@ -9,7 +9,6 @@
- 	"fmt"
- 	"github.com/gogo/protobuf/proto"
- 	"github.com/grafana/wiresmith/gen/protohelpers"
--	"io"
- 	"github.com/prometheus/prometheus/model/histogram"
- 	"google.golang.org/protobuf/encoding/protowire"
- 	"math"
-@@ -165,14 +164,6 @@
+--- a/pkg/mimirpb/mimir.pb.go	2026-04-19 18:48:15
++++ b/pkg/mimirpb/mimir.pb.go	2026-04-19 18:47:43
+@@ -165,14 +165,6 @@
  func (*QueryResponse_Matrix) isQueryResponse_Data() {}
  
  type WriteRequest struct {
@@ -23,7 +15,7 @@
  	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
  	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3" json:"Source,omitempty"`
  	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
-@@ -184,16 +175,6 @@
+@@ -184,16 +176,6 @@
  	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
  	// Skip label count validation.
  	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
@@ -40,7 +32,7 @@
  }
  
  type WriteResponse struct {
-@@ -217,8 +198,6 @@
+@@ -217,8 +199,6 @@
  	// Zero value means value not set. If you need to use exactly zero value for
  	// the timestamp, use 1 millisecond before or after.
  	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
@@ -49,113 +41,106 @@
  }
  
  type LabelPair struct {
-@@ -2538,8 +2517,6 @@
+@@ -2599,8 +2579,6 @@
  			m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, field5count)
  		}
  	}
 -	var metadata metadataSet
 -	seenFirstSymbol := false
- 	for len(b) > 0 {
- 		num, typ, tagLen := protowire.ConsumeTag(b)
- 		if tagLen < 0 {
-@@ -2548,7 +2525,6 @@
- 		b = b[tagLen:]
- 		switch num {
+ 	for iNdEx < l {
+ 		preIndex := iNdEx
+ 		_ = preIndex
+@@ -2629,7 +2607,6 @@
+ 		}
+ 		switch fieldNum {
  		case 1: // timeseries
 -			if m.unmarshalFromRW2 { return errorUnexpectedRW1Timeseries }
- 			if typ != protowire.BytesType {
- 				n, err := skipField_Mimir(b, num, typ)
- 				if err != nil {
-@@ -2562,8 +2538,7 @@
- 				return fmt.Errorf("invalid bytes")
+ 			if wireType != 2 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field Timeseries", wireType)
+ 			}
+@@ -2660,8 +2637,7 @@
+ 				return io.ErrUnexpectedEOF
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 -			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
--			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
-+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v); err != nil {
+-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
++			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
  			}
- 			b = b[n:]
-@@ -2583,7 +2558,6 @@
+ 			iNdEx = postIndex
+@@ -2686,7 +2662,6 @@
+ 			}
  			m.Source = WriteRequest_SourceEnum(v)
- 			b = b[n:]
  		case 3: // metadata
 -			if m.unmarshalFromRW2 { return errorUnexpectedRW1Metadata }
- 			if typ != protowire.BytesType {
- 				n, err := skipField_Mimir(b, num, typ)
- 				if err != nil {
-@@ -2602,7 +2576,6 @@
+ 			if wireType != 2 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
  			}
- 			b = b[n:]
+@@ -2722,7 +2697,6 @@
+ 			}
+ 			iNdEx = postIndex
  		case 4: // symbolsRW2
 -			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Symbols }
- 			if typ != protowire.BytesType {
- 				n, err := skipField_Mimir(b, num, typ)
- 				if err != nil {
-@@ -2611,14 +2584,13 @@
- 				b = b[n:]
- 				continue
+ 			if wireType != 2 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field SymbolsRW2", wireType)
  			}
--			v, n := protowire.ConsumeBytes(b)
--			if n < 0 { return fmt.Errorf("invalid bytes") }
--			if !seenFirstSymbol && len(v) > 0 { return errorInvalidFirstSymbol }
+@@ -2752,12 +2726,9 @@
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			if !seenFirstSymbol && intStringLen > 0 { return errorInvalidFirstSymbol }
 -			seenFirstSymbol = true
--			m.rw2symbols.append(yoloString(v))
-+			v, n := protowire.ConsumeString(b)
-+			if n < 0 {
-+				return fmt.Errorf("invalid string")
-+			}
-+			m.SymbolsRW2 = append(m.SymbolsRW2, v)
- 			b = b[n:]
+-			m.rw2symbols.append(yoloString(dAtA[iNdEx:postIndex]))
++			m.SymbolsRW2 = append(m.SymbolsRW2, string(dAtA[iNdEx:postIndex]))
+ 			iNdEx = postIndex
  		case 5: // timeseriesRW2
 -			if !m.unmarshalFromRW2 { return errorUnexpectedRW2Timeseries }
- 			if typ != protowire.BytesType {
- 				n, err := skipField_Mimir(b, num, typ)
- 				if err != nil {
-@@ -2631,10 +2603,8 @@
- 			if n < 0 {
- 				return fmt.Errorf("invalid bytes")
+ 			if wireType != 2 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field TimeseriesRW2", wireType)
+ 			}
+@@ -2787,10 +2758,8 @@
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
  			}
 -			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 -			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
 -			if metadata == nil { metadata = metadataSetFromSettings(m.skipDeduplicateMetadata) }
--			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
+-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 +			m.TimeseriesRW2 = append(m.TimeseriesRW2, TimeSeriesRW2{})
-+			if err := m.TimeseriesRW2[len(m.TimeseriesRW2)-1].Unmarshal(v); err != nil {
++			if err := m.TimeseriesRW2[len(m.TimeseriesRW2)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
  			}
- 			b = b[n:]
-@@ -2676,10 +2646,6 @@
- 			b = b[n:]
- 		}
+ 			iNdEx = postIndex
+@@ -2851,10 +2820,6 @@
  	}
+ 	if iNdEx > l {
+ 		return io.ErrUnexpectedEOF
+-	}
 -	if m.unmarshalFromRW2 {
 -		if metadata != nil { m.Metadata = metadata.slice() }
 -		m.rw2symbols.releasePages()
--	}
+ 	}
  	return nil
  }
- 
-@@ -2876,11 +2842,9 @@
- 			if n < 0 {
- 				return fmt.Errorf("invalid bytes")
+@@ -3228,11 +3193,9 @@
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
  			}
 -			if !m.SkipUnmarshalingExemplars {
 -				m.Exemplars = append(m.Exemplars, Exemplar{})
--				if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(v); err != nil {
+-				if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 -					return err
 -				}
 +			m.Exemplars = append(m.Exemplars, Exemplar{})
-+			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(v); err != nil {
++			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 +				return err
  			}
- 			b = b[n:]
+ 			iNdEx = postIndex
  		case 4: // histograms
-@@ -9569,596 +9533,4 @@
- 
+@@ -11866,595 +11829,3 @@
  func init() {
  	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)
--}
+ }
 -
 -func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 -	var metricName string
@@ -449,7 +434,7 @@
 -		return io.ErrUnexpectedEOF
 -	}
 -	return nil
- }
+-}
 -
 -func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, metricName string, skipNormalizeMetricName bool) error {
 -	var (

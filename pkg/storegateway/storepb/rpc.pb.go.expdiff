@@ -1,14 +1,14 @@
---- a/pkg/storegateway/storepb/rpc.pb.go	2026-04-19 07:47:23
-+++ b/pkg/storegateway/storepb/rpc.pb.go	2026-04-19 07:47:05
+--- a/pkg/storegateway/storepb/rpc.pb.go	2026-04-19 18:48:15
++++ b/pkg/storegateway/storepb/rpc.pb.go	2026-04-19 18:47:58
 @@ -8,7 +8,6 @@
  	"github.com/gogo/protobuf/proto"
  	"github.com/gogo/protobuf/types"
  	"github.com/grafana/wiresmith/gen/protohelpers"
 -	"github.com/grafana/mimir/pkg/mimirpb"
  	"google.golang.org/protobuf/encoding/protowire"
+ 	"io"
  	"math/bits"
- 	"strings"
-@@ -110,9 +109,6 @@
+@@ -111,9 +110,6 @@
  }
  
  type SeriesResponse struct {

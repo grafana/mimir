@@ -8,6 +8,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"io"
 	"math/bits"
 	"strings"
 )
@@ -98,131 +99,235 @@ func (m *ReplicaDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func skipField_HaTracker(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
-	switch typ {
-	case protowire.VarintType:
-		_, n := protowire.ConsumeVarint(b)
-		if n < 0 {
-			return 0, fmt.Errorf("invalid varint")
+func skipHaTracker(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	depth := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
 		}
-		return n, nil
-	case protowire.Fixed32Type:
-		if len(b) < 4 {
-			return 0, fmt.Errorf("truncated fixed32")
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, fmt.Errorf("negative length")
+			}
+			iNdEx += length
+		case 3:
+			depth++
+		case 4:
+			if depth == 0 {
+				return 0, fmt.Errorf("proto: unexpected end of group")
+			}
+			depth--
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
-		return 4, nil
-	case protowire.Fixed64Type:
-		if len(b) < 8 {
-			return 0, fmt.Errorf("truncated fixed64")
+		if iNdEx < 0 {
+			return 0, fmt.Errorf("negative index")
 		}
-		return 8, nil
-	case protowire.BytesType:
-		_, n := protowire.ConsumeBytes(b)
-		if n < 0 {
-			return 0, fmt.Errorf("invalid bytes")
+		if depth == 0 {
+			return iNdEx, nil
 		}
-		return n, nil
-	case protowire.StartGroupType:
-		_, n := protowire.ConsumeGroup(num, b)
-		if n < 0 {
-			return 0, fmt.Errorf("invalid group")
-		}
-		return n, nil
-	default:
-		return 0, fmt.Errorf("unknown wire type %d", typ)
 	}
+	return 0, io.ErrUnexpectedEOF
 }
 
-func (m *ReplicaDesc) Unmarshal(b []byte) error {
-	for len(b) > 0 {
-		num, typ, tagLen := protowire.ConsumeTag(b)
-		if tagLen < 0 {
-			return fmt.Errorf("invalid tag")
+func (m *ReplicaDesc) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		_ = preIndex
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return fmt.Errorf("proto: integer overflow")
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
 		}
-		b = b[tagLen:]
-		switch num {
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ReplicaDesc: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ReplicaDesc: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
 		case 1: // replica
-			if typ != protowire.BytesType {
-				n, err := skipField_HaTracker(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Replica", wireType)
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeString(b)
-			if n < 0 {
-				return fmt.Errorf("invalid string")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			m.Replica = v
-			b = b[n:]
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Replica = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		case 2: // received_at
-			if typ != protowire.VarintType {
-				n, err := skipField_HaTracker(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ReceivedAt", wireType)
 			}
-			v, n := protowire.ConsumeVarint(b)
-			if n < 0 {
-				return fmt.Errorf("invalid varint")
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
 			m.ReceivedAt = int64(v)
-			b = b[n:]
 		case 3: // deleted_at
-			if typ != protowire.VarintType {
-				n, err := skipField_HaTracker(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DeletedAt", wireType)
 			}
-			v, n := protowire.ConsumeVarint(b)
-			if n < 0 {
-				return fmt.Errorf("invalid varint")
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
 			m.DeletedAt = int64(v)
-			b = b[n:]
 		case 4: // elected_at
-			if typ != protowire.VarintType {
-				n, err := skipField_HaTracker(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ElectedAt", wireType)
 			}
-			v, n := protowire.ConsumeVarint(b)
-			if n < 0 {
-				return fmt.Errorf("invalid varint")
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
 			m.ElectedAt = int64(v)
-			b = b[n:]
 		case 5: // elected_changes
-			if typ != protowire.VarintType {
-				n, err := skipField_HaTracker(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ElectedChanges", wireType)
 			}
-			v, n := protowire.ConsumeVarint(b)
-			if n < 0 {
-				return fmt.Errorf("invalid varint")
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
 			m.ElectedChanges = int64(v)
-			b = b[n:]
 		default:
-			n, err := skipField_HaTracker(b, num, typ)
+			iNdEx = preIndex
+			skippy, err := skipHaTracker(dAtA[iNdEx:])
 			if err != nil {
 				return err
 			}
-			b = b[n:]
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return fmt.Errorf("invalid skip")
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
 		}
+	}
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
 	}
 	return nil
 }
@@ -380,89 +485,6 @@ func encodeVarintHaTracker(dAtA []byte, offset int, v uint64) int {
 	}
 	dAtA[offset] = uint8(v)
 	return base
-}
-
-func skipHaTracker(dAtA []byte) (n int, err error) {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if iNdEx >= l {
-				return 0, fmt.Errorf("proto: unexpected EOF")
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		wireType := int(wire & 0x7)
-		switch wireType {
-		case 0:
-			for shift := uint(0); ; shift += 7 {
-				if iNdEx >= l {
-					return 0, fmt.Errorf("proto: unexpected EOF")
-				}
-				iNdEx++
-				if dAtA[iNdEx-1] < 0x80 {
-					break
-				}
-			}
-		case 1:
-			iNdEx += 8
-		case 2:
-			var length int
-			for shift := uint(0); ; shift += 7 {
-				if iNdEx >= l {
-					return 0, fmt.Errorf("proto: unexpected EOF")
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				length |= (int(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if length < 0 {
-				return 0, ErrInvalidLengthHaTracker
-			}
-			iNdEx += length
-		case 3:
-			for {
-				var innerWire uint64
-				for shift := uint(0); ; shift += 7 {
-					if iNdEx >= l {
-						return 0, fmt.Errorf("proto: unexpected EOF")
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					innerWire |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				if int(innerWire&0x7) == 4 {
-					break
-				}
-				next, err := skipHaTracker(dAtA[iNdEx:])
-				if err != nil {
-					return 0, err
-				}
-				iNdEx += next
-			}
-		case 5:
-			iNdEx += 4
-		default:
-			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
-		}
-		if iNdEx < 0 {
-			return 0, ErrInvalidLengthHaTracker
-		}
-		return iNdEx, nil
-	}
-	return 0, fmt.Errorf("proto: unexpected EOF")
 }
 
 var (

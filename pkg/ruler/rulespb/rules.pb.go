@@ -10,6 +10,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
+	"io"
 	"math/bits"
 	"strings"
 	"time"
@@ -341,55 +342,101 @@ func (m *RuleDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func skipField_Rules(b []byte, num protowire.Number, typ protowire.Type) (int, error) {
-	switch typ {
-	case protowire.VarintType:
-		_, n := protowire.ConsumeVarint(b)
-		if n < 0 {
-			return 0, fmt.Errorf("invalid varint")
+func skipRules(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	depth := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if iNdEx >= l {
+				return 0, io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
 		}
-		return n, nil
-	case protowire.Fixed32Type:
-		if len(b) < 4 {
-			return 0, fmt.Errorf("truncated fixed32")
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, fmt.Errorf("negative length")
+			}
+			iNdEx += length
+		case 3:
+			depth++
+		case 4:
+			if depth == 0 {
+				return 0, fmt.Errorf("proto: unexpected end of group")
+			}
+			depth--
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
-		return 4, nil
-	case protowire.Fixed64Type:
-		if len(b) < 8 {
-			return 0, fmt.Errorf("truncated fixed64")
+		if iNdEx < 0 {
+			return 0, fmt.Errorf("negative index")
 		}
-		return 8, nil
-	case protowire.BytesType:
-		_, n := protowire.ConsumeBytes(b)
-		if n < 0 {
-			return 0, fmt.Errorf("invalid bytes")
+		if depth == 0 {
+			return iNdEx, nil
 		}
-		return n, nil
-	case protowire.StartGroupType:
-		_, n := protowire.ConsumeGroup(num, b)
-		if n < 0 {
-			return 0, fmt.Errorf("invalid group")
-		}
-		return n, nil
-	default:
-		return 0, fmt.Errorf("unknown wire type %d", typ)
 	}
+	return 0, io.ErrUnexpectedEOF
 }
 
-func (m *RuleGroupDesc) Unmarshal(b []byte) error {
-	if len(b) >= 256 {
-		tmp := b
+func (m *RuleGroupDesc) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	if l >= 256 {
+		var preIdx int
 		var field4count int
 		var field9count int
 		var field10count int
 		var field14count int
-		for len(tmp) > 0 {
-			num, typ, tagLen := protowire.ConsumeTag(tmp)
-			if tagLen < 0 {
-				break
+		for preIdx < l {
+			var preWire uint64
+			for shift := uint(0); ; shift += 7 {
+				if preIdx >= l {
+					break
+				}
+				b := dAtA[preIdx]
+				preIdx++
+				preWire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			tmp = tmp[tagLen:]
-			switch num {
+			preNum := int32(preWire >> 3)
+			preTyp := int(preWire & 0x7)
+			switch preNum {
 			case 4:
 				field4count++
 			case 9:
@@ -399,23 +446,38 @@ func (m *RuleGroupDesc) Unmarshal(b []byte) error {
 			case 14:
 				field14count++
 			}
-			var skip int
-			switch typ {
-			case protowire.VarintType:
-				_, skip = protowire.ConsumeVarint(tmp)
-			case protowire.Fixed32Type:
-				skip = 4
-			case protowire.Fixed64Type:
-				skip = 8
-			case protowire.BytesType:
-				_, skip = protowire.ConsumeBytes(tmp)
-			case protowire.StartGroupType:
-				_, skip = protowire.ConsumeGroup(num, tmp)
-			}
-			if skip < 0 || skip > len(tmp) {
+			switch preTyp {
+			case 0:
+				for preIdx < l {
+					preIdx++
+					if dAtA[preIdx-1] < 0x80 {
+						break
+					}
+				}
+			case 1:
+				preIdx += 8
+			case 2:
+				var preLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if preIdx >= l {
+						break
+					}
+					b := dAtA[preIdx]
+					preIdx++
+					preLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				preIdx += int(preLen)
+			case 5:
+				preIdx += 4
+			default:
 				break
 			}
-			tmp = tmp[skip:]
+			if preIdx < 0 || preIdx > l {
+				break
+			}
 		}
 		if field4count > 0 {
 			m.Rules = make([]*RuleDesc, 0, field4count)
@@ -430,253 +492,489 @@ func (m *RuleGroupDesc) Unmarshal(b []byte) error {
 			m.Labels = make([]mimirpb.LabelAdapter, 0, field14count)
 		}
 	}
-	for len(b) > 0 {
-		num, typ, tagLen := protowire.ConsumeTag(b)
-		if tagLen < 0 {
-			return fmt.Errorf("invalid tag")
+	for iNdEx < l {
+		preIndex := iNdEx
+		_ = preIndex
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return fmt.Errorf("proto: integer overflow")
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
 		}
-		b = b[tagLen:]
-		switch num {
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: RuleGroupDesc: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: RuleGroupDesc: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
 		case 1: // name
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeString(b)
-			if n < 0 {
-				return fmt.Errorf("invalid string")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			m.Name = v
-			b = b[n:]
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Name = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		case 2: // namespace
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Namespace", wireType)
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeString(b)
-			if n < 0 {
-				return fmt.Errorf("invalid string")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			m.Namespace = v
-			b = b[n:]
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Namespace = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		case 3: // interval
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType")
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			if err := types.StdDurationUnmarshal(&m.Interval, v); err != nil {
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := types.StdDurationUnmarshal(&m.Interval, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 4: // rules
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Rules", wireType)
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
 			}
 			m.Rules = append(m.Rules, &RuleDesc{})
-			if err := m.Rules[len(m.Rules)-1].Unmarshal(v); err != nil {
+			if err := m.Rules[len(m.Rules)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 6: // user
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field User", wireType)
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeString(b)
-			if n < 0 {
-				return fmt.Errorf("invalid string")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			m.User = v
-			b = b[n:]
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.User = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		case 9: // options
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Options", wireType)
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
 			}
 			m.Options = append(m.Options, &types.Any{})
-			if err := m.Options[len(m.Options)-1].Unmarshal(v); err != nil {
+			if err := m.Options[len(m.Options)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 10: // sourceTenants
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SourceTenants", wireType)
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeString(b)
-			if n < 0 {
-				return fmt.Errorf("invalid string")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			m.SourceTenants = append(m.SourceTenants, v)
-			b = b[n:]
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SourceTenants = append(m.SourceTenants, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
 		case 11: // evaluationDelay
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType")
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			if err := types.StdDurationUnmarshal(&m.EvaluationDelay, v); err != nil {
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := types.StdDurationUnmarshal(&m.EvaluationDelay, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 13: // queryOffset
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType")
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			if err := types.StdDurationUnmarshal(&m.QueryOffset, v); err != nil {
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := types.StdDurationUnmarshal(&m.QueryOffset, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 12: // align_evaluation_time_on_interval
-			if typ != protowire.VarintType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AlignEvaluationTimeOnInterval", wireType)
 			}
-			v, n := protowire.ConsumeVarint(b)
-			if n < 0 {
-				return fmt.Errorf("invalid varint")
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
 			m.AlignEvaluationTimeOnInterval = v != 0
-			b = b[n:]
 		case 14: // labels
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
 			}
 			m.Labels = append(m.Labels, mimirpb.LabelAdapter{})
-			if err := m.Labels[len(m.Labels)-1].Unmarshal(v); err != nil {
+			if err := m.Labels[len(m.Labels)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 15: // limit
-			if typ != protowire.VarintType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Limit", wireType)
 			}
-			v, n := protowire.ConsumeVarint(b)
-			if n < 0 {
-				return fmt.Errorf("invalid varint")
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
 			m.Limit = int32(v)
-			b = b[n:]
 		default:
-			n, err := skipField_Rules(b, num, typ)
+			iNdEx = preIndex
+			skippy, err := skipRules(dAtA[iNdEx:])
 			if err != nil {
 				return err
 			}
-			b = b[n:]
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return fmt.Errorf("invalid skip")
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
 		}
+	}
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
 	}
 	return nil
 }
 
-func (m *RuleDesc) Unmarshal(b []byte) error {
-	if len(b) >= 256 {
-		tmp := b
+func (m *RuleDesc) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	if l >= 256 {
+		var preIdx int
 		var field5count int
 		var field6count int
-		for len(tmp) > 0 {
-			num, typ, tagLen := protowire.ConsumeTag(tmp)
-			if tagLen < 0 {
-				break
+		for preIdx < l {
+			var preWire uint64
+			for shift := uint(0); ; shift += 7 {
+				if preIdx >= l {
+					break
+				}
+				b := dAtA[preIdx]
+				preIdx++
+				preWire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			tmp = tmp[tagLen:]
-			switch num {
+			preNum := int32(preWire >> 3)
+			preTyp := int(preWire & 0x7)
+			switch preNum {
 			case 5:
 				field5count++
 			case 6:
 				field6count++
 			}
-			var skip int
-			switch typ {
-			case protowire.VarintType:
-				_, skip = protowire.ConsumeVarint(tmp)
-			case protowire.Fixed32Type:
-				skip = 4
-			case protowire.Fixed64Type:
-				skip = 8
-			case protowire.BytesType:
-				_, skip = protowire.ConsumeBytes(tmp)
-			case protowire.StartGroupType:
-				_, skip = protowire.ConsumeGroup(num, tmp)
-			}
-			if skip < 0 || skip > len(tmp) {
+			switch preTyp {
+			case 0:
+				for preIdx < l {
+					preIdx++
+					if dAtA[preIdx-1] < 0x80 {
+						break
+					}
+				}
+			case 1:
+				preIdx += 8
+			case 2:
+				var preLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if preIdx >= l {
+						break
+					}
+					b := dAtA[preIdx]
+					preIdx++
+					preLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				preIdx += int(preLen)
+			case 5:
+				preIdx += 4
+			default:
 				break
 			}
-			tmp = tmp[skip:]
+			if preIdx < 0 || preIdx > l {
+				break
+			}
 		}
 		if field5count > 0 {
 			m.Labels = make([]mimirpb.LabelAdapter, 0, field5count)
@@ -685,135 +983,284 @@ func (m *RuleDesc) Unmarshal(b []byte) error {
 			m.Annotations = make([]mimirpb.LabelAdapter, 0, field6count)
 		}
 	}
-	for len(b) > 0 {
-		num, typ, tagLen := protowire.ConsumeTag(b)
-		if tagLen < 0 {
-			return fmt.Errorf("invalid tag")
+	for iNdEx < l {
+		preIndex := iNdEx
+		_ = preIndex
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return fmt.Errorf("proto: integer overflow")
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
 		}
-		b = b[tagLen:]
-		switch num {
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: RuleDesc: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: RuleDesc: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
 		case 1: // expr
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Expr", wireType)
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeString(b)
-			if n < 0 {
-				return fmt.Errorf("invalid string")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			m.Expr = v
-			b = b[n:]
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Expr = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		case 2: // record
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Record", wireType)
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeString(b)
-			if n < 0 {
-				return fmt.Errorf("invalid string")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			m.Record = v
-			b = b[n:]
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Record = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		case 3: // alert
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Alert", wireType)
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeString(b)
-			if n < 0 {
-				return fmt.Errorf("invalid string")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			m.Alert = v
-			b = b[n:]
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Alert = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		case 4: // for
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType")
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			if err := types.StdDurationUnmarshal(&m.For, v); err != nil {
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := types.StdDurationUnmarshal(&m.For, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 13: // keep_firing_for
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType")
+			}
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
 				}
-				b = b[n:]
-				continue
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
 			}
-			if err := types.StdDurationUnmarshal(&m.KeepFiringFor, v); err != nil {
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := types.StdDurationUnmarshal(&m.KeepFiringFor, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 5: // labels
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
 			}
 			m.Labels = append(m.Labels, mimirpb.LabelAdapter{})
-			if err := m.Labels[len(m.Labels)-1].Unmarshal(v); err != nil {
+			if err := m.Labels[len(m.Labels)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		case 6: // annotations
-			if typ != protowire.BytesType {
-				n, err := skipField_Rules(b, num, typ)
-				if err != nil {
-					return err
-				}
-				b = b[n:]
-				continue
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Annotations", wireType)
 			}
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("invalid bytes")
+			var byteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(byteLen)
+			if intStringLen < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
 			}
 			m.Annotations = append(m.Annotations, mimirpb.LabelAdapter{})
-			if err := m.Annotations[len(m.Annotations)-1].Unmarshal(v); err != nil {
+			if err := m.Annotations[len(m.Annotations)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			b = b[n:]
+			iNdEx = postIndex
 		default:
-			n, err := skipField_Rules(b, num, typ)
+			iNdEx = preIndex
+			skippy, err := skipRules(dAtA[iNdEx:])
 			if err != nil {
 				return err
 			}
-			b = b[n:]
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return fmt.Errorf("invalid skip")
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
 		}
+	}
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
 	}
 	return nil
 }
@@ -1244,89 +1691,6 @@ func encodeVarintRules(dAtA []byte, offset int, v uint64) int {
 	}
 	dAtA[offset] = uint8(v)
 	return base
-}
-
-func skipRules(dAtA []byte) (n int, err error) {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if iNdEx >= l {
-				return 0, fmt.Errorf("proto: unexpected EOF")
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		wireType := int(wire & 0x7)
-		switch wireType {
-		case 0:
-			for shift := uint(0); ; shift += 7 {
-				if iNdEx >= l {
-					return 0, fmt.Errorf("proto: unexpected EOF")
-				}
-				iNdEx++
-				if dAtA[iNdEx-1] < 0x80 {
-					break
-				}
-			}
-		case 1:
-			iNdEx += 8
-		case 2:
-			var length int
-			for shift := uint(0); ; shift += 7 {
-				if iNdEx >= l {
-					return 0, fmt.Errorf("proto: unexpected EOF")
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				length |= (int(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if length < 0 {
-				return 0, ErrInvalidLengthRules
-			}
-			iNdEx += length
-		case 3:
-			for {
-				var innerWire uint64
-				for shift := uint(0); ; shift += 7 {
-					if iNdEx >= l {
-						return 0, fmt.Errorf("proto: unexpected EOF")
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					innerWire |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				if int(innerWire&0x7) == 4 {
-					break
-				}
-				next, err := skipRules(dAtA[iNdEx:])
-				if err != nil {
-					return 0, err
-				}
-				iNdEx += next
-			}
-		case 5:
-			iNdEx += 4
-		default:
-			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
-		}
-		if iNdEx < 0 {
-			return 0, ErrInvalidLengthRules
-		}
-		return iNdEx, nil
-	}
-	return 0, fmt.Errorf("proto: unexpected EOF")
 }
 
 var (

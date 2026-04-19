@@ -1,6 +1,6 @@
---- a/pkg/ruler/ruler.pb.go	2026-04-19 07:47:23
-+++ b/pkg/ruler/ruler.pb.go	2026-04-19 07:46:54
-@@ -41,9 +41,6 @@
+--- a/pkg/ruler/ruler.pb.go	2026-04-19 18:48:15
++++ b/pkg/ruler/ruler.pb.go	2026-04-19 18:47:48
+@@ -42,9 +42,6 @@
  }
  
  type RulesResponse struct {

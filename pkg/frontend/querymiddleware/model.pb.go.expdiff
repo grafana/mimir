@@ -1,6 +1,6 @@
---- a/pkg/frontend/querymiddleware/model.pb.go	2026-04-19 07:47:23
-+++ b/pkg/frontend/querymiddleware/model.pb.go	2026-04-19 07:46:45
-@@ -21,9 +21,6 @@
+--- a/pkg/frontend/querymiddleware/model.pb.go	2026-04-19 18:48:15
++++ b/pkg/frontend/querymiddleware/model.pb.go	2026-04-19 18:47:39
+@@ -22,9 +22,6 @@
  }
  
  type PrometheusResponse struct {

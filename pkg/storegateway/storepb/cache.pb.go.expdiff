@@ -1,6 +1,6 @@
---- a/pkg/storegateway/storepb/cache.pb.go	2026-04-19 07:47:23
-+++ b/pkg/storegateway/storepb/cache.pb.go	2026-04-19 07:47:03
-@@ -15,9 +15,6 @@
+--- a/pkg/storegateway/storepb/cache.pb.go	2026-04-19 18:48:15
++++ b/pkg/storegateway/storepb/cache.pb.go	2026-04-19 18:47:57
+@@ -16,9 +16,6 @@
  )
  
  type CachedSeries struct {

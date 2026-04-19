@@ -248,8 +248,8 @@ func bufferHolder(file string, structs ...string) modification {
 	return modification{file: file, ops: ops}
 }
 
-const wrUnmarshal = "func (m *WriteRequest) Unmarshal(b []byte) error"
-const tsUnmarshal = "func (m *TimeSeries) Unmarshal(b []byte) error"
+const wrUnmarshal = "func (m *WriteRequest) Unmarshal(dAtA []byte) error"
+const tsUnmarshal = "func (m *TimeSeries) Unmarshal(dAtA []byte) error"
 
 var rw2FunctionsPath = "tools/regenerate-expdiffs/rw2_functions.go.inc"
 
@@ -288,7 +288,7 @@ func mimirPb() modification {
 			// WriteRequest.Unmarshal RW2 modifications: insert vars before the for loop
 			inFunc(wrUnmarshal, func(lines []string) []string {
 				for i, l := range lines {
-					if strings.TrimSpace(l) == "for len(b) > 0 {" {
+					if strings.TrimSpace(l) == "for iNdEx < l {" {
 						return insertMany(lines, i, []string{
 							"\tvar metadata metadataSet",
 							"\tseenFirstSymbol := false",
@@ -302,19 +302,17 @@ func mimirPb() modification {
 			inFunc(wrUnmarshal, insertAfter("m.Timeseries = append(m.Timeseries, PreallocTimeseries{})",
 				"\t\t\tm.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars")),
 			inFunc(wrUnmarshal, replaceFirst(
-				"Timeseries[len(m.Timeseries)-1].Unmarshal(v)",
-				"\t\t\tif err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, nil, nil, m.skipNormalizeMetadataMetricName); err != nil {")),
+				"Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex])",
+				"\t\t\tif err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {")),
 			inFunc(wrUnmarshal, insertAfter("case 3: // metadata",
 				"\t\t\tif m.unmarshalFromRW2 { return errorUnexpectedRW1Metadata }")),
 			inFunc(wrUnmarshal, insertAfter("case 4: // symbolsRW2",
 				"\t\t\tif !m.unmarshalFromRW2 { return errorUnexpectedRW2Symbols }")),
-			inFunc(wrUnmarshal, replaceBlock("protowire.ConsumeString(b)", 6,
-				"\t\t\tv, n := protowire.ConsumeBytes(b)",
-				"\t\t\tif n < 0 { return fmt.Errorf(\"invalid bytes\") }",
-				"\t\t\tif !seenFirstSymbol && len(v) > 0 { return errorInvalidFirstSymbol }",
+			inFunc(wrUnmarshal, replaceBlock("m.SymbolsRW2 = append(m.SymbolsRW2, string(dAtA[iNdEx:postIndex]))", 2,
+				"\t\t\tif !seenFirstSymbol && intStringLen > 0 { return errorInvalidFirstSymbol }",
 				"\t\t\tseenFirstSymbol = true",
-				"\t\t\tm.rw2symbols.append(yoloString(v))",
-				"\t\t\tb = b[n:]",
+				"\t\t\tm.rw2symbols.append(yoloString(dAtA[iNdEx:postIndex]))",
+				"\t\t\tiNdEx = postIndex",
 			)),
 			inFunc(wrUnmarshal, insertAfter("case 5: // timeseriesRW2",
 				"\t\t\tif !m.unmarshalFromRW2 { return errorUnexpectedRW2Timeseries }")),
@@ -322,7 +320,7 @@ func mimirPb() modification {
 				"\t\t\tm.Timeseries = append(m.Timeseries, PreallocTimeseries{})",
 				"\t\t\tm.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars",
 				"\t\t\tif metadata == nil { metadata = metadataSetFromSettings(m.skipDeduplicateMetadata) }",
-				"\t\t\tif err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(v, &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {",
+				"\t\t\tif err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {",
 				"\t\t\t\treturn err",
 				"\t\t\t}",
 			)),
