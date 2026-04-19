@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -316,14 +315,14 @@ func (m *JobKey) MarshalTo(dAtA []byte) (int, error) {
 func (m *JobKey) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Epoch != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Epoch))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Epoch))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.Id) > 0 {
 		i -= len(m.Id)
 		copy(dAtA[i:], m.Id)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Id)))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.Id)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -351,7 +350,7 @@ func (m *JobSpec) MarshalTo(dAtA []byte) (int, error) {
 func (m *JobSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.JobType != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.JobType))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.JobType))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -361,14 +360,14 @@ func (m *JobSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Tenant) > 0 {
 		i -= len(m.Tenant)
 		copy(dAtA[i:], m.Tenant)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Tenant)))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.Tenant)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -396,7 +395,7 @@ func (m *CompactionJob) MarshalTo(dAtA []byte) (int, error) {
 func (m *CompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TotalBlocksBytes != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TotalBlocksBytes))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.TotalBlocksBytes))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -413,7 +412,7 @@ func (m *CompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.BlockIds) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.BlockIds[iNdEx])
 		copy(dAtA[i:], m.BlockIds[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.BlockIds[iNdEx])))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.BlockIds[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -443,7 +442,7 @@ func (m *LeaseJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.WorkerId) > 0 {
 		i -= len(m.WorkerId)
 		copy(dAtA[i:], m.WorkerId)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.WorkerId)))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.WorkerId)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -476,7 +475,7 @@ func (m *LeaseJobResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -486,7 +485,7 @@ func (m *LeaseJobResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -519,14 +518,14 @@ func (m *PlannedCompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Id) > 0 {
 		i -= len(m.Id)
 		copy(dAtA[i:], m.Id)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Id)))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.Id)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -559,14 +558,14 @@ func (m *PlannedJobsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.Tenant) > 0 {
 		i -= len(m.Tenant)
 		copy(dAtA[i:], m.Tenant)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Tenant)))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.Tenant)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -576,7 +575,7 @@ func (m *PlannedJobsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -627,14 +626,14 @@ func (m *UpdatePlanJobRequest) MarshalTo(dAtA []byte) (int, error) {
 func (m *UpdatePlanJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Update != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Update))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Update))
 		i--
 		dAtA[i] = 0x18
 	}
 	if len(m.Tenant) > 0 {
 		i -= len(m.Tenant)
 		copy(dAtA[i:], m.Tenant)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Tenant)))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.Tenant)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -644,7 +643,7 @@ func (m *UpdatePlanJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -672,14 +671,14 @@ func (m *UpdateCompactionJobRequest) MarshalTo(dAtA []byte) (int, error) {
 func (m *UpdateCompactionJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Update != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Update))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Update))
 		i--
 		dAtA[i] = 0x18
 	}
 	if len(m.Tenant) > 0 {
 		i -= len(m.Tenant)
 		copy(dAtA[i:], m.Tenant)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Tenant)))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(len(m.Tenant)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -689,7 +688,7 @@ func (m *UpdateCompactionJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, err
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -740,27 +739,27 @@ func (m *StoredJobInfo) MarshalTo(dAtA []byte) (int, error) {
 func (m *StoredJobInfo) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Epoch != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Epoch))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Epoch))
 		i--
 		dAtA[i] = 0x28
 	}
 	if m.NumLeases != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.NumLeases))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.NumLeases))
 		i--
 		dAtA[i] = 0x20
 	}
 	if m.StatusTime != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.StatusTime))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.StatusTime))
 		i--
 		dAtA[i] = 0x18
 	}
 	if m.Status != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Status))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Status))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.CreationTime != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.CreationTime))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.CreationTime))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -788,7 +787,7 @@ func (m *StoredCompactionJob) MarshalTo(dAtA []byte) (int, error) {
 func (m *StoredCompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Order != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Order))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.Order))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -798,7 +797,7 @@ func (m *StoredCompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -808,7 +807,7 @@ func (m *StoredCompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -836,12 +835,12 @@ func (m *PersistenceMetadata) MarshalTo(dAtA []byte) (int, error) {
 func (m *PersistenceMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.CreationTime != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.CreationTime))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.CreationTime))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.ShardCount != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.ShardCount))
+		i = encodeVarintCompactorscheduler(dAtA, i, uint64(m.ShardCount))
 		i--
 		dAtA[i] = 0x08
 	}

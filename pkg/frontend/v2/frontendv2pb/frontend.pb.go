@@ -11,12 +11,11 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/wiresmith/gen/protohelpers"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"io"
 	"math/bits"
 	"strings"
@@ -177,7 +176,7 @@ func (m *QueryResultRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Stats.MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x1a
 		}
@@ -188,12 +187,12 @@ func (m *QueryResultRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFrontend(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.QueryID != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.QueryID))
+		i = encodeVarintFrontend(dAtA, i, uint64(m.QueryID))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -227,7 +226,7 @@ func (m *QueryResultStreamRequest) MarshalToSizedBuffer(dAtA []byte) (int, error
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFrontend(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	case *QueryResultStreamRequest_Error:
@@ -236,7 +235,7 @@ func (m *QueryResultStreamRequest) MarshalToSizedBuffer(dAtA []byte) (int, error
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFrontend(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	case *QueryResultStreamRequest_Body:
@@ -245,7 +244,7 @@ func (m *QueryResultStreamRequest) MarshalToSizedBuffer(dAtA []byte) (int, error
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFrontend(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	case *QueryResultStreamRequest_Metadata:
@@ -254,12 +253,12 @@ func (m *QueryResultStreamRequest) MarshalToSizedBuffer(dAtA []byte) (int, error
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFrontend(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.QueryID != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.QueryID))
+		i = encodeVarintFrontend(dAtA, i, uint64(m.QueryID))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -293,7 +292,7 @@ func (m *QueryResultMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Stats.MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x1a
 		}
@@ -304,12 +303,12 @@ func (m *QueryResultMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFrontend(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Code != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Code))
+		i = encodeVarintFrontend(dAtA, i, uint64(m.Code))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -339,7 +338,7 @@ func (m *QueryResultBody) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Chunk) > 0 {
 		i -= len(m.Chunk)
 		copy(dAtA[i:], m.Chunk)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Chunk)))
+		i = encodeVarintFrontend(dAtA, i, uint64(len(m.Chunk)))
 		i--
 		dAtA[i] = 0x0a
 	}

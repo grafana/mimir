@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -181,12 +180,12 @@ func (m *EncodedQueryPlan) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintPlan(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x3a
 	}
 	if m.Version != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Version))
+		i = encodeVarintPlan(dAtA, i, uint64(m.Version))
 		i--
 		dAtA[i] = 0x30
 	}
@@ -203,12 +202,12 @@ func (m *EncodedQueryPlan) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.OriginalExpression) > 0 {
 		i -= len(m.OriginalExpression)
 		copy(dAtA[i:], m.OriginalExpression)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.OriginalExpression)))
+		i = encodeVarintPlan(dAtA, i, uint64(len(m.OriginalExpression)))
 		i--
 		dAtA[i] = 0x22
 	}
 	if m.RootNode != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.RootNode))
+		i = encodeVarintPlan(dAtA, i, uint64(m.RootNode))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -218,7 +217,7 @@ func (m *EncodedQueryPlan) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintPlan(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -229,7 +228,7 @@ func (m *EncodedQueryPlan) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 		if size > 0 {
 			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintPlan(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -268,17 +267,17 @@ func (m *EncodedQueryTimeRange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x20
 	}
 	if m.IntervalMilliseconds != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.IntervalMilliseconds))
+		i = encodeVarintPlan(dAtA, i, uint64(m.IntervalMilliseconds))
 		i--
 		dAtA[i] = 0x18
 	}
 	if m.EndT != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.EndT))
+		i = encodeVarintPlan(dAtA, i, uint64(m.EndT))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.StartT != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.StartT))
+		i = encodeVarintPlan(dAtA, i, uint64(m.StartT))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -308,21 +307,21 @@ func (m *EncodedNode) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.ChildrenLabels) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.ChildrenLabels[iNdEx])
 		copy(dAtA[i:], m.ChildrenLabels[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ChildrenLabels[iNdEx])))
+		i = encodeVarintPlan(dAtA, i, uint64(len(m.ChildrenLabels[iNdEx])))
 		i--
 		dAtA[i] = 0x32
 	}
 	if len(m.Description) > 0 {
 		i -= len(m.Description)
 		copy(dAtA[i:], m.Description)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Description)))
+		i = encodeVarintPlan(dAtA, i, uint64(len(m.Description)))
 		i--
 		dAtA[i] = 0x2a
 	}
 	if len(m.Type) > 0 {
 		i -= len(m.Type)
 		copy(dAtA[i:], m.Type)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Type)))
+		i = encodeVarintPlan(dAtA, i, uint64(len(m.Type)))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -330,21 +329,21 @@ func (m *EncodedNode) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.Children) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Children[j]))
+			i = encodeVarintPlan(dAtA, i, uint64(m.Children[j]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintPlan(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.Details) > 0 {
 		i -= len(m.Details)
 		copy(dAtA[i:], m.Details)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Details)))
+		i = encodeVarintPlan(dAtA, i, uint64(len(m.Details)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.NodeType != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.NodeType))
+		i = encodeVarintPlan(dAtA, i, uint64(m.NodeType))
 		i--
 		dAtA[i] = 0x08
 	}

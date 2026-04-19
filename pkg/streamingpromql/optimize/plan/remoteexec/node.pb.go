@@ -6,7 +6,6 @@ package remoteexec
 import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -99,7 +98,7 @@ func (m *RemoteExecutionConsumerDetails) MarshalTo(dAtA []byte) (int, error) {
 func (m *RemoteExecutionConsumerDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.NodeIndex != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.NodeIndex))
+		i = encodeVarintNode(dAtA, i, uint64(m.NodeIndex))
 		i--
 		dAtA[i] = 0x08
 	}

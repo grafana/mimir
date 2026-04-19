@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -142,14 +141,14 @@ func (m *JobKey) MarshalTo(dAtA []byte) (int, error) {
 func (m *JobKey) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Epoch != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Epoch))
+		i = encodeVarintScheduler(dAtA, i, uint64(m.Epoch))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.Id) > 0 {
 		i -= len(m.Id)
 		copy(dAtA[i:], m.Id)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Id)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.Id)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -177,24 +176,24 @@ func (m *JobSpec) MarshalTo(dAtA []byte) (int, error) {
 func (m *JobSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.EndOffset != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.EndOffset))
+		i = encodeVarintScheduler(dAtA, i, uint64(m.EndOffset))
 		i--
 		dAtA[i] = 0x20
 	}
 	if m.StartOffset != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.StartOffset))
+		i = encodeVarintScheduler(dAtA, i, uint64(m.StartOffset))
 		i--
 		dAtA[i] = 0x18
 	}
 	if m.Partition != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Partition))
+		i = encodeVarintScheduler(dAtA, i, uint64(m.Partition))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.Topic) > 0 {
 		i -= len(m.Topic)
 		copy(dAtA[i:], m.Topic)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Topic)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.Topic)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -224,7 +223,7 @@ func (m *AssignJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.WorkerId) > 0 {
 		i -= len(m.WorkerId)
 		copy(dAtA[i:], m.WorkerId)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.WorkerId)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.WorkerId)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -257,7 +256,7 @@ func (m *AssignJobResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -267,7 +266,7 @@ func (m *AssignJobResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -310,14 +309,14 @@ func (m *UpdateJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.WorkerId) > 0 {
 		i -= len(m.WorkerId)
 		copy(dAtA[i:], m.WorkerId)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.WorkerId)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.WorkerId)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -327,7 +326,7 @@ func (m *UpdateJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}

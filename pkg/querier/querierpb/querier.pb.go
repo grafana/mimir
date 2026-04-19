@@ -9,7 +9,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -352,7 +351,7 @@ func (m *EvaluateQueryRequest) MarshalTo(dAtA []byte) (int, error) {
 func (m *EvaluateQueryRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.BatchSize != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.BatchSize))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.BatchSize))
 		i--
 		dAtA[i] = 0x20
 	}
@@ -362,7 +361,7 @@ func (m *EvaluateQueryRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -373,7 +372,7 @@ func (m *EvaluateQueryRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 		if size > 0 {
 			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintQuerier(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -408,13 +407,13 @@ func (m *EvaluationNode) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 		if size > 0 {
 			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintQuerier(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x12
 		}
 	}
 	if m.NodeIndex != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.NodeIndex))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.NodeIndex))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -448,7 +447,7 @@ func (m *EvaluateQueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x32
 	case *EvaluateQueryResponse_RangeVectorStepData:
@@ -457,7 +456,7 @@ func (m *EvaluateQueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	case *EvaluateQueryResponse_InstantVectorSeriesData:
@@ -466,7 +465,7 @@ func (m *EvaluateQueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	case *EvaluateQueryResponse_ScalarValue:
@@ -475,7 +474,7 @@ func (m *EvaluateQueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	case *EvaluateQueryResponse_StringValue:
@@ -484,7 +483,7 @@ func (m *EvaluateQueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	case *EvaluateQueryResponse_SeriesMetadata:
@@ -493,7 +492,7 @@ func (m *EvaluateQueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -526,12 +525,12 @@ func (m *EvaluateQueryResponseSeriesMetadata) MarshalToSizedBuffer(dAtA []byte) 
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.NodeIndex != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.NodeIndex))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.NodeIndex))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -575,7 +574,7 @@ func (m *SeriesMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintQuerier(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -606,12 +605,12 @@ func (m *EvaluateQueryResponseStringValue) MarshalToSizedBuffer(dAtA []byte) (in
 	if len(m.Value) > 0 {
 		i -= len(m.Value)
 		copy(dAtA[i:], m.Value)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Value)))
+		i = encodeVarintQuerier(dAtA, i, uint64(len(m.Value)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.NodeIndex != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.NodeIndex))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.NodeIndex))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -644,12 +643,12 @@ func (m *EvaluateQueryResponseScalarValue) MarshalToSizedBuffer(dAtA []byte) (in
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.NodeIndex != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.NodeIndex))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.NodeIndex))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -682,12 +681,12 @@ func (m *EvaluateQueryResponseInstantVectorSeriesData) MarshalToSizedBuffer(dAtA
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.NodeIndex != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.NodeIndex))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.NodeIndex))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -720,7 +719,7 @@ func (m *InstantVectorSeriesData) MarshalToSizedBuffer(dAtA []byte) (int, error)
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -730,7 +729,7 @@ func (m *InstantVectorSeriesData) MarshalToSizedBuffer(dAtA []byte) (int, error)
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -763,7 +762,7 @@ func (m *EvaluateQueryResponseRangeVectorStepData) MarshalToSizedBuffer(dAtA []b
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x3a
 	}
@@ -773,32 +772,32 @@ func (m *EvaluateQueryResponseRangeVectorStepData) MarshalToSizedBuffer(dAtA []b
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintQuerier(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x32
 	}
 	if m.RangeEnd != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.RangeEnd))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.RangeEnd))
 		i--
 		dAtA[i] = 0x28
 	}
 	if m.RangeStart != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.RangeStart))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.RangeStart))
 		i--
 		dAtA[i] = 0x20
 	}
 	if m.StepT != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.StepT))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.StepT))
 		i--
 		dAtA[i] = 0x18
 	}
 	if m.SeriesIndex != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SeriesIndex))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.SeriesIndex))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.NodeIndex != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.NodeIndex))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.NodeIndex))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -828,12 +827,12 @@ func (m *Error) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Message) > 0 {
 		i -= len(m.Message)
 		copy(dAtA[i:], m.Message)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Message)))
+		i = encodeVarintQuerier(dAtA, i, uint64(len(m.Message)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Type != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Type))
+		i = encodeVarintQuerier(dAtA, i, uint64(m.Type))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -867,7 +866,7 @@ func (m *EvaluateQueryResponseEvaluationCompleted) MarshalToSizedBuffer(dAtA []b
 		}
 		if size > 0 {
 			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintQuerier(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x12
 		}
@@ -879,7 +878,7 @@ func (m *EvaluateQueryResponseEvaluationCompleted) MarshalToSizedBuffer(dAtA []b
 		}
 		if size > 0 {
 			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintQuerier(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -910,14 +909,14 @@ func (m *Annotations) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.Infos) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Infos[iNdEx])
 		copy(dAtA[i:], m.Infos[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Infos[iNdEx])))
+		i = encodeVarintQuerier(dAtA, i, uint64(len(m.Infos[iNdEx])))
 		i--
 		dAtA[i] = 0x12
 	}
 	for iNdEx := len(m.Warnings) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Warnings[iNdEx])
 		copy(dAtA[i:], m.Warnings[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Warnings[iNdEx])))
+		i = encodeVarintQuerier(dAtA, i, uint64(len(m.Warnings[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}

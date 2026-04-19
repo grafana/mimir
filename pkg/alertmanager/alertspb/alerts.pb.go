@@ -6,7 +6,6 @@ package alertspb
 import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
@@ -90,21 +89,21 @@ func (m *AlertConfigDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintAlerts(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.RawConfig) > 0 {
 		i -= len(m.RawConfig)
 		copy(dAtA[i:], m.RawConfig)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.RawConfig)))
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.RawConfig)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.User) > 0 {
 		i -= len(m.User)
 		copy(dAtA[i:], m.User)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.User)))
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.User)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -134,14 +133,14 @@ func (m *TemplateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Body) > 0 {
 		i -= len(m.Body)
 		copy(dAtA[i:], m.Body)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Body)))
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.Body)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Filename) > 0 {
 		i -= len(m.Filename)
 		copy(dAtA[i:], m.Filename)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Filename)))
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.Filename)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -174,7 +173,7 @@ func (m *FullStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintAlerts(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}

@@ -8,7 +8,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -147,7 +146,7 @@ func (m *RuleGroupDesc) MarshalTo(dAtA []byte) (int, error) {
 func (m *RuleGroupDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Limit != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Limit))
+		i = encodeVarintRules(dAtA, i, uint64(m.Limit))
 		i--
 		dAtA[i] = 0x78
 	}
@@ -158,7 +157,7 @@ func (m *RuleGroupDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintRules(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x72
 		}
@@ -169,7 +168,7 @@ func (m *RuleGroupDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRules(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x6a
 	}
@@ -189,14 +188,14 @@ func (m *RuleGroupDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRules(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x5a
 	}
 	for iNdEx := len(m.SourceTenants) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.SourceTenants[iNdEx])
 		copy(dAtA[i:], m.SourceTenants[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.SourceTenants[iNdEx])))
+		i = encodeVarintRules(dAtA, i, uint64(len(m.SourceTenants[iNdEx])))
 		i--
 		dAtA[i] = 0x52
 	}
@@ -206,14 +205,14 @@ func (m *RuleGroupDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRules(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x4a
 	}
 	if len(m.User) > 0 {
 		i -= len(m.User)
 		copy(dAtA[i:], m.User)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.User)))
+		i = encodeVarintRules(dAtA, i, uint64(len(m.User)))
 		i--
 		dAtA[i] = 0x32
 	}
@@ -223,7 +222,7 @@ func (m *RuleGroupDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRules(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -233,21 +232,21 @@ func (m *RuleGroupDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRules(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.Namespace) > 0 {
 		i -= len(m.Namespace)
 		copy(dAtA[i:], m.Namespace)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Namespace)))
+		i = encodeVarintRules(dAtA, i, uint64(len(m.Namespace)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Name) > 0 {
 		i -= len(m.Name)
 		copy(dAtA[i:], m.Name)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Name)))
+		i = encodeVarintRules(dAtA, i, uint64(len(m.Name)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -280,7 +279,7 @@ func (m *RuleDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRules(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x6a
 	}
@@ -291,7 +290,7 @@ func (m *RuleDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Annotations[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintRules(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x32
 		}
@@ -303,7 +302,7 @@ func (m *RuleDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintRules(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x2a
 		}
@@ -314,28 +313,28 @@ func (m *RuleDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRules(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x22
 	}
 	if len(m.Alert) > 0 {
 		i -= len(m.Alert)
 		copy(dAtA[i:], m.Alert)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Alert)))
+		i = encodeVarintRules(dAtA, i, uint64(len(m.Alert)))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.Record) > 0 {
 		i -= len(m.Record)
 		copy(dAtA[i:], m.Record)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Record)))
+		i = encodeVarintRules(dAtA, i, uint64(len(m.Record)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Expr) > 0 {
 		i -= len(m.Expr)
 		copy(dAtA[i:], m.Expr)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Expr)))
+		i = encodeVarintRules(dAtA, i, uint64(len(m.Expr)))
 		i--
 		dAtA[i] = 0x0a
 	}

@@ -9,7 +9,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -275,7 +274,7 @@ func (m *QuerierToScheduler) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.QuerierID) > 0 {
 		i -= len(m.QuerierID)
 		copy(dAtA[i:], m.QuerierID)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.QuerierID)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.QuerierID)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -309,7 +308,7 @@ func (m *SchedulerToQuerier) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x3a
 	case *SchedulerToQuerier_HttpRequest:
@@ -318,12 +317,12 @@ func (m *SchedulerToQuerier) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.QueueTimeNanos != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.QueueTimeNanos))
+		i = encodeVarintScheduler(dAtA, i, uint64(m.QueueTimeNanos))
 		i--
 		dAtA[i] = 0x30
 	}
@@ -340,19 +339,19 @@ func (m *SchedulerToQuerier) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.UserID) > 0 {
 		i -= len(m.UserID)
 		copy(dAtA[i:], m.UserID)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.UserID)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.UserID)))
 		i--
 		dAtA[i] = 0x22
 	}
 	if len(m.FrontendAddress) > 0 {
 		i -= len(m.FrontendAddress)
 		copy(dAtA[i:], m.FrontendAddress)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.FrontendAddress)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.FrontendAddress)))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if m.QueryID != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.QueryID))
+		i = encodeVarintScheduler(dAtA, i, uint64(m.QueryID))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -385,7 +384,7 @@ func (m *ProtobufRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -395,7 +394,7 @@ func (m *ProtobufRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -425,14 +424,14 @@ func (m *MetadataItem) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.Value) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Value[iNdEx])
 		copy(dAtA[i:], m.Value[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Value[iNdEx])))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.Value[iNdEx])))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Key) > 0 {
 		i -= len(m.Key)
 		copy(dAtA[i:], m.Key)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Key)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.Key)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -466,7 +465,7 @@ func (m *FrontendToScheduler) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x42
 	case *FrontendToScheduler_HttpRequest:
@@ -475,14 +474,14 @@ func (m *FrontendToScheduler) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintScheduler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	}
 	for iNdEx := len(m.AdditionalQueueDimensions) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.AdditionalQueueDimensions[iNdEx])
 		copy(dAtA[i:], m.AdditionalQueueDimensions[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.AdditionalQueueDimensions[iNdEx])))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.AdditionalQueueDimensions[iNdEx])))
 		i--
 		dAtA[i] = 0x3a
 	}
@@ -499,24 +498,24 @@ func (m *FrontendToScheduler) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.UserID) > 0 {
 		i -= len(m.UserID)
 		copy(dAtA[i:], m.UserID)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.UserID)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.UserID)))
 		i--
 		dAtA[i] = 0x22
 	}
 	if m.QueryID != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.QueryID))
+		i = encodeVarintScheduler(dAtA, i, uint64(m.QueryID))
 		i--
 		dAtA[i] = 0x18
 	}
 	if len(m.FrontendAddress) > 0 {
 		i -= len(m.FrontendAddress)
 		copy(dAtA[i:], m.FrontendAddress)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.FrontendAddress)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.FrontendAddress)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Type != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Type))
+		i = encodeVarintScheduler(dAtA, i, uint64(m.Type))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -546,12 +545,12 @@ func (m *SchedulerToFrontend) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Error) > 0 {
 		i -= len(m.Error)
 		copy(dAtA[i:], m.Error)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Error)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.Error)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Status != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Status))
+		i = encodeVarintScheduler(dAtA, i, uint64(m.Status))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -581,7 +580,7 @@ func (m *NotifyQuerierShutdownRequest) MarshalToSizedBuffer(dAtA []byte) (int, e
 	if len(m.QuerierID) > 0 {
 		i -= len(m.QuerierID)
 		copy(dAtA[i:], m.QuerierID)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.QuerierID)))
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.QuerierID)))
 		i--
 		dAtA[i] = 0x0a
 	}

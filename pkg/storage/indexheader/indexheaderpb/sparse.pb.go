@@ -6,7 +6,6 @@ package indexheaderpb
 import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -155,7 +154,7 @@ func (m *Sparse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintSparse(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -165,7 +164,7 @@ func (m *Sparse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintSparse(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -193,7 +192,7 @@ func (m *Symbols) MarshalTo(dAtA []byte) (int, error) {
 func (m *Symbols) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.SymbolsCount != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SymbolsCount))
+		i = encodeVarintSparse(dAtA, i, uint64(m.SymbolsCount))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -201,9 +200,9 @@ func (m *Symbols) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.Offsets) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Offsets[j]))
+			i = encodeVarintSparse(dAtA, i, uint64(m.Offsets[j]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintSparse(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -236,14 +235,14 @@ func (m *PostingOffsetTable_PostingsEntry) MarshalToSizedBuffer(dAtA []byte) (in
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintSparse(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Key) > 0 {
 		i -= len(m.Key)
 		copy(dAtA[i:], m.Key)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Key)))
+		i = encodeVarintSparse(dAtA, i, uint64(len(m.Key)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -271,7 +270,7 @@ func (m *PostingOffsetTable) MarshalTo(dAtA []byte) (int, error) {
 func (m *PostingOffsetTable) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.PostingOffsetInMemorySampling != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.PostingOffsetInMemorySampling))
+		i = encodeVarintSparse(dAtA, i, uint64(m.PostingOffsetInMemorySampling))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -286,17 +285,17 @@ func (m *PostingOffsetTable) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 						return 0, err
 					}
 					i -= size
-					i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+					i = encodeVarintSparse(dAtA, i, uint64(size))
 				}
 				i--
 				dAtA[i] = 0x12
 			}
 			i -= len(k)
 			copy(dAtA[i:], k)
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(k)))
+			i = encodeVarintSparse(dAtA, i, uint64(len(k)))
 			i--
 			dAtA[i] = 0x0a
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(baseI-i))
+			i = encodeVarintSparse(dAtA, i, uint64(baseI-i))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -325,7 +324,7 @@ func (m *PostingValueOffsets) MarshalTo(dAtA []byte) (int, error) {
 func (m *PostingValueOffsets) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.LastValOffset != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.LastValOffset))
+		i = encodeVarintSparse(dAtA, i, uint64(m.LastValOffset))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -335,7 +334,7 @@ func (m *PostingValueOffsets) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintSparse(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -363,14 +362,14 @@ func (m *PostingOffset) MarshalTo(dAtA []byte) (int, error) {
 func (m *PostingOffset) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TableOff != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TableOff))
+		i = encodeVarintSparse(dAtA, i, uint64(m.TableOff))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.Value) > 0 {
 		i -= len(m.Value)
 		copy(dAtA[i:], m.Value)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Value)))
+		i = encodeVarintSparse(dAtA, i, uint64(len(m.Value)))
 		i--
 		dAtA[i] = 0x0a
 	}

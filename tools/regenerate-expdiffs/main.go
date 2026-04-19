@@ -237,7 +237,7 @@ func findFunc(lines []string, sig string) (int, int) {
 
 func bufferHolder(file string, structs ...string) modification {
 	var ops []op
-	ops = append(ops, addImportIfMissing("github.com/grafana/mimir/pkg/mimirpb", "github.com/grafana/wiresmith/gen/protohelpers"))
+	ops = append(ops, addImportIfMissing("github.com/grafana/mimir/pkg/mimirpb", "google.golang.org/protobuf/encoding/protowire"))
 	for _, s := range structs {
 		ops = append(ops, addStructFields(s,
 			"// Keep reference to buffer for unsafe references.",
@@ -257,7 +257,7 @@ func mimirPb() modification {
 	return modification{
 		file: "pkg/mimirpb/mimir.pb.go",
 		ops: []op{
-			addImportIfMissing("io", "github.com/grafana/wiresmith/gen/protohelpers"),
+			addImportIfMissing("io", "google.golang.org/protobuf/encoding/protowire"),
 			addStructFields("WriteRequest",
 				"// Keep reference to buffer for unsafe references.",
 				"BufferHolder",

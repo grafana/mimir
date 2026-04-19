@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -140,12 +139,12 @@ func (m *Stats) MarshalTo(dAtA []byte) (int, error) {
 func (m *Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.SplitRangeVectors != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SplitRangeVectors))
+		i = encodeVarintStats(dAtA, i, uint64(m.SplitRangeVectors))
 		i--
 		dAtA[i] = 0x78
 	}
 	if m.RemoteExecutionRequestCount != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.RemoteExecutionRequestCount))
+		i = encodeVarintStats(dAtA, i, uint64(m.RemoteExecutionRequestCount))
 		i--
 		dAtA[i] = 0x70
 	}
@@ -155,17 +154,17 @@ func (m *Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintStats(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x6a
 	}
 	if m.SpunOffSubqueries != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SpunOffSubqueries))
+		i = encodeVarintStats(dAtA, i, uint64(m.SpunOffSubqueries))
 		i--
 		dAtA[i] = 0x60
 	}
 	if m.SamplesProcessed != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SamplesProcessed))
+		i = encodeVarintStats(dAtA, i, uint64(m.SamplesProcessed))
 		i--
 		dAtA[i] = 0x58
 	}
@@ -175,7 +174,7 @@ func (m *Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintStats(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x52
 	}
@@ -185,42 +184,42 @@ func (m *Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintStats(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x4a
 	}
 	if m.EstimatedSeriesCount != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.EstimatedSeriesCount))
+		i = encodeVarintStats(dAtA, i, uint64(m.EstimatedSeriesCount))
 		i--
 		dAtA[i] = 0x40
 	}
 	if m.FetchedIndexBytes != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.FetchedIndexBytes))
+		i = encodeVarintStats(dAtA, i, uint64(m.FetchedIndexBytes))
 		i--
 		dAtA[i] = 0x38
 	}
 	if m.SplitQueries != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SplitQueries))
+		i = encodeVarintStats(dAtA, i, uint64(m.SplitQueries))
 		i--
 		dAtA[i] = 0x30
 	}
 	if m.ShardedQueries != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.ShardedQueries))
+		i = encodeVarintStats(dAtA, i, uint64(m.ShardedQueries))
 		i--
 		dAtA[i] = 0x28
 	}
 	if m.FetchedChunksCount != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.FetchedChunksCount))
+		i = encodeVarintStats(dAtA, i, uint64(m.FetchedChunksCount))
 		i--
 		dAtA[i] = 0x20
 	}
 	if m.FetchedChunkBytes != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.FetchedChunkBytes))
+		i = encodeVarintStats(dAtA, i, uint64(m.FetchedChunkBytes))
 		i--
 		dAtA[i] = 0x18
 	}
 	if m.FetchedSeriesCount != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.FetchedSeriesCount))
+		i = encodeVarintStats(dAtA, i, uint64(m.FetchedSeriesCount))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -230,7 +229,7 @@ func (m *Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintStats(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -258,12 +257,12 @@ func (m *StepStat) MarshalTo(dAtA []byte) (int, error) {
 func (m *StepStat) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Value != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Value))
+		i = encodeVarintStats(dAtA, i, uint64(m.Value))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.Timestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Timestamp))
+		i = encodeVarintStats(dAtA, i, uint64(m.Timestamp))
 		i--
 		dAtA[i] = 0x08
 	}

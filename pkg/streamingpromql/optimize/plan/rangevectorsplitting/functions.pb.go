@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math"
@@ -308,7 +307,7 @@ func (m *SumOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error)
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -363,7 +362,7 @@ func (m *SumOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, er
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -435,7 +434,7 @@ func (m *CountOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, 
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -517,7 +516,7 @@ func (m *MinMaxOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int,
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -557,12 +556,12 @@ func (m *RateIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x80
 	}
 	if m.LastHistogramTimestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.LastHistogramTimestamp))
+		i = encodeVarintFunctions(dAtA, i, uint64(m.LastHistogramTimestamp))
 		i--
 		dAtA[i] = 0x78
 	}
 	if m.FirstHistogramTimestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.FirstHistogramTimestamp))
+		i = encodeVarintFunctions(dAtA, i, uint64(m.FirstHistogramTimestamp))
 		i--
 		dAtA[i] = 0x70
 	}
@@ -572,7 +571,7 @@ func (m *RateIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x62
 	}
@@ -582,7 +581,7 @@ func (m *RateIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x5a
 	}
@@ -592,7 +591,7 @@ func (m *RateIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x52
 	}
@@ -608,7 +607,7 @@ func (m *RateIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -618,7 +617,7 @@ func (m *RateIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -633,7 +632,7 @@ func (m *RateIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x10
 	}
 	if m.SampleCount != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SampleCount))
+		i = encodeVarintFunctions(dAtA, i, uint64(m.SampleCount))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -666,7 +665,7 @@ func (m *RateIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -699,7 +698,7 @@ func (m *FirstLastOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, 
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -748,7 +747,7 @@ func (m *FirstLastOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (i
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -786,7 +785,7 @@ func (m *AvgOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error)
 		dAtA[i] = 0x40
 	}
 	if m.CountH != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.CountH))
+		i = encodeVarintFunctions(dAtA, i, uint64(m.CountH))
 		i--
 		dAtA[i] = 0x38
 	}
@@ -796,7 +795,7 @@ func (m *AvgOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error)
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x32
 	}
@@ -863,7 +862,7 @@ func (m *AvgOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, er
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintFunctions(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}

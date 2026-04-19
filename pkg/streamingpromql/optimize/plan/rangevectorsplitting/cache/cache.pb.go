@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -79,7 +78,7 @@ func (m *CachedSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 		if size > 0 {
 			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintCache(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x32
 		}
@@ -87,7 +86,7 @@ func (m *CachedSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Results) > 0 {
 		i -= len(m.Results)
 		copy(dAtA[i:], m.Results)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Results)))
+		i = encodeVarintCache(dAtA, i, uint64(len(m.Results)))
 		i--
 		dAtA[i] = 0x2a
 	}
@@ -97,24 +96,24 @@ func (m *CachedSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintCache(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	}
 	if m.End != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.End))
+		i = encodeVarintCache(dAtA, i, uint64(m.End))
 		i--
 		dAtA[i] = 0x18
 	}
 	if m.Start != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Start))
+		i = encodeVarintCache(dAtA, i, uint64(m.Start))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.CacheKey) > 0 {
 		i -= len(m.CacheKey)
 		copy(dAtA[i:], m.CacheKey)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.CacheKey)))
+		i = encodeVarintCache(dAtA, i, uint64(len(m.CacheKey)))
 		i--
 		dAtA[i] = 0x0a
 	}

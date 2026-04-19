@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -104,12 +103,12 @@ func (m *UpdateStateResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Error) > 0 {
 		i -= len(m.Error)
 		copy(dAtA[i:], m.Error)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Error)))
+		i = encodeVarintAlertmanager(dAtA, i, uint64(len(m.Error)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Status != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Status))
+		i = encodeVarintAlertmanager(dAtA, i, uint64(m.Status))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -165,19 +164,19 @@ func (m *ReadStateResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintAlertmanager(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.Error) > 0 {
 		i -= len(m.Error)
 		copy(dAtA[i:], m.Error)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Error)))
+		i = encodeVarintAlertmanager(dAtA, i, uint64(len(m.Error)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Status != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Status))
+		i = encodeVarintAlertmanager(dAtA, i, uint64(m.Status))
 		i--
 		dAtA[i] = 0x08
 	}

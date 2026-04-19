@@ -6,7 +6,6 @@ package distributor
 import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -70,29 +69,29 @@ func (m *ReplicaDesc) MarshalTo(dAtA []byte) (int, error) {
 func (m *ReplicaDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.ElectedChanges != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.ElectedChanges))
+		i = encodeVarintHaTracker(dAtA, i, uint64(m.ElectedChanges))
 		i--
 		dAtA[i] = 0x28
 	}
 	if m.ElectedAt != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.ElectedAt))
+		i = encodeVarintHaTracker(dAtA, i, uint64(m.ElectedAt))
 		i--
 		dAtA[i] = 0x20
 	}
 	if m.DeletedAt != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.DeletedAt))
+		i = encodeVarintHaTracker(dAtA, i, uint64(m.DeletedAt))
 		i--
 		dAtA[i] = 0x18
 	}
 	if m.ReceivedAt != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.ReceivedAt))
+		i = encodeVarintHaTracker(dAtA, i, uint64(m.ReceivedAt))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.Replica) > 0 {
 		i -= len(m.Replica)
 		copy(dAtA[i:], m.Replica)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Replica)))
+		i = encodeVarintHaTracker(dAtA, i, uint64(len(m.Replica)))
 		i--
 		dAtA[i] = 0x0a
 	}

@@ -7,9 +7,8 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
-	"github.com/grafana/wiresmith/gen/protohelpers"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"google.golang.org/protobuf/encoding/protowire"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"io"
 	"math/bits"
 	"strings"
@@ -459,7 +458,7 @@ func (m *SeriesRequest) MarshalTo(dAtA []byte) (int, error) {
 func (m *SeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.StreamingChunksBatchSize != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.StreamingChunksBatchSize))
+		i = encodeVarintRpc(dAtA, i, uint64(m.StreamingChunksBatchSize))
 		i--
 		dAtA[i] = 0x06
 		i--
@@ -471,7 +470,7 @@ func (m *SeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x72
 	}
@@ -481,7 +480,7 @@ func (m *SeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x4a
 	}
@@ -501,17 +500,17 @@ func (m *SeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if m.MaxTime != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.MaxTime))
+		i = encodeVarintRpc(dAtA, i, uint64(m.MaxTime))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.MinTime != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.MinTime))
+		i = encodeVarintRpc(dAtA, i, uint64(m.MinTime))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -541,7 +540,7 @@ func (m *SeriesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.ProjectionLabels) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.ProjectionLabels[iNdEx])
 		copy(dAtA[i:], m.ProjectionLabels[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ProjectionLabels[iNdEx])))
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.ProjectionLabels[iNdEx])))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -561,7 +560,7 @@ func (m *SeriesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -589,7 +588,7 @@ func (m *Stats) MarshalTo(dAtA []byte) (int, error) {
 func (m *Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.FetchedIndexBytes != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.FetchedIndexBytes))
+		i = encodeVarintRpc(dAtA, i, uint64(m.FetchedIndexBytes))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -623,7 +622,7 @@ func (m *SeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x42
 	case *SeriesResponse_StreamingChunksEstimate:
@@ -632,7 +631,7 @@ func (m *SeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x3a
 	case *SeriesResponse_StreamingChunks:
@@ -641,7 +640,7 @@ func (m *SeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x32
 	case *SeriesResponse_StreamingSeries:
@@ -650,7 +649,7 @@ func (m *SeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	case *SeriesResponse_Stats:
@@ -659,7 +658,7 @@ func (m *SeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	case *SeriesResponse_Hints:
@@ -668,13 +667,13 @@ func (m *SeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	case *SeriesResponse_Warning:
 		i -= len(v.Warning)
 		copy(dAtA[i:], v.Warning)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(v.Warning)))
+		i = encodeVarintRpc(dAtA, i, uint64(len(v.Warning)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -707,7 +706,7 @@ func (m *SeriesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -737,7 +736,7 @@ func (m *Block) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Id) > 0 {
 		i -= len(m.Id)
 		copy(dAtA[i:], m.Id)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Id)))
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.Id)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -770,12 +769,12 @@ func (m *LabelNamesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x42
 	}
 	if m.Limit != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Limit))
+		i = encodeVarintRpc(dAtA, i, uint64(m.Limit))
 		i--
 		dAtA[i] = 0x38
 	}
@@ -785,7 +784,7 @@ func (m *LabelNamesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x32
 	}
@@ -795,17 +794,17 @@ func (m *LabelNamesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	}
 	if m.End != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.End))
+		i = encodeVarintRpc(dAtA, i, uint64(m.End))
 		i--
 		dAtA[i] = 0x20
 	}
 	if m.Start != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Start))
+		i = encodeVarintRpc(dAtA, i, uint64(m.Start))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -838,7 +837,7 @@ func (m *LabelNamesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -871,7 +870,7 @@ func (m *LabelNamesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -881,21 +880,21 @@ func (m *LabelNamesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
 	for iNdEx := len(m.Warnings) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Warnings[iNdEx])
 		copy(dAtA[i:], m.Warnings[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Warnings[iNdEx])))
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.Warnings[iNdEx])))
 		i--
 		dAtA[i] = 0x12
 	}
 	for iNdEx := len(m.Names) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Names[iNdEx])
 		copy(dAtA[i:], m.Names[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Names[iNdEx])))
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.Names[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -928,7 +927,7 @@ func (m *LabelNamesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error)
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -961,12 +960,12 @@ func (m *LabelValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x4a
 	}
 	if m.Limit != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Limit))
+		i = encodeVarintRpc(dAtA, i, uint64(m.Limit))
 		i--
 		dAtA[i] = 0x40
 	}
@@ -976,7 +975,7 @@ func (m *LabelValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x3a
 	}
@@ -986,24 +985,24 @@ func (m *LabelValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x32
 	}
 	if m.End != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.End))
+		i = encodeVarintRpc(dAtA, i, uint64(m.End))
 		i--
 		dAtA[i] = 0x28
 	}
 	if m.Start != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Start))
+		i = encodeVarintRpc(dAtA, i, uint64(m.Start))
 		i--
 		dAtA[i] = 0x20
 	}
 	if len(m.Label) > 0 {
 		i -= len(m.Label)
 		copy(dAtA[i:], m.Label)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Label)))
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.Label)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -1036,7 +1035,7 @@ func (m *LabelValuesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error)
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -1069,7 +1068,7 @@ func (m *LabelValuesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -1079,21 +1078,21 @@ func (m *LabelValuesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
 	for iNdEx := len(m.Warnings) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Warnings[iNdEx])
 		copy(dAtA[i:], m.Warnings[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Warnings[iNdEx])))
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.Warnings[iNdEx])))
 		i--
 		dAtA[i] = 0x12
 	}
 	for iNdEx := len(m.Values) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Values[iNdEx])
 		copy(dAtA[i:], m.Values[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Values[iNdEx])))
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.Values[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -1126,7 +1125,7 @@ func (m *LabelValuesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRpc(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}

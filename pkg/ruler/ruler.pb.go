@@ -11,7 +11,6 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -259,12 +258,12 @@ func (m *RulesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.NextToken) > 0 {
 		i -= len(m.NextToken)
 		copy(dAtA[i:], m.NextToken)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.NextToken)))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.NextToken)))
 		i--
 		dAtA[i] = 0x3a
 	}
 	if m.MaxGroups != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.MaxGroups))
+		i = encodeVarintRuler(dAtA, i, uint64(m.MaxGroups))
 		i--
 		dAtA[i] = 0x30
 	}
@@ -281,26 +280,26 @@ func (m *RulesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.File) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.File[iNdEx])
 		copy(dAtA[i:], m.File[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.File[iNdEx])))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.File[iNdEx])))
 		i--
 		dAtA[i] = 0x22
 	}
 	for iNdEx := len(m.RuleGroup) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.RuleGroup[iNdEx])
 		copy(dAtA[i:], m.RuleGroup[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.RuleGroup[iNdEx])))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.RuleGroup[iNdEx])))
 		i--
 		dAtA[i] = 0x1a
 	}
 	for iNdEx := len(m.RuleName) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.RuleName[iNdEx])
 		copy(dAtA[i:], m.RuleName[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.RuleName[iNdEx])))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.RuleName[iNdEx])))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Filter != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Filter))
+		i = encodeVarintRuler(dAtA, i, uint64(m.Filter))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -330,7 +329,7 @@ func (m *RulesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.Warnings) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Warnings[iNdEx])
 		copy(dAtA[i:], m.Warnings[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Warnings[iNdEx])))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.Warnings[iNdEx])))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -340,7 +339,7 @@ func (m *RulesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRuler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -370,7 +369,7 @@ func (m *SyncRulesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.UserIds) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.UserIds[iNdEx])
 		copy(dAtA[i:], m.UserIds[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.UserIds[iNdEx])))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.UserIds[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -426,7 +425,7 @@ func (m *GroupStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -436,7 +435,7 @@ func (m *GroupStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -446,7 +445,7 @@ func (m *GroupStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRuler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -456,7 +455,7 @@ func (m *GroupStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRuler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -489,7 +488,7 @@ func (m *RuleStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x3a
 	}
@@ -499,7 +498,7 @@ func (m *RuleStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x32
 	}
@@ -509,28 +508,28 @@ func (m *RuleStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRuler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	}
 	if len(m.LastError) > 0 {
 		i -= len(m.LastError)
 		copy(dAtA[i:], m.LastError)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.LastError)))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.LastError)))
 		i--
 		dAtA[i] = 0x22
 	}
 	if len(m.Health) > 0 {
 		i -= len(m.Health)
 		copy(dAtA[i:], m.Health)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Health)))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.Health)))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.State) > 0 {
 		i -= len(m.State)
 		copy(dAtA[i:], m.State)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.State)))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.State)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -540,7 +539,7 @@ func (m *RuleStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintRuler(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -573,7 +572,7 @@ func (m *AlertStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x52
 	}
@@ -583,7 +582,7 @@ func (m *AlertStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x4a
 	}
@@ -593,7 +592,7 @@ func (m *AlertStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x42
 	}
@@ -603,7 +602,7 @@ func (m *AlertStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x3a
 	}
@@ -613,7 +612,7 @@ func (m *AlertStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x32
 	}
@@ -623,7 +622,7 @@ func (m *AlertStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= n
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(n))
+		i = encodeVarintRuler(dAtA, i, uint64(n))
 		i--
 		dAtA[i] = 0x2a
 	}
@@ -640,7 +639,7 @@ func (m *AlertStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Annotations[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintRuler(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x1a
 		}
@@ -652,7 +651,7 @@ func (m *AlertStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintRuler(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x12
 		}
@@ -660,7 +659,7 @@ func (m *AlertStateDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.State) > 0 {
 		i -= len(m.State)
 		copy(dAtA[i:], m.State)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.State)))
+		i = encodeVarintRuler(dAtA, i, uint64(len(m.State)))
 		i--
 		dAtA[i] = 0x0a
 	}

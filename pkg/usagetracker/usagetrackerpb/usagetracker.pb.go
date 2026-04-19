@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -305,21 +304,21 @@ func (m *TrackSeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.SeriesHashes) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SeriesHashes[j]))
+			i = encodeVarintUsagetracker(dAtA, i, uint64(m.SeriesHashes[j]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if m.Partition != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Partition))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.UserID) > 0 {
 		i -= len(m.UserID)
 		copy(dAtA[i:], m.UserID)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.UserID)))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.UserID)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -350,9 +349,9 @@ func (m *TrackSeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.RejectedSeriesHashes) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(m.RejectedSeriesHashes[j]))
+			i = encodeVarintUsagetracker(dAtA, i, uint64(m.RejectedSeriesHashes[j]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -383,16 +382,16 @@ func (m *TrackSeriesBatchUser) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.SeriesHashes) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SeriesHashes[j]))
+			i = encodeVarintUsagetracker(dAtA, i, uint64(m.SeriesHashes[j]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.UserID) > 0 {
 		i -= len(m.UserID)
 		copy(dAtA[i:], m.UserID)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.UserID)))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.UserID)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -425,12 +424,12 @@ func (m *TrackSeriesBatchPartition) MarshalToSizedBuffer(dAtA []byte) (int, erro
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Partition != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Partition))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -463,7 +462,7 @@ func (m *TrackSeriesBatchRequest) MarshalToSizedBuffer(dAtA []byte) (int, error)
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -494,16 +493,16 @@ func (m *TrackSeriesBatchRejectionUser) MarshalToSizedBuffer(dAtA []byte) (int, 
 		var j int
 		pStart := i
 		for j = len(m.RejectedSeriesHashes) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(m.RejectedSeriesHashes[j]))
+			i = encodeVarintUsagetracker(dAtA, i, uint64(m.RejectedSeriesHashes[j]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.UserID) > 0 {
 		i -= len(m.UserID)
 		copy(dAtA[i:], m.UserID)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.UserID)))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.UserID)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -536,12 +535,12 @@ func (m *TrackSeriesBatchRejection) MarshalToSizedBuffer(dAtA []byte) (int, erro
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Partition != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Partition))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -574,7 +573,7 @@ func (m *TrackSeriesBatchResponse) MarshalToSizedBuffer(dAtA []byte) (int, error
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -605,21 +604,21 @@ func (m *SeriesCreatedEvent) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.SeriesHashes) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SeriesHashes[j]))
+			i = encodeVarintUsagetracker(dAtA, i, uint64(m.SeriesHashes[j]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if m.Timestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Timestamp))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Timestamp))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.UserID) > 0 {
 		i -= len(m.UserID)
 		copy(dAtA[i:], m.UserID)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.UserID)))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.UserID)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -647,24 +646,24 @@ func (m *SnapshotRecord) MarshalTo(dAtA []byte) (int, error) {
 func (m *SnapshotRecord) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.LastSnapshotEventOffset != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.LastSnapshotEventOffset))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.LastSnapshotEventOffset))
 		i--
 		dAtA[i] = 0x20
 	}
 	if m.LastEventOffsetPublishedBeforeSnapshot != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.LastEventOffsetPublishedBeforeSnapshot))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.LastEventOffsetPublishedBeforeSnapshot))
 		i--
 		dAtA[i] = 0x18
 	}
 	for iNdEx := len(m.Filenames) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Filenames[iNdEx])
 		copy(dAtA[i:], m.Filenames[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Filenames[iNdEx])))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.Filenames[iNdEx])))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Timestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Timestamp))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Timestamp))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -694,12 +693,12 @@ func (m *SnapshotEvent) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Filename) > 0 {
 		i -= len(m.Filename)
 		copy(dAtA[i:], m.Filename)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Filename)))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.Filename)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Timestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Timestamp))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Timestamp))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -729,7 +728,7 @@ func (m *SnapshotFile) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.Data) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Data[iNdEx])
 		copy(dAtA[i:], m.Data[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Data[iNdEx])))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.Data[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -757,7 +756,7 @@ func (m *GetUsersCloseToLimitRequest) MarshalTo(dAtA []byte) (int, error) {
 func (m *GetUsersCloseToLimitRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Partition != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Partition))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -785,14 +784,14 @@ func (m *GetUsersCloseToLimitResponse) MarshalTo(dAtA []byte) (int, error) {
 func (m *GetUsersCloseToLimitResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Partition != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Partition))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
 		i--
 		dAtA[i] = 0x10
 	}
 	for iNdEx := len(m.SortedUserIds) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.SortedUserIds[iNdEx])
 		copy(dAtA[i:], m.SortedUserIds[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.SortedUserIds[iNdEx])))
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.SortedUserIds[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}

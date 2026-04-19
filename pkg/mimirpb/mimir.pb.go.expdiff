@@ -1,6 +1,6 @@
---- a/pkg/mimirpb/mimir.pb.go	2026-04-19 19:41:31
-+++ b/pkg/mimirpb/mimir.pb.go	2026-04-19 19:41:31
-@@ -165,14 +165,6 @@
+--- a/pkg/mimirpb/mimir.pb.go	2026-04-19 22:23:59
++++ b/pkg/mimirpb/mimir.pb.go	2026-04-19 22:23:28
+@@ -164,14 +164,6 @@
  func (*QueryResponse_Matrix) isQueryResponse_Data() {}
  
  type WriteRequest struct {
@@ -15,7 +15,7 @@
  	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
  	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3" json:"Source,omitempty"`
  	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
-@@ -184,16 +176,6 @@
+@@ -183,16 +175,6 @@
  	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
  	// Skip label count validation.
  	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
@@ -32,7 +32,7 @@
  }
  
  type WriteResponse struct {
-@@ -217,8 +199,6 @@
+@@ -216,8 +198,6 @@
  	// Zero value means value not set. If you need to use exactly zero value for
  	// the timestamp, use 1 millisecond before or after.
  	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
@@ -41,11 +41,12 @@
  }
  
  type LabelPair struct {
-@@ -2597,11 +2577,8 @@
+@@ -2595,11 +2575,9 @@
+ 			m.SymbolsRW2 = make([]string, 0, field4count)
  		}
  		if field5count > 0 {
- 			m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, field5count)
 -			m.Timeseries = make([]PreallocTimeseries, 0, field5count)
++			m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, field5count)
  		}
  	}
 -	var metadata metadataSet
@@ -53,7 +54,7 @@
  	for iNdEx < l {
  		preIndex := iNdEx
  		_ = preIndex
-@@ -2630,7 +2607,6 @@
+@@ -2628,7 +2606,6 @@
  		}
  		switch fieldNum {
  		case 1: // timeseries
@@ -61,7 +62,7 @@
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field Timeseries", wireType)
  			}
-@@ -2661,8 +2637,7 @@
+@@ -2659,8 +2636,7 @@
  				return io.ErrUnexpectedEOF
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
@@ -71,7 +72,7 @@
  				return err
  			}
  			iNdEx = postIndex
-@@ -2687,7 +2662,6 @@
+@@ -2685,7 +2661,6 @@
  			}
  			m.Source = WriteRequest_SourceEnum(v)
  		case 3: // metadata
@@ -79,7 +80,7 @@
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
  			}
-@@ -2723,7 +2697,6 @@
+@@ -2721,7 +2696,6 @@
  			}
  			iNdEx = postIndex
  		case 4: // symbolsRW2
@@ -87,7 +88,7 @@
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field SymbolsRW2", wireType)
  			}
-@@ -2753,12 +2726,9 @@
+@@ -2751,12 +2725,9 @@
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -101,7 +102,7 @@
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field TimeseriesRW2", wireType)
  			}
-@@ -2788,10 +2758,8 @@
+@@ -2786,10 +2757,8 @@
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -114,18 +115,18 @@
  				return err
  			}
  			iNdEx = postIndex
-@@ -2853,10 +2821,6 @@
+@@ -2850,10 +2819,6 @@
+ 	}
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
- 	}
+-	}
 -	if m.unmarshalFromRW2 {
 -		if metadata != nil { m.Metadata = metadata.slice() }
 -		m.rw2symbols.releasePages()
--	}
+ 	}
  	return nil
  }
- 
-@@ -3229,11 +3193,9 @@
+@@ -3227,11 +3192,9 @@
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -140,11 +141,10 @@
  			}
  			iNdEx = postIndex
  		case 4: // histograms
-@@ -11866,596 +11828,4 @@
- 
+@@ -11865,595 +11828,3 @@
  func init() {
  	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)
--}
+ }
 -
 -func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 -	var metricName string
@@ -438,7 +438,7 @@
 -		return io.ErrUnexpectedEOF
 -	}
 -	return nil
- }
+-}
 -
 -func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, metricName string, skipNormalizeMetricName bool) error {
 -	var (

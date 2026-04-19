@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -58,7 +57,7 @@ func (m *CachedSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.DiffEncodedPostings) > 0 {
 		i -= len(m.DiffEncodedPostings)
 		copy(dAtA[i:], m.DiffEncodedPostings)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.DiffEncodedPostings)))
+		i = encodeVarintCache(dAtA, i, uint64(len(m.DiffEncodedPostings)))
 		i--
 		dAtA[i] = 0x2a
 	}
@@ -69,7 +68,7 @@ func (m *CachedSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Series[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintCache(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}

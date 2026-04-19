@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -84,7 +83,7 @@ func (m *DuplicateFilterDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintNode(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}

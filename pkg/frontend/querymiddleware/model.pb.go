@@ -9,7 +9,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -290,14 +289,14 @@ func (m *PrometheusHeader) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.Values) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Values[iNdEx])
 		copy(dAtA[i:], m.Values[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Values[iNdEx])))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Values[iNdEx])))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Name) > 0 {
 		i -= len(m.Name)
 		copy(dAtA[i:], m.Name)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Name)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Name)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -327,14 +326,14 @@ func (m *PrometheusResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.Infos) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Infos[iNdEx])
 		copy(dAtA[i:], m.Infos[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Infos[iNdEx])))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Infos[iNdEx])))
 		i--
 		dAtA[i] = 0x3a
 	}
 	for iNdEx := len(m.Warnings) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Warnings[iNdEx])
 		copy(dAtA[i:], m.Warnings[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Warnings[iNdEx])))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Warnings[iNdEx])))
 		i--
 		dAtA[i] = 0x32
 	}
@@ -344,21 +343,21 @@ func (m *PrometheusResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintModel(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	}
 	if len(m.Error) > 0 {
 		i -= len(m.Error)
 		copy(dAtA[i:], m.Error)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Error)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Error)))
 		i--
 		dAtA[i] = 0x22
 	}
 	if len(m.ErrorType) > 0 {
 		i -= len(m.ErrorType)
 		copy(dAtA[i:], m.ErrorType)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ErrorType)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.ErrorType)))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -368,14 +367,14 @@ func (m *PrometheusResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintModel(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Status) > 0 {
 		i -= len(m.Status)
 		copy(dAtA[i:], m.Status)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Status)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Status)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -408,14 +407,14 @@ func (m *PrometheusData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintModel(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.ResultType) > 0 {
 		i -= len(m.ResultType)
 		copy(dAtA[i:], m.ResultType)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ResultType)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.ResultType)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -448,7 +447,7 @@ func (m *SampleStream) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintModel(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -458,7 +457,7 @@ func (m *SampleStream) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintModel(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -469,7 +468,7 @@ func (m *SampleStream) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintModel(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -500,21 +499,21 @@ func (m *CachedError) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.ErrorMessage) > 0 {
 		i -= len(m.ErrorMessage)
 		copy(dAtA[i:], m.ErrorMessage)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ErrorMessage)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.ErrorMessage)))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.ErrorType) > 0 {
 		i -= len(m.ErrorType)
 		copy(dAtA[i:], m.ErrorType)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ErrorType)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.ErrorType)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Key) > 0 {
 		i -= len(m.Key)
 		copy(dAtA[i:], m.Key)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Key)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Key)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -547,14 +546,14 @@ func (m *CachedResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintModel(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Key) > 0 {
 		i -= len(m.Key)
 		copy(dAtA[i:], m.Key)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Key)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Key)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -582,7 +581,7 @@ func (m *Extent) MarshalTo(dAtA []byte) (int, error) {
 func (m *Extent) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.QueryTimestampMs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.QueryTimestampMs))
+		i = encodeVarintModel(dAtA, i, uint64(m.QueryTimestampMs))
 		i--
 		dAtA[i] = 0x30
 	}
@@ -592,24 +591,24 @@ func (m *Extent) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintModel(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	}
 	if len(m.TraceId) > 0 {
 		i -= len(m.TraceId)
 		copy(dAtA[i:], m.TraceId)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.TraceId)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.TraceId)))
 		i--
 		dAtA[i] = 0x22
 	}
 	if m.End != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.End))
+		i = encodeVarintModel(dAtA, i, uint64(m.End))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.Start != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Start))
+		i = encodeVarintModel(dAtA, i, uint64(m.Start))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -637,7 +636,7 @@ func (m *Options) MarshalTo(dAtA []byte) (int, error) {
 func (m *Options) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TotalShards != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TotalShards))
+		i = encodeVarintModel(dAtA, i, uint64(m.TotalShards))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -687,12 +686,12 @@ func (m *QueryStatistics) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.UserID) > 0 {
 		i -= len(m.UserID)
 		copy(dAtA[i:], m.UserID)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.UserID)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.UserID)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.EstimatedSeriesCount != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.EstimatedSeriesCount))
+		i = encodeVarintModel(dAtA, i, uint64(m.EstimatedSeriesCount))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -722,7 +721,7 @@ func (m *CachedHTTPResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Body) > 0 {
 		i -= len(m.Body)
 		copy(dAtA[i:], m.Body)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Body)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Body)))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -732,19 +731,19 @@ func (m *CachedHTTPResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintModel(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if m.StatusCode != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.StatusCode))
+		i = encodeVarintModel(dAtA, i, uint64(m.StatusCode))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.CacheKey) > 0 {
 		i -= len(m.CacheKey)
 		copy(dAtA[i:], m.CacheKey)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.CacheKey)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.CacheKey)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -774,14 +773,14 @@ func (m *CachedHTTPHeader) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Value) > 0 {
 		i -= len(m.Value)
 		copy(dAtA[i:], m.Value)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Value)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Value)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Name) > 0 {
 		i -= len(m.Name)
 		copy(dAtA[i:], m.Name)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Name)))
+		i = encodeVarintModel(dAtA, i, uint64(len(m.Name)))
 		i--
 		dAtA[i] = 0x0a
 	}

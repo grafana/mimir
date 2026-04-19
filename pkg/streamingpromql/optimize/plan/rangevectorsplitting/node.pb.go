@@ -6,7 +6,6 @@ package rangevectorsplitting
 import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -76,7 +75,7 @@ func (m *SplitFunctionCallDetails) MarshalToSizedBuffer(dAtA []byte) (int, error
 	if len(m.InnerNodeCacheKey) > 0 {
 		i -= len(m.InnerNodeCacheKey)
 		copy(dAtA[i:], m.InnerNodeCacheKey)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.InnerNodeCacheKey)))
+		i = encodeVarintNode(dAtA, i, uint64(len(m.InnerNodeCacheKey)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -86,7 +85,7 @@ func (m *SplitFunctionCallDetails) MarshalToSizedBuffer(dAtA []byte) (int, error
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintNode(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -124,12 +123,12 @@ func (m *SplitRange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x18
 	}
 	if m.End != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.End))
+		i = encodeVarintNode(dAtA, i, uint64(m.End))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.Start != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Start))
+		i = encodeVarintNode(dAtA, i, uint64(m.Start))
 		i--
 		dAtA[i] = 0x08
 	}

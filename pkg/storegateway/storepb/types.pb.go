@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -191,13 +190,13 @@ func (m *Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Data.MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintTypes(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x12
 		}
 	}
 	if m.Type != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Type))
+		i = encodeVarintTypes(dAtA, i, uint64(m.Type))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -231,7 +230,7 @@ func (m *StreamingSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintTypes(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -275,7 +274,7 @@ func (m *StreamingSeriesBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintTypes(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -308,12 +307,12 @@ func (m *StreamingChunks) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintTypes(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.SeriesIndex != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SeriesIndex))
+		i = encodeVarintTypes(dAtA, i, uint64(m.SeriesIndex))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -346,7 +345,7 @@ func (m *StreamingChunksBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintTypes(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -374,7 +373,7 @@ func (m *StreamingChunksEstimate) MarshalTo(dAtA []byte) (int, error) {
 func (m *StreamingChunksEstimate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.EstimatedChunkCount != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.EstimatedChunkCount))
+		i = encodeVarintTypes(dAtA, i, uint64(m.EstimatedChunkCount))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -408,18 +407,18 @@ func (m *AggrChunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 		if size > 0 {
 			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintTypes(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x1a
 		}
 	}
 	if m.MaxTime != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.MaxTime))
+		i = encodeVarintTypes(dAtA, i, uint64(m.MaxTime))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.MinTime != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.MinTime))
+		i = encodeVarintTypes(dAtA, i, uint64(m.MinTime))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -449,19 +448,19 @@ func (m *LabelMatcher) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Value) > 0 {
 		i -= len(m.Value)
 		copy(dAtA[i:], m.Value)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Value)))
+		i = encodeVarintTypes(dAtA, i, uint64(len(m.Value)))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if len(m.Name) > 0 {
 		i -= len(m.Name)
 		copy(dAtA[i:], m.Name)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Name)))
+		i = encodeVarintTypes(dAtA, i, uint64(len(m.Name)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Type != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Type))
+		i = encodeVarintTypes(dAtA, i, uint64(m.Type))
 		i--
 		dAtA[i] = 0x08
 	}

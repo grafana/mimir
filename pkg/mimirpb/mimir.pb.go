@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"github.com/prometheus/prometheus/model/histogram"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
@@ -1047,14 +1046,14 @@ func (m *WriteRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	}
 	for iNdEx := len(m.SymbolsRW2) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.SymbolsRW2[iNdEx])
 		copy(dAtA[i:], m.SymbolsRW2[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.SymbolsRW2[iNdEx])))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.SymbolsRW2[iNdEx])))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -1064,12 +1063,12 @@ func (m *WriteRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if m.Source != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Source))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Source))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -1080,7 +1079,7 @@ func (m *WriteRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Timeseries[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintMimir(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -1132,7 +1131,7 @@ func (m *ErrorDetails) MarshalTo(dAtA []byte) (int, error) {
 func (m *ErrorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.RejectedSamples != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.RejectedSamples))
+		i = encodeVarintMimir(dAtA, i, uint64(m.RejectedSamples))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -1147,7 +1146,7 @@ func (m *ErrorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x10
 	}
 	if m.Cause != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Cause))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Cause))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -1175,7 +1174,7 @@ func (m *TimeSeries) MarshalTo(dAtA []byte) (int, error) {
 func (m *TimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.CreatedTimestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.CreatedTimestamp))
+		i = encodeVarintMimir(dAtA, i, uint64(m.CreatedTimestamp))
 		i--
 		dAtA[i] = 0x30
 	}
@@ -1185,7 +1184,7 @@ func (m *TimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -1195,7 +1194,7 @@ func (m *TimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -1205,7 +1204,7 @@ func (m *TimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -1216,7 +1215,7 @@ func (m *TimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintMimir(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -1247,14 +1246,14 @@ func (m *LabelPair) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Value) > 0 {
 		i -= len(m.Value)
 		copy(dAtA[i:], m.Value)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Value)))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Value)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(m.Name) > 0 {
 		i -= len(m.Name)
 		copy(dAtA[i:], m.Name)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Name)))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Name)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -1282,7 +1281,7 @@ func (m *Sample) MarshalTo(dAtA []byte) (int, error) {
 func (m *Sample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TimestampMs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TimestampMs))
+		i = encodeVarintMimir(dAtA, i, uint64(m.TimestampMs))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -1318,26 +1317,26 @@ func (m *MetricMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Unit) > 0 {
 		i -= len(m.Unit)
 		copy(dAtA[i:], m.Unit)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Unit)))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Unit)))
 		i--
 		dAtA[i] = 0x2a
 	}
 	if len(m.Help) > 0 {
 		i -= len(m.Help)
 		copy(dAtA[i:], m.Help)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Help)))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Help)))
 		i--
 		dAtA[i] = 0x22
 	}
 	if len(m.MetricFamilyName) > 0 {
 		i -= len(m.MetricFamilyName)
 		copy(dAtA[i:], m.MetricFamilyName)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.MetricFamilyName)))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.MetricFamilyName)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if m.Type != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Type))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Type))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -1371,7 +1370,7 @@ func (m *Metric) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintMimir(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -1400,7 +1399,7 @@ func (m *Exemplar) MarshalTo(dAtA []byte) (int, error) {
 func (m *Exemplar) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TimestampMs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TimestampMs))
+		i = encodeVarintMimir(dAtA, i, uint64(m.TimestampMs))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -1417,7 +1416,7 @@ func (m *Exemplar) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintMimir(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x0a
 		}
@@ -1450,19 +1449,19 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i -= 8
 			binary.LittleEndian.PutUint64(dAtA[i:], math.Float64bits(m.CustomValues[iNdEx]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.CustomValues)*8))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.CustomValues)*8))
 		i--
 		dAtA[i] = 0x01
 		i--
 		dAtA[i] = 0x82
 	}
 	if m.Timestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Timestamp))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Timestamp))
 		i--
 		dAtA[i] = 0x78
 	}
 	if m.ResetHint != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.ResetHint))
+		i = encodeVarintMimir(dAtA, i, uint64(m.ResetHint))
 		i--
 		dAtA[i] = 0x70
 	}
@@ -1471,7 +1470,7 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i -= 8
 			binary.LittleEndian.PutUint64(dAtA[i:], math.Float64bits(m.PositiveCounts[iNdEx]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.PositiveCounts)*8))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.PositiveCounts)*8))
 		i--
 		dAtA[i] = 0x6a
 	}
@@ -1479,9 +1478,9 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.PositiveDeltas) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(uint64(m.PositiveDeltas[j]<<1)^uint64(int64(m.PositiveDeltas[j])>>63)))
+			i = encodeVarintMimir(dAtA, i, uint64(uint64(m.PositiveDeltas[j]<<1)^uint64(int64(m.PositiveDeltas[j])>>63)))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintMimir(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x62
 	}
@@ -1491,7 +1490,7 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x5a
 	}
@@ -1500,7 +1499,7 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i -= 8
 			binary.LittleEndian.PutUint64(dAtA[i:], math.Float64bits(m.NegativeCounts[iNdEx]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.NegativeCounts)*8))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.NegativeCounts)*8))
 		i--
 		dAtA[i] = 0x52
 	}
@@ -1508,9 +1507,9 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.NegativeDeltas) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(uint64(m.NegativeDeltas[j]<<1)^uint64(int64(m.NegativeDeltas[j])>>63)))
+			i = encodeVarintMimir(dAtA, i, uint64(uint64(m.NegativeDeltas[j]<<1)^uint64(int64(m.NegativeDeltas[j])>>63)))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintMimir(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x4a
 	}
@@ -1520,7 +1519,7 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x42
 	}
@@ -1531,7 +1530,7 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x39
 	case *Histogram_ZeroCountInt:
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(v.ZeroCountInt))
+		i = encodeVarintMimir(dAtA, i, uint64(v.ZeroCountInt))
 		i--
 		dAtA[i] = 0x30
 	}
@@ -1542,7 +1541,7 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x29
 	}
 	if m.Schema != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(uint32(m.Schema<<1)^uint32(int32(m.Schema)>>31)))
+		i = encodeVarintMimir(dAtA, i, uint64(uint32(m.Schema<<1)^uint32(int32(m.Schema)>>31)))
 		i--
 		dAtA[i] = 0x20
 	}
@@ -1559,7 +1558,7 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x11
 	case *Histogram_CountInt:
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(v.CountInt))
+		i = encodeVarintMimir(dAtA, i, uint64(v.CountInt))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -1591,14 +1590,14 @@ func (m *FloatHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i -= 8
 			binary.LittleEndian.PutUint64(dAtA[i:], math.Float64bits(m.CustomValues[iNdEx]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.CustomValues)*8))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.CustomValues)*8))
 		i--
 		dAtA[i] = 0x01
 		i--
 		dAtA[i] = 0x82
 	}
 	if m.CounterResetHint != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.CounterResetHint))
+		i = encodeVarintMimir(dAtA, i, uint64(m.CounterResetHint))
 		i--
 		dAtA[i] = 0x70
 	}
@@ -1607,7 +1606,7 @@ func (m *FloatHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i -= 8
 			binary.LittleEndian.PutUint64(dAtA[i:], math.Float64bits(m.PositiveBuckets[iNdEx]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.PositiveBuckets)*8))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.PositiveBuckets)*8))
 		i--
 		dAtA[i] = 0x6a
 	}
@@ -1617,7 +1616,7 @@ func (m *FloatHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x5a
 	}
@@ -1626,7 +1625,7 @@ func (m *FloatHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i -= 8
 			binary.LittleEndian.PutUint64(dAtA[i:], math.Float64bits(m.NegativeBuckets[iNdEx]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.NegativeBuckets)*8))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.NegativeBuckets)*8))
 		i--
 		dAtA[i] = 0x52
 	}
@@ -1636,7 +1635,7 @@ func (m *FloatHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x42
 	}
@@ -1653,7 +1652,7 @@ func (m *FloatHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x29
 	}
 	if m.Schema != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(uint32(m.Schema<<1)^uint32(int32(m.Schema)>>31)))
+		i = encodeVarintMimir(dAtA, i, uint64(uint32(m.Schema<<1)^uint32(int32(m.Schema)>>31)))
 		i--
 		dAtA[i] = 0x20
 	}
@@ -1693,12 +1692,12 @@ func (m *BucketSpan) MarshalTo(dAtA []byte) (int, error) {
 func (m *BucketSpan) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Length != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Length))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Length))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.Offset != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(uint32(m.Offset<<1)^uint32(int32(m.Offset)>>31)))
+		i = encodeVarintMimir(dAtA, i, uint64(uint32(m.Offset<<1)^uint32(int32(m.Offset)>>31)))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -1726,7 +1725,7 @@ func (m *FloatHistogramPair) MarshalTo(dAtA []byte) (int, error) {
 func (m *FloatHistogramPair) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TimestampMs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TimestampMs))
+		i = encodeVarintMimir(dAtA, i, uint64(m.TimestampMs))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -1736,7 +1735,7 @@ func (m *FloatHistogramPair) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -1769,7 +1768,7 @@ func (m *SampleHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -1827,7 +1826,7 @@ func (m *HistogramBucket) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x11
 	}
 	if m.Boundaries != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Boundaries))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Boundaries))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -1855,7 +1854,7 @@ func (m *SampleHistogramPair) MarshalTo(dAtA []byte) (int, error) {
 func (m *SampleHistogramPair) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Timestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Timestamp))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Timestamp))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -1865,7 +1864,7 @@ func (m *SampleHistogramPair) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -1895,14 +1894,14 @@ func (m *QueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.Infos) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Infos[iNdEx])
 		copy(dAtA[i:], m.Infos[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Infos[iNdEx])))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Infos[iNdEx])))
 		i--
 		dAtA[i] = 0x4a
 	}
 	for iNdEx := len(m.Warnings) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Warnings[iNdEx])
 		copy(dAtA[i:], m.Warnings[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Warnings[iNdEx])))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Warnings[iNdEx])))
 		i--
 		dAtA[i] = 0x42
 	}
@@ -1913,7 +1912,7 @@ func (m *QueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x3a
 	case *QueryResponse_Scalar:
@@ -1922,7 +1921,7 @@ func (m *QueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x32
 	case *QueryResponse_Vector:
@@ -1931,7 +1930,7 @@ func (m *QueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	case *QueryResponse_String_:
@@ -1940,24 +1939,24 @@ func (m *QueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	}
 	if len(m.Error) > 0 {
 		i -= len(m.Error)
 		copy(dAtA[i:], m.Error)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Error)))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Error)))
 		i--
 		dAtA[i] = 0x1a
 	}
 	if m.ErrorType != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.ErrorType))
+		i = encodeVarintMimir(dAtA, i, uint64(m.ErrorType))
 		i--
 		dAtA[i] = 0x10
 	}
 	if m.Status != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Status))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Status))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -1985,14 +1984,14 @@ func (m *StringData) MarshalTo(dAtA []byte) (int, error) {
 func (m *StringData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TimestampMs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TimestampMs))
+		i = encodeVarintMimir(dAtA, i, uint64(m.TimestampMs))
 		i--
 		dAtA[i] = 0x10
 	}
 	if len(m.Value) > 0 {
 		i -= len(m.Value)
 		copy(dAtA[i:], m.Value)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Value)))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Value)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -2025,7 +2024,7 @@ func (m *VectorData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -2035,7 +2034,7 @@ func (m *VectorData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -2063,7 +2062,7 @@ func (m *VectorSample) MarshalTo(dAtA []byte) (int, error) {
 func (m *VectorSample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TimestampMs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TimestampMs))
+		i = encodeVarintMimir(dAtA, i, uint64(m.TimestampMs))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -2076,7 +2075,7 @@ func (m *VectorSample) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.Metric) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Metric[iNdEx])
 		copy(dAtA[i:], m.Metric[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Metric[iNdEx])))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Metric[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -2104,7 +2103,7 @@ func (m *VectorHistogram) MarshalTo(dAtA []byte) (int, error) {
 func (m *VectorHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TimestampMs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TimestampMs))
+		i = encodeVarintMimir(dAtA, i, uint64(m.TimestampMs))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -2115,7 +2114,7 @@ func (m *VectorHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 		if size > 0 {
 			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintMimir(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x12
 		}
@@ -2123,7 +2122,7 @@ func (m *VectorHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.Metric) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Metric[iNdEx])
 		copy(dAtA[i:], m.Metric[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Metric[iNdEx])))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Metric[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -2151,7 +2150,7 @@ func (m *ScalarData) MarshalTo(dAtA []byte) (int, error) {
 func (m *ScalarData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.TimestampMs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.TimestampMs))
+		i = encodeVarintMimir(dAtA, i, uint64(m.TimestampMs))
 		i--
 		dAtA[i] = 0x10
 	}
@@ -2190,7 +2189,7 @@ func (m *MatrixData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -2223,7 +2222,7 @@ func (m *MatrixSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -2233,14 +2232,14 @@ func (m *MatrixSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
 	for iNdEx := len(m.Metric) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Metric[iNdEx])
 		copy(dAtA[i:], m.Metric[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Metric[iNdEx])))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Metric[iNdEx])))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -2273,14 +2272,14 @@ func (m *WriteRequestRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x2a
 	}
 	for iNdEx := len(m.Symbols) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.Symbols[iNdEx])
 		copy(dAtA[i:], m.Symbols[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Symbols[iNdEx])))
+		i = encodeVarintMimir(dAtA, i, uint64(len(m.Symbols[iNdEx])))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -2308,7 +2307,7 @@ func (m *TimeSeriesRW2) MarshalTo(dAtA []byte) (int, error) {
 func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.CreatedTimestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.CreatedTimestamp))
+		i = encodeVarintMimir(dAtA, i, uint64(m.CreatedTimestamp))
 		i--
 		dAtA[i] = 0x30
 	}
@@ -2319,7 +2318,7 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 		if size > 0 {
 			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+			i = encodeVarintMimir(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x2a
 		}
@@ -2330,7 +2329,7 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x22
 	}
@@ -2340,7 +2339,7 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -2350,7 +2349,7 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintMimir(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -2358,9 +2357,9 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.LabelsRefs) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(m.LabelsRefs[j]))
+			i = encodeVarintMimir(dAtA, i, uint64(m.LabelsRefs[j]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintMimir(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -2388,7 +2387,7 @@ func (m *ExemplarRW2) MarshalTo(dAtA []byte) (int, error) {
 func (m *ExemplarRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.Timestamp != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Timestamp))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Timestamp))
 		i--
 		dAtA[i] = 0x18
 	}
@@ -2402,9 +2401,9 @@ func (m *ExemplarRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		var j int
 		pStart := i
 		for j = len(m.LabelsRefs) - 1; j >= 0; j-- {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(m.LabelsRefs[j]))
+			i = encodeVarintMimir(dAtA, i, uint64(m.LabelsRefs[j]))
 		}
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(pStart-i))
+		i = encodeVarintMimir(dAtA, i, uint64(pStart-i))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -2432,17 +2431,17 @@ func (m *MetadataRW2) MarshalTo(dAtA []byte) (int, error) {
 func (m *MetadataRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.UnitRef != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.UnitRef))
+		i = encodeVarintMimir(dAtA, i, uint64(m.UnitRef))
 		i--
 		dAtA[i] = 0x20
 	}
 	if m.HelpRef != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.HelpRef))
+		i = encodeVarintMimir(dAtA, i, uint64(m.HelpRef))
 		i--
 		dAtA[i] = 0x18
 	}
 	if m.Type != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Type))
+		i = encodeVarintMimir(dAtA, i, uint64(m.Type))
 		i--
 		dAtA[i] = 0x08
 	}
@@ -2596,7 +2595,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			m.SymbolsRW2 = make([]string, 0, field4count)
 		}
 		if field5count > 0 {
-			m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, field5count)
 			m.Timeseries = make([]PreallocTimeseries, 0, field5count)
 		}
 	}

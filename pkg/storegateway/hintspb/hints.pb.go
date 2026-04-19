@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/wiresmith/gen/protohelpers"
 	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math/bits"
@@ -153,7 +152,7 @@ func (m *SeriesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	for iNdEx := len(m.ProjectionLabels) - 1; iNdEx >= 0; iNdEx-- {
 		i -= len(m.ProjectionLabels[iNdEx])
 		copy(dAtA[i:], m.ProjectionLabels[iNdEx])
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ProjectionLabels[iNdEx])))
+		i = encodeVarintHints(dAtA, i, uint64(len(m.ProjectionLabels[iNdEx])))
 		i--
 		dAtA[i] = 0x1a
 	}
@@ -173,7 +172,7 @@ func (m *SeriesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintHints(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -206,7 +205,7 @@ func (m *SeriesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintHints(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -236,7 +235,7 @@ func (m *Block) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Id) > 0 {
 		i -= len(m.Id)
 		copy(dAtA[i:], m.Id)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Id)))
+		i = encodeVarintHints(dAtA, i, uint64(len(m.Id)))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -269,7 +268,7 @@ func (m *LabelNamesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintHints(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -302,7 +301,7 @@ func (m *LabelNamesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error)
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintHints(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -335,7 +334,7 @@ func (m *LabelValuesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error)
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintHints(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -368,7 +367,7 @@ func (m *LabelValuesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error
 			return 0, err
 		}
 		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = encodeVarintHints(dAtA, i, uint64(size))
 		i--
 		dAtA[i] = 0x0a
 	}
