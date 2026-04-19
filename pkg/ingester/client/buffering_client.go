@@ -14,7 +14,7 @@ import (
 // This is a copy of (*ingesterClient).Push method, but accepting any message type.
 func pushRaw(ctx context.Context, conn *grpc.ClientConn, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	out := new(mimirpb.WriteResponse)
-	err := conn.Invoke(ctx, "/cortex.Ingester/Push", msg, out, opts...)
+	err := conn.Invoke(ctx, "/ingesterpb.Ingester/Push", msg, out, opts...)
 	if err != nil {
 		return nil, err
 	}
