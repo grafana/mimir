@@ -137,7 +137,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     write_influx_http_routes_regex: 'api_v1_push_influx_write',
     write_http_routes_regex: self.write_prom_http_routes_regex + '|' + self.write_otlp_http_routes_regex + '|' + self.write_influx_http_routes_regex,
     write_grpc_distributor_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
-    write_grpc_ingester_route: '/cortex.Ingester/Push',
+    write_grpc_ingester_route: '/ingesterpb.Ingester/Push',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',  // Read routes exposed by gateway and query-frontend.
     querier_read_routes_regex: '(%s|querierpb.EvaluateQueryRequest)' % self.read_http_routes_regex,  // Read routes exposed by querier.
     read_grpc_ingester_route: $._config.ingester_read_path_routes_regex,

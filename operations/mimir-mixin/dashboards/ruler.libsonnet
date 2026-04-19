@@ -32,7 +32,7 @@ local filename = 'mimir-ruler.json';
         $.panel('Reads from ingesters - RPS') +
         $.ncSumCountRateStatPanel(
           metric='cortex_ingester_client_request_duration_seconds',
-          selectors=$.jobSelector($._config.job_names.ruler + $._config.job_names.ruler_querier) + [utils.selector.eq('operation', '/cortex.Ingester/QueryStream')],
+          selectors=$.jobSelector($._config.job_names.ruler + $._config.job_names.ruler_querier) + [utils.selector.eq('operation', '/ingesterpb.Ingester/QueryStream')],
         ) + $.panelDescription(
           'Reads from ingesters - RPS',
           |||
@@ -52,7 +52,7 @@ local filename = 'mimir-ruler.json';
             'Writes to ingesters - RPS'
         ) +
         $.newStatPanel(
-          local selectors = $.jobSelector($._config.job_names.ruler) + [utils.selector.eq('operation', '/cortex.Ingester/Push')];
+          local selectors = $.jobSelector($._config.job_names.ruler) + [utils.selector.eq('operation', '/ingesterpb.Ingester/Push')];
           local baseQueries = $.ncSumHistogramCountRate('cortex_ingester_client_request_duration_seconds', selectors);
 
           local queryTemplate(baseQuery) =
@@ -138,11 +138,11 @@ local filename = 'mimir-ruler.json';
       $.row('Writes (ingesters)')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanelNativeHistogram('cortex_ingester_client_request_duration_seconds', '%s, operation="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ruler))
+        $.qpsPanelNativeHistogram('cortex_ingester_client_request_duration_seconds', '%s, operation="/ingesterpb.Ingester/Push"' % $.jobMatcher($._config.job_names.ruler))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.ncLatencyPanel('cortex_ingester_client_request_duration_seconds', '%s, operation="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ruler))
+        $.ncLatencyPanel('cortex_ingester_client_request_duration_seconds', '%s, operation="/ingesterpb.Ingester/Push"' % $.jobMatcher($._config.job_names.ruler))
       )
     )
     .addRowIf(
@@ -159,11 +159,11 @@ local filename = 'mimir-ruler.json';
       $.row('Reads (ingesters)')
       .addPanel(
         $.timeseriesPanel('QPS') +
-        $.qpsPanelNativeHistogram('cortex_ingester_client_request_duration_seconds', '%s, operation="/cortex.Ingester/QueryStream"' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
+        $.qpsPanelNativeHistogram('cortex_ingester_client_request_duration_seconds', '%s, operation="/ingesterpb.Ingester/QueryStream"' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.ncLatencyPanel('cortex_ingester_client_request_duration_seconds', '%s, operation="/cortex.Ingester/QueryStream"' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
+        $.ncLatencyPanel('cortex_ingester_client_request_duration_seconds', '%s, operation="/ingesterpb.Ingester/QueryStream"' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
       )
     )
     .addRow(
