@@ -520,8 +520,14 @@ mod-check: ## Check the go mod is clean and tidy.
 	@./tools/find-diff-or-untracked.sh go.sum go.mod vendor/ || (echo "Please update vendoring by running 'make mod-check'" && false)
 
 check-protos: ## Check the protobuf files are up to date.
+# TODO(wiresmith): Once wiresmith is public, remove the availability check.
+ifneq (,$(shell which wiresmith 2>/dev/null))
 check-protos: clean-protos protos
 	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
+else
+check-protos:
+	@echo "wiresmith not found in PATH; skipping check-protos"
+endif
 
 format-promql-tests:
 	@./tools/format-promql-test.sh $(PROMQL_TESTS)
