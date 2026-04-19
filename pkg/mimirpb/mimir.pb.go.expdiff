@@ -1,5 +1,5 @@
---- a/pkg/mimirpb/mimir.pb.go	2026-04-19 18:48:15
-+++ b/pkg/mimirpb/mimir.pb.go	2026-04-19 18:47:43
+--- a/pkg/mimirpb/mimir.pb.go	2026-04-19 19:41:31
++++ b/pkg/mimirpb/mimir.pb.go	2026-04-19 19:41:31
 @@ -165,14 +165,6 @@
  func (*QueryResponse_Matrix) isQueryResponse_Data() {}
  
@@ -41,8 +41,11 @@
  }
  
  type LabelPair struct {
-@@ -2599,8 +2579,6 @@
+@@ -2597,11 +2577,8 @@
+ 		}
+ 		if field5count > 0 {
  			m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, field5count)
+-			m.Timeseries = make([]PreallocTimeseries, 0, field5count)
  		}
  	}
 -	var metadata metadataSet
@@ -50,7 +53,7 @@
  	for iNdEx < l {
  		preIndex := iNdEx
  		_ = preIndex
-@@ -2629,7 +2607,6 @@
+@@ -2630,7 +2607,6 @@
  		}
  		switch fieldNum {
  		case 1: // timeseries
@@ -58,7 +61,7 @@
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field Timeseries", wireType)
  			}
-@@ -2660,8 +2637,7 @@
+@@ -2661,8 +2637,7 @@
  				return io.ErrUnexpectedEOF
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
@@ -68,7 +71,7 @@
  				return err
  			}
  			iNdEx = postIndex
-@@ -2686,7 +2662,6 @@
+@@ -2687,7 +2662,6 @@
  			}
  			m.Source = WriteRequest_SourceEnum(v)
  		case 3: // metadata
@@ -76,7 +79,7 @@
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
  			}
-@@ -2722,7 +2697,6 @@
+@@ -2723,7 +2697,6 @@
  			}
  			iNdEx = postIndex
  		case 4: // symbolsRW2
@@ -84,7 +87,7 @@
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field SymbolsRW2", wireType)
  			}
-@@ -2752,12 +2726,9 @@
+@@ -2753,12 +2726,9 @@
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -98,7 +101,7 @@
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field TimeseriesRW2", wireType)
  			}
-@@ -2787,10 +2758,8 @@
+@@ -2788,10 +2758,8 @@
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -111,18 +114,18 @@
  				return err
  			}
  			iNdEx = postIndex
-@@ -2851,10 +2820,6 @@
- 	}
+@@ -2853,10 +2821,6 @@
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
--	}
+ 	}
 -	if m.unmarshalFromRW2 {
 -		if metadata != nil { m.Metadata = metadata.slice() }
 -		m.rw2symbols.releasePages()
- 	}
+-	}
  	return nil
  }
-@@ -3228,11 +3193,9 @@
+ 
+@@ -3229,11 +3193,9 @@
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -137,10 +140,11 @@
  			}
  			iNdEx = postIndex
  		case 4: // histograms
-@@ -11866,595 +11829,3 @@
+@@ -11866,596 +11828,4 @@
+ 
  func init() {
  	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)
- }
+-}
 -
 -func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 -	var metricName string
@@ -434,7 +438,7 @@
 -		return io.ErrUnexpectedEOF
 -	}
 -	return nil
--}
+ }
 -
 -func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, metricName string, skipNormalizeMetricName bool) error {
 -	var (

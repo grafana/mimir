@@ -331,6 +331,12 @@ func mimirPb() modification {
 				"\t}",
 			)),
 
+			// In RW2 mode, field 5 is redirected to Timeseries, so pre-allocate
+			// Timeseries instead of the unused TimeseriesRW2.
+			inFunc(wrUnmarshal, replaceFirst(
+				"m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, field5count)",
+				"\t\t\tm.Timeseries = make([]PreallocTimeseries, 0, field5count)")),
+
 			// TimeSeries.Unmarshal: exemplar skip guard
 			inFunc(tsUnmarshal, wrapBlock(
 				"m.Exemplars = append(m.Exemplars, Exemplar{})", 4,

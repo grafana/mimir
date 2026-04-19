@@ -2597,6 +2597,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 		}
 		if field5count > 0 {
 			m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, field5count)
+			m.Timeseries = make([]PreallocTimeseries, 0, field5count)
 		}
 	}
 	var metadata metadataSet
