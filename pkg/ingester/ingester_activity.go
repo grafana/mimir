@@ -278,12 +278,14 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 	sb.Write(strconv.AppendInt(b, req.EndTimestampMs, 10))
 	sb.WriteString(",")
 
-	sb.WriteString("Matchers:[]*LabelMatcher{")
-	for _, m := range req.Matchers {
+	sb.WriteString("Matchers:[")
+	for i, m := range req.Matchers {
+		if i > 0 {
+			sb.WriteString(" ")
+		}
 		labelMatcherToString(sb, m)
-		sb.WriteString(",")
 	}
-	sb.WriteString("},")
+	sb.WriteString("],")
 
 	sb.WriteString("ProjectionInclude:")
 	sb.WriteString(strconv.FormatBool(req.ProjectionInclude))

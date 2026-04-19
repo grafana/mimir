@@ -513,10 +513,11 @@ shell:
 	bash
 
 mod-check: ## Check the go mod is clean and tidy.
-	GO111MODULE=on go mod download
-	GO111MODULE=on go mod verify
-	GO111MODULE=on go mod tidy
-	GO111MODULE=on go mod vendor
+# TODO(wiresmith): Remove GOPRIVATE once wiresmith is public.
+	GO111MODULE=on GOPRIVATE=github.com/grafana/wiresmith go mod download
+	GO111MODULE=on GOPRIVATE=github.com/grafana/wiresmith go mod verify
+	GO111MODULE=on GOPRIVATE=github.com/grafana/wiresmith go mod tidy
+	GO111MODULE=on GOPRIVATE=github.com/grafana/wiresmith go mod vendor
 	@./tools/find-diff-or-untracked.sh go.sum go.mod vendor/ || (echo "Please update vendoring by running 'make mod-check'" && false)
 
 check-protos: ## Check the protobuf files are up to date.
