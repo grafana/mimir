@@ -3346,11 +3346,21 @@ func (this *LabelValuesResponseHints) GoString() string {
 
 func (m *SeriesRequest) Reset()      { *m = SeriesRequest{} }
 func (*SeriesRequest) ProtoMessage() {}
-func (m *SeriesRequest) String() string {
-	if m == nil {
+func (this *SeriesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SeriesRequest{`,
+		`MinTime:` + fmt.Sprintf("%v", this.MinTime) + `,`,
+		`MaxTime:` + fmt.Sprintf("%v", this.MaxTime) + `,`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`SkipChunks:` + fmt.Sprintf("%v", this.SkipChunks) + `,`,
+		`Hints:` + fmt.Sprintf("%v", this.Hints) + `,`,
+		`RequestHints:` + fmt.Sprintf("%v", this.RequestHints) + `,`,
+		`StreamingChunksBatchSize:` + fmt.Sprintf("%v", this.StreamingChunksBatchSize) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SeriesRequest) XXX_Unmarshal(b []byte) error {
@@ -3386,11 +3396,17 @@ var xxx_messageInfo_SeriesRequest proto.InternalMessageInfo
 
 func (m *SeriesRequestHints) Reset()      { *m = SeriesRequestHints{} }
 func (*SeriesRequestHints) ProtoMessage() {}
-func (m *SeriesRequestHints) String() string {
-	if m == nil {
+func (this *SeriesRequestHints) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SeriesRequestHints{`,
+		`BlockMatchers:` + fmt.Sprintf("%v", this.BlockMatchers) + `,`,
+		`ProjectionInclude:` + fmt.Sprintf("%v", this.ProjectionInclude) + `,`,
+		`ProjectionLabels:` + fmt.Sprintf("%v", this.ProjectionLabels) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SeriesRequestHints) XXX_Unmarshal(b []byte) error {
@@ -3426,11 +3442,15 @@ var xxx_messageInfo_SeriesRequestHints proto.InternalMessageInfo
 
 func (m *Stats) Reset()      { *m = Stats{} }
 func (*Stats) ProtoMessage() {}
-func (m *Stats) String() string {
-	if m == nil {
+func (this *Stats) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Stats{`,
+		`FetchedIndexBytes:` + fmt.Sprintf("%v", this.FetchedIndexBytes) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Stats) XXX_Unmarshal(b []byte) error {
@@ -3466,11 +3486,15 @@ var xxx_messageInfo_Stats proto.InternalMessageInfo
 
 func (m *SeriesResponse) Reset()      { *m = SeriesResponse{} }
 func (*SeriesResponse) ProtoMessage() {}
-func (m *SeriesResponse) String() string {
-	if m == nil {
+func (this *SeriesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SeriesResponse{`,
+		`Result:` + fmt.Sprintf("%v", this.Result) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SeriesResponse) XXX_Unmarshal(b []byte) error {
@@ -3506,11 +3530,15 @@ var xxx_messageInfo_SeriesResponse proto.InternalMessageInfo
 
 func (m *SeriesResponseHints) Reset()      { *m = SeriesResponseHints{} }
 func (*SeriesResponseHints) ProtoMessage() {}
-func (m *SeriesResponseHints) String() string {
-	if m == nil {
+func (this *SeriesResponseHints) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SeriesResponseHints{`,
+		`QueriedBlocks:` + fmt.Sprintf("%v", this.QueriedBlocks) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SeriesResponseHints) XXX_Unmarshal(b []byte) error {
@@ -3546,11 +3574,15 @@ var xxx_messageInfo_SeriesResponseHints proto.InternalMessageInfo
 
 func (m *Block) Reset()      { *m = Block{} }
 func (*Block) ProtoMessage() {}
-func (m *Block) String() string {
-	if m == nil {
+func (this *Block) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Block{`,
+		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Block) XXX_Unmarshal(b []byte) error {
@@ -3586,11 +3618,20 @@ var xxx_messageInfo_Block proto.InternalMessageInfo
 
 func (m *LabelNamesRequest) Reset()      { *m = LabelNamesRequest{} }
 func (*LabelNamesRequest) ProtoMessage() {}
-func (m *LabelNamesRequest) String() string {
-	if m == nil {
+func (this *LabelNamesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelNamesRequest{`,
+		`Start:` + fmt.Sprintf("%v", this.Start) + `,`,
+		`End:` + fmt.Sprintf("%v", this.End) + `,`,
+		`Hints:` + fmt.Sprintf("%v", this.Hints) + `,`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`RequestHints:` + fmt.Sprintf("%v", this.RequestHints) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelNamesRequest) XXX_Unmarshal(b []byte) error {
@@ -3626,11 +3667,15 @@ var xxx_messageInfo_LabelNamesRequest proto.InternalMessageInfo
 
 func (m *LabelNamesRequestHints) Reset()      { *m = LabelNamesRequestHints{} }
 func (*LabelNamesRequestHints) ProtoMessage() {}
-func (m *LabelNamesRequestHints) String() string {
-	if m == nil {
+func (this *LabelNamesRequestHints) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelNamesRequestHints{`,
+		`BlockMatchers:` + fmt.Sprintf("%v", this.BlockMatchers) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelNamesRequestHints) XXX_Unmarshal(b []byte) error {
@@ -3666,11 +3711,18 @@ var xxx_messageInfo_LabelNamesRequestHints proto.InternalMessageInfo
 
 func (m *LabelNamesResponse) Reset()      { *m = LabelNamesResponse{} }
 func (*LabelNamesResponse) ProtoMessage() {}
-func (m *LabelNamesResponse) String() string {
-	if m == nil {
+func (this *LabelNamesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelNamesResponse{`,
+		`Names:` + fmt.Sprintf("%v", this.Names) + `,`,
+		`Warnings:` + fmt.Sprintf("%v", this.Warnings) + `,`,
+		`Hints:` + fmt.Sprintf("%v", this.Hints) + `,`,
+		`ResponseHints:` + fmt.Sprintf("%v", this.ResponseHints) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelNamesResponse) XXX_Unmarshal(b []byte) error {
@@ -3706,11 +3758,15 @@ var xxx_messageInfo_LabelNamesResponse proto.InternalMessageInfo
 
 func (m *LabelNamesResponseHints) Reset()      { *m = LabelNamesResponseHints{} }
 func (*LabelNamesResponseHints) ProtoMessage() {}
-func (m *LabelNamesResponseHints) String() string {
-	if m == nil {
+func (this *LabelNamesResponseHints) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelNamesResponseHints{`,
+		`QueriedBlocks:` + fmt.Sprintf("%v", this.QueriedBlocks) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelNamesResponseHints) XXX_Unmarshal(b []byte) error {
@@ -3746,11 +3802,21 @@ var xxx_messageInfo_LabelNamesResponseHints proto.InternalMessageInfo
 
 func (m *LabelValuesRequest) Reset()      { *m = LabelValuesRequest{} }
 func (*LabelValuesRequest) ProtoMessage() {}
-func (m *LabelValuesRequest) String() string {
-	if m == nil {
+func (this *LabelValuesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValuesRequest{`,
+		`Label:` + fmt.Sprintf("%v", this.Label) + `,`,
+		`Start:` + fmt.Sprintf("%v", this.Start) + `,`,
+		`End:` + fmt.Sprintf("%v", this.End) + `,`,
+		`Hints:` + fmt.Sprintf("%v", this.Hints) + `,`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`RequestHints:` + fmt.Sprintf("%v", this.RequestHints) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValuesRequest) XXX_Unmarshal(b []byte) error {
@@ -3786,11 +3852,15 @@ var xxx_messageInfo_LabelValuesRequest proto.InternalMessageInfo
 
 func (m *LabelValuesRequestHints) Reset()      { *m = LabelValuesRequestHints{} }
 func (*LabelValuesRequestHints) ProtoMessage() {}
-func (m *LabelValuesRequestHints) String() string {
-	if m == nil {
+func (this *LabelValuesRequestHints) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValuesRequestHints{`,
+		`BlockMatchers:` + fmt.Sprintf("%v", this.BlockMatchers) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValuesRequestHints) XXX_Unmarshal(b []byte) error {
@@ -3826,11 +3896,18 @@ var xxx_messageInfo_LabelValuesRequestHints proto.InternalMessageInfo
 
 func (m *LabelValuesResponse) Reset()      { *m = LabelValuesResponse{} }
 func (*LabelValuesResponse) ProtoMessage() {}
-func (m *LabelValuesResponse) String() string {
-	if m == nil {
+func (this *LabelValuesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValuesResponse{`,
+		`Values:` + fmt.Sprintf("%v", this.Values) + `,`,
+		`Warnings:` + fmt.Sprintf("%v", this.Warnings) + `,`,
+		`Hints:` + fmt.Sprintf("%v", this.Hints) + `,`,
+		`ResponseHints:` + fmt.Sprintf("%v", this.ResponseHints) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValuesResponse) XXX_Unmarshal(b []byte) error {
@@ -3866,11 +3943,15 @@ var xxx_messageInfo_LabelValuesResponse proto.InternalMessageInfo
 
 func (m *LabelValuesResponseHints) Reset()      { *m = LabelValuesResponseHints{} }
 func (*LabelValuesResponseHints) ProtoMessage() {}
-func (m *LabelValuesResponseHints) String() string {
-	if m == nil {
+func (this *LabelValuesResponseHints) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValuesResponseHints{`,
+		`QueriedBlocks:` + fmt.Sprintf("%v", this.QueriedBlocks) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValuesResponseHints) XXX_Unmarshal(b []byte) error {

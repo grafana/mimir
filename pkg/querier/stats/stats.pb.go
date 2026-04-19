@@ -899,11 +899,29 @@ func (this *StepStat) GoString() string {
 
 func (m *Stats) Reset()      { *m = Stats{} }
 func (*Stats) ProtoMessage() {}
-func (m *Stats) String() string {
-	if m == nil {
+func (this *Stats) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Stats{`,
+		`WallTime:` + fmt.Sprintf("%v", this.WallTime) + `,`,
+		`FetchedSeriesCount:` + fmt.Sprintf("%v", this.FetchedSeriesCount) + `,`,
+		`FetchedChunkBytes:` + fmt.Sprintf("%v", this.FetchedChunkBytes) + `,`,
+		`FetchedChunksCount:` + fmt.Sprintf("%v", this.FetchedChunksCount) + `,`,
+		`ShardedQueries:` + fmt.Sprintf("%v", this.ShardedQueries) + `,`,
+		`SplitQueries:` + fmt.Sprintf("%v", this.SplitQueries) + `,`,
+		`FetchedIndexBytes:` + fmt.Sprintf("%v", this.FetchedIndexBytes) + `,`,
+		`EstimatedSeriesCount:` + fmt.Sprintf("%v", this.EstimatedSeriesCount) + `,`,
+		`QueueTime:` + fmt.Sprintf("%v", this.QueueTime) + `,`,
+		`EncodeTime:` + fmt.Sprintf("%v", this.EncodeTime) + `,`,
+		`SamplesProcessed:` + fmt.Sprintf("%v", this.SamplesProcessed) + `,`,
+		`SpunOffSubqueries:` + fmt.Sprintf("%v", this.SpunOffSubqueries) + `,`,
+		`SamplesProcessedPerStep:` + fmt.Sprintf("%v", this.SamplesProcessedPerStep) + `,`,
+		`RemoteExecutionRequestCount:` + fmt.Sprintf("%v", this.RemoteExecutionRequestCount) + `,`,
+		`SplitRangeVectors:` + fmt.Sprintf("%v", this.SplitRangeVectors) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Stats) XXX_Unmarshal(b []byte) error {
@@ -939,11 +957,16 @@ var xxx_messageInfo_Stats proto.InternalMessageInfo
 
 func (m *StepStat) Reset()      { *m = StepStat{} }
 func (*StepStat) ProtoMessage() {}
-func (m *StepStat) String() string {
-	if m == nil {
+func (this *StepStat) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StepStat{`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StepStat) XXX_Unmarshal(b []byte) error {

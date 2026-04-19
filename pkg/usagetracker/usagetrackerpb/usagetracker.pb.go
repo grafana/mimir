@@ -2826,11 +2826,17 @@ func (this *GetUsersCloseToLimitResponse) GoString() string {
 
 func (m *TrackSeriesRequest) Reset()      { *m = TrackSeriesRequest{} }
 func (*TrackSeriesRequest) ProtoMessage() {}
-func (m *TrackSeriesRequest) String() string {
-	if m == nil {
+func (this *TrackSeriesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TrackSeriesRequest{`,
+		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`SeriesHashes:` + fmt.Sprintf("%v", this.SeriesHashes) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TrackSeriesRequest) XXX_Unmarshal(b []byte) error {
@@ -2866,11 +2872,15 @@ var xxx_messageInfo_TrackSeriesRequest proto.InternalMessageInfo
 
 func (m *TrackSeriesResponse) Reset()      { *m = TrackSeriesResponse{} }
 func (*TrackSeriesResponse) ProtoMessage() {}
-func (m *TrackSeriesResponse) String() string {
-	if m == nil {
+func (this *TrackSeriesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TrackSeriesResponse{`,
+		`RejectedSeriesHashes:` + fmt.Sprintf("%v", this.RejectedSeriesHashes) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TrackSeriesResponse) XXX_Unmarshal(b []byte) error {
@@ -2906,11 +2916,16 @@ var xxx_messageInfo_TrackSeriesResponse proto.InternalMessageInfo
 
 func (m *TrackSeriesBatchUser) Reset()      { *m = TrackSeriesBatchUser{} }
 func (*TrackSeriesBatchUser) ProtoMessage() {}
-func (m *TrackSeriesBatchUser) String() string {
-	if m == nil {
+func (this *TrackSeriesBatchUser) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TrackSeriesBatchUser{`,
+		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
+		`SeriesHashes:` + fmt.Sprintf("%v", this.SeriesHashes) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TrackSeriesBatchUser) XXX_Unmarshal(b []byte) error {
@@ -2946,11 +2961,16 @@ var xxx_messageInfo_TrackSeriesBatchUser proto.InternalMessageInfo
 
 func (m *TrackSeriesBatchPartition) Reset()      { *m = TrackSeriesBatchPartition{} }
 func (*TrackSeriesBatchPartition) ProtoMessage() {}
-func (m *TrackSeriesBatchPartition) String() string {
-	if m == nil {
+func (this *TrackSeriesBatchPartition) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TrackSeriesBatchPartition{`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`Users:` + fmt.Sprintf("%v", this.Users) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TrackSeriesBatchPartition) XXX_Unmarshal(b []byte) error {
@@ -2986,11 +3006,15 @@ var xxx_messageInfo_TrackSeriesBatchPartition proto.InternalMessageInfo
 
 func (m *TrackSeriesBatchRequest) Reset()      { *m = TrackSeriesBatchRequest{} }
 func (*TrackSeriesBatchRequest) ProtoMessage() {}
-func (m *TrackSeriesBatchRequest) String() string {
-	if m == nil {
+func (this *TrackSeriesBatchRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TrackSeriesBatchRequest{`,
+		`Partitions:` + fmt.Sprintf("%v", this.Partitions) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TrackSeriesBatchRequest) XXX_Unmarshal(b []byte) error {
@@ -3026,11 +3050,16 @@ var xxx_messageInfo_TrackSeriesBatchRequest proto.InternalMessageInfo
 
 func (m *TrackSeriesBatchRejectionUser) Reset()      { *m = TrackSeriesBatchRejectionUser{} }
 func (*TrackSeriesBatchRejectionUser) ProtoMessage() {}
-func (m *TrackSeriesBatchRejectionUser) String() string {
-	if m == nil {
+func (this *TrackSeriesBatchRejectionUser) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TrackSeriesBatchRejectionUser{`,
+		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
+		`RejectedSeriesHashes:` + fmt.Sprintf("%v", this.RejectedSeriesHashes) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TrackSeriesBatchRejectionUser) XXX_Unmarshal(b []byte) error {
@@ -3066,11 +3095,16 @@ var xxx_messageInfo_TrackSeriesBatchRejectionUser proto.InternalMessageInfo
 
 func (m *TrackSeriesBatchRejection) Reset()      { *m = TrackSeriesBatchRejection{} }
 func (*TrackSeriesBatchRejection) ProtoMessage() {}
-func (m *TrackSeriesBatchRejection) String() string {
-	if m == nil {
+func (this *TrackSeriesBatchRejection) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TrackSeriesBatchRejection{`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`Users:` + fmt.Sprintf("%v", this.Users) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TrackSeriesBatchRejection) XXX_Unmarshal(b []byte) error {
@@ -3106,11 +3140,15 @@ var xxx_messageInfo_TrackSeriesBatchRejection proto.InternalMessageInfo
 
 func (m *TrackSeriesBatchResponse) Reset()      { *m = TrackSeriesBatchResponse{} }
 func (*TrackSeriesBatchResponse) ProtoMessage() {}
-func (m *TrackSeriesBatchResponse) String() string {
-	if m == nil {
+func (this *TrackSeriesBatchResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TrackSeriesBatchResponse{`,
+		`Rejections:` + fmt.Sprintf("%v", this.Rejections) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TrackSeriesBatchResponse) XXX_Unmarshal(b []byte) error {
@@ -3146,11 +3184,17 @@ var xxx_messageInfo_TrackSeriesBatchResponse proto.InternalMessageInfo
 
 func (m *SeriesCreatedEvent) Reset()      { *m = SeriesCreatedEvent{} }
 func (*SeriesCreatedEvent) ProtoMessage() {}
-func (m *SeriesCreatedEvent) String() string {
-	if m == nil {
+func (this *SeriesCreatedEvent) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SeriesCreatedEvent{`,
+		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`SeriesHashes:` + fmt.Sprintf("%v", this.SeriesHashes) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SeriesCreatedEvent) XXX_Unmarshal(b []byte) error {
@@ -3186,11 +3230,18 @@ var xxx_messageInfo_SeriesCreatedEvent proto.InternalMessageInfo
 
 func (m *SnapshotRecord) Reset()      { *m = SnapshotRecord{} }
 func (*SnapshotRecord) ProtoMessage() {}
-func (m *SnapshotRecord) String() string {
-	if m == nil {
+func (this *SnapshotRecord) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SnapshotRecord{`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Filenames:` + fmt.Sprintf("%v", this.Filenames) + `,`,
+		`LastEventOffsetPublishedBeforeSnapshot:` + fmt.Sprintf("%v", this.LastEventOffsetPublishedBeforeSnapshot) + `,`,
+		`LastSnapshotEventOffset:` + fmt.Sprintf("%v", this.LastSnapshotEventOffset) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SnapshotRecord) XXX_Unmarshal(b []byte) error {
@@ -3226,11 +3277,16 @@ var xxx_messageInfo_SnapshotRecord proto.InternalMessageInfo
 
 func (m *SnapshotEvent) Reset()      { *m = SnapshotEvent{} }
 func (*SnapshotEvent) ProtoMessage() {}
-func (m *SnapshotEvent) String() string {
-	if m == nil {
+func (this *SnapshotEvent) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SnapshotEvent{`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Filename:` + fmt.Sprintf("%v", this.Filename) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SnapshotEvent) XXX_Unmarshal(b []byte) error {
@@ -3266,11 +3322,15 @@ var xxx_messageInfo_SnapshotEvent proto.InternalMessageInfo
 
 func (m *SnapshotFile) Reset()      { *m = SnapshotFile{} }
 func (*SnapshotFile) ProtoMessage() {}
-func (m *SnapshotFile) String() string {
-	if m == nil {
+func (this *SnapshotFile) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SnapshotFile{`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SnapshotFile) XXX_Unmarshal(b []byte) error {
@@ -3306,11 +3366,15 @@ var xxx_messageInfo_SnapshotFile proto.InternalMessageInfo
 
 func (m *GetUsersCloseToLimitRequest) Reset()      { *m = GetUsersCloseToLimitRequest{} }
 func (*GetUsersCloseToLimitRequest) ProtoMessage() {}
-func (m *GetUsersCloseToLimitRequest) String() string {
-	if m == nil {
+func (this *GetUsersCloseToLimitRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&GetUsersCloseToLimitRequest{`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *GetUsersCloseToLimitRequest) XXX_Unmarshal(b []byte) error {
@@ -3346,11 +3410,16 @@ var xxx_messageInfo_GetUsersCloseToLimitRequest proto.InternalMessageInfo
 
 func (m *GetUsersCloseToLimitResponse) Reset()      { *m = GetUsersCloseToLimitResponse{} }
 func (*GetUsersCloseToLimitResponse) ProtoMessage() {}
-func (m *GetUsersCloseToLimitResponse) String() string {
-	if m == nil {
+func (this *GetUsersCloseToLimitResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&GetUsersCloseToLimitResponse{`,
+		`SortedUserIds:` + fmt.Sprintf("%v", this.SortedUserIds) + `,`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *GetUsersCloseToLimitResponse) XXX_Unmarshal(b []byte) error {

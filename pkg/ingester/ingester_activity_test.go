@@ -29,7 +29,7 @@ func TestRequestActivity(t *testing.T) {
 		},
 		{
 			request:  &client.LabelValuesCardinalityRequest{LabelNames: []string{"hello", "world"}, Matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "test", Value: "value"}}, CountMethod: client.IN_MEMORY},
-			expected: "test: user=\"\" trace=\"\" request=&LabelValuesCardinalityRequest{LabelNames:[hello world],Matchers:[]*LabelMatcher{&LabelMatcher{Type:EQUAL,Name:test,Value:value,},},CountMethod:IN_MEMORY,}",
+			expected: "test: user=\"\" trace=\"\" request=&LabelValuesCardinalityRequest{LabelNames:[hello world],Matchers:[&LabelMatcher{Type:EQUAL,Name:test,Value:value,}],CountMethod:IN_MEMORY,}",
 		},
 	} {
 		assert.Equal(t, tc.expected, requestActivity(context.Background(), "test", tc.request))

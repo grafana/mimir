@@ -1185,11 +1185,17 @@ func (this *QueryResultResponse) GoString() string {
 
 func (m *QueryResultRequest) Reset()      { *m = QueryResultRequest{} }
 func (*QueryResultRequest) ProtoMessage() {}
-func (m *QueryResultRequest) String() string {
-	if m == nil {
+func (this *QueryResultRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryResultRequest{`,
+		`QueryID:` + fmt.Sprintf("%v", this.QueryID) + `,`,
+		`HttpResponse:` + fmt.Sprintf("%v", this.HttpResponse) + `,`,
+		`Stats:` + fmt.Sprintf("%v", this.Stats) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryResultRequest) XXX_Unmarshal(b []byte) error {
@@ -1225,11 +1231,16 @@ var xxx_messageInfo_QueryResultRequest proto.InternalMessageInfo
 
 func (m *QueryResultStreamRequest) Reset()      { *m = QueryResultStreamRequest{} }
 func (*QueryResultStreamRequest) ProtoMessage() {}
-func (m *QueryResultStreamRequest) String() string {
-	if m == nil {
+func (this *QueryResultStreamRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryResultStreamRequest{`,
+		`QueryID:` + fmt.Sprintf("%v", this.QueryID) + `,`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryResultStreamRequest) XXX_Unmarshal(b []byte) error {
@@ -1265,11 +1276,17 @@ var xxx_messageInfo_QueryResultStreamRequest proto.InternalMessageInfo
 
 func (m *QueryResultMetadata) Reset()      { *m = QueryResultMetadata{} }
 func (*QueryResultMetadata) ProtoMessage() {}
-func (m *QueryResultMetadata) String() string {
-	if m == nil {
+func (this *QueryResultMetadata) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryResultMetadata{`,
+		`Code:` + fmt.Sprintf("%v", this.Code) + `,`,
+		`Headers:` + fmt.Sprintf("%v", this.Headers) + `,`,
+		`Stats:` + fmt.Sprintf("%v", this.Stats) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryResultMetadata) XXX_Unmarshal(b []byte) error {
@@ -1305,11 +1322,15 @@ var xxx_messageInfo_QueryResultMetadata proto.InternalMessageInfo
 
 func (m *QueryResultBody) Reset()      { *m = QueryResultBody{} }
 func (*QueryResultBody) ProtoMessage() {}
-func (m *QueryResultBody) String() string {
-	if m == nil {
+func (this *QueryResultBody) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryResultBody{`,
+		`Chunk:` + fmt.Sprintf("%v", this.Chunk) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryResultBody) XXX_Unmarshal(b []byte) error {
@@ -1345,11 +1366,14 @@ var xxx_messageInfo_QueryResultBody proto.InternalMessageInfo
 
 func (m *QueryResultResponse) Reset()      { *m = QueryResultResponse{} }
 func (*QueryResultResponse) ProtoMessage() {}
-func (m *QueryResultResponse) String() string {
-	if m == nil {
+func (this *QueryResultResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryResultResponse{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryResultResponse) XXX_Unmarshal(b []byte) error {

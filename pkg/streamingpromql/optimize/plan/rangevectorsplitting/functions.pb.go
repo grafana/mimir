@@ -2519,11 +2519,18 @@ func (this *AvgOverTimeIntermediateList) GoString() string {
 
 func (m *SumOverTimeIntermediate) Reset()      { *m = SumOverTimeIntermediate{} }
 func (*SumOverTimeIntermediate) ProtoMessage() {}
-func (m *SumOverTimeIntermediate) String() string {
-	if m == nil {
+func (this *SumOverTimeIntermediate) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SumOverTimeIntermediate{`,
+		`SumF:` + fmt.Sprintf("%v", this.SumF) + `,`,
+		`HasFloat:` + fmt.Sprintf("%v", this.HasFloat) + `,`,
+		`SumC:` + fmt.Sprintf("%v", this.SumC) + `,`,
+		`SumH:` + fmt.Sprintf("%v", this.SumH) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SumOverTimeIntermediate) XXX_Unmarshal(b []byte) error {
@@ -2559,11 +2566,15 @@ var xxx_messageInfo_SumOverTimeIntermediate proto.InternalMessageInfo
 
 func (m *SumOverTimeIntermediateList) Reset()      { *m = SumOverTimeIntermediateList{} }
 func (*SumOverTimeIntermediateList) ProtoMessage() {}
-func (m *SumOverTimeIntermediateList) String() string {
-	if m == nil {
+func (this *SumOverTimeIntermediateList) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SumOverTimeIntermediateList{`,
+		`Results:` + fmt.Sprintf("%v", this.Results) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SumOverTimeIntermediateList) XXX_Unmarshal(b []byte) error {
@@ -2599,11 +2610,16 @@ var xxx_messageInfo_SumOverTimeIntermediateList proto.InternalMessageInfo
 
 func (m *CountOverTimeIntermediate) Reset()      { *m = CountOverTimeIntermediate{} }
 func (*CountOverTimeIntermediate) ProtoMessage() {}
-func (m *CountOverTimeIntermediate) String() string {
-	if m == nil {
+func (this *CountOverTimeIntermediate) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&CountOverTimeIntermediate{`,
+		`F:` + fmt.Sprintf("%v", this.F) + `,`,
+		`HasFloat:` + fmt.Sprintf("%v", this.HasFloat) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *CountOverTimeIntermediate) XXX_Unmarshal(b []byte) error {
@@ -2639,11 +2655,15 @@ var xxx_messageInfo_CountOverTimeIntermediate proto.InternalMessageInfo
 
 func (m *CountOverTimeIntermediateList) Reset()      { *m = CountOverTimeIntermediateList{} }
 func (*CountOverTimeIntermediateList) ProtoMessage() {}
-func (m *CountOverTimeIntermediateList) String() string {
-	if m == nil {
+func (this *CountOverTimeIntermediateList) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&CountOverTimeIntermediateList{`,
+		`Results:` + fmt.Sprintf("%v", this.Results) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *CountOverTimeIntermediateList) XXX_Unmarshal(b []byte) error {
@@ -2679,11 +2699,17 @@ var xxx_messageInfo_CountOverTimeIntermediateList proto.InternalMessageInfo
 
 func (m *MinMaxOverTimeIntermediate) Reset()      { *m = MinMaxOverTimeIntermediate{} }
 func (*MinMaxOverTimeIntermediate) ProtoMessage() {}
-func (m *MinMaxOverTimeIntermediate) String() string {
-	if m == nil {
+func (this *MinMaxOverTimeIntermediate) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MinMaxOverTimeIntermediate{`,
+		`F:` + fmt.Sprintf("%v", this.F) + `,`,
+		`HasFloat:` + fmt.Sprintf("%v", this.HasFloat) + `,`,
+		`HasHistogram:` + fmt.Sprintf("%v", this.HasHistogram) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MinMaxOverTimeIntermediate) XXX_Unmarshal(b []byte) error {
@@ -2719,11 +2745,15 @@ var xxx_messageInfo_MinMaxOverTimeIntermediate proto.InternalMessageInfo
 
 func (m *MinMaxOverTimeIntermediateList) Reset()      { *m = MinMaxOverTimeIntermediateList{} }
 func (*MinMaxOverTimeIntermediateList) ProtoMessage() {}
-func (m *MinMaxOverTimeIntermediateList) String() string {
-	if m == nil {
+func (this *MinMaxOverTimeIntermediateList) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MinMaxOverTimeIntermediateList{`,
+		`Results:` + fmt.Sprintf("%v", this.Results) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MinMaxOverTimeIntermediateList) XXX_Unmarshal(b []byte) error {
@@ -2759,11 +2789,25 @@ var xxx_messageInfo_MinMaxOverTimeIntermediateList proto.InternalMessageInfo
 
 func (m *RateIntermediate) Reset()      { *m = RateIntermediate{} }
 func (*RateIntermediate) ProtoMessage() {}
-func (m *RateIntermediate) String() string {
-	if m == nil {
+func (this *RateIntermediate) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&RateIntermediate{`,
+		`SampleCount:` + fmt.Sprintf("%v", this.SampleCount) + `,`,
+		`IsHistogram:` + fmt.Sprintf("%v", this.IsHistogram) + `,`,
+		`FirstSample:` + fmt.Sprintf("%v", this.FirstSample) + `,`,
+		`LastSample:` + fmt.Sprintf("%v", this.LastSample) + `,`,
+		`Delta:` + fmt.Sprintf("%v", this.Delta) + `,`,
+		`FirstHistogram:` + fmt.Sprintf("%v", this.FirstHistogram) + `,`,
+		`LastHistogram:` + fmt.Sprintf("%v", this.LastHistogram) + `,`,
+		`DeltaHistogram:` + fmt.Sprintf("%v", this.DeltaHistogram) + `,`,
+		`FirstHistogramTimestamp:` + fmt.Sprintf("%v", this.FirstHistogramTimestamp) + `,`,
+		`LastHistogramTimestamp:` + fmt.Sprintf("%v", this.LastHistogramTimestamp) + `,`,
+		`ForceEmptyResult:` + fmt.Sprintf("%v", this.ForceEmptyResult) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *RateIntermediate) XXX_Unmarshal(b []byte) error {
@@ -2799,11 +2843,15 @@ var xxx_messageInfo_RateIntermediate proto.InternalMessageInfo
 
 func (m *RateIntermediateList) Reset()      { *m = RateIntermediateList{} }
 func (*RateIntermediateList) ProtoMessage() {}
-func (m *RateIntermediateList) String() string {
-	if m == nil {
+func (this *RateIntermediateList) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&RateIntermediateList{`,
+		`Results:` + fmt.Sprintf("%v", this.Results) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *RateIntermediateList) XXX_Unmarshal(b []byte) error {
@@ -2839,11 +2887,17 @@ var xxx_messageInfo_RateIntermediateList proto.InternalMessageInfo
 
 func (m *FirstLastOverTimeIntermediate) Reset()      { *m = FirstLastOverTimeIntermediate{} }
 func (*FirstLastOverTimeIntermediate) ProtoMessage() {}
-func (m *FirstLastOverTimeIntermediate) String() string {
-	if m == nil {
+func (this *FirstLastOverTimeIntermediate) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&FirstLastOverTimeIntermediate{`,
+		`F:` + fmt.Sprintf("%v", this.F) + `,`,
+		`HasFloat:` + fmt.Sprintf("%v", this.HasFloat) + `,`,
+		`H:` + fmt.Sprintf("%v", this.H) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *FirstLastOverTimeIntermediate) XXX_Unmarshal(b []byte) error {
@@ -2879,11 +2933,15 @@ var xxx_messageInfo_FirstLastOverTimeIntermediate proto.InternalMessageInfo
 
 func (m *FirstLastOverTimeIntermediateList) Reset()      { *m = FirstLastOverTimeIntermediateList{} }
 func (*FirstLastOverTimeIntermediateList) ProtoMessage() {}
-func (m *FirstLastOverTimeIntermediateList) String() string {
-	if m == nil {
+func (this *FirstLastOverTimeIntermediateList) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&FirstLastOverTimeIntermediateList{`,
+		`Results:` + fmt.Sprintf("%v", this.Results) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *FirstLastOverTimeIntermediateList) XXX_Unmarshal(b []byte) error {
@@ -2919,11 +2977,22 @@ var xxx_messageInfo_FirstLastOverTimeIntermediateList proto.InternalMessageInfo
 
 func (m *AvgOverTimeIntermediate) Reset()      { *m = AvgOverTimeIntermediate{} }
 func (*AvgOverTimeIntermediate) ProtoMessage() {}
-func (m *AvgOverTimeIntermediate) String() string {
-	if m == nil {
+func (this *AvgOverTimeIntermediate) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&AvgOverTimeIntermediate{`,
+		`SumF:` + fmt.Sprintf("%v", this.SumF) + `,`,
+		`IncrementalAvg:` + fmt.Sprintf("%v", this.IncrementalAvg) + `,`,
+		`CountF:` + fmt.Sprintf("%v", this.CountF) + `,`,
+		`UseIncrementalCalc:` + fmt.Sprintf("%v", this.UseIncrementalCalc) + `,`,
+		`CompF:` + fmt.Sprintf("%v", this.CompF) + `,`,
+		`AvgH:` + fmt.Sprintf("%v", this.AvgH) + `,`,
+		`CountH:` + fmt.Sprintf("%v", this.CountH) + `,`,
+		`ForceEmptyResult:` + fmt.Sprintf("%v", this.ForceEmptyResult) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *AvgOverTimeIntermediate) XXX_Unmarshal(b []byte) error {
@@ -2959,11 +3028,15 @@ var xxx_messageInfo_AvgOverTimeIntermediate proto.InternalMessageInfo
 
 func (m *AvgOverTimeIntermediateList) Reset()      { *m = AvgOverTimeIntermediateList{} }
 func (*AvgOverTimeIntermediateList) ProtoMessage() {}
-func (m *AvgOverTimeIntermediateList) String() string {
-	if m == nil {
+func (this *AvgOverTimeIntermediateList) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&AvgOverTimeIntermediateList{`,
+		`Results:` + fmt.Sprintf("%v", this.Results) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *AvgOverTimeIntermediateList) XXX_Unmarshal(b []byte) error {

@@ -3658,11 +3658,16 @@ func (this *VectorMatchFillValues) GoString() string {
 
 func (m *PositionRange) Reset()      { *m = PositionRange{} }
 func (*PositionRange) ProtoMessage() {}
-func (m *PositionRange) String() string {
-	if m == nil {
+func (this *PositionRange) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PositionRange{`,
+		`Start:` + fmt.Sprintf("%v", this.Start) + `,`,
+		`End:` + fmt.Sprintf("%v", this.End) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PositionRange) XXX_Unmarshal(b []byte) error {
@@ -3698,11 +3703,15 @@ var xxx_messageInfo_PositionRange proto.InternalMessageInfo
 
 func (m *BinaryExpressionHints) Reset()      { *m = BinaryExpressionHints{} }
 func (*BinaryExpressionHints) ProtoMessage() {}
-func (m *BinaryExpressionHints) String() string {
-	if m == nil {
+func (this *BinaryExpressionHints) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&BinaryExpressionHints{`,
+		`Include:` + fmt.Sprintf("%v", this.Include) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *BinaryExpressionHints) XXX_Unmarshal(b []byte) error {
@@ -3738,11 +3747,18 @@ var xxx_messageInfo_BinaryExpressionHints proto.InternalMessageInfo
 
 func (m *AggregateExpressionDetails) Reset()      { *m = AggregateExpressionDetails{} }
 func (*AggregateExpressionDetails) ProtoMessage() {}
-func (m *AggregateExpressionDetails) String() string {
-	if m == nil {
+func (this *AggregateExpressionDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&AggregateExpressionDetails{`,
+		`Op:` + fmt.Sprintf("%v", this.Op) + `,`,
+		`Grouping:` + fmt.Sprintf("%v", this.Grouping) + `,`,
+		`Without:` + fmt.Sprintf("%v", this.Without) + `,`,
+		`ExpressionPosition:` + fmt.Sprintf("%v", this.ExpressionPosition) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *AggregateExpressionDetails) XXX_Unmarshal(b []byte) error {
@@ -3778,11 +3794,19 @@ var xxx_messageInfo_AggregateExpressionDetails proto.InternalMessageInfo
 
 func (m *BinaryExpressionDetails) Reset()      { *m = BinaryExpressionDetails{} }
 func (*BinaryExpressionDetails) ProtoMessage() {}
-func (m *BinaryExpressionDetails) String() string {
-	if m == nil {
+func (this *BinaryExpressionDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&BinaryExpressionDetails{`,
+		`Op:` + fmt.Sprintf("%v", this.Op) + `,`,
+		`VectorMatching:` + fmt.Sprintf("%v", this.VectorMatching) + `,`,
+		`ReturnBool:` + fmt.Sprintf("%v", this.ReturnBool) + `,`,
+		`ExpressionPosition:` + fmt.Sprintf("%v", this.ExpressionPosition) + `,`,
+		`Hints:` + fmt.Sprintf("%v", this.Hints) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *BinaryExpressionDetails) XXX_Unmarshal(b []byte) error {
@@ -3818,11 +3842,19 @@ var xxx_messageInfo_BinaryExpressionDetails proto.InternalMessageInfo
 
 func (m *VectorMatching) Reset()      { *m = VectorMatching{} }
 func (*VectorMatching) ProtoMessage() {}
-func (m *VectorMatching) String() string {
-	if m == nil {
+func (this *VectorMatching) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&VectorMatching{`,
+		`Card:` + fmt.Sprintf("%v", this.Card) + `,`,
+		`MatchingLabels:` + fmt.Sprintf("%v", this.MatchingLabels) + `,`,
+		`On:` + fmt.Sprintf("%v", this.On) + `,`,
+		`Include:` + fmt.Sprintf("%v", this.Include) + `,`,
+		`FillValues:` + fmt.Sprintf("%v", this.FillValues) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *VectorMatching) XXX_Unmarshal(b []byte) error {
@@ -3858,11 +3890,17 @@ var xxx_messageInfo_VectorMatching proto.InternalMessageInfo
 
 func (m *FunctionCallDetails) Reset()      { *m = FunctionCallDetails{} }
 func (*FunctionCallDetails) ProtoMessage() {}
-func (m *FunctionCallDetails) String() string {
-	if m == nil {
+func (this *FunctionCallDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&FunctionCallDetails{`,
+		`Function:` + fmt.Sprintf("%v", this.Function) + `,`,
+		`AbsentLabels:` + fmt.Sprintf("%v", this.AbsentLabels) + `,`,
+		`ExpressionPosition:` + fmt.Sprintf("%v", this.ExpressionPosition) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *FunctionCallDetails) XXX_Unmarshal(b []byte) error {
@@ -3898,11 +3936,16 @@ var xxx_messageInfo_FunctionCallDetails proto.InternalMessageInfo
 
 func (m *NumberLiteralDetails) Reset()      { *m = NumberLiteralDetails{} }
 func (*NumberLiteralDetails) ProtoMessage() {}
-func (m *NumberLiteralDetails) String() string {
-	if m == nil {
+func (this *NumberLiteralDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&NumberLiteralDetails{`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`ExpressionPosition:` + fmt.Sprintf("%v", this.ExpressionPosition) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *NumberLiteralDetails) XXX_Unmarshal(b []byte) error {
@@ -3938,11 +3981,16 @@ var xxx_messageInfo_NumberLiteralDetails proto.InternalMessageInfo
 
 func (m *StringLiteralDetails) Reset()      { *m = StringLiteralDetails{} }
 func (*StringLiteralDetails) ProtoMessage() {}
-func (m *StringLiteralDetails) String() string {
-	if m == nil {
+func (this *StringLiteralDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StringLiteralDetails{`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`ExpressionPosition:` + fmt.Sprintf("%v", this.ExpressionPosition) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StringLiteralDetails) XXX_Unmarshal(b []byte) error {
@@ -3978,11 +4026,16 @@ var xxx_messageInfo_StringLiteralDetails proto.InternalMessageInfo
 
 func (m *UnaryExpressionDetails) Reset()      { *m = UnaryExpressionDetails{} }
 func (*UnaryExpressionDetails) ProtoMessage() {}
-func (m *UnaryExpressionDetails) String() string {
-	if m == nil {
+func (this *UnaryExpressionDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UnaryExpressionDetails{`,
+		`Op:` + fmt.Sprintf("%v", this.Op) + `,`,
+		`ExpressionPosition:` + fmt.Sprintf("%v", this.ExpressionPosition) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UnaryExpressionDetails) XXX_Unmarshal(b []byte) error {
@@ -4018,11 +4071,24 @@ var xxx_messageInfo_UnaryExpressionDetails proto.InternalMessageInfo
 
 func (m *VectorSelectorDetails) Reset()      { *m = VectorSelectorDetails{} }
 func (*VectorSelectorDetails) ProtoMessage() {}
-func (m *VectorSelectorDetails) String() string {
-	if m == nil {
+func (this *VectorSelectorDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&VectorSelectorDetails{`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Offset:` + fmt.Sprintf("%v", this.Offset) + `,`,
+		`ExpressionPosition:` + fmt.Sprintf("%v", this.ExpressionPosition) + `,`,
+		`ReturnSampleTimestamps:` + fmt.Sprintf("%v", this.ReturnSampleTimestamps) + `,`,
+		`SkipHistogramBuckets:` + fmt.Sprintf("%v", this.SkipHistogramBuckets) + `,`,
+		`Smoothed:` + fmt.Sprintf("%v", this.Smoothed) + `,`,
+		`ProjectionInclude:` + fmt.Sprintf("%v", this.ProjectionInclude) + `,`,
+		`ProjectionLabels:` + fmt.Sprintf("%v", this.ProjectionLabels) + `,`,
+		`ReturnSampleTimestampsPreserveHistograms:` + fmt.Sprintf("%v", this.ReturnSampleTimestampsPreserveHistograms) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *VectorSelectorDetails) XXX_Unmarshal(b []byte) error {
@@ -4058,11 +4124,25 @@ var xxx_messageInfo_VectorSelectorDetails proto.InternalMessageInfo
 
 func (m *MatrixSelectorDetails) Reset()      { *m = MatrixSelectorDetails{} }
 func (*MatrixSelectorDetails) ProtoMessage() {}
-func (m *MatrixSelectorDetails) String() string {
-	if m == nil {
+func (this *MatrixSelectorDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MatrixSelectorDetails{`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Offset:` + fmt.Sprintf("%v", this.Offset) + `,`,
+		`Range:` + fmt.Sprintf("%v", this.Range) + `,`,
+		`ExpressionPosition:` + fmt.Sprintf("%v", this.ExpressionPosition) + `,`,
+		`SkipHistogramBuckets:` + fmt.Sprintf("%v", this.SkipHistogramBuckets) + `,`,
+		`Smoothed:` + fmt.Sprintf("%v", this.Smoothed) + `,`,
+		`Anchored:` + fmt.Sprintf("%v", this.Anchored) + `,`,
+		`CounterAware:` + fmt.Sprintf("%v", this.CounterAware) + `,`,
+		`ProjectionInclude:` + fmt.Sprintf("%v", this.ProjectionInclude) + `,`,
+		`ProjectionLabels:` + fmt.Sprintf("%v", this.ProjectionLabels) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MatrixSelectorDetails) XXX_Unmarshal(b []byte) error {
@@ -4098,11 +4178,19 @@ var xxx_messageInfo_MatrixSelectorDetails proto.InternalMessageInfo
 
 func (m *SubqueryDetails) Reset()      { *m = SubqueryDetails{} }
 func (*SubqueryDetails) ProtoMessage() {}
-func (m *SubqueryDetails) String() string {
-	if m == nil {
+func (this *SubqueryDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SubqueryDetails{`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Offset:` + fmt.Sprintf("%v", this.Offset) + `,`,
+		`Range:` + fmt.Sprintf("%v", this.Range) + `,`,
+		`Step:` + fmt.Sprintf("%v", this.Step) + `,`,
+		`ExpressionPosition:` + fmt.Sprintf("%v", this.ExpressionPosition) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SubqueryDetails) XXX_Unmarshal(b []byte) error {
@@ -4138,11 +4226,14 @@ var xxx_messageInfo_SubqueryDetails proto.InternalMessageInfo
 
 func (m *StepInvariantExpressionDetails) Reset()      { *m = StepInvariantExpressionDetails{} }
 func (*StepInvariantExpressionDetails) ProtoMessage() {}
-func (m *StepInvariantExpressionDetails) String() string {
-	if m == nil {
+func (this *StepInvariantExpressionDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StepInvariantExpressionDetails{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StepInvariantExpressionDetails) XXX_Unmarshal(b []byte) error {
@@ -4178,11 +4269,17 @@ var xxx_messageInfo_StepInvariantExpressionDetails proto.InternalMessageInfo
 
 func (m *LabelMatcher) Reset()      { *m = LabelMatcher{} }
 func (*LabelMatcher) ProtoMessage() {}
-func (m *LabelMatcher) String() string {
-	if m == nil {
+func (this *LabelMatcher) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelMatcher{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {
@@ -4218,11 +4315,14 @@ var xxx_messageInfo_LabelMatcher proto.InternalMessageInfo
 
 func (m *DeduplicateAndMergeDetails) Reset()      { *m = DeduplicateAndMergeDetails{} }
 func (*DeduplicateAndMergeDetails) ProtoMessage() {}
-func (m *DeduplicateAndMergeDetails) String() string {
-	if m == nil {
+func (this *DeduplicateAndMergeDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&DeduplicateAndMergeDetails{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *DeduplicateAndMergeDetails) XXX_Unmarshal(b []byte) error {
@@ -4258,11 +4358,14 @@ var xxx_messageInfo_DeduplicateAndMergeDetails proto.InternalMessageInfo
 
 func (m *DropNameDetails) Reset()      { *m = DropNameDetails{} }
 func (*DropNameDetails) ProtoMessage() {}
-func (m *DropNameDetails) String() string {
-	if m == nil {
+func (this *DropNameDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&DropNameDetails{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *DropNameDetails) XXX_Unmarshal(b []byte) error {
@@ -4298,11 +4401,14 @@ var xxx_messageInfo_DropNameDetails proto.InternalMessageInfo
 
 func (m *NoOpDetails) Reset()      { *m = NoOpDetails{} }
 func (*NoOpDetails) ProtoMessage() {}
-func (m *NoOpDetails) String() string {
-	if m == nil {
+func (this *NoOpDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&NoOpDetails{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *NoOpDetails) XXX_Unmarshal(b []byte) error {
@@ -4338,11 +4444,18 @@ var xxx_messageInfo_NoOpDetails proto.InternalMessageInfo
 
 func (m *VectorMatchFillValues) Reset()      { *m = VectorMatchFillValues{} }
 func (*VectorMatchFillValues) ProtoMessage() {}
-func (m *VectorMatchFillValues) String() string {
-	if m == nil {
+func (this *VectorMatchFillValues) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&VectorMatchFillValues{`,
+		`Rhs:` + fmt.Sprintf("%v", this.Rhs) + `,`,
+		`Lhs:` + fmt.Sprintf("%v", this.Lhs) + `,`,
+		`RhsSet:` + fmt.Sprintf("%v", this.RhsSet) + `,`,
+		`LhsSet:` + fmt.Sprintf("%v", this.LhsSet) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *VectorMatchFillValues) XXX_Unmarshal(b []byte) error {

@@ -246,11 +246,15 @@ func (this *RemoteExecutionConsumerDetails) GoString() string {
 
 func (m *RemoteExecutionGroupDetails) Reset()      { *m = RemoteExecutionGroupDetails{} }
 func (*RemoteExecutionGroupDetails) ProtoMessage() {}
-func (m *RemoteExecutionGroupDetails) String() string {
-	if m == nil {
+func (this *RemoteExecutionGroupDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&RemoteExecutionGroupDetails{`,
+		`EagerLoad:` + fmt.Sprintf("%v", this.EagerLoad) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *RemoteExecutionGroupDetails) XXX_Unmarshal(b []byte) error {
@@ -286,11 +290,15 @@ var xxx_messageInfo_RemoteExecutionGroupDetails proto.InternalMessageInfo
 
 func (m *RemoteExecutionConsumerDetails) Reset()      { *m = RemoteExecutionConsumerDetails{} }
 func (*RemoteExecutionConsumerDetails) ProtoMessage() {}
-func (m *RemoteExecutionConsumerDetails) String() string {
-	if m == nil {
+func (this *RemoteExecutionConsumerDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&RemoteExecutionConsumerDetails{`,
+		`NodeIndex:` + fmt.Sprintf("%v", this.NodeIndex) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *RemoteExecutionConsumerDetails) XXX_Unmarshal(b []byte) error {

@@ -291,11 +291,14 @@ func (this *MultiAggregationInstanceDetails) GoString() string {
 
 func (m *MultiAggregationGroupDetails) Reset()      { *m = MultiAggregationGroupDetails{} }
 func (*MultiAggregationGroupDetails) ProtoMessage() {}
-func (m *MultiAggregationGroupDetails) String() string {
-	if m == nil {
+func (this *MultiAggregationGroupDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MultiAggregationGroupDetails{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MultiAggregationGroupDetails) XXX_Unmarshal(b []byte) error {
@@ -331,11 +334,16 @@ var xxx_messageInfo_MultiAggregationGroupDetails proto.InternalMessageInfo
 
 func (m *MultiAggregationInstanceDetails) Reset()      { *m = MultiAggregationInstanceDetails{} }
 func (*MultiAggregationInstanceDetails) ProtoMessage() {}
-func (m *MultiAggregationInstanceDetails) String() string {
-	if m == nil {
+func (this *MultiAggregationInstanceDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MultiAggregationInstanceDetails{`,
+		`Aggregation:` + fmt.Sprintf("%v", this.Aggregation) + `,`,
+		`Filters:` + fmt.Sprintf("%v", this.Filters) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MultiAggregationInstanceDetails) XXX_Unmarshal(b []byte) error {

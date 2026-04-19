@@ -2610,11 +2610,16 @@ func (this *CachedHTTPHeader) GoString() string {
 
 func (m *PrometheusHeader) Reset()      { *m = PrometheusHeader{} }
 func (*PrometheusHeader) ProtoMessage() {}
-func (m *PrometheusHeader) String() string {
-	if m == nil {
+func (this *PrometheusHeader) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PrometheusHeader{`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`Values:` + fmt.Sprintf("%v", this.Values) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PrometheusHeader) XXX_Unmarshal(b []byte) error {
@@ -2650,11 +2655,21 @@ var xxx_messageInfo_PrometheusHeader proto.InternalMessageInfo
 
 func (m *PrometheusResponse) Reset()      { *m = PrometheusResponse{} }
 func (*PrometheusResponse) ProtoMessage() {}
-func (m *PrometheusResponse) String() string {
-	if m == nil {
+func (this *PrometheusResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PrometheusResponse{`,
+		`Status:` + fmt.Sprintf("%v", this.Status) + `,`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`ErrorType:` + fmt.Sprintf("%v", this.ErrorType) + `,`,
+		`Error:` + fmt.Sprintf("%v", this.Error) + `,`,
+		`Headers:` + fmt.Sprintf("%v", this.Headers) + `,`,
+		`Warnings:` + fmt.Sprintf("%v", this.Warnings) + `,`,
+		`Infos:` + fmt.Sprintf("%v", this.Infos) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PrometheusResponse) XXX_Unmarshal(b []byte) error {
@@ -2690,11 +2705,16 @@ var xxx_messageInfo_PrometheusResponse proto.InternalMessageInfo
 
 func (m *PrometheusData) Reset()      { *m = PrometheusData{} }
 func (*PrometheusData) ProtoMessage() {}
-func (m *PrometheusData) String() string {
-	if m == nil {
+func (this *PrometheusData) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PrometheusData{`,
+		`ResultType:` + fmt.Sprintf("%v", this.ResultType) + `,`,
+		`Result:` + fmt.Sprintf("%v", this.Result) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PrometheusData) XXX_Unmarshal(b []byte) error {
@@ -2730,11 +2750,17 @@ var xxx_messageInfo_PrometheusData proto.InternalMessageInfo
 
 func (m *SampleStream) Reset()      { *m = SampleStream{} }
 func (*SampleStream) ProtoMessage() {}
-func (m *SampleStream) String() string {
-	if m == nil {
+func (this *SampleStream) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SampleStream{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`Samples:` + fmt.Sprintf("%v", this.Samples) + `,`,
+		`Histograms:` + fmt.Sprintf("%v", this.Histograms) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SampleStream) XXX_Unmarshal(b []byte) error {
@@ -2770,11 +2796,17 @@ var xxx_messageInfo_SampleStream proto.InternalMessageInfo
 
 func (m *CachedError) Reset()      { *m = CachedError{} }
 func (*CachedError) ProtoMessage() {}
-func (m *CachedError) String() string {
-	if m == nil {
+func (this *CachedError) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&CachedError{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`ErrorType:` + fmt.Sprintf("%v", this.ErrorType) + `,`,
+		`ErrorMessage:` + fmt.Sprintf("%v", this.ErrorMessage) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *CachedError) XXX_Unmarshal(b []byte) error {
@@ -2810,11 +2842,16 @@ var xxx_messageInfo_CachedError proto.InternalMessageInfo
 
 func (m *CachedResponse) Reset()      { *m = CachedResponse{} }
 func (*CachedResponse) ProtoMessage() {}
-func (m *CachedResponse) String() string {
-	if m == nil {
+func (this *CachedResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&CachedResponse{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Extents:` + fmt.Sprintf("%v", this.Extents) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *CachedResponse) XXX_Unmarshal(b []byte) error {
@@ -2850,11 +2887,19 @@ var xxx_messageInfo_CachedResponse proto.InternalMessageInfo
 
 func (m *Extent) Reset()      { *m = Extent{} }
 func (*Extent) ProtoMessage() {}
-func (m *Extent) String() string {
-	if m == nil {
+func (this *Extent) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Extent{`,
+		`Start:` + fmt.Sprintf("%v", this.Start) + `,`,
+		`End:` + fmt.Sprintf("%v", this.End) + `,`,
+		`TraceId:` + fmt.Sprintf("%v", this.TraceId) + `,`,
+		`Response:` + fmt.Sprintf("%v", this.Response) + `,`,
+		`QueryTimestampMs:` + fmt.Sprintf("%v", this.QueryTimestampMs) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Extent) XXX_Unmarshal(b []byte) error {
@@ -2890,11 +2935,17 @@ var xxx_messageInfo_Extent proto.InternalMessageInfo
 
 func (m *Options) Reset()      { *m = Options{} }
 func (*Options) ProtoMessage() {}
-func (m *Options) String() string {
-	if m == nil {
+func (this *Options) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Options{`,
+		`CacheDisabled:` + fmt.Sprintf("%v", this.CacheDisabled) + `,`,
+		`ShardingDisabled:` + fmt.Sprintf("%v", this.ShardingDisabled) + `,`,
+		`TotalShards:` + fmt.Sprintf("%v", this.TotalShards) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Options) XXX_Unmarshal(b []byte) error {
@@ -2930,11 +2981,16 @@ var xxx_messageInfo_Options proto.InternalMessageInfo
 
 func (m *QueryStatistics) Reset()      { *m = QueryStatistics{} }
 func (*QueryStatistics) ProtoMessage() {}
-func (m *QueryStatistics) String() string {
-	if m == nil {
+func (this *QueryStatistics) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryStatistics{`,
+		`EstimatedSeriesCount:` + fmt.Sprintf("%v", this.EstimatedSeriesCount) + `,`,
+		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryStatistics) XXX_Unmarshal(b []byte) error {
@@ -2970,11 +3026,18 @@ var xxx_messageInfo_QueryStatistics proto.InternalMessageInfo
 
 func (m *CachedHTTPResponse) Reset()      { *m = CachedHTTPResponse{} }
 func (*CachedHTTPResponse) ProtoMessage() {}
-func (m *CachedHTTPResponse) String() string {
-	if m == nil {
+func (this *CachedHTTPResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&CachedHTTPResponse{`,
+		`CacheKey:` + fmt.Sprintf("%v", this.CacheKey) + `,`,
+		`StatusCode:` + fmt.Sprintf("%v", this.StatusCode) + `,`,
+		`Headers:` + fmt.Sprintf("%v", this.Headers) + `,`,
+		`Body:` + fmt.Sprintf("%v", this.Body) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *CachedHTTPResponse) XXX_Unmarshal(b []byte) error {
@@ -3010,11 +3073,16 @@ var xxx_messageInfo_CachedHTTPResponse proto.InternalMessageInfo
 
 func (m *CachedHTTPHeader) Reset()      { *m = CachedHTTPHeader{} }
 func (*CachedHTTPHeader) ProtoMessage() {}
-func (m *CachedHTTPHeader) String() string {
-	if m == nil {
+func (this *CachedHTTPHeader) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&CachedHTTPHeader{`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *CachedHTTPHeader) XXX_Unmarshal(b []byte) error {

@@ -245,11 +245,16 @@ func (this *CachedSeries) GoString() string {
 
 func (m *CachedSeries) Reset()      { *m = CachedSeries{} }
 func (*CachedSeries) ProtoMessage() {}
-func (m *CachedSeries) String() string {
-	if m == nil {
+func (this *CachedSeries) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&CachedSeries{`,
+		`Series:` + fmt.Sprintf("%v", this.Series) + `,`,
+		`DiffEncodedPostings:` + fmt.Sprintf("%v", this.DiffEncodedPostings) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *CachedSeries) XXX_Unmarshal(b []byte) error {

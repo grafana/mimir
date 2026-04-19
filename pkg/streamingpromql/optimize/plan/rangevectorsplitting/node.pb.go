@@ -383,11 +383,16 @@ func (this *SplitRange) GoString() string {
 
 func (m *SplitFunctionCallDetails) Reset()      { *m = SplitFunctionCallDetails{} }
 func (*SplitFunctionCallDetails) ProtoMessage() {}
-func (m *SplitFunctionCallDetails) String() string {
-	if m == nil {
+func (this *SplitFunctionCallDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SplitFunctionCallDetails{`,
+		`SplitRanges:` + fmt.Sprintf("%v", this.SplitRanges) + `,`,
+		`InnerNodeCacheKey:` + fmt.Sprintf("%v", this.InnerNodeCacheKey) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SplitFunctionCallDetails) XXX_Unmarshal(b []byte) error {
@@ -423,11 +428,17 @@ var xxx_messageInfo_SplitFunctionCallDetails proto.InternalMessageInfo
 
 func (m *SplitRange) Reset()      { *m = SplitRange{} }
 func (*SplitRange) ProtoMessage() {}
-func (m *SplitRange) String() string {
-	if m == nil {
+func (this *SplitRange) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SplitRange{`,
+		`Start:` + fmt.Sprintf("%v", this.Start) + `,`,
+		`End:` + fmt.Sprintf("%v", this.End) + `,`,
+		`Cacheable:` + fmt.Sprintf("%v", this.Cacheable) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SplitRange) XXX_Unmarshal(b []byte) error {

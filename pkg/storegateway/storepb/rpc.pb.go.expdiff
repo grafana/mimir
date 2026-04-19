@@ -1,5 +1,5 @@
---- a/pkg/storegateway/storepb/rpc.pb.go	2026-04-18 21:59:44
-+++ b/pkg/storegateway/storepb/rpc.pb.go	2026-04-18 21:59:26
+--- a/pkg/storegateway/storepb/rpc.pb.go	2026-04-19 07:47:23
++++ b/pkg/storegateway/storepb/rpc.pb.go	2026-04-19 07:47:05
 @@ -8,7 +8,6 @@
  	"github.com/gogo/protobuf/proto"
  	"github.com/gogo/protobuf/types"

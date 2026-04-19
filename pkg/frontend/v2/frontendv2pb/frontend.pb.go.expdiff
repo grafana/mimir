@@ -1,5 +1,5 @@
---- a/pkg/frontend/v2/frontendv2pb/frontend.pb.go	2026-04-18 21:59:44
-+++ b/pkg/frontend/v2/frontendv2pb/frontend.pb.go	2026-04-18 21:59:08
+--- a/pkg/frontend/v2/frontendv2pb/frontend.pb.go	2026-04-19 07:47:23
++++ b/pkg/frontend/v2/frontendv2pb/frontend.pb.go	2026-04-19 07:46:46
 @@ -12,7 +12,6 @@
  	"github.com/grafana/mimir/pkg/querier/querierpb"
  	"github.com/grafana/mimir/pkg/querier/stats"

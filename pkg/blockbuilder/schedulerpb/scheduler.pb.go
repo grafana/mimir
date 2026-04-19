@@ -1163,11 +1163,16 @@ func (this *UpdateJobResponse) GoString() string {
 
 func (m *JobKey) Reset()      { *m = JobKey{} }
 func (*JobKey) ProtoMessage() {}
-func (m *JobKey) String() string {
-	if m == nil {
+func (this *JobKey) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&JobKey{`,
+		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
+		`Epoch:` + fmt.Sprintf("%v", this.Epoch) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *JobKey) XXX_Unmarshal(b []byte) error {
@@ -1203,11 +1208,18 @@ var xxx_messageInfo_JobKey proto.InternalMessageInfo
 
 func (m *JobSpec) Reset()      { *m = JobSpec{} }
 func (*JobSpec) ProtoMessage() {}
-func (m *JobSpec) String() string {
-	if m == nil {
+func (this *JobSpec) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&JobSpec{`,
+		`Topic:` + fmt.Sprintf("%v", this.Topic) + `,`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`StartOffset:` + fmt.Sprintf("%v", this.StartOffset) + `,`,
+		`EndOffset:` + fmt.Sprintf("%v", this.EndOffset) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *JobSpec) XXX_Unmarshal(b []byte) error {
@@ -1243,11 +1255,15 @@ var xxx_messageInfo_JobSpec proto.InternalMessageInfo
 
 func (m *AssignJobRequest) Reset()      { *m = AssignJobRequest{} }
 func (*AssignJobRequest) ProtoMessage() {}
-func (m *AssignJobRequest) String() string {
-	if m == nil {
+func (this *AssignJobRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&AssignJobRequest{`,
+		`WorkerId:` + fmt.Sprintf("%v", this.WorkerId) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *AssignJobRequest) XXX_Unmarshal(b []byte) error {
@@ -1283,11 +1299,16 @@ var xxx_messageInfo_AssignJobRequest proto.InternalMessageInfo
 
 func (m *AssignJobResponse) Reset()      { *m = AssignJobResponse{} }
 func (*AssignJobResponse) ProtoMessage() {}
-func (m *AssignJobResponse) String() string {
-	if m == nil {
+func (this *AssignJobResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&AssignJobResponse{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Spec:` + fmt.Sprintf("%v", this.Spec) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *AssignJobResponse) XXX_Unmarshal(b []byte) error {
@@ -1323,11 +1344,18 @@ var xxx_messageInfo_AssignJobResponse proto.InternalMessageInfo
 
 func (m *UpdateJobRequest) Reset()      { *m = UpdateJobRequest{} }
 func (*UpdateJobRequest) ProtoMessage() {}
-func (m *UpdateJobRequest) String() string {
-	if m == nil {
+func (this *UpdateJobRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UpdateJobRequest{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`WorkerId:` + fmt.Sprintf("%v", this.WorkerId) + `,`,
+		`Spec:` + fmt.Sprintf("%v", this.Spec) + `,`,
+		`Complete:` + fmt.Sprintf("%v", this.Complete) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UpdateJobRequest) XXX_Unmarshal(b []byte) error {
@@ -1363,11 +1391,14 @@ var xxx_messageInfo_UpdateJobRequest proto.InternalMessageInfo
 
 func (m *UpdateJobResponse) Reset()      { *m = UpdateJobResponse{} }
 func (*UpdateJobResponse) ProtoMessage() {}
-func (m *UpdateJobResponse) String() string {
-	if m == nil {
+func (this *UpdateJobResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UpdateJobResponse{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UpdateJobResponse) XXX_Unmarshal(b []byte) error {

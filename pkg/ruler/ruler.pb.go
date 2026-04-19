@@ -2301,11 +2301,21 @@ func (this *AlertStateDesc) GoString() string {
 
 func (m *RulesRequest) Reset()      { *m = RulesRequest{} }
 func (*RulesRequest) ProtoMessage() {}
-func (m *RulesRequest) String() string {
-	if m == nil {
+func (this *RulesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&RulesRequest{`,
+		`Filter:` + fmt.Sprintf("%v", this.Filter) + `,`,
+		`RuleName:` + fmt.Sprintf("%v", this.RuleName) + `,`,
+		`RuleGroup:` + fmt.Sprintf("%v", this.RuleGroup) + `,`,
+		`File:` + fmt.Sprintf("%v", this.File) + `,`,
+		`ExcludeAlerts:` + fmt.Sprintf("%v", this.ExcludeAlerts) + `,`,
+		`MaxGroups:` + fmt.Sprintf("%v", this.MaxGroups) + `,`,
+		`NextToken:` + fmt.Sprintf("%v", this.NextToken) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *RulesRequest) XXX_Unmarshal(b []byte) error {
@@ -2341,11 +2351,16 @@ var xxx_messageInfo_RulesRequest proto.InternalMessageInfo
 
 func (m *RulesResponse) Reset()      { *m = RulesResponse{} }
 func (*RulesResponse) ProtoMessage() {}
-func (m *RulesResponse) String() string {
-	if m == nil {
+func (this *RulesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&RulesResponse{`,
+		`Groups:` + fmt.Sprintf("%v", this.Groups) + `,`,
+		`Warnings:` + fmt.Sprintf("%v", this.Warnings) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *RulesResponse) XXX_Unmarshal(b []byte) error {
@@ -2381,11 +2396,15 @@ var xxx_messageInfo_RulesResponse proto.InternalMessageInfo
 
 func (m *SyncRulesRequest) Reset()      { *m = SyncRulesRequest{} }
 func (*SyncRulesRequest) ProtoMessage() {}
-func (m *SyncRulesRequest) String() string {
-	if m == nil {
+func (this *SyncRulesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SyncRulesRequest{`,
+		`UserIds:` + fmt.Sprintf("%v", this.UserIds) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SyncRulesRequest) XXX_Unmarshal(b []byte) error {
@@ -2421,11 +2440,14 @@ var xxx_messageInfo_SyncRulesRequest proto.InternalMessageInfo
 
 func (m *SyncRulesResponse) Reset()      { *m = SyncRulesResponse{} }
 func (*SyncRulesResponse) ProtoMessage() {}
-func (m *SyncRulesResponse) String() string {
-	if m == nil {
+func (this *SyncRulesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SyncRulesResponse{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SyncRulesResponse) XXX_Unmarshal(b []byte) error {
@@ -2461,11 +2483,18 @@ var xxx_messageInfo_SyncRulesResponse proto.InternalMessageInfo
 
 func (m *GroupStateDesc) Reset()      { *m = GroupStateDesc{} }
 func (*GroupStateDesc) ProtoMessage() {}
-func (m *GroupStateDesc) String() string {
-	if m == nil {
+func (this *GroupStateDesc) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&GroupStateDesc{`,
+		`Group:` + fmt.Sprintf("%v", this.Group) + `,`,
+		`ActiveRules:` + fmt.Sprintf("%v", this.ActiveRules) + `,`,
+		`EvaluationTimestamp:` + fmt.Sprintf("%v", this.EvaluationTimestamp) + `,`,
+		`EvaluationDuration:` + fmt.Sprintf("%v", this.EvaluationDuration) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *GroupStateDesc) XXX_Unmarshal(b []byte) error {
@@ -2501,11 +2530,21 @@ var xxx_messageInfo_GroupStateDesc proto.InternalMessageInfo
 
 func (m *RuleStateDesc) Reset()      { *m = RuleStateDesc{} }
 func (*RuleStateDesc) ProtoMessage() {}
-func (m *RuleStateDesc) String() string {
-	if m == nil {
+func (this *RuleStateDesc) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&RuleStateDesc{`,
+		`Rule:` + fmt.Sprintf("%v", this.Rule) + `,`,
+		`State:` + fmt.Sprintf("%v", this.State) + `,`,
+		`Health:` + fmt.Sprintf("%v", this.Health) + `,`,
+		`LastError:` + fmt.Sprintf("%v", this.LastError) + `,`,
+		`Alerts:` + fmt.Sprintf("%v", this.Alerts) + `,`,
+		`EvaluationTimestamp:` + fmt.Sprintf("%v", this.EvaluationTimestamp) + `,`,
+		`EvaluationDuration:` + fmt.Sprintf("%v", this.EvaluationDuration) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *RuleStateDesc) XXX_Unmarshal(b []byte) error {
@@ -2541,11 +2580,24 @@ var xxx_messageInfo_RuleStateDesc proto.InternalMessageInfo
 
 func (m *AlertStateDesc) Reset()      { *m = AlertStateDesc{} }
 func (*AlertStateDesc) ProtoMessage() {}
-func (m *AlertStateDesc) String() string {
-	if m == nil {
+func (this *AlertStateDesc) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&AlertStateDesc{`,
+		`State:` + fmt.Sprintf("%v", this.State) + `,`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`Annotations:` + fmt.Sprintf("%v", this.Annotations) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`ActiveAt:` + fmt.Sprintf("%v", this.ActiveAt) + `,`,
+		`FiredAt:` + fmt.Sprintf("%v", this.FiredAt) + `,`,
+		`ResolvedAt:` + fmt.Sprintf("%v", this.ResolvedAt) + `,`,
+		`LastSentAt:` + fmt.Sprintf("%v", this.LastSentAt) + `,`,
+		`ValidUntil:` + fmt.Sprintf("%v", this.ValidUntil) + `,`,
+		`KeepFiringSince:` + fmt.Sprintf("%v", this.KeepFiringSince) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *AlertStateDesc) XXX_Unmarshal(b []byte) error {

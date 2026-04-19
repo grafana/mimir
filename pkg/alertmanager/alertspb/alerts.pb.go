@@ -549,11 +549,17 @@ func (this *FullStateDesc) GoString() string {
 
 func (m *AlertConfigDesc) Reset()      { *m = AlertConfigDesc{} }
 func (*AlertConfigDesc) ProtoMessage() {}
-func (m *AlertConfigDesc) String() string {
-	if m == nil {
+func (this *AlertConfigDesc) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&AlertConfigDesc{`,
+		`User:` + fmt.Sprintf("%v", this.User) + `,`,
+		`RawConfig:` + fmt.Sprintf("%v", this.RawConfig) + `,`,
+		`Templates:` + fmt.Sprintf("%v", this.Templates) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *AlertConfigDesc) XXX_Unmarshal(b []byte) error {
@@ -589,11 +595,16 @@ var xxx_messageInfo_AlertConfigDesc proto.InternalMessageInfo
 
 func (m *TemplateDesc) Reset()      { *m = TemplateDesc{} }
 func (*TemplateDesc) ProtoMessage() {}
-func (m *TemplateDesc) String() string {
-	if m == nil {
+func (this *TemplateDesc) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TemplateDesc{`,
+		`Filename:` + fmt.Sprintf("%v", this.Filename) + `,`,
+		`Body:` + fmt.Sprintf("%v", this.Body) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TemplateDesc) XXX_Unmarshal(b []byte) error {
@@ -629,11 +640,15 @@ var xxx_messageInfo_TemplateDesc proto.InternalMessageInfo
 
 func (m *FullStateDesc) Reset()      { *m = FullStateDesc{} }
 func (*FullStateDesc) ProtoMessage() {}
-func (m *FullStateDesc) String() string {
-	if m == nil {
+func (this *FullStateDesc) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&FullStateDesc{`,
+		`State:` + fmt.Sprintf("%v", this.State) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *FullStateDesc) XXX_Unmarshal(b []byte) error {

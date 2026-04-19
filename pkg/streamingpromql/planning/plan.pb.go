@@ -1097,11 +1097,21 @@ func (this *EncodedNode) GoString() string {
 
 func (m *EncodedQueryPlan) Reset()      { *m = EncodedQueryPlan{} }
 func (*EncodedQueryPlan) ProtoMessage() {}
-func (m *EncodedQueryPlan) String() string {
-	if m == nil {
+func (this *EncodedQueryPlan) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EncodedQueryPlan{`,
+		`TimeRange:` + fmt.Sprintf("%v", this.TimeRange) + `,`,
+		`Nodes:` + fmt.Sprintf("%v", this.Nodes) + `,`,
+		`RootNode:` + fmt.Sprintf("%v", this.RootNode) + `,`,
+		`OriginalExpression:` + fmt.Sprintf("%v", this.OriginalExpression) + `,`,
+		`EnableDelayedNameRemoval:` + fmt.Sprintf("%v", this.EnableDelayedNameRemoval) + `,`,
+		`Version:` + fmt.Sprintf("%v", this.Version) + `,`,
+		`LookbackDelta:` + fmt.Sprintf("%v", this.LookbackDelta) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EncodedQueryPlan) XXX_Unmarshal(b []byte) error {
@@ -1137,11 +1147,18 @@ var xxx_messageInfo_EncodedQueryPlan proto.InternalMessageInfo
 
 func (m *EncodedQueryTimeRange) Reset()      { *m = EncodedQueryTimeRange{} }
 func (*EncodedQueryTimeRange) ProtoMessage() {}
-func (m *EncodedQueryTimeRange) String() string {
-	if m == nil {
+func (this *EncodedQueryTimeRange) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EncodedQueryTimeRange{`,
+		`StartT:` + fmt.Sprintf("%v", this.StartT) + `,`,
+		`EndT:` + fmt.Sprintf("%v", this.EndT) + `,`,
+		`IntervalMilliseconds:` + fmt.Sprintf("%v", this.IntervalMilliseconds) + `,`,
+		`IsInstant:` + fmt.Sprintf("%v", this.IsInstant) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EncodedQueryTimeRange) XXX_Unmarshal(b []byte) error {
@@ -1177,11 +1194,20 @@ var xxx_messageInfo_EncodedQueryTimeRange proto.InternalMessageInfo
 
 func (m *EncodedNode) Reset()      { *m = EncodedNode{} }
 func (*EncodedNode) ProtoMessage() {}
-func (m *EncodedNode) String() string {
-	if m == nil {
+func (this *EncodedNode) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EncodedNode{`,
+		`NodeType:` + fmt.Sprintf("%v", this.NodeType) + `,`,
+		`Details:` + fmt.Sprintf("%v", this.Details) + `,`,
+		`Children:` + fmt.Sprintf("%v", this.Children) + `,`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Description:` + fmt.Sprintf("%v", this.Description) + `,`,
+		`ChildrenLabels:` + fmt.Sprintf("%v", this.ChildrenLabels) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EncodedNode) XXX_Unmarshal(b []byte) error {

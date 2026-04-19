@@ -1163,11 +1163,16 @@ func (this *PostingOffset) GoString() string {
 
 func (m *Sparse) Reset()      { *m = Sparse{} }
 func (*Sparse) ProtoMessage() {}
-func (m *Sparse) String() string {
-	if m == nil {
+func (this *Sparse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Sparse{`,
+		`Symbols:` + fmt.Sprintf("%v", this.Symbols) + `,`,
+		`PostingsOffsetTable:` + fmt.Sprintf("%v", this.PostingsOffsetTable) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Sparse) XXX_Unmarshal(b []byte) error {
@@ -1203,11 +1208,16 @@ var xxx_messageInfo_Sparse proto.InternalMessageInfo
 
 func (m *Symbols) Reset()      { *m = Symbols{} }
 func (*Symbols) ProtoMessage() {}
-func (m *Symbols) String() string {
-	if m == nil {
+func (this *Symbols) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Symbols{`,
+		`Offsets:` + fmt.Sprintf("%v", this.Offsets) + `,`,
+		`SymbolsCount:` + fmt.Sprintf("%v", this.SymbolsCount) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Symbols) XXX_Unmarshal(b []byte) error {
@@ -1243,11 +1253,16 @@ var xxx_messageInfo_Symbols proto.InternalMessageInfo
 
 func (m *PostingOffsetTable_PostingsEntry) Reset()      { *m = PostingOffsetTable_PostingsEntry{} }
 func (*PostingOffsetTable_PostingsEntry) ProtoMessage() {}
-func (m *PostingOffsetTable_PostingsEntry) String() string {
-	if m == nil {
+func (this *PostingOffsetTable_PostingsEntry) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PostingOffsetTable_PostingsEntry{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PostingOffsetTable_PostingsEntry) XXX_Unmarshal(b []byte) error {
@@ -1283,11 +1298,16 @@ var xxx_messageInfo_PostingOffsetTable_PostingsEntry proto.InternalMessageInfo
 
 func (m *PostingOffsetTable) Reset()      { *m = PostingOffsetTable{} }
 func (*PostingOffsetTable) ProtoMessage() {}
-func (m *PostingOffsetTable) String() string {
-	if m == nil {
+func (this *PostingOffsetTable) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PostingOffsetTable{`,
+		`Postings:` + fmt.Sprintf("%v", this.Postings) + `,`,
+		`PostingOffsetInMemorySampling:` + fmt.Sprintf("%v", this.PostingOffsetInMemorySampling) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PostingOffsetTable) XXX_Unmarshal(b []byte) error {
@@ -1323,11 +1343,16 @@ var xxx_messageInfo_PostingOffsetTable proto.InternalMessageInfo
 
 func (m *PostingValueOffsets) Reset()      { *m = PostingValueOffsets{} }
 func (*PostingValueOffsets) ProtoMessage() {}
-func (m *PostingValueOffsets) String() string {
-	if m == nil {
+func (this *PostingValueOffsets) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PostingValueOffsets{`,
+		`Offsets:` + fmt.Sprintf("%v", this.Offsets) + `,`,
+		`LastValOffset:` + fmt.Sprintf("%v", this.LastValOffset) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PostingValueOffsets) XXX_Unmarshal(b []byte) error {
@@ -1363,11 +1388,16 @@ var xxx_messageInfo_PostingValueOffsets proto.InternalMessageInfo
 
 func (m *PostingOffset) Reset()      { *m = PostingOffset{} }
 func (*PostingOffset) ProtoMessage() {}
-func (m *PostingOffset) String() string {
-	if m == nil {
+func (this *PostingOffset) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PostingOffset{`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`TableOff:` + fmt.Sprintf("%v", this.TableOff) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PostingOffset) XXX_Unmarshal(b []byte) error {

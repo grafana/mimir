@@ -620,11 +620,16 @@ func (this *ReadStateResponse) GoString() string {
 
 func (m *UpdateStateResponse) Reset()      { *m = UpdateStateResponse{} }
 func (*UpdateStateResponse) ProtoMessage() {}
-func (m *UpdateStateResponse) String() string {
-	if m == nil {
+func (this *UpdateStateResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UpdateStateResponse{`,
+		`Status:` + fmt.Sprintf("%v", this.Status) + `,`,
+		`Error:` + fmt.Sprintf("%v", this.Error) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UpdateStateResponse) XXX_Unmarshal(b []byte) error {
@@ -660,11 +665,14 @@ var xxx_messageInfo_UpdateStateResponse proto.InternalMessageInfo
 
 func (m *ReadStateRequest) Reset()      { *m = ReadStateRequest{} }
 func (*ReadStateRequest) ProtoMessage() {}
-func (m *ReadStateRequest) String() string {
-	if m == nil {
+func (this *ReadStateRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ReadStateRequest{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ReadStateRequest) XXX_Unmarshal(b []byte) error {
@@ -700,11 +708,17 @@ var xxx_messageInfo_ReadStateRequest proto.InternalMessageInfo
 
 func (m *ReadStateResponse) Reset()      { *m = ReadStateResponse{} }
 func (*ReadStateResponse) ProtoMessage() {}
-func (m *ReadStateResponse) String() string {
-	if m == nil {
+func (this *ReadStateResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ReadStateResponse{`,
+		`Status:` + fmt.Sprintf("%v", this.Status) + `,`,
+		`Error:` + fmt.Sprintf("%v", this.Error) + `,`,
+		`State:` + fmt.Sprintf("%v", this.State) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ReadStateResponse) XXX_Unmarshal(b []byte) error {

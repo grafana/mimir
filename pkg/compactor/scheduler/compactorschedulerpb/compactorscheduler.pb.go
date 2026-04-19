@@ -2738,11 +2738,16 @@ func (this *PersistenceMetadata) GoString() string {
 
 func (m *JobKey) Reset()      { *m = JobKey{} }
 func (*JobKey) ProtoMessage() {}
-func (m *JobKey) String() string {
-	if m == nil {
+func (this *JobKey) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&JobKey{`,
+		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
+		`Epoch:` + fmt.Sprintf("%v", this.Epoch) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *JobKey) XXX_Unmarshal(b []byte) error {
@@ -2778,11 +2783,17 @@ var xxx_messageInfo_JobKey proto.InternalMessageInfo
 
 func (m *JobSpec) Reset()      { *m = JobSpec{} }
 func (*JobSpec) ProtoMessage() {}
-func (m *JobSpec) String() string {
-	if m == nil {
+func (this *JobSpec) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&JobSpec{`,
+		`Tenant:` + fmt.Sprintf("%v", this.Tenant) + `,`,
+		`Job:` + fmt.Sprintf("%v", this.Job) + `,`,
+		`JobType:` + fmt.Sprintf("%v", this.JobType) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *JobSpec) XXX_Unmarshal(b []byte) error {
@@ -2818,11 +2829,17 @@ var xxx_messageInfo_JobSpec proto.InternalMessageInfo
 
 func (m *CompactionJob) Reset()      { *m = CompactionJob{} }
 func (*CompactionJob) ProtoMessage() {}
-func (m *CompactionJob) String() string {
-	if m == nil {
+func (this *CompactionJob) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&CompactionJob{`,
+		`BlockIds:` + fmt.Sprintf("%v", this.BlockIds) + `,`,
+		`Split:` + fmt.Sprintf("%v", this.Split) + `,`,
+		`TotalBlocksBytes:` + fmt.Sprintf("%v", this.TotalBlocksBytes) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *CompactionJob) XXX_Unmarshal(b []byte) error {
@@ -2858,11 +2875,15 @@ var xxx_messageInfo_CompactionJob proto.InternalMessageInfo
 
 func (m *LeaseJobRequest) Reset()      { *m = LeaseJobRequest{} }
 func (*LeaseJobRequest) ProtoMessage() {}
-func (m *LeaseJobRequest) String() string {
-	if m == nil {
+func (this *LeaseJobRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LeaseJobRequest{`,
+		`WorkerId:` + fmt.Sprintf("%v", this.WorkerId) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LeaseJobRequest) XXX_Unmarshal(b []byte) error {
@@ -2898,11 +2919,16 @@ var xxx_messageInfo_LeaseJobRequest proto.InternalMessageInfo
 
 func (m *LeaseJobResponse) Reset()      { *m = LeaseJobResponse{} }
 func (*LeaseJobResponse) ProtoMessage() {}
-func (m *LeaseJobResponse) String() string {
-	if m == nil {
+func (this *LeaseJobResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LeaseJobResponse{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Spec:` + fmt.Sprintf("%v", this.Spec) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LeaseJobResponse) XXX_Unmarshal(b []byte) error {
@@ -2938,11 +2964,16 @@ var xxx_messageInfo_LeaseJobResponse proto.InternalMessageInfo
 
 func (m *PlannedCompactionJob) Reset()      { *m = PlannedCompactionJob{} }
 func (*PlannedCompactionJob) ProtoMessage() {}
-func (m *PlannedCompactionJob) String() string {
-	if m == nil {
+func (this *PlannedCompactionJob) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PlannedCompactionJob{`,
+		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
+		`Job:` + fmt.Sprintf("%v", this.Job) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PlannedCompactionJob) XXX_Unmarshal(b []byte) error {
@@ -2978,11 +3009,17 @@ var xxx_messageInfo_PlannedCompactionJob proto.InternalMessageInfo
 
 func (m *PlannedJobsRequest) Reset()      { *m = PlannedJobsRequest{} }
 func (*PlannedJobsRequest) ProtoMessage() {}
-func (m *PlannedJobsRequest) String() string {
-	if m == nil {
+func (this *PlannedJobsRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PlannedJobsRequest{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Tenant:` + fmt.Sprintf("%v", this.Tenant) + `,`,
+		`Jobs:` + fmt.Sprintf("%v", this.Jobs) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PlannedJobsRequest) XXX_Unmarshal(b []byte) error {
@@ -3018,11 +3055,14 @@ var xxx_messageInfo_PlannedJobsRequest proto.InternalMessageInfo
 
 func (m *PlannedJobsResponse) Reset()      { *m = PlannedJobsResponse{} }
 func (*PlannedJobsResponse) ProtoMessage() {}
-func (m *PlannedJobsResponse) String() string {
-	if m == nil {
+func (this *PlannedJobsResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PlannedJobsResponse{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PlannedJobsResponse) XXX_Unmarshal(b []byte) error {
@@ -3058,11 +3098,17 @@ var xxx_messageInfo_PlannedJobsResponse proto.InternalMessageInfo
 
 func (m *UpdatePlanJobRequest) Reset()      { *m = UpdatePlanJobRequest{} }
 func (*UpdatePlanJobRequest) ProtoMessage() {}
-func (m *UpdatePlanJobRequest) String() string {
-	if m == nil {
+func (this *UpdatePlanJobRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UpdatePlanJobRequest{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Tenant:` + fmt.Sprintf("%v", this.Tenant) + `,`,
+		`Update:` + fmt.Sprintf("%v", this.Update) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UpdatePlanJobRequest) XXX_Unmarshal(b []byte) error {
@@ -3098,11 +3144,17 @@ var xxx_messageInfo_UpdatePlanJobRequest proto.InternalMessageInfo
 
 func (m *UpdateCompactionJobRequest) Reset()      { *m = UpdateCompactionJobRequest{} }
 func (*UpdateCompactionJobRequest) ProtoMessage() {}
-func (m *UpdateCompactionJobRequest) String() string {
-	if m == nil {
+func (this *UpdateCompactionJobRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UpdateCompactionJobRequest{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Tenant:` + fmt.Sprintf("%v", this.Tenant) + `,`,
+		`Update:` + fmt.Sprintf("%v", this.Update) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UpdateCompactionJobRequest) XXX_Unmarshal(b []byte) error {
@@ -3138,11 +3190,14 @@ var xxx_messageInfo_UpdateCompactionJobRequest proto.InternalMessageInfo
 
 func (m *UpdateJobResponse) Reset()      { *m = UpdateJobResponse{} }
 func (*UpdateJobResponse) ProtoMessage() {}
-func (m *UpdateJobResponse) String() string {
-	if m == nil {
+func (this *UpdateJobResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UpdateJobResponse{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UpdateJobResponse) XXX_Unmarshal(b []byte) error {
@@ -3178,11 +3233,19 @@ var xxx_messageInfo_UpdateJobResponse proto.InternalMessageInfo
 
 func (m *StoredJobInfo) Reset()      { *m = StoredJobInfo{} }
 func (*StoredJobInfo) ProtoMessage() {}
-func (m *StoredJobInfo) String() string {
-	if m == nil {
+func (this *StoredJobInfo) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StoredJobInfo{`,
+		`CreationTime:` + fmt.Sprintf("%v", this.CreationTime) + `,`,
+		`Status:` + fmt.Sprintf("%v", this.Status) + `,`,
+		`StatusTime:` + fmt.Sprintf("%v", this.StatusTime) + `,`,
+		`NumLeases:` + fmt.Sprintf("%v", this.NumLeases) + `,`,
+		`Epoch:` + fmt.Sprintf("%v", this.Epoch) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StoredJobInfo) XXX_Unmarshal(b []byte) error {
@@ -3218,11 +3281,17 @@ var xxx_messageInfo_StoredJobInfo proto.InternalMessageInfo
 
 func (m *StoredCompactionJob) Reset()      { *m = StoredCompactionJob{} }
 func (*StoredCompactionJob) ProtoMessage() {}
-func (m *StoredCompactionJob) String() string {
-	if m == nil {
+func (this *StoredCompactionJob) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StoredCompactionJob{`,
+		`Info:` + fmt.Sprintf("%v", this.Info) + `,`,
+		`Job:` + fmt.Sprintf("%v", this.Job) + `,`,
+		`Order:` + fmt.Sprintf("%v", this.Order) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StoredCompactionJob) XXX_Unmarshal(b []byte) error {
@@ -3258,11 +3327,16 @@ var xxx_messageInfo_StoredCompactionJob proto.InternalMessageInfo
 
 func (m *PersistenceMetadata) Reset()      { *m = PersistenceMetadata{} }
 func (*PersistenceMetadata) ProtoMessage() {}
-func (m *PersistenceMetadata) String() string {
-	if m == nil {
+func (this *PersistenceMetadata) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&PersistenceMetadata{`,
+		`ShardCount:` + fmt.Sprintf("%v", this.ShardCount) + `,`,
+		`CreationTime:` + fmt.Sprintf("%v", this.CreationTime) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *PersistenceMetadata) XXX_Unmarshal(b []byte) error {

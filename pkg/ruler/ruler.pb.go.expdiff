@@ -1,5 +1,5 @@
---- a/pkg/ruler/ruler.pb.go	2026-04-18 21:59:44
-+++ b/pkg/ruler/ruler.pb.go	2026-04-18 21:59:16
+--- a/pkg/ruler/ruler.pb.go	2026-04-19 07:47:23
++++ b/pkg/ruler/ruler.pb.go	2026-04-19 07:46:54
 @@ -41,9 +41,6 @@
  }
  

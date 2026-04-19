@@ -1,5 +1,5 @@
---- a/pkg/storegateway/storepb/cache.pb.go	2026-04-18 21:59:44
-+++ b/pkg/storegateway/storepb/cache.pb.go	2026-04-18 21:59:25
+--- a/pkg/storegateway/storepb/cache.pb.go	2026-04-19 07:47:23
++++ b/pkg/storegateway/storepb/cache.pb.go	2026-04-19 07:47:03
 @@ -15,9 +15,6 @@
  )
  

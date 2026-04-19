@@ -316,11 +316,19 @@ func (this *ReplicaDesc) GoString() string {
 
 func (m *ReplicaDesc) Reset()      { *m = ReplicaDesc{} }
 func (*ReplicaDesc) ProtoMessage() {}
-func (m *ReplicaDesc) String() string {
-	if m == nil {
+func (this *ReplicaDesc) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ReplicaDesc{`,
+		`Replica:` + fmt.Sprintf("%v", this.Replica) + `,`,
+		`ReceivedAt:` + fmt.Sprintf("%v", this.ReceivedAt) + `,`,
+		`DeletedAt:` + fmt.Sprintf("%v", this.DeletedAt) + `,`,
+		`ElectedAt:` + fmt.Sprintf("%v", this.ElectedAt) + `,`,
+		`ElectedChanges:` + fmt.Sprintf("%v", this.ElectedChanges) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ReplicaDesc) XXX_Unmarshal(b []byte) error {

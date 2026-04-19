@@ -1123,11 +1123,26 @@ func (this *RuleDesc) GoString() string {
 
 func (m *RuleGroupDesc) Reset()      { *m = RuleGroupDesc{} }
 func (*RuleGroupDesc) ProtoMessage() {}
-func (m *RuleGroupDesc) String() string {
-	if m == nil {
+func (this *RuleGroupDesc) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&RuleGroupDesc{`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`Namespace:` + fmt.Sprintf("%v", this.Namespace) + `,`,
+		`Interval:` + fmt.Sprintf("%v", this.Interval) + `,`,
+		`Rules:` + fmt.Sprintf("%v", this.Rules) + `,`,
+		`User:` + fmt.Sprintf("%v", this.User) + `,`,
+		`Options:` + fmt.Sprintf("%v", this.Options) + `,`,
+		`SourceTenants:` + fmt.Sprintf("%v", this.SourceTenants) + `,`,
+		`EvaluationDelay:` + fmt.Sprintf("%v", this.EvaluationDelay) + `,`,
+		`QueryOffset:` + fmt.Sprintf("%v", this.QueryOffset) + `,`,
+		`AlignEvaluationTimeOnInterval:` + fmt.Sprintf("%v", this.AlignEvaluationTimeOnInterval) + `,`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *RuleGroupDesc) XXX_Unmarshal(b []byte) error {
@@ -1163,11 +1178,21 @@ var xxx_messageInfo_RuleGroupDesc proto.InternalMessageInfo
 
 func (m *RuleDesc) Reset()      { *m = RuleDesc{} }
 func (*RuleDesc) ProtoMessage() {}
-func (m *RuleDesc) String() string {
-	if m == nil {
+func (this *RuleDesc) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&RuleDesc{`,
+		`Expr:` + fmt.Sprintf("%v", this.Expr) + `,`,
+		`Record:` + fmt.Sprintf("%v", this.Record) + `,`,
+		`Alert:` + fmt.Sprintf("%v", this.Alert) + `,`,
+		`For:` + fmt.Sprintf("%v", this.For) + `,`,
+		`KeepFiringFor:` + fmt.Sprintf("%v", this.KeepFiringFor) + `,`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`Annotations:` + fmt.Sprintf("%v", this.Annotations) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *RuleDesc) XXX_Unmarshal(b []byte) error {

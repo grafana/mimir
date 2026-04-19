@@ -6770,11 +6770,16 @@ func (this *LabelMatcher) GoString() string {
 
 func (m *LabelNamesAndValuesRequest) Reset()      { *m = LabelNamesAndValuesRequest{} }
 func (*LabelNamesAndValuesRequest) ProtoMessage() {}
-func (m *LabelNamesAndValuesRequest) String() string {
-	if m == nil {
+func (this *LabelNamesAndValuesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelNamesAndValuesRequest{`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`CountMethod:` + fmt.Sprintf("%v", this.CountMethod) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelNamesAndValuesRequest) XXX_Unmarshal(b []byte) error {
@@ -6810,11 +6815,15 @@ var xxx_messageInfo_LabelNamesAndValuesRequest proto.InternalMessageInfo
 
 func (m *LabelNamesAndValuesResponse) Reset()      { *m = LabelNamesAndValuesResponse{} }
 func (*LabelNamesAndValuesResponse) ProtoMessage() {}
-func (m *LabelNamesAndValuesResponse) String() string {
-	if m == nil {
+func (this *LabelNamesAndValuesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelNamesAndValuesResponse{`,
+		`Items:` + fmt.Sprintf("%v", this.Items) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelNamesAndValuesResponse) XXX_Unmarshal(b []byte) error {
@@ -6850,11 +6859,16 @@ var xxx_messageInfo_LabelNamesAndValuesResponse proto.InternalMessageInfo
 
 func (m *LabelValues) Reset()      { *m = LabelValues{} }
 func (*LabelValues) ProtoMessage() {}
-func (m *LabelValues) String() string {
-	if m == nil {
+func (this *LabelValues) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValues{`,
+		`LabelName:` + fmt.Sprintf("%v", this.LabelName) + `,`,
+		`Values:` + fmt.Sprintf("%v", this.Values) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValues) XXX_Unmarshal(b []byte) error {
@@ -6890,11 +6904,17 @@ var xxx_messageInfo_LabelValues proto.InternalMessageInfo
 
 func (m *LabelValuesCardinalityRequest) Reset()      { *m = LabelValuesCardinalityRequest{} }
 func (*LabelValuesCardinalityRequest) ProtoMessage() {}
-func (m *LabelValuesCardinalityRequest) String() string {
-	if m == nil {
+func (this *LabelValuesCardinalityRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValuesCardinalityRequest{`,
+		`LabelNames:` + fmt.Sprintf("%v", this.LabelNames) + `,`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`CountMethod:` + fmt.Sprintf("%v", this.CountMethod) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValuesCardinalityRequest) XXX_Unmarshal(b []byte) error {
@@ -6930,11 +6950,15 @@ var xxx_messageInfo_LabelValuesCardinalityRequest proto.InternalMessageInfo
 
 func (m *LabelValuesCardinalityResponse) Reset()      { *m = LabelValuesCardinalityResponse{} }
 func (*LabelValuesCardinalityResponse) ProtoMessage() {}
-func (m *LabelValuesCardinalityResponse) String() string {
-	if m == nil {
+func (this *LabelValuesCardinalityResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValuesCardinalityResponse{`,
+		`Items:` + fmt.Sprintf("%v", this.Items) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValuesCardinalityResponse) XXX_Unmarshal(b []byte) error {
@@ -6972,11 +6996,16 @@ func (m *LabelValueSeriesCount_LabelValueSeriesEntry) Reset() {
 	*m = LabelValueSeriesCount_LabelValueSeriesEntry{}
 }
 func (*LabelValueSeriesCount_LabelValueSeriesEntry) ProtoMessage() {}
-func (m *LabelValueSeriesCount_LabelValueSeriesEntry) String() string {
-	if m == nil {
+func (this *LabelValueSeriesCount_LabelValueSeriesEntry) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValueSeriesCount_LabelValueSeriesEntry{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValueSeriesCount_LabelValueSeriesEntry) XXX_Unmarshal(b []byte) error {
@@ -7012,11 +7041,16 @@ var xxx_messageInfo_LabelValueSeriesCount_LabelValueSeriesEntry proto.InternalMe
 
 func (m *LabelValueSeriesCount) Reset()      { *m = LabelValueSeriesCount{} }
 func (*LabelValueSeriesCount) ProtoMessage() {}
-func (m *LabelValueSeriesCount) String() string {
-	if m == nil {
+func (this *LabelValueSeriesCount) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValueSeriesCount{`,
+		`LabelName:` + fmt.Sprintf("%v", this.LabelName) + `,`,
+		`LabelValueSeries:` + fmt.Sprintf("%v", this.LabelValueSeries) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValueSeriesCount) XXX_Unmarshal(b []byte) error {
@@ -7052,11 +7086,20 @@ var xxx_messageInfo_LabelValueSeriesCount proto.InternalMessageInfo
 
 func (m *QueryRequest) Reset()      { *m = QueryRequest{} }
 func (*QueryRequest) ProtoMessage() {}
-func (m *QueryRequest) String() string {
-	if m == nil {
+func (this *QueryRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryRequest{`,
+		`StartTimestampMs:` + fmt.Sprintf("%v", this.StartTimestampMs) + `,`,
+		`EndTimestampMs:` + fmt.Sprintf("%v", this.EndTimestampMs) + `,`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`ProjectionInclude:` + fmt.Sprintf("%v", this.ProjectionInclude) + `,`,
+		`ProjectionLabels:` + fmt.Sprintf("%v", this.ProjectionLabels) + `,`,
+		`StreamingChunksBatchSize:` + fmt.Sprintf("%v", this.StreamingChunksBatchSize) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryRequest) XXX_Unmarshal(b []byte) error {
@@ -7092,11 +7135,17 @@ var xxx_messageInfo_QueryRequest proto.InternalMessageInfo
 
 func (m *ExemplarQueryRequest) Reset()      { *m = ExemplarQueryRequest{} }
 func (*ExemplarQueryRequest) ProtoMessage() {}
-func (m *ExemplarQueryRequest) String() string {
-	if m == nil {
+func (this *ExemplarQueryRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ExemplarQueryRequest{`,
+		`StartTimestampMs:` + fmt.Sprintf("%v", this.StartTimestampMs) + `,`,
+		`EndTimestampMs:` + fmt.Sprintf("%v", this.EndTimestampMs) + `,`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ExemplarQueryRequest) XXX_Unmarshal(b []byte) error {
@@ -7132,11 +7181,16 @@ var xxx_messageInfo_ExemplarQueryRequest proto.InternalMessageInfo
 
 func (m *ActiveSeriesRequest) Reset()      { *m = ActiveSeriesRequest{} }
 func (*ActiveSeriesRequest) ProtoMessage() {}
-func (m *ActiveSeriesRequest) String() string {
-	if m == nil {
+func (this *ActiveSeriesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ActiveSeriesRequest{`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ActiveSeriesRequest) XXX_Unmarshal(b []byte) error {
@@ -7172,11 +7226,17 @@ var xxx_messageInfo_ActiveSeriesRequest proto.InternalMessageInfo
 
 func (m *QueryStreamResponse) Reset()      { *m = QueryStreamResponse{} }
 func (*QueryStreamResponse) ProtoMessage() {}
-func (m *QueryStreamResponse) String() string {
-	if m == nil {
+func (this *QueryStreamResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryStreamResponse{`,
+		`StreamingSeries:` + fmt.Sprintf("%v", this.StreamingSeries) + `,`,
+		`IsEndOfSeriesStream:` + fmt.Sprintf("%v", this.IsEndOfSeriesStream) + `,`,
+		`StreamingSeriesChunks:` + fmt.Sprintf("%v", this.StreamingSeriesChunks) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryStreamResponse) XXX_Unmarshal(b []byte) error {
@@ -7212,11 +7272,16 @@ var xxx_messageInfo_QueryStreamResponse proto.InternalMessageInfo
 
 func (m *QueryStreamSeries) Reset()      { *m = QueryStreamSeries{} }
 func (*QueryStreamSeries) ProtoMessage() {}
-func (m *QueryStreamSeries) String() string {
-	if m == nil {
+func (this *QueryStreamSeries) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryStreamSeries{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`ChunkCount:` + fmt.Sprintf("%v", this.ChunkCount) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryStreamSeries) XXX_Unmarshal(b []byte) error {
@@ -7252,11 +7317,16 @@ var xxx_messageInfo_QueryStreamSeries proto.InternalMessageInfo
 
 func (m *QueryStreamSeriesChunks) Reset()      { *m = QueryStreamSeriesChunks{} }
 func (*QueryStreamSeriesChunks) ProtoMessage() {}
-func (m *QueryStreamSeriesChunks) String() string {
-	if m == nil {
+func (this *QueryStreamSeriesChunks) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryStreamSeriesChunks{`,
+		`SeriesIndex:` + fmt.Sprintf("%v", this.SeriesIndex) + `,`,
+		`Chunks:` + fmt.Sprintf("%v", this.Chunks) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryStreamSeriesChunks) XXX_Unmarshal(b []byte) error {
@@ -7292,11 +7362,15 @@ var xxx_messageInfo_QueryStreamSeriesChunks proto.InternalMessageInfo
 
 func (m *ExemplarQueryResponse) Reset()      { *m = ExemplarQueryResponse{} }
 func (*ExemplarQueryResponse) ProtoMessage() {}
-func (m *ExemplarQueryResponse) String() string {
-	if m == nil {
+func (this *ExemplarQueryResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ExemplarQueryResponse{`,
+		`Timeseries:` + fmt.Sprintf("%v", this.Timeseries) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ExemplarQueryResponse) XXX_Unmarshal(b []byte) error {
@@ -7332,11 +7406,19 @@ var xxx_messageInfo_ExemplarQueryResponse proto.InternalMessageInfo
 
 func (m *LabelValuesRequest) Reset()      { *m = LabelValuesRequest{} }
 func (*LabelValuesRequest) ProtoMessage() {}
-func (m *LabelValuesRequest) String() string {
-	if m == nil {
+func (this *LabelValuesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValuesRequest{`,
+		`LabelName:` + fmt.Sprintf("%v", this.LabelName) + `,`,
+		`StartTimestampMs:` + fmt.Sprintf("%v", this.StartTimestampMs) + `,`,
+		`EndTimestampMs:` + fmt.Sprintf("%v", this.EndTimestampMs) + `,`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValuesRequest) XXX_Unmarshal(b []byte) error {
@@ -7372,11 +7454,15 @@ var xxx_messageInfo_LabelValuesRequest proto.InternalMessageInfo
 
 func (m *LabelValuesResponse) Reset()      { *m = LabelValuesResponse{} }
 func (*LabelValuesResponse) ProtoMessage() {}
-func (m *LabelValuesResponse) String() string {
-	if m == nil {
+func (this *LabelValuesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelValuesResponse{`,
+		`LabelValues:` + fmt.Sprintf("%v", this.LabelValues) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelValuesResponse) XXX_Unmarshal(b []byte) error {
@@ -7412,11 +7498,18 @@ var xxx_messageInfo_LabelValuesResponse proto.InternalMessageInfo
 
 func (m *LabelNamesRequest) Reset()      { *m = LabelNamesRequest{} }
 func (*LabelNamesRequest) ProtoMessage() {}
-func (m *LabelNamesRequest) String() string {
-	if m == nil {
+func (this *LabelNamesRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelNamesRequest{`,
+		`StartTimestampMs:` + fmt.Sprintf("%v", this.StartTimestampMs) + `,`,
+		`EndTimestampMs:` + fmt.Sprintf("%v", this.EndTimestampMs) + `,`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelNamesRequest) XXX_Unmarshal(b []byte) error {
@@ -7452,11 +7545,15 @@ var xxx_messageInfo_LabelNamesRequest proto.InternalMessageInfo
 
 func (m *LabelNamesResponse) Reset()      { *m = LabelNamesResponse{} }
 func (*LabelNamesResponse) ProtoMessage() {}
-func (m *LabelNamesResponse) String() string {
-	if m == nil {
+func (this *LabelNamesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelNamesResponse{`,
+		`LabelNames:` + fmt.Sprintf("%v", this.LabelNames) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelNamesResponse) XXX_Unmarshal(b []byte) error {
@@ -7492,11 +7589,15 @@ var xxx_messageInfo_LabelNamesResponse proto.InternalMessageInfo
 
 func (m *UserStatsRequest) Reset()      { *m = UserStatsRequest{} }
 func (*UserStatsRequest) ProtoMessage() {}
-func (m *UserStatsRequest) String() string {
-	if m == nil {
+func (this *UserStatsRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UserStatsRequest{`,
+		`CountMethod:` + fmt.Sprintf("%v", this.CountMethod) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UserStatsRequest) XXX_Unmarshal(b []byte) error {
@@ -7532,11 +7633,18 @@ var xxx_messageInfo_UserStatsRequest proto.InternalMessageInfo
 
 func (m *UserStatsResponse) Reset()      { *m = UserStatsResponse{} }
 func (*UserStatsResponse) ProtoMessage() {}
-func (m *UserStatsResponse) String() string {
-	if m == nil {
+func (this *UserStatsResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UserStatsResponse{`,
+		`IngestionRate:` + fmt.Sprintf("%v", this.IngestionRate) + `,`,
+		`NumSeries:` + fmt.Sprintf("%v", this.NumSeries) + `,`,
+		`ApiIngestionRate:` + fmt.Sprintf("%v", this.ApiIngestionRate) + `,`,
+		`RuleIngestionRate:` + fmt.Sprintf("%v", this.RuleIngestionRate) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UserStatsResponse) XXX_Unmarshal(b []byte) error {
@@ -7572,11 +7680,16 @@ var xxx_messageInfo_UserStatsResponse proto.InternalMessageInfo
 
 func (m *UserIDStatsResponse) Reset()      { *m = UserIDStatsResponse{} }
 func (*UserIDStatsResponse) ProtoMessage() {}
-func (m *UserIDStatsResponse) String() string {
-	if m == nil {
+func (this *UserIDStatsResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UserIDStatsResponse{`,
+		`UserId:` + fmt.Sprintf("%v", this.UserId) + `,`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UserIDStatsResponse) XXX_Unmarshal(b []byte) error {
@@ -7612,11 +7725,15 @@ var xxx_messageInfo_UserIDStatsResponse proto.InternalMessageInfo
 
 func (m *UsersStatsResponse) Reset()      { *m = UsersStatsResponse{} }
 func (*UsersStatsResponse) ProtoMessage() {}
-func (m *UsersStatsResponse) String() string {
-	if m == nil {
+func (this *UsersStatsResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&UsersStatsResponse{`,
+		`Stats:` + fmt.Sprintf("%v", this.Stats) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *UsersStatsResponse) XXX_Unmarshal(b []byte) error {
@@ -7652,11 +7769,18 @@ var xxx_messageInfo_UsersStatsResponse proto.InternalMessageInfo
 
 func (m *MetricsForLabelMatchersRequest) Reset()      { *m = MetricsForLabelMatchersRequest{} }
 func (*MetricsForLabelMatchersRequest) ProtoMessage() {}
-func (m *MetricsForLabelMatchersRequest) String() string {
-	if m == nil {
+func (this *MetricsForLabelMatchersRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MetricsForLabelMatchersRequest{`,
+		`StartTimestampMs:` + fmt.Sprintf("%v", this.StartTimestampMs) + `,`,
+		`EndTimestampMs:` + fmt.Sprintf("%v", this.EndTimestampMs) + `,`,
+		`MatchersSet:` + fmt.Sprintf("%v", this.MatchersSet) + `,`,
+		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MetricsForLabelMatchersRequest) XXX_Unmarshal(b []byte) error {
@@ -7692,11 +7816,15 @@ var xxx_messageInfo_MetricsForLabelMatchersRequest proto.InternalMessageInfo
 
 func (m *MetricsForLabelMatchersResponse) Reset()      { *m = MetricsForLabelMatchersResponse{} }
 func (*MetricsForLabelMatchersResponse) ProtoMessage() {}
-func (m *MetricsForLabelMatchersResponse) String() string {
-	if m == nil {
+func (this *MetricsForLabelMatchersResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MetricsForLabelMatchersResponse{`,
+		`Metric:` + fmt.Sprintf("%v", this.Metric) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MetricsForLabelMatchersResponse) XXX_Unmarshal(b []byte) error {
@@ -7732,11 +7860,17 @@ var xxx_messageInfo_MetricsForLabelMatchersResponse proto.InternalMessageInfo
 
 func (m *MetricsMetadataRequest) Reset()      { *m = MetricsMetadataRequest{} }
 func (*MetricsMetadataRequest) ProtoMessage() {}
-func (m *MetricsMetadataRequest) String() string {
-	if m == nil {
+func (this *MetricsMetadataRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MetricsMetadataRequest{`,
+		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`LimitPerMetric:` + fmt.Sprintf("%v", this.LimitPerMetric) + `,`,
+		`Metric:` + fmt.Sprintf("%v", this.Metric) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MetricsMetadataRequest) XXX_Unmarshal(b []byte) error {
@@ -7772,11 +7906,15 @@ var xxx_messageInfo_MetricsMetadataRequest proto.InternalMessageInfo
 
 func (m *MetricsMetadataResponse) Reset()      { *m = MetricsMetadataResponse{} }
 func (*MetricsMetadataResponse) ProtoMessage() {}
-func (m *MetricsMetadataResponse) String() string {
-	if m == nil {
+func (this *MetricsMetadataResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MetricsMetadataResponse{`,
+		`Metadata:` + fmt.Sprintf("%v", this.Metadata) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MetricsMetadataResponse) XXX_Unmarshal(b []byte) error {
@@ -7812,11 +7950,16 @@ var xxx_messageInfo_MetricsMetadataResponse proto.InternalMessageInfo
 
 func (m *ActiveSeriesResponse) Reset()      { *m = ActiveSeriesResponse{} }
 func (*ActiveSeriesResponse) ProtoMessage() {}
-func (m *ActiveSeriesResponse) String() string {
-	if m == nil {
+func (this *ActiveSeriesResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ActiveSeriesResponse{`,
+		`Metric:` + fmt.Sprintf("%v", this.Metric) + `,`,
+		`BucketCount:` + fmt.Sprintf("%v", this.BucketCount) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ActiveSeriesResponse) XXX_Unmarshal(b []byte) error {
@@ -7852,11 +7995,18 @@ var xxx_messageInfo_ActiveSeriesResponse proto.InternalMessageInfo
 
 func (m *Chunk) Reset()      { *m = Chunk{} }
 func (*Chunk) ProtoMessage() {}
-func (m *Chunk) String() string {
-	if m == nil {
+func (this *Chunk) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Chunk{`,
+		`StartTimestampMs:` + fmt.Sprintf("%v", this.StartTimestampMs) + `,`,
+		`EndTimestampMs:` + fmt.Sprintf("%v", this.EndTimestampMs) + `,`,
+		`Encoding:` + fmt.Sprintf("%v", this.Encoding) + `,`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Chunk) XXX_Unmarshal(b []byte) error {
@@ -7892,11 +8042,15 @@ var xxx_messageInfo_Chunk proto.InternalMessageInfo
 
 func (m *LabelMatchers) Reset()      { *m = LabelMatchers{} }
 func (*LabelMatchers) ProtoMessage() {}
-func (m *LabelMatchers) String() string {
-	if m == nil {
+func (this *LabelMatchers) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelMatchers{`,
+		`Matchers:` + fmt.Sprintf("%v", this.Matchers) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelMatchers) XXX_Unmarshal(b []byte) error {
@@ -7932,11 +8086,17 @@ var xxx_messageInfo_LabelMatchers proto.InternalMessageInfo
 
 func (m *LabelMatcher) Reset()      { *m = LabelMatcher{} }
 func (*LabelMatcher) ProtoMessage() {}
-func (m *LabelMatcher) String() string {
-	if m == nil {
+func (this *LabelMatcher) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelMatcher{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {

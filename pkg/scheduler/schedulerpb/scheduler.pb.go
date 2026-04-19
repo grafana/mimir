@@ -2049,11 +2049,15 @@ func (this *NotifyQuerierShutdownResponse) GoString() string {
 
 func (m *QuerierToScheduler) Reset()      { *m = QuerierToScheduler{} }
 func (*QuerierToScheduler) ProtoMessage() {}
-func (m *QuerierToScheduler) String() string {
-	if m == nil {
+func (this *QuerierToScheduler) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QuerierToScheduler{`,
+		`QuerierID:` + fmt.Sprintf("%v", this.QuerierID) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QuerierToScheduler) XXX_Unmarshal(b []byte) error {
@@ -2089,11 +2093,20 @@ var xxx_messageInfo_QuerierToScheduler proto.InternalMessageInfo
 
 func (m *SchedulerToQuerier) Reset()      { *m = SchedulerToQuerier{} }
 func (*SchedulerToQuerier) ProtoMessage() {}
-func (m *SchedulerToQuerier) String() string {
-	if m == nil {
+func (this *SchedulerToQuerier) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SchedulerToQuerier{`,
+		`QueryID:` + fmt.Sprintf("%v", this.QueryID) + `,`,
+		`Payload:` + fmt.Sprintf("%v", this.Payload) + `,`,
+		`FrontendAddress:` + fmt.Sprintf("%v", this.FrontendAddress) + `,`,
+		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
+		`StatsEnabled:` + fmt.Sprintf("%v", this.StatsEnabled) + `,`,
+		`QueueTimeNanos:` + fmt.Sprintf("%v", this.QueueTimeNanos) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SchedulerToQuerier) XXX_Unmarshal(b []byte) error {
@@ -2129,11 +2142,16 @@ var xxx_messageInfo_SchedulerToQuerier proto.InternalMessageInfo
 
 func (m *ProtobufRequest) Reset()      { *m = ProtobufRequest{} }
 func (*ProtobufRequest) ProtoMessage() {}
-func (m *ProtobufRequest) String() string {
-	if m == nil {
+func (this *ProtobufRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ProtobufRequest{`,
+		`Payload:` + fmt.Sprintf("%v", this.Payload) + `,`,
+		`Metadata:` + fmt.Sprintf("%v", this.Metadata) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ProtobufRequest) XXX_Unmarshal(b []byte) error {
@@ -2169,11 +2187,16 @@ var xxx_messageInfo_ProtobufRequest proto.InternalMessageInfo
 
 func (m *MetadataItem) Reset()      { *m = MetadataItem{} }
 func (*MetadataItem) ProtoMessage() {}
-func (m *MetadataItem) String() string {
-	if m == nil {
+func (this *MetadataItem) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MetadataItem{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MetadataItem) XXX_Unmarshal(b []byte) error {
@@ -2209,11 +2232,21 @@ var xxx_messageInfo_MetadataItem proto.InternalMessageInfo
 
 func (m *FrontendToScheduler) Reset()      { *m = FrontendToScheduler{} }
 func (*FrontendToScheduler) ProtoMessage() {}
-func (m *FrontendToScheduler) String() string {
-	if m == nil {
+func (this *FrontendToScheduler) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&FrontendToScheduler{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`FrontendAddress:` + fmt.Sprintf("%v", this.FrontendAddress) + `,`,
+		`QueryID:` + fmt.Sprintf("%v", this.QueryID) + `,`,
+		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
+		`Payload:` + fmt.Sprintf("%v", this.Payload) + `,`,
+		`StatsEnabled:` + fmt.Sprintf("%v", this.StatsEnabled) + `,`,
+		`AdditionalQueueDimensions:` + fmt.Sprintf("%v", this.AdditionalQueueDimensions) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *FrontendToScheduler) XXX_Unmarshal(b []byte) error {
@@ -2249,11 +2282,16 @@ var xxx_messageInfo_FrontendToScheduler proto.InternalMessageInfo
 
 func (m *SchedulerToFrontend) Reset()      { *m = SchedulerToFrontend{} }
 func (*SchedulerToFrontend) ProtoMessage() {}
-func (m *SchedulerToFrontend) String() string {
-	if m == nil {
+func (this *SchedulerToFrontend) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SchedulerToFrontend{`,
+		`Status:` + fmt.Sprintf("%v", this.Status) + `,`,
+		`Error:` + fmt.Sprintf("%v", this.Error) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SchedulerToFrontend) XXX_Unmarshal(b []byte) error {
@@ -2289,11 +2327,15 @@ var xxx_messageInfo_SchedulerToFrontend proto.InternalMessageInfo
 
 func (m *NotifyQuerierShutdownRequest) Reset()      { *m = NotifyQuerierShutdownRequest{} }
 func (*NotifyQuerierShutdownRequest) ProtoMessage() {}
-func (m *NotifyQuerierShutdownRequest) String() string {
-	if m == nil {
+func (this *NotifyQuerierShutdownRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&NotifyQuerierShutdownRequest{`,
+		`QuerierID:` + fmt.Sprintf("%v", this.QuerierID) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *NotifyQuerierShutdownRequest) XXX_Unmarshal(b []byte) error {
@@ -2329,11 +2371,14 @@ var xxx_messageInfo_NotifyQuerierShutdownRequest proto.InternalMessageInfo
 
 func (m *NotifyQuerierShutdownResponse) Reset()      { *m = NotifyQuerierShutdownResponse{} }
 func (*NotifyQuerierShutdownResponse) ProtoMessage() {}
-func (m *NotifyQuerierShutdownResponse) String() string {
-	if m == nil {
+func (this *NotifyQuerierShutdownResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&NotifyQuerierShutdownResponse{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *NotifyQuerierShutdownResponse) XXX_Unmarshal(b []byte) error {

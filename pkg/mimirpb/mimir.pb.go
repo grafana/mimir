@@ -7788,11 +7788,21 @@ func (this *MetadataRW2) GoString() string {
 
 func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
 func (*WriteRequest) ProtoMessage() {}
-func (m *WriteRequest) String() string {
-	if m == nil {
+func (this *WriteRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&WriteRequest{`,
+		`Timeseries:` + fmt.Sprintf("%v", this.Timeseries) + `,`,
+		`Source:` + fmt.Sprintf("%v", this.Source) + `,`,
+		`Metadata:` + fmt.Sprintf("%v", this.Metadata) + `,`,
+		`SymbolsRW2:` + fmt.Sprintf("%v", this.SymbolsRW2) + `,`,
+		`TimeseriesRW2:` + fmt.Sprintf("%v", this.TimeseriesRW2) + `,`,
+		`SkipLabelValidation:` + fmt.Sprintf("%v", this.SkipLabelValidation) + `,`,
+		`SkipLabelCountValidation:` + fmt.Sprintf("%v", this.SkipLabelCountValidation) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *WriteRequest) XXX_Unmarshal(b []byte) error {
@@ -7828,11 +7838,14 @@ var xxx_messageInfo_WriteRequest proto.InternalMessageInfo
 
 func (m *WriteResponse) Reset()      { *m = WriteResponse{} }
 func (*WriteResponse) ProtoMessage() {}
-func (m *WriteResponse) String() string {
-	if m == nil {
+func (this *WriteResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&WriteResponse{`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *WriteResponse) XXX_Unmarshal(b []byte) error {
@@ -7868,11 +7881,17 @@ var xxx_messageInfo_WriteResponse proto.InternalMessageInfo
 
 func (m *ErrorDetails) Reset()      { *m = ErrorDetails{} }
 func (*ErrorDetails) ProtoMessage() {}
-func (m *ErrorDetails) String() string {
-	if m == nil {
+func (this *ErrorDetails) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ErrorDetails{`,
+		`Cause:` + fmt.Sprintf("%v", this.Cause) + `,`,
+		`Soft:` + fmt.Sprintf("%v", this.Soft) + `,`,
+		`RejectedSamples:` + fmt.Sprintf("%v", this.RejectedSamples) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ErrorDetails) XXX_Unmarshal(b []byte) error {
@@ -7908,11 +7927,19 @@ var xxx_messageInfo_ErrorDetails proto.InternalMessageInfo
 
 func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
 func (*TimeSeries) ProtoMessage() {}
-func (m *TimeSeries) String() string {
-	if m == nil {
+func (this *TimeSeries) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TimeSeries{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`Samples:` + fmt.Sprintf("%v", this.Samples) + `,`,
+		`Exemplars:` + fmt.Sprintf("%v", this.Exemplars) + `,`,
+		`Histograms:` + fmt.Sprintf("%v", this.Histograms) + `,`,
+		`CreatedTimestamp:` + fmt.Sprintf("%v", this.CreatedTimestamp) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TimeSeries) XXX_Unmarshal(b []byte) error {
@@ -7948,11 +7975,16 @@ var xxx_messageInfo_TimeSeries proto.InternalMessageInfo
 
 func (m *LabelPair) Reset()      { *m = LabelPair{} }
 func (*LabelPair) ProtoMessage() {}
-func (m *LabelPair) String() string {
-	if m == nil {
+func (this *LabelPair) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelPair{`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelPair) XXX_Unmarshal(b []byte) error {
@@ -7988,11 +8020,16 @@ var xxx_messageInfo_LabelPair proto.InternalMessageInfo
 
 func (m *Sample) Reset()      { *m = Sample{} }
 func (*Sample) ProtoMessage() {}
-func (m *Sample) String() string {
-	if m == nil {
+func (this *Sample) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Sample{`,
+		`TimestampMs:` + fmt.Sprintf("%v", this.TimestampMs) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Sample) XXX_Unmarshal(b []byte) error {
@@ -8028,11 +8065,18 @@ var xxx_messageInfo_Sample proto.InternalMessageInfo
 
 func (m *MetricMetadata) Reset()      { *m = MetricMetadata{} }
 func (*MetricMetadata) ProtoMessage() {}
-func (m *MetricMetadata) String() string {
-	if m == nil {
+func (this *MetricMetadata) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MetricMetadata{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`MetricFamilyName:` + fmt.Sprintf("%v", this.MetricFamilyName) + `,`,
+		`Help:` + fmt.Sprintf("%v", this.Help) + `,`,
+		`Unit:` + fmt.Sprintf("%v", this.Unit) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MetricMetadata) XXX_Unmarshal(b []byte) error {
@@ -8068,11 +8112,15 @@ var xxx_messageInfo_MetricMetadata proto.InternalMessageInfo
 
 func (m *Metric) Reset()      { *m = Metric{} }
 func (*Metric) ProtoMessage() {}
-func (m *Metric) String() string {
-	if m == nil {
+func (this *Metric) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Metric{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Metric) XXX_Unmarshal(b []byte) error {
@@ -8108,11 +8156,17 @@ var xxx_messageInfo_Metric proto.InternalMessageInfo
 
 func (m *Exemplar) Reset()      { *m = Exemplar{} }
 func (*Exemplar) ProtoMessage() {}
-func (m *Exemplar) String() string {
-	if m == nil {
+func (this *Exemplar) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Exemplar{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`TimestampMs:` + fmt.Sprintf("%v", this.TimestampMs) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Exemplar) XXX_Unmarshal(b []byte) error {
@@ -8148,11 +8202,28 @@ var xxx_messageInfo_Exemplar proto.InternalMessageInfo
 
 func (m *Histogram) Reset()      { *m = Histogram{} }
 func (*Histogram) ProtoMessage() {}
-func (m *Histogram) String() string {
-	if m == nil {
+func (this *Histogram) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Histogram{`,
+		`Count:` + fmt.Sprintf("%v", this.Count) + `,`,
+		`Sum:` + fmt.Sprintf("%v", this.Sum) + `,`,
+		`Schema:` + fmt.Sprintf("%v", this.Schema) + `,`,
+		`ZeroThreshold:` + fmt.Sprintf("%v", this.ZeroThreshold) + `,`,
+		`ZeroCount:` + fmt.Sprintf("%v", this.ZeroCount) + `,`,
+		`NegativeSpans:` + fmt.Sprintf("%v", this.NegativeSpans) + `,`,
+		`NegativeDeltas:` + fmt.Sprintf("%v", this.NegativeDeltas) + `,`,
+		`NegativeCounts:` + fmt.Sprintf("%v", this.NegativeCounts) + `,`,
+		`PositiveSpans:` + fmt.Sprintf("%v", this.PositiveSpans) + `,`,
+		`PositiveDeltas:` + fmt.Sprintf("%v", this.PositiveDeltas) + `,`,
+		`PositiveCounts:` + fmt.Sprintf("%v", this.PositiveCounts) + `,`,
+		`ResetHint:` + fmt.Sprintf("%v", this.ResetHint) + `,`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`CustomValues:` + fmt.Sprintf("%v", this.CustomValues) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Histogram) XXX_Unmarshal(b []byte) error {
@@ -8188,11 +8259,25 @@ var xxx_messageInfo_Histogram proto.InternalMessageInfo
 
 func (m *FloatHistogram) Reset()      { *m = FloatHistogram{} }
 func (*FloatHistogram) ProtoMessage() {}
-func (m *FloatHistogram) String() string {
-	if m == nil {
+func (this *FloatHistogram) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&FloatHistogram{`,
+		`CounterResetHint:` + fmt.Sprintf("%v", this.CounterResetHint) + `,`,
+		`Schema:` + fmt.Sprintf("%v", this.Schema) + `,`,
+		`ZeroThreshold:` + fmt.Sprintf("%v", this.ZeroThreshold) + `,`,
+		`ZeroCount:` + fmt.Sprintf("%v", this.ZeroCount) + `,`,
+		`Count:` + fmt.Sprintf("%v", this.Count) + `,`,
+		`Sum:` + fmt.Sprintf("%v", this.Sum) + `,`,
+		`PositiveSpans:` + fmt.Sprintf("%v", this.PositiveSpans) + `,`,
+		`NegativeSpans:` + fmt.Sprintf("%v", this.NegativeSpans) + `,`,
+		`PositiveBuckets:` + fmt.Sprintf("%v", this.PositiveBuckets) + `,`,
+		`NegativeBuckets:` + fmt.Sprintf("%v", this.NegativeBuckets) + `,`,
+		`CustomValues:` + fmt.Sprintf("%v", this.CustomValues) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *FloatHistogram) XXX_Unmarshal(b []byte) error {
@@ -8228,11 +8313,16 @@ var xxx_messageInfo_FloatHistogram proto.InternalMessageInfo
 
 func (m *BucketSpan) Reset()      { *m = BucketSpan{} }
 func (*BucketSpan) ProtoMessage() {}
-func (m *BucketSpan) String() string {
-	if m == nil {
+func (this *BucketSpan) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&BucketSpan{`,
+		`Offset:` + fmt.Sprintf("%v", this.Offset) + `,`,
+		`Length:` + fmt.Sprintf("%v", this.Length) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *BucketSpan) XXX_Unmarshal(b []byte) error {
@@ -8268,11 +8358,16 @@ var xxx_messageInfo_BucketSpan proto.InternalMessageInfo
 
 func (m *FloatHistogramPair) Reset()      { *m = FloatHistogramPair{} }
 func (*FloatHistogramPair) ProtoMessage() {}
-func (m *FloatHistogramPair) String() string {
-	if m == nil {
+func (this *FloatHistogramPair) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&FloatHistogramPair{`,
+		`TimestampMs:` + fmt.Sprintf("%v", this.TimestampMs) + `,`,
+		`Histogram:` + fmt.Sprintf("%v", this.Histogram) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *FloatHistogramPair) XXX_Unmarshal(b []byte) error {
@@ -8308,11 +8403,17 @@ var xxx_messageInfo_FloatHistogramPair proto.InternalMessageInfo
 
 func (m *SampleHistogram) Reset()      { *m = SampleHistogram{} }
 func (*SampleHistogram) ProtoMessage() {}
-func (m *SampleHistogram) String() string {
-	if m == nil {
+func (this *SampleHistogram) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SampleHistogram{`,
+		`Count:` + fmt.Sprintf("%v", this.Count) + `,`,
+		`Sum:` + fmt.Sprintf("%v", this.Sum) + `,`,
+		`Buckets:` + fmt.Sprintf("%v", this.Buckets) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SampleHistogram) XXX_Unmarshal(b []byte) error {
@@ -8348,11 +8449,18 @@ var xxx_messageInfo_SampleHistogram proto.InternalMessageInfo
 
 func (m *HistogramBucket) Reset()      { *m = HistogramBucket{} }
 func (*HistogramBucket) ProtoMessage() {}
-func (m *HistogramBucket) String() string {
-	if m == nil {
+func (this *HistogramBucket) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&HistogramBucket{`,
+		`Boundaries:` + fmt.Sprintf("%v", this.Boundaries) + `,`,
+		`Lower:` + fmt.Sprintf("%v", this.Lower) + `,`,
+		`Upper:` + fmt.Sprintf("%v", this.Upper) + `,`,
+		`Count:` + fmt.Sprintf("%v", this.Count) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *HistogramBucket) XXX_Unmarshal(b []byte) error {
@@ -8388,11 +8496,16 @@ var xxx_messageInfo_HistogramBucket proto.InternalMessageInfo
 
 func (m *SampleHistogramPair) Reset()      { *m = SampleHistogramPair{} }
 func (*SampleHistogramPair) ProtoMessage() {}
-func (m *SampleHistogramPair) String() string {
-	if m == nil {
+func (this *SampleHistogramPair) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SampleHistogramPair{`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Histogram:` + fmt.Sprintf("%v", this.Histogram) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SampleHistogramPair) XXX_Unmarshal(b []byte) error {
@@ -8428,11 +8541,20 @@ var xxx_messageInfo_SampleHistogramPair proto.InternalMessageInfo
 
 func (m *QueryResponse) Reset()      { *m = QueryResponse{} }
 func (*QueryResponse) ProtoMessage() {}
-func (m *QueryResponse) String() string {
-	if m == nil {
+func (this *QueryResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&QueryResponse{`,
+		`Status:` + fmt.Sprintf("%v", this.Status) + `,`,
+		`ErrorType:` + fmt.Sprintf("%v", this.ErrorType) + `,`,
+		`Error:` + fmt.Sprintf("%v", this.Error) + `,`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`Warnings:` + fmt.Sprintf("%v", this.Warnings) + `,`,
+		`Infos:` + fmt.Sprintf("%v", this.Infos) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *QueryResponse) XXX_Unmarshal(b []byte) error {
@@ -8468,11 +8590,16 @@ var xxx_messageInfo_QueryResponse proto.InternalMessageInfo
 
 func (m *StringData) Reset()      { *m = StringData{} }
 func (*StringData) ProtoMessage() {}
-func (m *StringData) String() string {
-	if m == nil {
+func (this *StringData) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StringData{`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`TimestampMs:` + fmt.Sprintf("%v", this.TimestampMs) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StringData) XXX_Unmarshal(b []byte) error {
@@ -8508,11 +8635,16 @@ var xxx_messageInfo_StringData proto.InternalMessageInfo
 
 func (m *VectorData) Reset()      { *m = VectorData{} }
 func (*VectorData) ProtoMessage() {}
-func (m *VectorData) String() string {
-	if m == nil {
+func (this *VectorData) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&VectorData{`,
+		`Samples:` + fmt.Sprintf("%v", this.Samples) + `,`,
+		`Histograms:` + fmt.Sprintf("%v", this.Histograms) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *VectorData) XXX_Unmarshal(b []byte) error {
@@ -8548,11 +8680,17 @@ var xxx_messageInfo_VectorData proto.InternalMessageInfo
 
 func (m *VectorSample) Reset()      { *m = VectorSample{} }
 func (*VectorSample) ProtoMessage() {}
-func (m *VectorSample) String() string {
-	if m == nil {
+func (this *VectorSample) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&VectorSample{`,
+		`Metric:` + fmt.Sprintf("%v", this.Metric) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`TimestampMs:` + fmt.Sprintf("%v", this.TimestampMs) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *VectorSample) XXX_Unmarshal(b []byte) error {
@@ -8588,11 +8726,17 @@ var xxx_messageInfo_VectorSample proto.InternalMessageInfo
 
 func (m *VectorHistogram) Reset()      { *m = VectorHistogram{} }
 func (*VectorHistogram) ProtoMessage() {}
-func (m *VectorHistogram) String() string {
-	if m == nil {
+func (this *VectorHistogram) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&VectorHistogram{`,
+		`Metric:` + fmt.Sprintf("%v", this.Metric) + `,`,
+		`Histogram:` + fmt.Sprintf("%v", this.Histogram) + `,`,
+		`TimestampMs:` + fmt.Sprintf("%v", this.TimestampMs) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *VectorHistogram) XXX_Unmarshal(b []byte) error {
@@ -8628,11 +8772,16 @@ var xxx_messageInfo_VectorHistogram proto.InternalMessageInfo
 
 func (m *ScalarData) Reset()      { *m = ScalarData{} }
 func (*ScalarData) ProtoMessage() {}
-func (m *ScalarData) String() string {
-	if m == nil {
+func (this *ScalarData) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ScalarData{`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`TimestampMs:` + fmt.Sprintf("%v", this.TimestampMs) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ScalarData) XXX_Unmarshal(b []byte) error {
@@ -8668,11 +8817,15 @@ var xxx_messageInfo_ScalarData proto.InternalMessageInfo
 
 func (m *MatrixData) Reset()      { *m = MatrixData{} }
 func (*MatrixData) ProtoMessage() {}
-func (m *MatrixData) String() string {
-	if m == nil {
+func (this *MatrixData) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MatrixData{`,
+		`Series:` + fmt.Sprintf("%v", this.Series) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MatrixData) XXX_Unmarshal(b []byte) error {
@@ -8708,11 +8861,17 @@ var xxx_messageInfo_MatrixData proto.InternalMessageInfo
 
 func (m *MatrixSeries) Reset()      { *m = MatrixSeries{} }
 func (*MatrixSeries) ProtoMessage() {}
-func (m *MatrixSeries) String() string {
-	if m == nil {
+func (this *MatrixSeries) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MatrixSeries{`,
+		`Metric:` + fmt.Sprintf("%v", this.Metric) + `,`,
+		`Samples:` + fmt.Sprintf("%v", this.Samples) + `,`,
+		`Histograms:` + fmt.Sprintf("%v", this.Histograms) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MatrixSeries) XXX_Unmarshal(b []byte) error {
@@ -8748,11 +8907,16 @@ var xxx_messageInfo_MatrixSeries proto.InternalMessageInfo
 
 func (m *WriteRequestRW2) Reset()      { *m = WriteRequestRW2{} }
 func (*WriteRequestRW2) ProtoMessage() {}
-func (m *WriteRequestRW2) String() string {
-	if m == nil {
+func (this *WriteRequestRW2) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&WriteRequestRW2{`,
+		`Symbols:` + fmt.Sprintf("%v", this.Symbols) + `,`,
+		`Timeseries:` + fmt.Sprintf("%v", this.Timeseries) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *WriteRequestRW2) XXX_Unmarshal(b []byte) error {
@@ -8788,11 +8952,20 @@ var xxx_messageInfo_WriteRequestRW2 proto.InternalMessageInfo
 
 func (m *TimeSeriesRW2) Reset()      { *m = TimeSeriesRW2{} }
 func (*TimeSeriesRW2) ProtoMessage() {}
-func (m *TimeSeriesRW2) String() string {
-	if m == nil {
+func (this *TimeSeriesRW2) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&TimeSeriesRW2{`,
+		`LabelsRefs:` + fmt.Sprintf("%v", this.LabelsRefs) + `,`,
+		`Samples:` + fmt.Sprintf("%v", this.Samples) + `,`,
+		`Histograms:` + fmt.Sprintf("%v", this.Histograms) + `,`,
+		`Exemplars:` + fmt.Sprintf("%v", this.Exemplars) + `,`,
+		`Metadata:` + fmt.Sprintf("%v", this.Metadata) + `,`,
+		`CreatedTimestamp:` + fmt.Sprintf("%v", this.CreatedTimestamp) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *TimeSeriesRW2) XXX_Unmarshal(b []byte) error {
@@ -8828,11 +9001,17 @@ var xxx_messageInfo_TimeSeriesRW2 proto.InternalMessageInfo
 
 func (m *ExemplarRW2) Reset()      { *m = ExemplarRW2{} }
 func (*ExemplarRW2) ProtoMessage() {}
-func (m *ExemplarRW2) String() string {
-	if m == nil {
+func (this *ExemplarRW2) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&ExemplarRW2{`,
+		`LabelsRefs:` + fmt.Sprintf("%v", this.LabelsRefs) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *ExemplarRW2) XXX_Unmarshal(b []byte) error {
@@ -8868,11 +9047,17 @@ var xxx_messageInfo_ExemplarRW2 proto.InternalMessageInfo
 
 func (m *MetadataRW2) Reset()      { *m = MetadataRW2{} }
 func (*MetadataRW2) ProtoMessage() {}
-func (m *MetadataRW2) String() string {
-	if m == nil {
+func (this *MetadataRW2) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&MetadataRW2{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`HelpRef:` + fmt.Sprintf("%v", this.HelpRef) + `,`,
+		`UnitRef:` + fmt.Sprintf("%v", this.UnitRef) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *MetadataRW2) XXX_Unmarshal(b []byte) error {

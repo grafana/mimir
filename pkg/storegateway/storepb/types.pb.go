@@ -1371,11 +1371,16 @@ func (this *LabelMatcher) GoString() string {
 
 func (m *Chunk) Reset()      { *m = Chunk{} }
 func (*Chunk) ProtoMessage() {}
-func (m *Chunk) String() string {
-	if m == nil {
+func (this *Chunk) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Chunk{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Chunk) XXX_Unmarshal(b []byte) error {
@@ -1411,11 +1416,15 @@ var xxx_messageInfo_Chunk proto.InternalMessageInfo
 
 func (m *StreamingSeries) Reset()      { *m = StreamingSeries{} }
 func (*StreamingSeries) ProtoMessage() {}
-func (m *StreamingSeries) String() string {
-	if m == nil {
+func (this *StreamingSeries) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StreamingSeries{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StreamingSeries) XXX_Unmarshal(b []byte) error {
@@ -1451,11 +1460,16 @@ var xxx_messageInfo_StreamingSeries proto.InternalMessageInfo
 
 func (m *StreamingSeriesBatch) Reset()      { *m = StreamingSeriesBatch{} }
 func (*StreamingSeriesBatch) ProtoMessage() {}
-func (m *StreamingSeriesBatch) String() string {
-	if m == nil {
+func (this *StreamingSeriesBatch) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StreamingSeriesBatch{`,
+		`Series:` + fmt.Sprintf("%v", this.Series) + `,`,
+		`IsEndOfSeriesStream:` + fmt.Sprintf("%v", this.IsEndOfSeriesStream) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StreamingSeriesBatch) XXX_Unmarshal(b []byte) error {
@@ -1491,11 +1505,16 @@ var xxx_messageInfo_StreamingSeriesBatch proto.InternalMessageInfo
 
 func (m *StreamingChunks) Reset()      { *m = StreamingChunks{} }
 func (*StreamingChunks) ProtoMessage() {}
-func (m *StreamingChunks) String() string {
-	if m == nil {
+func (this *StreamingChunks) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StreamingChunks{`,
+		`SeriesIndex:` + fmt.Sprintf("%v", this.SeriesIndex) + `,`,
+		`Chunks:` + fmt.Sprintf("%v", this.Chunks) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StreamingChunks) XXX_Unmarshal(b []byte) error {
@@ -1531,11 +1550,15 @@ var xxx_messageInfo_StreamingChunks proto.InternalMessageInfo
 
 func (m *StreamingChunksBatch) Reset()      { *m = StreamingChunksBatch{} }
 func (*StreamingChunksBatch) ProtoMessage() {}
-func (m *StreamingChunksBatch) String() string {
-	if m == nil {
+func (this *StreamingChunksBatch) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StreamingChunksBatch{`,
+		`Series:` + fmt.Sprintf("%v", this.Series) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StreamingChunksBatch) XXX_Unmarshal(b []byte) error {
@@ -1571,11 +1594,15 @@ var xxx_messageInfo_StreamingChunksBatch proto.InternalMessageInfo
 
 func (m *StreamingChunksEstimate) Reset()      { *m = StreamingChunksEstimate{} }
 func (*StreamingChunksEstimate) ProtoMessage() {}
-func (m *StreamingChunksEstimate) String() string {
-	if m == nil {
+func (this *StreamingChunksEstimate) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&StreamingChunksEstimate{`,
+		`EstimatedChunkCount:` + fmt.Sprintf("%v", this.EstimatedChunkCount) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *StreamingChunksEstimate) XXX_Unmarshal(b []byte) error {
@@ -1611,11 +1638,17 @@ var xxx_messageInfo_StreamingChunksEstimate proto.InternalMessageInfo
 
 func (m *AggrChunk) Reset()      { *m = AggrChunk{} }
 func (*AggrChunk) ProtoMessage() {}
-func (m *AggrChunk) String() string {
-	if m == nil {
+func (this *AggrChunk) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&AggrChunk{`,
+		`MinTime:` + fmt.Sprintf("%v", this.MinTime) + `,`,
+		`MaxTime:` + fmt.Sprintf("%v", this.MaxTime) + `,`,
+		`Raw:` + fmt.Sprintf("%v", this.Raw) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *AggrChunk) XXX_Unmarshal(b []byte) error {
@@ -1651,11 +1684,17 @@ var xxx_messageInfo_AggrChunk proto.InternalMessageInfo
 
 func (m *LabelMatcher) Reset()      { *m = LabelMatcher{} }
 func (*LabelMatcher) ProtoMessage() {}
-func (m *LabelMatcher) String() string {
-	if m == nil {
+func (this *LabelMatcher) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&LabelMatcher{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {

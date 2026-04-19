@@ -2960,11 +2960,17 @@ func (this *Annotations) GoString() string {
 
 func (m *EvaluateQueryRequest) Reset()      { *m = EvaluateQueryRequest{} }
 func (*EvaluateQueryRequest) ProtoMessage() {}
-func (m *EvaluateQueryRequest) String() string {
-	if m == nil {
+func (this *EvaluateQueryRequest) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EvaluateQueryRequest{`,
+		`Plan:` + fmt.Sprintf("%v", this.Plan) + `,`,
+		`Nodes:` + fmt.Sprintf("%v", this.Nodes) + `,`,
+		`BatchSize:` + fmt.Sprintf("%v", this.BatchSize) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EvaluateQueryRequest) XXX_Unmarshal(b []byte) error {
@@ -3000,11 +3006,16 @@ var xxx_messageInfo_EvaluateQueryRequest proto.InternalMessageInfo
 
 func (m *EvaluationNode) Reset()      { *m = EvaluationNode{} }
 func (*EvaluationNode) ProtoMessage() {}
-func (m *EvaluationNode) String() string {
-	if m == nil {
+func (this *EvaluationNode) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EvaluationNode{`,
+		`NodeIndex:` + fmt.Sprintf("%v", this.NodeIndex) + `,`,
+		`TimeRange:` + fmt.Sprintf("%v", this.TimeRange) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EvaluationNode) XXX_Unmarshal(b []byte) error {
@@ -3040,11 +3051,15 @@ var xxx_messageInfo_EvaluationNode proto.InternalMessageInfo
 
 func (m *EvaluateQueryResponse) Reset()      { *m = EvaluateQueryResponse{} }
 func (*EvaluateQueryResponse) ProtoMessage() {}
-func (m *EvaluateQueryResponse) String() string {
-	if m == nil {
+func (this *EvaluateQueryResponse) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EvaluateQueryResponse{`,
+		`Message:` + fmt.Sprintf("%v", this.Message) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EvaluateQueryResponse) XXX_Unmarshal(b []byte) error {
@@ -3080,11 +3095,16 @@ var xxx_messageInfo_EvaluateQueryResponse proto.InternalMessageInfo
 
 func (m *EvaluateQueryResponseSeriesMetadata) Reset()      { *m = EvaluateQueryResponseSeriesMetadata{} }
 func (*EvaluateQueryResponseSeriesMetadata) ProtoMessage() {}
-func (m *EvaluateQueryResponseSeriesMetadata) String() string {
-	if m == nil {
+func (this *EvaluateQueryResponseSeriesMetadata) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EvaluateQueryResponseSeriesMetadata{`,
+		`NodeIndex:` + fmt.Sprintf("%v", this.NodeIndex) + `,`,
+		`Series:` + fmt.Sprintf("%v", this.Series) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EvaluateQueryResponseSeriesMetadata) XXX_Unmarshal(b []byte) error {
@@ -3120,11 +3140,16 @@ var xxx_messageInfo_EvaluateQueryResponseSeriesMetadata proto.InternalMessageInf
 
 func (m *SeriesMetadata) Reset()      { *m = SeriesMetadata{} }
 func (*SeriesMetadata) ProtoMessage() {}
-func (m *SeriesMetadata) String() string {
-	if m == nil {
+func (this *SeriesMetadata) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&SeriesMetadata{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`DropName:` + fmt.Sprintf("%v", this.DropName) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *SeriesMetadata) XXX_Unmarshal(b []byte) error {
@@ -3160,11 +3185,16 @@ var xxx_messageInfo_SeriesMetadata proto.InternalMessageInfo
 
 func (m *EvaluateQueryResponseStringValue) Reset()      { *m = EvaluateQueryResponseStringValue{} }
 func (*EvaluateQueryResponseStringValue) ProtoMessage() {}
-func (m *EvaluateQueryResponseStringValue) String() string {
-	if m == nil {
+func (this *EvaluateQueryResponseStringValue) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EvaluateQueryResponseStringValue{`,
+		`NodeIndex:` + fmt.Sprintf("%v", this.NodeIndex) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EvaluateQueryResponseStringValue) XXX_Unmarshal(b []byte) error {
@@ -3200,11 +3230,16 @@ var xxx_messageInfo_EvaluateQueryResponseStringValue proto.InternalMessageInfo
 
 func (m *EvaluateQueryResponseScalarValue) Reset()      { *m = EvaluateQueryResponseScalarValue{} }
 func (*EvaluateQueryResponseScalarValue) ProtoMessage() {}
-func (m *EvaluateQueryResponseScalarValue) String() string {
-	if m == nil {
+func (this *EvaluateQueryResponseScalarValue) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EvaluateQueryResponseScalarValue{`,
+		`NodeIndex:` + fmt.Sprintf("%v", this.NodeIndex) + `,`,
+		`Values:` + fmt.Sprintf("%v", this.Values) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EvaluateQueryResponseScalarValue) XXX_Unmarshal(b []byte) error {
@@ -3242,11 +3277,16 @@ func (m *EvaluateQueryResponseInstantVectorSeriesData) Reset() {
 	*m = EvaluateQueryResponseInstantVectorSeriesData{}
 }
 func (*EvaluateQueryResponseInstantVectorSeriesData) ProtoMessage() {}
-func (m *EvaluateQueryResponseInstantVectorSeriesData) String() string {
-	if m == nil {
+func (this *EvaluateQueryResponseInstantVectorSeriesData) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EvaluateQueryResponseInstantVectorSeriesData{`,
+		`NodeIndex:` + fmt.Sprintf("%v", this.NodeIndex) + `,`,
+		`Series:` + fmt.Sprintf("%v", this.Series) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EvaluateQueryResponseInstantVectorSeriesData) XXX_Unmarshal(b []byte) error {
@@ -3282,11 +3322,16 @@ var xxx_messageInfo_EvaluateQueryResponseInstantVectorSeriesData proto.InternalM
 
 func (m *InstantVectorSeriesData) Reset()      { *m = InstantVectorSeriesData{} }
 func (*InstantVectorSeriesData) ProtoMessage() {}
-func (m *InstantVectorSeriesData) String() string {
-	if m == nil {
+func (this *InstantVectorSeriesData) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&InstantVectorSeriesData{`,
+		`Floats:` + fmt.Sprintf("%v", this.Floats) + `,`,
+		`Histograms:` + fmt.Sprintf("%v", this.Histograms) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *InstantVectorSeriesData) XXX_Unmarshal(b []byte) error {
@@ -3324,11 +3369,21 @@ func (m *EvaluateQueryResponseRangeVectorStepData) Reset() {
 	*m = EvaluateQueryResponseRangeVectorStepData{}
 }
 func (*EvaluateQueryResponseRangeVectorStepData) ProtoMessage() {}
-func (m *EvaluateQueryResponseRangeVectorStepData) String() string {
-	if m == nil {
+func (this *EvaluateQueryResponseRangeVectorStepData) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EvaluateQueryResponseRangeVectorStepData{`,
+		`NodeIndex:` + fmt.Sprintf("%v", this.NodeIndex) + `,`,
+		`SeriesIndex:` + fmt.Sprintf("%v", this.SeriesIndex) + `,`,
+		`StepT:` + fmt.Sprintf("%v", this.StepT) + `,`,
+		`RangeStart:` + fmt.Sprintf("%v", this.RangeStart) + `,`,
+		`RangeEnd:` + fmt.Sprintf("%v", this.RangeEnd) + `,`,
+		`Floats:` + fmt.Sprintf("%v", this.Floats) + `,`,
+		`Histograms:` + fmt.Sprintf("%v", this.Histograms) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EvaluateQueryResponseRangeVectorStepData) XXX_Unmarshal(b []byte) error {
@@ -3364,11 +3419,16 @@ var xxx_messageInfo_EvaluateQueryResponseRangeVectorStepData proto.InternalMessa
 
 func (m *Error) Reset()      { *m = Error{} }
 func (*Error) ProtoMessage() {}
-func (m *Error) String() string {
-	if m == nil {
+func (this *Error) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Error{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Message:` + fmt.Sprintf("%v", this.Message) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Error) XXX_Unmarshal(b []byte) error {
@@ -3406,11 +3466,16 @@ func (m *EvaluateQueryResponseEvaluationCompleted) Reset() {
 	*m = EvaluateQueryResponseEvaluationCompleted{}
 }
 func (*EvaluateQueryResponseEvaluationCompleted) ProtoMessage() {}
-func (m *EvaluateQueryResponseEvaluationCompleted) String() string {
-	if m == nil {
+func (this *EvaluateQueryResponseEvaluationCompleted) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&EvaluateQueryResponseEvaluationCompleted{`,
+		`Annotations:` + fmt.Sprintf("%v", this.Annotations) + `,`,
+		`Stats:` + fmt.Sprintf("%v", this.Stats) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *EvaluateQueryResponseEvaluationCompleted) XXX_Unmarshal(b []byte) error {
@@ -3446,11 +3511,16 @@ var xxx_messageInfo_EvaluateQueryResponseEvaluationCompleted proto.InternalMessa
 
 func (m *Annotations) Reset()      { *m = Annotations{} }
 func (*Annotations) ProtoMessage() {}
-func (m *Annotations) String() string {
-	if m == nil {
+func (this *Annotations) String() string {
+	if this == nil {
 		return "nil"
 	}
-	return fmt.Sprintf("%v", *m)
+	s := strings.Join([]string{`&Annotations{`,
+		`Warnings:` + fmt.Sprintf("%v", this.Warnings) + `,`,
+		`Infos:` + fmt.Sprintf("%v", this.Infos) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 
 func (m *Annotations) XXX_Unmarshal(b []byte) error {

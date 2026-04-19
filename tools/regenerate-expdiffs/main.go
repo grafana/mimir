@@ -268,12 +268,7 @@ func mimirPb() modification {
 				"SkipUnmarshalingExemplars bool",
 			),
 
-			// WriteRequest.Unmarshal RW2 modifications
-			inFunc(wrUnmarshal, insertAfter("for len(b) > 0 {",
-				// NOTE: inserted INSIDE the for loop, after its opening brace is fine
-				// because we actually need them before the for loop. Let me fix:
-			)),
-			// Actually: insert before the for loop
+			// WriteRequest.Unmarshal RW2 modifications: insert vars before the for loop
 			inFunc(wrUnmarshal, func(lines []string) []string {
 				for i, l := range lines {
 					if strings.TrimSpace(l) == "for len(b) > 0 {" {

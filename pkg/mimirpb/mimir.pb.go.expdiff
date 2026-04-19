@@ -1,5 +1,5 @@
---- a/pkg/mimirpb/mimir.pb.go	2026-04-18 21:59:44
-+++ b/pkg/mimirpb/mimir.pb.go	2026-04-18 21:59:11
+--- a/pkg/mimirpb/mimir.pb.go	2026-04-19 07:47:23
++++ b/pkg/mimirpb/mimir.pb.go	2026-04-19 07:46:49
 @@ -9,7 +9,6 @@
  	"fmt"
  	"github.com/gogo/protobuf/proto"
@@ -139,7 +139,7 @@
  			}
  			b = b[n:]
  		case 4: // histograms
-@@ -9372,596 +9348,4 @@
+@@ -9557,596 +9533,4 @@
  
  func init() {
  	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)
