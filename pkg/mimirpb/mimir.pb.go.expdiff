@@ -1,5 +1,5 @@
---- a/pkg/mimirpb/mimir.pb.go	2026-04-19 07:47:23
-+++ b/pkg/mimirpb/mimir.pb.go	2026-04-19 07:46:49
+--- a/pkg/mimirpb/mimir.pb.go	2026-04-19 08:04:17
++++ b/pkg/mimirpb/mimir.pb.go	2026-04-19 08:04:16
 @@ -9,7 +9,6 @@
  	"fmt"
  	"github.com/gogo/protobuf/proto"
@@ -8,36 +8,48 @@
  	"github.com/prometheus/prometheus/model/histogram"
  	"google.golang.org/protobuf/encoding/protowire"
  	"math"
-@@ -165,8 +164,6 @@
+@@ -165,14 +164,6 @@
  func (*QueryResponse_Matrix) isQueryResponse_Data() {}
  
  type WriteRequest struct {
+-	// Keep reference to buffer for unsafe references.
 -	BufferHolder
+-	// sourceBufferHolders is populated when the WriteRequest is synthesized
+-	// from other WriteRequests, e. g. when batching, and thus holds references
+-	// to those source buffers. The WriteRequest must hold a strong reference to
+-	// each of these buffers.
 -	sourceBufferHolders map[uintptr]BufferHolder
+-
  	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
  	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3" json:"Source,omitempty"`
  	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
-@@ -178,11 +175,6 @@
+@@ -184,16 +175,6 @@
  	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
  	// Skip label count validation.
  	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
+-
+-	// Skip unmarshaling of exemplars.
 -	skipUnmarshalingExemplars bool
+-	// Skip normalization of metadata metric names when unmarshalling the request.
 -	skipNormalizeMetadataMetricName bool
+-	// Skip deduplication of metric metadata by family name.
 -	skipDeduplicateMetadata bool
+-	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 -	unmarshalFromRW2 bool
 -	rw2symbols       rw2PagedSymbols
  }
  
  type WriteResponse struct {
-@@ -206,7 +198,6 @@
+@@ -217,8 +198,6 @@
  	// Zero value means value not set. If you need to use exactly zero value for
  	// the timestamp, use 1 millisecond before or after.
  	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
+-	// Skip unmarshaling of exemplars.
 -	SkipUnmarshalingExemplars bool
  }
  
  type LabelPair struct {
-@@ -2526,8 +2517,6 @@
+@@ -2538,8 +2517,6 @@
  			m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, field5count)
  		}
  	}
@@ -46,7 +58,7 @@
  	for len(b) > 0 {
  		num, typ, tagLen := protowire.ConsumeTag(b)
  		if tagLen < 0 {
-@@ -2536,7 +2525,6 @@
+@@ -2548,7 +2525,6 @@
  		b = b[tagLen:]
  		switch num {
  		case 1: // timeseries
@@ -54,7 +66,7 @@
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2550,8 +2538,7 @@
+@@ -2562,8 +2538,7 @@
  				return fmt.Errorf("invalid bytes")
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
@@ -64,7 +76,7 @@
  				return err
  			}
  			b = b[n:]
-@@ -2571,7 +2558,6 @@
+@@ -2583,7 +2558,6 @@
  			m.Source = WriteRequest_SourceEnum(v)
  			b = b[n:]
  		case 3: // metadata
@@ -72,7 +84,7 @@
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2590,7 +2576,6 @@
+@@ -2602,7 +2576,6 @@
  			}
  			b = b[n:]
  		case 4: // symbolsRW2
@@ -80,7 +92,7 @@
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2599,14 +2584,13 @@
+@@ -2611,14 +2584,13 @@
  				b = b[n:]
  				continue
  			}
@@ -100,7 +112,7 @@
  			if typ != protowire.BytesType {
  				n, err := skipField_Mimir(b, num, typ)
  				if err != nil {
-@@ -2619,10 +2603,8 @@
+@@ -2631,10 +2603,8 @@
  			if n < 0 {
  				return fmt.Errorf("invalid bytes")
  			}
@@ -113,7 +125,7 @@
  				return err
  			}
  			b = b[n:]
-@@ -2664,10 +2646,6 @@
+@@ -2676,10 +2646,6 @@
  			b = b[n:]
  		}
  	}
@@ -124,7 +136,7 @@
  	return nil
  }
  
-@@ -2864,11 +2842,9 @@
+@@ -2876,11 +2842,9 @@
  			if n < 0 {
  				return fmt.Errorf("invalid bytes")
  			}
@@ -139,7 +151,7 @@
  			}
  			b = b[n:]
  		case 4: // histograms
-@@ -9557,596 +9533,4 @@
+@@ -9569,596 +9533,4 @@
  
  func init() {
  	proto.RegisterEnum("cortexpb.MetadataRW2.MetricType", MetadataRW2_MetricType_name, MetadataRW2_MetricType_value)

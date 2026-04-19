@@ -75,7 +75,11 @@ func addFieldsAfter(substr string, fields ...string) op {
 			if strings.Contains(l, substr) {
 				tabbed := make([]string, len(fields))
 				for j, f := range fields {
-					tabbed[j] = "\t" + f
+					if f == "" {
+						tabbed[j] = ""
+					} else {
+						tabbed[j] = "\t" + f
+					}
 				}
 				return insertMany(lines, i+1, tabbed)
 			}
@@ -254,17 +258,29 @@ func mimirPb() modification {
 		ops: []op{
 			addImportIfMissing("io", "github.com/grafana/wiresmith/gen/protohelpers"),
 			addStructFields("WriteRequest",
+				"// Keep reference to buffer for unsafe references.",
 				"BufferHolder",
+				"// sourceBufferHolders is populated when the WriteRequest is synthesized",
+				"// from other WriteRequests, e. g. when batching, and thus holds references",
+				"// to those source buffers. The WriteRequest must hold a strong reference to",
+				"// each of these buffers.",
 				"sourceBufferHolders map[uintptr]BufferHolder",
+				"",
 			),
 			addFieldsAfter("SkipLabelCountValidation bool",
+				"",
+				"// Skip unmarshaling of exemplars.",
 				"skipUnmarshalingExemplars bool",
+				"// Skip normalization of metadata metric names when unmarshalling the request.",
 				"skipNormalizeMetadataMetricName bool",
+				"// Skip deduplication of metric metadata by family name.",
 				"skipDeduplicateMetadata bool",
+				"// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.",
 				"unmarshalFromRW2 bool",
 				"rw2symbols       rw2PagedSymbols",
 			),
 			addFieldsAfter("CreatedTimestamp int64",
+				"// Skip unmarshaling of exemplars.",
 				"SkipUnmarshalingExemplars bool",
 			),
 

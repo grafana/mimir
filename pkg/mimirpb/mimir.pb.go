@@ -165,8 +165,14 @@ type QueryResponse_Matrix struct {
 func (*QueryResponse_Matrix) isQueryResponse_Data() {}
 
 type WriteRequest struct {
+	// Keep reference to buffer for unsafe references.
 	BufferHolder
+	// sourceBufferHolders is populated when the WriteRequest is synthesized
+	// from other WriteRequests, e. g. when batching, and thus holds references
+	// to those source buffers. The WriteRequest must hold a strong reference to
+	// each of these buffers.
 	sourceBufferHolders map[uintptr]BufferHolder
+
 	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
 	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3" json:"Source,omitempty"`
 	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
@@ -178,9 +184,14 @@ type WriteRequest struct {
 	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
 	// Skip label count validation.
 	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
+
+	// Skip unmarshaling of exemplars.
 	skipUnmarshalingExemplars bool
+	// Skip normalization of metadata metric names when unmarshalling the request.
 	skipNormalizeMetadataMetricName bool
+	// Skip deduplication of metric metadata by family name.
 	skipDeduplicateMetadata bool
+	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 	unmarshalFromRW2 bool
 	rw2symbols       rw2PagedSymbols
 }
@@ -206,6 +217,7 @@ type TimeSeries struct {
 	// Zero value means value not set. If you need to use exactly zero value for
 	// the timestamp, use 1 millisecond before or after.
 	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
+	// Skip unmarshaling of exemplars.
 	SkipUnmarshalingExemplars bool
 }
 
