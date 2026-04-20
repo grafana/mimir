@@ -174,6 +174,17 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 		headers = shardedQueryable.getResponseHeaders()
 	}
 
+	warnings := mimirpb.ErrorsToAnnotationErrors(warningErrors)
+	infos := mimirpb.ErrorsToAnnotationErrors(infoErrors)
+
+	if annotationAccumulator != nil {
+		// Sub-query annotations carry positions relative to the rewritten sub-query
+		// string (not the original query). Strip them so they don't appear in the
+		// response — consistent with the empty query string passed to AsErrorsSplit above.
+		removeAllAnnotationPositionInformation(warnings)
+		removeAllAnnotationPositionInformation(infos)
+	}
+
 	return &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
 			Status: statusSuccess,
@@ -182,8 +193,8 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 				Result:     extracted,
 			},
 			Headers:  headers,
-			Warnings: mimirpb.ErrorsToAnnotationErrors(warningErrors),
-			Infos:    mimirpb.ErrorsToAnnotationErrors(infoErrors),
+			Warnings: warnings,
+			Infos:    infos,
 		},
 		finalizer: qry.Close,
 	}, nil
@@ -567,6 +578,12 @@ func (a *AnnotationAccumulator) addAnnotations(warnings, infos []mimirpb.Annotat
 	if a == nil {
 		return
 	}
+	// Strip position info from sub-query annotations before adding to the
+	// accumulator. Sub-query positions refer to the rewritten sub-query string
+	// (not the original query) and would prevent proper deduplication: the outer
+	// query produces "msg" while shards produce "msg (1:N)", giving different keys.
+	removeAllAnnotationPositionInformation(warnings)
+	removeAllAnnotationPositionInformation(infos)
 	a.addAnnotationErrors(
 		mimirpb.AnnotationErrorsToErrors(warnings),
 		mimirpb.AnnotationErrorsToErrors(infos),
