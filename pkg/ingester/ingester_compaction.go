@@ -503,7 +503,8 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 		ownedSeriesCount := ownedState.ownedSeriesCount
 
 		// Check if owned series exceeds threshold
-		if ownedSeriesCount < threshold {
+		localThreshold := i.limiter.ringStrategy.convertGlobalToLocalLimit(userID, threshold)
+		if localThreshold <= 0 || ownedSeriesCount < localThreshold {
 			continue
 		}
 
@@ -531,7 +532,8 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 			"msg", "triggering per-tenant early head compaction",
 			"user", userID,
 			"owned_series", ownedSeriesCount,
-			"threshold", threshold,
+			"global_threshold", threshold,
+			"estimated_local_threshold", localThreshold,
 			"estimated_series_reduction", estimatedSeriesReduction,
 			"estimated_reduction_percentage", estimatedPercentage,
 		)

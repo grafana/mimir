@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
@@ -26,6 +29,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestIngester_filterUsersToCompactToReduceInMemorySeries(t *testing.T) {
@@ -803,32 +807,39 @@ func TestIngester_compactBlocksToReduceOwnedSeries_TriggersWhenThresholdExceeded
 	cfg.UseIngesterOwnedSeriesForLimits = true // Enable owned series for limits
 
 	limitsCfg := defaultLimitsTestConfig()
-	limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold = 5 // Trigger when owned series >= 5
+	limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold = 20 // Trigger when global per-tenant owned series >= 20
 	limitsCfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 10
 
-	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, "", nil)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, ingester, r)
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	ingestersPerZone := 2
 
-	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	// We create 6 ingesters, 2 per zone in 3 zones.
+	ingesters := setupTestIngesterRing(t, zones, ingestersPerZone, cfg, limitsCfg)
+	userBlocksDir := filepath.Join(ingesters[0].cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
-	// Push 10 series
-	for seriesID := 0; seriesID < 10; seriesID++ {
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+	// Global threshold is 20. With 2 ingesters per zone the local per-ingester threshold is 10.
+	// We will push 12 series, which is below the global threshold but above the local one.
+	for seriesID := 0; seriesID < 12; seriesID++ {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingesters[0], []util_test.Series{{
 			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: now.UnixMilli(), Val: 0}},
 		}}))
 	}
 
 	// Mark all series as inactive
-	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
 
-	// Pre-condition: owned series should be >= threshold
-	ownedState := ingester.getTSDB(userID).ownedSeriesState()
-	require.GreaterOrEqual(t, ownedState.ownedSeriesCount, 5)
+	// Pre-condition: owned series (12) is below the global threshold (20),
+	// but at or above the local per-ingester threshold (20 / 2 = 10).
+	ownedState := ingesters[0].getTSDB(userID).ownedSeriesState()
+	require.Equal(t, 12, ownedState.ownedSeriesCount)
+	localThreshold := ingesters[0].limiter.ringStrategy.convertGlobalToLocalLimit(userID, limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold)
+	require.Equal(t, 10, localThreshold)
+	require.Less(t, ownedState.ownedSeriesCount, limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold) // 12 < 20: below global
+	require.GreaterOrEqual(t, ownedState.ownedSeriesCount, localThreshold)                          // 12 >= 10: at or above local
 
 	// Per-tenant early compaction should trigger
-	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
+	ingesters[0].compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 }
 
@@ -846,50 +857,51 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T
 	cfg.UseIngesterOwnedSeriesForLimits = true // Enable owned series for limits
 
 	limitsCfg := defaultLimitsTestConfig()
-	limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold = 5
+	limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold = 20 // Trigger when global per-tenant owned series >= 20
 	limitsCfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 10
 	limitsCfg.CreationGracePeriod = model.Duration(24 * time.Hour) // This test writes samples in the future.
 
-	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, "", nil)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, ingester, r)
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	ingestersPerZone := 2
 
-	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	// We create 6 ingesters, 2 per zone in 3 zones.
+	ingesters := setupTestIngesterRing(t, zones, ingestersPerZone, cfg, limitsCfg)
+	userBlocksDir := filepath.Join(ingesters[0].cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
-	// Push 10 series
-	for seriesID := 0; seriesID < 10; seriesID++ {
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+	// Push 12 series
+	for seriesID := 0; seriesID < 12; seriesID++ {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingesters[0], []util_test.Series{{
 			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: now.UnixMilli(), Val: 0}},
 		}}))
 	}
 
 	// Mark all series as inactive
-	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
 
 	// First compaction should trigger
-	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
+	ingesters[0].compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
 	// Push more series
-	for seriesID := 10; seriesID < 20; seriesID++ {
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+	for seriesID := 12; seriesID < 24; seriesID++ {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingesters[0], []util_test.Series{{
 			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: now.Add(40 * time.Minute).UnixMilli(), Val: 0}},
 		}}))
 	}
 
 	// Mark new series as inactive
-	ingester.getTSDB(userID).activeSeries.Purge(now.Add(70*time.Minute), nil)
+	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(70*time.Minute), nil)
 
 	// Try compaction again immediately (within cooldown period)
 	// Should not create a new block because cooldown hasn't passed
-	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(40*time.Minute))
+	ingesters[0].compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(40*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1) // Still just 1 block
 
 	// Advance time past the cooldown period (IdleTimeout = 20 min)
 	// Now compaction should trigger again
-	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(60*time.Minute))
+	ingesters[0].compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(60*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 2) // Now 2 blocks
 }
 
@@ -909,24 +921,50 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RequiresOwnedSeriesForLimits(
 	limitsCfg := defaultLimitsTestConfig()
 	limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold = 5 // Threshold is set
 
-	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, "", nil)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, ingester, r)
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+	ingestersPerZone := 2
 
-	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	// We create 6 ingesters, 2 per zone in 3 zones.
+	ingesters := setupTestIngesterRing(t, zones, ingestersPerZone, cfg, limitsCfg)
+	userBlocksDir := filepath.Join(ingesters[0].cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
-	// Push 10 series
-	for seriesID := 0; seriesID < 10; seriesID++ {
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+	// Push 12 series
+	for seriesID := 0; seriesID < 12; seriesID++ {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingesters[0], []util_test.Series{{
 			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: now.UnixMilli(), Val: 0}},
 		}}))
 	}
 
 	// Mark all series as inactive
-	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+	ingesters[0].getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
 
 	// Per-tenant early compaction should NOT trigger because UseIngesterOwnedSeriesForLimits is false
-	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
+	ingesters[0].compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
+}
+
+func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {
+	// Create a shared consul KV store so both ingesters join the same ring.
+	consulClient, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	ingesters := make([]*Ingester, 0, len(zones)*ingestersPerZone)
+	for _, zone := range zones {
+		for i := 0; i < ingestersPerZone; i++ {
+			ingesterId := fmt.Sprintf("ingester-%s-%d", zone, i)
+			cfg.IngesterRing.KVStore.Mock = consulClient
+			cfg.IngesterRing.InstanceID = ingesterId
+			cfg.IngesterRing.InstanceAddr = ingesterId
+			cfg.IngesterRing.ZoneAwarenessEnabled = true
+			cfg.IngesterRing.InstanceZone = zone
+
+			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, "", nil)
+			require.NoError(t, err)
+			startAndWaitHealthy(t, ingester, r)
+
+			ingesters = append(ingesters, ingester)
+		}
+	}
+	return ingesters
 }

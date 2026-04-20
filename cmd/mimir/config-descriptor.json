@@ -5690,7 +5690,7 @@
           "kind": "field",
           "name": "early_head_compaction_owned_series_threshold",
           "required": false,
-          "desc": "When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.",
+          "desc": "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.early-head-compaction-owned-series-threshold",
