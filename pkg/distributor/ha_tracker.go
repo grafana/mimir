@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	mimirsync "github.com/grafana/mimir/pkg/util/sync"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type haTrackerLimits interface {
@@ -735,6 +736,36 @@ func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapt
 	}
 
 	return cluster, replica
+}
+
+// checkSample consults the HA tracker to decide whether a sample for the given
+// cluster/replica should be accepted. Returns a boolean indicating whether the
+// replica label should be stripped before storage (true only when both HA labels
+// were present and the replica is the elected one) and an error if the tracker
+// rejected the sample (e.g. replica is not elected, or too many clusters).
+func checkSample(ctx context.Context, userID, cluster, replica string, ts int64, tracker haTracker, limits *validation.Overrides) (removeReplicaLabel bool, _ error) {
+	// If the sample doesn't have either HA label, accept it.
+	// At the moment we want to accept these samples by default.
+	if cluster == "" || replica == "" {
+		return false, nil
+	}
+
+	// If replica label is too long, don't use it. We accept the sample here, but it will fail validation later anyway.
+	if len(replica) > limits.MaxLabelValueLength(userID) {
+		return false, nil
+	}
+
+	// At this point we know we have both HA labels, we should lookup
+	// the cluster/instance here to see if we want to accept this sample.
+	// Convert the timestamp to a time.Time for checking the replica
+	sampleTime := timestamp.Time(ts)
+	err := tracker.checkReplica(ctx, userID, cluster, replica, time.Now(), sampleTime)
+	// checkReplica would have returned an error if there was a real error talking to Consul,
+	// or if the replica is not the currently elected replica.
+	if err != nil { // Don't accept the sample.
+		return false, err
+	}
+	return true, nil
 }
 
 func (h *defaultHaTracker) cleanupHATrackerMetricsForUser(userID string) {

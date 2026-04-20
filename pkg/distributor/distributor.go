@@ -40,7 +40,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"go.opentelemetry.io/otel"
@@ -141,7 +140,8 @@ type Distributor struct {
 
 	costAttributionMgr *costattribution.Manager
 	// For handling HA replicas.
-	HATracker haTracker
+	HATracker  haTracker
+	perRequest *perRequestDedupe
 
 	// Per-user rate limiters.
 	requestRateLimiter   *limiter.RateLimiter
@@ -749,6 +749,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
+	d.perRequest = &perRequestDedupe{
+		limits:                            limits,
+		haTracker:                         haTrackerImpl,
+		dedupedSamples:                    d.dedupedSamples,
+		nonHASamples:                      d.nonHASamples,
+		discardedSamplesTooManyHaClusters: d.discardedSamplesTooManyHaClusters,
+		costAttributionMgr:                costAttributionMgr,
+	}
 
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 	d.activeGroups = activeGroupsCleanupService
@@ -942,34 +950,6 @@ func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 // Called after distributor is asked to stop via StopAsync.
 func (d *Distributor) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
-}
-
-// Returns a boolean that indicates whether or not we want to remove the replica label going forward,
-// and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
-// nil for the error means accept the sample.
-func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string, ts int64) (removeReplicaLabel bool, _ error) {
-	// If the sample doesn't have either HA label, accept it.
-	// At the moment we want to accept these samples by default.
-	if cluster == "" || replica == "" {
-		return false, nil
-	}
-
-	// If replica label is too long, don't use it. We accept the sample here, but it will fail validation later anyway.
-	if len(replica) > d.limits.MaxLabelValueLength(userID) {
-		return false, nil
-	}
-
-	// At this point we know we have both HA labels, we should lookup
-	// the cluster/instance here to see if we want to accept this sample.
-	// Convert the timestamp to a time.Time for checking the replica
-	sampleTime := timestamp.Time(ts)
-	err := d.HATracker.checkReplica(ctx, userID, cluster, replica, time.Now(), sampleTime)
-	// checkReplica would have returned an error if there was a real error talking to Consul,
-	// or if the replica is not the currently elected replica.
-	if err != nil { // Don't accept the sample.
-		return false, err
-	}
-	return true, nil
 }
 
 // validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.

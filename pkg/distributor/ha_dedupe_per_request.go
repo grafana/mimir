@@ -8,17 +8,29 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // perRequestDedupe decides whether to accept or dedupe an entire write request
 // based on the HA labels of the first series only. This is the legacy behavior
 // and assumes all series in a request share the same cluster/replica labels.
-func (d *Distributor) perRequestDedupe(ctx context.Context, pushReq *Request, req *mimirpb.WriteRequest, userID, haReplicaLabel, haClusterLabel, group string, now time.Time, next PushFunc) error {
+type perRequestDedupe struct {
+	limits                            *validation.Overrides
+	haTracker                         haTracker
+	dedupedSamples                    *prometheus.CounterVec
+	nonHASamples                      *prometheus.CounterVec
+	discardedSamplesTooManyHaClusters *prometheus.CounterVec
+	costAttributionMgr                *costattribution.Manager
+}
+
+func (p *perRequestDedupe) dedupe(ctx context.Context, pushReq *Request, req *mimirpb.WriteRequest, userID, haReplicaLabel, haClusterLabel, group string, now time.Time, next PushFunc) error {
 	cluster, replica := findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[0].Labels)
 	// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 	cluster, replica = strings.Clone(cluster), strings.Clone(replica)
@@ -30,7 +42,7 @@ func (d *Distributor) perRequestDedupe(ctx context.Context, pushReq *Request, re
 	)
 
 	sampleTimestamp := timestamp.FromTime(now)
-	if d.limits.HATrackerUseSampleTimeForFailover(userID) {
+	if p.limits.HATrackerUseSampleTimeForFailover(userID) {
 		sampleTimestamp = getEarliestSampleTimestamp(req, sampleTimestamp)
 	}
 
@@ -39,16 +51,16 @@ func (d *Distributor) perRequestDedupe(ctx context.Context, pushReq *Request, re
 		numSamples += len(ts.Samples) + len(ts.Histograms)
 	}
 
-	removeReplica, err := d.checkSample(ctx, userID, cluster, replica, sampleTimestamp)
+	removeReplica, err := checkSample(ctx, userID, cluster, replica, sampleTimestamp, p.haTracker, p.limits)
 	if err != nil {
 		if errors.As(err, &replicasDidNotMatchError{}) {
 			// These samples have been deduped.
-			d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
+			p.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
 		}
 
 		if errors.As(err, &tooManyClustersError{}) {
-			d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-			d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(numSamples), reasonTooManyHAClusters, now)
+			p.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
+			p.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(numSamples), reasonTooManyHAClusters, now)
 		}
 
 		return err
@@ -63,7 +75,7 @@ func (d *Distributor) perRequestDedupe(ctx context.Context, pushReq *Request, re
 		}
 	} else {
 		// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-		d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+		p.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 	}
 
 	return next(ctx, pushReq)

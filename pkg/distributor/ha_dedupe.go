@@ -37,6 +37,6 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		now := time.Now()
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
 
-		return d.perRequestDedupe(ctx, pushReq, req, userID, haReplicaLabel, haClusterLabel, group, now, next)
+		return d.perRequest.dedupe(ctx, pushReq, req, userID, haReplicaLabel, haClusterLabel, group, now, next)
 	})
 }
