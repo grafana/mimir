@@ -38,8 +38,8 @@ func (f ProtobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte
 		Status:    status,
 		ErrorType: errorType,
 		Error:     resp.Error,
-		Warnings:  resp.Warnings,
-		Infos:     resp.Infos,
+		Warnings:  mimirpb.StringsToAnnotationErrors(resp.Warnings),
+		Infos:     mimirpb.StringsToAnnotationErrors(resp.Infos),
 	}
 
 	if resp.Data != nil {
@@ -94,13 +94,11 @@ func (f ProtobufFormatter) EncodeQueryResponseWithAnnotations(resp *PrometheusRe
 	}
 
 	payload := mimirpb.QueryResponse{
-		Status:        status,
-		ErrorType:     errorType,
-		Error:         resp.Error,
-		Warnings:      resp.Warnings,
-		Infos:         resp.Infos,
-		TypedWarnings: errorsToAnnotationErrors(warningErrors),
-		TypedInfos:    errorsToAnnotationErrors(infoErrors),
+		Status:    status,
+		ErrorType: errorType,
+		Error:     resp.Error,
+		Warnings:  errorsToAnnotationErrors(warningErrors),
+		Infos:     errorsToAnnotationErrors(infoErrors),
 	}
 
 	if resp.Data != nil {
@@ -324,13 +322,13 @@ func (f ProtobufFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse,
 		ErrorType: errorType,
 		Error:     resp.Error,
 		Data:      data,
-		Warnings:  resp.Warnings,
-		Infos:     resp.Infos,
+		Warnings:  mimirpb.AnnotationErrorsToStrings(resp.Warnings),
+		Infos:     mimirpb.AnnotationErrorsToStrings(resp.Infos),
 	}, nil
 }
 
 // DecodeQueryResponseWithAnnotations decodes a protobuf query response and also
-// returns any typed annotation errors found in the TypedWarnings/TypedInfos fields.
+// returns any typed annotation errors found in the Warnings/Infos fields.
 func (f ProtobufFormatter) DecodeQueryResponseWithAnnotations(buf []byte) (*PrometheusResponse, []error, []error, error) {
 	var resp mimirpb.QueryResponse
 
@@ -358,12 +356,12 @@ func (f ProtobufFormatter) DecodeQueryResponseWithAnnotations(buf []byte) (*Prom
 		ErrorType: errorType,
 		Error:     resp.Error,
 		Data:      data,
-		Warnings:  resp.Warnings,
-		Infos:     resp.Infos,
+		Warnings:  mimirpb.AnnotationErrorsToStrings(resp.Warnings),
+		Infos:     mimirpb.AnnotationErrorsToStrings(resp.Infos),
 	}
 
-	warningErrors := annotationErrorsToErrors(resp.TypedWarnings)
-	infoErrors := annotationErrorsToErrors(resp.TypedInfos)
+	warningErrors := annotationErrorsToErrors(resp.Warnings)
+	infoErrors := annotationErrorsToErrors(resp.Infos)
 
 	return promResp, warningErrors, infoErrors, nil
 }

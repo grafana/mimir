@@ -443,8 +443,6 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 				ResultType: string(res.Value.Type()),
 				Result:     data,
 			},
-			Warnings: nil,
-			Infos:    nil,
 		},
 		finalizer:     q.Close,
 		WarningErrors: warningErrors,
