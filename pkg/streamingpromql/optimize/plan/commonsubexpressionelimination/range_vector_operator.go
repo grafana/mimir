@@ -608,7 +608,7 @@ type RangeVectorDuplicationConsumer struct {
 	currentUnfilteredSeriesIndex int // -1 means the consumer hasn't advanced to the first series yet.
 	nextUnfilteredSeriesIndex    int
 	hasReadCurrentSeriesSamples  bool
-	currentSeriesStepIndex       int // index of the next step to return from the buffer for the current series
+	currentSeriesStepIndex       int  // index of the next step to return from the buffer for the current series
 	passThrough                  bool // if true, read directly from the inner operator without buffering
 	finalized                    bool
 	closed                       bool
