@@ -417,6 +417,7 @@
 * [FEATURE] kafkatool: Add `create-topic` command to create a Kafka topic with a specified number of partitions. #14639
 * [FEATURE] kafkatool: Add `list-topics` command to list all Kafka topics and their partition counts. #14639
 * [ENHANCEMENT] mimir-tool: Add `__ignore_usage__=""` label selector to queries used in `analyze prometheus` command, so that Adaptive Metrics' recommendations service ignores them. #14474
+* [ENHANCEMENT] copyblocks: Support resolving S3 credentials from the environment (IAM roles for service accounts, ECS task roles, and EC2 instance metadata) when `-s3.<source|destination>.access-key-id` and `-s3.<source|destination>.secret-access-key` are omitted. #15075
 * [BUGFIX] mimir-tool-action: Fix base image of the Github action. #13303
 * [BUGFIX] mimir-tool: do not fail on `$latency_metrics` dashboard variable, documented for native histograms migrations. #13526
 * [BUGFIX] kafkatool: Fix `kafkatool dump print` to support RW2 records. #13848
