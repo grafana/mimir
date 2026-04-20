@@ -2023,9 +2023,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			// cause rangeEval to merge the cumulative total again each step, leading
 			// to self-merges and incorrect counts in mergeable annotations like
 			// histogramQuantileForcedMonotonicityErr.
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			mat, ws := ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				return call(v, nil, e.Args, enh)
 			}, e.Args...)
+			warnings.Merge(ws)
+			return mat, warnings
 		}
 
 		// Evaluate any non-matrix arguments.
