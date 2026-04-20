@@ -9236,7 +9236,7 @@
               "required": false,
               "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 12,
               "fieldFlag": "ingest-storage.kafka.fetch-concurrency-max",
               "fieldType": "int"
             },
@@ -9256,7 +9256,7 @@
               "required": false,
               "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
               "fieldValue": null,
-              "fieldDefaultValue": 100000000,
+              "fieldDefaultValue": 1000000000,
               "fieldFlag": "ingest-storage.kafka.max-buffered-bytes",
               "fieldType": "int"
             },
@@ -9266,7 +9266,7 @@
               "required": false,
               "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 8,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-max",
               "fieldType": "int"
             },
@@ -9286,7 +9286,7 @@
               "required": false,
               "desc": "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
               "fieldValue": null,
-              "fieldDefaultValue": 5,
+              "fieldDefaultValue": 3,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-queue-capacity",
               "fieldType": "int"
             },
@@ -9296,7 +9296,7 @@
               "required": false,
               "desc": "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
               "fieldValue": null,
-              "fieldDefaultValue": 80,
+              "fieldDefaultValue": 40,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard",
               "fieldType": "int"
             },

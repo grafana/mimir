@@ -5450,7 +5450,7 @@ kafka:
   # only when there is sufficient backlog of records to consume. Set to 0 to
   # disable.
   # CLI flag: -ingest-storage.kafka.fetch-concurrency-max
-  [fetch_concurrency_max: <int> | default = 0]
+  [fetch_concurrency_max: <int> | default = 12]
 
   # When enabled, the fetch request MaxBytes field is computed using the
   # compressed size of previous records. When disabled, MaxBytes is computed
@@ -5462,12 +5462,12 @@ kafka:
   # The maximum number of buffered records ready to be processed. This limit
   # applies to the sum of all inflight requests. Set to 0 to disable the limit.
   # CLI flag: -ingest-storage.kafka.max-buffered-bytes
-  [max_buffered_bytes: <int> | default = 100000000]
+  [max_buffered_bytes: <int> | default = 1000000000]
 
   # The maximum number of concurrent ingestion streams to the TSDB head. Every
   # tenant has their own set of streams. 0 to disable.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-max
-  [ingestion_concurrency_max: <int> | default = 0]
+  [ingestion_concurrency_max: <int> | default = 8]
 
   # The number of timeseries to batch together before ingesting to the TSDB
   # head. Only use this setting when
@@ -5479,14 +5479,14 @@ kafka:
   # use this setting when -ingest-storage.kafka.ingestion-concurrency-max is
   # greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-queue-capacity
-  [ingestion_concurrency_queue_capacity: <int> | default = 5]
+  [ingestion_concurrency_queue_capacity: <int> | default = 3]
 
   # The expected number of times to ingest timeseries to the TSDB head after
   # batching. With fewer flushes, the overhead of splitting up the work is
   # higher than the benefit of parallelization. Only use this setting when
   # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard
-  [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+  [ingestion_concurrency_target_flushes_per_shard: <int> | default = 40]
 
   # The estimated number of bytes a sample has at time of ingestion. This value
   # is used to estimate the timeseries without decompressing them. Only use this

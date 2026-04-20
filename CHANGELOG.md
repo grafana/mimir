@@ -185,6 +185,12 @@
 * [ENHANCEMENT] Distributor: OTLP endpoint now returns partial success (HTTP 200) instead of HTTP 429 when the usage tracker rejects some series due to the active series limit but other series are successfully ingested. The `RejectedDataPoints` field reports the count of distributor-side rejections (usage tracker filtering). #14789
 * [ENHANCEMENT] MQE: Account for memory consumption of labels returned by binary operations in query memory consumption estimate earlier. #15033
 * [ENHANCEMENT] Query-frontend: Log the number of series and samples returned for queries in `query stats` log lines. #15044
+* [ENHANCEMENT] Ingest storage: Update the default configuration to enable ingest storage concurrency: #15072
+  * `-ingest-storage.kafka.fetch-concurrency-max` from `0` to `12`
+  * `-ingest-storage.kafka.ingestion-concurrency-max` from `0` to `8`
+  * `-ingest-storage.kafka.ingestion-concurrency-queue-capacity` from `5` to `3`
+  * `-ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard` from `80` to `40`
+  * `-ingest-storage.kafka.max-buffered-bytes` from `100MB` to `1GB`
 * [BUGFIX] Update to Go v1.25.9. #15030
 * [BUGFIX] Distributor: OTLP partial success responses now correctly populate `RejectedDataPoints` with the actual count of rejected samples, instead of always reporting 0. In classical architecture, this includes rejected samples propagated from the ingester. #14789
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
