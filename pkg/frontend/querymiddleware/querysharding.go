@@ -605,6 +605,9 @@ func removeAnnotationPositionInformation(annotation string) string {
 func removeAllAnnotationPositionInformation(annotations []mimirpb.AnnotationError) []mimirpb.AnnotationError {
 	for i := range annotations {
 		annotations[i].Message = removeAnnotationPositionInformation(annotations[i].Message)
+		annotations[i].PositionStart = 0
+		annotations[i].PositionEnd = 0
+		annotations[i].PositionLabel = ""
 	}
 
 	return annotations

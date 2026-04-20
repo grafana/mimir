@@ -4,7 +4,7 @@ package mimirpb
 
 import (
 	"errors"
-	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -85,12 +85,25 @@ func TestAnnotationErrorsRoundTrip(t *testing.T) {
 				assert.Equal(t, originalData.Type, rtData.Type, "annotation %d: Type mismatch", i)
 				assert.Equal(t, originalData.Message, rtData.Message, "annotation %d: Message mismatch", i)
 				assert.Equal(t, originalData.Fields, rtData.Fields, "annotation %d: Fields mismatch", i)
+				assert.Equal(t, originalData.PositionStart, rtData.PositionStart, "annotation %d: PositionStart mismatch", i)
+				assert.Equal(t, originalData.PositionEnd, rtData.PositionEnd, "annotation %d: PositionEnd mismatch", i)
 			}
 
 			strs := AnnotationErrorsToStrings(protoAnnotations)
 			annErrs := StringsToAnnotationErrors(strs)
 
-			require.Equal(t, protoAnnotations, annErrs)
+			// String round-trips don't preserve position info. Zero out
+			// position fields on both sides before comparing.
+			require.Len(t, annErrs, len(protoAnnotations))
+			for j := range protoAnnotations {
+				expected := protoAnnotations[j]
+				expected.PositionStart = 0
+				expected.PositionEnd = 0
+				actual := annErrs[j]
+				actual.PositionStart = 0
+				actual.PositionEnd = 0
+				assert.Equal(t, expected, actual, "annotation %d: string round-trip mismatch", j)
+			}
 		})
 	}
 }
@@ -189,8 +202,6 @@ func TestStringsToAnnotationErrorsRoundTrip(t *testing.T) {
 		},
 	}
 
-	regexToStripPosition := regexp.MustCompile(` \(\d+:\d+\)$`)
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			protoAnnotations := StringsToAnnotationErrors([]string{tc.input})
@@ -200,8 +211,123 @@ func TestStringsToAnnotationErrorsRoundTrip(t *testing.T) {
 			if tc.isFinal {
 				roundTripped := AnnotationErrorsToStrings(protoAnnotations)
 				require.Len(t, roundTripped, 1)
-				inputWithoutPosition := regexToStripPosition.ReplaceAllString(tc.input, "")
-				assert.Equal(t, inputWithoutPosition, roundTripped[0])
+				// Position label is now preserved through the string round-trip.
+				assert.Equal(t, tc.input, roundTripped[0])
+			}
+		})
+	}
+}
+
+// TestAnnotationFromDataNoSpuriousPosition verifies that factory-created annotations
+// with no real position (PositionStart=0, PositionEnd=0, as happens after string
+// parsing) do not produce a bogus position like "1:1" when the error is later
+// extracted and rendered with a query string.
+func TestAnnotationFromDataNoSpuriousPosition(t *testing.T) {
+	// Simulate what happens when the querier's protobuf codec encodes an annotation:
+	// 1. The annotation string is parsed → AnnotationError with PositionStart=0, PositionEnd=0
+	// 2. The AnnotationError is sent over the wire
+	// 3. The QFE decodes and round-trips through AnnotationErrorsToErrors → ErrorsToAnnotationErrors
+	types := []struct {
+		name  string
+		input AnnotationError
+	}{
+		{
+			name: "possibleNonCounter with zero position",
+			input: AnnotationError{
+				Type:    ANNOTATION_POSSIBLE_NON_COUNTER,
+				Message: `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric"`,
+				Count:   42,
+			},
+		},
+		{
+			name: "histogramQuantileForcedMonotonicity with zero position",
+			input: AnnotationError{
+				Type:      ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
+				Message:   `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "bucket"`,
+				Count:     10,
+				MinTs:     1700000000000,
+				MaxTs:     1700000001000,
+				MinBucket: 0.5,
+				MaxBucket: 10.0,
+				MaxDiff:   0.01,
+			},
+		},
+	}
+
+	for _, tc := range types {
+		t.Run(tc.name, func(t *testing.T) {
+			// Round-trip: proto → error → proto
+			errs := AnnotationErrorsToErrors([]AnnotationError{tc.input})
+			require.Len(t, errs, 1)
+
+			result := ErrorsToAnnotationErrors(errs)
+			require.Len(t, result, 1)
+
+			// PositionStart and PositionEnd must remain 0 (not extracted from
+			// the Go zero-value PositionRange{0,0} that factories used to produce).
+			assert.Equal(t, int32(0), result[0].PositionStart, "PositionStart should remain 0")
+			assert.Equal(t, int32(0), result[0].PositionEnd, "PositionEnd should remain 0")
+			assert.Empty(t, result[0].PositionLabel, "PositionLabel should be empty")
+
+			// The reconstructed error's position must not produce "1:1" when a query is available.
+			data := annotations.ExtractAnnotationData(errs[0])
+			assert.Equal(t, 0, data.PositionStart, "position start should be 0 in extracted data")
+			assert.Equal(t, 0, data.PositionEnd, "position end should be 0 in extracted data")
+			assert.Empty(t, data.PositionLabel, "position label should be empty")
+		})
+	}
+}
+
+// TestPositionLabelPreservedThroughTypedParsing verifies that when annotation
+// strings contain a position suffix (e.g. "(1:10)"), parsing them into typed
+// errors and back to proto preserves the position label. This is the exact
+// pipeline used in the remote execution path where the querier sends annotation
+// strings and the QFE parses, processes, and re-serializes them.
+func TestPositionLabelPreservedThroughTypedParsing(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "possibleNonCounter with position",
+			input: `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 42 samples (1:10)`,
+		},
+		{
+			name:  "histogramQuantile with position",
+			input: `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "bucket", from buckets 0.5 to 10, with a max diff of 0.01, over 42 samples from 2023-11-14T22:13:20Z to 2023-11-14T22:13:21Z (1:10)`,
+		},
+		{
+			name:  "possibleNonCounter without position",
+			input: `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 42 samples`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Step 1: Parse string → typed error (this is what StringsToAnnotationErrs does)
+			errs := StringsToAnnotationErrs([]string{tc.input})
+			require.Len(t, errs, 1)
+
+			// Step 2: Convert error → proto (this is what ErrorsToAnnotationErrors does in the QFE)
+			aes := ErrorsToAnnotationErrors(errs)
+			require.Len(t, aes, 1)
+
+			// Step 3: Check that position label survived from the string parser
+			// through the error type to the proto representation.
+			if strings.Contains(tc.input, "(1:10)") {
+				assert.Equal(t, "1:10", aes[0].PositionLabel,
+					"position label should be preserved from original string through typed error round-trip")
+			} else {
+				assert.Empty(t, aes[0].PositionLabel,
+					"position label should be empty when input has no position suffix")
+			}
+
+			// Step 4: Convert back to string (this is what AnnotationErrorsToStrings does for the JSON response)
+			strs := AnnotationErrorsToStrings(aes)
+			require.Len(t, strs, 1)
+			if strings.Contains(tc.input, "(1:10)") {
+				assert.True(t, strings.HasSuffix(strs[0], "(1:10)"),
+					"final string should contain position suffix, got: %s", strs[0])
 			}
 		})
 	}

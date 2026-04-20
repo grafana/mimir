@@ -1264,8 +1264,10 @@ func TestQuerySharding_Annotations(t *testing.T) {
 				require.Equal(t, expected, actualSplit)
 
 				if template.isSharded {
-					// Remove position information from annotations generated with the unsharded query, to mirror what we expect from the sharded query.
+					// Remove position information from both sides: positions differ
+					// between the original and rewritten sharded queries.
 					removeAllAnnotationPositionInformation(expected)
+					removeAllAnnotationPositionInformation(actualSharded)
 				}
 
 				require.Equal(t, expected, actualSharded)

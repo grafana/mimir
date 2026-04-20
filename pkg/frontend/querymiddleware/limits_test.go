@@ -1308,14 +1308,23 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					ResultType: model.ValVector.String(),
 					Result:     []SampleStream{},
 				},
-				Warnings: mimirpb.StringsToAnnotationErrors([]string{
-					`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`,
-				}),
+				Warnings: []mimirpb.AnnotationError{
+					{
+						Type:          mimirpb.ANNOTATION_GENERIC,
+						Message:       `PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`,
+						PositionStart: 24,
+						PositionEnd:   45,
+						PositionLabel: "1:25",
+					},
+				},
 				Infos: []mimirpb.AnnotationError{
 					{
-						Type:    mimirpb.ANNOTATION_POSSIBLE_NON_COUNTER,
-						Message: `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric"`,
-						Count:   1,
+						Type:          mimirpb.ANNOTATION_POSSIBLE_NON_COUNTER,
+						Message:       `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric"`,
+						Count:         1,
+						PositionStart: 29,
+						PositionEnd:   44,
+						PositionLabel: "1:30",
 					},
 				},
 			},

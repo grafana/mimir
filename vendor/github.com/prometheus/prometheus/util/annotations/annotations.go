@@ -215,16 +215,24 @@ type annoError interface {
 	// AsStrings(), so before that we deduplicate based on the raw error string when query is empty,
 	// and the full error string with details will only be shown in the end when query is set.
 	SetQuery(string)
+	GetQuery() string
 	SetFinal()
 	// We can define custom merge functions to merge individual annotations of the same type if they have
 	// the same raw error string.
 	Merge(error) error
+	// GetPosition returns the position range of the expression that triggered
+	// this annotation. Used for serialization round-trips through cache.
+	GetPosition() posrange.PositionRange
+	// SetPosition sets the position range. Used when reconstructing annotations
+	// from cached data.
+	SetPosition(posrange.PositionRange)
 }
 
 type annoErr struct {
 	PositionRange posrange.PositionRange
 	Err           error
 	Query         string
+	positionLabel string // pre-computed "line:col" label preserved across serialization round-trips
 }
 
 func (e *annoErr) Error() string {
@@ -242,8 +250,23 @@ func (e *annoErr) SetQuery(query string) {
 	e.Query = query
 }
 
+func (e *annoErr) GetQuery() string {
+	return e.Query
+}
+
 func (e *annoErr) SetFinal() {
 }
+
+func (e *annoErr) GetPosition() posrange.PositionRange {
+	return e.PositionRange
+}
+
+func (e *annoErr) SetPosition(p posrange.PositionRange) {
+	e.PositionRange = p
+}
+
+func (e *annoErr) SetPositionLabel(s string) { e.positionLabel = s }
+func (e *annoErr) GetPositionLabel() string  { return e.positionLabel }
 
 // We do not merge generic annotations, instead we just ignore the provided error
 // and return the original.
@@ -347,6 +370,7 @@ type possibleNonCounterErr struct {
 	Query         string
 	count         int
 	final         bool
+	positionLabel string
 }
 
 func (e *possibleNonCounterErr) Error() string {
@@ -368,9 +392,24 @@ func (e *possibleNonCounterErr) SetQuery(query string) {
 	e.Query = query
 }
 
+func (e *possibleNonCounterErr) GetQuery() string {
+	return e.Query
+}
+
 func (e *possibleNonCounterErr) SetFinal() {
 	e.final = true
 }
+
+func (e *possibleNonCounterErr) GetPosition() posrange.PositionRange {
+	return e.PositionRange
+}
+
+func (e *possibleNonCounterErr) SetPosition(p posrange.PositionRange) {
+	e.PositionRange = p
+}
+
+func (e *possibleNonCounterErr) SetPositionLabel(s string) { e.positionLabel = s }
+func (e *possibleNonCounterErr) GetPositionLabel() string  { return e.positionLabel }
 
 func (e *possibleNonCounterErr) Merge(other error) error {
 	o := &possibleNonCounterErr{}
@@ -423,6 +462,7 @@ type histogramQuantileForcedMonotonicityErr struct {
 	minBucket, maxBucket, maxDiff float64
 	count                         int
 	final                         bool
+	positionLabel                 string
 }
 
 func (e *histogramQuantileForcedMonotonicityErr) Error() string {
@@ -452,9 +492,24 @@ func (e *histogramQuantileForcedMonotonicityErr) SetQuery(query string) {
 	e.Query = query
 }
 
+func (e *histogramQuantileForcedMonotonicityErr) GetQuery() string {
+	return e.Query
+}
+
 func (e *histogramQuantileForcedMonotonicityErr) SetFinal() {
 	e.final = true
 }
+
+func (e *histogramQuantileForcedMonotonicityErr) GetPosition() posrange.PositionRange {
+	return e.PositionRange
+}
+
+func (e *histogramQuantileForcedMonotonicityErr) SetPosition(p posrange.PositionRange) {
+	e.PositionRange = p
+}
+
+func (e *histogramQuantileForcedMonotonicityErr) SetPositionLabel(s string) { e.positionLabel = s }
+func (e *histogramQuantileForcedMonotonicityErr) GetPositionLabel() string  { return e.positionLabel }
 
 func (e *histogramQuantileForcedMonotonicityErr) Merge(other error) error {
 	o := &histogramQuantileForcedMonotonicityErr{}

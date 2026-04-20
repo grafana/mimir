@@ -4,8 +4,10 @@ package mimirpb
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/util/annotations"
@@ -35,7 +37,7 @@ type possibleNonCounterStringParser struct{}
 //
 //	"<message>, over <count> samples"
 //	"<message>, over <count> samples (<position>)"
-var possibleNonCounterFinalRe = regexp.MustCompile(`^(.+), over (\d+) samples(?: \(.+\))?$`)
+var possibleNonCounterFinalRe = regexp.MustCompile(`^(.+), over (\d+) samples(?: \((\d+:\d+)\))?$`)
 
 // possibleNonCounterRe matches the non-final form — the raw Err.Error() of a
 // possibleNonCounterErr, which is the PossibleNonCounterInfo sentinel followed
@@ -47,11 +49,13 @@ var possibleNonCounterRe = regexp.MustCompile(
 func (possibleNonCounterStringParser) Parse(s string) (error, bool) {
 	if m := possibleNonCounterFinalRe.FindStringSubmatch(s); m != nil {
 		count, _ := strconv.Atoi(m[2])
-		return annotations.AnnotationFromData(annotations.AnnotationData{
-			Type:    annotations.AnnotationTypePossibleNonCounter,
-			Message: m[1],
-			Fields:  map[string]float64{"count": float64(count)},
-		}), true
+		data := annotations.AnnotationData{
+			Type:          annotations.AnnotationTypePossibleNonCounter,
+			Message:       m[1],
+			Fields:        map[string]float64{"count": float64(count)},
+			PositionLabel: m[3], // captured position suffix e.g. "1:10", empty if absent
+		}
+		return annotations.AnnotationFromData(data), true
 	}
 	if possibleNonCounterRe.MatchString(s) {
 		return annotations.AnnotationFromData(annotations.AnnotationData{
@@ -73,7 +77,7 @@ type histogramQuantileStringParser struct{}
 //	"<message>, from buckets <min> to <max>, with a max diff of <diff>, over <count> samples from <start> to <end>"
 //	"<message>, from buckets <min> to <max>, with a max diff of <diff>, over <count> samples from <start> to <end> (<position>)"
 var histogramQuantileFinalRe = regexp.MustCompile(
-	`^(.+), from buckets (\S+) to (\S+), with a max diff of (\S+), over (\d+) samples from (\S+) to (\S+)(?: \(.+\))?$`,
+	`^(.+), from buckets (\S+) to (\S+), with a max diff of (\S+), over (\d+) samples from (\S+) to (\S+)(?: \((\d+:\d+)\))?$`,
 )
 
 // histogramQuantileRe matches the non-final form — the raw Err.Error() of a
@@ -104,6 +108,7 @@ func (histogramQuantileStringParser) Parse(s string) (error, bool) {
 				"max_bucket": maxBucket,
 				"max_diff":   maxDiff,
 			},
+			PositionLabel: m[8], // captured position suffix e.g. "1:10", empty if absent
 		}), true
 	}
 	if histogramQuantileRe.MatchString(s) {
@@ -154,7 +159,8 @@ type setFinaler interface {
 
 // AnnotationErrorsToStrings converts AnnotationError values to their final-form
 // string representations by reconstructing the original prometheus error types
-// and calling Error() on them after SetFinal().
+// and calling Error() on them after SetFinal(). If the AnnotationError has a
+// pre-computed PositionLabel (e.g. "1:25"), it is appended as a suffix.
 func AnnotationErrorsToStrings(aes []AnnotationError) []string {
 	if len(aes) == 0 {
 		return nil
@@ -165,7 +171,14 @@ func AnnotationErrorsToStrings(aes []AnnotationError) []string {
 		if sf, ok := err.(setFinaler); ok {
 			sf.SetFinal()
 		}
-		result[i] = err.Error()
+		s := err.Error()
+		// Append position label if the error string doesn't already contain it
+		// (typed errors with Query set include it via Error(); errors reconstructed
+		// from cache don't have Query but carry the pre-computed label).
+		if aes[i].PositionLabel != "" && !strings.HasSuffix(s, "("+aes[i].PositionLabel+")") {
+			s = fmt.Sprintf("%s (%s)", s, aes[i].PositionLabel)
+		}
+		result[i] = s
 	}
 	return result
 }
@@ -179,8 +192,11 @@ func ErrorsToAnnotationErrors(errs []error) []AnnotationError {
 	for i, err := range errs {
 		d := annotations.ExtractAnnotationData(err)
 		ae := AnnotationError{
-			Type:    AnnotationErrorType(d.Type),
-			Message: d.Message,
+			Type:          AnnotationErrorType(d.Type),
+			Message:       d.Message,
+			PositionStart: int32(d.PositionStart),
+			PositionEnd:   int32(d.PositionEnd),
+			PositionLabel: d.PositionLabel,
 		}
 		// Map opaque Fields to the concrete proto fields.
 		if len(d.Fields) > 0 {
@@ -214,6 +230,9 @@ func AnnotationErrorsToErrors(aes []AnnotationError) []error {
 				"max_bucket": ae.MaxBucket,
 				"max_diff":   ae.MaxDiff,
 			},
+			PositionStart: int(ae.PositionStart),
+			PositionEnd:   int(ae.PositionEnd),
+			PositionLabel: ae.PositionLabel,
 		})
 	}
 	return result

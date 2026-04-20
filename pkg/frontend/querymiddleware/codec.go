@@ -279,6 +279,11 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	// Use an AnnotationAccumulator for proper typed error merging across responses.
 	accumulator := NewAnnotationAccumulator()
 
+	// Collect pre-computed position labels from input annotations so we can
+	// restore them after the AnnotationAccumulator round-trip (which doesn't
+	// carry the query string needed to compute them).
+	positionLabels := map[string]string{} // message → position label
+
 	for _, res := range responses {
 		pr, ok := res.GetPrometheusResponse()
 		if !ok {
@@ -294,6 +299,17 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 
 		promResponses = append(promResponses, pr)
 
+		for _, ae := range pr.Warnings {
+			if ae.PositionLabel != "" {
+				positionLabels[ae.Message] = ae.PositionLabel
+			}
+		}
+		for _, ae := range pr.Infos {
+			if ae.PositionLabel != "" {
+				positionLabels[ae.Message] = ae.PositionLabel
+			}
+		}
+
 		// Collect typed annotation errors for proper merging.
 		accumulator.addAnnotationErrors(
 			mimirpb.AnnotationErrorsToErrors(pr.Warnings),
@@ -304,6 +320,21 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	mergedWarnings, mergedInfos := accumulator.getAll()
+
+	mergedWarningProtos := mimirpb.ErrorsToAnnotationErrors(mergedWarnings)
+	mergedInfoProtos := mimirpb.ErrorsToAnnotationErrors(mergedInfos)
+
+	// Restore position labels that were lost during the accumulator round-trip.
+	for i := range mergedWarningProtos {
+		if mergedWarningProtos[i].PositionLabel == "" {
+			mergedWarningProtos[i].PositionLabel = positionLabels[mergedWarningProtos[i].Message]
+		}
+	}
+	for i := range mergedInfoProtos {
+		if mergedInfoProtos[i].PositionLabel == "" {
+			mergedInfoProtos[i].PositionLabel = positionLabels[mergedInfoProtos[i].Message]
+		}
+	}
 
 	// Merge the responses.
 	slices.SortFunc(promResponses, func(a, b *PrometheusResponse) int {
@@ -317,8 +348,8 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 				ResultType: model.ValMatrix.String(),
 				Result:     matrixMerge(promResponses),
 			},
-			Warnings: mimirpb.ErrorsToAnnotationErrors(mergedWarnings),
-			Infos:    mimirpb.ErrorsToAnnotationErrors(mergedInfos),
+			Warnings: mergedWarningProtos,
+			Infos:    mergedInfoProtos,
 		},
 		finalizer: func() {
 			for _, close := range promCloses {
