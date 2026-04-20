@@ -16,6 +16,8 @@ package annotations
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // AnnotationType identifies the concrete type of an annotation error for serialization.
@@ -59,9 +61,28 @@ var annotationFactories = map[AnnotationType]annotationFactory{}
 
 func init() {
 	annotationFactories[AnnotationTypePossibleNonCounter] = func(msg string) mergeableAnnotation {
+		// Reconstruct the error chain matching NewPossibleNonCounterInfo:
+		// Err: fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName)
+		prefix := PossibleNonCounterInfo.Error() + " "
+		if quoted, ok := strings.CutPrefix(msg, prefix); ok {
+			if metricName, err := strconv.Unquote(quoted); err == nil {
+				return &possibleNonCounterErr{Err: fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName)}
+			}
+		}
 		return &possibleNonCounterErr{Err: fmt.Errorf("%s", msg)}
 	}
 	annotationFactories[AnnotationTypeHistogramQuantileForcedMonotonicity] = func(msg string) mergeableAnnotation {
+		// Reconstruct the error chain matching NewHistogramQuantileForcedMonotonicityInfo:
+		// Err: maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName)
+		sentinel := HistogramQuantileForcedMonotonicityInfo.Error()
+		if suffix, ok := strings.CutPrefix(msg, sentinel+" for metric name "); ok {
+			if metricName, err := strconv.Unquote(suffix); err == nil {
+				return &histogramQuantileForcedMonotonicityErr{Err: maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName)}
+			}
+		}
+		if msg == sentinel {
+			return &histogramQuantileForcedMonotonicityErr{Err: HistogramQuantileForcedMonotonicityInfo}
+		}
 		return &histogramQuantileForcedMonotonicityErr{Err: fmt.Errorf("%s", msg)}
 	}
 }
