@@ -168,7 +168,7 @@ func TestIngesterSharding(t *testing.T) {
 				[]string{"cortex_request_duration_seconds"},
 				e2e.WithMetricCount,
 				e2e.SkipMissingMetrics, // Some ingesters may have received no request at all.
-				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/QueryStream"))))
+				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "route", "/ingesterpb.Ingester/QueryStream"))))
 
 			// Ensure no service-specific metrics prefix is used by the wrong service.
 			assertServiceMetricsPrefixes(t, Distributor, distributor)

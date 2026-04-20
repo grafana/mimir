@@ -52,8 +52,8 @@ const (
 	rpcCallIngesterRead    = 2
 	rpcCallDistributorPush = 3
 
-	ingesterMethod       string = "/cortex.Ingester"
-	ingesterPushMethod   string = "/cortex.Ingester/Push"
+	ingesterMethod       string = "/ingesterpb.Ingester"
+	ingesterPushMethod   string = "/ingesterpb.Ingester/Push"
 	httpgrpcHandleMethod string = "/httpgrpc.HTTP/Handle"
 )
 

@@ -754,7 +754,7 @@
     ],
 
     // All query methods from IngesterServer interface. Basically everything except Push.
-    ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+    ingester_read_path_routes_regex: '/ingesterpb.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
 
     // All query methods from StoregatewayServer interface.
     store_gateway_read_path_routes_regex: '/gatewaypb.StoreGateway/.*',

@@ -549,7 +549,7 @@ func TestIngesterQuerying(t *testing.T) {
 			queryRequestCount := func(status string) (float64, error) {
 				counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
 					e2e.WithLabelMatchers(
-						labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
+						labels.MustNewMatcher(labels.MatchEqual, "operation", "/ingesterpb.Ingester/QueryStream"),
 						labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
 					),
 					e2e.WithMetricCount,
@@ -651,7 +651,7 @@ func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
 		sums, err := ingester.SumMetrics(
 			[]string{"cortex_request_duration_seconds"},
 			e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/QueryStream"),
+				labels.MustNewMatcher(labels.MatchEqual, "route", "/ingesterpb.Ingester/QueryStream"),
 				labels.MustNewMatcher(labels.MatchEqual, "status_code", "OK"),
 			),
 			e2e.SkipMissingMetrics,
@@ -737,7 +737,7 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	sums, err := ingester.SumMetrics(
 		[]string{"cortex_request_duration_seconds"},
 		e2e.WithLabelMatchers(
-			labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/Push"),
+			labels.MustNewMatcher(labels.MatchEqual, "route", "/ingesterpb.Ingester/Push"),
 			labels.MustNewMatcher(labels.MatchEqual, "status_code", "OK"),
 		),
 		e2e.SkipMissingMetrics,
@@ -755,7 +755,7 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	queryRequestCount := func(status string) (float64, error) {
 		counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
 			e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
+				labels.MustNewMatcher(labels.MatchEqual, "operation", "/ingesterpb.Ingester/QueryStream"),
 				labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
 			),
 			e2e.WithMetricCount,
@@ -920,7 +920,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 			sums, err := ingester.SumMetrics(
 				[]string{"cortex_request_duration_seconds"},
 				e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/Push"),
+					labels.MustNewMatcher(labels.MatchEqual, "route", "/ingesterpb.Ingester/Push"),
 					labels.MustNewMatcher(labels.MatchEqual, "status_code", testCase.expectedIngesterServerStatus),
 				),
 				e2e.SkipMissingMetrics,
@@ -932,7 +932,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 			// We track ingester client response code.
 			sums, err = distributor.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
 				e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/Push"),
+					labels.MustNewMatcher(labels.MatchEqual, "operation", "/ingesterpb.Ingester/Push"),
 					labels.MustNewMatcher(labels.MatchRegexp, "status_code", testCase.expectedIngesterClientStatus),
 				),
 				e2e.WithMetricCount,
@@ -945,7 +945,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 				// We expect that the cluster validation error is tracked by ingester client's metrics.
 				sums, err = distributor.SumMetrics([]string{"cortex_client_invalid_cluster_validation_label_requests_total"},
 					e2e.WithLabelMatchers(
-						labels.MustNewMatcher(labels.MatchEqual, "method", "/cortex.Ingester/Push"),
+						labels.MustNewMatcher(labels.MatchEqual, "method", "/ingesterpb.Ingester/Push"),
 						labels.MustNewMatcher(labels.MatchEqual, "client", "ingester"),
 						labels.MustNewMatcher(labels.MatchEqual, "protocol", "grpc"),
 					),

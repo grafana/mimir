@@ -46,7 +46,7 @@ sum by(route) (
       namespace="<your-namespace>",
       container="ingester",
       pod=~"ingester-zone-a-.*",
-      route="/cortex.Ingester/Push"}[5m]
+      route="/ingesterpb.Ingester/Push"}[5m]
   )
 )
 ```

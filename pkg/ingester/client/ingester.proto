@@ -5,8 +5,7 @@
 
 syntax = "proto3";
 
-// TODO: Rename to ingesterpb
-package cortex;
+package ingesterpb;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "gogoproto/gogo.proto";
