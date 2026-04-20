@@ -257,11 +257,21 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSelectorsInspected:           2,
 		},
 		"duplicate matrix selectors with different outer function in range query": {
-			// We do not want to deduplicate matrix selectors in range queries.
-			expr:                       `rate(foo[5m]) + increase(foo[5m])`,
-			rangeQuery:                 true,
-			expectUnchanged:            true,
-			expectedSelectorsInspected: 2,
+			expr: `rate(foo[5m]) + increase(foo[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- ref#1 Duplicate
+								- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: increase(...)
+							- ref#1 Duplicate ...
+			`,
+			rangeQuery:                           true,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate matrix selectors, some with different outer function in instant query": {
 			expr: `rate(foo[5m]) + increase(foo[5m]) + rate(foo[5m])`,
@@ -284,23 +294,23 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSelectorsInspected:           3,
 		},
 		"duplicate matrix selectors, some with different outer function in range query": {
-			// We do not want to deduplicate matrix selectors themselves in range queries, but do want to deduplicate duplicate functions over matrix selectors.
 			expr: `rate(foo[5m]) + increase(foo[5m]) + rate(foo[5m])`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: BinaryExpression: LHS + RHS
-						- LHS: ref#1 Duplicate
+						- LHS: ref#2 Duplicate
 							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="foo"}[5m0s]
+									- ref#1 Duplicate
+										- MatrixSelector: {__name__="foo"}[5m0s]
 						- RHS: DeduplicateAndMerge
 							- FunctionCall: increase(...)
-								- MatrixSelector: {__name__="foo"}[5m0s]
-					- RHS: ref#1 Duplicate ...
+								- ref#1 Duplicate ...
+					- RHS: ref#2 Duplicate ...
 			`,
 			rangeQuery:                           true,
-			expectedDuplicateNodes:               1,
-			expectedDuplicateSelectorsEliminated: 1, // We only eliminate one 'foo' selector in the duplicate rate(...) expression.
+			expectedDuplicateNodes:               2,
+			expectedDuplicateSelectorsEliminated: 2,
 			expectedSelectorsInspected:           3,
 		},
 		"duplicate matrix selectors with same outer function": {
@@ -336,19 +346,17 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSelectorsInspected:           2,
 		},
 		"duplicate subqueries with different outer function in range query": {
-			// We do not want to deduplicate subqueries directly in range queries, but do want to deduplicate their contents if they are the same.
 			expr: `rate(foo[5m:]) + increase(foo[5m:])`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: DeduplicateAndMerge
 						- FunctionCall: rate(...)
-							- Subquery: [5m0s:1m0s]
-								- ref#1 Duplicate
+							- ref#1 Duplicate
+								- Subquery: [5m0s:1m0s]
 									- VectorSelector: {__name__="foo"}
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: increase(...)
-							- Subquery: [5m0s:1m0s]
-								- ref#1 Duplicate ...
+							- ref#1 Duplicate ...
 			`,
 			rangeQuery:                           true,
 			expectedDuplicateNodes:               1,
@@ -381,15 +389,14 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS + RHS
 					- LHS: DeduplicateAndMerge
 						- FunctionCall: rate(...)
-							- Subquery: [5m0s:1m0s]
-								- ref#1 Duplicate
+							- ref#1 Duplicate
+								- Subquery: [5m0s:1m0s]
 									- BinaryExpression: LHS - RHS
 										- LHS: VectorSelector: {__name__="a"}
 										- RHS: VectorSelector: {__name__="b"}
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: increase(...)
-							- Subquery: [5m0s:1m0s]
-								- ref#1 Duplicate ...
+							- ref#1 Duplicate ...
 			`,
 			rangeQuery:                           true,
 			expectedDuplicateNodes:               1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.

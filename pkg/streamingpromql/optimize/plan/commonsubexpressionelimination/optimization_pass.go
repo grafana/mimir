@@ -435,7 +435,7 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 	}
 
 	firstPath := group.Paths[0]
-	duplicatedExpression, timeRange := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	resultType, err := duplicatedExpression.ResultType()
 
 	if err != nil {
@@ -443,22 +443,11 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 	}
 
 	skipLongerExpressions := false
-	skippedBecauseRangeVectorSelectorInRangeQuery := false
 	stats := group.computeStats()
 
-	// We only want to deduplicate instant vectors, or range vectors in an instant query.
-	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
+	// Deduplicate both instant vectors and range vectors (in both instant and range queries).
+	if resultType == parser.ValueTypeVector || resultType == parser.ValueTypeMatrix {
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
-	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
-		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
-		// query.
-		// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
-		// subquery.
-		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
-	} else {
-		// Duplicated range vector selector in a range query, but the function that encloses each instance isn't the same (or isn't the same on all paths).
-		skippedBecauseRangeVectorSelectorInRangeQuery = true
-		stats = deduplicationStats{}
 	}
 
 	if err != nil {
@@ -477,16 +466,9 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 	// Check if a subset of the paths we just examined share an even longer common subexpression.
 	// eg. if the expression is "a + max(a) + max(a)", then we may have just deduplicated the "a" selectors,
 	// but we can also deduplicate the "max(a)" expressions.
-	// This applies even if we just saw a common subexpression that returned something other than an instant vector
-	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
-	// but we can also deduplicate the "rate(foo[5m])" expressions.
 	subsequentGroups := e.groupPathsForSubsequentIteration(group.Paths, duplicatePathLength)
-	if nextLevelStats, err := e.applyDeduplicationToGroups(subsequentGroups, duplicatePathLength, delayedNameRemovalEnabled); err != nil {
+	if _, err := e.applyDeduplicationToGroups(subsequentGroups, duplicatePathLength, delayedNameRemovalEnabled); err != nil {
 		return deduplicationStats{}, err
-	} else if skippedBecauseRangeVectorSelectorInRangeQuery {
-		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector),
-		// return the number returned by the next level.
-		stats = nextLevelStats
 	}
 
 	return stats, nil
