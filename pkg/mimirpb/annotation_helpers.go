@@ -151,18 +151,20 @@ func ErrorsToAnnotationErrors(errs []error) []AnnotationError {
 	for i, err := range errs {
 		d := annotations.ExtractAnnotationData(err)
 		ae := AnnotationError{
-			Type:          AnnotationErrorType(d.Type),
 			Message:       d.Message,
 			PositionLabel: d.PositionLabel,
 		}
-		// Map opaque Fields to the concrete proto fields.
-		if len(d.Fields) > 0 {
-			ae.Count = int32(d.Fields["count"])
-			ae.MinTs = int64(d.Fields["min_ts"])
-			ae.MaxTs = int64(d.Fields["max_ts"])
-			ae.MinBucket = d.Fields["min_bucket"]
-			ae.MaxBucket = d.Fields["max_bucket"]
-			ae.MaxDiff = d.Fields["max_diff"]
+		if d.Type == annotations.AnnotationTypeHistogramQuantileForcedMonotonicity {
+			ae.Data = &AnnotationError_HistogramQuantile{
+				HistogramQuantile: &AnnotationHistogramQuantileForcedMonotonicityData{
+					Count:     int32(d.Fields["count"]),
+					MinTs:     int64(d.Fields["min_ts"]),
+					MaxTs:     int64(d.Fields["max_ts"]),
+					MinBucket: d.Fields["min_bucket"],
+					MaxBucket: d.Fields["max_bucket"],
+					MaxDiff:   d.Fields["max_diff"],
+				},
+			}
 		}
 		result[i] = ae
 	}
@@ -176,19 +178,22 @@ func AnnotationErrorsToErrors(aes []AnnotationError) []error {
 	}
 	result := make([]error, len(aes))
 	for i, ae := range aes {
-		result[i] = annotations.AnnotationFromData(annotations.AnnotationData{
-			Type:    annotations.AnnotationType(ae.Type),
-			Message: ae.Message,
-			Fields: map[string]float64{
-				"count":      float64(ae.Count),
-				"min_ts":     float64(ae.MinTs),
-				"max_ts":     float64(ae.MaxTs),
-				"min_bucket": ae.MinBucket,
-				"max_bucket": ae.MaxBucket,
-				"max_diff":   ae.MaxDiff,
-			},
+		d := annotations.AnnotationData{
+			Message:       ae.Message,
 			PositionLabel: ae.PositionLabel,
-		})
+		}
+		if hq := ae.GetHistogramQuantile(); hq != nil {
+			d.Type = annotations.AnnotationTypeHistogramQuantileForcedMonotonicity
+			d.Fields = map[string]float64{
+				"count":      float64(hq.Count),
+				"min_ts":     float64(hq.MinTs),
+				"max_ts":     float64(hq.MaxTs),
+				"min_bucket": hq.MinBucket,
+				"max_bucket": hq.MaxBucket,
+				"max_diff":   hq.MaxDiff,
+			}
+		}
+		result[i] = annotations.AnnotationFromData(d)
 	}
 	return result
 }

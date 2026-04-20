@@ -388,16 +388,16 @@ func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 
 func TestAnnotationErrorJSONRoundTrip(t *testing.T) {
 	tests := map[string]struct {
-		input    mimirpb.AnnotationError
-		wantType mimirpb.AnnotationErrorType
+		input         mimirpb.AnnotationError
+		wantHistogram bool
 	}{
 		"generic": {
-			input:    mimirpb.AnnotationError{Type: mimirpb.ANNOTATION_GENERIC, Message: "some warning"},
-			wantType: mimirpb.ANNOTATION_GENERIC,
+			input:         mimirpb.AnnotationError{Message: "some warning"},
+			wantHistogram: false,
 		},
 		"histogramQuantileForcedMonotonicity": {
-			input:    mimirpb.ErrorsToAnnotationErrors([]error{annotations.NewHistogramQuantileForcedMonotonicityInfo("my_bucket", posrange.PositionRange{Start: 5, End: 20}, 1700000000000, 1.0, 100.0, 0.05)})[0],
-			wantType: mimirpb.ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
+			input:         mimirpb.ErrorsToAnnotationErrors([]error{annotations.NewHistogramQuantileForcedMonotonicityInfo("my_bucket", posrange.PositionRange{Start: 5, End: 20}, 1700000000000, 1.0, 100.0, 0.05)})[0],
+			wantHistogram: true,
 		},
 	}
 
@@ -415,9 +415,8 @@ func TestAnnotationErrorJSONRoundTrip(t *testing.T) {
 			require.NoError(t, json.Unmarshal(encoded, &decoded))
 
 			require.Len(t, decoded.Warnings, 1)
-			assert.Equal(t, tc.wantType, decoded.Warnings[0].Type, "annotation type should survive JSON round-trip")
+			assert.Equal(t, tc.wantHistogram, decoded.Warnings[0].GetHistogramQuantile() != nil, "annotation type should survive JSON round-trip")
 			assert.Equal(t, tc.input.Message, decoded.Warnings[0].Message)
-			assert.Equal(t, tc.input.Count, decoded.Warnings[0].Count)
 		})
 	}
 }

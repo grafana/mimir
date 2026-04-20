@@ -294,29 +294,32 @@ message QueryResponse {
   repeated AnnotationError infos = 11 [(gogoproto.nullable) = false];
 }
 
-enum AnnotationErrorType {
-  ANNOTATION_GENERIC = 0;
-  ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY = 1;
+// AnnotationHistogramQuantileForcedMonotonicityData holds type-specific fields for
+// histogramQuantileForcedMonotonicityErr annotations.
+message AnnotationHistogramQuantileForcedMonotonicityData {
+  int32 count = 1;
+  int64 min_ts = 2;
+  int64 max_ts = 3;
+  double min_bucket = 4;
+  double max_bucket = 5;
+  double max_diff = 6;
 }
 
 // AnnotationError represents a typed PromQL annotation that can be properly
 // merged across sharded queries, preserving Merge() semantics (e.g. count
 // accumulation for histogramQuantileForcedMonotonicityErr).
+// The annotation type is determined by which oneof variant is set:
+// no variant set = generic annotation; histogram_quantile set = histogramQuantileForcedMonotonicityErr.
 message AnnotationError {
-  AnnotationErrorType type = 1;
   // The error message from Err.Error() — used as the deduplication/merge key.
-  string message = 2;
-  // For histogramQuantileForcedMonotonicityErr.
-  int32 count = 3;
-  // For histogramQuantileForcedMonotonicityErr only.
-  int64 min_ts = 4;
-  int64 max_ts = 5;
-  double min_bucket = 6;
-  double max_bucket = 7;
-  double max_diff = 8;
+  string message = 1;
   // Pre-computed "line:col" label (e.g. "1:25") for rendering the position
   // suffix without needing the full query string.
-  string position_label = 9;
+  string position_label = 2;
+  // Type-specific data. No variant set = generic annotation.
+  oneof data {
+    AnnotationHistogramQuantileForcedMonotonicityData histogram_quantile = 3;
+  }
 }
 
 message StringData {

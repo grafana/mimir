@@ -1382,15 +1382,18 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				},
 				Infos: []mimirpb.AnnotationError{
 					{
-						Type:      mimirpb.ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
-						Message:   `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)`,
-						Count:     0,
-						MinTs:     3000,
-						MaxTs:     3000,
-						MinBucket: 1,
-						MaxBucket: 1,
-						MaxDiff:   1,
+						Message:       `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)`,
 						PositionLabel: "1:25",
+						Data: &mimirpb.AnnotationError_HistogramQuantile{
+							HistogramQuantile: &mimirpb.AnnotationHistogramQuantileForcedMonotonicityData{
+								Count:     0,
+								MinTs:     3000,
+								MaxTs:     3000,
+								MinBucket: 1,
+								MaxBucket: 1,
+								MaxDiff:   1,
+							},
+						},
 					},
 				},
 			},

@@ -201,21 +201,21 @@ func TestTypedAnnotationStringsMerge(t *testing.T) {
 
 func TestStringsToAnnotationErrorsRoundTrip(t *testing.T) {
 	tests := map[string]struct {
-		input    string
-		wantType AnnotationErrorType
-		isFinal  bool
+		input         string
+		wantHistogram bool
+		isFinal       bool
 	}{
 		"generic warning": {
-			input:    "PromQL warning: some warning message",
-			wantType: ANNOTATION_GENERIC,
+			input:         "PromQL warning: some warning message",
+			wantHistogram: false,
 		},
 		"generic plain string": {
-			input:    "another annotation",
-			wantType: ANNOTATION_GENERIC,
+			input:         "another annotation",
+			wantHistogram: false,
 		},
 		"non-final HistogramQuantileForcedMonotonicity": {
-			input:    `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "http_duration_bucket"`,
-			wantType: ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
+			input:         `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "http_duration_bucket"`,
+			wantHistogram: true,
 		},
 	}
 
@@ -223,7 +223,7 @@ func TestStringsToAnnotationErrorsRoundTrip(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			protoAnnotations := StringsToAnnotationErrors([]string{tc.input})
 			require.Len(t, protoAnnotations, 1)
-			assert.Equal(t, tc.wantType, protoAnnotations[0].Type)
+			assert.Equal(t, tc.wantHistogram, protoAnnotations[0].GetHistogramQuantile() != nil)
 
 			if tc.isFinal {
 				roundTripped := AnnotationErrorsToStrings(protoAnnotations)
@@ -249,14 +249,17 @@ func TestAnnotationFromDataNoSpuriousPosition(t *testing.T) {
 		{
 			name: "histogramQuantileForcedMonotonicity with zero position",
 			input: AnnotationError{
-				Type:      ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
-				Message:   `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "bucket"`,
-				Count:     10,
-				MinTs:     1700000000000,
-				MaxTs:     1700000001000,
-				MinBucket: 0.5,
-				MaxBucket: 10.0,
-				MaxDiff:   0.01,
+				Message: `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "bucket"`,
+				Data: &AnnotationError_HistogramQuantile{
+					HistogramQuantile: &AnnotationHistogramQuantileForcedMonotonicityData{
+						Count:     10,
+						MinTs:     1700000000000,
+						MaxTs:     1700000001000,
+						MinBucket: 0.5,
+						MaxBucket: 10.0,
+						MaxDiff:   0.01,
+					},
+				},
 			},
 		},
 	}

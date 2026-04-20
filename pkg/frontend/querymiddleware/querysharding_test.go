@@ -115,15 +115,19 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	require.ElementsMatch(t, annotationKeys(a.Warnings), annotationKeys(b.Warnings), "expected same warning annotations")
 }
 
-// annotationKeys extracts only Type and Message from each AnnotationError for
-// comparison, ignoring merge-state fields that differ between execution strategies.
+// annotationKeys extracts only the type (by oneof variant) and message from each AnnotationError
+// for comparison, ignoring merge-state fields that differ between execution strategies.
 func annotationKeys(aes []mimirpb.AnnotationError) []mimirpb.AnnotationError {
 	if aes == nil {
 		return nil
 	}
 	keys := make([]mimirpb.AnnotationError, len(aes))
 	for i, ae := range aes {
-		keys[i] = mimirpb.AnnotationError{Type: ae.Type, Message: ae.Message}
+		key := mimirpb.AnnotationError{Message: ae.Message}
+		if ae.GetHistogramQuantile() != nil {
+			key.Data = &mimirpb.AnnotationError_HistogramQuantile{}
+		}
+		keys[i] = key
 	}
 	return keys
 }
