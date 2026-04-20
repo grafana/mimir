@@ -59,6 +59,9 @@ const (
 	// DefaultCompactionDelayMaxPercent in percentage.
 	DefaultCompactionDelayMaxPercent = 10
 
+	// SeriesHashLabel is the label used for unique per-series IDs to support the projections optimization.
+	SeriesHashLabel = "__series_hash__"
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -72,6 +75,8 @@ const (
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
 var ErrNotReady = errors.New("TSDB not ready")
+
+var ErrInvalidTimeRangeForProjections = errors.New("time range cannot be used with projections")
 
 // DefaultOptions used for the DB. They are reasonable for setups using
 // millisecond precision timestamps.
@@ -92,6 +97,7 @@ func DefaultOptions() *Options {
 		OutOfOrderCapMax:                         DefaultOutOfOrderCapMax,
 		EnableOverlappingCompaction:              true,
 		EnableSharding:                           false,
+		EnableSeriesHash:                         false,
 		EnableDelayedCompaction:                  false,
 		CompactionDelayMaxPercent:                DefaultCompactionDelayMaxPercent,
 		CompactionDelay:                          time.Duration(0),
@@ -234,6 +240,9 @@ type Options struct {
 
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
+
+	// EnableSeriesHash enables support for the projections optimization in TSDB via a unique per-series ID.
+	EnableSeriesHash bool
 
 	// EnableDelayedCompaction, when set to true, assigns a random value to CompactionDelay during DB opening.
 	// When set to false, delayed compaction is disabled, unless CompactionDelay is set directly.
@@ -1227,6 +1236,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
+	headOpts.EnableSeriesHash = opts.EnableSeriesHash
 	headOpts.TimelyCompaction = opts.TimelyCompaction
 	if opts.HeadPostingsForMatchersCacheFactory != nil {
 		headOpts.PostingsForMatchersCacheFactory = opts.HeadPostingsForMatchersCacheFactory
@@ -2672,6 +2682,54 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	}
 
 	return blockQueriers, nil
+}
+
+func (db *DB) ChunkQuerierForProjections(mint, maxt int64) (storage.ChunkQuerier, error) {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	for _, b := range db.blocks {
+		if b.OverlapsClosedInterval(mint, maxt) {
+			return nil, fmt.Errorf("%w: existing block overlaps the range. mint: %d, maxt: %d", ErrInvalidTimeRangeForProjections, mint, maxt)
+		}
+	}
+
+	// We can only use the projections optimization (including __series_hash__  unique ID) when
+	// the query touches only the head since we need to ensure results are sorted correctly based
+	// on the labels returned. This is only possible for the in-memory head.
+	headMinT := db.head.MinTime()
+	if mint < headMinT {
+		return nil, fmt.Errorf("%w: range mint %d precedes head mint %d", ErrInvalidTimeRangeForProjections, mint, headMinT)
+	}
+
+	rh := NewProjectionsRangeHead(db.head, mint, maxt)
+	headQuerier, err := db.blockChunkQuerierFunc(rh, mint, maxt)
+	if err != nil {
+		return nil, fmt.Errorf("open querier for head %s: %w", rh, err)
+	}
+
+	// Getting the querier above registers itself in the queue that the truncation waits on.
+	// If the querier is currently not colliding with any truncation, we can continue to use it
+	// for this projections optimized query. If it _is_ colliding return an error since we would
+	// rather not block truncation. In the normal query path, we adjust the range queried from
+	// the head but, we can't do that with projections since we need to be able to sort the entire
+	// result based on labels returned.
+	if shouldClose, _, _ := db.head.IsQuerierCollidingWithTruncation(mint, maxt); shouldClose {
+		if err = headQuerier.Close(); err != nil {
+			return nil, fmt.Errorf("closing head querier %s: %w", rh, err)
+		}
+
+		return nil, fmt.Errorf("%w: range mint %d to maxt %d overlaps truncation", ErrInvalidTimeRangeForProjections, mint, maxt)
+	}
+
+	overlapsOOO := overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime())
+	if overlapsOOO {
+		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
+		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
+		headQuerier = NewHeadAndOOOChunkQuerier(headMinT, mint, maxt, db.head, isoState, headQuerier)
+	}
+
+	return headQuerier, nil
 }
 
 // ChunkQuerier returns a new chunk querier over the data partition for the given time range.

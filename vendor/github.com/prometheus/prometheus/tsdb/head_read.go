@@ -35,19 +35,20 @@ func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, er
 
 // Index returns an IndexReader against the block.
 func (h *Head) Index() (IndexReader, error) {
-	return h.indexRange(math.MinInt64, math.MaxInt64), nil
+	return h.indexRange(math.MinInt64, math.MaxInt64, false), nil
 }
 
-func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
+func (h *Head) indexRange(mint, maxt int64, includeSeriesHash bool) *headIndexReader {
 	if hmin := h.MinTime(); hmin > mint {
 		mint = hmin
 	}
-	return &headIndexReader{head: h, mint: mint, maxt: maxt}
+	return &headIndexReader{head: h, mint: mint, maxt: maxt, includeSeriesHash: includeSeriesHash}
 }
 
 type headIndexReader struct {
-	head       *Head
-	mint, maxt int64
+	head              *Head
+	mint, maxt        int64
+	includeSeriesHash bool
 }
 
 func (*headIndexReader) Close() error {
@@ -139,9 +140,16 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
-	slices.SortFunc(series, func(a, b *memSeries) int {
-		return labels.Compare(a.labels(), b.labels())
-	})
+	// If the memSeries have a series hash label set and we haven't been
+	// told to include it in the output (when projections aren't being used)
+	// then we need to remove it from the label sets before sorting them.
+	// Otherwise, the label sets don't have the series hash or, we should
+	// include it so we don't remove anything.
+	if h.head.opts.EnableSeriesHash && !h.includeSeriesHash {
+		slices.SortFunc(series, compareWithoutSeriesHash)
+	} else {
+		slices.SortFunc(series, compareWithSeriesHash)
+	}
 
 	// Convert back to list.
 	ep := make([]storage.SeriesRef, 0, len(series))
@@ -149,6 +157,22 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 		ep = append(ep, storage.SeriesRef(p.ref))
 	}
 	return index.NewListPostings(ep)
+}
+
+func compareWithSeriesHash(a, b *memSeries) int {
+	return labels.Compare(a.labels(), b.labels())
+}
+
+func compareWithoutSeriesHash(a, b *memSeries) int {
+	lsetA := a.labels().DropReserved(func(name string) bool {
+		return name == SeriesHashLabel
+	})
+
+	lsetB := b.labels().DropReserved(func(name string) bool {
+		return name == SeriesHashLabel
+	})
+
+	return labels.Compare(lsetA, lsetB)
 }
 
 // ShardedPostings implements IndexReader. This function returns an failing postings list if sharding
@@ -202,7 +226,14 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 		h.head.metrics.seriesNotFound.Inc()
 		return storage.ErrNotFound
 	}
-	builder.Assign(s.labels())
+
+	if h.head.opts.EnableSeriesHash && !h.includeSeriesHash {
+		builder.Assign(s.labels().DropReserved(func(name string) bool {
+			return name == SeriesHashLabel
+		}))
+	} else {
+		builder.Assign(s.labels())
+	}
 
 	if chks == nil {
 		return nil
@@ -219,7 +250,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 
 func (h *Head) staleIndex(mint, maxt int64, staleSeriesRefs []storage.SeriesRef) (*headStaleIndexReader, error) {
 	return &headStaleIndexReader{
-		headIndexReader: h.indexRange(mint, maxt),
+		headIndexReader: h.indexRange(mint, maxt, false),
 		staleSeriesRefs: staleSeriesRefs,
 	}, nil
 }

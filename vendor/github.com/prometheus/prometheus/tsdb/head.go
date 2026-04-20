@@ -208,6 +208,9 @@ type HeadOptions struct {
 	// EnableSharding enables ShardedPostings() support in the Head.
 	EnableSharding bool
 
+	// EnableSeriesHash enables support for the projections optimization in the Head via a unique per-series ID.
+	EnableSeriesHash bool
+
 	// IndexLookupPlannerFunc can be optionally used when querying the index of the Head.
 	IndexLookupPlannerFunc IndexLookupPlannerFunc
 
@@ -1616,7 +1619,7 @@ func NewRangeHeadWithIsolationDisabled(head *Head, mint, maxt int64) *RangeHead 
 }
 
 func (h *RangeHead) Index() (IndexReader, error) {
-	return h.head.indexRange(h.mint, h.maxt), nil
+	return h.head.indexRange(h.mint, h.maxt, false), nil
 }
 
 func (h *RangeHead) Chunks() (ChunkReader, error) {
@@ -1672,6 +1675,27 @@ func (h *RangeHead) String() string {
 	return fmt.Sprintf("range head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
 }
 
+// ProjectionsRangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
+// but only within a restricted range. Used for queries that have requested the projections optimization,
+// adding a __series_hash__ unique ID to each series so that a subset of other labels may be returned.
+type ProjectionsRangeHead struct {
+	RangeHead
+}
+
+func NewProjectionsRangeHead(head *Head, mint, maxt int64) *ProjectionsRangeHead {
+	return &ProjectionsRangeHead{
+		RangeHead: RangeHead{
+			head: head,
+			mint: mint,
+			maxt: maxt,
+		},
+	}
+}
+
+func (h *ProjectionsRangeHead) Index() (IndexReader, error) {
+	return h.head.indexRange(h.mint, h.maxt, true), nil
+}
+
 // StaleHead allows querying the stale series in the Head via an IndexReader, ChunkReader and tombstones.Reader.
 // Used only for compactions.
 type StaleHead struct {
@@ -1725,7 +1749,7 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 	// Do not delete anything beyond the currently valid range.
 	mint, maxt = clampInterval(mint, maxt, h.MinTime(), h.MaxTime())
 
-	ir := h.indexRange(mint, maxt)
+	ir := h.indexRange(mint, maxt, false)
 
 	p, err := ir.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
@@ -1956,6 +1980,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	if h.opts.EnableSharding {
 		shardHash = labels.StableHash(lset)
 	}
+
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.secondaryHashFunc(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled, pendingCommit)
 
 	s, created := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
