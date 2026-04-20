@@ -597,7 +597,8 @@ func (q *histogramQuantile) getMetricNameForSeries(seriesIndex int) string {
 
 func (q *histogramQuantile) ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64 {
 	ph := q.phValues.Samples[pointIndex].F
-	quantile, forcedMonotonicity, _, _, _, _ := promql.BucketQuantile(ph, buckets)
+	ts := q.phValues.Samples[pointIndex].T
+	quantile, forcedMonotonicity, _, minBucket, maxBucket, maxDiff := promql.BucketQuantile(ph, buckets)
 
 	if forcedMonotonicity {
 		// Set the last few values to 0 to use original version of histogram quantile info
@@ -605,7 +606,7 @@ func (q *histogramQuantile) ComputeClassicHistogramResult(pointIndex int, series
 		q.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
 			q.getMetricNameForSeries(seriesIndex),
 			q.innerExpressionPosition,
-			0, 0, 0, 0,
+			ts, minBucket, maxBucket, maxDiff,
 		))
 	}
 
