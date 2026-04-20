@@ -173,9 +173,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
 	}
 
-	userDBHasDB := atomic.NewBool(false)
+	userDBReady := atomic.NewBool(false)
 	blocksToDelete := func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
-		if !userDBHasDB.Load() {
+		if !userDBReady.Load() {
 			return nil
 		}
 		return userDB.blocksToDelete(blocks)
@@ -242,7 +242,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB.db = db
-	userDBHasDB.Store(true)
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
@@ -293,6 +292,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
 		}
 	}
+
+	// Must be the last statement: once flipped, blocksToDelete can run against userDB from
+	// the goroutine tsdb.Open started, so every field it reads must already be initialised.
+	userDBReady.Store(true)
 
 	return userDB, nil
 }
