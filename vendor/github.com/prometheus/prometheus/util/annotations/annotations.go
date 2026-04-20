@@ -341,12 +341,68 @@ func NewMixedExponentialCustomHistogramsWarning(metricName string, pos posrange.
 	}
 }
 
+type possibleNonCounterErr struct {
+	PositionRange posrange.PositionRange
+	Err           error
+	Query         string
+	count         int
+	final         bool
+}
+
+func (e *possibleNonCounterErr) Error() string {
+	if !e.final {
+		return e.Err.Error()
+	}
+	msg := fmt.Sprintf("%s, over %d samples", e.Err, e.count)
+	if e.Query != "" {
+		msg = fmt.Sprintf("%s (%s)", msg, e.PositionRange.StartPosInput(e.Query, 0))
+	}
+	return msg
+}
+
+func (e *possibleNonCounterErr) Unwrap() error {
+	return e.Err
+}
+
+func (e *possibleNonCounterErr) SetQuery(query string) {
+	e.Query = query
+}
+
+func (e *possibleNonCounterErr) SetFinal() {
+	e.final = true
+}
+
+func (e *possibleNonCounterErr) Merge(other error) error {
+	o := &possibleNonCounterErr{}
+	ok := errors.As(other, &o)
+	if !ok {
+		return e
+	}
+	if e.Err.Error() != o.Err.Error() {
+		return e
+	}
+	o.count += e.count
+	return o
+}
+
+func (e *possibleNonCounterErr) annotationType() AnnotationType {
+	return AnnotationTypePossibleNonCounter
+}
+func (e *possibleNonCounterErr) rawMessage() string { return e.Err.Error() }
+func (e *possibleNonCounterErr) mergeFields() map[string]float64 {
+	return map[string]float64{"count": float64(e.count)}
+}
+func (e *possibleNonCounterErr) applyMergeFields(m map[string]float64) {
+	e.count = int(m["count"])
+}
+
 // NewPossibleNonCounterInfo is used when a named counter metric with only float samples does not
 // have the suffixes _total, _sum, _count, or _bucket.
-func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange, count int) error {
+	return &possibleNonCounterErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName),
+		count:         count,
 	}
 }
 
