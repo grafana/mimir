@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Alertmanager: register the Mimir alertmanager config API (`/api/v1/alerts`) also under the alertmanager HTTP prefix path so that users who include the prefix in their `--address` (e.g. `http://host:port/alertmanager`) receive the correct response instead of a `410 Gone` from the embedded Prometheus Alertmanager. #14928
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
 * [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143

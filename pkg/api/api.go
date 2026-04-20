@@ -247,6 +247,16 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 	a.RegisterRoute("/multitenant_alertmanager/delete_tenant_config", http.HandlerFunc(am.DeleteUserConfig), true, true, "POST")
 	a.RegisterRoute(path.Join(a.cfg.AlertmanagerHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
 
+	// MultiTenant Alertmanager API routes - register before the prefix handler so they take
+	// priority over the embedded Prometheus Alertmanager handler. This ensures requests to
+	// {alertmanagerHTTPPrefix}/api/v1/alerts are served by Mimir's config API regardless of
+	// whether the user includes the alertmanager path prefix in their --address.
+	if apiEnabled {
+		a.RegisterRoute(path.Join(a.cfg.AlertmanagerHTTPPrefix, "/api/v1/alerts"), http.HandlerFunc(am.GetUserConfig), true, true, "GET")
+		a.RegisterRoute(path.Join(a.cfg.AlertmanagerHTTPPrefix, "/api/v1/alerts"), http.HandlerFunc(am.SetUserConfig), true, true, "POST")
+		a.RegisterRoute(path.Join(a.cfg.AlertmanagerHTTPPrefix, "/api/v1/alerts"), http.HandlerFunc(am.DeleteUserConfig), true, true, "DELETE")
+	}
+
 	// UI components lead to a large number of routes to support, utilize a path prefix instead
 	a.RegisterRoutesWithPrefix(a.cfg.AlertmanagerHTTPPrefix, am, true, true, 0)
 	level.Debug(a.logger).Log("msg", "api: registering alertmanager", "path_prefix", a.cfg.AlertmanagerHTTPPrefix)
