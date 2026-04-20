@@ -52,14 +52,10 @@ type AnnotationData struct {
 	Type    AnnotationType
 	Message string
 	Fields  map[string]float64
-	// PositionStart and PositionEnd are the character offsets into the query
-	// string that triggered this annotation.
-	PositionStart int
-	PositionEnd   int
 	// PositionLabel is the pre-computed "line:col" string for the position,
-	// e.g. "1:25". Computed from the query string and PositionStart at
+	// e.g. "1:25". Computed from the query string and position offsets at
 	// extraction time so it survives serialization without storing the full
-	// query. Empty if position info is unavailable.
+	// query or the raw byte offsets. Empty if position info is unavailable.
 	PositionLabel string
 }
 
@@ -91,21 +87,18 @@ func init() {
 func ExtractAnnotationData(err error) AnnotationData {
 	var d AnnotationData
 
-	// Extract position from any annoError implementation.
+	// Extract position label from any annoError implementation.
 	var anErr annoError
 	if errors.As(err, &anErr) {
-		pos := anErr.GetPosition()
-		if pos.Start >= 0 {
-			d.PositionStart = int(pos.Start)
-			d.PositionEnd = int(pos.End)
-			if q := anErr.GetQuery(); q != "" {
+		// Prefer computing the label from the position offsets + query string,
+		// since that is the most accurate source. Fall back to a stored label
+		// (e.g. "1:10") preserved from a previous serialization round-trip.
+		if q := anErr.GetQuery(); q != "" {
+			pos := anErr.GetPosition()
+			if pos.Start >= 0 {
 				d.PositionLabel = pos.StartPosInput(q, 0)
 			}
 		}
-		// Fall back to a stored position label (e.g. "1:10") that was
-		// preserved from a previous serialization round-trip. This handles
-		// the case where the original byte offset was lost during string
-		// parsing but the pre-computed label was kept.
 		if d.PositionLabel == "" {
 			type posLabelGetter interface{ GetPositionLabel() string }
 			if plg, ok := anErr.(posLabelGetter); ok {
@@ -129,18 +122,11 @@ func ExtractAnnotationData(err error) AnnotationData {
 // AnnotationFromData reconstructs a typed annotation error from its portable representation.
 // The reconstructed error supports Merge() for proper annotation combining.
 func AnnotationFromData(d AnnotationData) error {
-	// Only set a real position when the data actually carries one.
-	// PositionStart=0 is ambiguous (could be "first character" or "unset" in
-	// proto3), so we require PositionEnd > 0 as evidence of a real position.
-	// Using Start=-1 prevents StartPosInput from producing a misleading "1:1"
-	// when the position was never set.
+	// Raw byte offsets are not preserved across serialization (only PositionLabel
+	// is). Use {-1, -1} to prevent the Go zero value {0, 0} from being mistaken
+	// for "offset 0", which would render as a misleading "1:1" if SetQuery() is
+	// later called on the reconstructed annotation.
 	pos := posrange.PositionRange{Start: -1, End: -1}
-	if d.PositionEnd > 0 || d.PositionStart > 0 {
-		pos = posrange.PositionRange{
-			Start: posrange.Pos(d.PositionStart),
-			End:   posrange.Pos(d.PositionEnd),
-		}
-	}
 
 	if f, ok := annotationFactories[d.Type]; ok {
 		a := f(d.Message)
