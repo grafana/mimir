@@ -1970,9 +1970,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if !matrixArg {
 			// Does not have a matrix argument.
+			// Return per-step annotations directly — do NOT merge into the captured
+			// warnings here. rangeEval already accumulates the returned annotations
+			// across all steps. Merging into warnings AND returning warnings would
+			// cause rangeEval to merge the cumulative total again each step, leading
+			// to self-merges and incorrect counts in mergeable annotations like
+			// histogramQuantileForcedMonotonicityErr.
 			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				vec, annos := call(v, nil, e.Args, enh)
-				return vec, warnings.Merge(annos)
+				return call(v, nil, e.Args, enh)
 			}, e.Args...)
 		}
 
