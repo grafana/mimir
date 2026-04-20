@@ -578,6 +578,10 @@ func (a *AnnotationAccumulator) addAnnotations(warnings, infos []mimirpb.Annotat
 	if a == nil {
 		return
 	}
+	// Copy input slices because removeAllAnnotationPositionInformation mutates in place.
+	warnings = slices.Clone(warnings)
+	infos = slices.Clone(infos)
+
 	// Strip position info from sub-query annotations before adding to the
 	// accumulator. Sub-query positions refer to the rewritten sub-query string
 	// (not the original query) and would prevent proper deduplication: the outer
@@ -601,14 +605,6 @@ func (a *AnnotationAccumulator) getAll() (warnings, infos []error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.warnings.AsErrors(), a.infos.AsErrors()
-}
-
-// removeDuplicates removes duplicate entries from s.
-//
-// s may be modified and should not be used after removeDuplicates returns.
-func removeDuplicates(s []string) []string {
-	slices.Sort(s)
-	return slices.Compact(s)
 }
 
 var annotationPositionPattern = regexp.MustCompile(`\s+\(\d+:\d+\)$`)

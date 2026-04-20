@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -1813,6 +1814,25 @@ func TestRemoveAnnotationPositionInformation(t *testing.T) {
 			require.Equal(t, expectedOutput, removeAnnotationPositionInformation(input))
 		})
 	}
+}
+
+func TestAnnotationAccumulatorAddAnnotationsDoesNotMutateInputs(t *testing.T) {
+	warnings := []mimirpb.AnnotationError{
+		{Message: "warn one (1:1)", PositionLabel: "(1:1)"},
+		{Message: "warn two"},
+	}
+	infos := []mimirpb.AnnotationError{
+		{Message: "info one (2:2)", PositionLabel: "(2:2)"},
+	}
+
+	expectedWarnings := slices.Clone(warnings)
+	expectedInfos := slices.Clone(infos)
+
+	accumulator := NewAnnotationAccumulator()
+	accumulator.addAnnotations(warnings, infos)
+
+	require.Equal(t, expectedWarnings, warnings)
+	require.Equal(t, expectedInfos, infos)
 }
 
 func TestMapEngineError(t *testing.T) {
