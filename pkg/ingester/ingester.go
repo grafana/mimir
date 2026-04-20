@@ -281,6 +281,7 @@ type Ingester struct {
 	subservicesWatcher    *services.FailureWatcher
 	ownedSeriesService    *ownedSeriesService
 	compactionService     services.Service
+	shippingService       services.Service
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
 	statisticsService     services.Service
@@ -577,6 +578,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil).WithName("ingester-compaction")
 	i.subservicesWatcher.WatchService(i.compactionService)
 
+	// Init shipping service, responsible to periodically ship TSDB blocks to long-term storage.
+	if cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
+		i.shippingService = services.NewBasicService(nil, i.shipBlocksLoop, nil).WithName("ingester-shipping")
+	}
+
 	// Init metrics updater service, responsible to periodically update ingester metrics and stats.
 	i.metricsUpdaterService = services.NewBasicService(nil, i.metricsUpdaterServiceRunning, nil).WithName("ingester-metrics-updater")
 	i.subservicesWatcher.WatchService(i.metricsUpdaterService)
@@ -709,9 +715,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	// Finally we start all services that should run after the ingester ring lifecycler.
 	var servs []services.Service
 
-	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
-		shippingService := services.NewBasicService(nil, i.shipBlocksLoop, nil)
-		servs = append(servs, shippingService)
+	if i.shippingService != nil {
+		servs = append(servs, i.shippingService)
 	}
 
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
