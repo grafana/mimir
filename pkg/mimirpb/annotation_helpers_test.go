@@ -158,6 +158,64 @@ func TestAnnotationErrorsRoundTripMerge(t *testing.T) {
 	}
 }
 
+// TestTypedAnnotationStringsMerge verifies that final-form annotation strings
+// with different sample counts are parsed into typed errors that merge properly
+// in an Annotations set, producing a single entry with accumulated count.
+// This is a regression test for a bug where annotations were wrapped as generic
+// errors (losing their typed merge semantics), causing annotations for the same
+// metric to appear as duplicates with slightly different counts.
+func TestTypedAnnotationStringsMerge(t *testing.T) {
+	tests := map[string]struct {
+		// Two final-form annotation strings for the same metric but different stats.
+		s1, s2    string
+		wantType  annotations.AnnotationType
+		wantCount float64
+	}{
+		"possibleNonCounterErr": {
+			s1:        `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 10 samples`,
+			s2:        `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 20 samples`,
+			wantType:  annotations.AnnotationTypePossibleNonCounter,
+			wantCount: 30,
+		},
+		"histogramQuantileForcedMonotonicityErr": {
+			s1:        `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "bucket", from buckets 0.5 to 10, with a max diff of 0.01, over 5 samples from 2023-11-14T22:13:20Z to 2023-11-14T22:13:21Z`,
+			s2:        `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "bucket", from buckets 1 to 20, with a max diff of 0.05, over 3 samples from 2023-11-14T22:13:22Z to 2023-11-14T22:13:23Z`,
+			wantType:  annotations.AnnotationTypeHistogramQuantileForcedMonotonicity,
+			wantCount: 7, // displayCount-1 stored: (5-1)+(3-1)+1 = 7
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Parse each final-form string into a typed error independently,
+			// simulating two evaluation results from split-by-time.
+			errs1 := StringsToAnnotationErrs([]string{tc.s1})
+			errs2 := StringsToAnnotationErrs([]string{tc.s2})
+			require.Len(t, errs1, 1)
+			require.Len(t, errs2, 1)
+
+			// Add both to an Annotations set — this triggers Merge().
+			var ann annotations.Annotations
+			ann.Add(errs1[0])
+			ann.Add(errs2[0])
+
+			// The two annotations must merge into a single entry.
+			// When annotations are incorrectly wrapped as generic errors,
+			// their Error() strings differ (because they include counts)
+			// and they appear as two separate entries.
+			require.Len(t, ann, 1,
+				"expected the two annotations for the same metric to merge into a single entry")
+
+			for _, merged := range ann {
+				data := annotations.ExtractAnnotationData(merged)
+				assert.Equal(t, tc.wantType, data.Type)
+				assert.Equal(t, tc.wantCount, data.Fields["count"],
+					"merged count should reflect both inputs")
+			}
+		})
+	}
+}
+
 func TestStringsToAnnotationErrorsRoundTrip(t *testing.T) {
 	tests := map[string]struct {
 		input    string
