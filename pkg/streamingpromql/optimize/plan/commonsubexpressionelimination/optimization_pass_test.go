@@ -1148,7 +1148,7 @@ func TestOptimizationPass(t *testing.T) {
 			require.NoError(t, err)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
 
 			var timeRange types.QueryTimeRange
 
@@ -1416,7 +1416,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 	require.NoError(t, err)
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, nil, opts.Logger))
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -1439,7 +1439,7 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxSupportedQueryPlanVersion))
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(enabled, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(enabled, true, nil, opts.Logger))
 
 		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -1479,6 +1479,126 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 	})
 }
 
+func TestOptimizationPass_RangeVectorCSEDisabled(t *testing.T) {
+	runTest := func(t *testing.T, expr string, rangeVectorCSEEnabled bool, isRangeQuery bool, expectedPlan string) {
+		t.Helper()
+
+		ctx := context.Background()
+		observer := streamingpromql.NoopPlanningObserver{}
+
+		var timeRange types.QueryTimeRange
+		if isRangeQuery {
+			timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(time.Hour), time.Minute)
+		} else {
+			timeRange = types.NewInstantQueryTimeRange(time.Now())
+		}
+
+		opts := streamingpromql.NewTestEngineOpts()
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, rangeVectorCSEEnabled, nil, opts.Logger))
+
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+		require.NoError(t, err)
+		require.Equal(t, testutils.TrimIndent(expectedPlan), p.String())
+	}
+
+	// Get the "no optimization" plan for expressions that should be unchanged.
+	unchangedPlan := func(t *testing.T, expr string, isRangeQuery bool) string {
+		t.Helper()
+
+		ctx := context.Background()
+		observer := streamingpromql.NoopPlanningObserver{}
+
+		var timeRange types.QueryTimeRange
+		if isRangeQuery {
+			timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(time.Hour), time.Minute)
+		} else {
+			timeRange = types.NewInstantQueryTimeRange(time.Now())
+		}
+
+		opts := streamingpromql.NewTestEngineOpts()
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+		require.NoError(t, err)
+		return p.String()
+	}
+
+	// Range query with duplicate matrix selectors and different outer functions.
+	// With range vector CSE disabled: the matrix selector is not deduplicated (old behavior).
+	// With range vector CSE enabled: the matrix selector is deduplicated.
+	matrixExpr := `rate(foo[5m]) + increase(foo[5m])`
+
+	t.Run("range query with different outer functions, feature disabled", func(t *testing.T) {
+		runTest(t, matrixExpr, false, true, unchangedPlan(t, matrixExpr, true))
+	})
+
+	t.Run("range query with different outer functions, feature enabled", func(t *testing.T) {
+		runTest(t, matrixExpr, true, true, `
+			- BinaryExpression: LHS + RHS
+				- LHS: DeduplicateAndMerge
+					- FunctionCall: rate(...)
+						- ref#1 Duplicate
+							- MatrixSelector: {__name__="foo"}[5m0s]
+				- RHS: DeduplicateAndMerge
+					- FunctionCall: increase(...)
+						- ref#1 Duplicate ...
+		`)
+	})
+
+	t.Run("instant query with different outer functions, feature disabled", func(t *testing.T) {
+		// In instant queries, matrix selectors are always deduplicated regardless of the flag.
+		runTest(t, matrixExpr, false, false, `
+			- BinaryExpression: LHS + RHS
+				- LHS: DeduplicateAndMerge
+					- FunctionCall: rate(...)
+						- ref#1 Duplicate
+							- MatrixSelector: {__name__="foo"}[5m0s]
+				- RHS: DeduplicateAndMerge
+					- FunctionCall: increase(...)
+						- ref#1 Duplicate ...
+		`)
+	})
+
+	// Range query with duplicate subqueries and different outer functions.
+	// With range vector CSE disabled: the inner vector selector is deduplicated (old behavior).
+	// With range vector CSE enabled: the subquery itself is deduplicated.
+	subqueryExpr := `rate(foo[5m:]) + increase(foo[5m:])`
+
+	t.Run("range query with subqueries and different outer functions, feature disabled", func(t *testing.T) {
+		runTest(t, subqueryExpr, false, true, `
+			- BinaryExpression: LHS + RHS
+				- LHS: DeduplicateAndMerge
+					- FunctionCall: rate(...)
+						- Subquery: [5m0s:1m0s]
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="foo"}
+				- RHS: DeduplicateAndMerge
+					- FunctionCall: increase(...)
+						- Subquery: [5m0s:1m0s]
+							- ref#1 Duplicate ...
+		`)
+	})
+
+	t.Run("range query with subqueries and different outer functions, feature enabled", func(t *testing.T) {
+		runTest(t, subqueryExpr, true, true, `
+			- BinaryExpression: LHS + RHS
+				- LHS: DeduplicateAndMerge
+					- FunctionCall: rate(...)
+						- ref#1 Duplicate
+							- Subquery: [5m0s:1m0s]
+								- VectorSelector: {__name__="foo"}
+				- RHS: DeduplicateAndMerge
+					- FunctionCall: increase(...)
+						- ref#1 Duplicate ...
+		`)
+	})
+}
+
 func TestOptimizationPass_RangeVectorSplittingEnabled(t *testing.T) {
 	ctx := context.Background()
 	timeRange := types.NewInstantQueryTimeRange(time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC))
@@ -1489,7 +1609,7 @@ func TestOptimizationPass_RangeVectorSplittingEnabled(t *testing.T) {
 	require.NoError(t, err)
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 	planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(2*time.Hour, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, nil, opts.Logger))
 
 	expr := `sum(rate(metric{env="prod"}[6h])) / sum(rate(metric[6h]))`
 	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
@@ -1564,7 +1684,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, reg, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, reg, opts.Logger))
 
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
@@ -1582,7 +1702,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 }
 
 func TestShouldSkipChild(t *testing.T) {
-	pass := commonsubexpressionelimination.NewOptimizationPass(true, nil, nil)
+	pass := commonsubexpressionelimination.NewOptimizationPass(true, true, nil, nil)
 
 	// Test info function - should skip only 2nd children
 	infoFunctionCall := &core.FunctionCall{
