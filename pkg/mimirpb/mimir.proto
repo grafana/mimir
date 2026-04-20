@@ -288,6 +288,34 @@ message QueryResponse {
 
   repeated string warnings = 8;
   repeated string infos = 9;
+
+  // Typed annotation errors for proper merging across sharded queries.
+  // When present, these take precedence over the string warnings/infos fields.
+  repeated AnnotationError typed_warnings = 10 [(gogoproto.nullable) = false];
+  repeated AnnotationError typed_infos = 11 [(gogoproto.nullable) = false];
+}
+
+enum AnnotationErrorType {
+  ANNOTATION_GENERIC = 0;
+  ANNOTATION_POSSIBLE_NON_COUNTER = 1;
+  ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY = 2;
+}
+
+// AnnotationError represents a typed PromQL annotation that can be properly
+// merged across sharded queries, preserving Merge() semantics (e.g. count
+// accumulation for possibleNonCounterErr).
+message AnnotationError {
+  AnnotationErrorType type = 1;
+  // The error message from Err.Error() — used as the deduplication/merge key.
+  string message = 2;
+  // For possibleNonCounterErr and histogramQuantileForcedMonotonicityErr.
+  int32 count = 3;
+  // For histogramQuantileForcedMonotonicityErr only.
+  int64 min_ts = 4;
+  int64 max_ts = 5;
+  double min_bucket = 6;
+  double max_bucket = 7;
+  double max_diff = 8;
 }
 
 message StringData {

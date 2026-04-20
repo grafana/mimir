@@ -243,6 +243,20 @@ type formatter interface {
 	ContentType() v1.MIMEType
 }
 
+// typedAnnotationEncoder is optionally implemented by formatters that support
+// encoding typed annotation errors alongside the response. This preserves
+// Merge() semantics across the wire (e.g. count accumulation for possibleNonCounterErr).
+type typedAnnotationEncoder interface {
+	EncodeQueryResponseWithAnnotations(resp *PrometheusResponse, warningErrors, infoErrors []error) ([]byte, error)
+}
+
+// typedAnnotationDecoder is optionally implemented by formatters that support
+// decoding typed annotation errors from the response. When available, the decoded
+// response is wrapped in a PrometheusResponseWithFinalizer carrying typed errors.
+type typedAnnotationDecoder interface {
+	DecodeQueryResponseWithAnnotations(buf []byte) (resp *PrometheusResponse, warningErrors, infoErrors []error, err error)
+}
+
 var jsonFormatterInstance = jsonFormatter{}
 
 var knownFormats = []formatter{
@@ -964,7 +978,17 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 	}
 
 	start := time.Now()
-	resp, err := formatter.DecodeQueryResponse(buf)
+
+	var resp *PrometheusResponse
+	var warningErrors, infoErrors []error
+
+	// If the formatter supports typed annotation decoding, use it to reconstruct
+	// typed errors that can be properly merged across sharded queries.
+	if tad, ok := formatter.(typedAnnotationDecoder); ok {
+		resp, warningErrors, infoErrors, err = tad.DecodeQueryResponseWithAnnotations(buf)
+	} else {
+		resp, err = formatter.DecodeQueryResponse(buf)
+	}
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
@@ -979,6 +1003,18 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 	for h, hv := range r.Header {
 		resp.Headers = append(resp.Headers, &PrometheusHeader{Name: h, Values: hv})
 	}
+
+	// If we decoded typed annotations, wrap in PrometheusResponseWithFinalizer
+	// so they flow through the middleware pipeline for proper merging.
+	if warningErrors != nil || infoErrors != nil {
+		return &PrometheusResponseWithFinalizer{
+			PrometheusResponse: resp,
+			finalizer:          func() {},
+			WarningErrors:      warningErrors,
+			InfoErrors:         infoErrors,
+		}, nil
+	}
+
 	return resp, nil
 }
 
@@ -1114,7 +1150,15 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 	}
 
 	start := time.Now()
-	b, err := formatter.EncodeQueryResponse(a)
+	var b []byte
+	var err error
+	// If the formatter supports typed annotations and we have them, encode them
+	// alongside the response so they can be properly merged on the receiving end.
+	if tae, ok := formatter.(typedAnnotationEncoder); ok && (warningErrors != nil || infoErrors != nil) {
+		b, err = tae.EncodeQueryResponseWithAnnotations(a, warningErrors, infoErrors)
+	} else {
+		b, err = formatter.EncodeQueryResponse(a)
+	}
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
