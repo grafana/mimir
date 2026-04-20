@@ -28,8 +28,9 @@ message PrometheusResponse {
   string ErrorType = 3 [(gogoproto.jsontag) = "errorType,omitempty"];
   string Error = 4 [(gogoproto.jsontag) = "error,omitempty"];
   repeated PrometheusHeader Headers = 5 [(gogoproto.jsontag) = "-"];
-  repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
-  repeated string Infos = 7 [(gogoproto.jsontag) = "infos,omitempty"];
+  reserved 6, 7; // Previously: repeated string Warnings/Infos; replaced by typed AnnotationError fields below.
+  repeated cortexpb.AnnotationError Warnings = 8 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "warnings,omitempty"];
+  repeated cortexpb.AnnotationError Infos = 9 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "infos,omitempty"];
 }
 
 message PrometheusData {

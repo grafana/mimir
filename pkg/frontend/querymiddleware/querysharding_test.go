@@ -1771,12 +1771,12 @@ func (h *downstreamHandler) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 		qs = r.GetQuery()
 	}
 
-	warnings, infos := res.Warnings.AsStrings(qs, 0, 0)
-	if len(warnings) > 0 {
-		resp.Warnings = warnings
+	warningErrors, infoErrors := res.Warnings.AsErrorsSplit(qs, 0, 0)
+	if len(warningErrors) > 0 {
+		resp.Warnings = mimirpb.ErrorsToAnnotationErrors(warningErrors)
 	}
-	if len(infos) > 0 {
-		resp.Infos = infos
+	if len(infoErrors) > 0 {
+		resp.Infos = mimirpb.ErrorsToAnnotationErrors(infoErrors)
 	}
 	return resp, nil
 }

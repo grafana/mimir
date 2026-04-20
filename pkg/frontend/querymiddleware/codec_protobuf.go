@@ -37,67 +37,8 @@ func (f ProtobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte
 		Status:    status,
 		ErrorType: errorType,
 		Error:     resp.Error,
-		Warnings:  mimirpb.StringsToAnnotationErrors(resp.Warnings),
-		Infos:     mimirpb.StringsToAnnotationErrors(resp.Infos),
-	}
-
-	if resp.Data != nil {
-		switch resp.Data.ResultType {
-		case model.ValString.String():
-			data, err := f.encodeStringData(resp.Data.Result)
-			if err != nil {
-				return nil, err
-			}
-
-			payload.Data = &mimirpb.QueryResponse_String_{String_: &data}
-
-		case model.ValScalar.String():
-			data, err := f.encodeScalarData(resp.Data.Result)
-			if err != nil {
-				return nil, err
-			}
-
-			payload.Data = &mimirpb.QueryResponse_Scalar{Scalar: &data}
-
-		case model.ValVector.String():
-			data, err := f.encodeVectorData(resp.Data.Result)
-			if err != nil {
-				return nil, err
-			}
-
-			payload.Data = &mimirpb.QueryResponse_Vector{Vector: &data}
-
-		case model.ValMatrix.String():
-			data := f.encodeMatrixData(resp.Data.Result)
-			payload.Data = &mimirpb.QueryResponse_Matrix{Matrix: &data}
-
-		default:
-			return nil, fmt.Errorf("unknown result type '%s'", resp.Data.ResultType)
-		}
-	}
-
-	return payload.Marshal()
-}
-
-// EncodeQueryResponseWithAnnotations encodes a query response with typed annotation errors
-// that preserve Merge() semantics across the wire.
-func (f ProtobufFormatter) EncodeQueryResponseWithAnnotations(resp *PrometheusResponse, warningErrors, infoErrors []error) ([]byte, error) {
-	status, err := mimirpb.StatusFromPrometheusString(resp.Status)
-	if err != nil {
-		return nil, err
-	}
-
-	errorType, err := mimirpb.ErrorTypeFromPrometheusString(resp.ErrorType)
-	if err != nil {
-		return nil, err
-	}
-
-	payload := mimirpb.QueryResponse{
-		Status:    status,
-		ErrorType: errorType,
-		Error:     resp.Error,
-		Warnings:  mimirpb.ErrorsToAnnotationErrors(warningErrors),
-		Infos:     mimirpb.ErrorsToAnnotationErrors(infoErrors),
+		Warnings:  resp.Warnings,
+		Infos:     resp.Infos,
 	}
 
 	if resp.Data != nil {
@@ -272,48 +213,9 @@ func (f ProtobufFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse,
 		ErrorType: errorType,
 		Error:     resp.Error,
 		Data:      data,
-		Warnings:  mimirpb.AnnotationErrorsToStrings(resp.Warnings),
-		Infos:     mimirpb.AnnotationErrorsToStrings(resp.Infos),
+		Warnings:  resp.Warnings,
+		Infos:     resp.Infos,
 	}, nil
-}
-
-// DecodeQueryResponseWithAnnotations decodes a protobuf query response and also
-// returns any typed annotation errors found in the Warnings/Infos fields.
-func (f ProtobufFormatter) DecodeQueryResponseWithAnnotations(buf []byte) (*PrometheusResponse, []error, []error, error) {
-	var resp mimirpb.QueryResponse
-
-	if err := resp.Unmarshal(buf); err != nil {
-		return nil, nil, nil, err
-	}
-
-	status, err := resp.Status.ToPrometheusString()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	errorType, err := resp.ErrorType.ToPrometheusString()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	data, err := f.decodeData(resp)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	promResp := &PrometheusResponse{
-		Status:    status,
-		ErrorType: errorType,
-		Error:     resp.Error,
-		Data:      data,
-		Warnings:  mimirpb.AnnotationErrorsToStrings(resp.Warnings),
-		Infos:     mimirpb.AnnotationErrorsToStrings(resp.Infos),
-	}
-
-	warningErrors := mimirpb.AnnotationErrorsToErrors(resp.Warnings)
-	infoErrors := mimirpb.AnnotationErrorsToErrors(resp.Infos)
-
-	return promResp, warningErrors, infoErrors, nil
 }
 
 func (f ProtobufFormatter) decodeData(resp mimirpb.QueryResponse) (*PrometheusData, error) {
