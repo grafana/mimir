@@ -8,6 +8,16 @@ Grafana Mimir follows the [Go Code Review Comments](https://go.dev/wiki/CodeRevi
 
 Comment sentences should begin with the name of the thing being described and end in a period.
 
+### Go import style
+
+Mimir uses the "gci" import organization style with three groups separated by blank lines:
+
+1. stdlib imports, sorted lexicographically
+2. 3rd-party imports, sorted lexicographically
+3. Mimir imports (`github.com/grafana/mimir/...`), sorted lexicographically
+
+Do not add extra blank lines within a group.
+
 ## No global variables
 
 - Do not use global variables

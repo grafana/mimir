@@ -285,25 +285,25 @@ Native histogram with exponential buckets samples have three different kind of b
 
 <!--- LaTeX equation source: -threshold \leq v \leq threshold -->
 
-![Zero threshold definition](zero-threshold-def.svg)
+![Zero threshold definition](../zero-threshold-def.svg)
 
 - Positive buckets, which contain the count of observations with a positive value that is greater than the lower bound and less or equal to the upper bound of a bucket.
 
 <!--- LaTeX equation source: {\left( 2^{2^{-schema}} \right)}^{index-1} < v \leq {\left( 2^{2^{-schema}}\right)}^{index} -->
 
-![Positive bucket definition](pos-bucket-def.svg)
+![Positive bucket definition](../pos-bucket-def.svg)
 
 where the _index_ can be a positive or negative integer resulting in boundaries above 1 and fractions below 1. The _schema_ either directly specified out of `[-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]` at instrumentation time or it is the largest number chosen from the list in such way that
 
 <!--- LaTeX equation source: 2^{2^{-schema}} <= factor -->
 
-![Factor equation](factor-equation.svg)
+![Factor equation](../factor-equation.svg)
 
 for example for factor `1.1`:
 
 <!--- Latex equation source: 2^{2^{-3}}\simeq1.09<=1.1 -->
 
-![Factor 1.1 equation](factor-1.1-equation.svg)
+![Factor 1.1 equation](../factor-1.1-equation.svg)
 
 Table of schema to factor:
 | _schema_ | _factor_ | | _schema_ | _factor_ |
@@ -320,7 +320,7 @@ Table of schema to factor:
 
 <!--- LaTeX equation source: -{\left( 2^{2^{-schema}} \right)}^{index} \leq v < -{\left( 2^{2^{-schema}}\right)}^{index-1} -->
 
-![Negative bucket definition](neg-bucket-def.svg)
+![Negative bucket definition](../neg-bucket-def.svg)
 
 where the `schema` is chosen as above.
 

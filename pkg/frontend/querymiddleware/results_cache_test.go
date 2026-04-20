@@ -312,7 +312,7 @@ func TestIsRequestCachable(t *testing.T) {
 	}
 }
 
-func TestIsResponseCachable(t *testing.T) {
+func TestResponseHeadersAllowCaching(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		response Response
@@ -377,7 +377,7 @@ func TestIsResponseCachable(t *testing.T) {
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
-				ret := isResponseCachable(tc.response)
+				ret := responseHeadersAllowCaching(tc.response)
 				require.Equal(t, tc.expected, ret)
 			})
 		}

@@ -19,6 +19,9 @@
 
     // Controls whether the multi (virtual) zone ingester should also be deployed multi-AZ.
     multi_zone_ingester_multi_az_enabled: $._config.multi_zone_read_path_multi_az_enabled,
+    multi_zone_ingester_zone_a_multi_az_enabled: self.multi_zone_ingester_multi_az_enabled,
+    multi_zone_ingester_zone_b_multi_az_enabled: self.multi_zone_ingester_multi_az_enabled,
+    multi_zone_ingester_zone_c_multi_az_enabled: self.multi_zone_ingester_multi_az_enabled,
   },
 
   local container = $.core.v1.container,
@@ -27,12 +30,12 @@
   local service = $.core.v1.service,
   local podAntiAffinity = $.apps.v1.deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
 
-  local isMultiAZEnabled = $._config.multi_zone_ingester_multi_az_enabled,
-  local isZoneAEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isZoneBEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
-  local isZoneCEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+  local isZoneAEnabled = $._config.multi_zone_ingester_zone_a_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isZoneBEnabled = $._config.multi_zone_ingester_zone_b_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isZoneCEnabled = $._config.multi_zone_ingester_zone_c_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 3,
 
-  assert !isMultiAZEnabled || $._config.multi_zone_ingester_enabled : 'ingester multi-AZ deployment requires ingester multi-zone to be enabled',
+  local isMultiAZAtLeastOnceEnabled = isZoneAEnabled || isZoneBEnabled || isZoneCEnabled,
+  assert !isMultiAZAtLeastOnceEnabled || $._config.multi_zone_ingester_enabled : 'ingester multi-AZ deployment requires ingester multi-zone to be enabled',
   assert !$._config.multi_zone_ingester_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
 
   //

@@ -12,6 +12,8 @@ import (
 	"unsafe"
 
 	"github.com/benbjohnson/clock"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
@@ -31,9 +33,11 @@ type JobTracker struct {
 	persister JobPersister
 	tenant    string
 	clock     clock.Clock
+	logger    log.Logger
 
-	maxLeases int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
-	metrics   *trackerMetrics
+	maxLeases                      int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
+	repeatedFailureReportThreshold int // number of failures before a repeated failure is recorded. 0 (infiniteLeases) means unlimited.
+	metrics                        *trackerMetrics
 
 	mtx                    sync.Mutex
 	pending                *list.List
@@ -44,19 +48,21 @@ type JobTracker struct {
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
-func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, metrics *trackerMetrics) *JobTracker {
+func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
 	jt := &JobTracker{
-		persister:              jobPersister,
-		tenant:                 tenant,
-		clock:                  clock,
-		maxLeases:              maxLeases,
-		metrics:                metrics,
-		mtx:                    sync.Mutex{},
-		pending:                list.New(),
-		active:                 list.New(),
-		isPlanJobLeased:        false,
-		incompleteJobs:         make(map[string]*list.Element),
-		completeCompactionJobs: make([]*TrackedCompactionJob, 0),
+		persister:                      jobPersister,
+		tenant:                         tenant,
+		clock:                          clock,
+		logger:                         log.With(logger, "user", tenant),
+		maxLeases:                      maxLeases,
+		repeatedFailureReportThreshold: repeatedFailureReportThreshold,
+		metrics:                        metrics,
+		mtx:                            sync.Mutex{},
+		pending:                        list.New(),
+		active:                         list.New(),
+		isPlanJobLeased:                false,
+		incompleteJobs:                 make(map[string]*list.Element),
+		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
 	}
 	return jt
 }
@@ -103,8 +109,7 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 		jt.incompleteJobs[job.ID()] = jt.active.PushBack(job)
 	}
 
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
+	jt.metrics.queue.Recover(pending, leased)
 }
 
 // Lease tries to find a pending job, returning a non-nil response if one was found.
@@ -134,9 +139,7 @@ func (jt *JobTracker) Lease() (response *compactorschedulerpb.LeaseJobResponse, 
 		jt.isPlanJobLeased = true
 	}
 	jt.incompleteJobs[id] = jt.active.PushBack(jj)
-
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
+	jt.metrics.queue.Leased(jj)
 
 	return jj.ToLeaseResponse(jt.tenant), jt.isPendingEmpty(), nil
 }
@@ -189,12 +192,12 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	delete(jt.incompleteJobs, id)
 	if j.IsLeased() {
 		jt.active.Remove(e)
-		jt.metrics.activeJobs.Set(float64(jt.active.Len()))
+		jt.metrics.queue.Complete(j)
 		return true, false, nil
 	}
 
 	jt.pending.Remove(e)
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
+	jt.metrics.queue.DropPending(j)
 	return true, jt.isPendingEmpty(), nil
 }
 
@@ -240,6 +243,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	wasEmpty := jt.isPendingEmpty()
 
 	for _, j := range reviveJobs {
+		jt.trackFailure(j)
 		id := j.ID()
 		// This only needs to be checked in the revive case due to plan jobs never respecting a maximum number of leases
 		if id == planJobId {
@@ -248,10 +252,13 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 
 		jt.active.Remove(jt.incompleteJobs[id])
 		jt.incompleteJobs[id] = jt.pending.PushFront(j)
+		jt.metrics.queue.Revive(j)
 	}
 
 	for _, j := range deleteJobs {
 		if j.IsLeased() {
+			jt.trackFailure(j)
+			jt.metrics.queue.Complete(j)
 			jt.active.Remove(jt.incompleteJobs[j.ID()])
 			delete(jt.incompleteJobs, j.ID())
 		}
@@ -259,12 +266,10 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 
 	if planJob != nil {
 		jt.incompleteJobs[planJobId] = jt.pending.PushBack(planJob)
+		jt.metrics.queue.Pending(planJob)
 		// Drop the previous completion time since there is now a pending job that overwrote it
 		jt.completePlanTime = time.Time{}
 	}
-
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
 
 	return wasEmpty && !jt.isPendingEmpty(), nil
 }
@@ -283,7 +288,7 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 		j := e.Value.(TrackedJob)
 		if now.Sub(j.StatusTime()) > leaseDuration {
 			// Can the job be returned to the queue?
-			if jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases {
+			if jt.canRetry(j) {
 				// Copy before modifying
 				jj := j.CopyBase()
 				jj.ClearLease()
@@ -362,7 +367,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	}
 
 	wasEmpty := jt.isPendingEmpty()
-	revive := jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases
+	revive := jt.canRetry(j)
 	if revive {
 		// Copy the value, don't want to leave a modification if the write fails
 		jj := j.CopyBase()
@@ -381,23 +386,37 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		}
 		jt.active.Remove(jt.incompleteJobs[jj.ID()])
 		jt.incompleteJobs[jj.ID()] = jt.pending.PushFront(jj)
-		jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
+		jt.metrics.queue.Revive(jj)
+
 	} else {
 		err := jt.persister.DeleteJob(j)
 		if err != nil {
 			return false, false, err
 		}
+		jt.metrics.queue.Complete(j)
 		jt.active.Remove(jt.incompleteJobs[j.ID()])
 		delete(jt.incompleteJobs, j.ID())
 	}
-
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
+	jt.trackFailure(j)
 
 	if id == planJobId {
 		jt.stopTrackingCompleteCompactionJobs()
 	}
 
 	return true, wasEmpty && revive, nil
+}
+
+// trackFailure records a repeated failure metric if the job exceeded the failure threshold.
+func (jt *JobTracker) trackFailure(j TrackedJob) {
+	if jt.repeatedFailureReportThreshold != infiniteLeases && j.NumLeases() > jt.repeatedFailureReportThreshold {
+		jt.metrics.repeatedJobFailures.Inc()
+		level.Error(jt.logger).Log("msg", "job is repeatedly failing", "job_id", j.ID(), "num_leases", j.NumLeases())
+	}
+}
+
+// canRetry returns whether a failed leased job can be retried.
+func (jt *JobTracker) canRetry(j TrackedJob) bool {
+	return j.ID() == planJobId || jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases
 }
 
 // OfferCompactionJobs processes the results from a plan job. Since planning offers a fresh view of pending work all remaining pending work
@@ -488,12 +507,14 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	for e := jt.pending.Front(); e != nil; e = e.Next() {
 		j := e.Value.(TrackedJob)
 		delete(jt.incompleteJobs, j.ID())
+		jt.metrics.queue.DropPending(j)
 	}
 
 	// Recreate the pending list in order
 	jt.pending = list.New()
 	for _, j := range acceptedJobs {
 		jt.incompleteJobs[j.ID()] = jt.pending.PushBack(j)
+		jt.metrics.queue.Pending(j)
 	}
 
 	jt.stopTrackingCompleteCompactionJobs()
@@ -502,9 +523,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	e := jt.incompleteJobs[planJobId]
 	jt.active.Remove(e)
 	delete(jt.incompleteJobs, planJobId)
-	jt.metrics.activeJobs.Set(float64(jt.active.Len()))
-
-	jt.metrics.pendingJobs.Set(float64(jt.pending.Len()))
+	jt.metrics.queue.Complete(planJob)
 	accepted = len(acceptedJobs)
 
 	// Determine rotation transition
@@ -554,6 +573,13 @@ func (jt *JobTracker) checkPlanJobEpoch(epoch int64) (*TrackedPlanJob, bool) {
 func (jt *JobTracker) stopTrackingCompleteCompactionJobs() {
 	jt.isPlanJobLeased = false
 	jt.completeCompactionJobs = make([]*TrackedCompactionJob, 0)
+}
+
+// CleanupMetrics clears metrics associated with this tenant. Must be called when a tenant is removed.
+func (jt *JobTracker) CleanupMetrics() {
+	jt.mtx.Lock()
+	defer jt.mtx.Unlock()
+	jt.metrics.Clear()
 }
 
 // completedJobsWith transforms []*TrackedCompactionJob to []TrackedJob while appending any additional provided values

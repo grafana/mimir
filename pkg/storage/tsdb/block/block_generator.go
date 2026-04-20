@@ -295,7 +295,7 @@ func CreateBlock(
 		Labels: extLset.Map(),
 		Source: TestSource,
 		Files:  []File{},
-	}, nil); err != nil {
+	}); err != nil {
 		return id, errors.Wrap(err, "finalize block")
 	}
 

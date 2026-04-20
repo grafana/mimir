@@ -240,14 +240,25 @@ func TestPartitionHandler(t *testing.T) {
 		require.NoError(t, ph1.publishSnapshot(ctx))
 		h.expectEvents(t, expectedSnapshotEvent{})
 
-		// Wait until ph2 consumes the snapshot event.
+		// Wait until ph2 receives the snapshot event.
 		select {
 		case typ := <-consumedEvents:
 			require.Equal(t, eventTypeSnapshot, typ, "expected ph2 to consume snapshot event, got %s", typ)
 		case <-time.After(10 * time.Second):
 			t.Fatal("timeout waiting for ph2 to consume snapshot event")
 		}
-		requirePerTenantSeries(t, ph2, map[string]uint64{tenantID: 2})
+
+		// onConsumeEvent fires as soon as the snapshot event is enqueued in the
+		// snapshotsFromEvents channel (inside processSnapshotEventAsync), but the
+		// actual store update happens asynchronously in loadSnapshotsFromEvents.
+		// Checking state immediately after the channel signal is a race; use
+		// Eventually to wait for the load to complete.
+		require.Eventually(t, func() bool {
+			ph2.store.mtx.RLock()
+			defer ph2.store.mtx.RUnlock()
+			tenant, ok := ph2.store.tenants[tenantID]
+			return ok && tenant.series.Load() == 2
+		}, 5*time.Second, 10*time.Millisecond, "expected ph2 to have 2 series for %s after snapshot load", tenantID)
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph1))
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
@@ -391,7 +402,7 @@ func TestPartitionHandler(t *testing.T) {
 		close(unblock)
 
 		select {
-		case <-time.After(time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatal("timeout waiting for partition handler to start")
 		case <-running:
 			requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
@@ -607,11 +618,21 @@ func (h *partitionHandlerTestHelper) newHandlerForPartitionID(t *testing.T, part
 func (h *partitionHandlerTestHelper) expectEvents(t *testing.T, expectedEvents ...any) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	// Use a generous timeout so that slow CI machines don't trip the deadline before
+	// the Kafka batch-publish timer fires (typically O(100ms)).
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	i := 0
 	for ctx.Err() == nil && i < len(expectedEvents) {
-		fetches := h.eventsKafkaReader.PollRecords(t.Context(), max(0, len(expectedEvents)-i))
+		// Pass ctx (not t.Context()) so the poll is actually bounded by the local
+		// deadline.  Using t.Context() caused the loop-condition
+		// check and the blocking call used *different* contexts, so a slow delivery
+		// could cause the loop to exit early and leave unconsumed records in the
+		// stream, corrupting subsequent expectEvents calls.
+		fetches := h.eventsKafkaReader.PollRecords(ctx, max(1, len(expectedEvents)-i))
+		if ctx.Err() != nil {
+			break // deadline expired during the poll; caught by the assertion below
+		}
 		require.NoError(t, fetches.Err(), "could not fetch events from Kafka, current: %d, expected: %d", i, len(expectedEvents))
 		fetches.EachRecord(func(record *kgo.Record) {
 			switch expected := expectedEvents[i].(type) {
@@ -639,6 +660,7 @@ func (h *partitionHandlerTestHelper) expectEvents(t *testing.T, expectedEvents .
 			i++
 		})
 	}
+	require.Equal(t, len(expectedEvents), i, "expected %d events but only received %d within timeout", len(expectedEvents), i)
 }
 
 type expectedSeriesCreatedEvent struct {

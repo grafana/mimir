@@ -57,6 +57,7 @@
     // dashboards and alerts, they should override the final matcher regexp (e.g. container_names or instance_names).
     local componentNameRegexp = {
       compactor: 'compactor',
+      compactor_scheduler: 'compactor-scheduler',
       alertmanager: 'alertmanager',
       alertmanager_im: 'alertmanager-im',
       ingester: 'ingester',
@@ -108,6 +109,7 @@
       store_gateway: ['store-gateway.*', 'cortex', 'mimir'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw.*'],  // Match also custom and per-zone gateway deployments.
       compactor: ['compactor.*', 'cortex', 'mimir'],  // Match also custom compactor deployments.
+      compactor_scheduler: ['compactor-scheduler.*'],
       alertmanager: ['alertmanager', 'cortex', 'mimir'],
       overrides_exporter: ['overrides-exporter'],
       usage_tracker: ['usage-tracker.*'],
@@ -134,6 +136,7 @@
 
       // The following matchers MUST match only the individual instances.
       compactor: instanceMatcher(componentNameRegexp.compactor),
+      compactor_scheduler: instanceMatcher(componentNameRegexp.compactor_scheduler),
       block_builder: instanceMatcher(componentNameRegexp.block_builder),
       block_builder_scheduler: instanceMatcher(componentNameRegexp.block_builder_scheduler),
       alertmanager: instanceMatcher(componentNameRegexp.alertmanager),
@@ -169,6 +172,7 @@
       // The following matchers MUST match only the individual instances.
       block_builder: componentNameRegexp.block_builder,
       block_builder_scheduler: componentNameRegexp.block_builder_scheduler,
+      compactor_scheduler: componentNameRegexp.compactor_scheduler,
       gateway: componentNameRegexp.gateway,
       distributor: componentNameRegexp.distributor,
       ingester: componentNameRegexp.ingester,
@@ -252,6 +256,9 @@
 
     // Whether mimir block-builder is enabled (experimental)
     block_builder_enabled: false,
+
+    // Whether mimir compactor scheduler is enabled (experimental)
+    compactor_scheduler_enabled: false,
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
     gateway_enabled: $._config.gem_enabled,
@@ -581,8 +588,15 @@
             (kube_pod_container_status_last_terminated_reason{%(namespace)s,container=~"%(containerName)s",reason="OOMKilled"} offset $__interval == bool 0)
           ) != 0
         |||,
-        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
-        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        // Kubernetes doesn't have build-in solution to track all ephemeral storage by container
+        // Ref https://github.com/kubernetes/kubernetes/issues/69507.
+        // We only use "log filesystem" because every container needs some amount of this for logs,
+        // regardless to if the container requires any other ephemeral persistence for it's data.
+        ephemeral_storage_usage: 'max by(%(instanceLabel)s) (kubelet_container_log_filesystem_used_bytes{%(namespace)s,container=~"%(containerName)s"})',
+        ephemeral_storage_limit: 'min(kube_pod_container_resource_limits{%(namespace)s,container=~"%(containerName)s",resource="ephemeral_storage"})',
+        ephemeral_storage_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="ephemeral_storage"})',
+        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
+        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
@@ -631,8 +645,8 @@
             + node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
           |||,
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"})',
-        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
-        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
+        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (

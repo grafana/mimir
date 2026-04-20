@@ -219,6 +219,12 @@ func (m *FunctionOverRangeVector) AfterPrepare(ctx context.Context) error {
 }
 
 func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
+	for _, d := range m.scalarArgsData {
+		types.FPointSlicePool.Put(&d.Samples, m.MemoryConsumptionTracker)
+	}
+
+	m.scalarArgsData = nil
+
 	err := m.Inner.Finalize(ctx)
 	if err != nil {
 		return err
@@ -234,16 +240,19 @@ func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
 	return nil
 }
 
+func (m *FunctionOverRangeVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	ops := make([]types.Operator, 1+len(m.ScalarArgs))
+	ops[0] = m.Inner
+	for i, sa := range m.ScalarArgs {
+		ops[1+i] = sa
+	}
+	return types.CombineStats(ctx, ops...)
+}
+
 func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
 
 	for _, sa := range m.ScalarArgs {
 		sa.Close()
 	}
-
-	for _, d := range m.scalarArgsData {
-		types.FPointSlicePool.Put(&d.Samples, m.MemoryConsumptionTracker)
-	}
-
-	m.scalarArgsData = nil
 }

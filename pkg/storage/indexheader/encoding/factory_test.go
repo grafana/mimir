@@ -17,6 +17,8 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 const testContentSize = 4096
@@ -108,15 +110,15 @@ func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
 
 	d1 := factory.NewDecbufAtChecked(0, table)
 	require.NoError(t, d1.Err())
-	fr1, ok := d1.r.(*fileReader)
-	require.True(t, ok, "expected fileReader")
+	fr1, ok := d1.r.(*FileReader)
+	require.True(t, ok, "expected FileReader")
 	fd1 := fr1.file.Fd()
 	require.NoError(t, d1.Close())
 
 	d2 := factory.NewDecbufAtChecked(0, table)
 	require.NoError(t, d2.Err())
-	fr2, ok := d2.r.(*fileReader)
-	require.True(t, ok, "expected fileReader")
+	fr2, ok := d2.r.(*FileReader)
+	require.True(t, ok, "expected FileReader")
 	fd2 := fr2.file.Fd()
 	require.NoError(t, d2.Close())
 
@@ -201,7 +203,7 @@ func TestDecbufFactory_Stop(t *testing.T) {
 			require.NoError(t, d.Close())
 		})
 
-		require.ErrorIs(t, d.Err(), ErrPoolStopped)
+		require.ErrorIs(t, d.Err(), filepool.ErrPoolStopped)
 	})
 }
 
@@ -254,7 +256,7 @@ func createDecbufFactoriesWithBytes(t testing.TB, filePoolSize uint, len int, en
 	require.NoError(t, os.WriteFile(filePath, bytes, 0700))
 
 	reg := prometheus.NewPedanticRegistry()
-	diskFactory := NewFilePoolDecbufFactory(filePath, filePoolSize, NewDecbufFactoryMetrics(reg))
+	diskFactory := NewFilePoolDecbufFactory(filePath, filePoolSize, filepool.NewFilePoolMetrics(reg))
 	t.Cleanup(func() {
 		_ = diskFactory.Close()
 	})

@@ -25,6 +25,9 @@ type MultiAggregatorGroupEvaluator struct {
 	haveComputedSeriesMetadata bool
 	prepareCalled              bool
 	afterPrepareCalled         bool
+
+	cachedQueryStats    *types.OperatorEvaluationStats
+	queryStatsCallCount int
 }
 
 func NewMultiAggregatorGroupEvaluator(
@@ -131,6 +134,30 @@ func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context) error {
 	return m.inner.Finalize(ctx)
 }
 
+func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	// TODO: handle subsets
+
+	if m.queryStatsCallCount == 0 {
+		var err error
+		m.cachedQueryStats, err = m.inner.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	m.queryStatsCallCount++
+
+	if m.queryStatsCallCount == len(m.instances) {
+		// Last call: return the cached stats directly, transferring ownership to the caller.
+		stats := m.cachedQueryStats
+		m.cachedQueryStats = nil
+		return stats, nil
+	}
+
+	// Not the last call: return a clone so the cached copy remains available.
+	return m.cachedQueryStats.Clone()
+}
+
 func (m *MultiAggregatorGroupEvaluator) Close() {
 	// Only close the inner operator if all instances have been closed.
 	for _, instance := range m.instances {
@@ -140,6 +167,11 @@ func (m *MultiAggregatorGroupEvaluator) Close() {
 	}
 
 	m.inner.Close()
+
+	if m.cachedQueryStats != nil {
+		m.cachedQueryStats.Close()
+		m.cachedQueryStats = nil
+	}
 }
 
 type MultiAggregatorInstanceOperator struct {
@@ -255,13 +287,7 @@ func (m *MultiAggregatorInstanceOperator) computeGroups(unfilteredSeries []types
 }
 
 func (m *MultiAggregatorInstanceOperator) matchesSeries(series labels.Labels) bool {
-	for _, filter := range m.filters {
-		if !filter.Matches(series.Get(filter.Name)) {
-			return false
-		}
-	}
-
-	return true
+	return types.MatchersMatch(m.filters, series)
 }
 
 func (m *MultiAggregatorInstanceOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -296,8 +322,20 @@ func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
 		return nil
 	}
 
+	if m.aggregator != nil {
+		m.aggregator.Finalize()
+		m.aggregator = nil
+	}
+
+	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
+
 	m.finalized = true
 	return m.group.Finalize(ctx)
+}
+
+func (m *MultiAggregatorInstanceOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return m.group.QueryStats(ctx)
 }
 
 func (m *MultiAggregatorInstanceOperator) Close() {
@@ -306,15 +344,6 @@ func (m *MultiAggregatorInstanceOperator) Close() {
 	}
 
 	m.closed = true
-
-	if m.aggregator != nil {
-		m.aggregator.Close()
-		m.aggregator = nil
-	}
-
-	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
-
 	m.group.Close()
 }
 

@@ -345,7 +345,7 @@ std.manifestYamlDoc({
 
   tempo:: {
     tempo: {
-      image: 'grafana/tempo:latest',
+      image: 'grafana/tempo:2.10.3',
       command: ['-config.file=/etc/config/tempo.yaml'],
       volumes: ['./config:/etc/config'],
       ports: [

@@ -930,7 +930,7 @@ alertmanager_config: |
 
 func TestMultitenantAlertmanager_DeleteUserConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertStore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
+	alertStore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertStore,
@@ -1012,7 +1012,7 @@ receivers:
 	}
 
 	storage := objstore.NewInMemBucket()
-	alertStore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
+	alertStore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
 
 	for u, cfg := range testCases {
 		err := alertStore.SetAlertConfig(context.Background(), alertspb.AlertConfigDesc{
@@ -1249,7 +1249,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 		"map containing TLSConfig as nested child": {
 			input: map[string][]config.EmailConfig{
 				"test": {{
-					TLSConfig: commoncfg.TLSConfig{
+					TLSConfig: &commoncfg.TLSConfig{
 						CAFile: "/file",
 					},
 				}},

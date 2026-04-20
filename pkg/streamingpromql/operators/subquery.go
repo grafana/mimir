@@ -141,11 +141,22 @@ func (s *Subquery) AfterPrepare(ctx context.Context) error {
 }
 
 func (s *Subquery) Finalize(ctx context.Context) error {
+	s.histograms.Close()
+	s.floats.Close()
 	return s.Inner.Finalize(ctx)
+}
+
+func (s *Subquery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	inner, err := s.Inner.Stats(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defer inner.Close()
+
+	return inner.ComputeForSubquery(s.ParentQueryTimeRange, s.rangeMilliseconds, s.SubqueryTimestamp, s.SubqueryOffset)
 }
 
 func (s *Subquery) Close() {
 	s.Inner.Close()
-	s.histograms.Close()
-	s.floats.Close()
 }

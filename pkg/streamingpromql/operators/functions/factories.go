@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
@@ -512,6 +513,10 @@ func SortByLabelOperatorFactory(descending bool) FunctionOperatorFactory {
 		// since range query results have a fixed output ordering. However, we still validate
 		// all the arguments as if we were going to sort for consistency.
 		if !timeRange.IsInstant {
+			// Match Prometheus' behaviour: only emit the "sort is ineffective for range queries" warning when the range query actually spans more than one moment.
+			if timeRange.StartT != timeRange.EndT {
+				opParams.Annotations.Add(annotations.NewSortInRangeQueryWarning(expressionPosition))
+			}
 			return inner, nil
 		}
 
@@ -538,8 +543,12 @@ func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 			return nil, fmt.Errorf("expected an instant vector for 1st argument for %s, got %T", functionName, args[0])
 		}
 
-		if timeRange.StepCount != 1 {
+		if !timeRange.IsInstant {
 			// If this is a range query, sort / sort_desc does not reorder series, but does drop all histograms like it would for an instant query.
+			// Match Prometheus' behaviour: only emit the "sort is ineffective for range queries" warning when the range query actually spans more than one moment.
+			if timeRange.StartT != timeRange.EndT {
+				opParams.Annotations.Add(annotations.NewSortInRangeQueryWarning(expressionPosition))
+			}
 			f := FunctionOverInstantVectorDefinition{SeriesDataFunc: DropHistograms}
 			return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 		}

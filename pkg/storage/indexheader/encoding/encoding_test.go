@@ -17,6 +17,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -308,7 +309,7 @@ func TestDecbuf_SkipHappyPath(t *testing.T) {
 func TestDecbuf_SkipMultipleBufferReads(t *testing.T) {
 	tb := test.NewTB(t)
 
-	// The underlying fileReader buffers the file 4k bytes at a time. Ensure
+	// The underlying FileReader buffers the file 4k bytes at a time. Ensure
 	// that we can skip multiple 4k chunks without ending up with a short read.
 	bytes := make([]byte, 4096*5)
 	for i := 0; i < len(bytes); i++ {
@@ -828,8 +829,8 @@ func runAllBufReaderTypes(tb test.TB, caseName string, bytes []byte, testFn func
 	filePath := path.Join(dir, fileName)
 	require.NoError(tb, os.WriteFile(filePath, bytes, 0700))
 
-	reg := prometheus.NewPedanticRegistry()
-	diskFactory := NewFilePoolDecbufFactory(filePath, 0, NewDecbufFactoryMetrics(reg))
+	reg := prometheus.WrapRegistererWithPrefix("indexheader_", prometheus.NewPedanticRegistry())
+	diskFactory := NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
 	tb.Cleanup(func() {
 		_ = diskFactory.Close()
 	})

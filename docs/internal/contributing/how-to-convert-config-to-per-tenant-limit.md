@@ -150,7 +150,7 @@ Until deprecation is complete, we need to ensure that a user who is still settin
    // The query-frontend.cache-unaligned-requests flag has been moved to the limits.go file
    // cfg.DeprecatedCacheUnalignedRequests is set to the default here for clarity
    // and consistency with the process for migrating limits to per-tenant config
-   // TODO: Remove in Mimir 2.12.0
+   // TODO: Remove in Mimir X.Y
    cfg.DeprecatedCacheUnalignedRequests = DefaultDeprecatedCacheUnalignedRequests
    ```
 
@@ -165,7 +165,7 @@ Until deprecation is complete, we need to ensure that a user who is still settin
    // DeprecatedCacheUnalignedRequests is moving from a global config that can in the frontend yaml to a limit config
    // We need to preserve the option in the frontend yaml for two releases
    // If the frontend config is configured by the user, the default limit is overwritten
-   // TODO: Remove in Mimir 2.12.0
+   // TODO: Remove in Mimir X.Y
    if t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests != querymiddleware.DefaultDeprecatedCacheUnalignedRequests {
        t.Cfg.LimitsConfig.ResultsCacheForUnalignedQueryEnabled = t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests
    }

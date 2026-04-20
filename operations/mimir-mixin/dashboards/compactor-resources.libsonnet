@@ -4,37 +4,35 @@ local filename = 'mimir-compactor-resources.json';
 (import 'dashboard-utils.libsonnet') {
   [filename]:
     assert std.md5(filename) == '09a5c49e9cdb2f2b24c6d184574a07fd' : 'UID of the dashboard has changed, please update references to dashboard.';
+    local compactor_scheduler_enabled = $._config.compactor_scheduler_enabled;
     ($.dashboard('Compactor resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
-      $.row('CPU and memory')
+      $.row('Compactor resources')
       .addPanel(
         $.containerCPUUsagePanelByComponent('compactor'),
       )
       .addPanel(
-        $.containerGoHeapInUsePanelByComponent('compactor'),
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.containerMemoryRSSPanelByComponent('compactor'),
-      )
-      .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('compactor'),
       )
-    )
-    .addRow(
-      $.row('Network')
       .addPanel(
-        $.containerNetworkReceiveBytesPanelByComponent('compactor'),
+        $.containerGoHeapInUsePanelByComponent('compactor'),
       )
       .addPanel(
-        $.containerNetworkTransmitBytesPanelByComponent('compactor'),
+        $.containerEphemeralStoragePanelByComponent('compactor'),
       )
     )
     .addRow(
-      $.row('Disk')
+      $.row(if compactor_scheduler_enabled then 'Network (compactor)' else 'Network')
+      .addPanel(
+        $.containerNetworkReceiveBytesPanelByComponent('compactor', if compactor_scheduler_enabled then 'compactor_scheduler' else ''),
+      )
+      .addPanel(
+        $.containerNetworkTransmitBytesPanelByComponent('compactor', if compactor_scheduler_enabled then 'compactor_scheduler' else ''),
+      )
+    )
+    .addRow(
+      $.row(if compactor_scheduler_enabled then 'Disk (compactor)' else 'Disk')
       .addPanel(
         $.containerDiskWritesPanelByComponent('compactor'),
       )
@@ -42,7 +40,46 @@ local filename = 'mimir-compactor-resources.json';
         $.containerDiskReadsPanelByComponent('compactor'),
       )
       .addPanel(
-        $.containerDiskSpaceUtilizationPanelByComponent('compactor'),
+        $.containerDiskSpaceUtilizationPanelByComponent('compactor', if compactor_scheduler_enabled then 'compactor_scheduler' else ''),
+      )
+    )
+    .addRowIf(
+      compactor_scheduler_enabled,
+      ($.row('Compactor-scheduler resources') + { collapse: true })
+      .addPanel(
+        $.containerCPUUsagePanelByComponent('compactor_scheduler'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('compactor_scheduler'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('compactor_scheduler'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('compactor_scheduler'),
+      )
+    )
+    .addRowIf(
+      compactor_scheduler_enabled,
+      ($.row('Network (compactor-scheduler)') + { collapse: true })
+      .addPanel(
+        $.containerNetworkReceiveBytesPanelByComponent('compactor_scheduler'),
+      )
+      .addPanel(
+        $.containerNetworkTransmitBytesPanelByComponent('compactor_scheduler'),
+      )
+    )
+    .addRowIf(
+      compactor_scheduler_enabled,
+      ($.row('Disk (compactor-scheduler)') + { collapse: true })
+      .addPanel(
+        $.containerDiskWritesPanelByComponent('compactor_scheduler'),
+      )
+      .addPanel(
+        $.containerDiskReadsPanelByComponent('compactor_scheduler'),
+      )
+      .addPanel(
+        $.containerDiskSpaceUtilizationPanelByComponent('compactor_scheduler'),
       )
     ) + {
       templating+: {

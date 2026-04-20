@@ -985,10 +985,10 @@ func TestCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 		Error:     "something went wrong",
 	}
 
-	jsonBody, err := jsonFormatter{}.EncodeQueryResponse(testResponse)
+	jsonBody, err := encodeQueryResponse(jsonFormatterInstance, testResponse)
 	require.NoError(t, err)
 
-	protobufBody, err := ProtobufFormatter{}.EncodeQueryResponse(testResponse)
+	protobufBody, err := encodeQueryResponse(ProtobufFormatter{}, testResponse)
 	require.NoError(t, err)
 
 	scenarios := map[string]struct {
@@ -2239,7 +2239,7 @@ func newTestCodecWithHeaders(propagateHeaders []string) Codec {
 }
 
 func newTestCodecWithFormatAndHeaders(format string, propagateHeaders []string) Codec {
-	return NewCodec(prometheus.NewPedanticRegistry(), streamingpromql.DefaultLookbackDelta, format, propagateHeaders, &api.ConsistencyInjector{})
+	return NewCodec(prometheus.NewPedanticRegistry(), streamingpromql.DefaultLookbackDelta, format, propagateHeaders, &api.ConsistencyInjector{}, log.NewNopLogger())
 }
 
 func mustSucceed[T any](value T, err error) T {
@@ -2257,4 +2257,12 @@ func TestContextHeaderPropagation(t *testing.T) {
 	ctx := ContextWithHeadersToPropagate(context.Background(), map[string][]string{"Some-Header": {"Some-Value"}})
 	headers = HeadersToPropagateFromContext(ctx)
 	require.Equal(t, map[string][]string{"Some-Header": {"Some-Value"}}, headers)
+}
+
+func encodeQueryResponse(f formatter, resp *PrometheusResponse) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := f.EncodeQueryResponseTo(&buf, resp); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

@@ -9,9 +9,10 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
-	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
@@ -167,7 +168,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{})
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{}, log.NewNopLogger())
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
@@ -214,10 +215,10 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 				},
 				ContentLength: int64(len(body)),
 			}
+
 			encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), httpRequest, decoded)
 			require.NoError(t, err)
-
-			requireEqualHttpResponse(t, httpResponse, encoded)
+			encodedBody := requireEqualHttpResponse(t, httpResponse, encoded)
 
 			metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
@@ -228,20 +229,16 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 			payloadSizeHistogram, err = dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
-			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
+			require.Equal(t, float64(len(encodedBody)), *payloadSizeHistogram.SampleSum)
 		})
 	}
 }
 
 // requireEqualHttpResponse checks the responses are the same with special handling for the Body.
-func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) {
-	// Compare all HTTP response fields except the Body
+// Returns the actual json encoded body.
+func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) string {
 	require.Equal(t, expected.StatusCode, actual.StatusCode)
 	require.Equal(t, expected.Header, actual.Header)
-	require.Equal(t, expected.ContentLength, actual.ContentLength)
-
-	// Verify that body types match
-	require.Equal(t, reflect.TypeOf(expected.Body), reflect.TypeOf(actual.Body))
 
 	// Read and compare the body contents
 	expectedJSON, err := readResponseBody(expected)
@@ -251,6 +248,7 @@ func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) {
 	require.JSONEq(t, string(expectedJSON), string(actualJSON))
 
 	// No need to reset the bodies since they're typically not used after this comparison
+	return string(actualJSON)
 }
 
 func TestCodec_JSONResponse_Labels(t *testing.T) {
@@ -352,7 +350,7 @@ func TestCodec_JSONResponse_Labels(t *testing.T) {
 			encoded, err := codec.EncodeLabelsSeriesQueryResponse(context.Background(), httpRequest, decoded, tc.isSeriesResponse)
 			require.NoError(t, err)
 
-			requireEqualHttpResponse(t, httpResponse, encoded)
+			_ = requireEqualHttpResponse(t, httpResponse, encoded)
 		})
 	}
 }
@@ -479,7 +477,7 @@ func TestCodec_JSONEncoding_Metrics(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{})
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{}, log.NewNopLogger())
 			httpRequest := &http.Request{
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}
@@ -492,7 +490,6 @@ func TestCodec_JSONEncoding_Metrics(t *testing.T) {
 			encodedJSON, err := readResponseBody(encoded)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expectedJSON, string(encodedJSON))
-			require.Equal(t, len(encodedJSON), int(encoded.ContentLength))
 
 			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
@@ -503,7 +500,7 @@ func TestCodec_JSONEncoding_Metrics(t *testing.T) {
 			payloadSizeHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
-			require.Equal(t, float64(encoded.ContentLength), *payloadSizeHistogram.SampleSum)
+			require.Equal(t, float64(len(encodedJSON)), *payloadSizeHistogram.SampleSum)
 		})
 	}
 }
@@ -563,7 +560,8 @@ func TestCodec_JSONEncoding_Labels(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			codec := newTestCodec()
+			reg := prometheus.NewPedanticRegistry()
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{}, log.NewNopLogger())
 			httpRequest := &http.Request{
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}
@@ -576,7 +574,71 @@ func TestCodec_JSONEncoding_Labels(t *testing.T) {
 			encodedJSON, err := readResponseBody(encoded)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expectedJSON, string(encodedJSON))
-			require.Equal(t, len(encodedJSON), int(encoded.ContentLength))
+
+			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			durationHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
+			require.Less(t, *durationHistogram.SampleSum, 0.1)
+			payloadSizeHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
+			require.Equal(t, float64(len(encodedJSON)), *payloadSizeHistogram.SampleSum)
 		})
+	}
+}
+
+// BenchmarkEncodeMetricsQueryResponse_Sizes benchmarks EncodeMetricsQueryResponse across a range of payload sizes.
+func BenchmarkEncodeMetricsQueryResponse_Sizes(b *testing.B) {
+	sizes := []struct{ series, samples int }{
+		{1000, 100},
+		{3000, 500},
+		{10000, 1000},
+	}
+	codec := newTestCodec()
+	for _, sz := range sizes {
+		resp := benchmarkPrometheusResponse(sz.series, sz.samples)
+		b.Run(fmt.Sprintf("%dx%d", sz.series, sz.samples), func(b *testing.B) {
+			req := &http.Request{Header: http.Header{"Accept": []string{jsonMimeType}}}
+			b.ReportAllocs()
+			for b.Loop() {
+				encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), req, resp)
+				if err != nil {
+					b.Fatal(err)
+				}
+				n, err := io.Copy(io.Discard, encoded.Body)
+				if err != nil {
+					b.Fatal(err)
+				}
+				// Measure live heap before releasing the response body.
+				// Prior to PR #14840 the encoded bytes.Buffer backing array would still be referenced here;
+				// now only a drained pipe reader remains.
+				runtime.GC()
+				var ms runtime.MemStats
+				runtime.ReadMemStats(&ms)
+				b.ReportMetric(float64(ms.HeapInuse), "heap-inuse/op")
+				_ = encoded.Body.Close()
+				b.SetBytes(n)
+			}
+		})
+	}
+}
+
+func benchmarkPrometheusResponse(seriesCount, samplesPerSeries int) *PrometheusResponse {
+	result := make([]SampleStream, seriesCount)
+	for i := range result {
+		samples := make([]mimirpb.Sample, samplesPerSeries)
+		for j := range samples {
+			samples[j] = mimirpb.Sample{TimestampMs: int64((i*samplesPerSeries + j) * 15000), Value: float64(i*samplesPerSeries + j)}
+		}
+		result[i] = SampleStream{
+			Labels:  []mimirpb.LabelAdapter{{Name: "series", Value: fmt.Sprintf("series_%d", i)}},
+			Samples: samples,
+		}
+	}
+	return &PrometheusResponse{
+		Status: statusSuccess,
+		Data:   &PrometheusData{ResultType: model.ValMatrix.String(), Result: result},
 	}
 }

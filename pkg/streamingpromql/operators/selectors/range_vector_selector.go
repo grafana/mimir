@@ -20,8 +20,9 @@ import (
 )
 
 type RangeVectorSelector struct {
-	Selector *Selector
-	Stats    *types.QueryStats
+	Selector                 *Selector
+	QueryStats               *types.QueryStats
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	rangeMilliseconds int64
 	chunkIterator     chunkenc.Iterator
@@ -29,6 +30,7 @@ type RangeVectorSelector struct {
 	floats            *types.FPointRingBuffer
 	histograms        *types.HPointRingBuffer
 	stepData          *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
+	evaluationStats   *types.OperatorEvaluationStats
 
 	// Maintain metadata about modifications made to the floats buffer to support the smoothed/anchored extended range implementation.
 	// A single instance is allocated (if required) and re-used between all steps and all series.
@@ -40,11 +42,12 @@ var _ types.RangeVectorOperator = &RangeVectorSelector{}
 func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats) *RangeVectorSelector {
 
 	rangeVectorSelector := RangeVectorSelector{
-		Selector:   selector,
-		Stats:      stats,
-		floats:     types.NewFPointRingBuffer(memoryConsumptionTracker),
-		histograms: types.NewHPointRingBuffer(memoryConsumptionTracker),
-		stepData:   &types.RangeVectorStepData{Anchored: selector.Anchored, Smoothed: selector.Smoothed}, // Include the smoothed/anchored context to the step data as functions such as rate/increase require this
+		Selector:                 selector,
+		QueryStats:               stats,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
+		histograms:               types.NewHPointRingBuffer(memoryConsumptionTracker),
+		stepData:                 &types.RangeVectorStepData{Anchored: selector.Anchored, Smoothed: selector.Smoothed}, // Include the smoothed/anchored context to the step data as functions such as rate/increase require this
 	}
 
 	if selector.Anchored {
@@ -158,22 +161,31 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		}
 	}
 
+	// Update query stats before we perform any mutations for the anchored or smoothed modifier.
+	m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, nil)
+
 	if m.Selector.Anchored || m.Selector.Smoothed {
 		// Histograms are not supported for these modified range queries
 		if histogramObserved {
 			return nil, errors.New("smoothed and anchored modifiers do not work with native histograms")
 		}
 
-		// Mutate the floats buffer to align and extend points to the original time boundaries.
-		// The result is either an empty buffer or one containing only points within the
-		// original time range, with points present at both boundaries.
-		err = m.extendedPointsState.ApplyBoundaryMutations(originalRangeStart, originalRangeEnd, rangeEnd)
-		if err != nil {
-			return nil, err
+		if m.floats.Count() > 0 && m.floats.PointAt(0).T > originalRangeEnd {
+			// This will be an empty set
+			m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(originalRangeEnd, m.stepData.Floats)
+		} else {
+			// Mutate the floats buffer to align and extend points to the original time boundaries.
+			// The result is either an empty buffer or one containing only points within the
+			// original time range, with points present at both boundaries.
+			err = m.extendedPointsState.ApplyBoundaryMutations(originalRangeStart, originalRangeEnd, rangeEnd)
+			if err != nil {
+				return nil, err
+			}
+
+			// A ViewAll can be used since we know that this buffer only contains points within the requested range.
+			m.stepData.Floats = m.floats.ViewAll(m.stepData.Floats)
 		}
 
-		// A ViewAll can be used since we know that this buffer only contains points within the requested range.
-		m.stepData.Floats = m.floats.ViewAll(m.stepData.Floats)
 	} else {
 		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Floats)
 	}
@@ -182,7 +194,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	m.stepData.RangeStart = originalRangeStart // important to return the original range start so that functions like rate() can determine the range duration regardless of smoothed / anchored
 	m.stepData.RangeEnd = originalRangeEnd
 
-	m.Stats.IncrementSamples(int64(m.stepData.Floats.Count()) + m.stepData.Histograms.EquivalentFloatSampleCount())
+	m.QueryStats.IncrementSamples(int64(m.stepData.Floats.Count()) + m.stepData.Histograms.EquivalentFloatSampleCount())
 
 	return m.stepData, nil
 }
@@ -252,6 +264,11 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 }
 
 func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	var err error
+	m.evaluationStats, err = types.NewOperatorEvaluationStats(m.Selector.TimeRange, m.MemoryConsumptionTracker, 0)
+	if err != nil {
+		return err
+	}
 	return m.Selector.Prepare(ctx, params)
 }
 
@@ -260,13 +277,25 @@ func (m *RangeVectorSelector) AfterPrepare(ctx context.Context) error {
 }
 
 func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
-	// Nothing to do.
-	return nil
-}
-
-func (m *RangeVectorSelector) Close() {
-	m.Selector.Close()
 	m.floats.Close()
 	m.histograms.Close()
 	m.chunkIterator = nil
+	m.Selector.Close()
+	return nil
+}
+
+func (m *RangeVectorSelector) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	stats := m.evaluationStats
+	m.evaluationStats = nil
+	return stats, nil
+}
+
+func (m *RangeVectorSelector) Close() {
+	// If the query fails, then Finalize above won't be called, so make sure to close the selector.
+	m.Selector.Close()
+
+	if m.evaluationStats != nil {
+		m.evaluationStats.Close()
+		m.evaluationStats = nil
+	}
 }

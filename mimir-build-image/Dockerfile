@@ -5,7 +5,7 @@
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
 FROM alpine/helm:4.1.1@sha256:b5c85b997d83e89d9e8ff9215a14b03864274143981af45eb3fe729cdf782c73 AS helm
-FROM golang:1.25.8-trixie@sha256:bc16125656839ffe56154c675f7a9662bec2ef7d4060177239914e7c6d2fd8a8
+FROM golang:1.25.9-trixie@sha256:091e6099f4a58e9393b8cc5615622a59c1cef64481b0ffcf349ec1574449059e
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -22,7 +22,7 @@ RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN npm install -g prettier@2.3.2
 
 # renovate: depName=github.com/mvdan/sh
-ENV SHFMT_VERSION=3.12.0
+ENV SHFMT_VERSION=3.13.0
 RUN GOARCH=$(go env GOARCH) && \
     URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
     curl -fsSLo shfmt "${URL}" && \
@@ -30,7 +30,7 @@ RUN GOARCH=$(go env GOARCH) && \
 	mv shfmt /usr/bin
 
 # renovate: depName=github.com/grafana/tanka
-ENV TANKA_VERSION=0.36.3
+ENV TANKA_VERSION=0.36.4
 RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
@@ -52,13 +52,13 @@ RUN GO111MODULE=on \
 	go install github.com/campoy/embedmd/v2@v2.0.0 && \
 	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.6.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
-	go install github.com/mikefarah/yq/v4@v4.52.4 && \
+	go install github.com/mikefarah/yq/v4@v4.52.5 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.21.0 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.21.0 && \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2 && \
 	go install github.com/open-policy-agent/conftest@v0.66.0 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \
-	go install github.com/bufbuild/buf/cmd/buf@v1.66.1 && \
+	go install github.com/bufbuild/buf/cmd/buf@v1.67.0 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm

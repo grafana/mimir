@@ -6,7 +6,9 @@
 package types
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -48,27 +50,36 @@ type OperatorEvaluationStats struct {
 	timeRange                QueryTimeRange
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	samplesProcessedPerStep []int64
-	newSamplesReadPerStep   []int64
+	allSeries *statsTracker
+	subsets   []*statsTracker
 }
 
-func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
-	samplesProcessedPerStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+// NewOperatorEvaluationStats creates a new OperatorEvaluationStats for the given time range.
+//
+// subsetCount is the number of subsets to track. It is the caller's responsibility to track
+// which subset is which.
+func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
+	allSeries, err := newStatsTracker(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	newSamplesReadPerStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
+	subsets := make([]*statsTracker, 0, subsetCount)
+	for range subsetCount {
+		stats, err := newStatsTracker(timeRange, memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+
+		subsets = append(subsets, stats)
 	}
 
 	return &OperatorEvaluationStats{
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 
-		samplesProcessedPerStep: samplesProcessedPerStep[:timeRange.StepCount],
-		newSamplesReadPerStep:   newSamplesReadPerStep[:timeRange.StepCount],
+		allSeries: allSeries,
+		subsets:   subsets,
 	}, nil
 }
 
@@ -78,11 +89,23 @@ func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTrack
 //
 // TrackSampleForInstantVectorSelector should be called for each output step of an instant vector selector, even if
 // the same underlying sample is used for multiple output steps.
-func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64) {
-	i := s.timeRange.PointIndex(stepT)
+//
+// matchesSubsets must be a bitmap with a value for each subset tracked by this instance. true indicates the samples
+// should be added to the corresponding subset.
+func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64, matchesSubsets []bool) {
+	if len(matchesSubsets) != len(s.subsets) {
+		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
+	}
 
-	s.samplesProcessedPerStep[i] += sampleCount
-	s.newSamplesReadPerStep[i] += sampleCount
+	pointIdx := s.timeRange.PointIndex(stepT)
+
+	s.allSeries.Add(pointIdx, sampleCount, sampleCount)
+
+	for subsetIdx, subset := range s.subsets {
+		if matchesSubsets[subsetIdx] {
+			subset.Add(pointIdx, sampleCount, sampleCount)
+		}
+	}
 }
 
 // TrackSamplesForRangeVectorSelector records samples for a range vector selector at output timestamp stepT.
@@ -92,17 +115,31 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 //
 // floats and histograms may contain samples beyond rangeEnd, these will be ignored.
 // floats and histograms must not contain samples before rangeStart.
-func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64) {
-	i := s.timeRange.PointIndex(stepT)
+//
+// matchesSubsets must be a bitmap with a value for each subset tracked by this instance. true indicates the samples
+// should be added to the corresponding subset.
+func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, matchesSubsets []bool) {
+	if len(matchesSubsets) != len(s.subsets) {
+		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
+	}
 
-	s.samplesProcessedPerStep[i] += int64(floats.CountUntil(rangeEnd)) + histograms.EquivalentFloatSampleCountUntil(rangeEnd)
+	pointIdx := s.timeRange.PointIndex(stepT)
+
+	samplesProcessed := int64(floats.CountUntil(rangeEnd)) + histograms.EquivalentFloatSampleCountUntil(rangeEnd)
 
 	newSampleRangeStart := rangeEnd - s.timeRange.IntervalMilliseconds
 	if s.timeRange.IsInstant {
 		newSampleRangeStart = rangeStart
 	}
+	newSamplesRead := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
 
-	s.newSamplesReadPerStep[i] += int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
+	s.allSeries.Add(pointIdx, samplesProcessed, newSamplesRead)
+
+	for subsetIdx, subset := range s.subsets {
+		if matchesSubsets[subsetIdx] {
+			subset.Add(pointIdx, samplesProcessed, newSamplesRead)
+		}
+	}
 }
 
 // Add adds the statistics from other to this instance.
@@ -110,33 +147,219 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 // This instance is modified in-place.
 //
 // Both instances must be for the same time range.
+//
+// At most one of the two instances may have subsets. If both have subsets, an error is returned.
+// When one has subsets and the other does not, the overall statistics from the instance without subsets
+// are added to each subset in the instance with subsets.
 func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 	if !s.timeRange.Equal(other.timeRange) {
 		return errors.New("cannot add OperatorEvaluationStats with different time ranges")
 	}
 
-	for i := range s.samplesProcessedPerStep {
-		s.samplesProcessedPerStep[i] += other.samplesProcessedPerStep[i]
-		s.newSamplesReadPerStep[i] += other.newSamplesReadPerStep[i]
+	if len(s.subsets) > 0 && len(other.subsets) > 0 {
+		return errors.New("cannot add two OperatorEvaluationStats instances that both have subsets")
+	}
+
+	for i := range s.timeRange.StepCount {
+		s.allSeries.Add(int64(i), other.allSeries.samplesProcessedPerStep[i], other.allSeries.newSamplesReadPerStep[i])
+	}
+
+	for _, subset := range s.subsets {
+		for i := range subset.samplesProcessedPerStep {
+			subset.Add(int64(i), other.allSeries.samplesProcessedPerStep[i], other.allSeries.newSamplesReadPerStep[i])
+		}
 	}
 
 	return nil
 }
 
-// Clone returns a copy of this OperatorEvaluationStats instance.
+func (s *OperatorEvaluationStats) newEmptyInstanceWithSameSubsets(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
+	return NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker, len(s.subsets))
+}
+
+// Clone returns a copy of this OperatorEvaluationStats instance, including any subset definitions and their data.
 func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
-	clone, err := NewOperatorEvaluationStats(s.timeRange, s.memoryConsumptionTracker)
+	clone, err := s.newEmptyInstanceWithSameSubsets(s.timeRange)
 	if err != nil {
 		return nil, err
 	}
 
-	copy(clone.samplesProcessedPerStep, s.samplesProcessedPerStep)
-	copy(clone.newSamplesReadPerStep, s.newSamplesReadPerStep)
+	clone.allSeries.CopyFrom(s.allSeries)
+
+	for i, subset := range s.subsets {
+		clone.subsets[i].CopyFrom(subset)
+	}
 
 	return clone, nil
 }
 
+// ExtendStepInvariantToFullRange calculates the equivalent statistics for a step invariant
+// operation that is used for multiple steps in a range query.
+//
+// Subset definitions and their data are preserved in the expanded instance.
+//
+// It is the caller's responsibility to call Close on the original OperatorEvaluationStats instance.
+func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
+	if !s.timeRange.IsInstant {
+		return nil, fmt.Errorf("cannot extend step invariant to full range for non-instant time range %v", s.timeRange)
+	}
+
+	expanded, err := s.newEmptyInstanceWithSameSubsets(timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	expanded.allSeries.SetFromStepInvariant(s.allSeries.samplesProcessedPerStep[0], s.allSeries.newSamplesReadPerStep[0])
+
+	for i, subset := range s.subsets {
+		expanded.subsets[i].SetFromStepInvariant(subset.samplesProcessedPerStep[0], subset.newSamplesReadPerStep[0])
+	}
+
+	return expanded, nil
+}
+
+// ComputeForSubquery calculates the statistics for a subquery's contribution to the parent query,
+// based on the statistics for the inner operator of the subquery.
+//
+// s must be the OperatorEvaluationStats for the inner operator, evaluated over the subquery's time range.
+//
+// parentTimeRange is the time range of the parent query.
+// subqueryRangeMilliseconds is the duration of the subquery range in milliseconds.
+// subqueryTimestamp is the fixed evaluation timestamp from the @ modifier, in milliseconds since Unix epoch.
+// It should be nil if the @ modifier was not used.
+// subqueryOffsetMilliseconds is the subquery offset in milliseconds.
+//
+// s is not modified and is not closed when ComputeForSubquery returns.
+func (s *OperatorEvaluationStats) ComputeForSubquery(
+	parentTimeRange QueryTimeRange,
+	subqueryRangeMilliseconds int64,
+	subqueryTimestamp *int64,
+	subqueryOffsetMilliseconds int64,
+) (*OperatorEvaluationStats, error) {
+	result, err := s.newEmptyInstanceWithSameSubsets(parentTimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	lastNewSamplesIdxUsed := -1
+
+	for parentIdx := range parentTimeRange.StepCount {
+		parentT := parentTimeRange.IndexTime(int64(parentIdx))
+
+		rangeEnd := parentT
+		if subqueryTimestamp != nil {
+			rangeEnd = *subqueryTimestamp
+		}
+		rangeEnd -= subqueryOffsetMilliseconds
+		rangeStart := rangeEnd - subqueryRangeMilliseconds
+
+		// Find the range of inner steps in (rangeStart, rangeEnd].
+		firstInnerIdx := s.timeRange.FirstPointIndexAfter(rangeStart)
+		lastInnerIdx := s.timeRange.LastPointIndexAtOrBefore(rangeEnd)
+		firstNewSamplesInnerIdx := max(lastNewSamplesIdxUsed, firstInnerIdx)
+
+		result.allSeries.SetFromSubquery(s.allSeries, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
+
+		for i, subset := range result.subsets {
+			subset.SetFromSubquery(s.subsets[i], parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
+		}
+
+		lastNewSamplesIdxUsed = lastInnerIdx + 1
+	}
+
+	return result, nil
+}
+
 func (s *OperatorEvaluationStats) Close() {
+	s.allSeries.Close()
+
+	for _, subset := range s.subsets {
+		subset.Close()
+	}
+}
+
+type statsTracker struct {
+	samplesProcessedPerStep []int64
+	newSamplesReadPerStep   []int64
+
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+}
+
+func newStatsTracker(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*statsTracker, error) {
+	samplesProcessed, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	newSamplesRead, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	return &statsTracker{
+		samplesProcessedPerStep:  samplesProcessed[:timeRange.StepCount],
+		newSamplesReadPerStep:    newSamplesRead[:timeRange.StepCount],
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}, nil
+}
+
+func (s *statsTracker) Add(pointIndex int64, samplesProcessed int64, newSamplesRead int64) {
+	s.samplesProcessedPerStep[pointIndex] += samplesProcessed
+	s.newSamplesReadPerStep[pointIndex] += newSamplesRead
+}
+
+func (s *statsTracker) SetFromSubquery(source *statsTracker, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int) {
+	for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+		s.samplesProcessedPerStep[parentIdx] += source.samplesProcessedPerStep[innerIdx]
+	}
+
+	for innerIdx := firstNewSamplesInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+		s.newSamplesReadPerStep[parentIdx] += source.newSamplesReadPerStep[innerIdx]
+	}
+}
+
+func (s *statsTracker) SetFromStepInvariant(samplesProcessed int64, newSamplesRead int64) {
+	s.newSamplesReadPerStep[0] = newSamplesRead
+	for idx := range s.samplesProcessedPerStep {
+		s.samplesProcessedPerStep[idx] = samplesProcessed
+	}
+}
+
+func (s *statsTracker) CopyFrom(source *statsTracker) {
+	copy(s.samplesProcessedPerStep, source.samplesProcessedPerStep)
+	copy(s.newSamplesReadPerStep, source.newSamplesReadPerStep)
+}
+
+func (s *statsTracker) Close() {
 	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)
+}
+
+// CombineStats retrieves and combines query stats from multiple operators.
+// The caller is responsible for calling Close() on the returned stats.
+func CombineStats[T StatsProvider](ctx context.Context, operators ...T) (*OperatorEvaluationStats, error) {
+	var combined *OperatorEvaluationStats
+
+	for _, op := range operators {
+		stats, err := op.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if combined == nil {
+			combined = stats
+			continue
+		}
+
+		if err := combined.Add(stats); err != nil {
+			return nil, err
+		}
+		stats.Close()
+	}
+
+	return combined, nil
+}
+
+type StatsProvider interface {
+	Stats(context.Context) (*OperatorEvaluationStats, error)
 }

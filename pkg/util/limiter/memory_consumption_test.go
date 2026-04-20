@@ -258,6 +258,75 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	})
 }
 
+func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	tt := NewInflightMemoryConsumptionTracker(reg)
+
+	tracker1Limit := 100
+	tracker2Limit := 200
+	tracker1 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker1Limit), nil, "query1")
+	tracker2 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker2Limit), nil, "query2")
+
+	// tracker1: add 30 ingester + 20 store-gateway = 50, remove 10 ingester -> current=40, peak=50
+	tracker1Ingester := 30
+	tracker1StoreGateway := 20
+	tracker1Decrease := 10
+	tracker1Current := tracker1Ingester + tracker1StoreGateway - tracker1Decrease // 40
+	tracker1Peak := tracker1Ingester + tracker1StoreGateway                       // 50
+	require.NoError(t, tracker1.IncreaseMemoryConsumption(uint64(tracker1Ingester), IngesterChunks))
+	require.NoError(t, tracker1.IncreaseMemoryConsumption(uint64(tracker1StoreGateway), StoreGatewayChunks))
+	tracker1.DecreaseMemoryConsumption(uint64(tracker1Decrease), IngesterChunks)
+
+	// tracker2: add 60 ingester -> current=60, peak=60
+	tracker2Ingester := 60
+	tracker2Current := tracker2Ingester // 60
+	tracker2Peak := tracker2Ingester    // 60
+	require.NoError(t, tracker2.IncreaseMemoryConsumption(uint64(tracker2Ingester), IngesterChunks))
+
+	assertTrackerTrackerMetrics(t, reg, float64(tracker1Limit+tracker2Limit), float64(tracker1Current+tracker2Current), float64(tracker1Peak+tracker2Peak), 2)
+
+	tt.Deregister(tracker1)
+	assertTrackerTrackerMetrics(t, reg, float64(tracker2Limit), float64(tracker2Current), float64(tracker2Peak), 1)
+
+	tt.Deregister(tracker2)
+	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
+
+	// idempotent
+	tt.Deregister(tracker2)
+	assertTrackerTrackerMetrics(t, reg, 0, 0, 0, 0)
+}
+
+func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedTracker(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	tt := NewInflightMemoryConsumptionTracker(reg)
+	nonManagedTracker := NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3")
+	require.Panics(t, func() { tt.Deregister(nonManagedTracker) })
+}
+
+func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes, currentBytes, peakBytes float64, sampled int) {
+	t.Helper()
+	expected := fmt.Sprintf(`
+		# HELP cortex_querier_inflight_query_current_estimated_memory_consumption_bytes Total current estimated memory consumption across all in-flight queries.
+		# TYPE cortex_querier_inflight_query_current_estimated_memory_consumption_bytes gauge
+		cortex_querier_inflight_query_current_estimated_memory_consumption_bytes %v
+		# HELP cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes Total of the max estimated memory consumption limit across all in-flight queries.
+		# TYPE cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes gauge
+		cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes %v
+		# HELP cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes Total peak estimated memory consumption across all in-flight queries.
+		# TYPE cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes gauge
+		cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes %v
+		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
+		# TYPE cortex_querier_inflight_query_sampled_count gauge
+		cortex_querier_inflight_query_sampled_count %v
+	`, currentBytes, maxBytes, peakBytes, sampled)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected),
+		"cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes",
+		"cortex_querier_inflight_query_current_estimated_memory_consumption_bytes",
+		"cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes",
+		"cortex_querier_inflight_query_sampled_count",
+	))
+}
+
 func TestMemoryConsumptionSourceNames(t *testing.T) {
 	for i := range memoryConsumptionSourceCount {
 		require.NotEqual(t, unknownMemorySource, i.String(), "source %d should have a String() representation", i)

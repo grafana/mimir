@@ -65,6 +65,7 @@ enum ErrorCause {
 message ErrorDetails {
   ErrorCause Cause = 1;
   bool Soft = 2;
+  int64 RejectedSamples = 3;
 }
 
 message TimeSeries {

@@ -294,9 +294,9 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 	return true, ""
 }
 
-// isResponseCachable returns true if a response hasn't explicitly disabled caching
+// responseHeadersAllowCaching returns true if a response hasn't explicitly disabled caching
 // via an HTTP header, false otherwise.
-func isResponseCachable(r Response) bool {
+func responseHeadersAllowCaching(r Response) bool {
 	for _, hv := range r.GetHeaders() {
 		if hv.GetName() == cacheControlHeader {
 			return !slices.Contains(hv.GetValues(), noStoreValue)

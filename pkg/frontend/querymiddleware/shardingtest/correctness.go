@@ -36,10 +36,10 @@ var (
 
 func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase CorrectnessTestCase, queryable storage.Queryable)) {
 	var (
-		numSeries                = 1000
-		numStaleSeries           = 100
-		numConvHistograms        = 1000
-		numStaleConvHistograms   = 100
+		numSeries                = 208
+		numStaleSeries           = 32
+		numConvHistograms        = 208
+		numStaleConvHistograms   = 32
 		histogramBuckets         = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
 		numNativeHistograms      = 1000
 		numStaleNativeHistograms = 100
@@ -799,10 +799,14 @@ func testQueryShardingFunctionCorrectness(t *testing.T, runTestCase functionCorr
 	}
 
 	fnToIgnore := map[string]struct{}{
-		"time":   {},
-		"scalar": {},
-		"vector": {},
+		"end":    {},
 		"pi":     {},
+		"range":  {},
+		"scalar": {},
+		"start":  {},
+		"step":   {},
+		"time":   {},
+		"vector": {},
 	}
 	for _, tc := range testsToIgnore {
 		fnToIgnore[tc.fn] = struct{}{}

@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -56,9 +57,16 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 	if len(blocks) <= 0 {
 		return false, ""
 	}
-	logger := log.With(qb.logger, "user", tenant)
 
-	query := req.GetQuery()
+	var (
+		logger          = log.With(qb.logger, "user", tenant)
+		query           = req.GetQuery()
+		queryDurationMs = req.GetEnd() - req.GetStart()
+		queryDuration   = time.Duration(queryDurationMs) * time.Millisecond
+		isInstantQuery  = queryDurationMs == 0
+		stepMs          = req.GetStep()
+		stepDuration    = time.Duration(stepMs) * time.Millisecond
+	)
 
 	for ruleIndex, block := range blocks {
 		if block.UnalignedRangeQueries {
@@ -69,10 +77,10 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 			}
 		}
 
-		if strings.TrimSpace(block.Pattern) == strings.TrimSpace(query) {
-			level.Info(logger).Log("msg", "query blocker matched with exact match policy", "query", query, "index", ruleIndex)
-			return true, block.Reason
-		}
+		pattern := strings.TrimSpace(block.Pattern)
+
+		// Check literal match regardless of regex setting (backwards compatibility).
+		patternMatches := pattern == strings.TrimSpace(query)
 
 		if block.Regex {
 			r, err := labels.NewFastRegexMatcher(block.Pattern)
@@ -81,10 +89,40 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 				continue
 			}
 			if r.MatchString(query) {
-				level.Info(logger).Log("msg", "query blocker matched with regex policy", "pattern", block.Pattern, "query", query, "index", ruleIndex)
-				return true, block.Reason
+				patternMatches = true
 			}
 		}
+
+		timeRangeViolation := !isInstantQuery &&
+			block.TimeRangeLongerThan > 0 &&
+			queryDuration > time.Duration(block.TimeRangeLongerThan)
+
+		stepViolation := block.MinimumStepSize > 0 &&
+			stepMs > 0 &&
+			stepDuration < time.Duration(block.MinimumStepSize)
+
+		hasCondition := pattern != "" || block.TimeRangeLongerThan > 0 || block.MinimumStepSize > 0
+		shouldBlock := hasCondition &&
+			(pattern == "" || patternMatches) &&
+			(block.TimeRangeLongerThan == 0 || timeRangeViolation) &&
+			(block.MinimumStepSize == 0 || stepViolation)
+
+		if shouldBlock {
+			level.Info(logger).Log(
+				"msg", "query blocked",
+				"query", query,
+				"query_duration_ms", queryDurationMs,
+				"step_ms", stepMs,
+				"pattern_matched", patternMatches,
+				"time_range_violation", timeRangeViolation,
+				"step_violation", stepViolation,
+				"index", ruleIndex,
+				"reason", block.Reason,
+			)
+
+			return true, block.Reason
+		}
 	}
+
 	return false, ""
 }

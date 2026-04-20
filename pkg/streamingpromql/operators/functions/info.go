@@ -333,6 +333,16 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		dataLabelMatchersMap[m.Name] = matcher
 	}
 
+	// Check if any data label matcher doesn't match the empty string (e.g. {cluster=~".+"}).
+	// If so, inner series without a matching info series should be suppressed.
+	hasNonEmptyDataLabelMatcher := false
+	for _, m := range dataLabelMatchersMap {
+		if !m.Matches("") {
+			hasNonEmptyDataLabelMatcher = true
+			break
+		}
+	}
+
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	f.labelSetsOrder = make([]map[string]int, len(innerMetadata))
@@ -354,9 +364,10 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		f.innerSig[i] = string(sig)
 		labelSetsMap, exists := f.labelSets[string(sig)]
 		// If this inner series doesn't match the identifying labels of any info series, pass
-		// the original series metadata along unchanged, unless user specified label matchers.
+		// the original series metadata along unchanged, unless a data label matcher doesn't
+		// match the empty string (e.g. {data=~".+"}), in which case we skip the series.
 		if !exists {
-			if len(dataLabelMatchersMap) > 0 {
+			if hasNonEmptyDataLabelMatcher {
 				continue
 			}
 			f.labelSetsOrder[i] = map[string]int{"inner": 0}
@@ -373,14 +384,21 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			continue
 		}
 
-		// Pass the original series metadata along unchanged.
-		f.labelSetsOrder[i] = map[string]int{"inner": 0}
-		totalLabelSetsCount++
+		f.labelSetsOrder[i] = make(map[string]int, len(labelSetsOrder)+1)
+
+		// Only emit the original (un-enriched) series for timestamps without a matching
+		// info series when all data label matchers match empty string.
+		offset := 0
+		if !hasNonEmptyDataLabelMatcher {
+			f.labelSetsOrder[i]["inner"] = 0
+			totalLabelSetsCount++
+			offset = 1
+		}
 
 		extraLabelSets[i] = newLabelSets
 		totalLabelSetsCount += len(newLabelSets)
 		for j, labelSetsHash := range labelSetsOrder {
-			f.labelSetsOrder[i][labelSetsHash] = j + 1
+			f.labelSetsOrder[i][labelSetsHash] = j + offset
 		}
 	}
 
@@ -634,6 +652,10 @@ func (f *InfoFunction) Finalize(ctx context.Context) error {
 	}
 
 	return f.Info.Finalize(ctx)
+}
+
+func (f *InfoFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, f.Inner, f.Info)
 }
 
 func (f *InfoFunction) Close() {

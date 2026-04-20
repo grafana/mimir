@@ -1,11 +1,6 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'alerts-utils.libsonnet') {
-  // simpleRegexpOpt produces a simple regexp that matches all strings in the input array.
-  local simpleRegexpOpt(strings) =
-    assert std.isArray(strings) : 'simpleRegexpOpt requires that `strings` is an array of strings`';
-    '(' + std.join('|', strings) + ')',
-
   local excludeWorkloads(labelName, values) =
     if std.length(values) == 0 then '' else '{%s!~"%s"}' % [labelName, std.join('|', values)],
 
@@ -180,7 +175,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('InconsistentRuntimeConfig'),
           expr: |||
-            count(count by(%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
+            count without(sha256) (
+                count by (%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)
+                unless on (%(alert_aggregation_labels)s, sha256)
+                # Don't include config hashes that are still being rolled out.
+                # Kubernetes configmap propagation can be slow,
+                # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
+                (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
+                # Don't include configs that didn't exist one minute ago.
+                # changes() == 0 for metrics appearing for the first time,
+                # but this is still a "we're rolling out a new config" scenario.
+                and on (%(alert_aggregation_labels)s, sha256)
+                group by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash offset 1m)
+            )  > 1
           ||| % $._config,
           'for': '1h',
           labels: {
@@ -212,26 +219,43 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
-            sum by (%(group_by)s, %(job_label)s) (min_over_time(cortex_query_scheduler_queue_length[%(range_interval)s])) > 0
+            # There are some queries in the queue.
+            (sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length) > 0)
+
+            # And the queue size doesn't decrease. We compute the delta with an higher frequency (so a lower step
+            # in the subquery) to increase chances of detecting even short-term downward variations.
+            and (
+              min_over_time(
+                delta(
+                  sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length)
+                  [%(range_interval)s:%(range_subinterval)s]
+                )
+                [%(range_interval)s:%(range_subinterval)s]
+              ) >= 0
+            )
           ||| % {
             group_by: $._config.alert_aggregation_labels,
             job_label: $._config.per_job_label,
             range_interval: $.alertRangeInterval(1),
+            range_subinterval: $.alertRangeInterval(0.25),
           },
           'for': '7m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
           },
-          annotations: {
-                         message: |||
-                           There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
-                         ||| % $._config,
-                       }
-                       // Alternative dashboards for investigation:
-                       //   - Mimir / Remote ruler reads (mimir-remote-ruler-reads.json)
-                       //   - Mimir / Reads Resources (mimir-reads-resources.json)
-                       //   - Mimir / Slow Queries (mimir-slow-queries.json)
-                       + $.dashboardURLAnnotation('mimir-reads.json'),
+          annotations: (
+            {
+              message: |||
+                There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
+              ||| % $._config,
+            }
+          ) + (
+            // Alternative dashboards for investigation:
+            //   - Mimir / Remote ruler reads (mimir-remote-ruler-reads.json)
+            //   - Mimir / Reads Resources (mimir-reads-resources.json)
+            //   - Mimir / Slow Queries (mimir-slow-queries.json)
+            $.dashboardURLAnnotation('mimir-reads.json')
+          ),
         },
         {
           alert: $.alertName('CacheRequestErrors'),
@@ -447,8 +471,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
-              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
+              (
+                avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
+                != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
+              )
+              unless on(%(alert_aggregation_labels)s)
+              (
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_replicas{statefulset=~".*ingester.*"})
+                  !=
+                sum by(%(alert_aggregation_labels)s) (kube_statefulset_status_replicas_updated{statefulset=~".*ingester.*"})
+              )
             )
             and
             (
@@ -955,10 +987,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('GossipMembersTooHigh'),
           expr:
             |||
-              max by (%s) (memberlist_client_cluster_members_count)
+              max by (%(alert_aggregation_labels)s) (memberlist_client_cluster_members_count)
               >
-              (sum by (%s) (up{%s}) + 10)
-            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.ring_members)],
+              (sum by (%(alert_aggregation_labels)s) (up{%(job_matcher)s%(job_not_matcher)s}) + 10)
+            ||| % {
+              alert_aggregation_labels: $._config.alert_aggregation_labels,
+              job_matcher: $.jobMatcher($._config.job_names.ring_members),
+              job_not_matcher: if $._config.compactor_scheduler_enabled then ',' + $.jobNotMatcher($._config.job_names.compactor_scheduler) else '',
+            },
           'for': '20m',
           labels: {
             severity: 'warning',
@@ -974,10 +1010,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('GossipMembersTooLow'),
           expr:
             |||
-              min by (%s) (memberlist_client_cluster_members_count)
+              min by (%(alert_aggregation_labels)s) (memberlist_client_cluster_members_count)
               <
-              (sum by (%s) (up{%s=~".+/%s"}) * 0.5)
-            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.per_job_label, simpleRegexpOpt($._config.job_names.ring_members)],
+              (sum by (%(alert_aggregation_labels)s) (up{%(job_matcher)s%(job_not_matcher)s}) * 0.5)
+            ||| % {
+              alert_aggregation_labels: $._config.alert_aggregation_labels,
+              job_matcher: $.jobMatcher($._config.job_names.ring_members),
+              job_not_matcher: if $._config.compactor_scheduler_enabled then ',' + $.jobNotMatcher($._config.job_names.compactor_scheduler) else '',
+            },
           'for': '20m',
           labels: {
             severity: 'warning',

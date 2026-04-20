@@ -124,8 +124,8 @@ local filename = 'mimir-block-builder.json';
           'Overview of per-second rate of records fetched from Kafka split by pods.',
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder) },
-          '{{pod}}'
+          'sum by (%(per_instance_label)s) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { per_instance_label: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.block_builder) },
+          '{{%(per_instance_label)s}}' % $._config.per_instance_label,
         ),
       )
       .addPanel(
@@ -198,6 +198,37 @@ local filename = 'mimir-block-builder.json';
       .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('block_builder'),
       )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.timeseriesPanel('In-memory series') +
+        $.panelDescription(
+          'In-memory series',
+          'Number of in-memory series handled by each block-builder instance.',
+        ) +
+        $.queryPanel(
+          'sum by (%(per_instance_label)s) (cortex_blockbuilder_memory_series{%(job)s})' % { per_instance_label: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.block_builder) },
+          '{{%(per_instance_label)s}}' % $._config.per_instance_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'short' }, custom+: { fillOpacity: 0 } } },
+      )
+      .splitIntoLines([4, 1])  // Puts "in-memory series" panel below the rest of the resources
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.containerDiskWritesPanelByComponent('block_builder')
+      )
+      .addPanel(
+        $.containerDiskReadsPanelByComponent('block_builder')
+      )
+      .addPanel(
+        $.containerDiskSpaceUtilizationPanelByComponent('block_builder'),
+      )
     )
     .addRowIf(
       $._config.autoscaling.block_builder.enabled,
@@ -213,12 +244,18 @@ local filename = 'mimir-block-builder.json';
       )
     )
     .addRow(
-      $.row('Scheduler resources')
+      $.row('Block-builder-scheduler resources')
       .addPanel(
         $.containerCPUUsagePanelByComponent('block_builder_scheduler'),
       )
       .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('block_builder_scheduler'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('block_builder_scheduler'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('block_builder_scheduler'),
       )
     ),
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -123,7 +124,7 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 			httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			httpReq.Header.Set("X-Test-Header", "test-value")
 
-			c := NewCodec(prometheus.NewPedanticRegistry(), time.Minute*5, "json", nil, &propagation.NoopInjector{})
+			c := NewCodec(prometheus.NewPedanticRegistry(), time.Minute*5, "json", nil, &propagation.NoopInjector{}, log.NewNopLogger())
 			originalReq, err := c.DecodeMetricsQueryRequest(context.Background(), httpReq)
 			require.NoError(t, err)
 

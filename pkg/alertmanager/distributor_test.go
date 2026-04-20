@@ -42,6 +42,14 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 	utiltest.VerifyNoLeak(t,
 		// This package's init() function statically starts a singleton goroutine that runs forever.
 		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+		// Upstream alertmanager's Inhibitor.Stop() and Dispatcher.Stop() signal
+		// cancellation but don't fully wait for all spawned goroutines to return.
+		// These goroutines exit eventually, but may still be draining when goleak
+		// checks after a prior test's deferred StopAndWait.
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*Dispatcher).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*aggrGroup).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/inhibit.(*Inhibitor).run"),
+		goleak.IgnoreTopFunction("github.com/oklog/run.(*Group).Run"),
 	)
 
 	cases := []struct {
@@ -203,16 +211,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 1,
 			route:              "/receivers",
 		}, {
-			name:               "Read /api/v1/grafana/receivers is sent to 3 AMs",
-			numAM:              5,
-			numHappyAM:         5,
-			replicationFactor:  3,
-			isRead:             true,
-			expStatusCode:      http.StatusOK,
-			expectedTotalCalls: 3,
-			route:              "/api/v1/grafana/receivers",
-			responseBody:       []byte(`[]`),
-		}, {
 			name:                "Write /receivers not supported",
 			numAM:               5,
 			numHappyAM:          5,
@@ -221,24 +219,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls:  0,
 			headersNotPreserved: true,
 			route:               "/receivers",
-		}, {
-			name:               "Read /api/v1/grafana/full_state is sent to only 1 AM",
-			numAM:              5,
-			numHappyAM:         5,
-			replicationFactor:  3,
-			isRead:             true,
-			expStatusCode:      http.StatusOK,
-			expectedTotalCalls: 1,
-			route:              "/api/v1/grafana/full_state",
-		}, {
-			name:                "Write /api/v1/grafana/full_state not supported",
-			numAM:               5,
-			numHappyAM:          5,
-			replicationFactor:   3,
-			expStatusCode:       http.StatusNotFound,
-			expectedTotalCalls:  0,
-			headersNotPreserved: true,
-			route:               "/api/v1/grafana/full_state",
 		},
 	}
 
