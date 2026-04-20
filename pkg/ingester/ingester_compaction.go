@@ -22,6 +22,12 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+// minCompactionLoopDelay is the minimum delay enforced between TSDB head
+// compaction iterations, so the loop cannot run continuously and starve
+// other ingester work when a single iteration approaches or exceeds the
+// configured compaction interval.
+const minCompactionLoopDelay = 10 * time.Second
+
 func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
 	// We add a slight jitter to make sure that if the head compaction interval and ship interval are set to the same
 	// value they don't clash (if they both continuously run at the same exact time, the head compaction may not run
@@ -132,6 +138,8 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	for ctx.Err() == nil {
 		select {
 		case <-tickerChan:
+			iterationStart := time.Now()
+
 			// Count the number of compactions in progress to keep the downscale handler from
 			// clearing the read-only mode. See [Ingester.PrepareInstanceRingDownscaleHandler]
 			i.numCompactionsInProgress.Inc()
@@ -147,6 +155,24 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 
 			// Decrement the counter after compaction is complete
 			i.numCompactionsInProgress.Dec()
+
+			// Ensure the gap between iterations is always at least minCompactionLoopDelay,
+			// so the compaction loop can't run continuously when iterations are slow and
+			// starve other ingester work (e.g. ingestion offset commits).
+			iterationDuration := time.Since(iterationStart)
+			if extraDelay := compactionLoopExtraDelay(iterationDuration, standardInterval, minCompactionLoopDelay); extraDelay > 0 {
+				level.Warn(i.logger).Log(
+					"msg", "enforcing minimum delay between TSDB head compaction iterations because the previous iteration approached or exceeded the configured interval",
+					"iteration_duration", iterationDuration,
+					"configured_interval", standardInterval,
+					"extra_delay", extraDelay,
+				)
+				select {
+				case <-time.After(extraDelay):
+				case <-ctx.Done():
+					return nil
+				}
+			}
 
 			// If the ingester state is no longer "Starting", we switch to a different interval.
 			// We only compare the standard interval because the first interval may be random due to jittering.
@@ -619,4 +645,25 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 	}
 
 	return compactionInterval - timeSinceLastCompaction
+}
+
+// compactionLoopExtraDelay returns how long the compaction loop should sleep
+// after an iteration, on top of the natural wait for the next ticker tick,
+// to guarantee a gap of at least minDelay between iterations. Returns 0 when
+// the natural wait (standardInterval - iterationDuration) is already >= minDelay.
+//
+// When an iteration overruns the configured interval, the extra delay is capped
+// at minDelay so that a pathologically long iteration does not translate into
+// an equally long sleep — the goal is just to prevent the loop from spinning
+// continuously.
+func compactionLoopExtraDelay(iterationDuration, standardInterval, minDelay time.Duration) time.Duration {
+	remaining := standardInterval - iterationDuration
+	if remaining >= minDelay {
+		return 0
+	}
+	extraDelay := minDelay - remaining
+	if extraDelay > minDelay {
+		extraDelay = minDelay
+	}
+	return extraDelay
 }
