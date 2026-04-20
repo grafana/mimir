@@ -38,6 +38,25 @@ func (ArchiveStatus) Values() []ArchiveStatus {
 	}
 }
 
+type BucketAbacStatus string
+
+// Enum values for BucketAbacStatus
+const (
+	BucketAbacStatusEnabled  BucketAbacStatus = "Enabled"
+	BucketAbacStatusDisabled BucketAbacStatus = "Disabled"
+)
+
+// Values returns all known values for BucketAbacStatus. Note that this can be
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (BucketAbacStatus) Values() []BucketAbacStatus {
+	return []BucketAbacStatus{
+		"Enabled",
+		"Disabled",
+	}
+}
+
 type BucketAccelerateStatus string
 
 // Enum values for BucketAccelerateStatus
@@ -179,6 +198,25 @@ func (BucketLogsPermission) Values() []BucketLogsPermission {
 		"FULL_CONTROL",
 		"READ",
 		"WRITE",
+	}
+}
+
+type BucketNamespace string
+
+// Enum values for BucketNamespace
+const (
+	BucketNamespaceAccountRegional BucketNamespace = "account-regional"
+	BucketNamespaceGlobal          BucketNamespace = "global"
+)
+
+// Values returns all known values for BucketNamespace. Note that this can be
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (BucketNamespace) Values() []BucketNamespace {
+	return []BucketNamespace{
+		"account-regional",
+		"global",
 	}
 }
 
@@ -356,6 +394,25 @@ func (EncodingType) Values() []EncodingType {
 	}
 }
 
+type EncryptionType string
+
+// Enum values for EncryptionType
+const (
+	EncryptionTypeNone EncryptionType = "NONE"
+	EncryptionTypeSseC EncryptionType = "SSE-C"
+)
+
+// Values returns all known values for EncryptionType. Note that this can be
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (EncryptionType) Values() []EncryptionType {
+	return []EncryptionType{
+		"NONE",
+		"SSE-C",
+	}
+}
+
 type Event string
 
 // Enum values for Event
@@ -442,6 +499,25 @@ func (ExistingObjectReplicationStatus) Values() []ExistingObjectReplicationStatu
 	return []ExistingObjectReplicationStatus{
 		"Enabled",
 		"Disabled",
+	}
+}
+
+type ExpirationState string
+
+// Enum values for ExpirationState
+const (
+	ExpirationStateEnabled  ExpirationState = "ENABLED"
+	ExpirationStateDisabled ExpirationState = "DISABLED"
+)
+
+// Values returns all known values for ExpirationState. Note that this can be
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (ExpirationState) Values() []ExpirationState {
+	return []ExpirationState{
+		"ENABLED",
+		"DISABLED",
 	}
 }
 
@@ -560,6 +636,25 @@ func (IntelligentTieringStatus) Values() []IntelligentTieringStatus {
 	}
 }
 
+type InventoryConfigurationState string
+
+// Enum values for InventoryConfigurationState
+const (
+	InventoryConfigurationStateEnabled  InventoryConfigurationState = "ENABLED"
+	InventoryConfigurationStateDisabled InventoryConfigurationState = "DISABLED"
+)
+
+// Values returns all known values for InventoryConfigurationState. Note that this
+// can be expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (InventoryConfigurationState) Values() []InventoryConfigurationState {
+	return []InventoryConfigurationState{
+		"ENABLED",
+		"DISABLED",
+	}
+}
+
 type InventoryFormat string
 
 // Enum values for InventoryFormat
@@ -639,6 +734,7 @@ const (
 	InventoryOptionalFieldChecksumAlgorithm            InventoryOptionalField = "ChecksumAlgorithm"
 	InventoryOptionalFieldObjectAccessControlList      InventoryOptionalField = "ObjectAccessControlList"
 	InventoryOptionalFieldObjectOwner                  InventoryOptionalField = "ObjectOwner"
+	InventoryOptionalFieldLifecycleExpirationDate      InventoryOptionalField = "LifecycleExpirationDate"
 )
 
 // Values returns all known values for InventoryOptionalField. Note that this can
@@ -662,6 +758,7 @@ func (InventoryOptionalField) Values() []InventoryOptionalField {
 		"ChecksumAlgorithm",
 		"ObjectAccessControlList",
 		"ObjectOwner",
+		"LifecycleExpirationDate",
 	}
 }
 
@@ -944,6 +1041,7 @@ const (
 	ObjectStorageClassSnow               ObjectStorageClass = "SNOW"
 	ObjectStorageClassExpressOnezone     ObjectStorageClass = "EXPRESS_ONEZONE"
 	ObjectStorageClassFsxOpenzfs         ObjectStorageClass = "FSX_OPENZFS"
+	ObjectStorageClassFsxOntap           ObjectStorageClass = "FSX_ONTAP"
 )
 
 // Values returns all known values for ObjectStorageClass. Note that this can be
@@ -964,6 +1062,7 @@ func (ObjectStorageClass) Values() []ObjectStorageClass {
 		"SNOW",
 		"EXPRESS_ONEZONE",
 		"FSX_OPENZFS",
+		"FSX_ONTAP",
 	}
 }
 
@@ -1252,6 +1351,25 @@ func (RestoreRequestType) Values() []RestoreRequestType {
 	}
 }
 
+type S3TablesBucketType string
+
+// Enum values for S3TablesBucketType
+const (
+	S3TablesBucketTypeAws      S3TablesBucketType = "aws"
+	S3TablesBucketTypeCustomer S3TablesBucketType = "customer"
+)
+
+// Values returns all known values for S3TablesBucketType. Note that this can be
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (S3TablesBucketType) Values() []S3TablesBucketType {
+	return []S3TablesBucketType{
+		"aws",
+		"customer",
+	}
+}
+
 type ServerSideEncryption string
 
 // Enum values for ServerSideEncryption
@@ -1330,6 +1448,7 @@ const (
 	StorageClassSnow               StorageClass = "SNOW"
 	StorageClassExpressOnezone     StorageClass = "EXPRESS_ONEZONE"
 	StorageClassFsxOpenzfs         StorageClass = "FSX_OPENZFS"
+	StorageClassFsxOntap           StorageClass = "FSX_ONTAP"
 )
 
 // Values returns all known values for StorageClass. Note that this can be
@@ -1350,6 +1469,7 @@ func (StorageClass) Values() []StorageClass {
 		"SNOW",
 		"EXPRESS_ONEZONE",
 		"FSX_OPENZFS",
+		"FSX_ONTAP",
 	}
 }
 
@@ -1368,6 +1488,25 @@ const (
 func (StorageClassAnalysisSchemaVersion) Values() []StorageClassAnalysisSchemaVersion {
 	return []StorageClassAnalysisSchemaVersion{
 		"V_1",
+	}
+}
+
+type TableSseAlgorithm string
+
+// Enum values for TableSseAlgorithm
+const (
+	TableSseAlgorithmAwsKms TableSseAlgorithm = "aws:kms"
+	TableSseAlgorithmAes256 TableSseAlgorithm = "AES256"
+)
+
+// Values returns all known values for TableSseAlgorithm. Note that this can be
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
+func (TableSseAlgorithm) Values() []TableSseAlgorithm {
+	return []TableSseAlgorithm{
+		"aws:kms",
+		"AES256",
 	}
 }
 
