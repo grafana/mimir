@@ -210,16 +210,12 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	// Note that the positions based on the original query may be wrong as the rewritten
 	// query which is actually used is different, but the user does not see the rewritten
 	// query, so we pass in an empty string as the query so the positions will be hidden.
-	warn, info := res.Warnings.AsStrings("", 0, 0)
+	warningErrors, infoErrors := res.Warnings.AsErrorsSplit("", 0, 0)
 
-	// Add any annotations returned by the sharded queries, and remove any duplicates.
-	// We remove any position information for the same reason as above: the position information
-	// relates to the rewritten expression sent to queriers, not the original expression provided by the user.
+	// Add any annotations returned by the subqueries, merging properly.
 	accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
-	warn = append(warn, removeAllAnnotationPositionInformation(accumulatedWarnings)...)
-	info = append(info, removeAllAnnotationPositionInformation(accumulatedInfos)...)
-	warn = removeDuplicates(warn)
-	info = removeDuplicates(info)
+	warningErrors = append(warningErrors, accumulatedWarnings...)
+	infoErrors = append(infoErrors, accumulatedInfos...)
 
 	return &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
@@ -228,10 +224,10 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 				ResultType: string(res.Value.Type()),
 				Result:     extracted,
 			},
-			Headers:  queryable.getResponseHeaders(),
-			Warnings: warn,
-			Infos:    info,
+			Headers: queryable.getResponseHeaders(),
 		},
-		finalizer: qry.Close,
+		finalizer:     qry.Close,
+		WarningErrors: warningErrors,
+		InfoErrors:    infoErrors,
 	}, nil
 }

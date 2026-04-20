@@ -1048,6 +1048,12 @@ func (resp *PrometheusResponse) GetPrometheusResponse() (*PrometheusResponse, bo
 type PrometheusResponseWithFinalizer struct {
 	*PrometheusResponse
 	finalizer func()
+
+	// WarningErrors and InfoErrors hold the typed annotation errors returned by the
+	// PromQL engine. They are not serialized; the string representations are kept
+	// in PrometheusResponse.Warnings and PrometheusResponse.Infos for wire format.
+	WarningErrors []error
+	InfoErrors    []error
 }
 
 func (resp *PrometheusResponseWithFinalizer) Close() {
@@ -1056,6 +1062,16 @@ func (resp *PrometheusResponseWithFinalizer) Close() {
 
 func (resp *PrometheusResponseWithFinalizer) GetPrometheusResponse() (*PrometheusResponse, bool) {
 	return resp.PrometheusResponse, true
+}
+
+// GetAnnotationErrors returns the typed warning and info annotation errors if
+// the response carries them (i.e. it was produced by the local engine). For
+// responses deserialized from the wire the returned slices will be nil.
+func GetAnnotationErrors(resp Response) (warnings, infos []error) {
+	if r, ok := resp.(*PrometheusResponseWithFinalizer); ok {
+		return r.WarningErrors, r.InfoErrors
+	}
+	return nil, nil
 }
 
 // EncodeCachedHTTPResponse encodes the input http.Response into CachedHTTPResponse.

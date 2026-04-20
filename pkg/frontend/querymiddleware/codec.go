@@ -275,9 +275,9 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
 	promCloses := make([]func(), 0, len(responses))
-	promWarningsMap := make(map[string]struct{}, 0)
-	promInfosMap := make(map[string]struct{}, 0)
-	var present struct{}
+
+	// Use an AnnotationAccumulator for proper typed error merging across responses.
+	accumulator := NewAnnotationAccumulator()
 
 	for _, res := range responses {
 		pr, ok := res.GetPrometheusResponse()
@@ -293,24 +293,19 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 		}
 
 		promResponses = append(promResponses, pr)
-		for _, warning := range pr.Warnings {
-			promWarningsMap[warning] = present
+
+		// Prefer typed errors for proper merging; fall back to strings from wire responses.
+		warningErrors, infoErrors := GetAnnotationErrors(res)
+		if warningErrors != nil || infoErrors != nil {
+			accumulator.addAnnotationErrors(warningErrors, infoErrors)
+		} else {
+			accumulator.addAnnotationStrings(pr.Warnings, pr.Infos)
 		}
-		for _, info := range pr.Infos {
-			promInfosMap[info] = present
-		}
+
 		promCloses = append(promCloses, res.Close)
 	}
 
-	var promWarnings []string
-	for warning := range promWarningsMap {
-		promWarnings = append(promWarnings, warning)
-	}
-
-	var promInfos []string
-	for info := range promInfosMap {
-		promInfos = append(promInfos, info)
-	}
+	mergedWarnings, mergedInfos := accumulator.getAll()
 
 	// Merge the responses.
 	slices.SortFunc(promResponses, func(a, b *PrometheusResponse) int {
@@ -324,14 +319,14 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 				ResultType: model.ValMatrix.String(),
 				Result:     matrixMerge(promResponses),
 			},
-			Warnings: promWarnings,
-			Infos:    promInfos,
 		},
 		finalizer: func() {
 			for _, close := range promCloses {
 				close()
 			}
 		},
+		WarningErrors: mergedWarnings,
+		InfoErrors:    mergedInfos,
 	}, nil
 }
 
@@ -1097,6 +1092,20 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 	}
 	if a.Data != nil {
 		sp.SetAttributes(attribute.Int("series", len(a.Data.Result)))
+	}
+
+	// At the serialization boundary, populate string Warnings/Infos from typed errors
+	// if the response carries them. This is where []error → []string conversion happens.
+	warningErrors, infoErrors := GetAnnotationErrors(res)
+	if warningErrors != nil || infoErrors != nil {
+		a.Warnings = make([]string, 0, len(warningErrors))
+		for _, w := range warningErrors {
+			a.Warnings = append(a.Warnings, w.Error())
+		}
+		a.Infos = make([]string, 0, len(infoErrors))
+		for _, i := range infoErrors {
+			a.Infos = append(a.Infos, i.Error())
+		}
 	}
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
