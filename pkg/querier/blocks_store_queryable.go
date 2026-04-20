@@ -217,6 +217,9 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		logger,
 		prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg),
 	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create caching bucket")
+	}
 	bucketClient = cachingBucket
 
 	// Create the blocks finder.
