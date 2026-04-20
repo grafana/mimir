@@ -430,6 +430,14 @@
 * [ENHANCEMENT] Add `/ready` endpoint that returns HTTP 200 when the proxy is running. #14478
 * [BUGFIX] Fix bug where query-tee can panic if forwarding a request fails. #14015
 
+## 3.0.6
+
+### Grafana Mimir
+
+* [BUGFIX] Update go.opentelemetry.io/otel/sdk to v1.43.0 to address [CVE-2026-39883](https://www.cve.org/CVERecord?id=CVE-2026-39883). #15048
+* [BUGFIX] Update github.com/aws/aws-sdk-go-v2/service/s3 to v1.97.3 to address [GHSA-xmrv-pmrh-hhx2](https://github.com/advisories/GHSA-xmrv-pmrh-hhx2). #15048
+* [BUGFIX] Update to Go v1.25.9 to address [CVE-2026-32283](https://pkg.go.dev/vuln/GO-2026-4870), [CVE-2026-32282](https://pkg.go.dev/vuln/GO-2026-4864), [CVE-2026-27144](https://pkg.go.dev/vuln/GO-2026-4867), [CVE-2026-27143](https://pkg.go.dev/vuln/GO-2026-4868), [CVE-2026-27140](https://pkg.go.dev/vuln/GO-2026-4871), [CVE-2026-32289](https://pkg.go.dev/vuln/GO-2026-4865), [CVE-2026-32288](https://pkg.go.dev/vuln/GO-2026-4869), [CVE-2026-32280](https://pkg.go.dev/vuln/GO-2026-4947), [CVE-2026-32281](https://pkg.go.dev/vuln/GO-2026-4946). #15043
+
 ## 3.0.5
 
 ### Grafana Mimir
