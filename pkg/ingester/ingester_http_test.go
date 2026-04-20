@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -27,7 +28,7 @@ import (
 
 func TestIngester_FlushHandler_WhileStarting(t *testing.T) {
 	var (
-		ctx                = t.Context()
+		ctx                = context.Background()
 		cfg                = defaultIngesterTestConfig(t)
 		reg                = prometheus.NewRegistry()
 		fetchRequestsCount = atomic.NewInt64(0)
