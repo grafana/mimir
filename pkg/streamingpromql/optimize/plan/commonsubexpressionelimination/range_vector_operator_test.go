@@ -972,7 +972,8 @@ type failingRangeVectorOperator struct {
 	histograms     *types.HPointRingBuffer
 	histogramsView *types.HPointRingBufferView
 
-	seriesRead int
+	seriesRead                 int
+	haveReadCurrentStepSamples bool
 }
 
 func (o *failingRangeVectorOperator) AfterPrepare(ctx context.Context) error {
@@ -985,6 +986,7 @@ func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.M
 
 func (o *failingRangeVectorOperator) NextSeries(_ context.Context) error {
 	o.seriesRead++
+	o.haveReadCurrentStepSamples = false
 	return nil
 }
 
@@ -992,6 +994,11 @@ func (o *failingRangeVectorOperator) NextStepSamples(_ context.Context) (*types.
 	if o.seriesRead > o.returnErrorAtSeriesIdx {
 		return nil, errors.New("something went wrong reading data")
 	}
+
+	if o.haveReadCurrentStepSamples {
+		return nil, types.EOS
+	}
+	o.haveReadCurrentStepSamples = true
 
 	if o.floats == nil {
 		o.floats = types.NewFPointRingBuffer(o.memoryConsumptionTracker)
@@ -1149,4 +1156,303 @@ func TestRangeVectorOperator_Stats(t *testing.T) {
 	consumer1.Close()
 	consumer2.Close()
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+// TestRangeVectorOperator_Buffering_MultipleStepsPerSeries verifies that the buffer correctly
+// handles range queries where each series has multiple steps.
+func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	// 3 series, each with 3 steps.
+	// stepsData[seriesIdx][stepIdx] = float value at that step.
+	stepsData := [][]float64{
+		{10, 11, 12},
+		{20, 21, 22},
+		{30, 31, 32},
+	}
+
+	inner := createMultiStepTestRangeOperator(t, stepsData, memoryConsumptionTracker)
+	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
+	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker, timeRange, log.NewNopLogger())
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+
+	// Consumer1 reads series 0, all 3 steps. The series should be buffered for consumer2.
+	require.NoError(t, consumer1.NextSeries(ctx))
+
+	d, err := consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 10, d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 11, d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 12, d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size())
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.Equal(t, types.EOS, err)
+	require.Nil(t, d)
+
+	// Consumer1 reads series 1 (also buffers for consumer2).
+	require.NoError(t, consumer1.NextSeries(ctx))
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 20, d, memoryConsumptionTracker)
+	require.Equal(t, 2, buffer.buffer.Size())
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 21, d, memoryConsumptionTracker)
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 22, d, memoryConsumptionTracker)
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.Equal(t, types.EOS, err)
+	require.Nil(t, d)
+
+	// Consumer2 reads series 0 from the buffer. All 3 steps should be available.
+	require.NoError(t, consumer2.NextSeries(ctx))
+
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 10, d, memoryConsumptionTracker)
+	require.Equal(t, 2, buffer.buffer.Size(), "data should remain buffered until the next NextSeries call")
+
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 11, d, memoryConsumptionTracker)
+
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 12, d, memoryConsumptionTracker)
+
+	d, err = consumer2.NextStepSamples(ctx)
+	require.Equal(t, types.EOS, err)
+	require.Nil(t, d)
+
+	// Consumer2 advances to series 1. Series 0 should be released.
+	require.NoError(t, consumer2.NextSeries(ctx))
+	require.Equal(t, 1, buffer.buffer.Size(), "series 0 should be released after both consumers have read it")
+
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 20, d, memoryConsumptionTracker)
+
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 21, d, memoryConsumptionTracker)
+
+	d, err = consumer2.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 22, d, memoryConsumptionTracker)
+
+	d, err = consumer2.NextStepSamples(ctx)
+	require.Equal(t, types.EOS, err)
+	require.Nil(t, d)
+
+	// Finalize consumer2 so that consumer1 is the only remaining consumer.
+	// Consumer1 will then read series 2 in pass-through mode (no buffering).
+	require.NoError(t, consumer2.Finalize(ctx))
+	consumer2.Close()
+	require.False(t, inner.Finalized, "inner should not be finalized until all consumers are finalized")
+
+	require.NoError(t, consumer1.NextSeries(ctx))
+	require.Equal(t, 0, buffer.buffer.Size())
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 30, d, memoryConsumptionTracker)
+	require.Equal(t, 0, buffer.buffer.Size(), "sole remaining consumer should not buffer series 2")
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 31, d, memoryConsumptionTracker)
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.NoError(t, err)
+	requireEqualFloatStep(t, 32, d, memoryConsumptionTracker)
+
+	d, err = consumer1.NextStepSamples(ctx)
+	require.Equal(t, types.EOS, err)
+	require.Nil(t, d)
+
+	require.NoError(t, consumer1.Finalize(ctx))
+	require.True(t, inner.Finalized)
+
+	consumer1.Close()
+	require.True(t, inner.Closed)
+	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+// multiStepTestRangeOperator is a test RangeVectorOperator that returns multiple steps per series.
+// stepsData[seriesIdx][stepIdx] contains the float value for each step.
+type multiStepTestRangeOperator struct {
+	series    []labels.Labels
+	stepsData [][]float64
+
+	currentSeriesIdx int
+	currentStepIdx   int
+
+	floatBuf  *types.FPointRingBuffer
+	floatView *types.FPointRingBufferView
+	histBuf   *types.HPointRingBuffer
+	histView  *types.HPointRingBufferView
+
+	Finalized bool
+	Closed    bool
+
+	memTracker *limiter.MemoryConsumptionTracker
+}
+
+func createMultiStepTestRangeOperator(t *testing.T, stepsData [][]float64, memTracker *limiter.MemoryConsumptionTracker) *multiStepTestRangeOperator {
+	t.Helper()
+
+	series := make([]labels.Labels, len(stepsData))
+	for i := range stepsData {
+		series[i] = labels.FromStrings("idx", strconv.Itoa(i))
+	}
+
+	return &multiStepTestRangeOperator{
+		series:           series,
+		stepsData:        stepsData,
+		currentSeriesIdx: -1,
+		memTracker:       memTracker,
+	}
+}
+
+func (o *multiStepTestRangeOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
+	metadata, err := types.SeriesMetadataSlicePool.Get(len(o.series), o.memTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata = metadata[:len(o.series)]
+
+	for i, l := range o.series {
+		metadata[i].Labels = l
+
+		if err := o.memTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
+			return nil, err
+		}
+	}
+
+	return metadata, nil
+}
+
+func (o *multiStepTestRangeOperator) NextSeries(_ context.Context) error {
+	if o.currentSeriesIdx+1 >= len(o.series) {
+		return types.EOS
+	}
+
+	o.currentSeriesIdx++
+	o.currentStepIdx = 0
+
+	return nil
+}
+
+func (o *multiStepTestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVectorStepData, error) {
+	steps := o.stepsData[o.currentSeriesIdx]
+
+	if o.currentStepIdx >= len(steps) {
+		return nil, types.EOS
+	}
+
+	if o.floatBuf == nil {
+		o.floatBuf = types.NewFPointRingBuffer(o.memTracker)
+	}
+
+	if o.histBuf == nil {
+		o.histBuf = types.NewHPointRingBuffer(o.memTracker)
+	}
+
+	o.floatBuf.Reset()
+
+	stepT := int64(o.currentStepIdx) * time.Minute.Milliseconds()
+
+	if err := o.floatBuf.Append(promql.FPoint{T: stepT, F: steps[o.currentStepIdx]}); err != nil {
+		return nil, err
+	}
+
+	o.floatView = o.floatBuf.ViewUntilSearchingBackwards(stepT, o.floatView)
+	o.histBuf.Reset()
+	o.histView = o.histBuf.ViewUntilSearchingBackwards(stepT, o.histView)
+	o.currentStepIdx++
+
+	return &types.RangeVectorStepData{
+		Floats:     o.floatView,
+		Histograms: o.histView,
+		StepT:      stepT,
+		RangeStart: 0,
+		RangeEnd:   stepT,
+	}, nil
+}
+
+func (o *multiStepTestRangeOperator) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (o *multiStepTestRangeOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	return nil
+}
+
+func (o *multiStepTestRangeOperator) AfterPrepare(_ context.Context) error {
+	return nil
+}
+
+func (o *multiStepTestRangeOperator) Finalize(_ context.Context) error {
+	o.Finalized = true
+
+	if o.floatBuf != nil {
+		o.floatBuf.Close()
+		o.floatBuf = nil
+		o.floatView = nil
+	}
+
+	if o.histBuf != nil {
+		o.histBuf.Close()
+		o.histBuf = nil
+		o.histView = nil
+	}
+
+	return nil
+}
+
+func (o *multiStepTestRangeOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	panic("not implemented")
+}
+
+func (o *multiStepTestRangeOperator) Close() {
+	o.Closed = true
+}
+
+func requireEqualFloatStep(t *testing.T, expectedFloat float64, actual *types.RangeVectorStepData, memTracker *limiter.MemoryConsumptionTracker) {
+	t.Helper()
+
+	pts, err := actual.Floats.CopyPoints()
+	require.NoError(t, err)
+	require.Len(t, pts, 1)
+	require.InDelta(t, expectedFloat, pts[0].F, 1e-9)
+	types.FPointSlicePool.Put(&pts, memTracker)
+
+	hpts, err := actual.Histograms.CopyPoints()
+	require.NoError(t, err)
+	require.Empty(t, hpts)
+	types.HPointSlicePool.Put(&hpts, memTracker)
 }
