@@ -428,6 +428,29 @@ func (e *histogramQuantileForcedMonotonicityErr) Merge(other error) error {
 	return o
 }
 
+func (e *histogramQuantileForcedMonotonicityErr) annotationType() AnnotationType {
+	return AnnotationTypeHistogramQuantileForcedMonotonicity
+}
+func (e *histogramQuantileForcedMonotonicityErr) rawMessage() string { return e.Err.Error() }
+func (e *histogramQuantileForcedMonotonicityErr) mergeFields() map[string]float64 {
+	return map[string]float64{
+		"count":      float64(e.count),
+		"min_ts":     float64(e.minTs),
+		"max_ts":     float64(e.maxTs),
+		"min_bucket": e.minBucket,
+		"max_bucket": e.maxBucket,
+		"max_diff":   e.maxDiff,
+	}
+}
+func (e *histogramQuantileForcedMonotonicityErr) applyMergeFields(m map[string]float64) {
+	e.count = int(m["count"])
+	e.minTs = int64(m["min_ts"])
+	e.maxTs = int64(m["max_ts"])
+	e.minBucket = m["min_bucket"]
+	e.maxBucket = m["max_bucket"]
+	e.maxDiff = m["max_diff"]
+}
+
 // NewHistogramQuantileForcedMonotonicityInfo is used when the input (classic histograms) to
 // histogram_quantile needs to be forced to be monotonic.
 func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange, ts int64, minBucket, maxBucket, maxDiff float64) error {
