@@ -38,6 +38,7 @@ const (
 //
 // No changes to AnnotationData or the Extract/From functions are needed.
 type mergeableAnnotation interface {
+	AnnoError
 	annotationType() AnnotationType
 	rawMessage() string              // Err.Error() — the merge key, without position/count decoration.
 	mergeFields() map[string]float64 // Type-specific merge state as an opaque key-value map.
@@ -72,13 +73,13 @@ func init() {
 		sentinel := HistogramQuantileForcedMonotonicityInfo.Error()
 		if suffix, ok := strings.CutPrefix(msg, sentinel+" for metric name "); ok {
 			if metricName, err := strconv.Unquote(suffix); err == nil {
-				return &histogramQuantileForcedMonotonicityErr{Err: maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName)}
+				return &HistogramQuantileForcedMonotonicityErr{Err: maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName)}
 			}
 		}
 		if msg == sentinel {
-			return &histogramQuantileForcedMonotonicityErr{Err: HistogramQuantileForcedMonotonicityInfo}
+			return &HistogramQuantileForcedMonotonicityErr{Err: HistogramQuantileForcedMonotonicityInfo}
 		}
-		return &histogramQuantileForcedMonotonicityErr{Err: fmt.Errorf("%s", msg)}
+		return &HistogramQuantileForcedMonotonicityErr{Err: fmt.Errorf("%s", msg)}
 	}
 }
 
@@ -87,8 +88,8 @@ func init() {
 func ExtractAnnotationData(err error) AnnotationData {
 	var d AnnotationData
 
-	// Extract position label from any annoError implementation.
-	var anErr annoError
+	// Extract position label from any AnnoError implementation.
+	var anErr AnnoError
 	if errors.As(err, &anErr) {
 		// Prefer computing the label from the position offsets + query string,
 		// since that is the most accurate source. Fall back to a stored label
@@ -100,10 +101,7 @@ func ExtractAnnotationData(err error) AnnotationData {
 			}
 		}
 		if d.PositionLabel == "" {
-			type posLabelGetter interface{ GetPositionLabel() string }
-			if plg, ok := anErr.(posLabelGetter); ok {
-				d.PositionLabel = plg.GetPositionLabel()
-			}
+			d.PositionLabel = anErr.GetPositionLabel()
 		}
 	}
 
@@ -137,18 +135,15 @@ func AnnotationFromData(d AnnotationData) error {
 		// Go zero value {0, 0} that factories produce, preventing
 		// ExtractAnnotationData from mistaking an unset position for "offset 0"
 		// (which would render as "1:1").
-		a.(annoError).SetPosition(pos)
+		a.SetPosition(pos)
 		// Preserve a pre-computed position label (e.g. "1:10") so it survives
 		// serialization round-trips even when we don't have the query string
 		// to recompute it from a byte offset.
 		if d.PositionLabel != "" {
-			type posLabelSetter interface{ SetPositionLabel(string) }
-			if pls, ok := a.(posLabelSetter); ok {
-				pls.SetPositionLabel(d.PositionLabel)
-			}
+			a.SetPositionLabel(d.PositionLabel)
 		}
-		return a.(error)
+		return a
 	}
-	// Generic or unknown: wrap as annoErr so it still implements annoError.
+	// Generic or unknown: wrap as annoErr so it still implements AnnoError.
 	return &annoErr{Err: fmt.Errorf("%s", d.Message), PositionRange: pos, positionLabel: d.PositionLabel}
 }

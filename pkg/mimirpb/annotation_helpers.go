@@ -13,20 +13,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// annotationStringParser parses a final-form annotation string back into the
-// original prometheus annotation error type. Each implementation handles a
-// specific annotation type using a type-specific regex.
-type annotationStringParser interface {
-	Parse(s string) (error, bool)
-}
-
-// annotationParsers is the ordered list of parsers tried when parsing annotation strings.
-var annotationParsers = []annotationStringParser{
-	histogramQuantileStringParser{},
-}
-
-// --- histogramQuantileStringParser ---
-
 type histogramQuantileStringParser struct{}
 
 // histogramQuantileFinalRe matches the final form produced by
@@ -101,19 +87,10 @@ func StringsToAnnotationErrs(ss []string) []error {
 }
 
 func parseAnnotationString(s string) error {
-	for _, p := range annotationParsers {
-		if err, ok := p.Parse(s); ok {
-			return err
-		}
+	if err, ok := (histogramQuantileStringParser{}).Parse(s); ok {
+		return err
 	}
 	return errors.New(s)
-}
-
-// setFinaler is satisfied by the unexported annoError interface in the
-// prometheus annotations package. It lets us call SetFinal() on reconstructed
-// errors so that their Error() output includes the full detail suffix.
-type setFinaler interface {
-	SetFinal()
 }
 
 // AnnotationErrorsToStrings converts AnnotationError values to their final-form
@@ -127,8 +104,9 @@ func AnnotationErrorsToStrings(aes []AnnotationError) []string {
 	errs := AnnotationErrorsToErrors(aes)
 	result := make([]string, len(errs))
 	for i, err := range errs {
-		if sf, ok := err.(setFinaler); ok {
-			sf.SetFinal()
+		var anErr annotations.AnnoError
+		if errors.As(err, &anErr) {
+			anErr.SetFinal()
 		}
 		s := err.Error()
 		// Append position label if the error string doesn't already contain it

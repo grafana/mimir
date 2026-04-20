@@ -44,7 +44,7 @@ func (a *Annotations) Add(err error) Annotations {
 		*a = Annotations{}
 	}
 	if prevErr, exists := (*a)[err.Error()]; exists {
-		var anErr annoError
+		var anErr AnnoError
 		if errors.As(err, &anErr) {
 			err = anErr.Merge(prevErr)
 		}
@@ -64,7 +64,7 @@ func (a *Annotations) Merge(aa Annotations) Annotations {
 	}
 	for key, val := range aa {
 		if prevVal, exists := (*a)[key]; exists {
-			var anErr annoError
+			var anErr AnnoError
 			if errors.As(val, &anErr) {
 				val = anErr.Merge(prevVal)
 			}
@@ -90,7 +90,7 @@ func (a Annotations) AsErrorsSplit(query string, maxWarnings, maxInfos int) (war
 	warnSkipped := 0
 	infoSkipped := 0
 	for _, err := range a {
-		var anErr annoError
+		var anErr AnnoError
 		if errors.As(err, &anErr) {
 			anErr.SetQuery(query)
 		}
@@ -129,7 +129,7 @@ func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warning
 	warnSkipped := 0
 	infoSkipped := 0
 	for _, err := range a {
-		var anErr annoError
+		var anErr AnnoError
 		if errors.As(err, &anErr) {
 			anErr.SetQuery(query)
 			anErr.SetFinal()
@@ -206,9 +206,9 @@ var (
 	MismatchedCustomBucketsHistogramsInfo   = fmt.Errorf("%w: mismatched custom buckets were reconciled during", PromQLInfo)
 )
 
-// annoError extends the standard error interface to provide additional functionality
+// AnnoError extends the standard error interface to provide additional functionality
 // for PromQL annotations, allowing them to be merged with other similar errors.
-type annoError interface {
+type AnnoError interface {
 	error
 	// Necessary so we can use errors.Is() to disambiguate between warning and info.
 	Unwrap() error
@@ -227,6 +227,12 @@ type annoError interface {
 	// SetPosition sets the position range. Used when reconstructing annotations
 	// from cached data.
 	SetPosition(posrange.PositionRange)
+	// GetPositionLabel returns a pre-computed "line:col" label preserved across
+	// serialization round-trips when the full query string is unavailable.
+	GetPositionLabel() string
+	// SetPositionLabel stores a pre-computed "line:col" label for use when
+	// the full query string is not available to recompute the position.
+	SetPositionLabel(string)
 }
 
 type annoErr struct {
@@ -383,7 +389,7 @@ func NewPossibleNonCounterLabelInfo(metricName, typeLabel string, pos posrange.P
 	}
 }
 
-type histogramQuantileForcedMonotonicityErr struct {
+type HistogramQuantileForcedMonotonicityErr struct {
 	PositionRange                 posrange.PositionRange
 	Err                           error
 	Query                         string
@@ -394,7 +400,7 @@ type histogramQuantileForcedMonotonicityErr struct {
 	positionLabel                 string
 }
 
-func (e *histogramQuantileForcedMonotonicityErr) Error() string {
+func (e *HistogramQuantileForcedMonotonicityErr) Error() string {
 	msg := e.Err.Error()
 	if !e.final {
 		return msg
@@ -413,35 +419,35 @@ func (e *histogramQuantileForcedMonotonicityErr) Error() string {
 	return msg
 }
 
-func (e *histogramQuantileForcedMonotonicityErr) Unwrap() error {
+func (e *HistogramQuantileForcedMonotonicityErr) Unwrap() error {
 	return e.Err
 }
 
-func (e *histogramQuantileForcedMonotonicityErr) SetQuery(query string) {
+func (e *HistogramQuantileForcedMonotonicityErr) SetQuery(query string) {
 	e.Query = query
 }
 
-func (e *histogramQuantileForcedMonotonicityErr) GetQuery() string {
+func (e *HistogramQuantileForcedMonotonicityErr) GetQuery() string {
 	return e.Query
 }
 
-func (e *histogramQuantileForcedMonotonicityErr) SetFinal() {
+func (e *HistogramQuantileForcedMonotonicityErr) SetFinal() {
 	e.final = true
 }
 
-func (e *histogramQuantileForcedMonotonicityErr) GetPosition() posrange.PositionRange {
+func (e *HistogramQuantileForcedMonotonicityErr) GetPosition() posrange.PositionRange {
 	return e.PositionRange
 }
 
-func (e *histogramQuantileForcedMonotonicityErr) SetPosition(p posrange.PositionRange) {
+func (e *HistogramQuantileForcedMonotonicityErr) SetPosition(p posrange.PositionRange) {
 	e.PositionRange = p
 }
 
-func (e *histogramQuantileForcedMonotonicityErr) SetPositionLabel(s string) { e.positionLabel = s }
-func (e *histogramQuantileForcedMonotonicityErr) GetPositionLabel() string  { return e.positionLabel }
+func (e *HistogramQuantileForcedMonotonicityErr) SetPositionLabel(s string) { e.positionLabel = s }
+func (e *HistogramQuantileForcedMonotonicityErr) GetPositionLabel() string  { return e.positionLabel }
 
-func (e *histogramQuantileForcedMonotonicityErr) Merge(other error) error {
-	o := &histogramQuantileForcedMonotonicityErr{}
+func (e *HistogramQuantileForcedMonotonicityErr) Merge(other error) error {
+	o := &HistogramQuantileForcedMonotonicityErr{}
 	ok := errors.As(other, &o)
 	if !ok {
 		return e
@@ -468,11 +474,11 @@ func (e *histogramQuantileForcedMonotonicityErr) Merge(other error) error {
 	return o
 }
 
-func (e *histogramQuantileForcedMonotonicityErr) annotationType() AnnotationType {
+func (e *HistogramQuantileForcedMonotonicityErr) annotationType() AnnotationType {
 	return AnnotationTypeHistogramQuantileForcedMonotonicity
 }
-func (e *histogramQuantileForcedMonotonicityErr) rawMessage() string { return e.Err.Error() }
-func (e *histogramQuantileForcedMonotonicityErr) mergeFields() map[string]float64 {
+func (e *HistogramQuantileForcedMonotonicityErr) rawMessage() string { return e.Err.Error() }
+func (e *HistogramQuantileForcedMonotonicityErr) mergeFields() map[string]float64 {
 	return map[string]float64{
 		"count":      float64(e.count),
 		"min_ts":     float64(e.minTs),
@@ -482,7 +488,7 @@ func (e *histogramQuantileForcedMonotonicityErr) mergeFields() map[string]float6
 		"max_diff":   e.maxDiff,
 	}
 }
-func (e *histogramQuantileForcedMonotonicityErr) applyMergeFields(m map[string]float64) {
+func (e *HistogramQuantileForcedMonotonicityErr) applyMergeFields(m map[string]float64) {
 	e.count = int(m["count"])
 	e.minTs = int64(m["min_ts"])
 	e.maxTs = int64(m["max_ts"])
@@ -494,7 +500,7 @@ func (e *histogramQuantileForcedMonotonicityErr) applyMergeFields(m map[string]f
 // NewHistogramQuantileForcedMonotonicityInfo is used when the input (classic histograms) to
 // histogram_quantile needs to be forced to be monotonic.
 func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange, ts int64, minBucket, maxBucket, maxDiff float64) error {
-	return &histogramQuantileForcedMonotonicityErr{
+	return &HistogramQuantileForcedMonotonicityErr{
 		PositionRange: pos,
 		Err:           maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName),
 		minTs:         ts,
