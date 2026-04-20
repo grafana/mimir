@@ -34,6 +34,14 @@ type PartitionRing struct {
 	// that registered that token.
 	partitionByToken map[Token]int32
 
+	// ringPartitionIDs is a slice parallel to ringTokens, where ringPartitionIDs[i] is the
+	// partition ID that owns ringTokens[i].
+	ringPartitionIDs []int32
+
+	// ringPartitionActive is a slice parallel to ringTokens, where ringPartitionActive[i]
+	// indicates whether the partition owning ringTokens[i] is active.
+	ringPartitionActive []bool
+
 	// ownersByPartition is a map where the key is the partition ID and the value is a list of owner IDs.
 	ownersByPartition map[int32][]string
 
@@ -77,16 +85,51 @@ func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptio
 		return nil, fmt.Errorf("failed to create shuffle shard cache: %w", err)
 	}
 
+	ringTokens := desc.tokens()
+	partitionByToken := desc.partitionByToken()
+	ringPartitionIDs, ringPartitionActive, err := buildRingTokenPartitionLookups(ringTokens, partitionByToken, desc.Partitions)
+	if err != nil {
+		return nil, err
+	}
+
 	return &PartitionRing{
 		desc:                  desc,
-		ringTokens:            desc.tokens(),
-		partitionByToken:      desc.partitionByToken(),
+		ringTokens:            ringTokens,
+		partitionByToken:      partitionByToken,
+		ringPartitionIDs:      ringPartitionIDs,
+		ringPartitionActive:   ringPartitionActive,
 		ownersByPartition:     desc.ownersByPartition(),
 		activePartitionsCount: desc.activePartitionsCount(),
 		maxPartitionID:        desc.maxPartitionID(),
 		shuffleShardCache:     shuffleShardCache,
 		opts:                  opts,
 	}, nil
+}
+
+// buildRingTokenPartitionLookups builds two slices parallel to ringTokens:
+// - ringPartitionIDs[i] is the partition ID that owns ringTokens[i]
+// - ringPartitionActive[i] is true if that partition is active
+//
+// Returns ErrInconsistentTokensInfo if a token has no matching partition.
+func buildRingTokenPartitionLookups(ringTokens Tokens, partitionByToken map[Token]int32, partitions map[int32]PartitionDesc) ([]int32, []bool, error) {
+	ringPartitionIDs := make([]int32, len(ringTokens))
+	ringPartitionActive := make([]bool, len(ringTokens))
+
+	for i, token := range ringTokens {
+		partitionID, ok := partitionByToken[Token(token)]
+		if !ok {
+			return nil, nil, ErrInconsistentTokensInfo
+		}
+		ringPartitionIDs[i] = partitionID
+
+		partition, ok := partitions[partitionID]
+		if !ok {
+			return nil, nil, ErrInconsistentTokensInfo
+		}
+		ringPartitionActive[i] = partition.IsActive()
+	}
+
+	return ringPartitionIDs, ringPartitionActive, nil
 }
 
 // ActivePartitionForKey returns partition for the given key. Only active partitions are considered.
@@ -102,24 +145,12 @@ func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, error) {
 		iterations++
 
 		if i >= tokensCount {
-			i %= len(r.ringTokens)
-		}
-
-		token := r.ringTokens[i]
-
-		partitionID, ok := r.partitionByToken[Token(token)]
-		if !ok {
-			return 0, ErrInconsistentTokensInfo
-		}
-
-		partition, ok := r.desc.Partitions[partitionID]
-		if !ok {
-			return 0, ErrInconsistentTokensInfo
+			i %= tokensCount
 		}
 
 		// If the partition is not active we'll keep walking the ring.
-		if partition.IsActive() {
-			return partitionID, nil
+		if r.ringPartitionActive[i] {
+			return r.ringPartitionIDs[i], nil
 		}
 	}
 

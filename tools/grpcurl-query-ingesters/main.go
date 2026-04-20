@@ -10,20 +10,32 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	promqlparser "github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func main() {
+	filterStr := flag.String("filter", "", "PromQL-style series selector to filter dumped series (e.g. metric_name{label=\"value\"})")
 	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		fmt.Println("Failed to parse CLI arguments:", err.Error())
 		os.Exit(1)
+	}
+
+	var matchers []*labels.Matcher
+	if *filterStr != "" {
+		matchers, err = promqlparser.NewParser(promqlparser.Options{}).ParseMetricSelector(*filterStr)
+		if err != nil {
+			fmt.Println("Failed to parse filter:", err.Error())
+			os.Exit(1)
+		}
 	}
 
 	for _, arg := range args {
@@ -33,9 +45,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		for _, res := range resps {
-			dumpResponse(res)
-		}
+		series := combineStreamingResponses(resps)
+		dumpChunkseries(arg, series, matchers)
 	}
 }
 
@@ -64,13 +75,48 @@ func parseFile(file string) ([]QueryStreamResponse, error) {
 	return resps, nil
 }
 
-func dumpResponse(res QueryStreamResponse) {
-	slices.SortFunc(res.Chunkseries, func(a, b QueryStreamChunkseries) int {
+func combineStreamingResponses(resps []QueryStreamResponse) []QueryStreamChunkseries {
+	// Collect all series labels across all streaming responses.
+	var allSeries []QueryStreamSeries
+	for _, res := range resps {
+		allSeries = append(allSeries, res.StreamingSeries...)
+	}
+
+	// Build combined series with empty chunk slices.
+	combined := make([]QueryStreamChunkseries, len(allSeries))
+	for i, s := range allSeries {
+		combined[i].Labels = s.Labels
+	}
+
+	// Attach chunks to their corresponding series by index.
+	for _, res := range resps {
+		for _, sc := range res.StreamingSeriesChunks {
+			combined[sc.SeriesIndex()].Chunks = append(combined[sc.SeriesIndex()].Chunks, sc.Chunks...)
+		}
+	}
+
+	return combined
+}
+
+func matchesFilter(lbls labels.Labels, matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if !m.Matches(lbls.Get(m.Name)) {
+			return false
+		}
+	}
+	return true
+}
+
+func dumpChunkseries(file string, allSeries []QueryStreamChunkseries, matchers []*labels.Matcher) {
+	slices.SortFunc(allSeries, func(a, b QueryStreamChunkseries) int {
 		return labels.Compare(a.LabelSet(), b.LabelSet())
 	})
 
-	for _, series := range res.Chunkseries {
-		fmt.Println(series.LabelSet().String())
+	for _, series := range allSeries {
+		if len(matchers) > 0 && !matchesFilter(series.LabelSet(), matchers) {
+			continue
+		}
+		fmt.Println(filepath.Base(file), "-", series.LabelSet().String())
 		var (
 			h  *histogram.Histogram
 			fh *histogram.FloatHistogram
@@ -96,13 +142,13 @@ func dumpResponse(res QueryStreamResponse) {
 
 				switch sampleType {
 				case chunkenc.ValFloat:
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", chunkIterator.Timestamp(), "value:", chunkIterator.Value().Value)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", chunkIterator.Timestamp(), "("+time.UnixMilli(chunkIterator.Timestamp()).UTC().Format(time.RFC3339)+")", "value:", chunkIterator.Value().Value)
 				case chunkenc.ValHistogram:
 					ts, h = chunkIterator.AtHistogram(h)
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", h, "hint:", counterResetHintString(h.CounterResetHint))
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "("+time.UnixMilli(ts).UTC().Format(time.RFC3339)+")", "value:", h, "hint:", counterResetHintString(h.CounterResetHint))
 				case chunkenc.ValFloatHistogram:
 					ts, fh := chunkIterator.AtFloatHistogram(fh)
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", fh, "hint:", counterResetHintString(fh.CounterResetHint))
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "("+time.UnixMilli(ts).UTC().Format(time.RFC3339)+")", "value:", fh, "hint:", counterResetHintString(fh.CounterResetHint))
 				default:
 					panic(fmt.Errorf("unknown sample type %s", sampleType.String()))
 				}

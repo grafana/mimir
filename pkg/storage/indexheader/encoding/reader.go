@@ -10,6 +10,10 @@ type BufReader interface {
 
 	// ResetAt moves the cursor to the given offset in the data segment owned by the reader,
 	// relative to the base offset configured at reader initialization.
+	// CAUTION: This operation may be very expensive and result in the discard of buffered data.
+	// Use Skip to move forward to avoid unnecessary buffer discard.
+	// ResetAt should only be used to move backwards.
+	//
 	// Attempting to ResetAt to the end of the data segment is valid.
 	// Attempting to ResetAt _beyond_ the end of the data segment will return an error.
 	ResetAt(off int) error

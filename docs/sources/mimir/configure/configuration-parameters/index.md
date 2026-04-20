@@ -149,6 +149,13 @@ api:
   # CLI flag: -api.skip-label-count-validation-header-enabled
   [skip_label_count_validation_header_enabled: <boolean> | default = false]
 
+  # (experimental) Allows controlling OTLP metric name suffix addition and
+  # translation strategy via X-Mimir-OTLP-AddSuffixes and
+  # X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not
+  # recommended for general use.
+  # CLI flag: -api.otlp-translation-headers-enabled
+  [otlp_translation_headers_enabled: <boolean> | default = false]
+
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
   # CLI flag: -http.alertmanager-http-prefix
@@ -335,10 +342,15 @@ runtime_config:
   # CLI flag: -runtime-config.reload-period
   [period: <duration> | default = 10s]
 
-  # Comma separated list of yaml files with the configuration that can be
-  # updated at runtime. Runtime config files will be merged from left to right.
+  # Comma separated list of yaml files or URLs with the configuration that can
+  # be updated at runtime. Runtime config files will be merged from left to
+  # right.
   # CLI flag: -runtime-config.file
   [file: <string> | default = ""]
+
+  # (advanced) HTTP client timeout when fetching runtime config from URLs.
+  # CLI flag: -runtime-config.http-client-timeout
+  [http_client_timeout: <duration> | default = 30s]
 
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
@@ -1980,6 +1992,11 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
   [enable_multi_aggregation: <boolean> | default = true]
 
+  # (experimental) Enable removing expressions that are guaranteed to produce no
+  # results.
+  # CLI flag: -querier.mimir-query-engine.enable-remove-statically-empty-expressions
+  [enable_remove_statically_empty_expressions: <boolean> | default = true]
+
   range_vector_splitting:
     # (experimental) Enable splitting function over range vectors queries into
     # smaller blocks for caching.
@@ -3247,10 +3264,6 @@ alertmanager_client:
 # with UTF-8 strict mode.
 # CLI flag: -alertmanager.utf8-migration-logging-enabled
 [utf8_migration_logging: <boolean> | default = false]
-
-# (experimental) Enable pre-notification hooks.
-# CLI flag: -alertmanager.notify-hooks-enabled
-[enable_notify_hooks: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
@@ -3851,6 +3864,12 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.notify-interval
 [notify_interval: <duration> | default = 0s]
 
+# (advanced) Size of the internal queue for messages received from other nodes.
+# Increasing this value may help to avoid dropping messages when the node is
+# processing a large number of messages from other nodes.
+# CLI flag: -memberlist.received-messages-queue-size
+[received_messages_queue_size: <int> | default = 1024]
+
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
 # CLI flag: -memberlist.advertise-addr
@@ -4266,8 +4285,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.ignore-ooo-exemplars
 [ignore_ooo_exemplars: <boolean> | default = false]
 
-# (experimental) When the number of owned series for a tenant exceeds this
-# threshold, trigger early head compaction. 0 to disable.
+# (experimental) When the number of owned series for a tenant across the cluster
+# exceeds this threshold, trigger early head compaction. 0 to disable.
 # CLI flag: -ingester.early-head-compaction-owned-series-threshold
 [early_head_compaction_owned_series_threshold: <int> | default = 0]
 
@@ -5036,19 +5055,6 @@ ruler_alertmanager_client_config:
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
 
-# URL of a hook to invoke before a notification is sent. empty = no hook.
-# CLI flag: -alertmanager.notify-hook-url
-[alertmanager_notify_hook_url: <string> | default = ""]
-
-# List of receivers to enable notify hooks for. empty = all receivers.
-# CLI flag: -alertmanager.notify-hook-receivers
-[alertmanager_notify_hook_receivers: <string> | default = ""]
-
-# Maximum amount of time to wait for a hook to complete before timing out. 0 =
-# no timeout.
-# CLI flag: -alertmanager.notify-hook-timeout
-[alertmanager_notify_hook_timeout: <duration> | default = 30s]
-
 # (advanced) Whether to enable automatic suffixes to names of metrics ingested
 # through OTLP.
 # CLI flag: -distributor.otel-metric-suffixes-enabled
@@ -5444,7 +5450,7 @@ kafka:
   # only when there is sufficient backlog of records to consume. Set to 0 to
   # disable.
   # CLI flag: -ingest-storage.kafka.fetch-concurrency-max
-  [fetch_concurrency_max: <int> | default = 0]
+  [fetch_concurrency_max: <int> | default = 12]
 
   # When enabled, the fetch request MaxBytes field is computed using the
   # compressed size of previous records. When disabled, MaxBytes is computed
@@ -5456,12 +5462,12 @@ kafka:
   # The maximum number of buffered records ready to be processed. This limit
   # applies to the sum of all inflight requests. Set to 0 to disable the limit.
   # CLI flag: -ingest-storage.kafka.max-buffered-bytes
-  [max_buffered_bytes: <int> | default = 100000000]
+  [max_buffered_bytes: <int> | default = 1000000000]
 
   # The maximum number of concurrent ingestion streams to the TSDB head. Every
   # tenant has their own set of streams. 0 to disable.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-max
-  [ingestion_concurrency_max: <int> | default = 0]
+  [ingestion_concurrency_max: <int> | default = 8]
 
   # The number of timeseries to batch together before ingesting to the TSDB
   # head. Only use this setting when
@@ -5473,14 +5479,14 @@ kafka:
   # use this setting when -ingest-storage.kafka.ingestion-concurrency-max is
   # greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-queue-capacity
-  [ingestion_concurrency_queue_capacity: <int> | default = 5]
+  [ingestion_concurrency_queue_capacity: <int> | default = 3]
 
   # The expected number of times to ingest timeseries to the TSDB head after
   # batching. With fewer flushes, the overhead of splitting up the work is
   # higher than the benefit of parallelization. Only use this setting when
   # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard
-  [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+  [ingestion_concurrency_target_flushes_per_shard: <int> | default = 40]
 
   # The estimated number of bytes a sample has at time of ingestion. This value
   # is used to estimate the timeseries without decompressing them. Only use this

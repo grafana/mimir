@@ -1,4 +1,5 @@
 (import 'ksonnet-util/kausal.libsonnet') +
+(import 'keda-libsonnet/main.libsonnet') +
 (import 'images.libsonnet') +
 (import 'common.libsonnet') +
 (import 'tracing.libsonnet') +
@@ -43,12 +44,11 @@
 (import 'multi-zone-query-scheduler.libsonnet') +
 (import 'multi-zone-ruler.libsonnet') +
 (import 'multi-zone-ruler-remote-evaluation.libsonnet') +
-(import 'multi-zone-memberlist-bridge.libsonnet') +
 
 // Automated downscale of ingesters and store-gateways
 (import 'ingester-automated-downscale.libsonnet') +
 (import 'ingester-automated-downscale-v2.libsonnet') +
-(import 'store-gateway-automated-downscale.libsonnet') +
+(import 'store-gateway-autoscaling.libsonnet') +
 
 // Automatic cleanup of unused PVCs after scaling down
 (import 'pvc-auto-deletion.libsonnet') +
@@ -62,4 +62,5 @@
 (import 'ingest-storage-migration.libsonnet') +
 
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
-(import 'memberlist.libsonnet')
+(import 'memberlist.libsonnet') +
+(import 'multi-zone-memberlist-bridge.libsonnet')

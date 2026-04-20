@@ -426,7 +426,7 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 		o, err := probeInitialOffsets(ctx, offStore, off.topic, off.partition,
 			off.start, off.resume, off.end, endTime, s.cfg.JobSize, minScanTime, s.logger)
 		if err != nil {
-			level.Warn(s.logger).Log("msg", "failed to probe initial offsets", "err", err)
+			level.Warn(s.logger).Log("msg", "failed to probe initial offsets", "partition", off.partition, "err", err)
 			continue
 		}
 		if len(o) == 0 {
@@ -438,7 +438,7 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 
 		for _, io := range o {
 			if job, err := ps.updateEndOffset(io.offset, io.time, s.cfg.JobSize); err != nil {
-				level.Warn(s.logger).Log("msg", "failed to observe end offset", "err", err)
+				level.Warn(s.logger).Log("msg", "failed to observe end offset", "partition", ps.partition, "err", err)
 			} else if job != nil {
 				ps.addPendingJob(job)
 			}
@@ -526,7 +526,7 @@ func probeInitialOffsets(ctx context.Context, offs offsetStore, topic string, pa
 		if len(sentinels) > 0 {
 			lastOffset = sentinels[len(sentinels)-1].offset
 		}
-		level.Warn(logger).Log("msg", "probe offsets: probe did not reach commit offset due to limited scan age", "lastOffset", lastOffset, "commitOffset", commit)
+		level.Warn(logger).Log("msg", "probe offsets: probe did not reach commit offset due to limited scan age", "partition", partition, "lastOffset", lastOffset, "commitOffset", commit)
 	}
 
 	// Return them in increasing order of offset.

@@ -1107,6 +1107,14 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
+		"an activeSeriesLimitedError with default 429 gets translated into an HTTP 429": {
+			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusTooManyRequests, 0),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+		},
+		"an activeSeriesLimitedError with overridden 400 gets translated into an HTTP 400": {
+			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusBadRequest, 0),
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -1540,7 +1548,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",use
 
 			reg := prometheus.NewRegistry()
 			handler := OTLPHandler(
-				MiB, util.NewBufferPool(0), nil, otlpLimitsMock{},
+				MiB, util.NewBufferPool(0), nil, false, otlpLimitsMock{},
 				nil, nil, RetryConfig{}, nil,
 				distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger(),
 			)
@@ -1587,7 +1595,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 		return nil
 	}
 	h := OTLPHandler(
-		200, util.NewBufferPool(0), nil, otlpLimitsMock{},
+		200, util.NewBufferPool(0), nil, false, otlpLimitsMock{},
 		nil, nil, RetryConfig{}, nil,
 		push, newPushMetrics(reg), reg, log.NewNopLogger(),
 	)
@@ -1960,7 +1968,7 @@ func TestOTLPHandler_CompressionRatioMetric(t *testing.T) {
 		return err
 	}
 	handler := OTLPHandler(
-		100000, util.NewBufferPool(0), nil, otlpLimitsMock{},
+		100000, util.NewBufferPool(0), nil, false, otlpLimitsMock{},
 		nil, nil, RetryConfig{}, nil,
 		pushFunc, pushMetrics, reg, log.NewNopLogger(),
 	)

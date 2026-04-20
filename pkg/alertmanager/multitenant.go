@@ -22,7 +22,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -34,7 +33,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
-	amconfig "github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -116,9 +115,6 @@ type MultitenantAlertmanagerConfig struct {
 	// expression parser will be logged.
 	LogParsingLabelMatchers bool `yaml:"log_parsing_label_matchers" category:"experimental"`
 	UTF8MigrationLogging    bool `yaml:"utf8_migration_logging" category:"experimental"`
-
-	// Enable experimental pre-notification hooks.
-	EnableNotifyHooks bool `yaml:"enable_notify_hooks" category:"experimental"`
 }
 
 const (
@@ -156,8 +152,6 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).")
 	f.BoolVar(&cfg.LogParsingLabelMatchers, "alertmanager.log-parsing-label-matchers", false, "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.")
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
-
-	f.BoolVar(&cfg.EnableNotifyHooks, "alertmanager.notify-hooks-enabled", false, "Enable pre-notification hooks.")
 }
 
 // Validate config and returns error on failure
@@ -238,8 +232,6 @@ func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAl
 
 // Limits defines limits used by Alertmanager.
 type Limits interface {
-	notifyHooksLimits
-
 	// AlertmanagerReceiversBlockCIDRNetworks returns the list of network CIDRs that should be blocked
 	// in the Alertmanager receivers for the given user.
 	AlertmanagerReceiversBlockCIDRNetworks(user string) []flagext.CIDR
@@ -381,19 +373,19 @@ func ComputeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to read fallback config %q: %s", fallbackConfigFile, err)
 		}
-		_, err = amconfig.LoadFile(fallbackConfigFile)
+		_, err = config.LoadFile(fallbackConfigFile)
 		if err != nil {
 			return nil, fmt.Errorf("unable to load fallback config %q: %s", fallbackConfigFile, err)
 		}
 		return fallbackConfig, nil
 	}
-	globalConfig := amconfig.DefaultGlobalConfig()
-	defaultConfig := amconfig.Config{
+	globalConfig := config.DefaultGlobalConfig()
+	defaultConfig := config.Config{
 		Global: &globalConfig,
-		Route: &amconfig.Route{
+		Route: &config.Route{
 			Receiver: "empty-receiver",
 		},
-		Receivers: []amconfig.Receiver{
+		Receivers: []config.Receiver{
 			{
 				Name: "empty-receiver",
 			},
@@ -699,7 +691,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if err := am.setConfig(cfg); err != nil {
+		if _, err := am.setConfig(cfg); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err, "user", user)
 			continue
@@ -808,7 +800,7 @@ func fingerprint(desc alertspb.AlertConfigDesc) model.Fingerprint {
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
+func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) (*Alertmanager, error) {
 	if am.cfg.UTF8MigrationLogging {
 		// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
 		// The reason for this that the config.Load function uses the origin "config",
@@ -829,25 +821,25 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	existing, hasExisting := am.alertmanagers[cfg.User]
 
 	rawCfg := cfg.RawConfig
-	var userAmConfig *definition.PostableApiAlertingConfig
+	var amCfg *config.Config
 	var err error
 	if cfg.RawConfig == "" {
 		if am.fallbackConfig == "" {
-			return fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
+			return nil, fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
 		}
 		level.Debug(am.logger).Log("msg", "blank Alertmanager configuration; using fallback", "user", cfg.User)
-		userAmConfig, err = definition.LoadCompat([]byte(am.fallbackConfig))
+		amCfg, err = config.Load(am.fallbackConfig)
 		if err != nil {
-			return fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
+			return nil, fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
 		}
 		rawCfg = am.fallbackConfig
 	} else {
-		userAmConfig, err = definition.LoadCompat([]byte(cfg.RawConfig))
+		amCfg, err = config.Load(cfg.RawConfig)
 		if err != nil && hasExisting {
 			// This means that if a user has a working config and
 			// they submit a broken one, the Manager will keep running the last known
 			// working configuration.
-			return fmt.Errorf("invalid Alertmanager configuration for %v: %v", cfg.User, err)
+			return nil, fmt.Errorf("invalid Alertmanager configuration for %v: %v", cfg.User, err)
 		}
 	}
 
@@ -855,17 +847,17 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	// 1) the user had a previous alertmanager
 	// 2) then, submitted a non-working configuration (and we kept running the prev working config)
 	// 3) finally, the cortex AM instance is restarted and the running version is no longer present
-	if userAmConfig == nil {
-		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
+	if amCfg == nil {
+		return nil, fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
 	cfgFp := fingerprint(cfg)
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, cfg.Templates, rawCfg)
+		newAM, err := am.newAlertmanager(cfg.User, amCfg, cfg.Templates, rawCfg)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		am.alertmanagers[cfg.User] = newAM
 	} else {
@@ -874,22 +866,22 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			level.Info(am.logger).Log("msg", "updating per-tenant alertmanager", "user", cfg.User, "old_fingerprint", curFp, "new_fingerprint", cfgFp)
 			am.cfgs[cfg.User] = cfgFp
 			// If the config changed, apply the new one.
-			err := existing.ApplyConfig(userAmConfig, cfg.Templates, rawCfg)
+			err := existing.ApplyConfig(amCfg, cfg.Templates, rawCfg)
 			if err != nil {
-				return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
+				return nil, fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 			}
 		}
 	}
 
 	am.cfgs[cfg.User] = cfgFp
-	return nil
+	return am.alertmanagers[cfg.User], nil
 }
 
 func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []*alertspb.TemplateDesc, rawCfg string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *config.Config, templates []*alertspb.TemplateDesc, rawCfg string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -912,7 +904,6 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		PersisterConfig:                   am.cfg.Persister,
 		Limits:                            am.limits,
 		Features:                          am.features,
-		EnableNotifyHooks:                 am.cfg.EnableNotifyHooks,
 		StateReadTimeout:                  am.cfg.StateReadTimeout,
 	}, reg)
 	if err != nil {
@@ -1050,12 +1041,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, errConfigNotFound
 	}
 
-	if err := am.setConfig(cfg); err != nil {
-		return nil, err
-	}
-	am.alertmanagersMtx.Lock()
-	defer am.alertmanagersMtx.Unlock()
-	return am.alertmanagers[userID], nil
+	return am.setConfig(cfg)
 }
 
 func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Context, userID string) (*Alertmanager, error) {
@@ -1089,14 +1075,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	err = am.setConfig(cfgDesc)
-	if err != nil {
-		return nil, err
-	}
-
-	am.alertmanagersMtx.Lock()
-	defer am.alertmanagersMtx.Unlock()
-	return am.alertmanagers[userID], nil
+	return am.setConfig(cfgDesc)
 }
 
 // ReplicateStateForUser attempts to replicate a partial state sent by an alertmanager to its other replicas through the ring.

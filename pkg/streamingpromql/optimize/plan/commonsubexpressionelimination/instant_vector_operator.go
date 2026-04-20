@@ -459,13 +459,3 @@ func (d *InstantVectorDuplicationConsumer) Stats(ctx context.Context) (*types.Op
 func (d *InstantVectorDuplicationConsumer) Close() {
 	d.Buffer.CloseConsumer(d)
 }
-
-func matchesSeries(filters []*labels.Matcher, series labels.Labels) bool {
-	for _, filter := range filters {
-		if !filter.Matches(series.Get(filter.Name)) {
-			return false
-		}
-	}
-
-	return true
-}

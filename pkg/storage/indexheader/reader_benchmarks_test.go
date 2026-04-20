@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"slices"
+	"sort"
 	"testing"
 	"time"
 
@@ -245,55 +246,75 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 	ctx := context.Background()
 	tests, blockID, blockDir, bkt := labelValuesTestCases(test.NewTB(b))
-
-	bucketReg := prometheus.NewPedanticRegistry()
-	instrBkt := objstore.WrapWithMetrics(objstore.WithNoopInstr(bkt), prometheus.WrapRegistererWithPrefix("thanos_", bucketReg), "")
 	b.Cleanup(func() {
 		require.NoError(b, bkt.Close())
 	})
 
-	// Initialize the first index-header reader,
-	// configured to read all index-header sections from the on-disk index-header.
-	// This first call to create a reader also builds the index-header and sparse index-header from the block.
-	diskReaderCfg := Config{}
-	diskReader, err := NewStreamBinaryReader(ctx, blockID, instrBkt, blockDir, diskReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
-	require.NoError(b, err)
-	b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
-
-	// Initialize the second index-header reader,
-	// configured to read symbols from disk and postings offsets from bucket.
-	bucketCacheCfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
-	cachingBucket, err := bucketcache.NewCachingBucket("test", instrBkt, bucketCacheCfg, log.NewNopLogger(), bucketReg)
-	require.NoError(b, err)
-
-	splitReaderCfg := Config{
-		BucketReader: BucketReaderConfig{
-			Enabled:             true,
-			BucketIndexSections: SectionPostingsOffsetsTable,
-		},
-	}
-	splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, blockDir, splitReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
-	require.NoError(b, err)
-	b.Cleanup(func() { require.NoError(b, splitReader.Close()) })
-
-	diskNames, err := diskReader.LabelNames(ctx)
-	require.NoError(b, err)
-	bucketReaderNames, err := splitReader.LabelNames(ctx)
-	require.NoError(b, err)
-	require.Equal(b, diskNames, bucketReaderNames)
-
-	readers := []struct {
+	sortedTests := make([]struct {
 		name string
-		Reader
-	}{
-		{"disk", diskReader},
-		{"split", splitReader},
-	}
-
-	b.ResetTimer()
+		tcs  []labelValuesTestCase
+	}, 0, len(tests))
 
 	for lbl, tcs := range tests {
-		for _, tc := range tcs {
+		sortedTests = append(sortedTests,
+			struct {
+				name string
+				tcs  []labelValuesTestCase
+			}{name: lbl, tcs: tcs},
+		)
+	}
+	// Sorting tests allows for deterministic behavior across test runs
+	// w.r.t when the index-header's underlying readers need to rewind/reset
+	// to continue reading from a different offset.
+	sort.Slice(sortedTests, func(i, j int) bool {
+		return sortedTests[i].name < sortedTests[j].name
+	})
+
+	for _, sortedTest := range sortedTests {
+		lbl := sortedTest.name
+		for _, tc := range sortedTest.tcs {
+			bucketReg := prometheus.NewPedanticRegistry()
+			instrBkt := objstore.WrapWithMetrics(objstore.WithNoopInstr(bkt), prometheus.WrapRegistererWithPrefix("thanos_", bucketReg), "")
+
+			// Initialize the first index-header reader,
+			// configured to read all index-header sections from the on-disk index-header.
+			// This first call to create a reader also builds the index-header and sparse index-header from the block.
+			diskReaderCfg := Config{}
+			diskReader, err := NewStreamBinaryReader(ctx, blockID, instrBkt, blockDir, diskReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			require.NoError(b, err)
+			b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
+
+			// Initialize the second index-header reader,
+			// configured to read symbols from disk and postings offsets from bucket.
+			bucketCacheCfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
+			cachingBucket, err := bucketcache.NewCachingBucket("test", instrBkt, bucketCacheCfg, log.NewNopLogger(), bucketReg)
+			require.NoError(b, err)
+
+			splitReaderCfg := Config{
+				BucketReader: BucketReaderConfig{
+					Enabled:             true,
+					BucketIndexSections: SectionPostingsOffsetsTable,
+				},
+			}
+			splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, blockDir, splitReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			require.NoError(b, err)
+			b.Cleanup(func() { require.NoError(b, splitReader.Close()) })
+
+			diskNames, err := diskReader.LabelNames(ctx)
+			require.NoError(b, err)
+			bucketReaderNames, err := splitReader.LabelNames(ctx)
+			require.NoError(b, err)
+			require.Equal(b, diskNames, bucketReaderNames)
+
+			readers := []struct {
+				name string
+				Reader
+			}{
+				{"disk", diskReader},
+				{"split", splitReader},
+			}
+
+			b.ResetTimer()
 			for _, reader := range readers {
 				b.Run(fmt.Sprintf("Label=%s/Prefix='%s'/Desc=%s/Reader=%s", lbl, tc.prefix, tc.desc, reader.name), func(b *testing.B) {
 					b.ReportAllocs()

@@ -547,7 +547,8 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			// NOTE: instant queries are not tested because they don't have a time range.
+			// NOTE: instant queries are not tested here because their start==end; they are
+			// covered separately by TestLimitsMiddleware_MaxQueryLength_InstantQueryWithSubquery.
 			reqs := map[string]MetricsQueryRequest{
 				"range query": &PrometheusRangeQueryRequest{
 					start: util.TimeToMillis(testData.reqStartTime),
@@ -591,6 +592,69 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 						assert.Equal(t, util.TimeToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd())
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestLimitsMiddleware_MaxQueryLength_InstantQueryWithSubquery(t *testing.T) {
+	now := time.Now()
+
+	tests := map[string]struct {
+		query               string
+		maxTotalQueryLength time.Duration
+		expectedErr         string
+	}{
+		"should fail when subquery range exceeds the limit": {
+			query:               `max_over_time(rate(metric_counter[1m])[2h:1m])`,
+			maxTotalQueryLength: 1 * time.Hour,
+			expectedErr:         "the total query time range exceeds the limit",
+		},
+		"should succeed when subquery range is within the limit": {
+			query:               `max_over_time(rate(metric_counter[1m])[2h:1m])`,
+			maxTotalQueryLength: 3 * time.Hour,
+		},
+		"should succeed when limit is disabled": {
+			query:               `max_over_time(rate(metric_counter[1m])[30d:1m])`,
+			maxTotalQueryLength: 0,
+		},
+		"should fail when range selector exceeds the limit": {
+			query:               `rate(metric_counter[2h])`,
+			maxTotalQueryLength: 1 * time.Hour,
+			expectedErr:         "the total query time range exceeds the limit",
+		},
+		"should succeed for simple instant query without subquery": {
+			query:               `metric_counter`,
+			maxTotalQueryLength: 1 * time.Hour,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			queryTime := util.TimeToMillis(now)
+			req := NewPrometheusInstantQueryRequest(
+				"/query", nil, queryTime, 0, parseQuery(t, testData.query), Options{}, nil, "",
+			)
+
+			limits := mockLimits{maxTotalQueryLength: testData.maxTotalQueryLength}
+			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+
+			innerRes := NewEmptyPrometheusResponse()
+			inner := &mockHandler{}
+			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			outer := middleware.Wrap(inner)
+			res, err := outer.Do(ctx, req)
+
+			if testData.expectedErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), testData.expectedErr)
+				assert.Nil(t, res)
+				assert.Len(t, inner.Calls, 0)
+			} else {
+				require.NoError(t, err)
+				assert.Same(t, innerRes, res)
 			}
 		})
 	}

@@ -3121,8 +3121,10 @@ kafka:
   terminationGracePeriodSeconds: 30
   # -- Kafka log retention period in hours
   logRetentionHours: 24
-  # -- Additional environment variables for Kafka
-  extraEnv: []
+  # -- Additional environment variables for Kafka.
+  # Entries are merged by name into the default Kafka env vars, following the same pattern as other chart components.
+  # A user-provided entry with the same name as a default overrides the default in-place (preserving list order).
+  env: []
   # -- Additional environment variables from secrets or configmaps
   extraEnvFrom: []
 

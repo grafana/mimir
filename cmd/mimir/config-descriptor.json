@@ -98,6 +98,17 @@
         },
         {
           "kind": "field",
+          "name": "otlp_translation_headers_enabled",
+          "required": false,
+          "desc": "Allows controlling OTLP metric name suffix addition and translation strategy via X-Mimir-OTLP-AddSuffixes and X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not recommended for general use.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "api.otlp-translation-headers-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_http_prefix",
           "required": false,
           "desc": "HTTP URL path under which the Alertmanager ui and api will be served.",
@@ -2644,6 +2655,17 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-multi-aggregation",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_remove_statically_empty_expressions",
+              "required": false,
+              "desc": "Enable removing expressions that are guaranteed to produce no results.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-remove-statically-empty-expressions",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -5668,7 +5690,7 @@
           "kind": "field",
           "name": "early_head_compaction_owned_series_threshold",
           "required": false,
-          "desc": "When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.",
+          "desc": "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.early-head-compaction-owned-series-threshold",
@@ -7033,36 +7055,6 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-alerts-size-bytes",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "alertmanager_notify_hook_url",
-          "required": false,
-          "desc": "URL of a hook to invoke before a notification is sent. empty = no hook.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.notify-hook-url",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
-          "name": "alertmanager_notify_hook_receivers",
-          "required": false,
-          "desc": "List of receivers to enable notify hooks for. empty = all receivers.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.notify-hook-receivers",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
-          "name": "alertmanager_notify_hook_timeout",
-          "required": false,
-          "desc": "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.",
-          "fieldValue": null,
-          "fieldDefaultValue": 30000000000,
-          "fieldFlag": "alertmanager.notify-hook-timeout",
-          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -9244,7 +9236,7 @@
               "required": false,
               "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 12,
               "fieldFlag": "ingest-storage.kafka.fetch-concurrency-max",
               "fieldType": "int"
             },
@@ -9264,7 +9256,7 @@
               "required": false,
               "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
               "fieldValue": null,
-              "fieldDefaultValue": 100000000,
+              "fieldDefaultValue": 1000000000,
               "fieldFlag": "ingest-storage.kafka.max-buffered-bytes",
               "fieldType": "int"
             },
@@ -9274,7 +9266,7 @@
               "required": false,
               "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 8,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-max",
               "fieldType": "int"
             },
@@ -9294,7 +9286,7 @@
               "required": false,
               "desc": "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
               "fieldValue": null,
-              "fieldDefaultValue": 5,
+              "fieldDefaultValue": 3,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-queue-capacity",
               "fieldType": "int"
             },
@@ -9304,7 +9296,7 @@
               "required": false,
               "desc": "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
               "fieldValue": null,
-              "fieldDefaultValue": 80,
+              "fieldDefaultValue": 40,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard",
               "fieldType": "int"
             },
@@ -17572,17 +17564,6 @@
           "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "enable_notify_hooks",
-          "required": false,
-          "desc": "Enable pre-notification hooks.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "alertmanager.notify-hooks-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -18702,11 +18683,22 @@
           "kind": "field",
           "name": "file",
           "required": false,
-          "desc": "Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.",
+          "desc": "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "runtime-config.file",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "http_client_timeout",
+          "required": false,
+          "desc": "HTTP client timeout when fetching runtime config from URLs.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "runtime-config.http-client-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
@@ -18837,6 +18829,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "memberlist.notify-interval",
           "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "received_messages_queue_size",
+          "required": false,
+          "desc": "Size of the internal queue for messages received from other nodes. Increasing this value may help to avoid dropping messages when the node is processing a large number of messages from other nodes.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1024,
+          "fieldFlag": "memberlist.received-messages-queue-size",
+          "fieldType": "int",
           "fieldCategory": "advanced"
         },
         {

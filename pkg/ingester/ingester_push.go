@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/util/extract"
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -285,8 +284,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	spanlog.DebugLog("event", "acquired append lock")
 
 	var (
-		startAppend          = time.Now()
-		appendWallClockStart = startAppend
+		startAppend = time.Now()
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
@@ -390,10 +388,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		)
 	)
 
-	if ts, ok := ingest.RecordTimestampFromContext(ctx); ok {
-		startAppend = ts
-	}
-
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
 	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
@@ -427,7 +421,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(appendWallClockStart).Seconds())
+	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
 
 	spanlog.DebugLog(
 		"event", "start commit",
@@ -461,38 +455,16 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
 	appendedExemplarsStats.Inc(int64(stats.succeededExemplarsCount))
 
-	if ts, ok := ingest.RecordTimestampFromContext(ctx); ok {
-		tsMs := ts.UnixMilli()
-		for {
-			cur := i.latestKafkaRecordTimestamp.Load()
-			if tsMs <= cur || i.latestKafkaRecordTimestamp.CompareAndSwap(cur, tsMs) {
-				break
-			}
-		}
-
-		i.activeSeriesStartMs.CompareAndSwap(0, tsMs)
-
-		if i.cfg.ActiveSeriesMetrics.Enabled {
-			updatePeriodMs := i.cfg.ActiveSeriesMetrics.UpdatePeriod.Milliseconds()
-			for {
-				lastUpdate := i.lastKafkaActiveSeriesUpdate.Load()
-				if tsMs-lastUpdate < updatePeriodMs {
-					break
-				}
-				if i.lastKafkaActiveSeriesUpdate.CompareAndSwap(lastUpdate, tsMs) {
-					i.updateActiveSeries(ts)
-					break
-				}
-			}
-		}
-	}
-
 	group := i.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(i.limits, userID, req.Timeseries), startAppend)
 
 	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discarded)
 
 	if firstPartialErr != nil {
-		return wrapOrAnnotateWithUser(firstPartialErr, userID)
+		wrappedErr := softErrorWithRejectedSamples{
+			err:             firstPartialErr,
+			rejectedSamples: int64(stats.failedSamplesCount),
+		}
+		return wrapOrAnnotateWithUser(wrappedErr, userID)
 	}
 
 	return nil

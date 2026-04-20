@@ -146,11 +146,9 @@ func NewLazyBinaryReader(
 	}
 
 	g := errgroup.Group{}
-	if !cfg.BucketReader.Enabled {
-		g.Go(func() error {
-			return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, logger)
-		})
-	}
+	g.Go(func() error {
+		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, logger)
+	})
 
 	g.Go(func() error {
 		err := downloadSparseHeaderToDisk(ctx, id, bkt, localDir, logger)

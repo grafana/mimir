@@ -496,6 +496,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
 				require.EqualValues(t, 0, msg["remote_execution_request_count"])
+				require.EqualValues(t, 0, msg["response_series_count"])
+				require.EqualValues(t, 0, msg["response_samples_count"])
 
 				if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
 					require.Equal(t, "success", msg["status"])
@@ -795,6 +797,18 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 				"results_cache_miss_bytes": "10",
 				"results_cache_hit_bytes":  "200",
 				"header_cache_control":     "",
+			},
+		},
+		{
+			name:              "response series and samples count",
+			requestFormFields: []string{},
+			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+				d.ResponseSeriesCount = 42
+				d.ResponseSamplesCount = 1234
+			},
+			expectedLoggedFields: map[string]string{
+				"response_series_count":  "42",
+				"response_samples_count": "1234",
 			},
 		},
 		{

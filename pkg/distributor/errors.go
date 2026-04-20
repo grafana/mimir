@@ -67,6 +67,12 @@ type Error interface {
 	IsSoft() bool
 }
 
+// ErrorWithHTTPStatusCode is an optional interface that errors can implement
+// to override the default HTTP status code derived from the error cause.
+type ErrorWithHTTPStatusCode interface {
+	HTTPStatusCode() int
+}
+
 // replicasDidNotMatchError is an error stating that replicas do not match.
 type replicasDidNotMatchError struct {
 	replica, elected string
@@ -165,11 +171,13 @@ func (e reactiveLimiterExceededError) IsSoft() bool {
 
 var _ Error = reactiveLimiterExceededError{}
 
-func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit int) activeSeriesLimitedError {
+func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit, httpStatusCode int, rejectedSamples int64) activeSeriesLimitedError {
 	return activeSeriesLimitedError{
 		totalSeriesInThisRequest:      totalSeriesInThisRequest,
 		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
 		limit:                         limit,
+		httpStatusCode:                httpStatusCode,
+		rejectedSamples:               rejectedSamples,
 	}
 }
 
@@ -177,6 +185,8 @@ type activeSeriesLimitedError struct {
 	totalSeriesInThisRequest      int
 	rejectedSeriesFromThisRequest int
 	limit                         int
+	httpStatusCode                int
+	rejectedSamples               int64
 }
 
 func (e activeSeriesLimitedError) Error() string {
@@ -188,11 +198,16 @@ func (e activeSeriesLimitedError) Cause() mimirpb.ErrorCause {
 }
 
 func (e activeSeriesLimitedError) IsSoft() bool {
-	return false
+	return e.rejectedSeriesFromThisRequest > 0 && e.rejectedSeriesFromThisRequest < e.totalSeriesInThisRequest
 }
 
-// Ensure that activeSeriesLimitedError implements Error.
+func (e activeSeriesLimitedError) HTTPStatusCode() int {
+	return e.httpStatusCode
+}
+
+// Ensure that activeSeriesLimitedError implements Error and ErrorWithHTTPStatusCode.
 var _ Error = activeSeriesLimitedError{}
+var _ ErrorWithHTTPStatusCode = activeSeriesLimitedError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {
@@ -283,27 +298,31 @@ var _ Error = requestRateLimitedError{}
 
 // ingesterPushError is an error used to represent a failed attempt to push to the ingester.
 type ingesterPushError struct {
-	message string
-	cause   mimirpb.ErrorCause
-	soft    bool
+	message         string
+	cause           mimirpb.ErrorCause
+	soft            bool
+	rejectedSamples int64
 }
 
 // newIngesterPushError creates an ingesterPushError error representing the given status object.
 func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushError {
 	errorCause := mimirpb.ERROR_CAUSE_UNKNOWN
 	softErr := false
+	var rejectedSamples int64
 	details := stat.Details()
 	if len(details) == 1 {
 		if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 			errorCause = errorDetails.GetCause()
 			softErr = errorDetails.GetSoft()
+			rejectedSamples = errorDetails.GetRejectedSamples()
 		}
 	}
 	message := fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())
 	return ingesterPushError{
-		message: message,
-		cause:   errorCause,
-		soft:    softErr,
+		message:         message,
+		cause:           errorCause,
+		soft:            softErr,
+		rejectedSamples: rejectedSamples,
 	}
 }
 

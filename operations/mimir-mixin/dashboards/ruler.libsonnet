@@ -177,6 +177,9 @@ local filename = 'mimir-ruler.json';
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('ruler'),
       )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('ruler'),
+      )
     )
     .addRowIf(
       $._config.autoscaling.ruler.enabled,

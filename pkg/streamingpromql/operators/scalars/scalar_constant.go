@@ -71,7 +71,7 @@ func (s *ScalarConstant) Finalize(_ context.Context) error {
 }
 
 func (s *ScalarConstant) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.NewOperatorEvaluationStats(s.TimeRange, s.MemoryConsumptionTracker)
+	return types.NewOperatorEvaluationStats(s.TimeRange, s.MemoryConsumptionTracker, 0)
 }
 
 func (s *ScalarConstant) Close() {
