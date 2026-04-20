@@ -10767,6 +10767,71 @@
             },
             {
               "kind": "block",
+              "name": "index_header_cache",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "Enable caching of reads for TSDB index-header sections from object storage, utilizing the index-cache backend.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "attributes_ttl",
+                  "required": false,
+                  "desc": "How long to cache attributes of the block index as utilized by the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index cache backend.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.attributes-ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "subrange_ttl",
+                  "required": false,
+                  "desc": "TTL for caching individual subranges.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 86400000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.subrange-ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "subrange_in_memory_max_items",
+                  "required": false,
+                  "desc": "Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 50000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_range_requests",
+                  "required": false,
+                  "desc": "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header sections. Zero or negative value = unlimited number of sub-requests.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.max-get-range-requests",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
               "name": "chunks_cache",
               "required": false,
               "desc": "",

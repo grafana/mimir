@@ -89,7 +89,8 @@ type BucketStore struct {
 	userID          string
 	logger          log.Logger
 	metrics         *BucketStoreMetrics
-	bkt             objstore.InstrumentedBucketReader
+	indexHeaderBkt  objstore.InstrumentedBucketReader
+	storeBkt        objstore.InstrumentedBucketReader
 	bucketIndexMeta BucketIndexMetadataReader
 	fetcher         block.MetadataFetcher
 	dir             string
@@ -205,7 +206,8 @@ func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 // an object store bucket. It is optimized to work against high latency backends.
 func NewBucketStore(
 	userID string,
-	bkt objstore.InstrumentedBucketReader,
+	indexHeaderBkt objstore.InstrumentedBucketReader,
+	storeBkt objstore.InstrumentedBucketReader,
 	bucketIndexMeta BucketIndexMetadataReader,
 	fetcher block.MetadataFetcher,
 	dir string,
@@ -220,7 +222,8 @@ func NewBucketStore(
 ) (*BucketStore, error) {
 	s := &BucketStore{
 		logger:                      log.NewNopLogger(),
-		bkt:                         bkt,
+		indexHeaderBkt:              indexHeaderBkt,
+		storeBkt:                    storeBkt,
 		bucketIndexMeta:             bucketIndexMeta,
 		fetcher:                     fetcher,
 		dir:                         dir,
@@ -471,7 +474,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 	indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
 		ctx,
 		binaryReaderLogger,
-		s.bkt,
+		s.indexHeaderBkt,
 		s.dir,
 		meta.ULID,
 		s.postingOffsetsInMemSampling,
@@ -493,7 +496,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 		log.With(s.logger, "block", meta.ULID),
 		s.metrics,
 		meta,
-		s.bkt,
+		s.storeBkt,
 		dir,
 		s.indexCache,
 		indexHeaderReader,
