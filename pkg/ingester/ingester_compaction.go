@@ -648,22 +648,19 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 }
 
 // compactionLoopExtraDelay returns how long the compaction loop should sleep
-// after an iteration, on top of the natural wait for the next ticker tick,
-// to guarantee a gap of at least minDelay between iterations. Returns 0 when
-// the natural wait (standardInterval - iterationDuration) is already >= minDelay.
+// after an iteration to guarantee a gap of at least minDelay between iterations.
+// Returns 0 when the natural wait for the next ticker tick
+// (standardInterval - iterationDuration) is already >= minDelay.
 //
-// When an iteration overruns the configured interval, the extra delay is capped
-// at minDelay so that a pathologically long iteration does not translate into
-// an equally long sleep — the goal is just to prevent the loop from spinning
-// continuously.
+// When the natural wait is shorter, the function returns minDelay — not
+// minDelay - remaining. That is because the sleep does NOT add to the ticker
+// countdown: both run against wall-clock time, so the effective gap is
+// max(sleep, naturalWait). To push the max above minDelay, the sleep itself
+// must be at least minDelay. Returning minDelay also handles the overrun case
+// (naturalWait <= 0, tick already buffered) with the same value.
 func compactionLoopExtraDelay(iterationDuration, standardInterval, minDelay time.Duration) time.Duration {
-	remaining := standardInterval - iterationDuration
-	if remaining >= minDelay {
+	if standardInterval-iterationDuration >= minDelay {
 		return 0
 	}
-	extraDelay := minDelay - remaining
-	if extraDelay > minDelay {
-		extraDelay = minDelay
-	}
-	return extraDelay
+	return minDelay
 }

@@ -27,23 +27,23 @@ func TestCompactionLoopExtraDelay(t *testing.T) {
 			iterationDuration: standardInterval - minDelay,
 			expected:          0,
 		},
-		"iteration just past the boundary: small extra delay": {
+		"iteration just past the boundary: extra delay equals minDelay": {
 			iterationDuration: standardInterval - minDelay + time.Second,
-			expected:          time.Second,
+			expected:          minDelay,
 		},
-		"iteration near the full interval: extra delay close to minDelay": {
+		"iteration near the full interval: extra delay equals minDelay": {
 			iterationDuration: standardInterval - time.Second,
-			expected:          minDelay - time.Second,
+			expected:          minDelay,
 		},
 		"iteration exactly at the interval: extra delay equals minDelay": {
 			iterationDuration: standardInterval,
 			expected:          minDelay,
 		},
-		"iteration overruns the interval: extra delay capped at minDelay": {
+		"iteration overruns the interval: extra delay equals minDelay": {
 			iterationDuration: standardInterval + time.Second,
 			expected:          minDelay,
 		},
-		"iteration far overruns the interval: extra delay still capped at minDelay": {
+		"iteration far overruns the interval: extra delay equals minDelay": {
 			iterationDuration: 10 * standardInterval,
 			expected:          minDelay,
 		},
