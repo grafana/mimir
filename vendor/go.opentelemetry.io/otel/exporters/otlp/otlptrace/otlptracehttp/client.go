@@ -175,7 +175,19 @@ func (d *client) UploadTraces(ctx context.Context, protoSpans []*tracepb.Resourc
 
 	var statusCode int
 	if d.inst != nil {
-		op := d.inst.ExportSpans(ctx, len(protoSpans))
+		nSpans := 0
+		for _, rs := range protoSpans {
+			if rs == nil {
+				continue
+			}
+			for _, ss := range rs.ScopeSpans {
+				if ss == nil {
+					continue
+				}
+				nSpans += len(ss.Spans)
+			}
+		}
+		op := d.inst.ExportSpans(ctx, nSpans)
 		defer func() { op.End(uploadErr, statusCode) }()
 	}
 
