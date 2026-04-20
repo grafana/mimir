@@ -4140,6 +4140,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.ha-tracker.enable-for-all-users
 [accept_ha_samples: <boolean> | default = false]
 
+# (experimental) Experimental: evaluate HA deduplication per timeseries within a
+# write request instead of applying the first series' decision to the whole
+# request. Enables correct behavior for mixed-label requests such as Prometheus
+# federation or metrics proxies.
+# CLI flag: -distributor.ha-tracker.per-sample-dedupe
+[ha_tracker_per_sample_dedupe: <boolean> | default = false]
+
 # Prometheus label to look for in samples to identify a Prometheus HA cluster.
 # CLI flag: -distributor.ha-tracker.cluster
 [ha_cluster_label: <string> | default = "cluster"]

@@ -5396,6 +5396,17 @@
         },
         {
           "kind": "field",
+          "name": "ha_tracker_per_sample_dedupe",
+          "required": false,
+          "desc": "Experimental: evaluate HA deduplication per timeseries within a write request instead of applying the first series' decision to the whole request. Enables correct behavior for mixed-label requests such as Prometheus federation or metrics proxies.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.ha-tracker.per-sample-dedupe",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ha_cluster_label",
           "required": false,
           "desc": "Prometheus label to look for in samples to identify a Prometheus HA cluster.",

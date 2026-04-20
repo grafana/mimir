@@ -113,6 +113,8 @@ The following features are currently experimental:
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
+  - Evaluate HA deduplication per timeseries within a write request instead of using the first series' labels for the whole request
+    - `-distributor.ha-tracker.per-sample-dedupe`
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)

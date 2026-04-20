@@ -142,6 +142,7 @@ type Distributor struct {
 	// For handling HA replicas.
 	HATracker  haTracker
 	perRequest *perRequestDedupe
+	perSample  *perSampleDedupe
 
 	// Per-user rate limiters.
 	requestRateLimiter   *limiter.RateLimiter
@@ -750,6 +751,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
 	d.perRequest = &perRequestDedupe{
+		limits:                            limits,
+		haTracker:                         haTrackerImpl,
+		dedupedSamples:                    d.dedupedSamples,
+		nonHASamples:                      d.nonHASamples,
+		discardedSamplesTooManyHaClusters: d.discardedSamplesTooManyHaClusters,
+		costAttributionMgr:                costAttributionMgr,
+	}
+	d.perSample = &perSampleDedupe{
 		limits:                            limits,
 		haTracker:                         haTrackerImpl,
 		dedupedSamples:                    d.dedupedSamples,

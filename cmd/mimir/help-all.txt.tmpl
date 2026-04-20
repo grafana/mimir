@@ -1263,6 +1263,8 @@ Usage of ./cmd/mimir/mimir:
     	Primary backend storage used by multi-client.
   -distributor.ha-tracker.multi.secondary string
     	Secondary backend storage used by multi-client.
+  -distributor.ha-tracker.per-sample-dedupe
+    	[experimental] Experimental: evaluate HA deduplication per timeseries within a write request instead of applying the first series' decision to the whole request. Enables correct behavior for mixed-label requests such as Prometheus federation or metrics proxies.
   -distributor.ha-tracker.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "ha-tracker/")
   -distributor.ha-tracker.replica string
