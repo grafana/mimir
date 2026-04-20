@@ -734,12 +734,20 @@ func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvalua
 	count := len(msg.Annotations.Infos) + len(msg.Annotations.Warnings)
 
 	annos := make(annotations.Annotations, count)
-	for _, a := range msg.Annotations.Infos {
-		annos.Add(querierpb.NewInfoAnnotation(a))
+	for _, err := range mimirpb.StringsToAnnotationErrs(msg.Annotations.Infos) {
+		// Typed parsers produce errors that already wrap PromQLInfo.
+		// For generic strings, fall back to NewInfoAnnotation to preserve the distinction.
+		if !errors.Is(err, annotations.PromQLInfo) {
+			err = querierpb.NewInfoAnnotation(err.Error())
+		}
+		annos.Add(err)
 	}
 
-	for _, a := range msg.Annotations.Warnings {
-		annos.Add(querierpb.NewWarningAnnotation(a))
+	for _, err := range mimirpb.StringsToAnnotationErrs(msg.Annotations.Warnings) {
+		if !errors.Is(err, annotations.PromQLWarning) {
+			err = querierpb.NewWarningAnnotation(err.Error())
+		}
+		annos.Add(err)
 	}
 
 	return &annos, msg.Stats
