@@ -42,7 +42,7 @@ func (histogramQuantileStringParser) Parse(s string) (error, bool) {
 		startTime, _ := time.Parse(time.RFC3339, m[6])
 		endTime, _ := time.Parse(time.RFC3339, m[7])
 
-		return annotations.AnnotationFromData(annotations.AnnotationData{
+		return AnnotationFromData(AnnotationData{
 			Type:    annotations.AnnotationTypeHistogramQuantileForcedMonotonicity,
 			Message: m[1],
 			Fields: map[string]float64{
@@ -57,7 +57,7 @@ func (histogramQuantileStringParser) Parse(s string) (error, bool) {
 		}), true
 	}
 	if histogramQuantileRe.MatchString(s) {
-		return annotations.AnnotationFromData(annotations.AnnotationData{
+		return AnnotationFromData(AnnotationData{
 			Type:    annotations.AnnotationTypeHistogramQuantileForcedMonotonicity,
 			Message: s,
 		}), true
@@ -127,7 +127,7 @@ func ErrorsToAnnotationErrors(errs []error) []AnnotationError {
 	}
 	result := make([]AnnotationError, len(errs))
 	for i, err := range errs {
-		d := annotations.ExtractAnnotationData(err)
+		d := ExtractAnnotationData(err)
 		ae := AnnotationError{
 			Message:       d.Message,
 			PositionLabel: d.PositionLabel,
@@ -156,7 +156,7 @@ func AnnotationErrorsToErrors(aes []AnnotationError) []error {
 	}
 	result := make([]error, len(aes))
 	for i, ae := range aes {
-		d := annotations.AnnotationData{
+		d := AnnotationData{
 			Message:       ae.Message,
 			PositionLabel: ae.PositionLabel,
 		}
@@ -171,7 +171,7 @@ func AnnotationErrorsToErrors(aes []AnnotationError) []error {
 				"max_diff":   hq.MaxDiff,
 			}
 		}
-		result[i] = annotations.AnnotationFromData(d)
+		result[i] = AnnotationFromData(d)
 	}
 	return result
 }

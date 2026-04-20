@@ -206,6 +206,14 @@ var (
 	MismatchedCustomBucketsHistogramsInfo   = fmt.Errorf("%w: mismatched custom buckets were reconciled during", PromQLInfo)
 )
 
+// AnnotationType identifies the concrete type of an annotation error for serialization.
+type AnnotationType int
+
+const (
+	AnnotationTypeGeneric                             AnnotationType = 0
+	AnnotationTypeHistogramQuantileForcedMonotonicity AnnotationType = 1
+)
+
 // AnnoError extends the standard error interface to provide additional functionality
 // for PromQL annotations, allowing them to be merged with other similar errors.
 type AnnoError interface {
@@ -235,53 +243,53 @@ type AnnoError interface {
 	SetPositionLabel(string)
 }
 
-type annoErr struct {
+type AnnoErr struct {
 	PositionRange posrange.PositionRange
 	Err           error
 	Query         string
-	positionLabel string // pre-computed "line:col" label preserved across serialization round-trips
+	PositionLabel string // pre-computed "line:col" label preserved across serialization round-trips
 }
 
-func (e *annoErr) Error() string {
+func (e *AnnoErr) Error() string {
 	if e.Query == "" {
 		return e.Err.Error()
 	}
 	return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.StartPosInput(e.Query, 0))
 }
 
-func (e *annoErr) Unwrap() error {
+func (e *AnnoErr) Unwrap() error {
 	return e.Err
 }
 
-func (e *annoErr) SetQuery(query string) {
+func (e *AnnoErr) SetQuery(query string) {
 	e.Query = query
 }
 
-func (e *annoErr) GetQuery() string {
+func (e *AnnoErr) GetQuery() string {
 	return e.Query
 }
 
-func (e *annoErr) SetFinal() {
+func (e *AnnoErr) SetFinal() {
 }
 
-func (e *annoErr) GetPosition() posrange.PositionRange {
+func (e *AnnoErr) GetPosition() posrange.PositionRange {
 	return e.PositionRange
 }
 
-func (e *annoErr) SetPosition(p posrange.PositionRange) {
+func (e *AnnoErr) SetPosition(p posrange.PositionRange) {
 	e.PositionRange = p
 }
 
-func (e *annoErr) SetPositionLabel(s string) { e.positionLabel = s }
-func (e *annoErr) GetPositionLabel() string  { return e.positionLabel }
+func (e *AnnoErr) SetPositionLabel(s string) { e.PositionLabel = s }
+func (e *AnnoErr) GetPositionLabel() string  { return e.PositionLabel }
 
 // We do not merge generic annotations, instead we just ignore the provided error
 // and return the original.
-func (e *annoErr) Merge(_ error) error {
+func (e *AnnoErr) Merge(_ error) error {
 	return e
 }
 
-func maybeAddMetricName(anno error, metricName string) error {
+func MaybeAddMetricName(anno error, metricName string) error {
 	if metricName == "" {
 		return anno
 	}
@@ -291,7 +299,7 @@ func maybeAddMetricName(anno error, metricName string) error {
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile
 // value, i.e. a float that is outside the range [0, 1] or NaN.
 func NewInvalidQuantileWarning(q float64, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w, got %g", InvalidQuantileWarning, q),
 	}
@@ -300,7 +308,7 @@ func NewInvalidQuantileWarning(q float64, pos posrange.PositionRange) error {
 // NewInvalidRatioWarning is used when the user specifies an invalid ratio
 // value, i.e. a float that is outside the range [-1, 1] or NaN.
 func NewInvalidRatioWarning(q, to float64, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w, got %g, capping to %g", InvalidRatioWarning, q, to),
 	}
@@ -309,8 +317,8 @@ func NewInvalidRatioWarning(q, to float64, pos posrange.PositionRange) error {
 // NewBadBucketLabelWarning is used when there is an error parsing the bucket label
 // of a classic histogram.
 func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRange) error {
-	anno := maybeAddMetricName(fmt.Errorf("%w of %q", BadBucketLabelWarning, label), metricName)
-	return &annoErr{
+	anno := MaybeAddMetricName(fmt.Errorf("%w of %q", BadBucketLabelWarning, label), metricName)
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           anno,
 	}
@@ -320,7 +328,7 @@ func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRan
 // float samples and histogram samples for functions that do not support mixed
 // samples.
 func NewMixedFloatsHistogramsWarning(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w metric name %q", MixedFloatsHistogramsWarning, metricName),
 	}
@@ -329,7 +337,7 @@ func NewMixedFloatsHistogramsWarning(metricName string, pos posrange.PositionRan
 // NewMixedFloatsHistogramsAggWarning is used when the queried series includes both
 // float samples and histogram samples in an aggregation.
 func NewMixedFloatsHistogramsAggWarning(pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w aggregation", MixedFloatsHistogramsWarning),
 	}
@@ -338,16 +346,16 @@ func NewMixedFloatsHistogramsAggWarning(pos posrange.PositionRange) error {
 // NewMixedClassicNativeHistogramsWarning is used when the queried series includes
 // both classic and native histograms.
 func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
-		Err:           maybeAddMetricName(MixedClassicNativeHistogramsWarning, metricName),
+		Err:           MaybeAddMetricName(MixedClassicNativeHistogramsWarning, metricName),
 	}
 }
 
 // NewNativeHistogramNotCounterWarning is used when histogramRate is called
 // with isCounter set to true on a gauge histogram.
 func NewNativeHistogramNotCounterWarning(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", NativeHistogramNotCounterWarning, metricName),
 	}
@@ -356,7 +364,7 @@ func NewNativeHistogramNotCounterWarning(metricName string, pos posrange.Positio
 // NewNativeHistogramNotGaugeWarning is used when histogramRate is called
 // with isCounter set to false on a counter histogram.
 func NewNativeHistogramNotGaugeWarning(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", NativeHistogramNotGaugeWarning, metricName),
 	}
@@ -365,7 +373,7 @@ func NewNativeHistogramNotGaugeWarning(metricName string, pos posrange.PositionR
 // NewMixedExponentialCustomHistogramsWarning is used when the queried series includes
 // histograms with both exponential and custom buckets schemas.
 func NewMixedExponentialCustomHistogramsWarning(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", MixedExponentialCustomHistogramsWarning, metricName),
 	}
@@ -374,7 +382,7 @@ func NewMixedExponentialCustomHistogramsWarning(metricName string, pos posrange.
 // NewPossibleNonCounterInfo is used when a named counter metric with only float samples does not
 // have the suffixes _total, _sum, _count, or _bucket.
 func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName),
 	}
@@ -383,7 +391,7 @@ func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) er
 // NewPossibleNonCounterLabelInfo is used when a named counter metric with only float samples does not
 // have the __type__ label set to "counter".
 func NewPossibleNonCounterLabelInfo(metricName, typeLabel string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w, got %q: %q", PossibleNonCounterLabelInfo, typeLabel, metricName),
 	}
@@ -474,11 +482,11 @@ func (e *HistogramQuantileForcedMonotonicityErr) Merge(other error) error {
 	return o
 }
 
-func (e *HistogramQuantileForcedMonotonicityErr) annotationType() AnnotationType {
+func (e *HistogramQuantileForcedMonotonicityErr) AnnotationType() AnnotationType {
 	return AnnotationTypeHistogramQuantileForcedMonotonicity
 }
-func (e *HistogramQuantileForcedMonotonicityErr) rawMessage() string { return e.Err.Error() }
-func (e *HistogramQuantileForcedMonotonicityErr) mergeFields() map[string]float64 {
+func (e *HistogramQuantileForcedMonotonicityErr) RawMessage() string { return e.Err.Error() }
+func (e *HistogramQuantileForcedMonotonicityErr) MergeFields() map[string]float64 {
 	return map[string]float64{
 		"count":      float64(e.count),
 		"min_ts":     float64(e.minTs),
@@ -488,7 +496,7 @@ func (e *HistogramQuantileForcedMonotonicityErr) mergeFields() map[string]float6
 		"max_diff":   e.maxDiff,
 	}
 }
-func (e *HistogramQuantileForcedMonotonicityErr) applyMergeFields(m map[string]float64) {
+func (e *HistogramQuantileForcedMonotonicityErr) ApplyMergeFields(m map[string]float64) {
 	e.count = int(m["count"])
 	e.minTs = int64(m["min_ts"])
 	e.maxTs = int64(m["max_ts"])
@@ -502,7 +510,7 @@ func (e *HistogramQuantileForcedMonotonicityErr) applyMergeFields(m map[string]f
 func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange, ts int64, minBucket, maxBucket, maxDiff float64) error {
 	return &HistogramQuantileForcedMonotonicityErr{
 		PositionRange: pos,
-		Err:           maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName),
+		Err:           MaybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName),
 		minTs:         ts,
 		maxTs:         ts,
 		minBucket:     minBucket,
@@ -514,7 +522,7 @@ func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.
 // NewIncompatibleTypesInBinOpInfo is used if binary operators act on a
 // combination of types that doesn't work and therefore returns no result.
 func NewIncompatibleTypesInBinOpInfo(lhsType, operator, rhsType string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q: %s %s %s", IncompatibleTypesInBinOpInfo, operator, lhsType, operator, rhsType),
 	}
@@ -523,7 +531,7 @@ func NewIncompatibleTypesInBinOpInfo(lhsType, operator, rhsType string, pos posr
 // NewHistogramIgnoredInAggregationInfo is used when a histogram is ignored by
 // an aggregation operator that cannot handle histograms.
 func NewHistogramIgnoredInAggregationInfo(aggregation string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %s aggregation", HistogramIgnoredInAggregationInfo, aggregation),
 	}
@@ -532,7 +540,7 @@ func NewHistogramIgnoredInAggregationInfo(aggregation string, pos posrange.Posit
 // NewHistogramIgnoredInMixedRangeInfo is used when a histogram is ignored
 // in a range vector which contains mix of floats and histograms.
 func NewHistogramIgnoredInMixedRangeInfo(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", HistogramIgnoredInMixedRangeInfo, metricName),
 	}
@@ -541,7 +549,7 @@ func NewHistogramIgnoredInMixedRangeInfo(metricName string, pos posrange.Positio
 // NewIncompatibleBucketLayoutInBinOpWarning is used if binary operators act on a
 // combination of two incompatible histograms.
 func NewIncompatibleBucketLayoutInBinOpWarning(operator string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %s", IncompatibleBucketLayoutInBinOpWarning, operator),
 	}
@@ -550,30 +558,30 @@ func NewIncompatibleBucketLayoutInBinOpWarning(operator string, pos posrange.Pos
 // NewSortInRangeQueryWarning is used when sort or sort_desc functions are used
 // in range queries where they have no effect since results are always ordered by labels.
 func NewSortInRangeQueryWarning(pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           SortInRangeQueryWarning,
 	}
 }
 
 func NewNativeHistogramQuantileNaNResultInfo(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
-		Err:           maybeAddMetricName(NativeHistogramQuantileNaNResultInfo, metricName),
+		Err:           MaybeAddMetricName(NativeHistogramQuantileNaNResultInfo, metricName),
 	}
 }
 
 func NewNativeHistogramQuantileNaNSkewInfo(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
-		Err:           maybeAddMetricName(NativeHistogramQuantileNaNSkewInfo, metricName),
+		Err:           MaybeAddMetricName(NativeHistogramQuantileNaNSkewInfo, metricName),
 	}
 }
 
 func NewNativeHistogramFractionNaNsInfo(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
-		Err:           maybeAddMetricName(NativeHistogramFractionNaNsInfo, metricName),
+		Err:           MaybeAddMetricName(NativeHistogramFractionNaNsInfo, metricName),
 	}
 }
 
@@ -597,7 +605,7 @@ func (op HistogramOperation) String() string {
 // NewHistogramCounterResetCollisionWarning is used when two counter histograms are added or subtracted where one has
 // a CounterReset hint and the other has NotCounterReset.
 func NewHistogramCounterResetCollisionWarning(pos posrange.PositionRange, operation HistogramOperation) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %s", HistogramCounterResetCollisionWarning, operation.String()),
 	}
@@ -606,7 +614,7 @@ func NewHistogramCounterResetCollisionWarning(pos posrange.PositionRange, operat
 // NewMismatchedCustomBucketsHistogramsInfo is used when the queried series includes
 // custom buckets histograms with mismatched custom bounds that cause reconciling.
 func NewMismatchedCustomBucketsHistogramsInfo(pos posrange.PositionRange, operation HistogramOperation) error {
-	return &annoErr{
+	return &AnnoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %s", MismatchedCustomBucketsHistogramsInfo, operation.String()),
 	}

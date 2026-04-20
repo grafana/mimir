@@ -1,17 +1,6 @@
-// Copyright The Prometheus Authors
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: AGPL-3.0-only
 
-package annotations
+package mimirpb
 
 import (
 	"errors"
@@ -20,14 +9,7 @@ import (
 	"strings"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-)
-
-// AnnotationType identifies the concrete type of an annotation error for serialization.
-type AnnotationType int
-
-const (
-	AnnotationTypeGeneric                             AnnotationType = 0
-	AnnotationTypeHistogramQuantileForcedMonotonicity AnnotationType = 1
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // mergeableAnnotation is implemented by annotation types that carry mergeable
@@ -38,11 +20,11 @@ const (
 //
 // No changes to AnnotationData or the Extract/From functions are needed.
 type mergeableAnnotation interface {
-	AnnoError
-	annotationType() AnnotationType
-	rawMessage() string              // Err.Error() — the merge key, without position/count decoration.
-	mergeFields() map[string]float64 // Type-specific merge state as an opaque key-value map.
-	applyMergeFields(map[string]float64)
+	annotations.AnnoError
+	AnnotationType() annotations.AnnotationType
+	RawMessage() string              // Err.Error() — the merge key, without position/count decoration.
+	MergeFields() map[string]float64 // Type-specific merge state as an opaque key-value map.
+	ApplyMergeFields(map[string]float64)
 }
 
 // AnnotationData is a portable, type-agnostic representation of a typed annotation error,
@@ -50,7 +32,7 @@ type mergeableAnnotation interface {
 // Fields holds the type-specific merge state; its key names are defined by each
 // concrete type's mergeFields/applyMergeFields implementation.
 type AnnotationData struct {
-	Type    AnnotationType
+	Type    annotations.AnnotationType
 	Message string
 	Fields  map[string]float64
 	// PositionLabel is the pre-computed "line:col" string for the position,
@@ -60,26 +42,24 @@ type AnnotationData struct {
 	PositionLabel string
 }
 
-// annotationFactory creates a zero-value instance of a mergeable annotation
-// with the given raw message. The caller will apply merge state via applyMergeFields.
 type annotationFactory func(msg string) mergeableAnnotation
 
-var annotationFactories = map[AnnotationType]annotationFactory{}
+var annotationFactories = map[annotations.AnnotationType]annotationFactory{}
 
 func init() {
-	annotationFactories[AnnotationTypeHistogramQuantileForcedMonotonicity] = func(msg string) mergeableAnnotation {
+	annotationFactories[annotations.AnnotationTypeHistogramQuantileForcedMonotonicity] = func(msg string) mergeableAnnotation {
 		// Reconstruct the error chain matching NewHistogramQuantileForcedMonotonicityInfo:
-		// Err: maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName)
-		sentinel := HistogramQuantileForcedMonotonicityInfo.Error()
+		// Err: annotations.MaybeAddMetricName(annotations.HistogramQuantileForcedMonotonicityInfo, metricName)
+		sentinel := annotations.HistogramQuantileForcedMonotonicityInfo.Error()
 		if suffix, ok := strings.CutPrefix(msg, sentinel+" for metric name "); ok {
 			if metricName, err := strconv.Unquote(suffix); err == nil {
-				return &HistogramQuantileForcedMonotonicityErr{Err: maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName)}
+				return &annotations.HistogramQuantileForcedMonotonicityErr{Err: annotations.MaybeAddMetricName(annotations.HistogramQuantileForcedMonotonicityInfo, metricName)}
 			}
 		}
 		if msg == sentinel {
-			return &HistogramQuantileForcedMonotonicityErr{Err: HistogramQuantileForcedMonotonicityInfo}
+			return &annotations.HistogramQuantileForcedMonotonicityErr{Err: annotations.HistogramQuantileForcedMonotonicityInfo}
 		}
-		return &HistogramQuantileForcedMonotonicityErr{Err: fmt.Errorf("%s", msg)}
+		return &annotations.HistogramQuantileForcedMonotonicityErr{Err: fmt.Errorf("%s", msg)}
 	}
 }
 
@@ -89,7 +69,7 @@ func ExtractAnnotationData(err error) AnnotationData {
 	var d AnnotationData
 
 	// Extract position label from any AnnoError implementation.
-	var anErr AnnoError
+	var anErr annotations.AnnoError
 	if errors.As(err, &anErr) {
 		// Prefer computing the label from the position offsets + query string,
 		// since that is the most accurate source. Fall back to a stored label
@@ -107,12 +87,12 @@ func ExtractAnnotationData(err error) AnnotationData {
 
 	var m mergeableAnnotation
 	if errors.As(err, &m) {
-		d.Type = m.annotationType()
-		d.Message = m.rawMessage()
-		d.Fields = m.mergeFields()
+		d.Type = m.AnnotationType()
+		d.Message = m.RawMessage()
+		d.Fields = m.MergeFields()
 		return d
 	}
-	d.Type = AnnotationTypeGeneric
+	d.Type = annotations.AnnotationTypeGeneric
 	d.Message = err.Error()
 	return d
 }
@@ -129,7 +109,7 @@ func AnnotationFromData(d AnnotationData) error {
 	if f, ok := annotationFactories[d.Type]; ok {
 		a := f(d.Message)
 		if len(d.Fields) > 0 {
-			a.applyMergeFields(d.Fields)
+			a.ApplyMergeFields(d.Fields)
 		}
 		// Always set position, even when pos is {-1, -1}. This overrides the
 		// Go zero value {0, 0} that factories produce, preventing
@@ -144,6 +124,6 @@ func AnnotationFromData(d AnnotationData) error {
 		}
 		return a
 	}
-	// Generic or unknown: wrap as annoErr so it still implements AnnoError.
-	return &annoErr{Err: fmt.Errorf("%s", d.Message), PositionRange: pos, positionLabel: d.PositionLabel}
+	// Generic or unknown: wrap as AnnoErr so it still implements AnnoError.
+	return &annotations.AnnoErr{Err: fmt.Errorf("%s", d.Message), PositionRange: pos, PositionLabel: d.PositionLabel}
 }

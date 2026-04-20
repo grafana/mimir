@@ -73,8 +73,8 @@ func TestAnnotationErrorsRoundTrip(t *testing.T) {
 
 				// Extract the canonical data from both to compare—this is what
 				// the serialization layer sees.
-				originalData := annotations.ExtractAnnotationData(original)
-				rtData := annotations.ExtractAnnotationData(rt)
+				originalData := ExtractAnnotationData(original)
+				rtData := ExtractAnnotationData(rt)
 
 				assert.Equal(t, originalData.Type, rtData.Type, "annotation %d: Type mismatch", i)
 				assert.Equal(t, originalData.Message, rtData.Message, "annotation %d: Message mismatch", i)
@@ -114,8 +114,8 @@ func TestAnnotationErrorsRoundTripMerge(t *testing.T) {
 			rtB := AnnotationErrorsToErrors(ErrorsToAnnotationErrors([]error{tc.b}))[0]
 
 			// Pre-merge: both should independently have the correct type.
-			dataA := annotations.ExtractAnnotationData(rtA)
-			dataB := annotations.ExtractAnnotationData(rtB)
+			dataA := ExtractAnnotationData(rtA)
+			dataB := ExtractAnnotationData(rtB)
 			require.Equal(t, tc.wantType, dataA.Type)
 			require.Equal(t, tc.wantType, dataB.Type)
 
@@ -131,7 +131,7 @@ func TestAnnotationErrorsRoundTripMerge(t *testing.T) {
 
 			// Verify the merged entry has accumulated fields.
 			for _, merged := range ann {
-				mergedData := annotations.ExtractAnnotationData(merged)
+				mergedData := ExtractAnnotationData(merged)
 				assert.Equal(t, tc.wantType, mergedData.Type)
 
 				// Count should reflect both inputs were merged.
@@ -190,7 +190,7 @@ func TestTypedAnnotationStringsMerge(t *testing.T) {
 				"expected the two annotations for the same metric to merge into a single entry")
 
 			for _, merged := range ann {
-				data := annotations.ExtractAnnotationData(merged)
+				data := ExtractAnnotationData(merged)
 				assert.Equal(t, tc.wantType, data.Type)
 				assert.Equal(t, tc.wantCount, data.Fields["count"],
 					"merged count should reflect both inputs")
@@ -276,7 +276,7 @@ func TestAnnotationFromDataNoSpuriousPosition(t *testing.T) {
 			assert.Empty(t, result[0].PositionLabel, "PositionLabel should be empty")
 
 			// The reconstructed error's position must not produce "1:1" when a query is available.
-			data := annotations.ExtractAnnotationData(errs[0])
+			data := ExtractAnnotationData(errs[0])
 			assert.Empty(t, data.PositionLabel, "position label should be empty")
 		})
 	}
