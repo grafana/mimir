@@ -3,7 +3,7 @@
 package mimirpb
 
 import (
-	"fmt"
+	"errors"
 	"regexp"
 	"strconv"
 	"time"
@@ -11,14 +11,14 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// annotationStringParser parses a final-form annotation string back into an
-// AnnotationError. Each implementation handles a specific AnnotationErrorType
-// using a type-specific regex.
+// annotationStringParser parses a final-form annotation string back into the
+// original prometheus annotation error type. Each implementation handles a
+// specific annotation type using a type-specific regex.
 type annotationStringParser interface {
-	Parse(s string) (AnnotationError, bool)
+	Parse(s string) (error, bool)
 }
 
-// annotationParsers is the ordered list of parsers tried by StringsToAnnotationErrors.
+// annotationParsers is the ordered list of parsers tried when parsing annotation strings.
 // More specific patterns (histogram) must come before less specific ones (possibleNonCounter)
 // because both contain "over N samples" but the histogram suffix is longer.
 var annotationParsers = []annotationStringParser{
@@ -30,117 +30,144 @@ var annotationParsers = []annotationStringParser{
 
 type possibleNonCounterStringParser struct{}
 
-// possibleNonCounterRe matches the final form produced by possibleNonCounterErr.Error():
+// possibleNonCounterFinalRe matches the final form produced by possibleNonCounterErr.Error()
+// when SetFinal() has been called, with an optional positional suffix:
 //
 //	"<message>, over <count> samples"
-var possibleNonCounterRe = regexp.MustCompile(`^(.+), over (\d+) samples$`)
+//	"<message>, over <count> samples (<position>)"
+var possibleNonCounterFinalRe = regexp.MustCompile(`^(.+), over (\d+) samples(?: \(.+\))?$`)
 
-func (possibleNonCounterStringParser) Parse(s string) (AnnotationError, bool) {
-	m := possibleNonCounterRe.FindStringSubmatch(s)
-	if m == nil {
-		return AnnotationError{}, false
+// possibleNonCounterRe matches the non-final form — the raw Err.Error() of a
+// possibleNonCounterErr, which is the PossibleNonCounterInfo sentinel followed
+// by the metric name.
+var possibleNonCounterRe = regexp.MustCompile(
+	`^(` + regexp.QuoteMeta(annotations.PossibleNonCounterInfo.Error()) + ` .+)$`,
+)
+
+func (possibleNonCounterStringParser) Parse(s string) (error, bool) {
+	if m := possibleNonCounterFinalRe.FindStringSubmatch(s); m != nil {
+		count, _ := strconv.Atoi(m[2])
+		return annotations.AnnotationFromData(annotations.AnnotationData{
+			Type:    annotations.AnnotationTypePossibleNonCounter,
+			Message: m[1],
+			Fields:  map[string]float64{"count": float64(count)},
+		}), true
 	}
-	count, _ := strconv.Atoi(m[2])
-	return AnnotationError{
-		Type:    ANNOTATION_POSSIBLE_NON_COUNTER,
-		Message: m[1],
-		Count:   int32(count),
-	}, true
+	if possibleNonCounterRe.MatchString(s) {
+		return annotations.AnnotationFromData(annotations.AnnotationData{
+			Type:    annotations.AnnotationTypePossibleNonCounter,
+			Message: s,
+		}), true
+	}
+	return nil, false
 }
 
 // --- histogramQuantileStringParser ---
 
 type histogramQuantileStringParser struct{}
 
-// histogramQuantileRe matches the final form produced by
-// histogramQuantileForcedMonotonicityErr.Error():
+// histogramQuantileFinalRe matches the final form produced by
+// histogramQuantileForcedMonotonicityErr.Error() when SetFinal() has been called,
+// with an optional positional suffix:
 //
 //	"<message>, from buckets <min> to <max>, with a max diff of <diff>, over <count> samples from <start> to <end>"
-var histogramQuantileRe = regexp.MustCompile(
-	`^(.+), from buckets (\S+) to (\S+), with a max diff of (\S+), over (\d+) samples from (\S+) to (\S+)$`,
+//	"<message>, from buckets <min> to <max>, with a max diff of <diff>, over <count> samples from <start> to <end> (<position>)"
+var histogramQuantileFinalRe = regexp.MustCompile(
+	`^(.+), from buckets (\S+) to (\S+), with a max diff of (\S+), over (\d+) samples from (\S+) to (\S+)(?: \(.+\))?$`,
 )
 
-func (histogramQuantileStringParser) Parse(s string) (AnnotationError, bool) {
-	m := histogramQuantileRe.FindStringSubmatch(s)
-	if m == nil {
-		return AnnotationError{}, false
-	}
-	minBucket, _ := strconv.ParseFloat(m[2], 64)
-	maxBucket, _ := strconv.ParseFloat(m[3], 64)
-	maxDiff, _ := strconv.ParseFloat(m[4], 64)
-	displayCount, _ := strconv.Atoi(m[5])
-	startTime, _ := time.Parse(time.RFC3339, m[6])
-	endTime, _ := time.Parse(time.RFC3339, m[7])
+// histogramQuantileRe matches the non-final form — the raw Err.Error() of a
+// histogramQuantileForcedMonotonicityErr, which is the
+// HistogramQuantileForcedMonotonicityInfo sentinel optionally followed by a
+// metric name suffix.
+var histogramQuantileRe = regexp.MustCompile(
+	`^(` + regexp.QuoteMeta(annotations.HistogramQuantileForcedMonotonicityInfo.Error()) + `.*)$`,
+)
 
-	return AnnotationError{
-		Type:      ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
-		Message:   m[1],
-		Count:     int32(displayCount - 1), // upstream Error() displays count+1
-		MinTs:     startTime.Unix() * 1000,
-		MaxTs:     endTime.Unix() * 1000,
-		MinBucket: minBucket,
-		MaxBucket: maxBucket,
-		MaxDiff:   maxDiff,
-	}, true
+func (histogramQuantileStringParser) Parse(s string) (error, bool) {
+	if m := histogramQuantileFinalRe.FindStringSubmatch(s); m != nil {
+		minBucket, _ := strconv.ParseFloat(m[2], 64)
+		maxBucket, _ := strconv.ParseFloat(m[3], 64)
+		maxDiff, _ := strconv.ParseFloat(m[4], 64)
+		displayCount, _ := strconv.Atoi(m[5])
+		startTime, _ := time.Parse(time.RFC3339, m[6])
+		endTime, _ := time.Parse(time.RFC3339, m[7])
+
+		return annotations.AnnotationFromData(annotations.AnnotationData{
+			Type:    annotations.AnnotationTypeHistogramQuantileForcedMonotonicity,
+			Message: m[1],
+			Fields: map[string]float64{
+				"count":      float64(displayCount - 1), // upstream Error() displays count+1
+				"min_ts":     float64(startTime.Unix() * 1000),
+				"max_ts":     float64(endTime.Unix() * 1000),
+				"min_bucket": minBucket,
+				"max_bucket": maxBucket,
+				"max_diff":   maxDiff,
+			},
+		}), true
+	}
+	if histogramQuantileRe.MatchString(s) {
+		return annotations.AnnotationFromData(annotations.AnnotationData{
+			Type:    annotations.AnnotationTypeHistogramQuantileForcedMonotonicity,
+			Message: s,
+		}), true
+	}
+	return nil, false
 }
 
 // StringsToAnnotationErrors converts annotation strings (in final form) back to
-// typed AnnotationError values. It tries each registered annotationStringParser
-// in order and falls back to ANNOTATION_GENERIC if none match.
+// typed AnnotationError values. It parses each string into the original
+// prometheus annotation error type, then converts those errors to AnnotationError.
 func StringsToAnnotationErrors(ss []string) []AnnotationError {
+	return ErrorsToAnnotationErrors(StringsToAnnotationErrs(ss))
+}
+
+// StringsToAnnotationErrs parses final-form annotation strings back into the
+// original prometheus annotation error types. It tries each registered
+// annotationStringParser in order and falls back to a generic error if none match.
+func StringsToAnnotationErrs(ss []string) []error {
 	if len(ss) == 0 {
 		return nil
 	}
-	result := make([]AnnotationError, len(ss))
+	result := make([]error, len(ss))
 	for i, s := range ss {
 		result[i] = parseAnnotationString(s)
 	}
 	return result
 }
 
-func parseAnnotationString(s string) AnnotationError {
+func parseAnnotationString(s string) error {
 	for _, p := range annotationParsers {
-		if ae, ok := p.Parse(s); ok {
-			return ae
+		if err, ok := p.Parse(s); ok {
+			return err
 		}
 	}
-	return AnnotationError{
-		Type:    ANNOTATION_GENERIC,
-		Message: s,
-	}
+	return errors.New(s)
+}
+
+// setFinaler is satisfied by the unexported annoError interface in the
+// prometheus annotations package. It lets us call SetFinal() on reconstructed
+// errors so that their Error() output includes the full detail suffix.
+type setFinaler interface {
+	SetFinal()
 }
 
 // AnnotationErrorsToStrings converts AnnotationError values to their final-form
-// string representations. For typed annotations, the string encodes all
-// annotation data (count, timestamps, buckets, etc.) in the format matching the
-// upstream Error() output with SetFinal() applied.
+// string representations by reconstructing the original prometheus error types
+// and calling Error() on them after SetFinal().
 func AnnotationErrorsToStrings(aes []AnnotationError) []string {
 	if len(aes) == 0 {
 		return nil
 	}
-	result := make([]string, len(aes))
-	for i, ae := range aes {
-		result[i] = formatAnnotationError(ae)
+	errs := AnnotationErrorsToErrors(aes)
+	result := make([]string, len(errs))
+	for i, err := range errs {
+		if sf, ok := err.(setFinaler); ok {
+			sf.SetFinal()
+		}
+		result[i] = err.Error()
 	}
 	return result
-}
-
-func formatAnnotationError(ae AnnotationError) string {
-	switch ae.Type {
-	case ANNOTATION_POSSIBLE_NON_COUNTER:
-		return fmt.Sprintf("%s, over %d samples", ae.Message, ae.Count)
-	case ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY:
-		// Mirror the upstream skip when all configurable fields are zero.
-		if ae.MinTs == 0 && ae.MaxTs == 0 && ae.MinBucket == 0 && ae.MaxBucket == 0 && ae.MaxDiff == 0 {
-			return ae.Message
-		}
-		startTime := time.Unix(ae.MinTs/1000, 0).UTC().Format(time.RFC3339)
-		endTime := time.Unix(ae.MaxTs/1000, 0).UTC().Format(time.RFC3339)
-		return fmt.Sprintf("%s, from buckets %g to %g, with a max diff of %.2g, over %d samples from %s to %s",
-			ae.Message, ae.MinBucket, ae.MaxBucket, ae.MaxDiff, ae.Count+1, startTime, endTime)
-	default:
-		return ae.Message
-	}
 }
 
 // ErrorsToAnnotationErrors converts typed annotation errors to their protobuf representation.

@@ -41,19 +41,22 @@ func init() {
 	jsoniter.RegisterTypeEncoderFunc("querymiddleware.PrometheusData", prometheusDataJsoniterEncode, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("querymiddleware.PrometheusData", prometheusDataJsoniterDecode)
 
-	// AnnotationError is serialized as a plain string (its Message) in the JSON API
-	// so that the Prometheus HTTP API contract ("warnings": ["msg", ...]) is preserved.
+	// AnnotationError is serialized as a plain string in the JSON API so that the
+	// Prometheus HTTP API contract ("warnings": ["msg", ...]) is preserved.
+	// The encoder renders the full final-form string (with count/bucket details),
+	// and the decoder parses it back to recover the annotation type.
 	jsoniter.RegisterTypeEncoderFunc("mimirpb.AnnotationError", func(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 		ae := (*mimirpb.AnnotationError)(ptr)
-		stream.WriteString(ae.Message)
+		strs := mimirpb.AnnotationErrorsToStrings([]mimirpb.AnnotationError{*ae})
+		stream.WriteString(strs[0])
 	}, func(ptr unsafe.Pointer) bool {
 		ae := (*mimirpb.AnnotationError)(ptr)
 		return ae.Message == ""
 	})
 	jsoniter.RegisterTypeDecoderFunc("mimirpb.AnnotationError", func(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 		ae := (*mimirpb.AnnotationError)(ptr)
-		ae.Type = mimirpb.ANNOTATION_GENERIC
-		ae.Message = iter.ReadString()
+		parsed := mimirpb.StringsToAnnotationErrors([]string{iter.ReadString()})
+		*ae = parsed[0]
 	})
 }
 

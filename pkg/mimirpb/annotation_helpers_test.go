@@ -4,6 +4,7 @@ package mimirpb
 
 import (
 	"errors"
+	"regexp"
 	"testing"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -155,20 +156,53 @@ func TestAnnotationErrorsRoundTripMerge(t *testing.T) {
 }
 
 func TestStringsToAnnotationErrorsRoundTrip(t *testing.T) {
-	input := []string{
-		"PromQL warning: some warning message",
-		`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric"`,
-		"another annotation",
+	tests := map[string]struct {
+		input    string
+		wantType AnnotationErrorType
+		isFinal  bool
+	}{
+		"generic warning": {
+			input:    "PromQL warning: some warning message",
+			wantType: ANNOTATION_GENERIC,
+		},
+		"generic plain string": {
+			input:    "another annotation",
+			wantType: ANNOTATION_GENERIC,
+		},
+		"non-final PossibleNonCounterInfo": {
+			input:    `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric"`,
+			wantType: ANNOTATION_POSSIBLE_NON_COUNTER,
+		},
+		"final PossibleNonCounterInfo without pos info": {
+			input:    `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"up\", over 637 samples`,
+			wantType: ANNOTATION_POSSIBLE_NON_COUNTER,
+			isFinal:  true,
+		},
+		"final PossibleNonCounterInfo with pos info": {
+			input:    `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"up\", over 637 samples (1:10)`,
+			wantType: ANNOTATION_POSSIBLE_NON_COUNTER,
+			isFinal:  true,
+		},
+		"non-final HistogramQuantileForcedMonotonicity": {
+			input:    `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "http_duration_bucket"`,
+			wantType: ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
+		},
 	}
 
-	protoAnnotations := StringsToAnnotationErrors(input)
-	roundTripped := AnnotationErrorsToStrings(protoAnnotations)
+	regexToStripPosition := regexp.MustCompile(` \(\d+:\d+\)$`)
 
-	require.Equal(t, input, roundTripped)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			protoAnnotations := StringsToAnnotationErrors([]string{tc.input})
+			require.Len(t, protoAnnotations, 1)
+			assert.Equal(t, tc.wantType, protoAnnotations[0].Type)
 
-	// Verify all are generic type.
-	for i, ae := range protoAnnotations {
-		assert.Equal(t, ANNOTATION_GENERIC, ae.Type, "annotation %d: expected ANNOTATION_GENERIC", i)
-		assert.Zero(t, ae.Count, "annotation %d: Count should be zero for generic", i)
+			if tc.isFinal {
+				roundTripped := AnnotationErrorsToStrings(protoAnnotations)
+				require.Len(t, roundTripped, 1)
+				inputWithoutPosition := regexToStripPosition.ReplaceAllString(tc.input, "")
+				assert.Equal(t, inputWithoutPosition, roundTripped[0])
+			}
+		})
 	}
 }

@@ -15,9 +15,12 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
@@ -378,6 +381,46 @@ func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedMinT, newReq.GetMinT())
 			require.Equal(t, tc.expectedMaxT, newReq.GetMaxT())
+		})
+	}
+}
+
+func TestAnnotationErrorJSONRoundTrip(t *testing.T) {
+	tests := map[string]struct {
+		input    mimirpb.AnnotationError
+		wantType mimirpb.AnnotationErrorType
+	}{
+		"generic": {
+			input:    mimirpb.AnnotationError{Type: mimirpb.ANNOTATION_GENERIC, Message: "some warning"},
+			wantType: mimirpb.ANNOTATION_GENERIC,
+		},
+		"possibleNonCounter": {
+			input:    mimirpb.ErrorsToAnnotationErrors([]error{annotations.NewPossibleNonCounterInfo("my_metric", posrange.PositionRange{}, 42)})[0],
+			wantType: mimirpb.ANNOTATION_POSSIBLE_NON_COUNTER,
+		},
+		"histogramQuantileForcedMonotonicity": {
+			input:    mimirpb.ErrorsToAnnotationErrors([]error{annotations.NewHistogramQuantileForcedMonotonicityInfo("bucket", posrange.PositionRange{}, 1700000000000, 0.5, 10.0, 0.01)})[0],
+			wantType: mimirpb.ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			resp := &PrometheusResponse{
+				Status:   statusSuccess,
+				Warnings: []mimirpb.AnnotationError{tc.input},
+			}
+
+			encoded, err := json.Marshal(resp)
+			require.NoError(t, err)
+
+			var decoded PrometheusResponse
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+
+			require.Len(t, decoded.Warnings, 1)
+			assert.Equal(t, tc.wantType, decoded.Warnings[0].Type, "annotation type should survive JSON round-trip")
+			assert.Equal(t, tc.input.Message, decoded.Warnings[0].Message)
+			assert.Equal(t, tc.input.Count, decoded.Warnings[0].Count)
 		})
 	}
 }
