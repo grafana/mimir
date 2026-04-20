@@ -488,6 +488,377 @@ func TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit(t *
 	require.Equal(t, T1, pr.Data.Result[0].Histograms[2].TimestampMs)
 }
 
+func TestSplitAndCacheMiddleware_ResultsCache_AnnotationsMergedOnPartialCacheHit(t *testing.T) {
+	// Three equidistant step-aligned timestamps within the same day.
+	const step = 60 * 1000 // 60 s in ms
+
+	T0 := parseTimeRFC3339(t, "2021-10-14T00:00:00Z").UnixMilli()
+	Tmid := T0 + step
+	T1 := T0 + 2*step
+
+	seriesLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}}
+
+	downstreamCalls := 0
+	mw := newSplitAndCacheMiddleware(
+		false, // no time-splitting so that each query is a single cache key
+		true,
+		24*time.Hour,
+		mockLimits{resultsCacheTTL: resultsCacheTTL},
+		newTestCodec(),
+		cache.NewInstrumentedMockCache(),
+		DefaultCacheKeyGenerator{interval: day},
+		PrometheusResponseExtractor{},
+		resultsCacheAlwaysEnabled,
+		log.NewNopLogger(),
+		prometheus.NewPedanticRegistry(),
+	)
+
+	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+		downstreamCalls++
+		start := req.GetStart()
+		end := req.GetEnd()
+		switch {
+		case start == Tmid && end == T1:
+			// First query: [Tmid, T1] — cached response has warning A.
+			resp := mockPrometheusResponseSingleSeries(seriesLabels,
+				mimirpb.Sample{TimestampMs: Tmid, Value: 1},
+				mimirpb.Sample{TimestampMs: T1, Value: 2},
+			)
+			resp.Warnings = mimirpb.StringsToAnnotationErrors([]string{"warning-from-cache"})
+			return resp, nil
+		case start == T0 && end == Tmid:
+			// Second query sub-request: [T0, Tmid] — fresh response has warning B and info.
+			resp := mockPrometheusResponseSingleSeries(seriesLabels,
+				mimirpb.Sample{TimestampMs: T0, Value: 0},
+				mimirpb.Sample{TimestampMs: Tmid, Value: 1},
+			)
+			resp.Warnings = mimirpb.StringsToAnnotationErrors([]string{"warning-from-fresh"})
+			resp.Infos = mimirpb.StringsToAnnotationErrors([]string{"info-from-fresh"})
+			return resp, nil
+		default:
+			t.Errorf("unexpected downstream request start=%d end=%d", start, end)
+			return nil, fmt.Errorf("unexpected request start=%d end=%d", start, end)
+		}
+	}))
+
+	ctx := user.InjectOrgID(context.Background(), "1")
+
+	// First query: [Tmid, T1] — populates the cache with warning-from-cache.
+	firstReq := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     Tmid,
+		end:       T1,
+		step:      step,
+		queryExpr: parseQuery(t, `test_metric`),
+	})
+	resp, err := rc.Do(ctx, firstReq)
+	require.NoError(t, err)
+	pr, ok := resp.GetPrometheusResponse()
+	require.True(t, ok)
+	require.Equal(t, 1, downstreamCalls)
+	require.Len(t, pr.Data.Result, 1)
+	require.Len(t, pr.Data.Result[0].Samples, 2)
+
+	// Second query: [T0, T1] — partial cache hit for [Tmid, T1], fetches [T0, Tmid] from downstream.
+	// The final response should have annotations from BOTH the cached and the fresh responses.
+	secondReq := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     T0,
+		end:       T1,
+		step:      step,
+		queryExpr: parseQuery(t, `test_metric`),
+	})
+	resp, err = rc.Do(ctx, secondReq)
+	require.NoError(t, err)
+	pr, ok = resp.GetPrometheusResponse()
+	require.True(t, ok)
+	require.Equal(t, 2, downstreamCalls, "downstream should be called once more for the missing [T0, Tmid] range")
+	require.Len(t, pr.Data.Result, 1)
+	require.Len(t, pr.Data.Result[0].Samples, 3, "expected 3 samples (T0, Tmid, T1)")
+
+	// Verify that annotations from both the cached response and the fresh response are present.
+	var warningMessages []string
+	for _, w := range pr.Warnings {
+		warningMessages = append(warningMessages, w.Message)
+	}
+	var infoMessages []string
+	for _, info := range pr.Infos {
+		infoMessages = append(infoMessages, info.Message)
+	}
+	assert.ElementsMatch(t, []string{"warning-from-cache", "warning-from-fresh"}, warningMessages,
+		"expected annotations from both cached and fresh responses")
+	assert.ElementsMatch(t, []string{"info-from-fresh"}, infoMessages,
+		"expected info annotation from fresh response")
+}
+
+func TestSplitAndCacheMiddleware_ResultsCache_AnnotationsSurviveCacheRoundTrip(t *testing.T) {
+	// Verify annotations from a cached response are returned when the query is a full cache hit.
+	const step = 60 * 1000 // 60 s in ms
+
+	T0 := parseTimeRFC3339(t, "2021-10-14T00:00:00Z").UnixMilli()
+	T1 := T0 + 2*step
+
+	seriesLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}}
+
+	downstreamCalls := 0
+	mw := newSplitAndCacheMiddleware(
+		false, // no time-splitting
+		true,
+		24*time.Hour,
+		mockLimits{resultsCacheTTL: resultsCacheTTL},
+		newTestCodec(),
+		cache.NewInstrumentedMockCache(),
+		DefaultCacheKeyGenerator{interval: day},
+		PrometheusResponseExtractor{},
+		resultsCacheAlwaysEnabled,
+		log.NewNopLogger(),
+		prometheus.NewPedanticRegistry(),
+	)
+
+	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+		downstreamCalls++
+		resp := mockPrometheusResponseSingleSeries(seriesLabels,
+			mimirpb.Sample{TimestampMs: T0, Value: 0},
+			mimirpb.Sample{TimestampMs: T0 + step, Value: 1},
+			mimirpb.Sample{TimestampMs: T1, Value: 2},
+		)
+		resp.Warnings = mimirpb.StringsToAnnotationErrors([]string{"cached-warning"})
+		resp.Infos = mimirpb.StringsToAnnotationErrors([]string{"cached-info"})
+		return resp, nil
+	}))
+
+	ctx := user.InjectOrgID(context.Background(), "1")
+
+	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     T0,
+		end:       T1,
+		step:      step,
+		queryExpr: parseQuery(t, `test_metric`),
+	})
+
+	// First query: populates the cache.
+	resp, err := rc.Do(ctx, req)
+	require.NoError(t, err)
+	pr, ok := resp.GetPrometheusResponse()
+	require.True(t, ok)
+	require.Equal(t, 1, downstreamCalls)
+	require.Len(t, pr.Data.Result[0].Samples, 3)
+
+	// Verify annotations on the first (non-cached) response.
+	require.Len(t, pr.Warnings, 1, "first response should have warning")
+	require.Len(t, pr.Infos, 1, "first response should have info")
+
+	// Second query: same range, should be full cache hit.
+	resp, err = rc.Do(ctx, req)
+	require.NoError(t, err)
+	pr, ok = resp.GetPrometheusResponse()
+	require.True(t, ok)
+	require.Equal(t, 1, downstreamCalls, "should not call downstream again")
+
+	// Verify annotations survive the cache round-trip.
+	var warningMessages []string
+	for _, w := range pr.Warnings {
+		warningMessages = append(warningMessages, w.Message)
+	}
+	var infoMessages []string
+	for _, info := range pr.Infos {
+		infoMessages = append(infoMessages, info.Message)
+	}
+	assert.ElementsMatch(t, []string{"cached-warning"}, warningMessages,
+		"warning should survive cache round-trip")
+	assert.ElementsMatch(t, []string{"cached-info"}, infoMessages,
+		"info should survive cache round-trip")
+}
+
+func TestSplitAndCacheMiddleware_ResultsCache_AnnotationsWithTimeSplitting(t *testing.T) {
+	// Tests that annotations are properly merged when a query is split by time interval
+	// and some splits hit the cache while others go downstream.
+	const step = 120 * 1000 // 120 s in ms
+
+	dayOneStart := parseTimeRFC3339(t, "2021-10-14T10:00:00Z").UnixMilli()
+	dayOneEnd := parseTimeRFC3339(t, "2021-10-14T12:00:00Z").UnixMilli()
+	dayTwoStart := parseTimeRFC3339(t, "2021-10-15T00:00:00Z").UnixMilli()
+	dayTwoEnd := parseTimeRFC3339(t, "2021-10-15T12:00:00Z").UnixMilli()
+
+	seriesLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}}
+
+	downstreamCalls := atomic.Int32{}
+	mw := newSplitAndCacheMiddleware(
+		true, // time-splitting enabled
+		true,
+		24*time.Hour,
+		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+		newTestCodec(),
+		cache.NewInstrumentedMockCache(),
+		DefaultCacheKeyGenerator{interval: day},
+		PrometheusResponseExtractor{},
+		resultsCacheAlwaysEnabled,
+		log.NewNopLogger(),
+		prometheus.NewPedanticRegistry(),
+	)
+
+	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+		downstreamCalls.Inc()
+		start := req.GetStart()
+
+		// Each daily split returns a response with its own annotation.
+		resp := mockPrometheusResponseSingleSeries(seriesLabels,
+			mimirpb.Sample{TimestampMs: start, Value: float64(start)},
+		)
+		if start >= dayTwoStart {
+			resp.Warnings = mimirpb.StringsToAnnotationErrors([]string{"warning-day-two"})
+		} else {
+			resp.Warnings = mimirpb.StringsToAnnotationErrors([]string{"warning-day-one"})
+			resp.Infos = mimirpb.StringsToAnnotationErrors([]string{"info-day-one"})
+		}
+		return resp, nil
+	}))
+
+	ctx := user.InjectOrgID(context.Background(), "1")
+
+	// First query: day 1 only — populates cache for day 1.
+	firstReq := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     dayOneStart,
+		end:       dayOneEnd,
+		step:      step,
+		queryExpr: parseQuery(t, `test_metric`),
+	})
+	resp, err := rc.Do(ctx, firstReq)
+	require.NoError(t, err)
+	pr, ok := resp.GetPrometheusResponse()
+	require.True(t, ok)
+	require.NotEmpty(t, pr.Warnings, "first response should have warning-day-one")
+
+	// Second query: day 1 + day 2. Day 1 is a cache hit, day 2 goes downstream.
+	// The final response must have annotations from both days.
+	secondReq := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     dayOneStart,
+		end:       dayTwoEnd,
+		step:      step,
+		queryExpr: parseQuery(t, `test_metric`),
+	})
+	resp, err = rc.Do(ctx, secondReq)
+	require.NoError(t, err)
+	pr, ok = resp.GetPrometheusResponse()
+	require.True(t, ok)
+
+	var warningMessages []string
+	for _, w := range pr.Warnings {
+		warningMessages = append(warningMessages, w.Message)
+	}
+	var infoMessages []string
+	for _, info := range pr.Infos {
+		infoMessages = append(infoMessages, info.Message)
+	}
+	assert.ElementsMatch(t, []string{"warning-day-one", "warning-day-two"}, warningMessages,
+		"expected annotations from both the cached day-1 split and the fresh day-2 split")
+	assert.ElementsMatch(t, []string{"info-day-one"}, infoMessages,
+		"expected info annotation from cached day-1 split")
+}
+
+func TestSplitAndCacheMiddleware_ResultsCache_AnnotationsMergedInCacheUpdate(t *testing.T) {
+	// Tests that after a partial cache hit, the merged annotations from both the old
+	// cached extent and the new downstream extent are stored in the updated cache entry,
+	// and that a subsequent full cache hit returns all merged annotations.
+	const step = 60 * 1000 // 60 s in ms
+
+	T0 := parseTimeRFC3339(t, "2021-10-14T00:00:00Z").UnixMilli()
+	Tmid := T0 + step
+	T1 := T0 + 2*step
+
+	seriesLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}}
+
+	downstreamCalls := 0
+	mw := newSplitAndCacheMiddleware(
+		false,
+		true,
+		24*time.Hour,
+		mockLimits{resultsCacheTTL: resultsCacheTTL},
+		newTestCodec(),
+		cache.NewInstrumentedMockCache(),
+		DefaultCacheKeyGenerator{interval: day},
+		PrometheusResponseExtractor{},
+		resultsCacheAlwaysEnabled,
+		log.NewNopLogger(),
+		prometheus.NewPedanticRegistry(),
+	)
+
+	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+		downstreamCalls++
+		start := req.GetStart()
+		end := req.GetEnd()
+		switch {
+		case start == Tmid && end == T1:
+			resp := mockPrometheusResponseSingleSeries(seriesLabels,
+				mimirpb.Sample{TimestampMs: Tmid, Value: 1},
+				mimirpb.Sample{TimestampMs: T1, Value: 2},
+			)
+			resp.Warnings = mimirpb.StringsToAnnotationErrors([]string{"warning-A"})
+			return resp, nil
+		case start == T0 && end == Tmid:
+			resp := mockPrometheusResponseSingleSeries(seriesLabels,
+				mimirpb.Sample{TimestampMs: T0, Value: 0},
+				mimirpb.Sample{TimestampMs: Tmid, Value: 1},
+			)
+			resp.Warnings = mimirpb.StringsToAnnotationErrors([]string{"warning-B"})
+			resp.Infos = mimirpb.StringsToAnnotationErrors([]string{"info-B"})
+			return resp, nil
+		default:
+			t.Errorf("unexpected downstream request start=%d end=%d", start, end)
+			return nil, fmt.Errorf("unexpected request start=%d end=%d", start, end)
+		}
+	}))
+
+	ctx := user.InjectOrgID(context.Background(), "1")
+
+	// First query: [Tmid, T1] → cached with warning-A.
+	firstReq := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path: "/api/v1/query_range", start: Tmid, end: T1, step: step,
+		queryExpr: parseQuery(t, `test_metric`),
+	})
+	_, err := rc.Do(ctx, firstReq)
+	require.NoError(t, err)
+	require.Equal(t, 1, downstreamCalls)
+
+	// Second query: [T0, T1] → partial cache hit, fetches [T0, Tmid] with warning-B.
+	// The cache update merges extents but keeps only the accumulator's annotations
+	// (the first extent after sorting) to prevent count snowball.
+	secondReq := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path: "/api/v1/query_range", start: T0, end: T1, step: step,
+		queryExpr: parseQuery(t, `test_metric`),
+	})
+	_, err = rc.Do(ctx, secondReq)
+	require.NoError(t, err)
+	require.Equal(t, 2, downstreamCalls)
+
+	// Third query: [T0, T1] → should be a FULL cache hit.
+	// The cached extent only carries the accumulator's annotations (warning-B
+	// from the [T0, Tmid] extent which sorts first). warning-A from the
+	// [Tmid, T1] extent was stripped during the merge to prevent snowball.
+	resp, err := rc.Do(ctx, secondReq)
+	require.NoError(t, err)
+	require.Equal(t, 2, downstreamCalls, "should not call downstream again")
+
+	pr, ok := resp.GetPrometheusResponse()
+	require.True(t, ok)
+
+	var warningMessages []string
+	for _, w := range pr.Warnings {
+		warningMessages = append(warningMessages, w.Message)
+	}
+	var infoMessages []string
+	for _, info := range pr.Infos {
+		infoMessages = append(infoMessages, info.Message)
+	}
+	assert.ElementsMatch(t, []string{"warning-B"}, warningMessages,
+		"expected only accumulator's annotations from the merged cache entry")
+	assert.ElementsMatch(t, []string{"info-B"}, infoMessages,
+		"expected only accumulator's annotations from the merged cache entry")
+}
+
 func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
 

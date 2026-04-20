@@ -124,6 +124,21 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 	}
 }
 
+func mkExtentWithAnnotations(start, end, step int64, warnings, infos []string) Extent {
+	res := mkAPIResponse(start, end, step)
+	res.Warnings = mimirpb.StringsToAnnotationErrors(warnings)
+	res.Infos = mimirpb.StringsToAnnotationErrors(infos)
+	marshalled, err := types.MarshalAny(res)
+	if err != nil {
+		panic(err)
+	}
+	return Extent{
+		Start:    start,
+		End:      end,
+		Response: marshalled,
+	}
+}
+
 func TestIsRequestCachable(t *testing.T) {
 	maxCacheTime := int64(150 * 1000)
 
@@ -744,6 +759,184 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExtractPreservesAnnotations(t *testing.T) {
+	extractor := PrometheusResponseExtractor{}
+
+	res := &PrometheusResponse{
+		Status: statusSuccess,
+		Data: &PrometheusData{
+			ResultType: matrix,
+			Result: []SampleStream{
+				{
+					Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+					Samples: []mimirpb.Sample{{TimestampMs: 0, Value: 0}, {TimestampMs: 50, Value: 50}, {TimestampMs: 100, Value: 100}},
+				},
+			},
+		},
+		Warnings: mimirpb.StringsToAnnotationErrors([]string{"warning1"}),
+		Infos:    mimirpb.StringsToAnnotationErrors([]string{"info1"}),
+	}
+
+	extracted := extractor.Extract(0, 50, res)
+	promRes, ok := extracted.GetPrometheusResponse()
+	require.True(t, ok)
+
+	assert.Equal(t, mimirpb.StringsToAnnotationErrors([]string{"warning1"}), promRes.Warnings)
+	assert.Equal(t, mimirpb.StringsToAnnotationErrors([]string{"info1"}), promRes.Infos)
+
+	// Verify data was actually extracted (not all samples).
+	require.Len(t, promRes.Data.Result, 1)
+	assert.Len(t, promRes.Data.Result[0].Samples, 2) // timestamps 0 and 50
+}
+
+func TestResponseWithoutHeadersPreservesAnnotations(t *testing.T) {
+	extractor := PrometheusResponseExtractor{}
+
+	res := &PrometheusResponse{
+		Status: statusSuccess,
+		Data: &PrometheusData{
+			ResultType: matrix,
+			Result: []SampleStream{
+				{
+					Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+					Samples: []mimirpb.Sample{{TimestampMs: 0, Value: 0}},
+				},
+			},
+		},
+		Headers:  []*PrometheusHeader{{Name: "X-Test", Values: []string{"val"}}},
+		Warnings: mimirpb.StringsToAnnotationErrors([]string{"warning1"}),
+		Infos:    mimirpb.StringsToAnnotationErrors([]string{"info1"}),
+	}
+
+	stripped := extractor.ResponseWithoutHeaders(res)
+	promRes, ok := stripped.GetPrometheusResponse()
+	require.True(t, ok)
+
+	assert.Empty(t, promRes.Headers)
+	assert.Equal(t, mimirpb.StringsToAnnotationErrors([]string{"warning1"}), promRes.Warnings)
+	assert.Equal(t, mimirpb.StringsToAnnotationErrors([]string{"info1"}), promRes.Infos)
+}
+
+func TestMergeCacheExtentsForRequest_MergesAnnotations(t *testing.T) {
+	ctx := context.Background()
+	merger := &Codec{}
+
+	tests := []struct {
+		name             string
+		extents          []Extent
+		request          MetricsQueryRequest
+		expectedWarnings []string
+		expectedInfos   []string
+	}{
+		{
+			name: "Adjacent extending extent keeps only accumulator annotations",
+			extents: []Extent{
+				mkExtentWithAnnotations(100, 200, 10, []string{"warning-A"}, nil),
+				mkExtentWithAnnotations(200, 300, 10, []string{"warning-B"}, []string{"info-B"}),
+			},
+			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
+			// Only the accumulator's annotations are kept to prevent snowball
+			// from filterRecentCacheExtents trimming.
+			expectedWarnings: []string{"warning-A"},
+			expectedInfos:    nil,
+		},
+		{
+			name: "Overlapping extending extent keeps only accumulator annotations",
+			extents: []Extent{
+				mkExtentWithAnnotations(100, 200, 10, []string{"warning-A"}, nil),
+				mkExtentWithAnnotations(150, 300, 10, []string{"warning-B"}, []string{"info-B"}),
+			},
+			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
+			expectedWarnings: []string{"warning-A"},
+			expectedInfos:    nil,
+		},
+		{
+			name: "Fully contained extent does not contribute annotations",
+			extents: []Extent{
+				mkExtentWithAnnotations(100, 300, 10, []string{"warning-outer"}, nil),
+				mkExtentWithAnnotations(150, 200, 10, nil, []string{"info-inner"}),
+			},
+			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
+			expectedWarnings: []string{"warning-outer"},
+			expectedInfos:    nil,
+		},
+		{
+			name: "Merged extents with same annotations keep accumulator copy only",
+			extents: []Extent{
+				mkExtentWithAnnotations(100, 200, 10, []string{"same-warning"}, []string{"same-info"}),
+				mkExtentWithAnnotations(150, 300, 10, []string{"same-warning"}, []string{"same-info"}),
+			},
+			request:          &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
+			expectedWarnings: []string{"same-warning"},
+			expectedInfos:    []string{"same-info"},
+		},
+		{
+			name: "Non-overlapping extents each keep their own annotations",
+			extents: []Extent{
+				mkExtentWithAnnotations(100, 200, 10, []string{"warning-first"}, nil),
+				mkExtentWithAnnotations(220, 300, 10, nil, []string{"info-second"}),
+			},
+			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
+			// Non-overlapping extents stay separate, so each keeps its annotations.
+			expectedWarnings: []string{"warning-first"},
+			expectedInfos:    []string{"info-second"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := mergeCacheExtentsForRequest(ctx, tc.request, merger, tc.extents)
+			require.NoError(t, err)
+
+			// Check annotations on each resulting extent.
+			var allWarnings, allInfos []string
+			for _, ext := range result {
+				res, err := ext.toResponse()
+				require.NoError(t, err)
+				promRes, ok := res.GetPrometheusResponse()
+				require.True(t, ok)
+				for _, w := range promRes.Warnings {
+					allWarnings = append(allWarnings, w.Message)
+				}
+				for _, info := range promRes.Infos {
+					allInfos = append(allInfos, info.Message)
+				}
+			}
+
+			assert.ElementsMatch(t, tc.expectedWarnings, allWarnings, "warnings mismatch")
+			assert.ElementsMatch(t, tc.expectedInfos, allInfos, "infos mismatch")
+		})
+	}
+}
+
+func TestPartitionCacheExtents_PreservesAnnotations(t *testing.T) {
+	extractor := PrometheusResponseExtractor{}
+	minCacheExtent := int64(10)
+
+	// Create a cached extent with annotations.
+	extent := mkExtentWithAnnotations(50, 150, 10, []string{"cached-warning"}, []string{"cached-info"})
+
+	// Request that partially overlaps with the cached extent.
+	req := &PrometheusRangeQueryRequest{
+		start: 0,
+		end:   200,
+		step:  10,
+	}
+
+	reqs, resps, err := partitionCacheExtents(req, []Extent{extent}, minCacheExtent, extractor)
+	require.NoError(t, err)
+
+	// Should have 2 downstream requests (before and after the extent) and 1 cached response.
+	require.Len(t, reqs, 2)
+	require.Len(t, resps, 1)
+
+	// Verify the cached response preserves annotations.
+	promRes, ok := resps[0].GetPrometheusResponse()
+	require.True(t, ok)
+	assert.Equal(t, mimirpb.StringsToAnnotationErrors([]string{"cached-warning"}), promRes.Warnings)
+	assert.Equal(t, mimirpb.StringsToAnnotationErrors([]string{"cached-info"}), promRes.Infos)
 }
 
 func toMs(t time.Duration) int64 {
