@@ -394,12 +394,8 @@ func TestAnnotationErrorJSONRoundTrip(t *testing.T) {
 			input:    mimirpb.AnnotationError{Type: mimirpb.ANNOTATION_GENERIC, Message: "some warning"},
 			wantType: mimirpb.ANNOTATION_GENERIC,
 		},
-		"possibleNonCounter": {
-			input:    mimirpb.ErrorsToAnnotationErrors([]error{annotations.NewPossibleNonCounterInfo("my_metric", posrange.PositionRange{}, 42)})[0],
-			wantType: mimirpb.ANNOTATION_POSSIBLE_NON_COUNTER,
-		},
 		"histogramQuantileForcedMonotonicity": {
-			input:    mimirpb.ErrorsToAnnotationErrors([]error{annotations.NewHistogramQuantileForcedMonotonicityInfo("bucket", posrange.PositionRange{}, 1700000000000, 0.5, 10.0, 0.01)})[0],
+			input:    mimirpb.ErrorsToAnnotationErrors([]error{annotations.NewHistogramQuantileForcedMonotonicityInfo("my_bucket", posrange.PositionRange{Start: 5, End: 20}, 1700000000000, 1.0, 100.0, 0.05)})[0],
 			wantType: mimirpb.ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
 		},
 	}

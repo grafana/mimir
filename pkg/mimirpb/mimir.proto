@@ -295,18 +295,17 @@ message QueryResponse {
 
 enum AnnotationErrorType {
   ANNOTATION_GENERIC = 0;
-  ANNOTATION_POSSIBLE_NON_COUNTER = 1;
-  ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY = 2;
+  ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY = 1;
 }
 
 // AnnotationError represents a typed PromQL annotation that can be properly
 // merged across sharded queries, preserving Merge() semantics (e.g. count
-// accumulation for possibleNonCounterErr).
+// accumulation for histogramQuantileForcedMonotonicityErr).
 message AnnotationError {
   AnnotationErrorType type = 1;
   // The error message from Err.Error() — used as the deduplication/merge key.
   string message = 2;
-  // For possibleNonCounterErr and histogramQuantileForcedMonotonicityErr.
+  // For histogramQuantileForcedMonotonicityErr.
   int32 count = 3;
   // For histogramQuantileForcedMonotonicityErr only.
   int64 min_ts = 4;

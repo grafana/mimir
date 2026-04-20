@@ -21,49 +21,8 @@ type annotationStringParser interface {
 }
 
 // annotationParsers is the ordered list of parsers tried when parsing annotation strings.
-// More specific patterns (histogram) must come before less specific ones (possibleNonCounter)
-// because both contain "over N samples" but the histogram suffix is longer.
 var annotationParsers = []annotationStringParser{
 	histogramQuantileStringParser{},
-	possibleNonCounterStringParser{},
-}
-
-// --- possibleNonCounterStringParser ---
-
-type possibleNonCounterStringParser struct{}
-
-// possibleNonCounterFinalRe matches the final form produced by possibleNonCounterErr.Error()
-// when SetFinal() has been called, with an optional positional suffix:
-//
-//	"<message>, over <count> samples"
-//	"<message>, over <count> samples (<position>)"
-var possibleNonCounterFinalRe = regexp.MustCompile(`^(.+), over (\d+) samples(?: \((\d+:\d+)\))?$`)
-
-// possibleNonCounterRe matches the non-final form — the raw Err.Error() of a
-// possibleNonCounterErr, which is the PossibleNonCounterInfo sentinel followed
-// by the metric name.
-var possibleNonCounterRe = regexp.MustCompile(
-	`^(` + regexp.QuoteMeta(annotations.PossibleNonCounterInfo.Error()) + ` .+)$`,
-)
-
-func (possibleNonCounterStringParser) Parse(s string) (error, bool) {
-	if m := possibleNonCounterFinalRe.FindStringSubmatch(s); m != nil {
-		count, _ := strconv.Atoi(m[2])
-		data := annotations.AnnotationData{
-			Type:          annotations.AnnotationTypePossibleNonCounter,
-			Message:       m[1],
-			Fields:        map[string]float64{"count": float64(count)},
-			PositionLabel: m[3], // captured position suffix e.g. "1:10", empty if absent
-		}
-		return annotations.AnnotationFromData(data), true
-	}
-	if possibleNonCounterRe.MatchString(s) {
-		return annotations.AnnotationFromData(annotations.AnnotationData{
-			Type:    annotations.AnnotationTypePossibleNonCounter,
-			Message: s,
-		}), true
-	}
-	return nil, false
 }
 
 // --- histogramQuantileStringParser ---

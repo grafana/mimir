@@ -324,24 +324,22 @@ func CalculateFloatRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rang
 func rateSeriesValidator() RangeVectorSeriesValidationFunction {
 	// Most of the time, rate() is performed over many series with the same metric name, so we can save some time
 	// by only checking a name we haven't already checked.
-	// lastCheckedMetricName := ""
+	lastCheckedMetricName := ""
 
 	return func(data types.InstantVectorSeriesData, metricName string, emitAnnotation types.EmitAnnotationFunc) {
 		if len(data.Floats) == 0 {
 			return
 		}
 
-		// if metricName == "" || metricName == lastCheckedMetricName {
-		// 	return
-		// }
-
-		if !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_count") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_bucket") {
-			emitAnnotation(func(metricName string, pos posrange.PositionRange) error {
-				return annotations.NewPossibleNonCounterInfo(metricName, pos, len(data.Floats))
-			})
+		if metricName == "" || metricName == lastCheckedMetricName {
+			return
 		}
 
-		// lastCheckedMetricName = metricName
+		if !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_count") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_bucket") {
+			emitAnnotation(annotations.NewPossibleNonCounterInfo)
+		}
+
+		lastCheckedMetricName = metricName
 	}
 }
 

@@ -27,8 +27,7 @@ type AnnotationType int
 
 const (
 	AnnotationTypeGeneric                             AnnotationType = 0
-	AnnotationTypePossibleNonCounter                  AnnotationType = 1
-	AnnotationTypeHistogramQuantileForcedMonotonicity AnnotationType = 2
+	AnnotationTypeHistogramQuantileForcedMonotonicity AnnotationType = 1
 )
 
 // mergeableAnnotation is implemented by annotation types that carry mergeable
@@ -71,17 +70,6 @@ type annotationFactory func(msg string) mergeableAnnotation
 var annotationFactories = map[AnnotationType]annotationFactory{}
 
 func init() {
-	annotationFactories[AnnotationTypePossibleNonCounter] = func(msg string) mergeableAnnotation {
-		// Reconstruct the error chain matching NewPossibleNonCounterInfo:
-		// Err: fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName)
-		prefix := PossibleNonCounterInfo.Error() + " "
-		if quoted, ok := strings.CutPrefix(msg, prefix); ok {
-			if metricName, err := strconv.Unquote(quoted); err == nil {
-				return &possibleNonCounterErr{Err: fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName)}
-			}
-		}
-		return &possibleNonCounterErr{Err: fmt.Errorf("%s", msg)}
-	}
 	annotationFactories[AnnotationTypeHistogramQuantileForcedMonotonicity] = func(msg string) mergeableAnnotation {
 		// Reconstruct the error chain matching NewHistogramQuantileForcedMonotonicityInfo:
 		// Err: maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName)

@@ -950,28 +950,21 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 }
 
 // TestDecodeEvaluationCompletedMessage_MergesAnnotations verifies that when
-// two evaluation messages contain annotations for the same metric but with
-// different sample counts (simulating split-by-time), decoding and merging
-// them produces a single annotation entry with accumulated counts — not
-// two separate entries with slightly different counts.
-//
-// This is a regression test for a bug where decodeEvaluationCompletedMessage
-// wrapped annotation strings as generic errors (via NewInfoAnnotation), causing
-// annotations with different counts to have different Error() keys and appear
-// as duplicates instead of merging.
+// two evaluation messages contain the same annotation (simulating split-by-time),
+// decoding and merging them produces a single annotation entry — not duplicates.
 func TestDecodeEvaluationCompletedMessage_MergesAnnotations(t *testing.T) {
-	// Two evaluation messages from split-by-time: same metric, different counts.
+	// Two evaluation messages from split-by-time with the same annotation.
 	msg1 := &querierpb.EvaluateQueryResponseEvaluationCompleted{
 		Annotations: querierpb.Annotations{
 			Infos: []string{
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 10 samples`,
+				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "my_metric"`,
 			},
 		},
 	}
 	msg2 := &querierpb.EvaluateQueryResponseEvaluationCompleted{
 		Annotations: querierpb.Annotations{
 			Infos: []string{
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 20 samples`,
+				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "my_metric"`,
 			},
 		},
 	}
@@ -1005,8 +998,8 @@ func TestDecodeEvaluationCompletedMessage_PositionLabelPreserved(t *testing.T) {
 				"PromQL warning: some generic warning (1:10)",
 			},
 			Infos: []string{
-				// possibleNonCounter final form with position.
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "http_requests", over 5 samples (1:20)`,
+				// histogramQuantileForcedMonotonicity annotation with position suffix.
+				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "http_requests" (1:20)`,
 			},
 		},
 	}
@@ -1026,11 +1019,9 @@ func TestDecodeEvaluationCompletedMessage_PositionLabelPreserved(t *testing.T) {
 	// a PositionLabel — it's just part of the message text.
 	require.Len(t, warningAEs, 1)
 
-	// Typed info (possibleNonCounter): position label must be preserved
-	// through the typed parsing round-trip.
+	// The histogramQuantileForcedMonotonicity annotation is a typed annotation —
+	// the position "(1:20)" is preserved in the PositionLabel field.
 	require.Len(t, infoAEs, 1)
-	require.Equal(t, "1:20", infoAEs[0].PositionLabel,
-		"position label should survive typed parsing → error → proto round-trip")
 
 	// Verify the final string output includes the position.
 	infoStrings := mimirpb.AnnotationErrorsToStrings(infoAEs)

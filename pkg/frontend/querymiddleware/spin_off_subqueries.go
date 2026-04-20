@@ -214,8 +214,8 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	warningErrors, infoErrors := res.Warnings.AsErrorsSplit("", 0, 0)
 
 	// Merge the outer query's annotations into the accumulator so that
-	// overlapping typed annotations (e.g. possibleNonCounterErr for the same
-	// metric) are properly merged rather than appended as duplicates.
+	// overlapping typed annotations (e.g. histogramQuantileForcedMonotonicityErr
+	// for the same metric) are properly merged rather than appended as duplicates.
 	annotationAccumulator.addAnnotationErrors(warningErrors, infoErrors)
 	warningErrors, infoErrors = annotationAccumulator.getAll()
 

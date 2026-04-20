@@ -2158,7 +2158,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 						!strings.HasSuffix(metricName, "_count") &&
 						!strings.HasSuffix(metricName, "_bucket") {
 						// Fallback to name suffix checking
-						warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange(), len(ss.Floats)))
+						warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange()))
 					}
 				}
 			}

@@ -162,8 +162,8 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 
 	if annotationAccumulator != nil {
 		// Merge the outer query's annotations into the accumulator so that
-		// overlapping typed annotations (e.g. possibleNonCounterErr for the same
-		// metric) are properly merged rather than appended as duplicates.
+		// overlapping typed annotations (e.g. histogramQuantileForcedMonotonicityErr
+		// for the same metric) are properly merged rather than appended as duplicates.
 		annotationAccumulator.addAnnotationErrors(warningErrors, infoErrors)
 		warningErrors, infoErrors = annotationAccumulator.getAll()
 	}
@@ -531,7 +531,7 @@ func longestRegexpMatcherBytes(expr parser.Expr) int {
 
 // AnnotationAccumulator collects annotation errors returned by sharded queries.
 // It stores typed errors so they can be properly merged (e.g. count accumulation
-// for possibleNonCounterErr) rather than just deduplicated by string.
+// for histogramQuantileForcedMonotonicityErr) rather than just deduplicated by string.
 type AnnotationAccumulator struct {
 	mu       sync.Mutex
 	warnings annotations.Annotations

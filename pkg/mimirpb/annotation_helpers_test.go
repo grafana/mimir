@@ -26,11 +26,6 @@ func TestAnnotationErrorsRoundTrip(t *testing.T) {
 		"generic error": {
 			input: []error{errors.New("something went wrong")},
 		},
-		"possibleNonCounterErr with count": {
-			input: []error{
-				annotations.NewPossibleNonCounterInfo("metric_counter", posrange.PositionRange{Start: 0, End: 10}, 42),
-			},
-		},
 		"histogramQuantileForcedMonotonicityErr with all fields": {
 			input: []error{
 				annotations.NewHistogramQuantileForcedMonotonicityInfo(
@@ -46,7 +41,6 @@ func TestAnnotationErrorsRoundTrip(t *testing.T) {
 		"multiple mixed annotation types": {
 			input: []error{
 				errors.New("plain warning"),
-				annotations.NewPossibleNonCounterInfo("requests_total", posrange.PositionRange{Start: 0, End: 5}, 100),
 				annotations.NewHistogramQuantileForcedMonotonicityInfo(
 					"latency_bucket",
 					posrange.PositionRange{Start: 10, End: 30},
@@ -67,7 +61,7 @@ func TestAnnotationErrorsRoundTrip(t *testing.T) {
 			// Reverse: proto → errors
 			roundTripped := AnnotationErrorsToErrors(protoAnnotations)
 
-			if tc.input == nil || len(tc.input) == 0 {
+			if len(tc.input) == 0 {
 				require.Empty(t, roundTripped)
 				return
 			}
@@ -106,11 +100,6 @@ func TestAnnotationErrorsRoundTripMerge(t *testing.T) {
 		a, b     error
 		wantType annotations.AnnotationType
 	}{
-		"possibleNonCounterErr": {
-			a:        annotations.NewPossibleNonCounterInfo("my_metric", posrange.PositionRange{}, 10),
-			b:        annotations.NewPossibleNonCounterInfo("my_metric", posrange.PositionRange{}, 20),
-			wantType: annotations.AnnotationTypePossibleNonCounter,
-		},
 		"histogramQuantileForcedMonotonicityErr": {
 			a:        annotations.NewHistogramQuantileForcedMonotonicityInfo("my_bucket", posrange.PositionRange{}, 1000, 1.0, 10.0, 0.01),
 			b:        annotations.NewHistogramQuantileForcedMonotonicityInfo("my_bucket", posrange.PositionRange{}, 2000, 0.5, 20.0, 0.05),
@@ -171,12 +160,6 @@ func TestTypedAnnotationStringsMerge(t *testing.T) {
 		wantType  annotations.AnnotationType
 		wantCount float64
 	}{
-		"possibleNonCounterErr": {
-			s1:        `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 10 samples`,
-			s2:        `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 20 samples`,
-			wantType:  annotations.AnnotationTypePossibleNonCounter,
-			wantCount: 30,
-		},
 		"histogramQuantileForcedMonotonicityErr": {
 			s1:        `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "bucket", from buckets 0.5 to 10, with a max diff of 0.01, over 5 samples from 2023-11-14T22:13:20Z to 2023-11-14T22:13:21Z`,
 			s2:        `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "bucket", from buckets 1 to 20, with a max diff of 0.05, over 3 samples from 2023-11-14T22:13:22Z to 2023-11-14T22:13:23Z`,
@@ -230,20 +213,6 @@ func TestStringsToAnnotationErrorsRoundTrip(t *testing.T) {
 			input:    "another annotation",
 			wantType: ANNOTATION_GENERIC,
 		},
-		"non-final PossibleNonCounterInfo": {
-			input:    `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric"`,
-			wantType: ANNOTATION_POSSIBLE_NON_COUNTER,
-		},
-		"final PossibleNonCounterInfo without pos info": {
-			input:    `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"up\", over 637 samples`,
-			wantType: ANNOTATION_POSSIBLE_NON_COUNTER,
-			isFinal:  true,
-		},
-		"final PossibleNonCounterInfo with pos info": {
-			input:    `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"up\", over 637 samples (1:10)`,
-			wantType: ANNOTATION_POSSIBLE_NON_COUNTER,
-			isFinal:  true,
-		},
 		"non-final HistogramQuantileForcedMonotonicity": {
 			input:    `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "http_duration_bucket"`,
 			wantType: ANNOTATION_HISTOGRAM_QUANTILE_FORCED_MONOTONICITY,
@@ -277,14 +246,6 @@ func TestAnnotationFromDataNoSpuriousPosition(t *testing.T) {
 		name  string
 		input AnnotationError
 	}{
-		{
-			name: "possibleNonCounter with zero position",
-			input: AnnotationError{
-				Type:    ANNOTATION_POSSIBLE_NON_COUNTER,
-				Message: `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric"`,
-				Count:   42,
-			},
-		},
 		{
 			name: "histogramQuantileForcedMonotonicity with zero position",
 			input: AnnotationError{
@@ -329,16 +290,8 @@ func TestPositionLabelPreservedThroughTypedParsing(t *testing.T) {
 		input string
 	}{
 		{
-			name:  "possibleNonCounter with position",
-			input: `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 42 samples (1:10)`,
-		},
-		{
 			name:  "histogramQuantile with position",
 			input: `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "bucket", from buckets 0.5 to 10, with a max diff of 0.01, over 42 samples from 2023-11-14T22:13:20Z to 2023-11-14T22:13:21Z (1:10)`,
-		},
-		{
-			name:  "possibleNonCounter without position",
-			input: `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_metric", over 42 samples`,
 		},
 	}
 
