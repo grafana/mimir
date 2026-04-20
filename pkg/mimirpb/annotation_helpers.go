@@ -194,8 +194,6 @@ func ErrorsToAnnotationErrors(errs []error) []AnnotationError {
 		ae := AnnotationError{
 			Type:          AnnotationErrorType(d.Type),
 			Message:       d.Message,
-			PositionStart: int32(d.PositionStart),
-			PositionEnd:   int32(d.PositionEnd),
 			PositionLabel: d.PositionLabel,
 		}
 		// Map opaque Fields to the concrete proto fields.
@@ -230,8 +228,6 @@ func AnnotationErrorsToErrors(aes []AnnotationError) []error {
 				"max_bucket": ae.MaxBucket,
 				"max_diff":   ae.MaxDiff,
 			},
-			PositionStart: int(ae.PositionStart),
-			PositionEnd:   int(ae.PositionEnd),
 			PositionLabel: ae.PositionLabel,
 		})
 	}

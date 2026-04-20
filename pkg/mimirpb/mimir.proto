@@ -314,13 +314,9 @@ message AnnotationError {
   double min_bucket = 6;
   double max_bucket = 7;
   double max_diff = 8;
-  // Position of the expression in the query string that triggered this annotation.
-  // Used to reconstruct "(line:col)" suffixes after cache round-trips.
-  int32 position_start = 9;
-  int32 position_end = 10;
   // Pre-computed "line:col" label (e.g. "1:25") for rendering the position
   // suffix without needing the full query string.
-  string position_label = 11;
+  string position_label = 9;
 }
 
 message StringData {

@@ -85,24 +85,14 @@ func TestAnnotationErrorsRoundTrip(t *testing.T) {
 				assert.Equal(t, originalData.Type, rtData.Type, "annotation %d: Type mismatch", i)
 				assert.Equal(t, originalData.Message, rtData.Message, "annotation %d: Message mismatch", i)
 				assert.Equal(t, originalData.Fields, rtData.Fields, "annotation %d: Fields mismatch", i)
-				assert.Equal(t, originalData.PositionStart, rtData.PositionStart, "annotation %d: PositionStart mismatch", i)
-				assert.Equal(t, originalData.PositionEnd, rtData.PositionEnd, "annotation %d: PositionEnd mismatch", i)
 			}
 
 			strs := AnnotationErrorsToStrings(protoAnnotations)
 			annErrs := StringsToAnnotationErrors(strs)
 
-			// String round-trips don't preserve position info. Zero out
-			// position fields on both sides before comparing.
 			require.Len(t, annErrs, len(protoAnnotations))
 			for j := range protoAnnotations {
-				expected := protoAnnotations[j]
-				expected.PositionStart = 0
-				expected.PositionEnd = 0
-				actual := annErrs[j]
-				actual.PositionStart = 0
-				actual.PositionEnd = 0
-				assert.Equal(t, expected, actual, "annotation %d: string round-trip mismatch", j)
+				assert.Equal(t, protoAnnotations[j], annErrs[j], "annotation %d: string round-trip mismatch", j)
 			}
 		})
 	}
@@ -219,14 +209,12 @@ func TestStringsToAnnotationErrorsRoundTrip(t *testing.T) {
 }
 
 // TestAnnotationFromDataNoSpuriousPosition verifies that factory-created annotations
-// with no real position (PositionStart=0, PositionEnd=0, as happens after string
-// parsing) do not produce a bogus position like "1:1" when the error is later
-// extracted and rendered with a query string.
+// with no position label do not produce a bogus position like "1:1" when the error
+// is later extracted and rendered with a query string.
 func TestAnnotationFromDataNoSpuriousPosition(t *testing.T) {
-	// Simulate what happens when the querier's protobuf codec encodes an annotation:
-	// 1. The annotation string is parsed → AnnotationError with PositionStart=0, PositionEnd=0
-	// 2. The AnnotationError is sent over the wire
-	// 3. The QFE decodes and round-trips through AnnotationErrorsToErrors → ErrorsToAnnotationErrors
+	// Simulate what happens when the querier's protobuf codec encodes an annotation
+	// with no position: the AnnotationError is sent over the wire and the QFE
+	// decodes and round-trips through AnnotationErrorsToErrors → ErrorsToAnnotationErrors.
 	types := []struct {
 		name  string
 		input AnnotationError
@@ -263,16 +251,10 @@ func TestAnnotationFromDataNoSpuriousPosition(t *testing.T) {
 			result := ErrorsToAnnotationErrors(errs)
 			require.Len(t, result, 1)
 
-			// PositionStart and PositionEnd must remain 0 (not extracted from
-			// the Go zero-value PositionRange{0,0} that factories used to produce).
-			assert.Equal(t, int32(0), result[0].PositionStart, "PositionStart should remain 0")
-			assert.Equal(t, int32(0), result[0].PositionEnd, "PositionEnd should remain 0")
 			assert.Empty(t, result[0].PositionLabel, "PositionLabel should be empty")
 
 			// The reconstructed error's position must not produce "1:1" when a query is available.
 			data := annotations.ExtractAnnotationData(errs[0])
-			assert.Equal(t, 0, data.PositionStart, "position start should be 0 in extracted data")
-			assert.Equal(t, 0, data.PositionEnd, "position end should be 0 in extracted data")
 			assert.Empty(t, data.PositionLabel, "position label should be empty")
 		})
 	}
