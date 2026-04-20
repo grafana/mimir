@@ -30,30 +30,6 @@ const subrangeSize int64 = 16000
 
 var supportedCacheBackends = []string{cache.BackendMemcached}
 
-type ChunksCacheConfig struct {
-	cache.BackendConfig `yaml:",inline"`
-
-	MaxGetRangeRequests        int           `yaml:"max_get_range_requests" category:"advanced"`
-	AttributesTTL              time.Duration `yaml:"attributes_ttl" category:"advanced"`
-	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items" category:"advanced"`
-	SubrangeTTL                time.Duration `yaml:"subrange_ttl" category:"advanced"`
-}
-
-func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
-
-	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
-
-	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.")
-	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
-	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 50000, "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
-	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual chunks subranges.")
-}
-
-func (cfg *ChunksCacheConfig) Validate() error {
-	return cfg.BackendConfig.Validate()
-}
-
 type MetadataCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"`
 
@@ -88,40 +64,181 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 	f.IntVar(&cfg.BucketIndexMaxSize, prefix+"bucket-index-max-size-bytes", 1*1024*1024, "Maximum size of bucket index content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend).")
 }
 
+type IndexHeaderCacheConfig struct {
+	Enabled       bool          `yaml:"enabled" category:"experimental"`
+	AttributesTTL time.Duration `yaml:"attributes_ttl" category:"experimental"`
+
+	SubrangeTTL              time.Duration `yaml:"subrange_ttl" category:"experimental"`
+	SubRangeInMemoryMaxItems int           `yaml:"subrange_in_memory_max_items" category:"experimental"`
+	MaxGetRangeRequests      int           `yaml:"max_get_range_requests" category:"experimental"`
+}
+
+func (cfg *IndexHeaderCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable caching of reads for TSDB index-header sections from object storage, utilizing the index-cache backend.")
+	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "How long to cache attributes of the block index as utilized by the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index cache backend.")
+	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual subranges.")
+	f.IntVar(&cfg.SubRangeInMemoryMaxItems, prefix+"subrange-in-memory-max-items", 50000, "Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
+	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header sections. Zero or negative value = unlimited number of sub-requests.")
+}
+
+type ChunksCacheConfig struct {
+	cache.BackendConfig `yaml:",inline"`
+
+	MaxGetRangeRequests        int           `yaml:"max_get_range_requests" category:"advanced"`
+	AttributesTTL              time.Duration `yaml:"attributes_ttl" category:"advanced"`
+	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items" category:"advanced"`
+	SubrangeTTL                time.Duration `yaml:"subrange_ttl" category:"advanced"`
+}
+
+func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
+
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+
+	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.")
+	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
+	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 50000, "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
+	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual chunks subranges.")
+}
+
+func (cfg *ChunksCacheConfig) Validate() error {
+	return cfg.BackendConfig.Validate()
+}
+
 func (cfg *MetadataCacheConfig) Validate() error {
 	return cfg.BackendConfig.Validate()
 }
 
-func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
-	cfg := bucketcache.NewCachingBucketConfig()
-	cachingConfigured := false
-
-	metadataCache, err := cache.CreateClient("metadata-cache", metadataConfig.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+func NewMetadataCachingBucketConfig(
+	metadataCacheName string,
+	metadataCacheCfg MetadataCacheConfig,
+	logger log.Logger, reg prometheus.Registerer,
+) (metadataCache cache.Cache, cachingBucketConfig *bucketcache.CachingBucketConfig, err error) {
+	cachingBucketConfig = bucketcache.NewCachingBucketConfig()
+	metadataCache, err = cache.CreateClient(metadataCacheName, metadataCacheCfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
-		return nil, errors.Wrapf(err, "metadata-cache")
+		return nil, nil, fmt.Errorf("%s: %w", metadataCacheName, err)
 	}
 	if metadataCache != nil {
-		cachingConfigured = true
 		metadataCache = cache.NewSpanlessTracingCache(metadataCache, logger, tenant.NewMultiResolver())
 
-		cfg.CacheExists("metafile", metadataCache, isMetaFile, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
-		cfg.CacheGet("metafile", metadataCache, isMetaFile, metadataConfig.MetafileMaxSize, metadataConfig.MetafileContentTTL, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
-		cfg.CacheAttributes("metafile", metadataCache, isMetaFile, metadataConfig.MetafileAttributesTTL)
-		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
-		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
+		cachingBucketConfig.CacheExists("metafile", metadataCache, isMetaFile, metadataCacheCfg.MetafileExistsTTL, metadataCacheCfg.MetafileDoesntExistTTL)
+		cachingBucketConfig.CacheGet("metafile", metadataCache, isMetaFile, metadataCacheCfg.MetafileMaxSize, metadataCacheCfg.MetafileContentTTL, metadataCacheCfg.MetafileExistsTTL, metadataCacheCfg.MetafileDoesntExistTTL)
+		cachingBucketConfig.CacheAttributes("metafile", metadataCache, isMetaFile, metadataCacheCfg.MetafileAttributesTTL)
+		cachingBucketConfig.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataCacheCfg.BlockIndexAttributesTTL)
+		cachingBucketConfig.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataCacheCfg.BucketIndexMaxSize, metadataCacheCfg.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
 
 		codec := bucketcache.SnappyIterCodec{IterCodec: bucketcache.JSONIterCodec{}}
-		cfg.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataConfig.TenantsListTTL, codec)
-		cfg.CacheIter("tenant-blocks-iter", metadataCache, isTenantBlocksDir, metadataConfig.TenantBlocksListTTL, codec)
-		cfg.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataConfig.ChunksListTTL, codec)
+		cachingBucketConfig.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataCacheCfg.TenantsListTTL, codec)
+		cachingBucketConfig.CacheIter("tenant-blocks-iter", metadataCache, isTenantBlocksDir, metadataCacheCfg.TenantBlocksListTTL, codec)
+		cachingBucketConfig.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataCacheCfg.ChunksListTTL, codec)
+	}
+	return metadataCache, cachingBucketConfig, nil
+}
+
+// NewMetadataCachingBucket creates a caching bucket for metadata and indexes of the bucket store and its tenant TSDBs.
+func NewMetadataCachingBucket(metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+
+	metadataCache, cachingBucketConfig, err := NewMetadataCachingBucketConfig(
+		"metadata-cache", metadataConfig, logger, reg,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if metadataCache != nil {
+		// No caching configured
+		return bkt, nil
 	}
 
+	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
+	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
+	// ID. This is still fine, as far as all other caching bucket implementations specify their
+	// own unique ID.
+	return bucketcache.NewCachingBucket("", bkt, cachingBucketConfig, logger, reg)
+}
+
+func NewIndexHeaderCachingBucket(
+	metadataCache cache.Cache,
+	cachingBucketConfig *bucketcache.CachingBucketConfig,
+	indexCacheClient cache.Cache,
+	indexHeaderCacheConfig IndexHeaderCacheConfig,
+	bkt objstore.Bucket,
+	logger log.Logger,
+	reg prometheus.Registerer,
+) (objstore.Bucket, error) {
+	var err error
+	cachingConfigured := metadataCache != nil
+
+	if indexCacheClient != nil && indexHeaderCacheConfig.Enabled {
+		cachingConfigured = true
+		indexCacheClient = cache.NewSpanlessTracingCache(indexCacheClient, logger, tenant.NewMultiResolver())
+
+		// GetRange caching requires object attributes for calculating subranges.
+		// Use the metadata cache for attributes if configured, otherwise fallback to chunks cache.
+		attributesCache := indexCacheClient
+		if metadataCache != nil {
+			attributesCache = metadataCache
+		}
+
+		// If in-memory cache is enabled, wrap the attributes cache with the in-memory LRU cache.
+		if indexHeaderCacheConfig.SubRangeInMemoryMaxItems > 0 {
+			indexCacheClient, err = cache.WrapWithLRUCache(
+				indexCacheClient,
+				"index-cache",
+				prometheus.WrapRegistererWithPrefix("cortex_", reg),
+				indexHeaderCacheConfig.SubRangeInMemoryMaxItems,
+				indexHeaderCacheConfig.SubrangeTTL,
+				logger,
+			)
+			if err != nil {
+				return nil, errors.Wrapf(err, "wrap index-header cache with in-memory cache")
+			}
+		}
+		cachingBucketConfig.CacheGetRange(
+			"block-index",
+			indexCacheClient,
+			isBlockIndexFile,
+			subrangeSize,
+			attributesCache,
+			indexHeaderCacheConfig.AttributesTTL,
+			indexHeaderCacheConfig.SubrangeTTL,
+			indexHeaderCacheConfig.MaxGetRangeRequests,
+		)
+	}
+
+	if !cachingConfigured {
+		// Neither metadata nor index header bucket caching is configured.
+		return bkt, nil
+	}
+
+	// TODO how to adjust this usage for new caching bucket that is pointed at the same bucket,
+	//   but using a different cache backend (index-cache, which already exists for other purposes)?
+	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
+	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
+	// ID. This is still fine, as far as all other caching bucket implementations specify their
+	// own unique ID.
+	return bucketcache.NewCachingBucket("", bkt, cachingBucketConfig, logger, reg)
+}
+
+// NewChunksCachingBucket creates a caching bucket for TSDB chunks.
+// It configures both metadata caching and, if chunksCache is non-nil, chunks caching.
+func NewChunksCachingBucket(
+	metadataCache cache.Cache,
+	cachingBucketConfig *bucketcache.CachingBucketConfig,
+	chunksCache cache.Cache,
+	chunksConfig ChunksCacheConfig,
+	bkt objstore.Bucket,
+	logger log.Logger,
+	reg prometheus.Registerer,
+) (objstore.Bucket, error) {
+	var err error
+	cachingConfigured := metadataCache != nil
+
 	if chunksCache != nil {
-		// If the chunks cache is configured, we will use it for the attributes of chunk files instead of
-		// the metadata cache.
 		cachingConfigured = true
 		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger, tenant.NewMultiResolver())
 
+		// GetRange caching requires object attributes for calculating subranges.
 		// Use the metadata cache for attributes if configured, otherwise fallback to chunks cache.
 		// If in-memory cache is enabled, wrap the attributes cache with the in-memory LRU cache.
 		attributesCache := chunksCache
@@ -134,11 +251,20 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}
 		}
-		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		cachingBucketConfig.CacheGetRange(
+			"chunks",
+			chunksCache,
+			isTSDBChunkFile,
+			subrangeSize,
+			attributesCache,
+			chunksConfig.AttributesTTL,
+			chunksConfig.SubrangeTTL,
+			chunksConfig.MaxGetRangeRequests,
+		)
 	}
 
 	if !cachingConfigured {
-		// No caching is configured.
+		// Neither metadata nor chunks bucket caching is configured.
 		return bkt, nil
 	}
 
@@ -146,7 +272,7 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
 	// ID. This is still fine, as far as all other caching bucket implementations specify their
 	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cfg, logger, reg)
+	return bucketcache.NewCachingBucket("", bkt, cachingBucketConfig, logger, reg)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
