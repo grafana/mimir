@@ -115,15 +115,28 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	require.ElementsMatch(t, annotationKeys(a.Warnings), annotationKeys(b.Warnings), "expected same warning annotations")
 }
 
-// annotationKeys extracts only Type and Message from each AnnotationError for
-// comparison, ignoring merge-state fields that differ between execution strategies.
+// annotationKeys extracts Type and Message from each AnnotationError for comparison,
+// ignoring merge-state fields (Count, MinTs, MaxTs, etc.) that differ between execution
+// strategies. Position suffixes are stripped from messages because sub-query positions are
+// relative to the rewritten sub-query string and are meaningless after merging. Duplicates
+// (same type+message after stripping) are collapsed because the sharded path may accumulate
+// the same annotation from multiple shards before deduplication.
 func annotationKeys(aes []mimirpb.AnnotationError) []mimirpb.AnnotationError {
 	if aes == nil {
 		return nil
 	}
-	keys := make([]mimirpb.AnnotationError, len(aes))
-	for i, ae := range aes {
-		keys[i] = mimirpb.AnnotationError{Type: ae.Type, Message: ae.Message}
+	type key struct {
+		t mimirpb.AnnotationErrorType
+		m string
+	}
+	seen := make(map[key]struct{}, len(aes))
+	var keys []mimirpb.AnnotationError
+	for _, ae := range aes {
+		k := key{t: ae.Type, m: removeAnnotationPositionInformation(ae.Message)}
+		if _, exists := seen[k]; !exists {
+			seen[k] = struct{}{}
+			keys = append(keys, mimirpb.AnnotationError{Type: k.t, Message: k.m})
+		}
 	}
 	return keys
 }
