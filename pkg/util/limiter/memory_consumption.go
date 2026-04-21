@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
-	"go.uber.org/atomic"
 )
 
 type contextKey int
@@ -143,8 +142,7 @@ func (s MemoryConsumptionSource) String() string {
 
 // InflightMemoryConsumptionTracker exposes metrics related to the cumulative in-flight MemoryConsumptionTrackers.
 type InflightMemoryConsumptionTracker struct {
-	inflight sync.Map // map[uint64]*MemoryConsumptionTracker
-	nextID   atomic.Uint64
+	inflight sync.Map // map[*MemoryConsumptionTracker]struct{}
 
 	maxDesc     *prometheus.Desc
 	currentDesc *prometheus.Desc
@@ -217,10 +215,8 @@ func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx conte
 		maxEstimatedMemoryConsumptionBytes = 0
 	}
 	tracker := NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionBytes, t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
-	id := t.nextID.Add(1)
-	tracker.trackingId = id
 	tracker.producer = t
-	t.inflight.Store(id, tracker)
+	t.inflight.Store(tracker, struct{}{})
 	return tracker
 }
 
@@ -229,7 +225,7 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 	// It is intentional to return silently in we are given a non managed tracker.
 	// There are still a range of test code paths which inject unlimited memory consumption trackers into the context which would cause this to fail.
 	// It is not a problem if a non managed tracker is requested to be deregistered.
-	if tracker.parent != nil || tracker.trackingId == 0 {
+	if tracker.parent != nil || tracker.producer == nil {
 		return
 	}
 
@@ -239,17 +235,17 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 		panic("cannot deregister inflight memory consumption tracker - the given tracker was allocated by another InflightMemoryConsumptionTracker")
 	}
 
-	t.inflight.Delete(tracker.trackingId)
+	t.inflight.Delete(tracker)
 }
 
 // IsTracking returns true if the given tracker is being actively tracked by this InflightMemoryConsumptionTracker.
 // Note that this function is only used by unit tests and will only return true on managed trackers.
 // Unmanaged and nested trackers will always return false.
 func (t *InflightMemoryConsumptionTracker) IsTracking(tracker *MemoryConsumptionTracker) bool {
-	if tracker.trackingId == 0 || tracker.producer != t {
+	if tracker.producer != t {
 		return false
 	}
-	_, ok := t.inflight.Load(tracker.trackingId)
+	_, ok := t.inflight.Load(tracker)
 	return ok
 }
 
@@ -260,7 +256,7 @@ func (t *InflightMemoryConsumptionTracker) IsTracking(tracker *MemoryConsumption
 // Note that the accumulated metrics reported by the InflightMemoryConsumptionTracker will not include this MemoryConsumptionTracker. Only
 // the metrics on the parent trackers are included in the InflightMemoryConsumptionTracker accumulations.
 func (t *InflightMemoryConsumptionTracker) NewNestedMemoryConsumptionTracker(ctx context.Context, queryDescription string, parent *MemoryConsumptionTracker) *MemoryConsumptionTracker {
-	if parent.trackingId == 0 || parent.parent != nil || parent.producer != t {
+	if parent.parent != nil || parent.producer != t {
 		panic("cannot nest a tracker not created via this InflightMemoryConsumptionTracker")
 	}
 	tracker := NewMemoryConsumptionTracker(ctx, parent.maxEstimatedMemoryConsumptionBytes, t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
@@ -281,8 +277,8 @@ func (t *InflightMemoryConsumptionTracker) Describe(ch chan<- *prometheus.Desc) 
 func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) {
 	var maxBytes, currentBytes, peakBytes float64
 	sampled := 0
-	t.inflight.Range(func(key, value any) bool {
-		tracker := value.(*MemoryConsumptionTracker)
+	t.inflight.Range(func(key, _ any) bool {
+		tracker := key.(*MemoryConsumptionTracker)
 		maxBytes += float64(tracker.maxEstimatedMemoryConsumptionBytes)
 		currentBytes += float64(tracker.CurrentEstimatedMemoryConsumptionBytes())
 		peakBytes += float64(tracker.PeakEstimatedMemoryConsumptionBytes())
@@ -307,11 +303,11 @@ func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) 
 //
 // Trackers allocated via InflightMemoryConsumptionTracker.NewMemoryConsumptionTracker() - these are managed trackers and their values are included in the InflightMemoryConsumptionTracker accumulated metrics.
 // It is important that these trackers are deregistered with the InflightMemoryConsumptionTracker when their lifecycle is complete.
-// These trackers will have a trackingId and instanceId set.
+// These trackers will have a producer set.
 //
 // Trackers allocated via InflightMemoryConsumptionTracker.NewNestedMemoryConsumptionTracker() - these trackers wrap a managed tracker. Any memory changes are first passed through the parent tracker.
 // These trackers do not need to be deregistered, but it is safe to call Deregister() with a nested tracker argument.
-// These trackers will have a parent set, but do not themselves have a trackingId or instanceId set.
+// These trackers will have a parent set, but do not themselves have a producer set.
 type MemoryConsumptionTracker struct {
 	maxEstimatedMemoryConsumptionBytes     uint64
 	currentEstimatedMemoryConsumptionBytes uint64
@@ -329,9 +325,6 @@ type MemoryConsumptionTracker struct {
 	// rather than atomics because we only want to adjust the memory used after checking
 	// that it would not exceed the limit.
 	mtx sync.Mutex
-
-	// trackingId is the unique ID allocated to this tracker by the InflightMemoryConsumptionTracker
-	trackingId uint64
 
 	// producer is InflightMemoryConsumptionTracker which created this tracker
 	producer *InflightMemoryConsumptionTracker
