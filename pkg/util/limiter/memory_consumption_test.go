@@ -368,7 +368,8 @@ func TestNewUnlimintedInflightMemoryConsumptionTracker(t *testing.T) {
 
 func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	factory := NewInflightMemoryConsumptionTracker(reg, nil)
+	rejectCounter := promauto.With(reg).NewCounter(prometheus.CounterOpts{Name: rejectedQueriesMetricName})
+	factory := NewInflightMemoryConsumptionTracker(reg, rejectCounter)
 
 	t.Run("simple managed tracker is deregistered", func(t *testing.T) {
 		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")

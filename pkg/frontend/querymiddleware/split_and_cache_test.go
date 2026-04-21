@@ -2483,7 +2483,8 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, nil)
+			rejectCounter := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_queries_rejected_total"})
+			inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, rejectCounter)
 
 			var cacheBackend cache.Cache
 			var splitter CacheKeyGenerator
@@ -2530,7 +2531,8 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 				})
 				seedLimits := limits
 				seedLimits.maxEstimatedMemoryConsumptionPerQuery = 1024 * 1024
-				seedInflightTracker := limiter.NewInflightMemoryConsumptionTracker(nil, nil)
+				seedRejectCounter := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_queries_rejected_total"})
+				seedInflightTracker := limiter.NewInflightMemoryConsumptionTracker(nil, seedRejectCounter)
 				seedMw := newSplitAndCacheMiddleware(
 					true,
 					true,
