@@ -591,7 +591,7 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, tenant, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL)
 
 	level.Info(userLogger).Log("msg", "start sync of metas")
-	metas, err := fetcher.FetchMetasFromListing(ctx, maxLookback, []block.MetadataFilter{
+	metas, err := fetcher.FetchCompactableMetasFromListing(ctx, maxLookback, []block.MetadataFilter{
 		NewLabelRemoverFilter(compactionIgnoredLabels),
 		deduplicateBlocksFilter,
 	}, block.NewFetcherMetrics(reg, nil))

@@ -58,9 +58,10 @@ func (f *batchCachingMetaFetcher) metaCacheKey(blockID ulid.ULID) string {
 	return bucketcache.ContentKey("", path.Join(f.tenant, blockID.String(), block.MetaFilename))
 }
 
-// FetchMetasFromListing discovers blockIDs through an object storage listing,
+// FetchCompactableMetasFromListing discovers blockIDs through an object storage listing,
 // filters by ULID time and deletion markers, then batch fetches metadata from cache with fallback to object storage.
-func (f *batchCachingMetaFetcher) FetchMetasFromListing(ctx context.Context, maxLookback time.Duration, filters []block.MetadataFilter, metrics *block.FetcherMetrics) (metas map[ulid.ULID]*block.Meta, err error) {
+// The passed filters are then run with no-compact filtering at the end.
+func (f *batchCachingMetaFetcher) FetchCompactableMetasFromListing(ctx context.Context, maxLookback time.Duration, filters []block.MetadataFilter, metrics *block.FetcherMetrics) (metas map[ulid.ULID]*block.Meta, err error) {
 	start := time.Now()
 	metrics.Syncs.Inc()
 	metrics.ResetTx()
@@ -81,6 +82,7 @@ func (f *batchCachingMetaFetcher) FetchMetasFromListing(ctx context.Context, max
 	if err != nil {
 		return nil, err
 	}
+
 	// Filter blocks marked as no-compact after innerFetchMetas to not get in the front of deduplication
 	beforeLen := len(metas)
 	filterMapIfMarked(metas, noCompact)
@@ -274,9 +276,6 @@ func filterSliceIfMarked(blockIDs []ulid.ULID, marks map[ulid.ULID]struct{}) []u
 }
 
 func filterMapIfMarked(metas map[ulid.ULID]*block.Meta, marks map[ulid.ULID]struct{}) {
-	if len(marks) == 0 {
-		return
-	}
 	for id := range marks {
 		delete(metas, id)
 	}
