@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Query-frontend: Renamed `minimum_step_size` filter in `blocked_queries` configuration to `step_size_shorter_than` to follow the naming convention of `time_range_longer_than`. Users with `minimum_step_size` in their runtime configuration must rename the field. #15081
 * [CHANGE] Query-frontend: `blocked_queries` configuration is now validated at load time; a configuration error is returned if a rule has an empty `pattern`, or has `regex: true` with a `pattern` that is not a valid regular expression. #14978
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104

@@ -6120,9 +6120,9 @@
               },
               {
                 "kind": "field",
-                "name": "minimum_step_size",
+                "name": "step_size_shorter_than",
                 "required": false,
-                "desc": "Block queries where the step is smaller than this duration. Instant queries and queries with no step are not blocked. Set to 0 to disable.",
+                "desc": "Block queries where the step is shorter than this duration. Instant queries and queries with no step are not blocked. Set to 0 to disable.",
                 "fieldValue": null,
                 "fieldDefaultValue": null,
                 "fieldType": "duration"

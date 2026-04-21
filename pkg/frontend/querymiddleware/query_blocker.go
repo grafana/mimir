@@ -101,8 +101,8 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 			continue
 		}
 
-		if block.MinimumStepSize > 0 &&
-			(stepMs == 0 || stepDuration >= time.Duration(block.MinimumStepSize)) {
+		if block.StepSizeShorterThan > 0 &&
+			(stepMs == 0 || stepDuration >= time.Duration(block.StepSizeShorterThan)) {
 			continue
 		}
 

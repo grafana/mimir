@@ -13,7 +13,7 @@ your service.
 Each rule must include a `pattern` field; rules without a pattern are a configuration error.
 Rules with `regex: true` must have a valid regular expression pattern; an invalid pattern is also a configuration error.
 To match all queries, use `pattern: ".*"` with `regex: true`.
-Optional filter conditions (`time_range_longer_than`, `minimum_step_size`, `unaligned_range_queries`) narrow which matching queries are blocked; all configured conditions must be satisfied to block.
+Optional filter conditions (`time_range_longer_than`, `step_size_shorter_than`, `unaligned_range_queries`) narrow which matching queries are blocked; all configured conditions must be satisfied to block.
 
 You can block queries using [per-tenant overrides](../about-runtime-configuration/):
 
@@ -40,10 +40,10 @@ overrides:
         time_range_longer_than: 24h
         reason: "expensive queries over 1 day are blocked"
 
-      # match all queries with a step smaller than 1 minute
+      # match all queries with a step shorter than 1 minute
       - pattern: ".*"
         regex: true
-        minimum_step_size: 1m
+        step_size_shorter_than: 1m
         reason: "step resolution too fine-grained"
 
       # match this query only when the time range is not a multiple of the step
@@ -58,8 +58,8 @@ For instant and range queries, the pattern is evaluated against the query. For r
 Setting `time_range_longer_than` on a rule blocks queries where the time range duration (calculated as `end - start`) exceeds the specified threshold.
 `time_range_longer_than` does not apply to instant queries.
 
-Setting `minimum_step_size` on a rule blocks queries where the step is smaller than the configured duration.
-`minimum_step_size` does not apply to instant queries or queries without a step.
+Setting `step_size_shorter_than` on a rule blocks queries where the step is shorter than the configured duration.
+`step_size_shorter_than` does not apply to instant queries or queries without a step.
 
 Setting `unaligned_range_queries: true` on a rule limits it to range queries where the time range is not a multiple of the step.
 Such queries are not eligible for [range query result caching](https://grafana.com/docs/mimir/latest/references/architecture/components/query-frontend/#caching) by default.

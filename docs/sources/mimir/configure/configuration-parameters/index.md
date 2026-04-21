@@ -4571,9 +4571,9 @@ blocked_queries:
     # disable.
     [time_range_longer_than: <duration> | default = ]
 
-    # Block queries where the step is smaller than this duration. Instant
+    # Block queries where the step is shorter than this duration. Instant
     # queries and queries with no step are not blocked. Set to 0 to disable.
-    [minimum_step_size: <duration> | default = ]
+    [step_size_shorter_than: <duration> | default = ]
 
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:

@@ -551,7 +551,7 @@ blocked_queries:
 	}
 }
 
-// TestQueryBlockerMiddleware_StepSize verifies minimum_step_size: the step must be below the
+// TestQueryBlockerMiddleware_StepSize verifies step_size_shorter_than: the step must be below the
 // threshold to block; instant queries and queries with no step are never blocked by this filter.
 func TestQueryBlockerMiddleware_StepSize(t *testing.T) {
 	now := time.Now()
@@ -589,7 +589,7 @@ func TestQueryBlockerMiddleware_StepSize(t *testing.T) {
 			name: "no pattern",
 			limitsYAML: `
 blocked_queries:
-  - minimum_step_size: "1m"
+  - step_size_shorter_than: "1m"
     reason: "step too small"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", step30s),
@@ -601,7 +601,7 @@ blocked_queries:
 blocked_queries:
   - pattern: ".*"
     regex: true
-    minimum_step_size: "1m"
+    step_size_shorter_than: "1m"
     reason: "step too small"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", step30s),
@@ -613,7 +613,7 @@ blocked_queries:
 blocked_queries:
   - pattern: ".*"
     regex: true
-    minimum_step_size: "1m"
+    step_size_shorter_than: "1m"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", step1m),
 			expectedBlocked: false,
@@ -624,7 +624,7 @@ blocked_queries:
 blocked_queries:
   - pattern: ".*"
     regex: true
-    minimum_step_size: "1m"
+    step_size_shorter_than: "1m"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", step5m),
 			expectedBlocked: false,
@@ -635,7 +635,7 @@ blocked_queries:
 blocked_queries:
   - pattern: ".*"
     regex: true
-    minimum_step_size: "1m"
+    step_size_shorter_than: "1m"
 `,
 			makeReq:         instantReq("rate(expensive_metric[5m])"),
 			expectedBlocked: false,
@@ -681,7 +681,7 @@ blocked_queries:
   - pattern: ".*expensive.*"
     regex: true
     time_range_longer_than: "24h"
-    minimum_step_size: "1m"
+    step_size_shorter_than: "1m"
     reason: "all three conditions met"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), step30s),
@@ -694,7 +694,7 @@ blocked_queries:
   - pattern: ".*expensive.*"
     regex: true
     time_range_longer_than: "24h"
-    minimum_step_size: "1m"
+    step_size_shorter_than: "1m"
 `,
 			makeReq:         rangeReq("rate(cheap_metric[5m])", now.Add(-48*time.Hour), step30s),
 			expectedBlocked: false,
@@ -706,7 +706,7 @@ blocked_queries:
   - pattern: ".*expensive.*"
     regex: true
     time_range_longer_than: "24h"
-    minimum_step_size: "1m"
+    step_size_shorter_than: "1m"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-12*time.Hour), step30s),
 			expectedBlocked: false,
@@ -718,7 +718,7 @@ blocked_queries:
   - pattern: ".*expensive.*"
     regex: true
     time_range_longer_than: "24h"
-    minimum_step_size: "1m"
+    step_size_shorter_than: "1m"
 `,
 			makeReq:         rangeReq("rate(expensive_metric[5m])", now.Add(-48*time.Hour), step5m),
 			expectedBlocked: false,
@@ -738,7 +738,7 @@ blocked_queries:
 // LabelMatchersToString — never PromQL syntax. Non-regex matching is a raw string compare
 // with no canonicalization on the query side, so matcher order is significant (unlike range/instant
 // queries where both sides are canonicalized via the PromQL parser).
-// minimum_step_size never applies because GetStep always returns 0 for remote reads.
+// step_size_shorter_than never applies because GetStep always returns 0 for remote reads.
 func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 	remoteReadReq := func(matchers ...*prompb.LabelMatcher) func(t *testing.T) MetricsQueryRequest {
 		req := mustSucceed(remoteReadToMetricsQueryRequest(remoteReadPathSuffix, &prompb.Query{Matchers: matchers}))
