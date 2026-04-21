@@ -32,14 +32,6 @@ import (
 )
 
 func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
-	for _, useZeroAllocationDecoder := range []bool{false, true} {
-		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
-			runTestShardActiveSeriesMiddlewareRoundTrip(t, useZeroAllocationDecoder)
-		})
-	}
-}
-
-func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocationDecoder bool) {
 	const tenantShardCount = 4
 	const tenantMaxShardCount = 128
 
@@ -367,14 +359,6 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 }
 
 func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
-	for _, useZeroAllocationDecoder := range []bool{false, true} {
-		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
-			runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t, useZeroAllocationDecoder)
-		})
-	}
-}
-
-func runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t *testing.T, useZeroAllocationDecoder bool) {
 	const shardCount = 4
 
 	upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -443,14 +427,6 @@ func runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t *testing.T, useZero
 }
 
 func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
-	for _, useZeroAllocationDecoder := range []bool{false, true} {
-		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
-			runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t, useZeroAllocationDecoder)
-		})
-	}
-}
-
-func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testing.T, useZeroAllocationDecoder bool) {
 	s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(fmt.Errorf("test ran to completion"))
@@ -467,18 +443,8 @@ func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testi
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 	}
-	var resp *http.Response
 
-	if useZeroAllocationDecoder {
-		resp = s.mergeResponses(ctx, responses, "")
-	} else {
-		defer func() {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-		}()
-
-		resp = s.mergeResponses(ctx, responses, "")
-	}
+	resp := s.mergeResponses(ctx, responses, "")
 
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
