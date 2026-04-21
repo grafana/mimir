@@ -2655,14 +2655,10 @@ Usage of ./cmd/mimir/mimir:
     	How often to resolve the scheduler-address, in order to look for new query-scheduler instances. (default 10s)
   -query-frontend.scheduler-worker-concurrency int
     	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
-  -query-frontend.shard-active-series-queries
-    	[experimental] True to enable sharding of active series queries.
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
   -query-frontend.subquery-spin-off-enabled
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
-  -query-frontend.use-active-series-decoder
-    	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
   -query-frontend.use-mimir-query-engine-for-sharding
     	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.
   -query-scheduler.grpc-client-config.backoff-max-period duration

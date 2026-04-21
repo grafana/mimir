@@ -323,7 +323,6 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			// Run the request through the middleware.
 			s := newShardActiveSeriesMiddleware(
 				upstream,
-				useZeroAllocationDecoder,
 				mockLimits{maxShardedQueries: tenantMaxShardCount, totalShards: tenantShardCount},
 				log.NewNopLogger(),
 			)
@@ -393,7 +392,6 @@ func runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t *testing.T, useZero
 
 	s := newShardActiveSeriesMiddleware(
 		upstream,
-		useZeroAllocationDecoder,
 		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
 		log.NewNopLogger(),
 	)
@@ -453,7 +451,7 @@ func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testi
 }
 
 func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testing.T, useZeroAllocationDecoder bool) {
-	s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+	s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(fmt.Errorf("test ran to completion"))
 
@@ -472,7 +470,7 @@ func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testi
 	var resp *http.Response
 
 	if useZeroAllocationDecoder {
-		resp = s.mergeResponsesWithZeroAllocationDecoder(ctx, responses, "")
+		resp = s.mergeResponses(ctx, responses, "")
 	} else {
 		defer func() {
 			_, _ = io.Copy(io.Discard, resp.Body)
@@ -548,13 +546,13 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 				benchResponses[i] = responses
 			}
 
-			s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+			s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 
 			b.ResetTimer()
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				resp := s.mergeResponsesWithZeroAllocationDecoder(context.Background(), benchResponses[i], encoding)
+				resp := s.mergeResponses(context.Background(), benchResponses[i], encoding)
 
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()

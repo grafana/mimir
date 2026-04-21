@@ -8651,28 +8651,6 @@
         },
         {
           "kind": "field",
-          "name": "shard_active_series_queries",
-          "required": false,
-          "desc": "True to enable sharding of active series queries.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.shard-active-series-queries",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "use_active_series_decoder",
-          "required": false,
-          "desc": "Set to true to use the zero-allocation response decoder for active series queries.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.use-active-series-decoder",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "extra_propagated_headers",
           "required": false,
           "desc": "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.",

@@ -2258,15 +2258,6 @@ results_cache:
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
 
-# (experimental) True to enable sharding of active series queries.
-# CLI flag: -query-frontend.shard-active-series-queries
-[shard_active_series_queries: <boolean> | default = false]
-
-# (experimental) Set to true to use the zero-allocation response decoder for
-# active series queries.
-# CLI flag: -query-frontend.use-active-series-decoder
-[use_active_series_decoder: <boolean> | default = false]
-
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
 # required headers that the read path needs.
