@@ -24,6 +24,19 @@ var adminTemplate = template.Must(template.New("admin").Funcs(template.FuncMap{
 		}
 		return formatFloat(f, 0)
 	},
+	"fmtSeries": func(n int64) string {
+		f := float64(n)
+		if f >= 1e6 {
+			return formatFloat(f/1e6, 1) + "M"
+		}
+		if f >= 1e3 {
+			return formatFloat(f/1e3, 1) + "K"
+		}
+		return formatFloat(f, 0)
+	},
+	"fmtLoad": func(f float64) string {
+		return formatFloat(f*100, 2) + "%"
+	},
 	"fmtPct": func(f float64) string {
 		return formatFloat(f, 2) + "%"
 	},

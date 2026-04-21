@@ -49,11 +49,19 @@ type RoundLog struct {
 
 const maxRoundLogs = 20
 
+// rangeStatsView mirrors loadMap.stats for one range: raw signals plus
+// the combined weighted load value used for slicer decisions.
+type rangeStatsView struct {
+	Samples float64
+	Series  int64
+	Load    float64
+}
+
 // adminState stores the data needed to render the admin page.
 type adminState struct {
 	mu        sync.RWMutex
 	rounds    []RoundLog
-	lastRates map[assignment.HashRange]float64
+	lastStats map[assignment.HashRange]rangeStatsView
 }
 
 func (s *adminState) addRound(rl RoundLog) {
@@ -65,51 +73,68 @@ func (s *adminState) addRound(rl RoundLog) {
 	}
 }
 
-func (s *adminState) setLastRates(rates map[assignment.HashRange]float64) {
+// setLastStats snapshots the current loadMap into the admin state.
+// Captures all per-range raw signals plus the combined load.
+func (s *adminState) setLastStats(lm *loadMap) {
+	stats := make(map[assignment.HashRange]rangeStatsView, len(lm.stats))
+	for hr, raw := range lm.stats {
+		stats[hr] = rangeStatsView{
+			Samples: raw.samples,
+			Series:  raw.series,
+			Load:    lm.load(hr),
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.lastRates = rates
+	s.lastStats = stats
 }
 
 // snapshot returns the current admin state for rendering.
-func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]float64) {
+func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStatsView) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	rounds := make([]RoundLog, len(s.rounds))
 	copy(rounds, s.rounds)
 
-	rates := make(map[assignment.HashRange]float64, len(s.lastRates))
-	for k, v := range s.lastRates {
-		rates[k] = v
+	stats := make(map[assignment.HashRange]rangeStatsView, len(s.lastStats))
+	for k, v := range s.lastStats {
+		stats[k] = v
 	}
-	return rounds, rates
+	return rounds, stats
 }
 
 // partitionView is the data for one partition row in the admin page.
 type partitionView struct {
-	PartitionID   int32
-	InstanceID    string
-	InstanceAddr  string
-	TotalLoad     float64
-	HashSpacePct  float64
-	NumRanges     int
-	Ranges        []rangeView
+	PartitionID  int32
+	InstanceID   string
+	InstanceAddr string
+	TotalLoad    float64
+	TotalSamples float64
+	TotalSeries  int64
+	HashSpacePct float64
+	NumRanges    int
+	Ranges       []rangeView
 }
 
 // rangeView is the data for one hash range in the admin page.
 type rangeView struct {
-	Lo           uint32
-	Hi           uint32
-	Load         float64
-	SizePct      float64
-	LastAction   ActionKind
+	Lo         uint32
+	Hi         uint32
+	Load       float64
+	Samples    float64
+	Series     int64
+	SizePct    float64
+	LastAction ActionKind
 }
 
 // adminPageData is the full data structure passed to the template.
 type adminPageData struct {
 	GeneratedAt    string
 	TotalLoad      float64
+	TotalSamples   float64
+	TotalSeries    int64
 	MeanPartLoad   float64
 	MaxPartLoad    float64
 	MinPartLoad    float64
@@ -120,14 +145,20 @@ type adminPageData struct {
 	Partitions     []partitionView
 	Rounds         []RoundLog
 	HeatmapData    string
+
+	// Configuration echo.
+	WeightSeries  float64
+	WeightSamples float64
 }
 
 func (r *Rebalancer) buildAdminPageData() adminPageData {
-	rounds, lastRates := r.admin.snapshot()
+	rounds, lastStats := r.admin.snapshot()
 	current := r.store.latest()
 
 	data := adminPageData{
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		WeightSeries:  r.cfg.LoadWeightSeries,
+		WeightSamples: r.cfg.LoadWeightSamples,
 	}
 
 	if current == nil {
@@ -145,7 +176,8 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	// Build partition views.
 	partMap := make(map[int32]*partitionView)
 	hashSpaceTotal := float64(uint64(math.MaxUint32) + 1)
-	var totalLoad float64
+	var totalLoad, totalSamples float64
+	var totalSeries int64
 
 	for _, e := range current.Entries {
 		pv, ok := partMap[e.PartitionID]
@@ -154,22 +186,28 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 			partMap[e.PartitionID] = pv
 		}
 
-		rate := lastRates[e.Range]
+		stat := lastStats[e.Range]
 		sizePct := float64(e.Range.Size()) / hashSpaceTotal * 100
 
-		action, _ := lastActions[e.Range]
+		action := lastActions[e.Range]
 
 		pv.Ranges = append(pv.Ranges, rangeView{
 			Lo:         e.Range.Lo,
 			Hi:         e.Range.Hi,
-			Load:       rate,
+			Load:       stat.Load,
+			Samples:    stat.Samples,
+			Series:     stat.Series,
 			SizePct:    sizePct,
 			LastAction: action,
 		})
-		pv.TotalLoad += rate
+		pv.TotalLoad += stat.Load
+		pv.TotalSamples += stat.Samples
+		pv.TotalSeries += stat.Series
 		pv.HashSpacePct += sizePct
 		pv.NumRanges++
-		totalLoad += rate
+		totalLoad += stat.Load
+		totalSamples += stat.Samples
+		totalSeries += stat.Series
 	}
 
 	// Resolve instance IDs from the partition ring.
@@ -220,21 +258,22 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		imbalance = (maxPartLoad - minPartLoad) / meanPartLoad
 	}
 
-	// Build heatmap: 256 buckets across the hash space.
+	// Build heatmap: 256 buckets across the hash space, weighted by
+	// combined load so the visualization matches what the slicer sees.
 	const heatmapBuckets = 256
 	heatmap := make([]float64, heatmapBuckets)
 	bucketSize := (uint64(math.MaxUint32) + 1) / uint64(heatmapBuckets)
 	for _, e := range current.Entries {
-		rate := lastRates[e.Range]
+		stat := lastStats[e.Range]
 		startBucket := uint64(e.Range.Lo) / bucketSize
 		endBucket := uint64(e.Range.Hi) / bucketSize
 		if endBucket >= heatmapBuckets {
 			endBucket = heatmapBuckets - 1
 		}
 		bucketsSpanned := endBucket - startBucket + 1
-		ratePerBucket := rate / float64(bucketsSpanned)
+		loadPerBucket := stat.Load / float64(bucketsSpanned)
 		for b := startBucket; b <= endBucket; b++ {
-			heatmap[b] += ratePerBucket
+			heatmap[b] += loadPerBucket
 		}
 	}
 	heatmapJSON, _ := json.Marshal(heatmap)
@@ -252,6 +291,8 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	}
 
 	data.TotalLoad = totalLoad
+	data.TotalSamples = totalSamples
+	data.TotalSeries = totalSeries
 	data.MeanPartLoad = meanPartLoad
 	data.MaxPartLoad = maxPartLoad
 	data.MinPartLoad = minPartLoad

@@ -25,11 +25,23 @@ import (
 type Config struct {
 	RebalanceInterval time.Duration `yaml:"rebalance_interval"`
 	MovementBudget    float64       `yaml:"movement_budget"`
+
+	// LoadWeightSeries and LoadWeightSamples control how the two
+	// per-range load signals (active series count and sample ingestion
+	// rate) are combined into a single scalar load value used by the
+	// slicer. Each component is first normalized by its global total
+	// so that both contribute fractions of total load, then weighted.
+	// Defaults give cardinality the dominant role since ingester memory
+	// (and OOM risk) is the primary scaling dimension.
+	LoadWeightSeries  float64 `yaml:"load_weight_series"`
+	LoadWeightSamples float64 `yaml:"load_weight_samples"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.RebalanceInterval, prefix+"rebalance-interval", 60*time.Second, "How often the rebalancer runs.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.09, "Maximum fraction of the hash space that can be moved per round.")
+	f.Float64Var(&cfg.LoadWeightSeries, prefix+"load-weight-series", 0.8, "Weight of normalized active series count in the per-range combined load metric.")
+	f.Float64Var(&cfg.LoadWeightSamples, prefix+"load-weight-samples", 0.2, "Weight of normalized sample ingestion rate in the per-range combined load metric.")
 }
 
 // Rebalancer is a Mimir module that periodically queries ingesters for
@@ -110,7 +122,8 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	r.admin.setLastRates(buildRateMap(rates))
+	lm := buildLoadMap(rates, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
+	r.admin.setLastStats(lm)
 
 	newAssignment, actions := r.runSlicer(current, rates, activePartitions)
 	if err := newAssignment.Validate(); err != nil {
@@ -123,8 +136,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	r.pushRangesToIngesters(ctx, newAssignment)
 
 	// Compute round summary stats.
-	rateMap := buildRateMap(rates)
-	partLoads := computePartitionLoads(buildRangeLoads(newAssignment, rateMap))
+	partLoads := computePartitionLoads(buildRangeLoads(newAssignment, lm))
 	var totalLoad, maxPL, minPL float64
 	minPL = math.MaxFloat64
 	for _, pl := range partLoads {
@@ -198,8 +210,9 @@ func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, error) {
 
 		for _, rate := range resp.Rates {
 			all = append(all, rangeRate{
-				hr:   assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
-				rate: rate.SamplesPerSecond,
+				hr:      assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
+				samples: rate.SamplesPerSecond,
+				series:  rate.ActiveSeries,
 			})
 		}
 	}
@@ -299,14 +312,20 @@ const (
 	mergeChurnBudget = 0.01
 )
 
+// rangeRate is one entry from an ingester's HashRangeStats response.
+// It carries both raw load signals; the rebalancer combines them into
+// a single scalar load using configurable weights.
 type rangeRate struct {
-	hr   assignment.HashRange
-	rate float64
+	hr      assignment.HashRange
+	samples float64
+	series  int64
 }
 
 type rangeLoad struct {
-	entry assignment.Entry
-	load  float64
+	entry   assignment.Entry
+	load    float64 // combined, weighted, normalized load
+	samples float64 // raw samples/sec (for logging/admin)
+	series  int64   // raw active series count (for logging/admin)
 }
 
 // runSlicer implements the Slicer weighted-move algorithm (Adya et al.,
@@ -322,7 +341,7 @@ type rangeLoad struct {
 //     assignments. This creates finer load signals for the next round.
 //     Cap: maxSlicesPerPartition.
 func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate, activePartitions []int32) (*assignment.Assignment, []Action) {
-	rateMap := buildRateMap(rates)
+	lm := buildLoadMap(rates, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
 	numPartitions := len(activePartitions)
 	var actions []Action
 
@@ -335,9 +354,12 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	entries := make([]rangeLoad, len(current.Entries))
 	rrIdx := 0
 	for i, e := range current.Entries {
+		samples, series := lm.stat(e.Range)
 		entries[i] = rangeLoad{
-			entry: e,
-			load:  lookupRate(e.Range, rateMap),
+			entry:   e,
+			load:    lm.load(e.Range),
+			samples: samples,
+			series:  series,
 		}
 		if !activeSet[e.PartitionID] {
 			newPID := activePartitions[rrIdx%numPartitions]
@@ -364,7 +386,7 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 		meanSliceLoad := totalLoad / float64(len(entries))
 		mergeMoveBudget := mergeChurnBudget * float64(uint64(math.MaxUint32)+1)
 		var mergeActions []Action
-		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions, rateMap)
+		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions)
 		actions = append(actions, mergeActions...)
 	}
 
@@ -481,16 +503,25 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 				mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
 				left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
 				right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
-				leftLoad := lookupRate(left, rateMap)
-				rightLoad := lookupRate(right, rateMap)
+				leftLoad := lm.load(left)
+				rightLoad := lm.load(right)
+				leftSamples, leftSeries := lm.stat(left)
+				rightSamples, rightSeries := lm.stat(right)
 				if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
+					// Newly split sub-ranges have no per-range data yet.
+					// Distribute the parent's load proportionally so the
+					// next phase doesn't immediately re-merge them.
 					leftFraction := float64(left.Size()) / float64(rl.entry.Range.Size())
 					leftLoad = rl.load * leftFraction
 					rightLoad = rl.load * (1 - leftFraction)
+					leftSamples = rl.samples * leftFraction
+					rightSamples = rl.samples * (1 - leftFraction)
+					leftSeries = int64(float64(rl.series) * leftFraction)
+					rightSeries = rl.series - leftSeries
 				}
 				newEntries = append(newEntries,
-					rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad},
-					rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad},
+					rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad, samples: leftSamples, series: leftSeries},
+					rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad, samples: rightSamples, series: rightSeries},
 				)
 				actions = append(actions, Action{
 					Kind:   ActionSplit,
@@ -519,10 +550,16 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	return result, actions
 }
 
-func buildRangeLoads(a *assignment.Assignment, rateMap map[assignment.HashRange]float64) []rangeLoad {
+func buildRangeLoads(a *assignment.Assignment, lm *loadMap) []rangeLoad {
 	entries := make([]rangeLoad, len(a.Entries))
 	for i, e := range a.Entries {
-		entries[i] = rangeLoad{entry: e, load: lookupRate(e.Range, rateMap)}
+		samples, series := lm.stat(e.Range)
+		entries[i] = rangeLoad{
+			entry:   e,
+			load:    lm.load(e.Range),
+			samples: samples,
+			series:  series,
+		}
 	}
 	return entries
 }
@@ -535,23 +572,65 @@ func computePartitionLoads(entries []rangeLoad) map[int32]float64 {
 	return m
 }
 
-// buildRateMap builds a lookup from hash range to rate.
-func buildRateMap(rates []rangeRate) map[assignment.HashRange]float64 {
-	m := make(map[assignment.HashRange]float64, len(rates))
-	for _, rr := range rates {
-		m[rr.hr] += rr.rate
-	}
-	return m
+// rangeStats holds the raw per-range signals reported by ingesters.
+type rangeStats struct {
+	samples float64
+	series  int64
 }
 
-// lookupRate returns the rate for the given hash range. If an exact
-// match exists, it's returned directly. Otherwise returns 0 (new
-// ranges from splits won't have data until the next cycle).
-func lookupRate(hr assignment.HashRange, rateMap map[assignment.HashRange]float64) float64 {
-	if rate, ok := rateMap[hr]; ok {
-		return rate
+// loadMap holds per-range raw signals plus the global totals needed to
+// normalize them into a combined weighted load. Construct via
+// buildLoadMap and query via load() / stats().
+type loadMap struct {
+	stats        map[assignment.HashRange]rangeStats
+	totalSamples float64
+	totalSeries  int64
+	wSeries      float64
+	wSamples     float64
+}
+
+func buildLoadMap(rates []rangeRate, wSeries, wSamples float64) *loadMap {
+	lm := &loadMap{
+		stats:    make(map[assignment.HashRange]rangeStats, len(rates)),
+		wSeries:  wSeries,
+		wSamples: wSamples,
 	}
-	return 0
+	for _, rr := range rates {
+		s := lm.stats[rr.hr]
+		s.samples += rr.samples
+		s.series += rr.series
+		lm.stats[rr.hr] = s
+		lm.totalSamples += rr.samples
+		lm.totalSeries += rr.series
+	}
+	return lm
+}
+
+// load returns the combined weighted load for the given hash range.
+// Returns 0 if the range is not present in the underlying map. The
+// returned value has no physical units; it's the sum of two
+// fraction-of-total components weighted by the configured weights, so
+// the global total of load() across all ranges is wSeries + wSamples
+// (typically 1.0).
+func (lm *loadMap) load(hr assignment.HashRange) float64 {
+	s, ok := lm.stats[hr]
+	if !ok {
+		return 0
+	}
+	var l float64
+	if lm.totalSeries > 0 {
+		l += lm.wSeries * float64(s.series) / float64(lm.totalSeries)
+	}
+	if lm.totalSamples > 0 {
+		l += lm.wSamples * s.samples / lm.totalSamples
+	}
+	return l
+}
+
+// stat returns the raw samples/sec and series count for the range.
+func (lm *loadMap) stat(hr assignment.HashRange) (samples float64, series int64) {
+	s := lm.stats[hr]
+	return s.samples, s.series
 }
 
 // mergeAdjacentCold merges adjacent cold slices to defragment the
@@ -566,7 +645,7 @@ func lookupRate(hr assignment.HashRange, rateMap map[assignment.HashRange]float6
 //   - receiving partition load stays below maxPartitionLoad (target * 1.5)
 //   - total churn stays within churnBudget
 //   - total entries don't drop below minEntries
-func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries int, rateMap map[assignment.HashRange]float64) ([]rangeLoad, []Action) {
+func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries int) ([]rangeLoad, []Action) {
 	if len(entries) <= 1 || len(entries) <= minEntries {
 		return entries, nil
 	}
@@ -605,10 +684,12 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 						Kind:   ActionMerge,
 						Range:  merged,
 						ToPart: prev.entry.PartitionID,
-						Detail: fmt.Sprintf("same-partition merge on P%d, combined load=%.1f/s", prev.entry.PartitionID, mergedLoad),
+						Detail: fmt.Sprintf("same-partition merge on P%d, combined load=%.4f", prev.entry.PartitionID, mergedLoad),
 					})
 					prev.entry.Range = merged
 					prev.load = mergedLoad
+					prev.samples += curr.samples
+					prev.series += curr.series
 					churned += mergeCost
 					continue
 				}
@@ -639,11 +720,13 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 					Range:    merged,
 					FromPart: donorPID,
 					ToPart:   receiverPID,
-					Detail:   fmt.Sprintf("cross-partition merge P%d+P%d→P%d, combined load=%.1f/s", donorPID, receiverPID, receiverPID, mergedLoad),
+					Detail:   fmt.Sprintf("cross-partition merge P%d+P%d→P%d, combined load=%.4f", donorPID, receiverPID, receiverPID, mergedLoad),
 				})
 				prev.entry.Range = merged
 				prev.entry.PartitionID = receiverPID
 				prev.load = mergedLoad
+				prev.samples += curr.samples
+				prev.series += curr.series
 				churned += movedSize
 				continue
 			}

@@ -12,9 +12,9 @@ import (
 func TestHashRangeStatsResponse_MarshalUnmarshal(t *testing.T) {
 	original := &HashRangeStatsResponse{
 		Rates: []HashRangeRate{
-			{Lo: 0, Hi: 1000, SamplesPerSecond: 100.5},
-			{Lo: 1001, Hi: 2000, SamplesPerSecond: 200.25},
-			{Lo: 2001, Hi: 4294967295, SamplesPerSecond: 300.75},
+			{Lo: 0, Hi: 1000, SamplesPerSecond: 100.5, ActiveSeries: 12345},
+			{Lo: 1001, Hi: 2000, SamplesPerSecond: 200.25, ActiveSeries: 0},
+			{Lo: 2001, Hi: 4294967295, SamplesPerSecond: 300.75, ActiveSeries: 9876543210},
 		},
 	}
 
@@ -29,14 +29,17 @@ func TestHashRangeStatsResponse_MarshalUnmarshal(t *testing.T) {
 	assert.Equal(t, uint32(0), restored.Rates[0].Lo)
 	assert.Equal(t, uint32(1000), restored.Rates[0].Hi)
 	assert.InDelta(t, 100.5, restored.Rates[0].SamplesPerSecond, 0.001)
+	assert.Equal(t, int64(12345), restored.Rates[0].ActiveSeries)
 
 	assert.Equal(t, uint32(1001), restored.Rates[1].Lo)
 	assert.Equal(t, uint32(2000), restored.Rates[1].Hi)
 	assert.InDelta(t, 200.25, restored.Rates[1].SamplesPerSecond, 0.001)
+	assert.Equal(t, int64(0), restored.Rates[1].ActiveSeries)
 
 	assert.Equal(t, uint32(2001), restored.Rates[2].Lo)
 	assert.Equal(t, uint32(4294967295), restored.Rates[2].Hi)
 	assert.InDelta(t, 300.75, restored.Rates[2].SamplesPerSecond, 0.001)
+	assert.Equal(t, int64(9876543210), restored.Rates[2].ActiveSeries)
 }
 
 func TestHashRangeStatsResponse_EmptyRoundTrip(t *testing.T) {

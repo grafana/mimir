@@ -73,8 +73,8 @@ func (si *simulatedIngester) snapshot() []rangeRate {
 	var out []rangeRate
 	for i, r := range si.ranges {
 		out = append(out, rangeRate{
-			hr:   r,
-			rate: si.rates[i].Rate(),
+			hr:      r,
+			samples: si.rates[i].Rate(),
 		})
 	}
 	return out
@@ -156,10 +156,10 @@ func (s *simulation) rebalance() {
 
 func (s *simulation) partitionLoads() map[int32]float64 {
 	rates := s.collectRates()
-	rateMap := buildRateMap(rates)
+	lm := buildLoadMap(rates, s.rebalancer.cfg.LoadWeightSeries, s.rebalancer.cfg.LoadWeightSamples)
 	loads := make(map[int32]float64)
 	for _, e := range s.assignment.Entries {
-		loads[e.PartitionID] += lookupRate(e.Range, rateMap)
+		loads[e.PartitionID] += lm.load(e.Range)
 	}
 	return loads
 }
@@ -221,8 +221,8 @@ func TestSimulation_SkewedLoadConverges(t *testing.T) {
 		ticksPerRound   = 60
 	)
 
-	cfg := Config{MovementBudget: 0.09}
-	sim := newSimulation(numPartitions, cfg)
+	// Simulation only models samples ingestion; put all load weight there.
+	sim := newSimulation(numPartitions, samplesOnlyCfg(0.09))
 
 	// Create load sources concentrated in partition 0's initial hash space.
 	// Use FineEvenSplit: partition 0 owns hashes [0, MaxUint32/4).
@@ -285,8 +285,7 @@ func TestSimulation_RealisticProductionWorkload(t *testing.T) {
 		ticksPerRound   = 60
 	)
 
-	cfg := Config{MovementBudget: 0.09}
-	sim := newSimulation(numPartitions, cfg)
+	sim := newSimulation(numPartitions, samplesOnlyCfg(0.09))
 
 	// Spread 200 sources across the hash space with varying intensities.
 	// Cluster hot sources in the first 1/6 of the space (partition 0).
@@ -357,8 +356,7 @@ func TestSimulation_LoadShiftMidway(t *testing.T) {
 		ticksPerRound   = 60
 	)
 
-	cfg := Config{MovementBudget: 0.09}
-	sim := newSimulation(numPartitions, cfg)
+	sim := newSimulation(numPartitions, samplesOnlyCfg(0.09))
 
 	hashSpacePerPartition := uint64(math.MaxUint32+1) / uint64(numPartitions)
 
@@ -438,8 +436,7 @@ func TestSimulation_EvenLoadStaysStable(t *testing.T) {
 		ticksPerRound   = 60
 	)
 
-	cfg := Config{MovementBudget: 0.09}
-	sim := newSimulation(numPartitions, cfg)
+	sim := newSimulation(numPartitions, samplesOnlyCfg(0.09))
 
 	// Spread sources evenly across all partitions.
 	hashSpacePerPartition := uint64(math.MaxUint32+1) / uint64(numPartitions)

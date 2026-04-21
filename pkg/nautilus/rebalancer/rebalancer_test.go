@@ -13,6 +13,18 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
+// samplesOnlyCfg returns a Config that puts all load weight on the
+// samples-per-second signal. Used by tests written before the
+// active-series signal existed; they construct rangeRates with only
+// samples populated.
+func samplesOnlyCfg(movementBudget float64) Config {
+	return Config{
+		MovementBudget:    movementBudget,
+		LoadWeightSeries:  0,
+		LoadWeightSamples: 1,
+	}
+}
+
 func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 	partitions := []int32{0, 1, 2, 3}
 	initial := assignment.FineEvenSplit(partitions, initialSlicesPerPartition)
@@ -22,14 +34,13 @@ func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, rate: 10000.0 / float64(initialSlicesPerPartition)})
+			rates = append(rates, rangeRate{hr: e.Range, samples: 10000.0 / float64(initialSlicesPerPartition)})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, rate: 100.0 / float64(initialSlicesPerPartition)})
+			rates = append(rates, rangeRate{hr: e.Range, samples: 100.0 / float64(initialSlicesPerPartition)})
 		}
 	}
 
-	cfg := Config{MovementBudget: 0.5}
-	r := &Rebalancer{cfg: cfg}
+	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
 
 	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
@@ -66,19 +77,18 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 
 	var rates []rangeRate
 	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, rate: 100.0})
+		rates = append(rates, rangeRate{hr: e.Range, samples: 100.0})
 	}
 
-	cfg := Config{MovementBudget: 0.09}
-	r := &Rebalancer{cfg: cfg}
+	r := &Rebalancer{cfg: samplesOnlyCfg(0.09)}
 
 	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
 
-	rateMap := buildRateMap(rates)
+	lm := buildLoadMap(rates, 0, 1)
 	partitionLoad := make(map[int32]float64)
 	for _, e := range result.Entries {
-		partitionLoad[e.PartitionID] += lookupRate(e.Range, rateMap)
+		partitionLoad[e.PartitionID] += lm.load(e.Range)
 	}
 
 	totalLoad := 0.0
@@ -100,11 +110,10 @@ func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
 
 	var rates []rangeRate
 	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, rate: 100.0})
+		rates = append(rates, rangeRate{hr: e.Range, samples: 100.0})
 	}
 
-	cfg := Config{MovementBudget: 0.5}
-	r := &Rebalancer{cfg: cfg}
+	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
 
 	result, _ := r.runSlicer(initial, rates, activePartitions)
 	require.NoError(t, result.Validate())
@@ -122,14 +131,13 @@ func TestRunSlicer_SliceCountCapped(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, rate: 100000.0})
+			rates = append(rates, rangeRate{hr: e.Range, samples: 100000.0})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, rate: 1.0})
+			rates = append(rates, rangeRate{hr: e.Range, samples: 1.0})
 		}
 	}
 
-	cfg := Config{MovementBudget: 0.09}
-	r := &Rebalancer{cfg: cfg}
+	r := &Rebalancer{cfg: samplesOnlyCfg(0.09)}
 
 	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
@@ -139,19 +147,13 @@ func TestRunSlicer_SliceCountCapped(t *testing.T) {
 }
 
 func TestMergeAdjacentCold(t *testing.T) {
-	rateMap := map[assignment.HashRange]float64{
-		{Lo: 0, Hi: 99}:   0.1,
-		{Lo: 100, Hi: 199}: 0.1,
-		{Lo: 200, Hi: 299}: 0.1,
-	}
-
 	entries := []rangeLoad{
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 0}, load: 0.1},
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 0}, load: 0.1},
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 1}, load: 0.1},
 	}
 
-	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, rateMap)
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1)
 
 	// All three slices are cold and adjacent; the first two merge
 	// (same partition), then the third merges cross-partition onto
@@ -173,11 +175,8 @@ func TestMergeAdjacentCold_CrossPartition(t *testing.T) {
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 1}, load: 0.1},
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 0}, load: 0.1},
 	}
-	rateMap := map[assignment.HashRange]float64{
-		{Lo: 0, Hi: 99}: 0.1, {Lo: 100, Hi: 199}: 0.1, {Lo: 200, Hi: 299}: 0.1,
-	}
 
-	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, rateMap)
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1)
 
 	// Should merge into fewer entries by moving the B slice onto A's partition.
 	require.Less(t, len(result), 3, "cross-partition merge should reduce entry count")
@@ -202,11 +201,10 @@ func TestRunSlicer_Phase1_DistributesAcrossPartitions(t *testing.T) {
 
 	var rates []rangeRate
 	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, rate: 100.0})
+		rates = append(rates, rangeRate{hr: e.Range, samples: 100.0})
 	}
 
-	cfg := Config{MovementBudget: 0.0}
-	r := &Rebalancer{cfg: cfg}
+	r := &Rebalancer{cfg: samplesOnlyCfg(0.0)}
 
 	result, _ := r.runSlicer(initial, rates, activePartitions)
 	require.NoError(t, result.Validate())
@@ -234,22 +232,21 @@ func TestRunSlicer_Phase4_ExhaustsBudget(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, rate: 120.0})
+			rates = append(rates, rangeRate{hr: e.Range, samples: 120.0})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, rate: 80.0})
+			rates = append(rates, rangeRate{hr: e.Range, samples: 80.0})
 		}
 	}
 
-	cfg := Config{MovementBudget: 0.5}
-	r := &Rebalancer{cfg: cfg}
+	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
 
 	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
 
-	rateMap := buildRateMap(rates)
+	lm := buildLoadMap(rates, 0, 1)
 	loads := make(map[int32]float64)
 	for _, e := range result.Entries {
-		loads[e.PartitionID] += lookupRate(e.Range, rateMap)
+		loads[e.PartitionID] += lm.load(e.Range)
 	}
 
 	total := loads[0] + loads[1]
@@ -279,14 +276,13 @@ func TestRunSlicer_Phase5_SplitsAnyHotSlice(t *testing.T) {
 	hotIdx := map[int]bool{0: true, 4: true}
 	for i, e := range initial.Entries {
 		if hotIdx[i] {
-			rates = append(rates, rangeRate{hr: e.Range, rate: 500.0})
+			rates = append(rates, rangeRate{hr: e.Range, samples: 500.0})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, rate: 10.0})
+			rates = append(rates, rangeRate{hr: e.Range, samples: 10.0})
 		}
 	}
 
-	cfg := Config{MovementBudget: 0.0}
-	r := &Rebalancer{cfg: cfg}
+	r := &Rebalancer{cfg: samplesOnlyCfg(0.0)}
 
 	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
@@ -352,15 +348,38 @@ func TestGetAssignmentsResponse_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestLookupRate(t *testing.T) {
-	rateMap := map[assignment.HashRange]float64{
-		{Lo: 0, Hi: 999}:    100.0,
-		{Lo: 1000, Hi: 1999}: 200.0,
+func TestLoadMap_SamplesOnly(t *testing.T) {
+	rates := []rangeRate{
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, samples: 100.0},
+		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, samples: 300.0},
 	}
+	lm := buildLoadMap(rates, 0, 1)
 
-	assert.Equal(t, 100.0, lookupRate(assignment.HashRange{Lo: 0, Hi: 999}, rateMap))
-	assert.Equal(t, 200.0, lookupRate(assignment.HashRange{Lo: 1000, Hi: 1999}, rateMap))
-	assert.Equal(t, 0.0, lookupRate(assignment.HashRange{Lo: 5000, Hi: 6000}, rateMap))
+	// Each range gets samples/totalSamples * weight.
+	assert.InDelta(t, 0.25, lm.load(assignment.HashRange{Lo: 0, Hi: 999}), 1e-9)
+	assert.InDelta(t, 0.75, lm.load(assignment.HashRange{Lo: 1000, Hi: 1999}), 1e-9)
+	assert.Equal(t, 0.0, lm.load(assignment.HashRange{Lo: 5000, Hi: 6000}))
+}
+
+func TestLoadMap_Combined(t *testing.T) {
+	rates := []rangeRate{
+		// hot in samples, cold in series
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, samples: 900.0, series: 100},
+		// cold in samples, hot in series
+		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, samples: 100.0, series: 900},
+	}
+	// Weights: 50/50.
+	lm := buildLoadMap(rates, 0.5, 0.5)
+
+	// Each range contributes 0.5*0.9 + 0.5*0.1 = 0.5 from one signal
+	// and the other way around for the other. Both should get exactly 0.5.
+	assert.InDelta(t, 0.5, lm.load(rates[0].hr), 1e-9)
+	assert.InDelta(t, 0.5, lm.load(rates[1].hr), 1e-9)
+
+	// Check raw stats are exposed.
+	s, n := lm.stat(rates[0].hr)
+	assert.Equal(t, 900.0, s)
+	assert.Equal(t, int64(100), n)
 }
 
 func TestFineEvenSplit(t *testing.T) {

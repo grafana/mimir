@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -18,20 +19,41 @@ import (
 
 const (
 	hashRangeEWMAAlpha = 0.2
+
+	// seriesHistBucketShift selects the high bits of a 32-bit hash that
+	// index into the series histogram. With shift=16, each bucket covers
+	// 65536 contiguous hash values, and the histogram has 65536 buckets
+	// (512 KB total). This is fine-grained enough that even small ranges
+	// span many buckets and the partial-bucket approximation at range
+	// edges is sub-percent error in practice.
+	seriesHistBucketShift = 16
+	seriesHistBuckets     = 1 << (32 - seriesHistBucketShift)
+	seriesHistBucketSize  = uint64(1) << seriesHistBucketShift
 )
 
-// hashRangeRates tracks EWMA ingestion rates per owned hash range.
-// The rebalancer pushes owned ranges via SetHashRanges. On the hot
-// push path, RecordSamples finds the matching range (binary search)
-// and calls Add() on the per-range EwmaRate. The ingester's background
-// loop calls Tick() every second to advance the EWMA, and LogSummary()
-// every minute to log per-range rates.
+// hashRangeRates tracks two per-hash-range load signals:
+//
+//  1. Sample ingestion rate (EWMA), updated on every push via RecordSamples.
+//  2. Active series count, maintained as a fixed-size histogram bucketed
+//     by the high bits of the hash. Updated by IncSeries/DecSeries from
+//     the TSDB head's series lifecycle callbacks.
+//
+// The rebalancer pushes owned ranges via SetHashRanges and polls a
+// snapshot via Snapshot, which reports both signals. The histogram
+// approach for series counts means inserts/deletions are O(1) lock-free
+// atomic ops and require no knowledge of the current range layout, so
+// SetHashRanges does not need to recount.
 type hashRangeRates struct {
 	mu     sync.RWMutex
 	ranges []assignment.HashRange
 	rates  []*util_math.EwmaRate
 
 	tickInterval time.Duration
+
+	// seriesHist[i] is the count of active series whose hash falls in
+	// bucket i. Each bucket covers seriesHistBucketSize hashes. Updated
+	// lock-free by IncSeries/DecSeries.
+	seriesHist [seriesHistBuckets]atomic.Int64
 }
 
 func newHashRangeRates(tickInterval time.Duration) *hashRangeRates {
@@ -101,14 +123,62 @@ func (h *hashRangeRates) Tick() {
 	}
 }
 
-// HashRangeSnapshot holds per-range EWMA rates from a snapshot.
+// IncSeries records that a new series with the given hash was created.
+// Safe to call concurrently from many goroutines without holding any
+// hashRangeRates lock.
+func (h *hashRangeRates) IncSeries(hash uint32) {
+	h.seriesHist[hash>>seriesHistBucketShift].Add(1)
+}
+
+// DecSeries records that a series with the given hash was deleted.
+// Safe to call concurrently.
+func (h *hashRangeRates) DecSeries(hash uint32) {
+	h.seriesHist[hash>>seriesHistBucketShift].Add(-1)
+}
+
+// seriesInRange returns the active series count attributed to the given
+// hash range. Buckets fully covered by the range contribute their full
+// count; buckets only partially covered contribute proportionally to
+// the fraction of the bucket that the range spans (this is an O(1)
+// approximation that assumes uniform hash distribution within a bucket;
+// for typical multi-million-hash ranges the error is sub-percent).
+func (h *hashRangeRates) seriesInRange(r assignment.HashRange) int64 {
+	startBucket := uint64(r.Lo) >> seriesHistBucketShift
+	endBucket := uint64(r.Hi) >> seriesHistBucketShift
+
+	if startBucket == endBucket {
+		bucketCount := h.seriesHist[startBucket].Load()
+		rangeSize := uint64(r.Hi) - uint64(r.Lo) + 1
+		return int64(float64(bucketCount) * float64(rangeSize) / float64(seriesHistBucketSize))
+	}
+
+	var sum int64
+
+	startBucketHi := (startBucket+1)<<seriesHistBucketShift - 1
+	startCovered := startBucketHi - uint64(r.Lo) + 1
+	sum += int64(float64(h.seriesHist[startBucket].Load()) * float64(startCovered) / float64(seriesHistBucketSize))
+
+	for b := startBucket + 1; b < endBucket; b++ {
+		sum += h.seriesHist[b].Load()
+	}
+
+	endBucketLo := endBucket << seriesHistBucketShift
+	endCovered := uint64(r.Hi) - endBucketLo + 1
+	sum += int64(float64(h.seriesHist[endBucket].Load()) * float64(endCovered) / float64(seriesHistBucketSize))
+
+	return sum
+}
+
+// HashRangeSnapshot holds per-range load signals from a snapshot.
 type HashRangeSnapshot struct {
 	Ranges           []assignment.HashRange
 	SamplesPerSecond []float64
+	ActiveSeries     []int64
 }
 
-// Snapshot returns the current per-range EWMA rates (samples/sec).
-// Unlike the old counter-based approach, this does not reset state.
+// Snapshot returns the current per-range load signals: EWMA samples
+// rate and active series count. Unlike the old counter-based approach,
+// this does not reset state.
 func (h *hashRangeRates) Snapshot() HashRangeSnapshot {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -116,11 +186,13 @@ func (h *hashRangeRates) Snapshot() HashRangeSnapshot {
 	snap := HashRangeSnapshot{
 		Ranges:           make([]assignment.HashRange, len(h.ranges)),
 		SamplesPerSecond: make([]float64, len(h.ranges)),
+		ActiveSeries:     make([]int64, len(h.ranges)),
 	}
 	copy(snap.Ranges, h.ranges)
 
 	for i, r := range h.rates {
 		snap.SamplesPerSecond[i] = r.Rate()
+		snap.ActiveSeries[i] = h.seriesInRange(h.ranges[i])
 	}
 
 	return snap
@@ -133,8 +205,8 @@ func (h *hashRangeRates) HasRanges() bool {
 	return len(h.ranges) > 0
 }
 
-// LogSummary logs a summary of all owned hash ranges and their EWMA
-// ingestion rates.
+// LogSummary logs a summary of all owned hash ranges with their EWMA
+// ingestion rates and active series counts.
 func (h *hashRangeRates) LogSummary(logger log.Logger) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -144,17 +216,21 @@ func (h *hashRangeRates) LogSummary(logger log.Logger) {
 	}
 
 	var totalRate float64
+	var totalSeries int64
 	lines := make([]string, len(h.ranges))
 	for i, r := range h.ranges {
 		rate := h.rates[i].Rate()
+		series := h.seriesInRange(r)
 		totalRate += rate
-		lines[i] = fmt.Sprintf("[%08x-%08x]=%.1f/s", r.Lo, r.Hi, rate)
+		totalSeries += series
+		lines[i] = fmt.Sprintf("[%08x-%08x]=%.1f/s,%d-series", r.Lo, r.Hi, rate, series)
 	}
 
 	level.Info(logger).Log(
-		"msg", "hash range ingestion rate summary",
+		"msg", "hash range load summary",
 		"num_ranges", len(h.ranges),
 		"total_samples_per_sec", fmt.Sprintf("%.1f", totalRate),
+		"total_active_series", totalSeries,
 		"ranges", strings.Join(lines, " "),
 	)
 }

@@ -50,6 +50,7 @@ message HashRangeRate {
   uint32 lo = 1;
   uint32 hi = 2;
   double samples_per_second = 3;
+  int64 active_series = 4;
 }
 
 message HashRangeStatsResponse {

@@ -73,8 +73,12 @@ details>summary::-webkit-details-marker{display:none}
 {{else}}
 <div class="summary">
 	<div class="stat">
-		<div class="stat-label">Total Load</div>
-		<div class="stat-value">{{fmtRate .TotalLoad}}/s</div>
+		<div class="stat-label">Active Series</div>
+		<div class="stat-value">{{fmtSeries .TotalSeries}}</div>
+	</div>
+	<div class="stat">
+		<div class="stat-label">Samples / Sec</div>
+		<div class="stat-value">{{fmtRate .TotalSamples}}</div>
 	</div>
 	<div class="stat">
 		<div class="stat-label">Partitions</div>
@@ -85,16 +89,16 @@ details>summary::-webkit-details-marker{display:none}
 		<div class="stat-value">{{.NumEntries}}</div>
 	</div>
 	<div class="stat">
-		<div class="stat-label">Mean / Partition</div>
-		<div class="stat-value">{{fmtRate .MeanPartLoad}}/s</div>
+		<div class="stat-label">Mean Part Load</div>
+		<div class="stat-value">{{fmtLoad .MeanPartLoad}}</div>
 	</div>
 	<div class="stat">
-		<div class="stat-label">Max / Partition</div>
-		<div class="stat-value warn">{{fmtRate .MaxPartLoad}}/s</div>
+		<div class="stat-label">Max Part Load</div>
+		<div class="stat-value warn">{{fmtLoad .MaxPartLoad}}</div>
 	</div>
 	<div class="stat">
-		<div class="stat-label">Min / Partition</div>
-		<div class="stat-value good">{{fmtRate .MinPartLoad}}/s</div>
+		<div class="stat-label">Min Part Load</div>
+		<div class="stat-value good">{{fmtLoad .MinPartLoad}}</div>
 	</div>
 	<div class="stat">
 		<div class="stat-label">Imbalance</div>
@@ -104,10 +108,14 @@ details>summary::-webkit-details-marker{display:none}
 		<div class="stat-label">Last Moved</div>
 		<div class="stat-value">{{fmtPct1 .MovedFraction}}</div>
 	</div>
+	<div class="stat">
+		<div class="stat-label">Load Weights</div>
+		<div class="stat-value" style="font-size:13px;line-height:1.4">series {{fmtPct1 .WeightSeries}}<br>samples {{fmtPct1 .WeightSamples}}</div>
+	</div>
 </div>
 
 <div class="heatmap-container">
-	<div class="heatmap-label">Hash Space Load Distribution (0x00000000 → 0xffffffff)</div>
+	<div class="heatmap-label">Hash Space Combined Load Distribution (0x00000000 → 0xffffffff)</div>
 	<div class="heatmap" id="heatmap"></div>
 </div>
 
@@ -127,7 +135,9 @@ details>summary::-webkit-details-marker{display:none}
 		<span class="part-id">P{{.PartitionID}}</span>
 		<span class="part-instance" title="{{.InstanceAddr}}">{{.InstanceID}}</span>
 		<span class="part-stats">
-			<span>{{fmtRate .TotalLoad}}/s</span>
+			<span title="combined weighted load">{{fmtLoad .TotalLoad}}</span>
+			<span title="active series">{{fmtSeries .TotalSeries}}s</span>
+			<span title="samples per second">{{fmtRate .TotalSamples}}/s</span>
 			<span>{{.NumRanges}} ranges</span>
 			<span>{{fmtPct .HashSpacePct}} hash</span>
 		</span>
@@ -139,7 +149,7 @@ details>summary::-webkit-details-marker{display:none}
 	<div class="part-ranges open">
 		<div class="range-grid">
 		{{range .Ranges}}
-			<span class="range {{actionClass .LastAction}}" title="Size: {{fmtPct .SizePct}}">{{hexRange .Lo .Hi}}<span class="rate">{{fmtRate .Load}}/s</span></span>
+			<span class="range {{actionClass .LastAction}}" title="Size: {{fmtPct .SizePct}} · Load: {{fmtLoad .Load}} · Samples: {{fmtRate .Samples}}/s · Series: {{fmtSeries .Series}}">{{hexRange .Lo .Hi}}<span class="rate">{{fmtSeries .Series}}s · {{fmtRate .Samples}}/s</span></span>
 		{{end}}
 		</div>
 	</div>
@@ -157,7 +167,7 @@ details>summary::-webkit-details-marker{display:none}
 <div class="round">
 	<div class="round-header">
 		<strong>{{.Time.Format "15:04:05"}}</strong>
-		<span>Load: {{fmtRate .TotalLoad}}/s</span>
+		<span>Load: {{fmtLoad .TotalLoad}}</span>
 		<span>Imbalance: {{fmtImbalance .ImbalanceRatio}}</span>
 		<span>Ranges: {{.NumEntries}}</span>
 		<span>Moved: {{fmtPct1 .MovedFraction}}</span>
@@ -196,7 +206,7 @@ details>summary::-webkit-details-marker{display:none}
 		var g = Math.round(219 - intensity * (219 - 49));
 		var b = Math.round(124 - intensity * (124 - 49));
 		d.style.backgroundColor = 'rgb(' + r + ',' + g + ',' + b + ')';
-		d.title = 'Bucket ' + i + ': ' + raw[i].toFixed(1) + '/s';
+		d.title = 'Bucket ' + i + ': ' + (raw[i] * 100).toFixed(2) + '% load';
 		frag.appendChild(d);
 	}
 	el.appendChild(frag);

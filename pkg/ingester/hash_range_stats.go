@@ -31,6 +31,7 @@ func (i *Ingester) HashRangeStats(_ context.Context, _ *client.HashRangeStatsReq
 			Lo:               r.Lo,
 			Hi:               r.Hi,
 			SamplesPerSecond: snap.SamplesPerSecond[j],
+			ActiveSeries:     snap.ActiveSeries[j],
 		}
 	}
 	return resp, nil

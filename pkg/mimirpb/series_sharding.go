@@ -63,6 +63,15 @@ func ShardByMetricNameLocality(userID string, metricName string, ls []LabelAdapt
 	return (metricHash & MetricNameMask) | (labelsHash & LabelBitsMask)
 }
 
+// ShardByMetricNameLocalityLabels is like ShardByMetricNameLocality, but takes
+// labels.Labels instead of []LabelAdapter. Useful in code paths (e.g. TSDB
+// lifecycle callbacks) that already operate on labels.Labels.
+func ShardByMetricNameLocalityLabels(userID string, metricName string, ls labels.Labels) uint32 {
+	metricHash := ShardByMetricName(userID, metricName)
+	labelsHash := ShardByAllLabels(userID, ls)
+	return (metricHash & MetricNameMask) | (labelsHash & LabelBitsMask)
+}
+
 // MetricNameHashRange returns the inclusive hash range [lo, hi] that covers all possible
 // series hashes for a given user and metric name under locality-aware sharding.
 func MetricNameHashRange(userID string, metricName string) (lo, hi uint32) {
