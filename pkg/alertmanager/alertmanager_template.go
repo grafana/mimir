@@ -62,17 +62,39 @@ func grafanaExploreURL(grafanaURL, datasource, from, to, expr string) (string, e
 }
 
 // queryFromGeneratorURL returns a PromQL expression parsed out from a GeneratorURL in Prometheus alert
+// the GeneratorURL can either be in Prometheus' /query format or Grafana's /explore format
 func queryFromGeneratorURL(generatorURL string) (string, error) {
 	u, err := url.Parse(generatorURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse generator URL: %w", err)
 	}
+  queryValues := u.Query()
 	// See https://github.com/prometheus/prometheus/blob/259bb5c69263635887541964d1bfd7acc46682c6/util/strutil/strconv.go#L28
-	queryParam, ok := u.Query()["g0.expr"]
+	queryParam, ok := queryValues["g0.expr"]
+	if ok && len(queryParam) > 0 {
+		return queryParam[0], nil
+	}
+	// If there was no match, try Loki-ruler style explore URL
+	// See https://github.com/grafana/loki/blob/3868af26763bd6a836b9163dfd302d46ac72acb8/pkg/ruler/base/ruler.go#L399
+	queryParam, ok = queryValues["left"]
 	if !ok || len(queryParam) < 1 {
 		return "", fmt.Errorf("query not found in the generator URL")
 	}
-	return queryParam[0], nil
+	type query struct {
+		Expr string `json:"expr"`
+	}
+	type response struct {
+		Queries []query `json:"queries"`
+	}
+	var resp response
+	err = json.Unmarshal([]byte(queryParam[0]), &resp)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse generator URL query: %w", err)
+	}
+	if len(resp.Queries) == 0 || len(resp.Queries[0].Expr) == 0 {
+		return "", fmt.Errorf("query not found in the generator URL")
+	}
+	return resp.Queries[0].Expr, nil
 }
 
 // WithCustomFunctions returns template.Option which adds additional template functions
