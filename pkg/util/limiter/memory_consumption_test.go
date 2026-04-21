@@ -389,7 +389,7 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 		g, _ := errgroup.WithContext(t.Context())
 		for i := range routines {
 			g.Go(func() error {
-				childTracker := factory.NewWrappedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
+				childTracker := factory.NewNestedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
 				require.Equal(t, tracker.maxEstimatedMemoryConsumptionBytes, childTracker.maxEstimatedMemoryConsumptionBytes)
 				require.True(t, factory.IsTracking(tracker))
 				require.False(t, factory.IsTracking(childTracker))
@@ -440,7 +440,7 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 		children := make([]*MemoryConsumptionTracker, routines)
 		for i := range routines {
 			g.Go(func() error {
-				childTracker := factory.NewWrappedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
+				childTracker := factory.NewNestedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i), tracker)
 				children[i] = childTracker
 				// do some work
 				require.NoError(t, childTracker.IncreaseMemoryConsumptionForLabels(labels.FromStrings("key", "value", "key2", "value2")))
@@ -474,7 +474,7 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 		g, _ := errgroup.WithContext(t.Context())
 		for range routines {
 			g.Go(func() error {
-				childTracker := factory.NewWrappedMemoryConsumptionTracker(context.Background(), "child", tracker)
+				childTracker := factory.NewNestedMemoryConsumptionTracker(context.Background(), "child", tracker)
 				// do some work
 				require.Error(t, childTracker.IncreaseMemoryConsumption(10, IngesterChunks)) // this will exceed the allow memory consumption
 				factory.Deregister(childTracker)
@@ -495,14 +495,14 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 	t.Run("panic when attempting to wrap a non manager tracker", func(t *testing.T) {
 		tracker := NewMemoryConsumptionTracker(context.Background(), 5, nil, "foo + bar")
 		require.False(t, factory.IsTracking(tracker))
-		require.PanicsWithValue(t, "cannot wrap a tracker not created via the InflightMemoryConsumptionTracker", func() { factory.NewWrappedMemoryConsumptionTracker(context.Background(), "child", tracker) })
+		require.PanicsWithValue(t, "cannot nest a tracker not created via this InflightMemoryConsumptionTracker", func() { factory.NewNestedMemoryConsumptionTracker(context.Background(), "child", tracker) })
 	})
 
 	t.Run("panic when attempting to wrap a wrapped tracker", func(t *testing.T) {
 		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 5, "foo + bar")
 		require.True(t, factory.IsTracking(tracker))
-		childTracker := factory.NewWrappedMemoryConsumptionTracker(context.Background(), "child", tracker)
+		childTracker := factory.NewNestedMemoryConsumptionTracker(context.Background(), "child", tracker)
 
-		require.PanicsWithValue(t, "cannot wrap a tracker not created via the InflightMemoryConsumptionTracker", func() { factory.NewWrappedMemoryConsumptionTracker(context.Background(), "child", childTracker) })
+		require.PanicsWithValue(t, "cannot nest a tracker not created via this InflightMemoryConsumptionTracker", func() { factory.NewNestedMemoryConsumptionTracker(context.Background(), "child", childTracker) })
 	})
 }

@@ -244,7 +244,7 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 
 // IsTracking returns true if the given tracker is being actively tracked by this InflightMemoryConsumptionTracker.
 // Note that this function is only used by unit tests and will only return true on managed trackers.
-// Unmanaged and wrapped trackers will always return false.
+// Unmanaged and nested trackers will always return false.
 func (t *InflightMemoryConsumptionTracker) IsTracking(tracker *MemoryConsumptionTracker) bool {
 	if tracker.trackingId == 0 || tracker.producer != t {
 		return false
@@ -253,15 +253,15 @@ func (t *InflightMemoryConsumptionTracker) IsTracking(tracker *MemoryConsumption
 	return ok
 }
 
-// NewWrappedMemoryConsumptionTracker returns a MemoryConsumptionTracker which is backed by the given parent MemoryConsumptionTracker.
+// NewNestedMemoryConsumptionTracker returns a MemoryConsumptionTracker which is backed by the given parent MemoryConsumptionTracker.
 // Any increment or decrement in memory is first passed through the parent before this tracker is updated.
 // Any functions for requesting the tracker values - such as PeakEstimatedMemoryConsumptionBytes() - returns this tracker's values.
 //
 // Note that the accumulated metrics reported by the InflightMemoryConsumptionTracker will not include this MemoryConsumptionTracker. Only
 // the metrics on the parent trackers are included in the InflightMemoryConsumptionTracker accumulations.
-func (t *InflightMemoryConsumptionTracker) NewWrappedMemoryConsumptionTracker(ctx context.Context, queryDescription string, parent *MemoryConsumptionTracker) *MemoryConsumptionTracker {
-	if parent.trackingId == 0 || parent.parent != nil {
-		panic("cannot wrap a tracker not created via the InflightMemoryConsumptionTracker")
+func (t *InflightMemoryConsumptionTracker) NewNestedMemoryConsumptionTracker(ctx context.Context, queryDescription string, parent *MemoryConsumptionTracker) *MemoryConsumptionTracker {
+	if parent.trackingId == 0 || parent.parent != nil || parent.producer != t {
+		panic("cannot nest a tracker not created via this InflightMemoryConsumptionTracker")
 	}
 	tracker := NewMemoryConsumptionTracker(ctx, parent.maxEstimatedMemoryConsumptionBytes, t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
 	tracker.parent = parent
@@ -309,8 +309,8 @@ func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) 
 // It is important that these trackers are deregistered with the InflightMemoryConsumptionTracker when their lifecycle is complete.
 // These trackers will have a trackingId and instanceId set.
 //
-// Trackers allocated via InflightMemoryConsumptionTracker.NewWrappedMemoryConsumptionTracker() - these trackers wrap a managed tracker. Any memory changes are first passed through the parent tracker.
-// These trackers do not need to be deregistered, but it is safe to call Deregister() with a wrapped tracker argument.
+// Trackers allocated via InflightMemoryConsumptionTracker.NewNestedMemoryConsumptionTracker() - these trackers wrap a managed tracker. Any memory changes are first passed through the parent tracker.
+// These trackers do not need to be deregistered, but it is safe to call Deregister() with a nested tracker argument.
 // These trackers will have a parent set, but do not themselves have a trackingId or instanceId set.
 type MemoryConsumptionTracker struct {
 	maxEstimatedMemoryConsumptionBytes     uint64
