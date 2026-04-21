@@ -42,7 +42,7 @@ func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
 
-	result, _ := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// After rebalancing, partition 0 should own less hash space than
@@ -82,7 +82,7 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.09)}
 
-	result, _ := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	lm := buildLoadMap(rates, 0, 1)
@@ -115,7 +115,7 @@ func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
 
-	result, _ := r.runSlicer(initial, rates, activePartitions)
+	result, _ := r.runSlicer(initial, rates, activePartitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	for _, e := range result.Entries {
@@ -139,7 +139,7 @@ func TestRunSlicer_SliceCountCapped(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.09)}
 
-	result, _ := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	assert.LessOrEqual(t, len(result.Entries), maxSlicesPerPartition*len(partitions)+len(partitions),
@@ -206,7 +206,7 @@ func TestRunSlicer_Phase1_DistributesAcrossPartitions(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.0)}
 
-	result, _ := r.runSlicer(initial, rates, activePartitions)
+	result, _ := r.runSlicer(initial, rates, activePartitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	counts := make(map[int32]int)
@@ -240,7 +240,7 @@ func TestRunSlicer_Phase4_ExhaustsBudget(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
 
-	result, _ := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	lm := buildLoadMap(rates, 0, 1)
@@ -284,7 +284,7 @@ func TestRunSlicer_Phase5_SplitsAnyHotSlice(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.0)}
 
-	result, _ := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// Both hot slices should split even though neither partition is
@@ -380,6 +380,104 @@ func TestLoadMap_Combined(t *testing.T) {
 	s, n := lm.stat(rates[0].hr)
 	assert.Equal(t, 900.0, s)
 	assert.Equal(t, int64(100), n)
+}
+
+// TestRunSlicer_MoveCooldown_BlocksRepeatMoves verifies that, when a
+// range is moved to balance load, it (and any range overlapping its
+// boundaries) is excluded from being moved again until the cooldown
+// expires. This protects against over-correction during the warm-up
+// window where post-move stats lag reality.
+func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
+	partitions := []int32{0, 1}
+	initial := assignment.FineEvenSplit(partitions, 4)
+	require.NoError(t, initial.Validate())
+
+	// Strong skew: partition 0 owns all the load.
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		if e.PartitionID == 0 {
+			rates = append(rates, rangeRate{hr: e.Range, samples: 1000.0})
+		} else {
+			rates = append(rates, rangeRate{hr: e.Range, samples: 1.0})
+		}
+	}
+
+	cfg := samplesOnlyCfg(0.5)
+	cfg.MoveCooldown = 90 * time.Second
+	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
+
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// First round: produces some moves and arms cooldowns.
+	result1, actions1 := r.runSlicer(initial, rates, partitions, t0)
+	require.NoError(t, result1.Validate())
+	r.recordMoveCooldowns(t0, actions1)
+
+	var movedRanges []assignment.HashRange
+	for _, a := range actions1 {
+		if a.Kind == ActionMove {
+			movedRanges = append(movedRanges, a.Range)
+		}
+	}
+	require.NotEmpty(t, movedRanges, "first round should produce some moves on a heavily-skewed cluster")
+	require.NotEmpty(t, r.moveCooldowns, "cooldowns should be armed after moves")
+
+	// Second round inside the cooldown window: same load profile (we
+	// pretend no stats have updated yet, which is the worst case).
+	t1 := t0.Add(30 * time.Second)
+	r.pruneExpiredCooldowns(t1)
+	_, actions2 := r.runSlicer(result1, rates, partitions, t1)
+	for _, a := range actions2 {
+		if a.Kind != ActionMove {
+			continue
+		}
+		for _, cooled := range movedRanges {
+			assert.Falsef(t, hashRangesOverlap(a.Range, cooled),
+				"in-cooldown range %v should not be re-moved as %v", cooled, a.Range)
+		}
+	}
+
+	// Third round well past the cooldown: the algorithm is free to
+	// re-move overlapping ranges again.
+	t2 := t0.Add(2 * time.Minute)
+	r.pruneExpiredCooldowns(t2)
+	assert.Empty(t, r.moveCooldowns, "cooldowns past deadline should be pruned")
+}
+
+// TestRunSlicer_MoveCooldown_DisabledByZero verifies that setting
+// MoveCooldown to 0 turns off filtering entirely.
+func TestRunSlicer_MoveCooldown_DisabledByZero(t *testing.T) {
+	hr := assignment.HashRange{Lo: 100, Hi: 200}
+	r := &Rebalancer{
+		cfg:           Config{MoveCooldown: 0},
+		moveCooldowns: map[assignment.HashRange]time.Time{hr: time.Now().Add(time.Hour)},
+	}
+	assert.False(t, r.isInMoveCooldown(time.Now(), hr),
+		"cooldown should be disabled when MoveCooldown == 0")
+}
+
+// TestRunSlicer_MoveCooldown_OverlapMatchesSplitsAndMerges verifies the
+// lineage-by-overlap heuristic: a range that overlaps a recently-moved
+// ancestor is also considered in cooldown, even if its boundaries
+// changed via split or merge.
+func TestRunSlicer_MoveCooldown_OverlapMatchesSplitsAndMerges(t *testing.T) {
+	moved := assignment.HashRange{Lo: 1000, Hi: 1999}
+	r := &Rebalancer{
+		cfg:           Config{MoveCooldown: time.Minute},
+		moveCooldowns: map[assignment.HashRange]time.Time{moved: time.Now().Add(time.Minute)},
+	}
+	now := time.Now()
+
+	// Exact match.
+	assert.True(t, r.isInMoveCooldown(now, moved))
+	// Sub-range of a recently moved range (split case).
+	assert.True(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 1000, Hi: 1499}))
+	assert.True(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 1500, Hi: 1999}))
+	// Super-range of a recently moved range (merge case).
+	assert.True(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 500, Hi: 2500}))
+	// Adjacent but not overlapping.
+	assert.False(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 2000, Hi: 2500}))
+	assert.False(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 0, Hi: 999}))
 }
 
 func TestFineEvenSplit(t *testing.T) {

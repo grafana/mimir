@@ -26,6 +26,14 @@ type Config struct {
 	RebalanceInterval time.Duration `yaml:"rebalance_interval"`
 	MovementBudget    float64       `yaml:"movement_budget"`
 
+	// MoveCooldown is the minimum time a hash range must sit on its new
+	// partition after a move before it (or any range overlapping its
+	// former boundaries) is eligible to be moved again. Prevents
+	// over-correction during the warm-up window where the destination
+	// ingester's reported load lags the actual post-move load (distributor
+	// poll lag plus EWMA settle time). Set to 0 to disable.
+	MoveCooldown time.Duration `yaml:"move_cooldown"`
+
 	// LoadWeightSeries and LoadWeightSamples control how the two
 	// per-range load signals (active series count and sample ingestion
 	// rate) are combined into a single scalar load value used by the
@@ -40,6 +48,7 @@ type Config struct {
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.RebalanceInterval, prefix+"rebalance-interval", 60*time.Second, "How often the rebalancer runs.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.09, "Maximum fraction of the hash space that can be moved per round.")
+	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 90*time.Second, "Minimum time between consecutive moves of the same hash range (or any range overlapping it). Covers distributor poll lag plus ingester EWMA settle time. 0 disables.")
 	f.Float64Var(&cfg.LoadWeightSeries, prefix+"load-weight-series", 0.8, "Weight of normalized active series count in the per-range combined load metric.")
 	f.Float64Var(&cfg.LoadWeightSamples, prefix+"load-weight-samples", 0.2, "Weight of normalized sample ingestion rate in the per-range combined load metric.")
 }
@@ -64,6 +73,12 @@ type Rebalancer struct {
 	// prevInstanceRanges tracks the last set of ranges pushed to each
 	// ingester, keyed by instance ID, so we can log changes.
 	prevInstanceRanges map[string][]ingester_client.HashRangeEntry
+
+	// moveCooldowns records, for each hash range that was recently
+	// moved, the wall-clock time at which it (and any range overlapping
+	// its boundaries) becomes eligible to be moved again. Mutated only
+	// by rebalance(), which runs single-threaded via TimerService.
+	moveCooldowns map[assignment.HashRange]time.Time
 }
 
 // New creates and returns a new Rebalancer.
@@ -74,6 +89,7 @@ func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partiti
 		ingesterRing:  ingesterRing,
 		pool:          pool,
 		partitionRing: partitionRing,
+		moveCooldowns: make(map[assignment.HashRange]time.Time),
 	}
 
 	r.Service = services.NewTimerService(cfg.RebalanceInterval, r.starting, r.rebalance, nil)
@@ -125,13 +141,17 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	lm := buildLoadMap(rates, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
 	r.admin.setLastStats(lm)
 
-	newAssignment, actions := r.runSlicer(current, rates, activePartitions)
+	now := time.Now()
+	r.pruneExpiredCooldowns(now)
+
+	newAssignment, actions := r.runSlicer(current, rates, activePartitions, now)
 	if err := newAssignment.Validate(); err != nil {
 		level.Error(r.logger).Log("msg", "generated invalid assignment", "err", err)
 		return nil
 	}
 
-	now := time.Now()
+	r.recordMoveCooldowns(now, actions)
+
 	r.store.add(now, newAssignment)
 	r.pushRangesToIngesters(ctx, newAssignment)
 
@@ -340,7 +360,12 @@ type rangeLoad struct {
 //  4. Split hot slices (>2× mean slice load) without changing
 //     assignments. This creates finer load signals for the next round.
 //     Cap: maxSlicesPerPartition.
-func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate, activePartitions []int32) (*assignment.Assignment, []Action) {
+//
+// The `now` parameter is used to evaluate per-range move cooldowns
+// (see Config.MoveCooldown). Pass time.Now() in production; tests can
+// pass a deterministic value or the zero time to disable cooldown
+// filtering.
+func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate, activePartitions []int32, now time.Time) (*assignment.Assignment, []Action) {
 	lm := buildLoadMap(rates, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
 	numPartitions := len(activePartitions)
 	var actions []Action
@@ -423,6 +448,9 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 		bestScore := 0.0
 		for j, rl := range entries {
 			if rl.entry.PartitionID != hottestPID {
+				continue
+			}
+			if r.isInMoveCooldown(now, rl.entry.Range) {
 				continue
 			}
 			moveCost := float64(rl.entry.Range.Size())
@@ -631,6 +659,66 @@ func (lm *loadMap) load(hr assignment.HashRange) float64 {
 func (lm *loadMap) stat(hr assignment.HashRange) (samples float64, series int64) {
 	s := lm.stats[hr]
 	return s.samples, s.series
+}
+
+// isInMoveCooldown reports whether the given range overlaps any range
+// that was moved within the configured cooldown window. Splits and
+// merges that happen between the original move and now are handled
+// implicitly: any overlap with a cooled-down ancestor's boundaries
+// disqualifies the candidate. Always returns false when the cooldown
+// is disabled (cfg.MoveCooldown <= 0) or no cooldowns are tracked.
+func (r *Rebalancer) isInMoveCooldown(now time.Time, hr assignment.HashRange) bool {
+	if r.cfg.MoveCooldown <= 0 || len(r.moveCooldowns) == 0 {
+		return false
+	}
+	for cooled, deadline := range r.moveCooldowns {
+		if !now.Before(deadline) {
+			continue
+		}
+		if hashRangesOverlap(hr, cooled) {
+			return true
+		}
+	}
+	return false
+}
+
+// recordMoveCooldowns scans the slicer's actions and starts a cooldown
+// timer for every ActionMove. ActionReassign is intentionally excluded:
+// it's a recovery action triggered by an inactive partition, not a
+// load-balancing decision, so cooldowning it would needlessly delay
+// recovery.
+func (r *Rebalancer) recordMoveCooldowns(now time.Time, actions []Action) {
+	if r.cfg.MoveCooldown <= 0 {
+		return
+	}
+	deadline := now.Add(r.cfg.MoveCooldown)
+	for _, a := range actions {
+		if a.Kind != ActionMove {
+			continue
+		}
+		if r.moveCooldowns == nil {
+			r.moveCooldowns = make(map[assignment.HashRange]time.Time)
+		}
+		// Use the post-move (current) range as the cooldown key. If a
+		// later round splits or merges this range, the overlap test
+		// in isInMoveCooldown will still match.
+		r.moveCooldowns[a.Range] = deadline
+	}
+}
+
+// pruneExpiredCooldowns drops cooldown entries whose deadline has passed.
+func (r *Rebalancer) pruneExpiredCooldowns(now time.Time) {
+	for hr, deadline := range r.moveCooldowns {
+		if !now.Before(deadline) {
+			delete(r.moveCooldowns, hr)
+		}
+	}
+}
+
+// hashRangesOverlap returns true if the two ranges share at least one
+// hash value (closed intervals on both sides).
+func hashRangesOverlap(a, b assignment.HashRange) bool {
+	return a.Lo <= b.Hi && b.Lo <= a.Hi
 }
 
 // mergeAdjacentCold merges adjacent cold slices to defragment the

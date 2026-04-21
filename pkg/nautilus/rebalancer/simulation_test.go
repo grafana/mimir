@@ -150,7 +150,11 @@ func (s *simulation) collectRates() []rangeRate {
 
 func (s *simulation) rebalance() {
 	rates := s.collectRates()
-	s.assignment, _ = s.rebalancer.runSlicer(s.assignment, rates, s.partitions)
+	now := time.Now()
+	s.rebalancer.pruneExpiredCooldowns(now)
+	var actions []Action
+	s.assignment, actions = s.rebalancer.runSlicer(s.assignment, rates, s.partitions, now)
+	s.rebalancer.recordMoveCooldowns(now, actions)
 	s.pushRangesToIngesters()
 }
 
