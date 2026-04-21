@@ -157,7 +157,7 @@ type InflightMemoryConsumptionTracker struct {
 	forceUnlimited bool
 }
 
-// NewUnlimintedInflightMemoryConsumptionTracker returns a new InflightMemoryConsumptionTracker. There should only be one instance of this per container.
+// NewUnlimintedInflightMemoryConsumptionTracker returns a new InflightMemoryConsumptionTracker. There should only be one instance of this per process.
 // All MemoryConsumptionTrackers returned from this instance will be unlimited memory consumption trackers.
 func NewUnlimintedInflightMemoryConsumptionTracker(reg prometheus.Registerer) *InflightMemoryConsumptionTracker {
 	t := NewInflightMemoryConsumptionTracker(reg, nil)
