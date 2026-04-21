@@ -58,10 +58,10 @@ func (f *batchCachingMetaFetcher) metaCacheKey(blockID ulid.ULID) string {
 	return bucketcache.ContentKey("", path.Join(f.tenant, blockID.String(), block.MetaFilename))
 }
 
-// FetchCompactableMetasFromListing discovers blockIDs through an object storage listing,
+// fetchCompactableMetasFromListing discovers blockIDs through an object storage listing,
 // filters by ULID time and deletion markers, then batch fetches metadata from cache with fallback to object storage.
 // The passed filters are then run with no-compact filtering at the end.
-func (f *batchCachingMetaFetcher) FetchCompactableMetasFromListing(ctx context.Context, maxLookback time.Duration, filters []block.MetadataFilter, metrics *block.FetcherMetrics) (metas map[ulid.ULID]*block.Meta, err error) {
+func (f *batchCachingMetaFetcher) fetchCompactableMetasFromListing(ctx context.Context, maxLookback time.Duration, filters []block.MetadataFilter, metrics *block.FetcherMetrics) (metas map[ulid.ULID]*block.Meta, err error) {
 	start := time.Now()
 	metrics.Syncs.Inc()
 	metrics.ResetTx()
@@ -93,10 +93,10 @@ func (f *batchCachingMetaFetcher) FetchCompactableMetasFromListing(ctx context.C
 	return metas, nil
 }
 
-// FetchMetasFromIDs fetches metadata for specific block IDs using the cache where possible.
-// Unlike FetchMetasFromListing, this method returns an error if any block's meta.json is not
-// found in storage.
-func (f *batchCachingMetaFetcher) FetchMetasFromIDs(ctx context.Context, blockIDs []ulid.ULID, filters []block.MetadataFilter) (map[ulid.ULID]*block.Meta, error) {
+// fetchMetasFromIDs fetches metadata for specific block IDs using the cache where possible.
+// Unlike FetchCompactableMetasFromListing, this method returns an error if any block's meta.json is not
+// found in storage or is corrupt.
+func (f *batchCachingMetaFetcher) fetchMetasFromIDs(ctx context.Context, blockIDs []ulid.ULID, filters []block.MetadataFilter) (map[ulid.ULID]*block.Meta, error) {
 	metas, _, err := f.innerFetchMetas(ctx, blockIDs, true, false, newNoopGaugeVec(), filters)
 	return metas, err
 }
@@ -120,11 +120,11 @@ func (fs *fetchStats) updateMetrics(metrics *block.FetcherMetrics) {
 
 // innerFetchMetas fetches metadata for the given block IDs from cache and/or storage
 // with fast-fail behavior and applies filters afterwards.
-// When failOnNotFound is true, a missing meta.json in storage returns an error
-// instead of being silently skipped.
+// When failOnNotFoundOrCorrupt is true, a missing or corrupt meta.json in storage returns
+// an error instead of being silently skipped.
 // When cacheContent is true, cache misses that were later successfully loaded will
 // be set in the cache.
-func (f *batchCachingMetaFetcher) innerFetchMetas(ctx context.Context, blockIDs []ulid.ULID, failOnNotFound bool, cacheContent bool, synced block.GaugeVec, filters []block.MetadataFilter) (map[ulid.ULID]*block.Meta, *fetchStats, error) {
+func (f *batchCachingMetaFetcher) innerFetchMetas(ctx context.Context, blockIDs []ulid.ULID, failOnNotFoundOrCorrupt bool, cacheContent bool, synced block.GaugeVec, filters []block.MetadataFilter) (map[ulid.ULID]*block.Meta, *fetchStats, error) {
 	stats := &fetchStats{}
 	if len(blockIDs) == 0 {
 		return map[ulid.ULID]*block.Meta{}, stats, nil
@@ -155,7 +155,7 @@ func (f *batchCachingMetaFetcher) innerFetchMetas(ctx context.Context, blockIDs 
 			if err != nil {
 				if f.userBkt.IsObjNotFoundErr(err) {
 					stats.noMeta.Inc()
-					if failOnNotFound {
+					if failOnNotFoundOrCorrupt {
 						return fmt.Errorf("block metadata not found in bucket for %s: %w", id, block.ErrorSyncMetaNotFound)
 					}
 					// Tolerate the missing block metadata
@@ -174,9 +174,11 @@ func (f *batchCachingMetaFetcher) innerFetchMetas(ctx context.Context, blockIDs 
 
 			m := &block.Meta{}
 			if err := json.Unmarshal(data, m); err != nil {
-				// Corrupted meta.json: skip the block, consistent with MetaFetcher behavior.
-				level.Warn(f.logger).Log("msg", "corrupted block meta, skipping", "block", id, "err", err)
 				stats.corrupted.Inc()
+				if failOnNotFoundOrCorrupt {
+					return fmt.Errorf("corrupted block metadata for %s: %w", id, block.ErrorSyncMetaCorrupted)
+				}
+				level.Warn(f.logger).Log("msg", "corrupted block meta, skipping", "block", id, "err", err)
 				return nil
 			}
 

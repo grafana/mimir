@@ -499,11 +499,11 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		NewLabelRemoverFilter(compactionIgnoredLabels),
 	}
 	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, userID, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL)
-	metaMap, err := fetcher.FetchMetasFromIDs(ctx, blockIDs, filters)
+	metaMap, err := fetcher.fetchMetasFromIDs(ctx, blockIDs, filters)
 	if err != nil {
-		// If a block was not found, ABANDON the job, it will never succeed.
-		if errors.Is(err, block.ErrorSyncMetaNotFound) {
-			level.Warn(userLogger).Log("msg", "blocks not found in object storage, abandoning job", "err", err)
+		// Abandon the job if a block metadata was not found or corrupt
+		if errors.Is(err, block.ErrorSyncMetaNotFound) || errors.Is(err, block.ErrorSyncMetaCorrupted) {
+			level.Warn(userLogger).Log("msg", "block metadata missing or corrupt in object storage, abandoning job", "err", err)
 			return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
 		}
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to sync metas: %w", err)
@@ -591,7 +591,7 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, tenant, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL)
 
 	level.Info(userLogger).Log("msg", "start sync of metas")
-	metas, err := fetcher.FetchCompactableMetasFromListing(ctx, maxLookback, []block.MetadataFilter{
+	metas, err := fetcher.fetchCompactableMetasFromListing(ctx, maxLookback, []block.MetadataFilter{
 		NewLabelRemoverFilter(compactionIgnoredLabels),
 		deduplicateBlocksFilter,
 	}, block.NewFetcherMetrics(reg, nil))

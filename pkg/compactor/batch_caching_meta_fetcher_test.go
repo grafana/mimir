@@ -26,7 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 )
 
-func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
+func TestBatchCachingMetaFetcher_FetchCompactableMetasFromListing(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	tenant := "tenant"
@@ -43,7 +43,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		uploadToCache(t, c, tenant, block1Meta)
 		uploadToCache(t, c, tenant, block2Meta)
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 2)
@@ -62,7 +62,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		uploadBlockMeta(t, bkt, block1Meta)
 		uploadBlockMeta(t, bkt, block2Meta)
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 2)
@@ -87,7 +87,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		uploadToCache(t, c, tenant, block1Meta)
 		uploadBlockMeta(t, bkt, block2Meta)
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 2)
@@ -105,7 +105,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		uploadBlockMeta(t, bkt, block1Meta) // 1 hour old
 		uploadBlockMeta(t, bkt, block3Meta) // 3 hours old
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 2*time.Hour, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 2*time.Hour, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
@@ -121,7 +121,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		uploadBlockMeta(t, bkt, block2Meta)
 		uploadDeletionMark(t, bkt, block2Meta.ULID)
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
@@ -137,7 +137,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		uploadBlockMeta(t, bkt, block2Meta)
 		uploadNoCompactMark(t, bkt, block2Meta.ULID)
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
@@ -155,7 +155,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		key := tenantMetaCacheKey(tenant, block1Meta.ULID)
 		c.SetAsync(key, []byte("not valid json"), 24*time.Hour)
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
@@ -173,7 +173,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		key := tenantMetaCacheKey(tenant, block1Meta.ULID)
 		require.NoError(t, c.Set(ctx, key, data, 24*time.Hour))
 
-		metas, fetchErr := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, fetchErr := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, fetchErr)
 		assert.Len(t, metas, 1)
@@ -189,7 +189,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		uploadBlockMeta(t, bkt, block1Meta)
 		require.NoError(t, bkt.Upload(ctx, path.Join(block2Meta.ULID.String(), "index"), bytes.NewReader([]byte{})))
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
@@ -206,7 +206,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		// Upload invalid JSON as block2's meta.json directly to object storage.
 		require.NoError(t, bkt.Upload(ctx, path.Join(block2Meta.ULID.String(), block.MetaFilename), bytes.NewReader([]byte("not valid json"))))
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
@@ -225,7 +225,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		metrics := block.NewFetcherMetrics(prometheus.NewPedanticRegistry(), nil)
 
 		fetcher := newBatchCachingMetaFetcher(errBkt, c, log.NewNopLogger(), tenant, 2, 24*time.Hour)
-		_, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		_, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.Error(t, err)
 		assert.Equal(t, float64(1), testutil.ToFloat64(metrics.Syncs))
@@ -242,7 +242,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 		metrics := block.NewFetcherMetrics(prometheus.NewPedanticRegistry(), nil)
 		fetcher := newBatchCachingMetaFetcher(errBkt, nil, log.NewNopLogger(), tenant, 2, 24*time.Hour)
 
-		_, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		_, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 		require.Error(t, err)
 
 		assert.Equal(t, float64(1), testutil.ToFloat64(metrics.Syncs))
@@ -253,7 +253,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 	t.Run("empty block listing", func(t *testing.T) {
 		fetcher, _, _, metrics := newTestFetcher(t, tenant)
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Empty(t, metas)
@@ -266,7 +266,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 
 		uploadBlockMeta(t, bkt, block1Meta)
 
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, nil, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
@@ -281,7 +281,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromListing(t *testing.T) {
 
 		// Filter out block2
 		filter := &removeBlockFilter{id: block2Meta.ULID}
-		metas, err := fetcher.FetchCompactableMetasFromListing(ctx, 0, []block.MetadataFilter{filter}, metrics)
+		metas, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, []block.MetadataFilter{filter}, metrics)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
@@ -307,7 +307,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromIDs(t *testing.T) {
 		uploadBlockMeta(t, bkt, block2Meta)
 		uploadBlockMeta(t, bkt, block3Meta)
 
-		metas, err := fetcher.FetchMetasFromIDs(ctx, []ulid.ULID{block1Meta.ULID, block2Meta.ULID}, nil)
+		metas, err := fetcher.fetchMetasFromIDs(ctx, []ulid.ULID{block1Meta.ULID, block2Meta.ULID}, nil)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 2)
@@ -323,10 +323,23 @@ func TestBatchCachingMetaFetcher_FetchMetasFromIDs(t *testing.T) {
 		// block2 prefix exists but has no meta.json.
 		require.NoError(t, bkt.Upload(ctx, path.Join(block2Meta.ULID.String(), "index"), bytes.NewReader([]byte{})))
 
-		_, err := fetcher.FetchMetasFromIDs(ctx, []ulid.ULID{block1Meta.ULID, block2Meta.ULID}, nil)
+		_, err := fetcher.fetchMetasFromIDs(ctx, []ulid.ULID{block1Meta.ULID, block2Meta.ULID}, nil)
 
 		require.Error(t, err)
+		assert.ErrorIs(t, err, block.ErrorSyncMetaNotFound)
 		assert.Contains(t, err.Error(), block2Meta.ULID.String())
+	})
+
+	t.Run("returns error when meta is corrupt in storage", func(t *testing.T) {
+		fetcher, bkt, _, _ := newTestFetcher(t, tenant)
+
+		uploadBlockMeta(t, bkt, block1Meta)
+		require.NoError(t, bkt.Upload(ctx, path.Join(block2Meta.ULID.String(), block.MetaFilename), bytes.NewReader([]byte("not valid json"))))
+
+		_, err := fetcher.fetchMetasFromIDs(ctx, []ulid.ULID{block1Meta.ULID, block2Meta.ULID}, nil)
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, block.ErrorSyncMetaCorrupted)
 	})
 
 	t.Run("returns cached meta without storage fetch", func(t *testing.T) {
@@ -335,7 +348,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromIDs(t *testing.T) {
 		// Block is only in cache
 		uploadToCache(t, c, tenant, block1Meta)
 
-		metas, err := fetcher.FetchMetasFromIDs(ctx, []ulid.ULID{block1Meta.ULID}, nil)
+		metas, err := fetcher.fetchMetasFromIDs(ctx, []ulid.ULID{block1Meta.ULID}, nil)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
@@ -348,7 +361,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromIDs(t *testing.T) {
 
 		uploadBlockMeta(t, bkt, block1Meta)
 
-		metas, err := fetcher.FetchMetasFromIDs(ctx, []ulid.ULID{block1Meta.ULID}, nil)
+		metas, err := fetcher.fetchMetasFromIDs(ctx, []ulid.ULID{block1Meta.ULID}, nil)
 
 		require.NoError(t, err)
 		assert.Len(t, metas, 1)
