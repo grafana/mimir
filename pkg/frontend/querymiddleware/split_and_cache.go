@@ -657,7 +657,7 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, memoryTrack
 			req.AddSpanTags(span)
 			defer span.End()
 
-			// Note this is not a managed tracker do we do not need to deregister it.
+			// Note this is not a managed tracker so we do not need to deregister it.
 			childTracker := memoryTracker.NewNestedMemoryConsumptionTracker(childCtx, req.GetQuery())
 			childCtx = limiter.AddMemoryTrackerToContext(childCtx, childTracker)
 
