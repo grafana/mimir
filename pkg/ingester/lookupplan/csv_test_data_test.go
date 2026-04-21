@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/alertmanager/matchers/parse"
+	"github.com/prometheus/alertmanager/matcher/parse"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"

@@ -588,6 +588,13 @@
             (kube_pod_container_status_last_terminated_reason{%(namespace)s,container=~"%(containerName)s",reason="OOMKilled"} offset $__interval == bool 0)
           ) != 0
         |||,
+        // Kubernetes doesn't have build-in solution to track all ephemeral storage by container
+        // Ref https://github.com/kubernetes/kubernetes/issues/69507.
+        // We only use "log filesystem" because every container needs some amount of this for logs,
+        // regardless to if the container requires any other ephemeral persistence for it's data.
+        ephemeral_storage_usage: 'max by(%(instanceLabel)s) (kubelet_container_log_filesystem_used_bytes{%(namespace)s,container=~"%(containerName)s"})',
+        ephemeral_storage_limit: 'min(kube_pod_container_resource_limits{%(namespace)s,container=~"%(containerName)s",resource="ephemeral_storage"})',
+        ephemeral_storage_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="ephemeral_storage"})',
         network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         disk_writes:

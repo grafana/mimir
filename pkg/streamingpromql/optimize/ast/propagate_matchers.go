@@ -210,7 +210,7 @@ func VectorSelectorArgumentIndex(funcName string) (int, error) {
 	case "timestamp":
 		return 0, nil
 	// No vector/matrix selectors
-	case "pi", "time", "vector":
+	case "end", "pi", "range", "start", "step", "time", "vector":
 		return -1, nil
 	// Explicitly not supported because it's not valid to propagate matchers across these functions.
 	case "scalar", "absent", "absent_over_time":

@@ -180,6 +180,15 @@
   ruler_query_frontend_zone_c_service: if !isZoneCEnabled then null else
     $.newRulerQueryFrontendZoneService($.ruler_query_frontend_zone_c_deployment),
 
+  ruler_query_frontend_zone_a_headless_service: if !isZoneAEnabled then null else
+    $.newRulerQueryFrontendZoneHeadlessService('a', $.ruler_query_frontend_zone_a_deployment),
+
+  ruler_query_frontend_zone_b_headless_service: if !isZoneBEnabled then null else
+    $.newRulerQueryFrontendZoneHeadlessService('b', $.ruler_query_frontend_zone_b_deployment),
+
+  ruler_query_frontend_zone_c_headless_service: if !isZoneCEnabled then null else
+    $.newRulerQueryFrontendZoneHeadlessService('c', $.ruler_query_frontend_zone_c_deployment),
+
   ruler_query_frontend_zone_a_pdb: if !isZoneAEnabled then null else
     $.newMimirPdb('ruler-query-frontend-zone-a'),
 
@@ -201,8 +210,11 @@
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
   newRulerQueryFrontendZoneService(deployment)::
+    $.util.serviceFor(deployment, $._config.service_ignored_labels),
+
+  newRulerQueryFrontendZoneHeadlessService(zone, deployment)::
     $.util.serviceFor(deployment, $._config.service_ignored_labels) +
-    // Note: We use a headless service because the ruler uses gRPC load balancing.
+    service.mixin.metadata.withName('ruler-query-frontend-zone-%s-headless' % zone) +
     service.mixin.spec.withClusterIp('None'),
 
   // Ensure all configured addresses are zonal ones.
@@ -216,6 +228,7 @@
   // Remove single-zone deployment when it's disabled.
   ruler_query_frontend_deployment: if !isSingleZoneEnabled then null else super.ruler_query_frontend_deployment,
   ruler_query_frontend_service: if !isSingleZoneEnabled then null else super.ruler_query_frontend_service,
+  ruler_query_frontend_headless_service: if !isSingleZoneEnabled then null else super.ruler_query_frontend_headless_service,
   ruler_query_frontend_pdb: if !isSingleZoneEnabled then null else super.ruler_query_frontend_pdb,
 
   // Autoscaling.

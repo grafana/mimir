@@ -170,16 +170,22 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			return nil, errors.New("smoothed and anchored modifiers do not work with native histograms")
 		}
 
-		// Mutate the floats buffer to align and extend points to the original time boundaries.
-		// The result is either an empty buffer or one containing only points within the
-		// original time range, with points present at both boundaries.
-		err = m.extendedPointsState.ApplyBoundaryMutations(originalRangeStart, originalRangeEnd, rangeEnd)
-		if err != nil {
-			return nil, err
+		if m.floats.Count() > 0 && m.floats.PointAt(0).T > originalRangeEnd {
+			// This will be an empty set
+			m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(originalRangeEnd, m.stepData.Floats)
+		} else {
+			// Mutate the floats buffer to align and extend points to the original time boundaries.
+			// The result is either an empty buffer or one containing only points within the
+			// original time range, with points present at both boundaries.
+			err = m.extendedPointsState.ApplyBoundaryMutations(originalRangeStart, originalRangeEnd, rangeEnd)
+			if err != nil {
+				return nil, err
+			}
+
+			// A ViewAll can be used since we know that this buffer only contains points within the requested range.
+			m.stepData.Floats = m.floats.ViewAll(m.stepData.Floats)
 		}
 
-		// A ViewAll can be used since we know that this buffer only contains points within the requested range.
-		m.stepData.Floats = m.floats.ViewAll(m.stepData.Floats)
 	} else {
 		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Floats)
 	}

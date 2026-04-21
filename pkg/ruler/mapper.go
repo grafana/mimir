@@ -8,6 +8,7 @@ package ruler
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/spf13/afero"
@@ -182,12 +184,14 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 type FSLoader struct {
 	fs     afero.Fs
 	parser parser.Parser
+	logger *slog.Logger
 }
 
 func NewFSLoader(fs afero.Fs) FSLoader {
 	return FSLoader{
 		fs:     fs,
 		parser: promqlext.NewPromQLParser(),
+		logger: promslog.NewNopLogger(),
 	}
 }
 
@@ -206,7 +210,7 @@ func (f FSLoader) parseFile(fs afero.Fs, file string, ignoreUnknownFields bool, 
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme, f.parser)
+	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme, f.parser, f.logger)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}

@@ -59,8 +59,6 @@ The following features are currently experimental:
   - Configure the cost attribution cleanup process run interval
     - `-cost-attribution.cleanup-interval`
 - Alertmanager
-  - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
-    - `-alertmanager.grafana-alertmanager-compatibility-enabled`
   - Health check grace period for connections to other replicas (`-alertmanager.alertmanager-client.health-check-grace-period`)
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.

@@ -374,6 +374,9 @@ func (c *Config) Validate(log log.Logger) error {
 
 // ValidateLimits validates the runtime limits.
 func (c *Config) ValidateLimits(limits *validation.Limits) error {
+	if err := limits.BlockedQueries.Validate(); err != nil {
+		return err
+	}
 	if err := c.Querier.ValidateLimits(*limits); err != nil {
 		return errors.Wrap(err, "invalid limits config for querier")
 	}

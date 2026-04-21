@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"mime"
 	"mime/multipart"
@@ -29,10 +30,9 @@ import (
 	"net/textproto"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	commoncfg "github.com/prometheus/common/config"
 
 	"github.com/prometheus/alertmanager/config"
@@ -45,12 +45,12 @@ import (
 type Email struct {
 	conf     *config.EmailConfig
 	tmpl     *template.Template
-	logger   log.Logger
+	logger   *slog.Logger
 	hostname string
 }
 
 // New returns a new Email notifier.
-func New(c *config.EmailConfig, t *template.Template, l log.Logger) *Email {
+func New(c *config.EmailConfig, t *template.Template, l *slog.Logger) *Email {
 	if _, ok := c.Headers["Subject"]; !ok {
 		c.Headers["Subject"] = config.DefaultEmailSubject
 	}
@@ -75,15 +75,19 @@ func (n *Email) auth(mechs string) (smtp.Auth, error) {
 
 	// If no username is set, keep going without authentication.
 	if n.conf.AuthUsername == "" {
-		level.Debug(n.logger).Log("msg", "smtp_auth_username is not configured. Attempting to send email without authenticating")
+		n.logger.Debug("smtp_auth_username is not configured. Attempting to send email without authenticating")
 		return nil, nil
 	}
 
 	err := &types.MultiError{}
-	for _, mech := range strings.Split(mechs, " ") {
+	for mech := range strings.SplitSeq(mechs, " ") {
 		switch mech {
 		case "CRAM-MD5":
-			secret := string(n.conf.AuthSecret)
+			secret, secretErr := n.getAuthSecret()
+			if secretErr != nil {
+				err.Add(secretErr)
+				continue
+			}
 			if secret == "" {
 				err.Add(errors.New("missing secret for CRAM-MD5 auth mechanism"))
 				continue
@@ -130,8 +134,17 @@ func (n *Email) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 		err     error
 		success = false
 	)
-	if n.conf.Smarthost.Port == "465" {
-		tlsConfig, err := commoncfg.NewTLSConfig(&n.conf.TLSConfig)
+	// Determine whether to use Implicit TLS
+	var useImplicitTLS bool
+	if n.conf.ForceImplicitTLS != nil {
+		useImplicitTLS = *n.conf.ForceImplicitTLS
+	} else {
+		// Default logic: port 465 uses implicit TLS (backward compatibility)
+		useImplicitTLS = n.conf.Smarthost.Port == "465"
+	}
+
+	if useImplicitTLS {
+		tlsConfig, err := commoncfg.NewTLSConfig(n.conf.TLSConfig)
 		if err != nil {
 			return false, fmt.Errorf("parse TLS configuration: %w", err)
 		}
@@ -161,7 +174,7 @@ func (n *Email) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 	defer func() {
 		// Try to clean up after ourselves but don't log anything if something has failed.
 		if err := c.Quit(); success && err != nil {
-			level.Warn(n.logger).Log("msg", "failed to close SMTP connection", "err", err)
+			n.logger.Warn("failed to close SMTP connection", "err", err)
 		}
 	}()
 
@@ -173,12 +186,12 @@ func (n *Email) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 	}
 
 	// Global Config guarantees RequireTLS is not nil.
-	if *n.conf.RequireTLS {
+	if *n.conf.RequireTLS && !useImplicitTLS {
 		if ok, _ := c.Extension("STARTTLS"); !ok {
 			return true, fmt.Errorf("'require_tls' is true (default) but %q does not advertise the STARTTLS extension", n.conf.Smarthost)
 		}
 
-		tlsConf, err := commoncfg.NewTLSConfig(&n.conf.TLSConfig)
+		tlsConf, err := commoncfg.NewTLSConfig(n.conf.TLSConfig)
 		if err != nil {
 			return false, fmt.Errorf("parse TLS configuration: %w", err)
 		}
@@ -242,7 +255,15 @@ func (n *Email) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 	if err != nil {
 		return true, fmt.Errorf("send DATA command: %w", err)
 	}
-	defer message.Close()
+	closeOnce := sync.OnceValue(func() error {
+		return message.Close()
+	})
+	// Close the message when this method exits in order to not leak resources. Even though we're calling this explicitly
+	// further down, the method may exit before then.
+	defer func() {
+		// If we try close an already-closed writer, it'll send a subsequent request to the server which is invalid.
+		_ = closeOnce()
+	}()
 
 	buffer := &bytes.Buffer{}
 	for header, t := range n.conf.Headers {
@@ -255,6 +276,31 @@ func (n *Email) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 
 	if _, ok := n.conf.Headers["Message-Id"]; !ok {
 		fmt.Fprintf(buffer, "Message-Id: %s\r\n", fmt.Sprintf("<%d.%d@%s>", time.Now().UnixNano(), rand.Uint64(), n.hostname))
+	}
+
+	if n.conf.Threading.Enabled {
+		key, err := notify.ExtractGroupKey(ctx)
+		if err != nil {
+			return false, err
+		}
+		// Add threading headers. All notifications for the same alert group
+		// (identified by key hash) are threaded together.
+		threadBy := ""
+		if n.conf.Threading.ThreadByDate != "none" {
+			// ThreadByDate is 'daily':
+			// Use current date so all mails for this alert today thread together.
+			threadBy = time.Now().Format("2006-01-02")
+		}
+		keyHash := key.Hash()
+		if len(keyHash) > 16 {
+			keyHash = keyHash[:16]
+		}
+		// The thread root ID is a Message-ID that doesn't correspond to
+		// any actual email. Email clients following the (commonly used) JWZ
+		// algorithm will create a dummy container to group these messages.
+		threadRootID := fmt.Sprintf("<alert-%s-%s@alertmanager>", keyHash, threadBy)
+		fmt.Fprintf(buffer, "References: %s\r\n", threadRootID)
+		fmt.Fprintf(buffer, "In-Reply-To: %s\r\n", threadRootID)
 	}
 
 	multipartBuffer := &bytes.Buffer{}
@@ -331,6 +377,11 @@ func (n *Email) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 		return false, fmt.Errorf("write body buffer: %w", err)
 	}
 
+	// Complete the message and await response.
+	if err = closeOnce(); err != nil {
+		return true, fmt.Errorf("delivery failure: %w", err)
+	}
+
 	success = true
 	return false, nil
 }
@@ -371,4 +422,15 @@ func (n *Email) getPassword() (string, error) {
 		return strings.TrimSpace(string(content)), nil
 	}
 	return string(n.conf.AuthPassword), nil
+}
+
+func (n *Email) getAuthSecret() (string, error) {
+	if len(n.conf.AuthSecretFile) > 0 {
+		content, err := os.ReadFile(n.conf.AuthSecretFile)
+		if err != nil {
+			return "", fmt.Errorf("could not read %s: %w", n.conf.AuthSecretFile, err)
+		}
+		return string(content), nil
+	}
+	return string(n.conf.AuthSecret), nil
 }

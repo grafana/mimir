@@ -212,11 +212,18 @@ func OTLPHandler(
 }
 
 func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
-	// Respond as per spec:
-	// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+	var rejectedDataPoints int64
+	var ingPushErr ingesterPushError
+	var asErr activeSeriesLimitedError
+	if errors.As(pushErr, &ingPushErr) {
+		rejectedDataPoints = ingPushErr.rejectedSamples
+	} else if errors.As(pushErr, &asErr) {
+		rejectedDataPoints = asErr.rejectedSamples
+	}
+
 	expResp := colmetricpb.ExportMetricsServiceResponse{
 		PartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
-			RejectedDataPoints: 0,
+			RejectedDataPoints: rejectedDataPoints,
 			ErrorMessage:       pushErr.Error(),
 		},
 	}

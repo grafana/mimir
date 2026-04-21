@@ -42,6 +42,14 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 	utiltest.VerifyNoLeak(t,
 		// This package's init() function statically starts a singleton goroutine that runs forever.
 		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+		// Upstream alertmanager's Inhibitor.Stop() and Dispatcher.Stop() signal
+		// cancellation but don't fully wait for all spawned goroutines to return.
+		// These goroutines exit eventually, but may still be draining when goleak
+		// checks after a prior test's deferred StopAndWait.
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*Dispatcher).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*aggrGroup).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/inhibit.(*Inhibitor).run"),
+		goleak.IgnoreTopFunction("github.com/oklog/run.(*Group).Run"),
 	)
 
 	cases := []struct {

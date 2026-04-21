@@ -691,7 +691,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if err := am.setConfig(cfg); err != nil {
+		if _, err := am.setConfig(cfg); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err, "user", user)
 			continue
@@ -800,7 +800,7 @@ func fingerprint(desc alertspb.AlertConfigDesc) model.Fingerprint {
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
+func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) (*Alertmanager, error) {
 	if am.cfg.UTF8MigrationLogging {
 		// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
 		// The reason for this that the config.Load function uses the origin "config",
@@ -825,12 +825,12 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	var err error
 	if cfg.RawConfig == "" {
 		if am.fallbackConfig == "" {
-			return fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
+			return nil, fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
 		}
 		level.Debug(am.logger).Log("msg", "blank Alertmanager configuration; using fallback", "user", cfg.User)
 		amCfg, err = config.Load(am.fallbackConfig)
 		if err != nil {
-			return fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
+			return nil, fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
 		}
 		rawCfg = am.fallbackConfig
 	} else {
@@ -839,7 +839,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			// This means that if a user has a working config and
 			// they submit a broken one, the Manager will keep running the last known
 			// working configuration.
-			return fmt.Errorf("invalid Alertmanager configuration for %v: %v", cfg.User, err)
+			return nil, fmt.Errorf("invalid Alertmanager configuration for %v: %v", cfg.User, err)
 		}
 	}
 
@@ -848,7 +848,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	// 2) then, submitted a non-working configuration (and we kept running the prev working config)
 	// 3) finally, the cortex AM instance is restarted and the running version is no longer present
 	if amCfg == nil {
-		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
+		return nil, fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
 	cfgFp := fingerprint(cfg)
@@ -857,7 +857,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
 		newAM, err := am.newAlertmanager(cfg.User, amCfg, cfg.Templates, rawCfg)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		am.alertmanagers[cfg.User] = newAM
 	} else {
@@ -868,13 +868,13 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			// If the config changed, apply the new one.
 			err := existing.ApplyConfig(amCfg, cfg.Templates, rawCfg)
 			if err != nil {
-				return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
+				return nil, fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 			}
 		}
 	}
 
 	am.cfgs[cfg.User] = cfgFp
-	return nil
+	return am.alertmanagers[cfg.User], nil
 }
 
 func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
@@ -1041,12 +1041,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		return nil, errConfigNotFound
 	}
 
-	if err := am.setConfig(cfg); err != nil {
-		return nil, err
-	}
-	am.alertmanagersMtx.Lock()
-	defer am.alertmanagersMtx.Unlock()
-	return am.alertmanagers[userID], nil
+	return am.setConfig(cfg)
 }
 
 func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Context, userID string) (*Alertmanager, error) {
@@ -1080,14 +1075,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	err = am.setConfig(cfgDesc)
-	if err != nil {
-		return nil, err
-	}
-
-	am.alertmanagersMtx.Lock()
-	defer am.alertmanagersMtx.Unlock()
-	return am.alertmanagers[userID], nil
+	return am.setConfig(cfgDesc)
 }
 
 // ReplicateStateForUser attempts to replicate a partial state sent by an alertmanager to its other replicas through the ring.

@@ -243,6 +243,79 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
+func TestInstantVectorExecutionResponse_BatchedSeriesMetadata(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{msg: newSeriesMetadataBatch(0, false, 4, labels.FromStrings("series", "1"))},
+			{msg: newSeriesMetadataBatch(0, false, 4, labels.FromStrings("series", "2"), labels.FromStrings("series", "3"))},
+			{msg: newSeriesMetadataBatch(0, false, 4, labels.FromStrings("series", "4"))},
+			{msg: newInstantVectorSeriesData(0, generateFPoints(1000, 1, 0), nil)},
+			{msg: newInstantVectorSeriesData(0, generateFPoints(1000, 1, 1), nil)},
+			{msg: newInstantVectorSeriesData(0, generateFPoints(1000, 1, 2), nil)},
+			{msg: newInstantVectorSeriesData(0, generateFPoints(1000, 1, 3), nil)},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	require.NoError(t, response.Start(ctx))
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1")},
+		{Labels: labels.FromStrings("series", "2")},
+		{Labels: labels.FromStrings("series", "3")},
+		{Labels: labels.FromStrings("series", "4")},
+	}
+	require.Equal(t, expectedSeries, series)
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+
+	response.Close()
+	require.True(t, stream.closed.Load())
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+func TestRangeVectorExecutionResponse_BatchedSeriesMetadata(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{msg: newSeriesMetadataBatch(0, false, 2, labels.FromStrings("series", "1"))},
+			{msg: newSeriesMetadataBatch(0, false, 2, labels.FromStrings("series", "2"))},
+			{msg: newRangeVectorStepData(0, 0, -10_000, 0, generateFPoints(1000, 1, 0), nil)},
+			{msg: newRangeVectorStepData(1, 0, -10_000, 0, generateFPoints(1000, 1, 1), nil)},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	require.NoError(t, response.Start(ctx))
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1")},
+		{Labels: labels.FromStrings("series", "2")},
+	}
+	require.Equal(t, expectedSeries, series)
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+
+	response.Close()
+	require.True(t, stream.closed.Load())
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
 func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
@@ -939,6 +1012,10 @@ func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRe
 }
 
 func newSeriesMetadata(nodeIndex int64, dropName bool, series ...labels.Labels) *frontendv2pb.QueryResultStreamRequest {
+	return newSeriesMetadataBatch(nodeIndex, dropName, 0, series...)
+}
+
+func newSeriesMetadataBatch(nodeIndex int64, dropName bool, totalSeriesCount int64, series ...labels.Labels) *frontendv2pb.QueryResultStreamRequest {
 	protoSeries := make([]querierpb.SeriesMetadata, 0, len(series))
 	for _, series := range series {
 		protoSeries = append(protoSeries, querierpb.SeriesMetadata{
@@ -952,8 +1029,9 @@ func newSeriesMetadata(nodeIndex int64, dropName bool, series ...labels.Labels) 
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 					SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-						NodeIndex: nodeIndex,
-						Series:    protoSeries,
+						NodeIndex:               nodeIndex,
+						Series:                  protoSeries,
+						TotalSeriesCountForNode: totalSeriesCount,
 					},
 				},
 			},

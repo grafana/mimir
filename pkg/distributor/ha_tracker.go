@@ -721,25 +721,20 @@ func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, re
 	return err
 }
 
-func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) haReplica {
-	var r haReplica
+func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) (string, string) {
+	var cluster, replica string
+	var pair mimirpb.LabelAdapter
 
-	for _, pair := range labels {
-		switch pair.Name {
-		case replicaLabel:
-			r.replica = pair.Value
-			if r.cluster != "" {
-				return r
-			}
-		case clusterLabel:
-			r.cluster = pair.Value
-			if r.replica != "" {
-				return r
-			}
+	for _, pair = range labels {
+		if pair.Name == replicaLabel {
+			replica = pair.Value
+		}
+		if pair.Name == clusterLabel {
+			cluster = pair.Value
 		}
 	}
 
-	return r
+	return cluster, replica
 }
 
 func (h *defaultHaTracker) cleanupHATrackerMetricsForUser(userID string) {

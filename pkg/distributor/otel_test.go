@@ -1719,6 +1719,55 @@ func TestHandlerOTLPPush(t *testing.T) {
 				ErrorMessage:       "unexpected ingester error",
 			},
 		},
+		{
+			name:       "Soft ingesterPushError with rejected samples",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return ingesterPushError{message: "some samples rejected", cause: mimirpb.ERROR_CAUSE_BAD_DATA, soft: true, rejectedSamples: 3}
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 27,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 3,
+				ErrorMessage:       "some samples rejected",
+			},
+		},
+		{
+			name:       "Soft activeSeriesLimitedError with rejected samples",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5)
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 321,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 5,
+				ErrorMessage:       newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5).Error(),
+			},
+		},
+		{
+			name:       "Hard activeSeriesLimitedError when all series rejected",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15)
+			},
+			responseCode:          http.StatusTooManyRequests,
+			responseContentType:   pbContentType,
+			responseContentLength: 319,
+			errMessage:            newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error(),
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="` + newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error() + `" insight=true`},
+			expectedRetryHeader:   true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2441,17 +2490,23 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedGRPCStatus: codes.InvalidArgument,
 			expectedSoft:       true,
 		},
-		"an activeSeriesLimitedError with default 429 gets translated into gRPC codes.ResourceExhausted and HTTP 429 statuses": {
-			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusTooManyRequests),
+		"an activeSeriesLimitedError with all series rejected gets translated into gRPC codes.ResourceExhausted and HTTP 429 statuses": {
+			err:                newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedSoft:       false,
 		},
 		"an activeSeriesLimitedError with overridden 400 gets translated into gRPC codes.ResourceExhausted and HTTP 400 statuses": {
-			err:                newActiveSeriesLimitedError(100, 25, 50, http.StatusBadRequest),
+			err:                newActiveSeriesLimitedError(100, 100, 50, http.StatusBadRequest, 0),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedSoft:       false,
+		},
+		"an activeSeriesLimitedError with some series rejected gets translated into soft": {
+			err:                newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedSoft:       true,
 		},
 	}
 	for name, tc := range testCases {

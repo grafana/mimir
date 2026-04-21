@@ -366,6 +366,14 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 				oneSide.outputSeriesCount++
 				thisManySide.outputSeriesCount++
 
+				// Account for the memory consumption from the labels now. This helps protect against
+				// queries that return many series from this operator.
+				// All series in outputSeriesMap will be returned, so this doesn't lead to over-counting
+				// of memory consumption.
+				if err := g.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
+					return nil, nil, nil, -1, nil, -1, err
+				}
+
 				outputSeriesMap[string(l.Bytes(buf))] = groupedBinaryOperationOutputSeriesWithLabels{
 					labels: l,
 					outputSeries: &groupedBinaryOperationOutputSeries{
@@ -418,11 +426,9 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	outputSeries := make([]*groupedBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, o := range outputSeriesMap {
-		outputMetadata, err = types.AppendSeriesMetadata(g.MemoryConsumptionTracker, outputMetadata, types.SeriesMetadata{Labels: o.labels})
-		if err != nil {
-			return nil, nil, nil, -1, nil, -1, err
-		}
-
+		// Note that we deliberately don't use types.AppendSeriesMetadata here as we've already
+		// accounted for the memory consumption of every set of labels in outputSeriesMap above.
+		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: o.labels})
 		outputSeries = append(outputSeries, o.outputSeries)
 	}
 

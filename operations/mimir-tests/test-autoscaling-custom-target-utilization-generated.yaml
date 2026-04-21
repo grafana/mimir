@@ -523,6 +523,24 @@ metadata:
   name: ruler-query-frontend
   namespace: default
 spec:
+  ports:
+  - name: ruler-query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: ruler-query-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-frontend
+  name: ruler-query-frontend-headless
+  namespace: default
+spec:
   clusterIP: None
   ports:
   - name: ruler-query-frontend-http-metrics
@@ -971,7 +989,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///ruler-query-frontend.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///ruler-query-frontend-headless.default.svc.cluster.local.:9095
         - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
