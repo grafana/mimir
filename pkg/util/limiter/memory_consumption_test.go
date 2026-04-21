@@ -507,3 +507,14 @@ func TestMemoryTrackerWrappedTrackers(t *testing.T) {
 		require.PanicsWithValue(t, "cannot nest a tracker not created via this InflightMemoryConsumptionTracker", func() { factory.NewNestedMemoryConsumptionTracker(context.Background(), "child", childTracker) })
 	})
 }
+
+// IsTracking returns true if the given tracker is being actively tracked by this InflightMemoryConsumptionTracker.
+// Note that this function is only used by unit tests and will only return true on managed trackers.
+// Unmanaged and nested trackers will always return false.
+func (t *InflightMemoryConsumptionTracker) IsTracking(tracker *MemoryConsumptionTracker) bool {
+	if tracker.producer != t {
+		return false
+	}
+	_, ok := t.inflight.Load(tracker)
+	return ok
+}
