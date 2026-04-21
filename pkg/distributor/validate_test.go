@@ -1475,6 +1475,7 @@ func TestNewValidationConfigFieldCompleteness(t *testing.T) {
 
 	// 2. Set fields that default to zero to non-zero values
 	limits.PastGracePeriod = model.Duration(5 * time.Minute)
+	limits.EnforceOOOWindowOnDistributor = true
 	limits.MaxNativeHistogramBuckets = 100
 	limits.OutOfOrderTimeWindow = model.Duration(30 * time.Minute)
 	require.NoError(t, limits.LabelValueLengthOverLimitStrategy.Set("truncate"))
@@ -1502,5 +1503,72 @@ func assertNoZeroFields(t *testing.T, v reflect.Value, path string) {
 		}
 	default:
 		require.False(t, v.IsZero(), "field %s is zero", path)
+	}
+}
+
+func TestValidateSample_EnforceOOOWindowOnDistributor(t *testing.T) {
+	t.Parallel()
+
+	now := model.Now()
+	const ooo = time.Hour
+
+	ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "m"}, {Name: "a", Value: "a"}}
+
+	cases := map[string]struct {
+		cfg       sampleValidationConfig
+		tsOffset  time.Duration
+		wantErr   bool
+		wantErrID globalerror.ID
+	}{
+		"flag off, old sample, accepted": {
+			cfg:      sampleValidationConfig{outOfOrderTimeWindow: ooo},
+			tsOffset: -2 * ooo,
+			wantErr:  false,
+		},
+		"flag on, ooo=0, accepted (no-op)": {
+			cfg:      sampleValidationConfig{enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: 0},
+			tsOffset: -2 * ooo,
+			wantErr:  false,
+		},
+		"flag on, within ooo window, accepted": {
+			cfg:      sampleValidationConfig{enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: ooo},
+			tsOffset: -ooo / 2,
+			wantErr:  false,
+		},
+		"flag on, older than ooo window, rejected as sample_too_old": {
+			cfg:       sampleValidationConfig{enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: ooo},
+			tsOffset:  -2 * ooo,
+			wantErr:   true,
+			wantErrID: globalerror.SampleTimestampTooOld,
+		},
+		"past_grace_period > 0 takes precedence over flag": {
+			cfg:       sampleValidationConfig{pastGracePeriod: 10 * time.Minute, enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: ooo},
+			tsOffset:  -2 * (ooo + 10*time.Minute),
+			wantErr:   true,
+			wantErrID: globalerror.SampleTooFarInPast,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			metrics := newSampleValidationMetrics(reg)
+			ts := now.Add(tc.tsOffset)
+
+			err := validateSample(metrics, now, tc.cfg, "u", "g", ls, mimirpb.Sample{TimestampMs: int64(ts)}, nil)
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			require.Contains(t, err.Error(), string(tc.wantErrID))
+
+			// Also verify histogram variant behaves the same.
+			hreg := prometheus.NewRegistry()
+			hmetrics := newSampleValidationMetrics(hreg)
+			_, herr := validateSampleHistogram(hmetrics, now, tc.cfg, "u", "g", ls, &mimirpb.Histogram{Timestamp: int64(ts), Schema: 0}, nil)
+			require.Error(t, herr)
+			require.Contains(t, herr.Error(), string(tc.wantErrID))
+		})
 	}
 }

@@ -112,6 +112,8 @@ The following features are currently experimental:
     - `-api.otlp-translation-headers-enabled`
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
+  - Enforce the out-of-order time window on the distributor when `past_grace_period` is 0
+    - `-validation.enforce-out-of-order-window-on-distributor`
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
   - Evaluate HA deduplication per timeseries within a write request instead of using the first series' labels for the whole request
     - `-distributor.ha-tracker.per-sample-dedupe`

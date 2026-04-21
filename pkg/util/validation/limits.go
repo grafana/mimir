@@ -55,6 +55,8 @@ const (
 	ReduceNativeHistogramOverMaxBucketsFlag     = "validation.reduce-native-histogram-over-max-buckets"
 	CreationGracePeriodFlag                     = "validation.create-grace-period"
 	PastGracePeriodFlag                         = "validation.past-grace-period"
+	EnforceOutOfOrderWindowOnDistributorFlag    = "validation.enforce-out-of-order-window-on-distributor"
+	OutOfOrderTimeWindowFlag                    = "ingester.out-of-order-time-window"
 	MaxActiveSeriesAdditionalCustomTrackersFlag = "validation.max-active-series-additional-custom-trackers"
 	MaxPartialQueryLengthFlag                   = "querier.max-partial-query-length"
 	MaxSeriesQueryLimitFlag                     = "querier.max-series-query-limit"
@@ -162,6 +164,7 @@ type Limits struct {
 	ReduceNativeHistogramOverMaxBuckets bool                              `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
 	CreationGracePeriod                 model.Duration                    `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
 	PastGracePeriod                     model.Duration                    `yaml:"past_grace_period" json:"past_grace_period" category:"advanced"`
+	EnforceOOOWindowOnDistributor       bool                              `yaml:"enforce_out_of_order_window_on_distributor" json:"enforce_out_of_order_window_on_distributor" category:"experimental"`
 	EnforceMetadataMetricName           bool                              `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize            int                               `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
 	MetricRelabelConfigs                []*relabel.Config                 `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
@@ -366,6 +369,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	_ = l.CreationGracePeriod.Set("10m")
 	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.")
 	f.Var(&l.PastGracePeriod, PastGracePeriodFlag, "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.")
+	f.BoolVar(&l.EnforceOOOWindowOnDistributor, EnforceOutOfOrderWindowOnDistributorFlag, false, "When enabled and past_grace_period is 0, the distributor rejects samples whose timestamp is older than '(now - out_of_order_time_window)'. This matches what the ingester will reject. Has no effect when past_grace_period is greater than 0.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 	l.OTelMetricSuffixesEnabled = new(bool)
 	f.BoolVar(l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
@@ -392,7 +396,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.BoolVar(&l.IgnoreOOOExemplars, "ingester.ignore-ooo-exemplars", false, "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.")
 	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
-	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
+	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
@@ -894,6 +898,12 @@ func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
 // Zero means disabled.
 func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
+}
+
+// EnforceOOOWindowOnDistributor returns whether the distributor should reject
+// samples older than the out-of-order time window when past_grace_period is 0.
+func (o *Overrides) EnforceOOOWindowOnDistributor(userID string) bool {
+	return o.getOverridesForUser(userID).EnforceOOOWindowOnDistributor
 }
 
 // MaxActiveOrGlobalSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.

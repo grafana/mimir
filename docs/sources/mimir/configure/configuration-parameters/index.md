@@ -4249,6 +4249,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.past-grace-period
 [past_grace_period: <duration> | default = 0s]
 
+# (experimental) When enabled and past_grace_period is 0, the distributor
+# rejects samples whose timestamp is older than '(now -
+# out_of_order_time_window)'. This matches what the ingester will reject. Has no
+# effect when past_grace_period is greater than 0.
+# CLI flag: -validation.enforce-out-of-order-window-on-distributor
+[enforce_out_of_order_window_on_distributor: <boolean> | default = false]
+
 # (advanced) Enforce every metadata has a metric name.
 # CLI flag: -validation.enforce-metadata-metric-name
 [enforce_metadata_metric_name: <boolean> | default = true]

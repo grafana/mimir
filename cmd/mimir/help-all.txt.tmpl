@@ -3597,6 +3597,8 @@ Usage of ./cmd/mimir/mimir:
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
+  -validation.enforce-out-of-order-window-on-distributor
+    	[experimental] When enabled and past_grace_period is 0, the distributor rejects samples whose timestamp is older than '(now - out_of_order_time_window)'. This matches what the ingester will reject. Has no effect when past_grace_period is greater than 0.
   -validation.label-value-length-over-limit-strategy value
     	[experimental] What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.
   -validation.max-active-series-additional-custom-trackers int

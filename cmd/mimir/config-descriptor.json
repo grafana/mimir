@@ -5606,6 +5606,17 @@
         },
         {
           "kind": "field",
+          "name": "enforce_out_of_order_window_on_distributor",
+          "required": false,
+          "desc": "When enabled and past_grace_period is 0, the distributor rejects samples whose timestamp is older than '(now - out_of_order_time_window)'. This matches what the ingester will reject. Has no effect when past_grace_period is greater than 0.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "validation.enforce-out-of-order-window-on-distributor",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "enforce_metadata_metric_name",
           "required": false,
           "desc": "Enforce every metadata has a metric name.",

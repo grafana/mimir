@@ -3102,11 +3102,12 @@ How to **fix** it:
 
 ### err-mimir-sample-timestamp-too-old
 
-This error occurs when the ingester rejects a sample because its timestamp is too old as compared to the most recent timestamp received for the same tenant across all its time series.
+This error occurs when Mimir rejects a sample because its timestamp is too old.
 
 How it **works**:
 
-- If the incoming timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant, the sample will be rejected.
+- The ingester rejects a sample if its timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant.
+- The distributor can also produce this error when `enforce_out_of_order_window_on_distributor` is enabled and `past_grace_period` is 0. In that case, a sample is rejected if its timestamp is lower than `(now - out_of_order_time_window)`, which matches the rejection the ingester would later perform. To allow older samples, increase `out_of_order_time_window`, or disable `enforce_out_of_order_window_on_distributor`.
 
 {{< admonition type="note" >}}
 If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
