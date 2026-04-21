@@ -5,6 +5,8 @@ package scheduler
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/mimir/pkg/compactor"
 )
 
 const (
@@ -33,7 +35,7 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 		incompleteJobsBytes: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes",
 			Help: "The total bytes of blocks in compaction jobs that have not yet completed (pending or active).",
-		}, []string{"compaction_type"}),
+		}, []string{"compaction_type", compactor.SizeBucketLabel}),
 		incompletePlanJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_incomplete_plan_jobs",
 			Help: "The total number of plan jobs that have not yet completed (pending or active).",
@@ -51,22 +53,26 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 			Help: "Total number of failures for jobs that exceeded the repeated failure threshold.",
 		}),
 	}
-	// Pre-initialize job type labels so we get zeros instead of no data.
+	// Pre-initialize all label combinations so every series exists with value zero. This gives
+	// the autoscaler stable PromQL output when the queue is empty.
 	m.jobsCompleted.WithLabelValues(jobTypePlan)
 	m.jobsCompleted.WithLabelValues(jobTypeCompaction)
-	m.incompleteJobsBytes.WithLabelValues(compactionTypeSplit)
-	m.incompleteJobsBytes.WithLabelValues(compactionTypeMerge)
+	for _, ct := range []string{compactionTypeSplit, compactionTypeMerge} {
+		for _, sb := range compactor.AllSizeBuckets() {
+			m.incompleteJobsBytes.WithLabelValues(ct, sb)
+		}
+	}
 	return m
 }
 
 func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMetrics {
 	return &trackerMetrics{
 		queue: &queueMetrics{
-			pendingJobs:          s.pendingJobs.WithLabelValues(tenant),
-			activeJobs:           s.activeJobs.WithLabelValues(tenant),
-			incompleteSplitBytes: s.incompleteJobsBytes.WithLabelValues(compactionTypeSplit),
-			incompleteMergeBytes: s.incompleteJobsBytes.WithLabelValues(compactionTypeMerge),
-			incompletePlanJobs:   s.incompletePlanJobs,
+			pendingJobs:         s.pendingJobs.WithLabelValues(tenant),
+			activeJobs:          s.activeJobs.WithLabelValues(tenant),
+			incompleteJobsBytes: s.incompleteJobsBytes,
+			incompletePlanJobs:  s.incompletePlanJobs,
+			perBucketBytes:      map[sizeBucketKey]uint64{},
 			clear: func() {
 				s.pendingJobs.DeleteLabelValues(tenant)
 				s.activeJobs.DeleteLabelValues(tenant)
@@ -84,13 +90,20 @@ type trackerMetrics struct {
 // Clear deletes all per-tenant label values and subtracts this tenant's contribution from the
 // shared gauges. Must be called when a tenant is removed.
 func (m *trackerMetrics) Clear() {
-	m.queue.incompleteSplitBytes.Sub(float64(m.queue.splitBytes))
-	m.queue.incompleteMergeBytes.Sub(float64(m.queue.mergeBytes))
+	for k, v := range m.queue.perBucketBytes {
+		m.queue.incompleteJobsBytes.WithLabelValues(k.compactionType, k.sizeBucket).Sub(float64(v))
+	}
 	m.queue.incompletePlanJobs.Sub(float64(m.queue.planJobCount))
-	m.queue.splitBytes = 0
-	m.queue.mergeBytes = 0
+	m.queue.perBucketBytes = map[sizeBucketKey]uint64{}
 	m.queue.planJobCount = 0
 	m.queue.clear()
+}
+
+// sizeBucketKey identifies a (compaction_type, size_bucket) pair for tracking per-tenant
+// contributions to the shared incompleteJobsBytes gauge.
+type sizeBucketKey struct {
+	compactionType string
+	sizeBucket     string
 }
 
 // queueMetrics encapsulates queue-level metrics for one tenant, allowing the caller to ignore
@@ -102,16 +115,14 @@ type queueMetrics struct {
 	activeJobs  prometheus.Gauge
 
 	// shared across tenants
-	incompleteSplitBytes prometheus.Gauge
-	incompleteMergeBytes prometheus.Gauge
-	incompletePlanJobs   prometheus.Gauge
+	incompleteJobsBytes *prometheus.GaugeVec
+	incompletePlanJobs  prometheus.Gauge
 
-	// splitBytes, mergeBytes, and planJobCount track this tenant's contribution to the shared
-	// incomplete gauges so we can subtract exactly the right amount on tenant removal.
-	splitBytes   uint64
-	mergeBytes   uint64
-	planJobCount int
-	clear        func()
+	// perBucketBytes and planJobCount track this tenant's contribution to the shared gauges
+	// so Clear can subtract exactly the right amount on tenant removal.
+	perBucketBytes map[sizeBucketKey]uint64
+	planJobCount   int
+	clear          func()
 }
 
 func (q *queueMetrics) Pending(j TrackedJob) {
@@ -180,21 +191,21 @@ func (q *queueMetrics) DropPending(j TrackedJob) {
 }
 
 func (q *queueMetrics) addBytes(cj *TrackedCompactionJob) {
-	if cj.value.isSplit {
-		q.splitBytes += cj.totalBlockBytes
-		q.incompleteSplitBytes.Add(float64(cj.totalBlockBytes))
-	} else {
-		q.mergeBytes += cj.totalBlockBytes
-		q.incompleteMergeBytes.Add(float64(cj.totalBlockBytes))
-	}
+	k := jobBucketKey(cj)
+	q.perBucketBytes[k] += cj.totalBlockBytes
+	q.incompleteJobsBytes.WithLabelValues(k.compactionType, k.sizeBucket).Add(float64(cj.totalBlockBytes))
 }
 
 func (q *queueMetrics) subBytes(cj *TrackedCompactionJob) {
+	k := jobBucketKey(cj)
+	q.perBucketBytes[k] -= cj.totalBlockBytes
+	q.incompleteJobsBytes.WithLabelValues(k.compactionType, k.sizeBucket).Sub(float64(cj.totalBlockBytes))
+}
+
+func jobBucketKey(cj *TrackedCompactionJob) sizeBucketKey {
+	ct := compactionTypeMerge
 	if cj.value.isSplit {
-		q.splitBytes -= cj.totalBlockBytes
-		q.incompleteSplitBytes.Sub(float64(cj.totalBlockBytes))
-	} else {
-		q.mergeBytes -= cj.totalBlockBytes
-		q.incompleteMergeBytes.Sub(float64(cj.totalBlockBytes))
+		ct = compactionTypeSplit
 	}
+	return sizeBucketKey{compactionType: ct, sizeBucket: compactor.SizeBucket(cj.totalBlockBytes)}
 }

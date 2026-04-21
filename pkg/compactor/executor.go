@@ -420,7 +420,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			return true, err
 		}
-		c.jobDuration.WithLabelValues(jobTypePlan, "").Observe(time.Since(planStartTime).Seconds())
+		c.jobDuration.WithLabelValues(jobTypePlan, "", "").Observe(time.Since(planStartTime).Seconds())
 		return true, nil
 	default:
 		// Should not happen because this case is caught above.
@@ -533,9 +533,10 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 			compactionType = compactionTypeSplit
 		}
 		elapsed := time.Since(startTime).Seconds()
-		c.jobDuration.WithLabelValues(jobTypeCompaction, compactionType).Observe(elapsed)
+		sizeBucket := SizeBucket(spec.Job.TotalBlocksBytes)
+		c.jobDuration.WithLabelValues(jobTypeCompaction, compactionType, sizeBucket).Observe(elapsed)
 		if totalBytes := spec.Job.TotalBlocksBytes; totalBytes > 0 {
-			c.compactionJobBytes.WithLabelValues(compactionType).Observe(float64(totalBytes))
+			c.compactionJobBytes.WithLabelValues(compactionType, sizeBucket).Observe(float64(totalBytes))
 		}
 		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
 		return compactorschedulerpb.UPDATE_TYPE_COMPLETE, nil

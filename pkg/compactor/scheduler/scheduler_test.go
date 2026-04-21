@@ -41,11 +41,23 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 	}
 	assertIncompleteBytes := func(msg string, splitBytes, mergeBytes float64) {
 		t.Helper()
+		// Test jobs are small and always land in the "xs" bucket. Pre-initialized series for
+		// all other buckets must be present with value 0.
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 			# HELP cortex_compactor_scheduler_incomplete_compaction_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).
 			# TYPE cortex_compactor_scheduler_incomplete_compaction_jobs_bytes gauge
-			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge"} %g
-			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split"} %g
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",size_bucket="l"} 0
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",size_bucket="m"} 0
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",size_bucket="s"} 0
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",size_bucket="xl"} 0
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",size_bucket="xs"} %g
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",size_bucket="xxl"} 0
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",size_bucket="l"} 0
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",size_bucket="m"} 0
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",size_bucket="s"} 0
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",size_bucket="xl"} 0
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",size_bucket="xs"} %g
+			cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",size_bucket="xxl"} 0
 		`, mergeBytes, splitBytes)), "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes"), msg)
 	}
 

@@ -511,14 +511,14 @@ func newMultitenantCompactor(
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"compaction_type"})
+	}, []string{"compaction_type", SizeBucketLabel})
 	c.jobDuration = promauto.With(schedulerReg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_compactor_job_duration_seconds",
 		Help:                            "Duration of successfully completed jobs.",
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"job_type", "compaction_type"})
+	}, []string{"job_type", "compaction_type", SizeBucketLabel})
 	c.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(schedulerReg, "compactor", util.GRPCProtocol)
 
 	return c, nil
