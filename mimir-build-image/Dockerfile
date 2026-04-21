@@ -22,7 +22,7 @@ RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN npm install -g prettier@2.3.2
 
 # renovate: depName=github.com/mvdan/sh
-ENV SHFMT_VERSION=3.13.0
+ENV SHFMT_VERSION=3.13.1
 RUN GOARCH=$(go env GOARCH) && \
     URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
     curl -fsSLo shfmt "${URL}" && \
