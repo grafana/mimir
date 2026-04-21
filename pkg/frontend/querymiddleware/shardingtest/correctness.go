@@ -799,10 +799,14 @@ func testQueryShardingFunctionCorrectness(t *testing.T, runTestCase functionCorr
 	}
 
 	fnToIgnore := map[string]struct{}{
-		"time":   {},
-		"scalar": {},
-		"vector": {},
+		"end":    {},
 		"pi":     {},
+		"range":  {},
+		"scalar": {},
+		"start":  {},
+		"step":   {},
+		"time":   {},
+		"vector": {},
 	}
 	for _, tc := range testsToIgnore {
 		fnToIgnore[tc.fn] = struct{}{}

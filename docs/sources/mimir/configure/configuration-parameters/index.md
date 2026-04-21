@@ -342,10 +342,15 @@ runtime_config:
   # CLI flag: -runtime-config.reload-period
   [period: <duration> | default = 10s]
 
-  # Comma separated list of yaml files with the configuration that can be
-  # updated at runtime. Runtime config files will be merged from left to right.
+  # Comma separated list of yaml files or URLs with the configuration that can
+  # be updated at runtime. Runtime config files will be merged from left to
+  # right.
   # CLI flag: -runtime-config.file
   [file: <string> | default = ""]
+
+  # (advanced) HTTP client timeout when fetching runtime config from URLs.
+  # CLI flag: -runtime-config.http-client-timeout
+  [http_client_timeout: <duration> | default = 30s]
 
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
@@ -4285,8 +4290,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.ignore-ooo-exemplars
 [ignore_ooo_exemplars: <boolean> | default = false]
 
-# (experimental) When the number of owned series for a tenant exceeds this
-# threshold, trigger early head compaction. 0 to disable.
+# (experimental) When the number of owned series for a tenant across the cluster
+# exceeds this threshold, trigger early head compaction. 0 to disable.
 # CLI flag: -ingester.early-head-compaction-owned-series-threshold
 [early_head_compaction_owned_series_threshold: <int> | default = 0]
 
@@ -4531,30 +4536,31 @@ The `limits` block configures default and per-tenant limits imposed by component
 # List of queries to block.
 # Example:
 #   The following configuration shows various ways to block queries: by pattern,
-#   by time range, or by combining both. Setting the pattern to ".*" and regex
-#   to true blocks all queries. Time range filtering blocks queries with
+#   by time range, or by combining both. Rules are validated at configuration
+#   load; an error is returned if the pattern is missing or, when regex: true,
+#   the pattern is not a valid regular expression. Use pattern: ".*" with regex:
+#   true to match all queries. Time range filtering blocks queries with
 #   durations exceeding the specified threshold.
 #   blocked_queries:
 #       - pattern: rate(metric_counter[5m])
 #         regex: false
 #         reason: because the query is misconfigured
-#         unaligned_range_queries: false
 #       - pattern: .*expensive.*
 #         regex: true
 #         reason: expensive queries over 7 days are blocked
-#         unaligned_range_queries: false
 #         time_range_longer_than: 1w
-#       - pattern: ""
-#         regex: false
+#       - pattern: .*
+#         regex: true
 #         reason: queries longer than 21 days are blocked
-#         unaligned_range_queries: false
 #         time_range_longer_than: 3w
 blocked_queries:
-  - # PromQL expression pattern to match.
+  - # PromQL expression pattern to match. Rules without a pattern are a
+    # configuration error.
     [pattern: <string> | default = ""]
 
-    # If true, the pattern is treated as a regular expression. If false, the
-    # pattern is treated as a literal match.
+    # If true, the pattern is treated as a regular expression; an invalid
+    # regular expression is a configuration error. If false, the pattern is
+    # treated as a literal match.
     [regex: <boolean> | default = ]
 
     # Reason returned to clients when rejecting matching queries.
@@ -4600,7 +4606,8 @@ limited_queries:
 #           limit:
 #               value: "100"
 blocked_requests:
-  - # Path to match, including leading slash (/). Leave blank to match all paths.
+  - # Path to match, including leading slash (/). Leave blank to match all
+    # paths.
     [path: <string> | default = ""]
 
     # HTTP method to match. Leave blank to match all methods.
@@ -5450,7 +5457,7 @@ kafka:
   # only when there is sufficient backlog of records to consume. Set to 0 to
   # disable.
   # CLI flag: -ingest-storage.kafka.fetch-concurrency-max
-  [fetch_concurrency_max: <int> | default = 0]
+  [fetch_concurrency_max: <int> | default = 12]
 
   # When enabled, the fetch request MaxBytes field is computed using the
   # compressed size of previous records. When disabled, MaxBytes is computed
@@ -5462,12 +5469,12 @@ kafka:
   # The maximum number of buffered records ready to be processed. This limit
   # applies to the sum of all inflight requests. Set to 0 to disable the limit.
   # CLI flag: -ingest-storage.kafka.max-buffered-bytes
-  [max_buffered_bytes: <int> | default = 100000000]
+  [max_buffered_bytes: <int> | default = 1000000000]
 
   # The maximum number of concurrent ingestion streams to the TSDB head. Every
   # tenant has their own set of streams. 0 to disable.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-max
-  [ingestion_concurrency_max: <int> | default = 0]
+  [ingestion_concurrency_max: <int> | default = 8]
 
   # The number of timeseries to batch together before ingesting to the TSDB
   # head. Only use this setting when
@@ -5479,14 +5486,14 @@ kafka:
   # use this setting when -ingest-storage.kafka.ingestion-concurrency-max is
   # greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-queue-capacity
-  [ingestion_concurrency_queue_capacity: <int> | default = 5]
+  [ingestion_concurrency_queue_capacity: <int> | default = 3]
 
   # The expected number of times to ingest timeseries to the TSDB head after
   # batching. With fewer flushes, the overhead of splitting up the work is
   # higher than the benefit of parallelization. Only use this setting when
   # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard
-  [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+  [ingestion_concurrency_target_flushes_per_shard: <int> | default = 40]
 
   # The estimated number of bytes a sample has at time of ingestion. This value
   # is used to estimate the timeseries without decompressing them. Only use this

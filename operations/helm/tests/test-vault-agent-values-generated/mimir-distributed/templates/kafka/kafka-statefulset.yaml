@@ -52,7 +52,6 @@ spec:
               name: controller
               protocol: TCP
           env:
-            # Kubernetes expands env variables in lexical order. So "_POD_NAME" (sic) here is so the name was expanded before KAFKA_ADVERTISED_LISTENERS is.
             - name: _POD_NAME
               valueFrom:
                 fieldRef:
@@ -64,21 +63,19 @@ spec:
                 fieldRef:
                   fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
             - name: KAFKA_PROCESS_ROLES
-              value: "broker,controller"
+              value: broker,controller
             - name: KAFKA_LISTENERS
-              value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+              value: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
             - name: KAFKA_ADVERTISED_LISTENERS
               value: PLAINTEXT://$(_POD_NAME).test-vault-agent-values-mimir-kafka-headless.citestns.svc.cluster.local.:9092
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-              # Kafka fails to resolve DNS name with a trailing dot, e.g. "example.cluster.local." Thus, "trimSuffix" is here for the clusterDomain.
-              value: "0@test-vault-agent-values-mimir-kafka-0.test-vault-agent-values-mimir-kafka-headless.citestns.svc.cluster.local:9093"
+              value: 0@test-vault-agent-values-mimir-kafka-0.test-vault-agent-values-mimir-kafka-headless.citestns.svc.cluster.local:9093
             - name: KAFKA_CONTROLLER_LISTENER_NAMES
-              value: "CONTROLLER"
+              value: CONTROLLER
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
-              value: "PLAINTEXT"
+              value: PLAINTEXT
             - name: KAFKA_LOG_DIRS
-              value: "/var/lib/kafka/data"
-              # The "REPLICATION_FACTOR" must be defined so the broker created offsets topic. Otherwise, the Mimir ingesters won't be able to start.
+              value: /var/lib/kafka/data
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
               value: "1"
             - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
