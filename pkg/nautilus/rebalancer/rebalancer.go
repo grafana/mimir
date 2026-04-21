@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -25,6 +27,20 @@ import (
 type Config struct {
 	RebalanceInterval time.Duration `yaml:"rebalance_interval"`
 	MovementBudget    float64       `yaml:"movement_budget"`
+
+	// IngesterRPCTimeout bounds each individual HashRangeStats /
+	// SetHashRanges call to a single ingester. RPCs are issued in
+	// parallel, but a stuck ingester (e.g. mid-rollout, with a stale
+	// pool connection) would otherwise tie up the whole round behind
+	// TCP-level timeouts. Set to 0 to disable per-call timeouts (not
+	// recommended in production).
+	IngesterRPCTimeout time.Duration `yaml:"ingester_rpc_timeout"`
+
+	// IngesterRPCConcurrency caps the number of in-flight ingester
+	// RPCs per round. A value <= 0 means "one job per ingester"
+	// (effectively unbounded). Tune down if the rebalancer pod has
+	// limited file descriptors or you want gentler load on the pool.
+	IngesterRPCConcurrency int `yaml:"ingester_rpc_concurrency"`
 
 	// MoveCooldown is the minimum time a hash range must sit on its new
 	// partition after a move before it (or any range overlapping its
@@ -48,6 +64,8 @@ type Config struct {
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.RebalanceInterval, prefix+"rebalance-interval", 60*time.Second, "How often the rebalancer runs.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.09, "Maximum fraction of the hash space that can be moved per round.")
+	f.DurationVar(&cfg.IngesterRPCTimeout, prefix+"ingester-rpc-timeout", 4*time.Second, "Per-call timeout for HashRangeStats and SetHashRanges RPCs to each ingester. Prevents one stuck pod (e.g. mid-rollout) from stalling the whole rebalance round. 0 disables.")
+	f.IntVar(&cfg.IngesterRPCConcurrency, prefix+"ingester-rpc-concurrency", 10, "Maximum concurrent ingester RPCs per round. 0 means one per ingester (unbounded).")
 	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 90*time.Second, "Minimum time between consecutive moves of the same hash range (or any range overlapping it). Covers distributor poll lag plus ingester EWMA settle time. 0 disables.")
 	f.Float64Var(&cfg.LoadWeightSeries, prefix+"load-weight-series", 0.8, "Weight of normalized active series count in the per-range combined load metric.")
 	f.Float64Var(&cfg.LoadWeightSamples, prefix+"load-weight-samples", 0.2, "Weight of normalized sample ingestion rate in the per-range combined load metric.")
@@ -216,6 +234,11 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 // ingesters only report rates for ranges they own, the results are
 // already partitioned; we aggregate into a single map keyed by range.
 //
+// RPCs are issued in parallel with a per-call timeout (see
+// Config.IngesterRPCTimeout) so a single stuck ingester (e.g. mid-
+// rollout, with a stale pool connection) cannot block the whole
+// round behind TCP-level timeouts.
+//
 // The second return value is keyed by ingester instance ID and holds
 // the total in-memory series count on that ingester (across all
 // tenants and all hash buckets, including ones not currently owned).
@@ -227,32 +250,74 @@ func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]
 		return nil, nil, err
 	}
 
-	var all []rangeRate
-	instanceTotals := make(map[string]int64, len(instances.Instances))
-	for _, inst := range instances.Instances {
+	type result struct {
+		instanceID  string
+		totalSeries int64
+		rates       []rangeRate
+	}
+
+	results := make([]result, len(instances.Instances))
+	var ok, failed atomic.Int32
+
+	_ = concurrency.ForEachJob(ctx, len(instances.Instances), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
+		inst := instances.Instances[idx]
+
 		c, err := r.pool.GetClientForInstance(inst)
 		if err != nil {
+			failed.Add(1)
 			level.Warn(r.logger).Log("msg", "failed to get client for ingester", "ingester", inst.Addr, "err", err)
-			continue
+			return nil
 		}
 
-		resp, err := c.(ingester_client.IngesterClient).HashRangeStats(ctx, &ingester_client.HashRangeStatsRequest{})
+		callCtx, cancel := r.withRPCTimeout(jobCtx)
+		defer cancel()
+
+		resp, err := c.(ingester_client.IngesterClient).HashRangeStats(callCtx, &ingester_client.HashRangeStatsRequest{})
 		if err != nil {
+			failed.Add(1)
 			level.Warn(r.logger).Log("msg", "HashRangeStats RPC failed", "ingester", inst.Addr, "err", err)
-			continue
+			return nil
 		}
 
-		instanceTotals[inst.GetId()] = resp.TotalActiveSeries
-		for _, rate := range resp.Rates {
-			all = append(all, rangeRate{
+		rates := make([]rangeRate, len(resp.Rates))
+		for i, rate := range resp.Rates {
+			rates[i] = rangeRate{
 				hr:      assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
 				samples: rate.SamplesPerSecond,
 				series:  rate.ActiveSeries,
-			})
+			}
 		}
+		results[idx] = result{
+			instanceID:  inst.GetId(),
+			totalSeries: resp.TotalActiveSeries,
+			rates:       rates,
+		}
+		ok.Add(1)
+		return nil
+	})
+
+	var all []rangeRate
+	instanceTotals := make(map[string]int64, len(instances.Instances))
+	for _, res := range results {
+		if res.instanceID == "" {
+			continue
+		}
+		instanceTotals[res.instanceID] = res.totalSeries
+		all = append(all, res.rates...)
 	}
 
+	level.Info(r.logger).Log("msg", "collected ingester stats", "healthy", len(instances.Instances), "ok", ok.Load(), "failed", failed.Load())
 	return all, instanceTotals, nil
+}
+
+// withRPCTimeout wraps ctx with the configured per-call timeout. When
+// the timeout is disabled (<=0), returns the parent context and a
+// no-op cancel.
+func (r *Rebalancer) withRPCTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if r.cfg.IngesterRPCTimeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, r.cfg.IngesterRPCTimeout)
 }
 
 // computePartitionOrphans returns a per-partition estimate of "orphan"
@@ -361,6 +426,16 @@ func (r *Rebalancer) pushRangesToIngesters(ctx context.Context, a *assignment.As
 		}
 	}
 
+	// Flatten the per-instance work into an indexed slice so we can
+	// fan out the SetHashRanges RPCs in parallel. Each job is bounded
+	// by the configured per-call timeout; one stuck pod can no longer
+	// stall the whole round behind TCP-level timeouts.
+	type job struct {
+		instanceID string
+		inst       ring.InstanceDesc
+		ranges     []ingester_client.HashRangeEntry
+	}
+	jobs := make([]job, 0, len(instanceRanges))
 	for instanceID, ranges := range instanceRanges {
 		inst, ok := idToInst[instanceID]
 		if !ok {
@@ -385,17 +460,33 @@ func (r *Rebalancer) pushRangesToIngesters(ctx context.Context, a *assignment.As
 			)
 		}
 
-		c, err := r.pool.GetClientForInstance(inst)
-		if err != nil {
-			level.Warn(r.logger).Log("msg", "failed to get client for ingester", "ingester", inst.Addr, "err", err)
-			continue
-		}
-		req := &ingester_client.SetHashRangesRequest{Ranges: ranges}
-		if _, err := c.(ingester_client.IngesterClient).SetHashRanges(ctx, req); err != nil {
-			level.Warn(r.logger).Log("msg", "SetHashRanges RPC failed", "ingester", inst.Addr, "err", err)
-		}
+		jobs = append(jobs, job{instanceID: instanceID, inst: inst, ranges: ranges})
 	}
 
+	var ok, failed atomic.Int32
+	_ = concurrency.ForEachJob(ctx, len(jobs), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
+		j := jobs[idx]
+
+		c, err := r.pool.GetClientForInstance(j.inst)
+		if err != nil {
+			failed.Add(1)
+			level.Warn(r.logger).Log("msg", "failed to get client for ingester", "ingester", j.inst.Addr, "err", err)
+			return nil
+		}
+
+		callCtx, cancel := r.withRPCTimeout(jobCtx)
+		defer cancel()
+
+		if _, err := c.(ingester_client.IngesterClient).SetHashRanges(callCtx, &ingester_client.SetHashRangesRequest{Ranges: j.ranges}); err != nil {
+			failed.Add(1)
+			level.Warn(r.logger).Log("msg", "SetHashRanges RPC failed", "ingester", j.inst.Addr, "err", err)
+			return nil
+		}
+		ok.Add(1)
+		return nil
+	})
+
+	level.Info(r.logger).Log("msg", "pushed ranges to ingesters", "ok", ok.Load(), "failed", failed.Load())
 	r.prevInstanceRanges = instanceRanges
 }
 

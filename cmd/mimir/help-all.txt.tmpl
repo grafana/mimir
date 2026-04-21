@@ -1299,6 +1299,8 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
+  -distributor.nautilus-rebalancer-address string
+    	[experimental] gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
@@ -1665,6 +1667,8 @@ Usage of ./cmd/mimir/mimir:
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.native-histograms-ingestion-enabled
     	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'. (default true)
+  -ingester.nautilus-enabled
+    	[experimental] Enable nautilus hash-range tracking. When enabled, the ingester accepts SetHashRanges/HashRangeStats RPCs and tracks per-range ingestion rates.
   -ingester.out-of-order-blocks-external-label-enabled
     	Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
   -ingester.out-of-order-time-window duration
