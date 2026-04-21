@@ -658,7 +658,7 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, inflightTra
 			defer span.End()
 
 			// Note this is not a managed tracker do we do not need to deregister it.
-			childTracker := inflightTracker.NewWrappedMemoryConsumptionTracker(childCtx, req.GetQuery(), memoryTracker)
+			childTracker := inflightTracker.NewNestedMemoryConsumptionTracker(childCtx, req.GetQuery(), memoryTracker)
 			childCtx = limiter.AddMemoryTrackerToContext(childCtx, childTracker)
 
 			resp, err := downstream.Do(childCtx, req)
