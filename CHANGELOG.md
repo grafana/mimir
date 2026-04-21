@@ -266,6 +266,7 @@
 * [BUGFIX] Alertmanager: Fix deadlock when trying to broadcast after stopping a tenant #14922
 * [BUGFIX] Query-frontend: Fix max total query length limit (`-query-frontend.max-total-query-length`) not being enforced on instant queries with subqueries or range selectors. #14985
 * [BUGFIX] Compactor: Fix potential goroutine leak when compaction iteration exits early due to errors. #13420
+* [BUGFIX] MQE: Fix narrow selectors optimization pass to drop irrelevant matchers before passing to children  #15082
 
 ### Mixin
 
