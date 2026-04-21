@@ -42,6 +42,7 @@ import (
 var (
 	errCompactionJobHasNoBlocks = errors.New("compaction job has no blocks")
 	errNoBlockMetadataProvided  = errors.New("no block metadata provided")
+	errJobCanceledByScheduler   = errors.New("job canceled by scheduler")
 )
 
 // compactionExecutor defines how compaction work is executed.
@@ -317,7 +318,7 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 				// Check if the job was canceled from the scheduler side (not found response)
 				if grpcutil.ErrorToStatusCode(err) == codes.NotFound {
 					level.Info(e.logger).Log("msg", "job canceled by scheduler, stopping work", "job_id", jobId, "tenant", jobTenant)
-					cancelJob(err) // Cancel the job context to stop the main work
+					cancelJob(errJobCanceledByScheduler) // Cancel the job context to stop the main work
 					return
 				}
 				level.Warn(e.logger).Log("msg", "failed to send keep-alive update", "job_id", jobId, "tenant", jobTenant, "err", err)
@@ -418,7 +419,9 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		wg.Wait()
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
-			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+			if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
+				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+			}
 			return true, err
 		}
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
@@ -430,12 +433,14 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		wg.Wait()
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
-			// Planning jobs only send final status updates on failure
-			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+			if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
+				// Only send an update on failure if the scheduler still thinks we own the job.
+				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+			}
 			return true, planErr
 		}
 
-		// For planning jobs, no final status update is sent - results are communicated via PlannedJobs
+		// For planning jobs, no final status update is sent on success. Completion is communicated via PlannedJobs.
 		if err := e.sendPlannedJobs(ctx, resp.Key, resp.Spec, plannedJobs); err != nil {
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			return true, err

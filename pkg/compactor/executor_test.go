@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -917,6 +918,97 @@ func TestBuildCompactionJobFromMetas(t *testing.T) {
 				assert.Equal(t, tc.expectMinTime, job.MinTime())
 				assert.Equal(t, tc.expectMaxTime, job.MaxTime())
 			}
+		})
+	}
+}
+
+type blockingBucket struct {
+	objstore.Bucket
+}
+
+func (b *blockingBucket) Get(ctx context.Context, _ string) (io.ReadCloser, error) {
+	// Blocks compaction jobs
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (b *blockingBucket) Iter(ctx context.Context, _ string, _ func(string) error, _ ...objstore.IterOption) error {
+	// Blocks planning jobs
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestSchedulerExecutor_SchedulerCancellation_SkipsFinalStatus(t *testing.T) {
+	tests := map[string]struct {
+		leaseResponse *compactorschedulerpb.LeaseJobResponse
+		setupUpdate   func(*mockCompactorSchedulerClient)
+	}{
+		"compaction": {
+			leaseResponse: &compactorschedulerpb.LeaseJobResponse{
+				Key: &compactorschedulerpb.JobKey{Id: "compaction"},
+				Spec: &compactorschedulerpb.JobSpec{
+					Tenant:  "tenant",
+					Job:     &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testBlockID1.Bytes()}},
+					JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
+				},
+			},
+			setupUpdate: func(m *mockCompactorSchedulerClient) {
+				m.UpdateJobFunc = func(_ context.Context, _ *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+					return nil, status.Error(codes.NotFound, "not found")
+				}
+			},
+		},
+		"planning": {
+			leaseResponse: &compactorschedulerpb.LeaseJobResponse{
+				Key: &compactorschedulerpb.JobKey{Id: "planning"},
+				Spec: &compactorschedulerpb.JobSpec{
+					Tenant:  "tenant",
+					JobType: compactorschedulerpb.JOB_TYPE_PLANNING,
+				},
+			},
+			setupUpdate: func(m *mockCompactorSchedulerClient) {
+				m.UpdatePlanJobFunc = func(_ context.Context, _ *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+					return nil, status.Error(codes.NotFound, "not found")
+				}
+			},
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			mockSchedulerClient := &mockCompactorSchedulerClient{}
+			mockSchedulerClient.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
+				return tc.leaseResponse, nil
+			}
+			tc.setupUpdate(mockSchedulerClient)
+
+			cfg := makeTestCompactorConfig()
+			cfg.SchedulerClientConfig.UpdateInterval = 1 * time.Millisecond // arbitrary
+
+			schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
+			c := prepareCompactorForExecutorTest(t, cfg, &blockingBucket{Bucket: objstore.NewInMemBucket()}, newMockConfigProvider())
+
+			synctest.Test(t, func(t *testing.T) {
+				errCh := make(chan error, 1)
+				go func() {
+					_, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
+					errCh <- err
+				}()
+
+				// Wait until both goroutines get caught:
+				// 1. The job is blocked in a bucket call
+				// 2. The heartbeat is waiting on its ticker
+				synctest.Wait()
+
+				// Advance synctest time so a heartbeat is sent.
+				// The scheduler will return NotFound in response, which cancels the job context,
+				// which then frees the goroutine from the blocking bucket.
+				time.Sleep(cfg.SchedulerClientConfig.UpdateInterval + time.Millisecond)
+				synctest.Wait()
+
+				require.Error(t, <-errCh)
+				require.Equal(t, 1, mockSchedulerClient.GetUpdateJobCallCount()) // no final status sent
+			})
 		})
 	}
 }
