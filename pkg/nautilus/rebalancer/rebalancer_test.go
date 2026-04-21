@@ -31,7 +31,7 @@ func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 	cfg := Config{MovementBudget: 0.5}
 	r := &Rebalancer{cfg: cfg}
 
-	result := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
 
 	// After rebalancing, partition 0 should own less hash space than
@@ -72,7 +72,7 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 	cfg := Config{MovementBudget: 0.09}
 	r := &Rebalancer{cfg: cfg}
 
-	result := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
 
 	rateMap := buildRateMap(rates)
@@ -106,7 +106,7 @@ func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
 	cfg := Config{MovementBudget: 0.5}
 	r := &Rebalancer{cfg: cfg}
 
-	result := r.runSlicer(initial, rates, activePartitions)
+	result, _ := r.runSlicer(initial, rates, activePartitions)
 	require.NoError(t, result.Validate())
 
 	for _, e := range result.Entries {
@@ -131,7 +131,7 @@ func TestRunSlicer_SliceCountCapped(t *testing.T) {
 	cfg := Config{MovementBudget: 0.09}
 	r := &Rebalancer{cfg: cfg}
 
-	result := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
 
 	assert.LessOrEqual(t, len(result.Entries), maxSlicesPerPartition*len(partitions)+len(partitions),
@@ -151,7 +151,7 @@ func TestMergeAdjacentCold(t *testing.T) {
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 1}, load: 0.1},
 	}
 
-	result := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, rateMap)
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, rateMap)
 
 	// All three slices are cold and adjacent; the first two merge
 	// (same partition), then the third merges cross-partition onto
@@ -177,7 +177,7 @@ func TestMergeAdjacentCold_CrossPartition(t *testing.T) {
 		{Lo: 0, Hi: 99}: 0.1, {Lo: 100, Hi: 199}: 0.1, {Lo: 200, Hi: 299}: 0.1,
 	}
 
-	result := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, rateMap)
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, rateMap)
 
 	// Should merge into fewer entries by moving the B slice onto A's partition.
 	require.Less(t, len(result), 3, "cross-partition merge should reduce entry count")
@@ -208,7 +208,7 @@ func TestRunSlicer_Phase1_DistributesAcrossPartitions(t *testing.T) {
 	cfg := Config{MovementBudget: 0.0}
 	r := &Rebalancer{cfg: cfg}
 
-	result := r.runSlicer(initial, rates, activePartitions)
+	result, _ := r.runSlicer(initial, rates, activePartitions)
 	require.NoError(t, result.Validate())
 
 	counts := make(map[int32]int)
@@ -243,7 +243,7 @@ func TestRunSlicer_Phase4_ExhaustsBudget(t *testing.T) {
 	cfg := Config{MovementBudget: 0.5}
 	r := &Rebalancer{cfg: cfg}
 
-	result := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
 
 	rateMap := buildRateMap(rates)
@@ -288,7 +288,7 @@ func TestRunSlicer_Phase5_SplitsAnyHotSlice(t *testing.T) {
 	cfg := Config{MovementBudget: 0.0}
 	r := &Rebalancer{cfg: cfg}
 
-	result := r.runSlicer(initial, rates, partitions)
+	result, _ := r.runSlicer(initial, rates, partitions)
 	require.NoError(t, result.Validate())
 
 	// Both hot slices should split even though neither partition is

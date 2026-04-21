@@ -47,6 +47,7 @@ type Rebalancer struct {
 	partitionRing *ring.PartitionInstanceRing
 
 	store assignmentStore
+	admin adminState
 
 	// prevInstanceRanges tracks the last set of ranges pushed to each
 	// ingester, keyed by instance ID, so we can log changes.
@@ -109,14 +110,63 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	newAssignment := r.runSlicer(current, rates, activePartitions)
+	r.admin.setLastRates(buildRateMap(rates))
+
+	newAssignment, actions := r.runSlicer(current, rates, activePartitions)
 	if err := newAssignment.Validate(); err != nil {
 		level.Error(r.logger).Log("msg", "generated invalid assignment", "err", err)
 		return nil
 	}
 
-	r.store.add(time.Now(), newAssignment)
+	now := time.Now()
+	r.store.add(now, newAssignment)
 	r.pushRangesToIngesters(ctx, newAssignment)
+
+	// Compute round summary stats.
+	rateMap := buildRateMap(rates)
+	partLoads := computePartitionLoads(buildRangeLoads(newAssignment, rateMap))
+	var totalLoad, maxPL, minPL float64
+	minPL = math.MaxFloat64
+	for _, pl := range partLoads {
+		totalLoad += pl
+		if pl > maxPL {
+			maxPL = pl
+		}
+		if pl < minPL {
+			minPL = pl
+		}
+	}
+	if minPL == math.MaxFloat64 {
+		minPL = 0
+	}
+	meanPL := 0.0
+	if len(partLoads) > 0 {
+		meanPL = totalLoad / float64(len(partLoads))
+	}
+	imbalance := 0.0
+	if meanPL > 0 {
+		imbalance = (maxPL - minPL) / meanPL
+	}
+	movedFraction := 0.0
+	hashSpaceSize := float64(uint64(math.MaxUint32) + 1)
+	for _, a := range actions {
+		if a.Kind == ActionMove || a.Kind == ActionReassign {
+			movedFraction += float64(a.Range.Size()) / hashSpaceSize
+		}
+	}
+
+	r.admin.addRound(RoundLog{
+		Time:           now,
+		TotalLoad:      totalLoad,
+		MeanPartLoad:   meanPL,
+		MaxPartLoad:    maxPL,
+		MinPartLoad:    minPL,
+		ImbalanceRatio: imbalance,
+		NumEntries:     len(newAssignment.Entries),
+		NumPartitions:  len(partLoads),
+		MovedFraction:  movedFraction,
+		Actions:        actions,
+	})
 
 	level.Info(r.logger).Log("msg", "rebalance complete", "entries", len(newAssignment.Entries), "total_assignments", len(r.store.snapshot().Assignments))
 	return nil
@@ -271,9 +321,10 @@ type rangeLoad struct {
 //  4. Split hot slices (>2× mean slice load) without changing
 //     assignments. This creates finer load signals for the next round.
 //     Cap: maxSlicesPerPartition.
-func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate, activePartitions []int32) *assignment.Assignment {
+func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate, activePartitions []int32) (*assignment.Assignment, []Action) {
 	rateMap := buildRateMap(rates)
 	numPartitions := len(activePartitions)
+	var actions []Action
 
 	activeSet := make(map[int32]bool, numPartitions)
 	for _, pid := range activePartitions {
@@ -281,8 +332,6 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	}
 
 	// --- Phase 1: build entries, reassign inactive partitions ----------
-	// Dead-partition slices are distributed round-robin across all
-	// active partitions (Slicer paper: "spread across remaining tasks").
 	entries := make([]rangeLoad, len(current.Entries))
 	rrIdx := 0
 	for i, e := range current.Entries {
@@ -291,7 +340,15 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 			load:  lookupRate(e.Range, rateMap),
 		}
 		if !activeSet[e.PartitionID] {
-			entries[i].entry.PartitionID = activePartitions[rrIdx%numPartitions]
+			newPID := activePartitions[rrIdx%numPartitions]
+			actions = append(actions, Action{
+				Kind:     ActionReassign,
+				Range:    e.Range,
+				FromPart: e.PartitionID,
+				ToPart:   newPID,
+				Detail:   fmt.Sprintf("inactive partition %d → %d", e.PartitionID, newPID),
+			})
+			entries[i].entry.PartitionID = newPID
 			rrIdx++
 		}
 	}
@@ -306,7 +363,9 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	if len(entries) > minSlicesPerPartition*numPartitions {
 		meanSliceLoad := totalLoad / float64(len(entries))
 		mergeMoveBudget := mergeChurnBudget * float64(uint64(math.MaxUint32)+1)
-		entries = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions, rateMap)
+		var mergeActions []Action
+		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions, rateMap)
+		actions = append(actions, mergeActions...)
 	}
 
 	// --- Phase 3: weighted-move from hottest to coldest ----------------
@@ -335,6 +394,9 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 			break
 		}
 
+		// Don't drain any partition below 25% of the target load.
+		minSourceLoad := targetLoad * 0.25
+
 		bestIdx := -1
 		bestScore := 0.0
 		for j, rl := range entries {
@@ -345,9 +407,12 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 			if moved+moveCost > movementBudget {
 				continue
 			}
-			imbalanceBefore := math.Abs(hottestLoad-targetLoad) + math.Abs(coldestLoad-targetLoad)
 			newHotLoad := hottestLoad - rl.load
+			if newHotLoad < minSourceLoad {
+				continue
+			}
 			newColdLoad := coldestLoad + rl.load
+			imbalanceBefore := math.Abs(hottestLoad-targetLoad) + math.Abs(coldestLoad-targetLoad)
 			imbalanceAfter := math.Abs(newHotLoad-targetLoad) + math.Abs(newColdLoad-targetLoad)
 			improvement := imbalanceBefore - imbalanceAfter
 			if improvement <= 0 {
@@ -364,18 +429,47 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 			break
 		}
 
+		fromPID := entries[bestIdx].entry.PartitionID
 		moved += float64(entries[bestIdx].entry.Range.Size())
 		entries[bestIdx].entry.PartitionID = coldestPID
+		actions = append(actions, Action{
+			Kind:     ActionMove,
+			Range:    entries[bestIdx].entry.Range,
+			FromPart: fromPID,
+			ToPart:   coldestPID,
+			Detail:   fmt.Sprintf("load=%.1f/s, hot P%d→cold P%d", entries[bestIdx].load, fromPID, coldestPID),
+		})
 	}
 
 	// --- Phase 4: split hot slices ----------------------------------------
-	// Per the Slicer paper: split any slice whose load exceeds 2x the
-	// mean slice load. This produces finer granularity for the next
-	// round's moves. The maxSlicesPerPartition cap prevents runaway growth.
+	// Only split ranges on OVERLOADED partitions (>= target load).
+	// Splitting ranges on cold partitions just adds fragmentation
+	// without helping rebalancing.
+	//
+	// The split threshold is computed from ranges with non-zero load
+	// to avoid the feedback loop where zero-load fragments from prior
+	// splits drag down the mean and cause everything to look "hot".
 	maxTotal := maxSlicesPerPartition * numPartitions
 	if len(entries) < maxTotal {
-		meanSliceLoad := totalLoad / float64(len(entries))
+		partitionLoads := computePartitionLoads(entries)
+
+		var nonZeroCount int
+		var nonZeroLoad float64
+		for _, rl := range entries {
+			if rl.load > 0 {
+				nonZeroCount++
+				nonZeroLoad += rl.load
+			}
+		}
+		meanSliceLoad := nonZeroLoad / math.Max(float64(nonZeroCount), 1)
 		splitThreshold := 2.0 * meanSliceLoad
+
+		overloaded := make(map[int32]bool, numPartitions)
+		for _, pid := range activePartitions {
+			if partitionLoads[pid] >= targetLoad {
+				overloaded[pid] = true
+			}
+		}
 
 		var newEntries []rangeLoad
 		for _, rl := range entries {
@@ -383,7 +477,7 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 				newEntries = append(newEntries, rl)
 				continue
 			}
-			if rl.load > splitThreshold && rl.entry.Range.Size() > 1 {
+			if rl.load > splitThreshold && rl.entry.Range.Size() > 1 && overloaded[rl.entry.PartitionID] {
 				mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
 				left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
 				right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
@@ -398,6 +492,12 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 					rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad},
 					rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad},
 				)
+				actions = append(actions, Action{
+					Kind:   ActionSplit,
+					Range:  rl.entry.Range,
+					ToPart: rl.entry.PartitionID,
+					Detail: fmt.Sprintf("load=%.1f/s > threshold=%.1f/s, split on P%d", rl.load, splitThreshold, rl.entry.PartitionID),
+				})
 			} else {
 				newEntries = append(newEntries, rl)
 			}
@@ -416,7 +516,15 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	for i, rl := range entries {
 		result.Entries[i] = rl.entry
 	}
-	return result
+	return result, actions
+}
+
+func buildRangeLoads(a *assignment.Assignment, rateMap map[assignment.HashRange]float64) []rangeLoad {
+	entries := make([]rangeLoad, len(a.Entries))
+	for i, e := range a.Entries {
+		entries[i] = rangeLoad{entry: e, load: lookupRate(e.Range, rateMap)}
+	}
+	return entries
 }
 
 func computePartitionLoads(entries []rangeLoad) map[int32]float64 {
@@ -458,14 +566,15 @@ func lookupRate(hr assignment.HashRange, rateMap map[assignment.HashRange]float6
 //   - receiving partition load stays below maxPartitionLoad (target * 1.5)
 //   - total churn stays within churnBudget
 //   - total entries don't drop below minEntries
-func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries int, rateMap map[assignment.HashRange]float64) []rangeLoad {
+func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries int, rateMap map[assignment.HashRange]float64) ([]rangeLoad, []Action) {
 	if len(entries) <= 1 || len(entries) <= minEntries {
-		return entries
+		return entries, nil
 	}
 
 	maxPartitionLoad := targetLoad * 1.5
 	partitionLoads := computePartitionLoads(entries)
 	var churned float64
+	var actions []Action
 
 	result := []rangeLoad{entries[0]}
 	for i := 1; i < len(entries); i++ {
@@ -491,15 +600,20 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 			if partitionLoads[prev.entry.PartitionID] <= maxPartitionLoad {
 				mergeCost := float64(curr.entry.Range.Size())
 				if churned+mergeCost <= churnBudget {
-					prev.entry.Range = assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
+					merged := assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
+					actions = append(actions, Action{
+						Kind:   ActionMerge,
+						Range:  merged,
+						ToPart: prev.entry.PartitionID,
+						Detail: fmt.Sprintf("same-partition merge on P%d, combined load=%.1f/s", prev.entry.PartitionID, mergedLoad),
+					})
+					prev.entry.Range = merged
 					prev.load = mergedLoad
 					churned += mergeCost
 					continue
 				}
 			}
 		} else {
-			// Cross-partition merge: move the smaller slice onto the
-			// larger slice's partition, then merge the ranges.
 			var receiverPID, donorPID int32
 			var movedSize float64
 			var donorLoad float64
@@ -519,7 +633,15 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 				partitionLoads[receiverPID] += donorLoad
 				partitionLoads[donorPID] -= donorLoad
 
-				prev.entry.Range = assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
+				merged := assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
+				actions = append(actions, Action{
+					Kind:     ActionMerge,
+					Range:    merged,
+					FromPart: donorPID,
+					ToPart:   receiverPID,
+					Detail:   fmt.Sprintf("cross-partition merge P%d+P%d→P%d, combined load=%.1f/s", donorPID, receiverPID, receiverPID, mergedLoad),
+				})
+				prev.entry.Range = merged
 				prev.entry.PartitionID = receiverPID
 				prev.load = mergedLoad
 				churned += movedSize
@@ -529,7 +651,7 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 
 		result = append(result, curr)
 	}
-	return result
+	return result, actions
 }
 
 type rangeKey struct{ lo, hi uint32 }

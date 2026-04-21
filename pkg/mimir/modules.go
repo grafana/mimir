@@ -1469,6 +1469,9 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 		util_log.Logger,
 	)
 	t.Server.GRPC.RegisterService(&rebalancer.NautilusRebalancerServiceDesc, t.NautilusRebalancer)
+
+	t.API.RegisterRoute("/nautilus/rebalancer", t.NautilusRebalancer, false, true, "GET")
+
 	return t.NautilusRebalancer, nil
 }
 
