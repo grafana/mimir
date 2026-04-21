@@ -1116,8 +1116,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('MemberlistZoneAwareRoutingAutoFailover'),
           expr: |||
-            sum by (%(alert_aggregation_labels)s) (rate(memberlist_client_zone_aware_routing_select_nodes_skipped_total[1m])) > 0
-          ||| % $._config,
+            sum by (%(alert_aggregation_labels)s) (rate(memberlist_client_zone_aware_routing_select_nodes_skipped_total[%(range)s])) > 0
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            range: $.alertRangeInterval(1),
+          },
           'for': '10m',
           labels: {
             severity: 'warning',
