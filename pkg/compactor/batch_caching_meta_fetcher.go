@@ -94,7 +94,7 @@ func (f *batchCachingMetaFetcher) fetchCompactableMetasFromListing(ctx context.C
 }
 
 // fetchMetasFromIDs fetches metadata for specific block IDs using the cache where possible.
-// Unlike FetchCompactableMetasFromListing, this method returns an error if any block's meta.json is not
+// Unlike fetchCompactableMetasFromListing, this method returns an error if any block's meta.json is not
 // found in storage or is corrupt.
 func (f *batchCachingMetaFetcher) fetchMetasFromIDs(ctx context.Context, blockIDs []ulid.ULID, filters []block.MetadataFilter) (map[ulid.ULID]*block.Meta, error) {
 	metas, _, err := f.innerFetchMetas(ctx, blockIDs, true, false, newNoopGaugeVec(), filters)
