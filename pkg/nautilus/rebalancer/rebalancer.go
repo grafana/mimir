@@ -132,19 +132,26 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	rates, err := r.collectRates(ctx)
+	rates, instanceTotals, err := r.collectRates(ctx)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect ingester rates", "err", err)
 		return nil
 	}
 
-	lm := buildLoadMap(rates, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
+	// Compute per-partition "orphan" series: in-memory series an
+	// ingester still holds for hash ranges it no longer owns. These
+	// linger until TSDB head compaction (~2h) and represent real
+	// memory pressure on the source ingester even though no per-range
+	// signal accounts for them.
+	partitionOrphans := computePartitionOrphans(current, instanceTotals, rates, pRing)
+
+	lm := buildLoadMapWithOrphans(rates, partitionOrphans, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
 	r.admin.setLastStats(lm)
 
 	now := time.Now()
 	r.pruneExpiredCooldowns(now)
 
-	newAssignment, actions := r.runSlicer(current, rates, activePartitions, now)
+	newAssignment, actions := r.runSlicer(current, rates, partitionOrphans, activePartitions, now)
 	if err := newAssignment.Validate(); err != nil {
 		level.Error(r.logger).Log("msg", "generated invalid assignment", "err", err)
 		return nil
@@ -156,7 +163,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	r.pushRangesToIngesters(ctx, newAssignment)
 
 	// Compute round summary stats.
-	partLoads := computePartitionLoads(buildRangeLoads(newAssignment, lm))
+	partLoads := lm.computePartitionLoads(buildRangeLoads(newAssignment, lm))
 	var totalLoad, maxPL, minPL float64
 	minPL = math.MaxFloat64
 	for _, pl := range partLoads {
@@ -208,13 +215,20 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 // returns a global view: one rate per reported hash range. Since
 // ingesters only report rates for ranges they own, the results are
 // already partitioned; we aggregate into a single map keyed by range.
-func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, error) {
+//
+// The second return value is keyed by ingester instance ID and holds
+// the total in-memory series count on that ingester (across all
+// tenants and all hash buckets, including ones not currently owned).
+// It is used to detect "orphan" series left behind by recent moves;
+// see computePartitionOrphans.
+func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]int64, error) {
 	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var all []rangeRate
+	instanceTotals := make(map[string]int64, len(instances.Instances))
 	for _, inst := range instances.Instances {
 		c, err := r.pool.GetClientForInstance(inst)
 		if err != nil {
@@ -228,6 +242,7 @@ func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, error) {
 			continue
 		}
 
+		instanceTotals[inst.GetId()] = resp.TotalActiveSeries
 		for _, rate := range resp.Rates {
 			all = append(all, rangeRate{
 				hr:      assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
@@ -237,7 +252,78 @@ func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, error) {
 		}
 	}
 
-	return all, nil
+	return all, instanceTotals, nil
+}
+
+// computePartitionOrphans returns a per-partition estimate of "orphan"
+// in-memory series: series the partition's owner ingester(s) still
+// hold from a previously-owned hash range that has since been moved
+// away. These series will be garbage-collected by the next TSDB head
+// compaction (every ~2h by default), but in the meantime they
+// represent genuine memory pressure on the source ingester.
+//
+// We compute the orphan count per ingester as
+// (total in-memory series) - (sum of per-range series for ranges the
+// ingester currently owns), and attribute it to the partition that
+// instance owns. When a partition has multiple owners (e.g. one per
+// zone), we take the worst (max) orphan count across owners — that's
+// the partition's worst-case memory pressure.
+//
+// The orphan count is conservative when a single owner's per-range
+// histogram approximation undercounts owned series; in that case we
+// floor the orphan at zero to avoid negative values.
+func computePartitionOrphans(current *assignment.Assignment, instanceTotals map[string]int64, rates []rangeRate, pRing partitionRingView) map[int32]int64 {
+	if pRing == nil || len(instanceTotals) == 0 || current == nil {
+		return nil
+	}
+
+	// Sum reported per-range series, keyed by range. An ingester
+	// reports at most one entry per owned range.
+	rangeSeries := make(map[assignment.HashRange]int64, len(rates))
+	for _, rr := range rates {
+		rangeSeries[rr.hr] += rr.series
+	}
+
+	// Sum the per-range series owned by each partition. Each entry
+	// in the assignment maps a range to exactly one partition.
+	partitionOwnedSeries := make(map[int32]int64)
+	for _, e := range current.Entries {
+		partitionOwnedSeries[e.PartitionID] += rangeSeries[e.Range]
+	}
+
+	// For each owner of a partition, the orphan count is total
+	// in-memory series on that ingester minus what it should be
+	// reporting for currently-owned ranges. Take the max across
+	// owners — that's the partition's worst-case memory pressure.
+	orphans := make(map[int32]int64)
+	for pid, ownedSeries := range partitionOwnedSeries {
+		owners := pRing.PartitionOwnerIDs(pid)
+		var worst int64
+		for _, ownerID := range owners {
+			total, ok := instanceTotals[ownerID]
+			if !ok {
+				continue
+			}
+			orphan := total - ownedSeries
+			if orphan < 0 {
+				orphan = 0
+			}
+			if orphan > worst {
+				worst = orphan
+			}
+		}
+		if worst > 0 {
+			orphans[pid] = worst
+		}
+	}
+	return orphans
+}
+
+// partitionRingView is the subset of the partition ring API that the
+// orphan-computation code needs. Defined as an interface so tests can
+// inject a stub without spinning up a full PartitionRing.
+type partitionRingView interface {
+	PartitionOwnerIDs(int32) []string
 }
 
 // pushRangesToIngesters calls SetHashRanges on each ingester with
@@ -365,8 +451,8 @@ type rangeLoad struct {
 // (see Config.MoveCooldown). Pass time.Now() in production; tests can
 // pass a deterministic value or the zero time to disable cooldown
 // filtering.
-func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate, activePartitions []int32, now time.Time) (*assignment.Assignment, []Action) {
-	lm := buildLoadMap(rates, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
+func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate, partitionOrphans map[int32]int64, activePartitions []int32, now time.Time) (*assignment.Assignment, []Action) {
+	lm := buildLoadMapWithOrphans(rates, partitionOrphans, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
 	numPartitions := len(activePartitions)
 	var actions []Action
 
@@ -420,7 +506,7 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	var moved float64
 
 	for iter := 0; iter < len(entries); iter++ {
-		partitionLoads := computePartitionLoads(entries)
+		partitionLoads := lm.computePartitionLoads(entries)
 
 		var hottestPID, coldestPID int32
 		hottestLoad := -1.0
@@ -501,7 +587,7 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	// splits drag down the mean and cause everything to look "hot".
 	maxTotal := maxSlicesPerPartition * numPartitions
 	if len(entries) < maxTotal {
-		partitionLoads := computePartitionLoads(entries)
+		partitionLoads := lm.computePartitionLoads(entries)
 
 		var nonZeroCount int
 		var nonZeroLoad float64
@@ -592,6 +678,12 @@ func buildRangeLoads(a *assignment.Assignment, lm *loadMap) []rangeLoad {
 	return entries
 }
 
+// computePartitionLoads sums the per-range combined load for each
+// partition. It does NOT include the orphan-series adjustment;
+// callers that want the orphan-aware per-partition load should use
+// loadMap.computePartitionLoads instead. Kept as a free function for
+// the defragmentation (merge) phase, where orphan accounting is not
+// useful.
 func computePartitionLoads(entries []rangeLoad) map[int32]float64 {
 	m := make(map[int32]float64)
 	for _, rl := range entries {
@@ -608,20 +700,34 @@ type rangeStats struct {
 
 // loadMap holds per-range raw signals plus the global totals needed to
 // normalize them into a combined weighted load. Construct via
-// buildLoadMap and query via load() / stats().
+// buildLoadMap (or buildLoadMapWithOrphans when partition-level
+// orphan counts are available) and query via load() / stat().
+//
+// totalSeries includes both per-range reported series AND the
+// per-partition orphan series (in-memory series an ingester still
+// holds for hash ranges it no longer owns). Including orphans in the
+// denominator keeps the load values normalized — the sum of all
+// per-partition loads (including orphan contributions) stays equal
+// to wSeries + wSamples regardless of how many series are orphaned.
 type loadMap struct {
-	stats        map[assignment.HashRange]rangeStats
-	totalSamples float64
-	totalSeries  int64
-	wSeries      float64
-	wSamples     float64
+	stats            map[assignment.HashRange]rangeStats
+	partitionOrphans map[int32]int64
+	totalSamples     float64
+	totalSeries      int64
+	wSeries          float64
+	wSamples         float64
 }
 
 func buildLoadMap(rates []rangeRate, wSeries, wSamples float64) *loadMap {
+	return buildLoadMapWithOrphans(rates, nil, wSeries, wSamples)
+}
+
+func buildLoadMapWithOrphans(rates []rangeRate, partitionOrphans map[int32]int64, wSeries, wSamples float64) *loadMap {
 	lm := &loadMap{
-		stats:    make(map[assignment.HashRange]rangeStats, len(rates)),
-		wSeries:  wSeries,
-		wSamples: wSamples,
+		stats:            make(map[assignment.HashRange]rangeStats, len(rates)),
+		partitionOrphans: partitionOrphans,
+		wSeries:          wSeries,
+		wSamples:         wSamples,
 	}
 	for _, rr := range rates {
 		s := lm.stats[rr.hr]
@@ -631,6 +737,9 @@ func buildLoadMap(rates []rangeRate, wSeries, wSamples float64) *loadMap {
 		lm.totalSamples += rr.samples
 		lm.totalSeries += rr.series
 	}
+	for _, orphan := range partitionOrphans {
+		lm.totalSeries += orphan
+	}
 	return lm
 }
 
@@ -638,8 +747,8 @@ func buildLoadMap(rates []rangeRate, wSeries, wSamples float64) *loadMap {
 // Returns 0 if the range is not present in the underlying map. The
 // returned value has no physical units; it's the sum of two
 // fraction-of-total components weighted by the configured weights, so
-// the global total of load() across all ranges is wSeries + wSamples
-// (typically 1.0).
+// the global total of load() across all ranges PLUS partitionOrphanLoad
+// across all partitions is wSeries + wSamples (typically 1.0).
 func (lm *loadMap) load(hr assignment.HashRange) float64 {
 	s, ok := lm.stats[hr]
 	if !ok {
@@ -659,6 +768,53 @@ func (lm *loadMap) load(hr assignment.HashRange) float64 {
 func (lm *loadMap) stat(hr assignment.HashRange) (samples float64, series int64) {
 	s := lm.stats[hr]
 	return s.samples, s.series
+}
+
+// partitionOrphanLoad returns the load contribution from orphan
+// series attributed to the given partition. Orphans are series an
+// owner ingester still holds for ranges that have been moved to
+// another partition; they will be GC'd by the next TSDB head
+// compaction (~2h) but in the meantime represent real memory
+// pressure on the source ingester. Returns 0 when the range
+// component (wSeries) is zero, when no orphans were measured for the
+// partition, or when totalSeries is zero.
+func (lm *loadMap) partitionOrphanLoad(pid int32) float64 {
+	if lm == nil || lm.wSeries == 0 || lm.totalSeries == 0 {
+		return 0
+	}
+	orphan := lm.partitionOrphans[pid]
+	if orphan <= 0 {
+		return 0
+	}
+	return lm.wSeries * float64(orphan) / float64(lm.totalSeries)
+}
+
+// partitionOrphanSeries returns the raw orphan series count for the
+// given partition (0 if unknown).
+func (lm *loadMap) partitionOrphanSeries(pid int32) int64 {
+	if lm == nil || lm.partitionOrphans == nil {
+		return 0
+	}
+	return lm.partitionOrphans[pid]
+}
+
+// computePartitionLoads sums the per-range combined load for each
+// partition AND adds each partition's orphan-load contribution, so
+// the result reflects the source ingester's true memory pressure
+// (current ranges + as-yet-uncompacted series from former ranges).
+// Used by the slicer's hottest/coldest selection so we don't pile
+// load onto a partition whose owner is still working off a backlog.
+func (lm *loadMap) computePartitionLoads(entries []rangeLoad) map[int32]float64 {
+	m := computePartitionLoads(entries)
+	if lm == nil {
+		return m
+	}
+	for pid := range lm.partitionOrphans {
+		if extra := lm.partitionOrphanLoad(pid); extra > 0 {
+			m[pid] += extra
+		}
+	}
+	return m
 }
 
 // isInMoveCooldown reports whether the given range overlaps any range

@@ -83,8 +83,8 @@ func (si *simulatedIngester) snapshot() []rangeRate {
 // loadSource represents a source of load: a set of hashes with a fixed
 // samples-per-second rate, simulating traffic from specific metric names.
 type loadSource struct {
-	hash            uint32
-	samplesPerTick  int
+	hash           uint32
+	samplesPerTick int
 }
 
 // simulation ties together dummy ingesters, a distributor (just the
@@ -153,7 +153,7 @@ func (s *simulation) rebalance() {
 	now := time.Now()
 	s.rebalancer.pruneExpiredCooldowns(now)
 	var actions []Action
-	s.assignment, actions = s.rebalancer.runSlicer(s.assignment, rates, s.partitions, now)
+	s.assignment, actions = s.rebalancer.runSlicer(s.assignment, rates, nil, s.partitions, now)
 	s.rebalancer.recordMoveCooldowns(now, actions)
 	s.pushRangesToIngesters()
 }

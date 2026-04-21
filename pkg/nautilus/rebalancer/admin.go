@@ -18,33 +18,33 @@ import (
 type ActionKind string
 
 const (
-	ActionMove       ActionKind = "move"
-	ActionMerge      ActionKind = "merge"
-	ActionSplit      ActionKind = "split"
-	ActionReassign   ActionKind = "reassign"
+	ActionMove     ActionKind = "move"
+	ActionMerge    ActionKind = "merge"
+	ActionSplit    ActionKind = "split"
+	ActionReassign ActionKind = "reassign"
 )
 
 // Action records a single slicer operation from a rebalance round.
 type Action struct {
-	Kind      ActionKind         `json:"kind"`
-	Range     assignment.HashRange `json:"range"`
-	FromPart  int32              `json:"from_partition,omitempty"`
-	ToPart    int32              `json:"to_partition,omitempty"`
-	Detail    string             `json:"detail,omitempty"`
+	Kind     ActionKind           `json:"kind"`
+	Range    assignment.HashRange `json:"range"`
+	FromPart int32                `json:"from_partition,omitempty"`
+	ToPart   int32                `json:"to_partition,omitempty"`
+	Detail   string               `json:"detail,omitempty"`
 }
 
 // RoundLog captures the actions and summary stats from one rebalance round.
 type RoundLog struct {
-	Time          time.Time `json:"time"`
-	TotalLoad     float64   `json:"total_load"`
-	MeanPartLoad  float64   `json:"mean_partition_load"`
-	MaxPartLoad   float64   `json:"max_partition_load"`
-	MinPartLoad   float64   `json:"min_partition_load"`
-	ImbalanceRatio float64  `json:"imbalance_ratio"`
-	NumEntries    int       `json:"num_entries"`
-	NumPartitions int       `json:"num_partitions"`
-	MovedFraction float64   `json:"moved_fraction"`
-	Actions       []Action  `json:"actions"`
+	Time           time.Time `json:"time"`
+	TotalLoad      float64   `json:"total_load"`
+	MeanPartLoad   float64   `json:"mean_partition_load"`
+	MaxPartLoad    float64   `json:"max_partition_load"`
+	MinPartLoad    float64   `json:"min_partition_load"`
+	ImbalanceRatio float64   `json:"imbalance_ratio"`
+	NumEntries     int       `json:"num_entries"`
+	NumPartitions  int       `json:"num_partitions"`
+	MovedFraction  float64   `json:"moved_fraction"`
+	Actions        []Action  `json:"actions"`
 }
 
 const maxRoundLogs = 20
@@ -59,9 +59,11 @@ type rangeStatsView struct {
 
 // adminState stores the data needed to render the admin page.
 type adminState struct {
-	mu        sync.RWMutex
-	rounds    []RoundLog
-	lastStats map[assignment.HashRange]rangeStatsView
+	mu               sync.RWMutex
+	rounds           []RoundLog
+	lastStats        map[assignment.HashRange]rangeStatsView
+	lastOrphanSeries map[int32]int64
+	lastOrphanLoad   map[int32]float64
 }
 
 func (s *adminState) addRound(rl RoundLog) {
@@ -74,7 +76,8 @@ func (s *adminState) addRound(rl RoundLog) {
 }
 
 // setLastStats snapshots the current loadMap into the admin state.
-// Captures all per-range raw signals plus the combined load.
+// Captures all per-range raw signals plus the combined load and the
+// per-partition orphan series count and orphan-derived load.
 func (s *adminState) setLastStats(lm *loadMap) {
 	stats := make(map[assignment.HashRange]rangeStatsView, len(lm.stats))
 	for hr, raw := range lm.stats {
@@ -85,13 +88,22 @@ func (s *adminState) setLastStats(lm *loadMap) {
 		}
 	}
 
+	orphanSeries := make(map[int32]int64, len(lm.partitionOrphans))
+	orphanLoad := make(map[int32]float64, len(lm.partitionOrphans))
+	for pid, n := range lm.partitionOrphans {
+		orphanSeries[pid] = n
+		orphanLoad[pid] = lm.partitionOrphanLoad(pid)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastStats = stats
+	s.lastOrphanSeries = orphanSeries
+	s.lastOrphanLoad = orphanLoad
 }
 
 // snapshot returns the current admin state for rendering.
-func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStatsView) {
+func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStatsView, map[int32]int64, map[int32]float64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -102,7 +114,15 @@ func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStats
 	for k, v := range s.lastStats {
 		stats[k] = v
 	}
-	return rounds, stats
+	orphanSeries := make(map[int32]int64, len(s.lastOrphanSeries))
+	for k, v := range s.lastOrphanSeries {
+		orphanSeries[k] = v
+	}
+	orphanLoad := make(map[int32]float64, len(s.lastOrphanLoad))
+	for k, v := range s.lastOrphanLoad {
+		orphanLoad[k] = v
+	}
+	return rounds, stats, orphanSeries, orphanLoad
 }
 
 // partitionView is the data for one partition row in the admin page.
@@ -113,6 +133,8 @@ type partitionView struct {
 	TotalLoad    float64
 	TotalSamples float64
 	TotalSeries  int64
+	OrphanSeries int64
+	OrphanLoad   float64
 	HashSpacePct float64
 	NumRanges    int
 	Ranges       []rangeView
@@ -135,6 +157,7 @@ type adminPageData struct {
 	TotalLoad      float64
 	TotalSamples   float64
 	TotalSeries    int64
+	TotalOrphan    int64
 	MeanPartLoad   float64
 	MaxPartLoad    float64
 	MinPartLoad    float64
@@ -152,7 +175,7 @@ type adminPageData struct {
 }
 
 func (r *Rebalancer) buildAdminPageData() adminPageData {
-	rounds, lastStats := r.admin.snapshot()
+	rounds, lastStats, lastOrphanSeries, lastOrphanLoad := r.admin.snapshot()
 	current := r.store.latest()
 
 	data := adminPageData{
@@ -218,12 +241,18 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		idToAddr[inst.GetId()] = inst.Addr
 	}
 
+	var totalOrphan int64
 	for pid, pv := range partMap {
 		owners := pRing.PartitionOwnerIDs(pid)
 		if len(owners) > 0 {
 			pv.InstanceID = owners[0]
 			pv.InstanceAddr = idToAddr[owners[0]]
 		}
+		pv.OrphanSeries = lastOrphanSeries[pid]
+		pv.OrphanLoad = lastOrphanLoad[pid]
+		pv.TotalLoad += pv.OrphanLoad
+		totalOrphan += pv.OrphanSeries
+		totalLoad += pv.OrphanLoad
 	}
 
 	// Sort partitions by ID.
@@ -293,6 +322,7 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	data.TotalLoad = totalLoad
 	data.TotalSamples = totalSamples
 	data.TotalSeries = totalSeries
+	data.TotalOrphan = totalOrphan
 	data.MeanPartLoad = meanPartLoad
 	data.MaxPartLoad = maxPartLoad
 	data.MinPartLoad = minPartLoad

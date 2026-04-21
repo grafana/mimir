@@ -55,6 +55,13 @@ message HashRangeRate {
 
 message HashRangeStatsResponse {
   repeated HashRangeRate rates = 1 [(gogoproto.nullable) = false];
+  // total_active_series is the total number of in-memory series on the
+  // ingester, across all tenants. It includes series whose hashes fall
+  // outside of any currently-owned range (i.e. series the ingester used
+  // to own but that haven't yet been GC'd by head compaction). The
+  // rebalancer can compare this to sum(rates[].active_series) to detect
+  // stale post-move cardinality and weight source-side load accordingly.
+  int64 total_active_series = 2;
 }
 
 message HashRangeEntry {

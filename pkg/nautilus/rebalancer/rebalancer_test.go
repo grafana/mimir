@@ -42,7 +42,7 @@ func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
 
-	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// After rebalancing, partition 0 should own less hash space than
@@ -82,7 +82,7 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.09)}
 
-	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	lm := buildLoadMap(rates, 0, 1)
@@ -115,7 +115,7 @@ func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
 
-	result, _ := r.runSlicer(initial, rates, activePartitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, activePartitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	for _, e := range result.Entries {
@@ -139,7 +139,7 @@ func TestRunSlicer_SliceCountCapped(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.09)}
 
-	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	assert.LessOrEqual(t, len(result.Entries), maxSlicesPerPartition*len(partitions)+len(partitions),
@@ -206,7 +206,7 @@ func TestRunSlicer_Phase1_DistributesAcrossPartitions(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.0)}
 
-	result, _ := r.runSlicer(initial, rates, activePartitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, activePartitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	counts := make(map[int32]int)
@@ -240,7 +240,7 @@ func TestRunSlicer_Phase4_ExhaustsBudget(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
 
-	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	lm := buildLoadMap(rates, 0, 1)
@@ -284,7 +284,7 @@ func TestRunSlicer_Phase5_SplitsAnyHotSlice(t *testing.T) {
 
 	r := &Rebalancer{cfg: samplesOnlyCfg(0.0)}
 
-	result, _ := r.runSlicer(initial, rates, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// Both hot slices should split even though neither partition is
@@ -409,7 +409,7 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// First round: produces some moves and arms cooldowns.
-	result1, actions1 := r.runSlicer(initial, rates, partitions, t0)
+	result1, actions1 := r.runSlicer(initial, rates, nil, partitions, t0)
 	require.NoError(t, result1.Validate())
 	r.recordMoveCooldowns(t0, actions1)
 
@@ -426,7 +426,7 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 	// pretend no stats have updated yet, which is the worst case).
 	t1 := t0.Add(30 * time.Second)
 	r.pruneExpiredCooldowns(t1)
-	_, actions2 := r.runSlicer(result1, rates, partitions, t1)
+	_, actions2 := r.runSlicer(result1, rates, nil, partitions, t1)
 	for _, a := range actions2 {
 		if a.Kind != ActionMove {
 			continue
@@ -478,6 +478,163 @@ func TestRunSlicer_MoveCooldown_OverlapMatchesSplitsAndMerges(t *testing.T) {
 	// Adjacent but not overlapping.
 	assert.False(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 2000, Hi: 2500}))
 	assert.False(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 0, Hi: 999}))
+}
+
+// stubPartitionRing implements partitionRingView for tests that need
+// to compute orphans without spinning up a real PartitionRing.
+type stubPartitionRing map[int32][]string
+
+func (s stubPartitionRing) PartitionOwnerIDs(pid int32) []string { return s[pid] }
+
+func TestComputePartitionOrphans_DetectsOrphanSeries(t *testing.T) {
+	// Two partitions, one owner each. Partition 0 owns one range
+	// reporting 100 series; its owner reports 250 total in memory,
+	// implying 150 orphans (e.g. from a recently-moved range).
+	current := &assignment.Assignment{
+		Entries: []assignment.Entry{
+			{Range: assignment.HashRange{Lo: 0, Hi: 999}, PartitionID: 0},
+			{Range: assignment.HashRange{Lo: 1000, Hi: 1999}, PartitionID: 1},
+		},
+	}
+	rates := []rangeRate{
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100},
+		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 200},
+	}
+	instanceTotals := map[string]int64{
+		"ingester-0": 250, // 100 owned + 150 orphan
+		"ingester-1": 200, // matches owned exactly, no orphan
+	}
+	pRing := stubPartitionRing{
+		0: {"ingester-0"},
+		1: {"ingester-1"},
+	}
+
+	orphans := computePartitionOrphans(current, instanceTotals, rates, pRing)
+	assert.Equal(t, int64(150), orphans[0])
+	_, hasOne := orphans[1]
+	assert.False(t, hasOne, "partition 1 should not appear in orphan map")
+}
+
+func TestComputePartitionOrphans_TakesMaxAcrossOwners(t *testing.T) {
+	// One partition with two replica owners (e.g. across zones).
+	// Owners have different orphan histories; the partition's
+	// orphan should be the worst-case (max), since rebalancing
+	// affects whichever ingester is the most pressured.
+	current := &assignment.Assignment{
+		Entries: []assignment.Entry{
+			{Range: assignment.HashRange{Lo: 0, Hi: 999}, PartitionID: 5},
+		},
+	}
+	rates := []rangeRate{
+		// Two owners both report 100 series for the same range.
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 200},
+	}
+	// Per-range sum is 200; per-owner expected owned series is 100
+	// (we sum across rates, but each owner contributes ~100).
+	// Owner-z1 has 350 in memory → orphan = 350 - 200 = 150.
+	// Owner-z2 has 500 in memory → orphan = 500 - 200 = 300.
+	instanceTotals := map[string]int64{
+		"ingester-z1": 350,
+		"ingester-z2": 500,
+	}
+	pRing := stubPartitionRing{
+		5: {"ingester-z1", "ingester-z2"},
+	}
+
+	orphans := computePartitionOrphans(current, instanceTotals, rates, pRing)
+	assert.Equal(t, int64(300), orphans[5], "should pick the worst-case owner orphan")
+}
+
+func TestComputePartitionOrphans_FloorsAtZero(t *testing.T) {
+	// Owner reports fewer total series than the per-range sum
+	// suggests (e.g. histogram approximation overshoots). Orphan
+	// should clamp to 0, never go negative.
+	current := &assignment.Assignment{
+		Entries: []assignment.Entry{
+			{Range: assignment.HashRange{Lo: 0, Hi: 999}, PartitionID: 0},
+		},
+	}
+	rates := []rangeRate{
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 500},
+	}
+	instanceTotals := map[string]int64{
+		"ingester-0": 400, // less than sum(per-range)
+	}
+	pRing := stubPartitionRing{0: {"ingester-0"}}
+
+	orphans := computePartitionOrphans(current, instanceTotals, rates, pRing)
+	_, has := orphans[0]
+	assert.False(t, has, "negative orphan must not be recorded")
+}
+
+func TestLoadMap_OrphanContributesToPartitionLoad(t *testing.T) {
+	// Two ranges of equal series load on different partitions.
+	// Without orphans, partition loads are equal. With 50 orphans
+	// on partition 0, that partition's combined load grows.
+	rates := []rangeRate{
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100},
+		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 100},
+	}
+	orphans := map[int32]int64{0: 50}
+
+	lm := buildLoadMapWithOrphans(rates, orphans, 1.0, 0)
+	// Denominator is 100+100+50 = 250.
+	// Range load = 100/250 = 0.4 each.
+	// Orphan load on P0 = 50/250 = 0.2.
+	entries := []rangeLoad{
+		{entry: assignment.Entry{Range: rates[0].hr, PartitionID: 0}, load: lm.load(rates[0].hr)},
+		{entry: assignment.Entry{Range: rates[1].hr, PartitionID: 1}, load: lm.load(rates[1].hr)},
+	}
+
+	loads := lm.computePartitionLoads(entries)
+	assert.InDelta(t, 0.6, loads[0], 1e-9, "P0 = range + orphan")
+	assert.InDelta(t, 0.4, loads[1], 1e-9, "P1 = range only")
+
+	// All partition loads should sum to wSeries+wSamples = 1.0.
+	assert.InDelta(t, 1.0, loads[0]+loads[1], 1e-9)
+}
+
+// TestRunSlicer_OrphanBiasesSourceSelection verifies that, when two
+// partitions have equal per-range load but one carries a heavy orphan
+// backlog (recently-moved series still in memory), the slicer prefers
+// to drain the orphan-heavy partition.
+func TestRunSlicer_OrphanBiasesSourceSelection(t *testing.T) {
+	partitions := []int32{0, 1}
+	initial := assignment.FineEvenSplit(partitions, 8)
+
+	// Equal per-range series load on both partitions.
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		rates = append(rates, rangeRate{hr: e.Range, series: 100})
+	}
+
+	// Partition 0 has a large orphan backlog; partition 1 doesn't.
+	// Total per-range series = 16 * 100 = 1600. Partition 0 owned
+	// series = 800. Orphan of 4000 puts the source ingester at
+	// roughly 6x its peer's memory pressure.
+	orphans := map[int32]int64{0: 4000}
+
+	cfg := Config{
+		MovementBudget:    0.5,
+		LoadWeightSeries:  1.0,
+		LoadWeightSamples: 0,
+	}
+	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
+
+	_, actions := r.runSlicer(initial, rates, orphans, partitions, time.Time{})
+
+	// At least one move should happen, and every move action should
+	// take ranges away from partition 0 (the orphan-heavy source).
+	var moves int
+	for _, a := range actions {
+		if a.Kind != ActionMove {
+			continue
+		}
+		moves++
+		assert.Equalf(t, int32(0), a.FromPart,
+			"orphan-heavy partition should be the source, got %v", a)
+	}
+	assert.Greater(t, moves, 0, "expected at least one move from the orphan-heavy partition")
 }
 
 func TestFineEvenSplit(t *testing.T) {

@@ -16,6 +16,7 @@ func TestHashRangeStatsResponse_MarshalUnmarshal(t *testing.T) {
 			{Lo: 1001, Hi: 2000, SamplesPerSecond: 200.25, ActiveSeries: 0},
 			{Lo: 2001, Hi: 4294967295, SamplesPerSecond: 300.75, ActiveSeries: 9876543210},
 		},
+		TotalActiveSeries: 9876555555,
 	}
 
 	data, err := original.Marshal()
@@ -25,6 +26,7 @@ func TestHashRangeStatsResponse_MarshalUnmarshal(t *testing.T) {
 	err = restored.Unmarshal(data)
 	require.NoError(t, err)
 
+	assert.Equal(t, int64(9876555555), restored.TotalActiveSeries)
 	require.Len(t, restored.Rates, 3)
 	assert.Equal(t, uint32(0), restored.Rates[0].Lo)
 	assert.Equal(t, uint32(1000), restored.Rates[0].Hi)

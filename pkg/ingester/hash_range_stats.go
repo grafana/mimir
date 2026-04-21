@@ -15,7 +15,11 @@ import (
 var errNautilusDisabled = status.Error(codes.Unimplemented, "nautilus is not enabled on this ingester")
 
 // HashRangeStats returns per-range ingestion rates for the hash ranges
-// this ingester has been told it owns (via SetHashRanges).
+// this ingester has been told it owns (via SetHashRanges), plus the
+// total in-memory series count across all tenants. The rebalancer
+// compares the total against the sum of per-range counts to detect
+// "orphan" series left behind by a recent move that haven't been GC'd
+// by head compaction yet.
 func (i *Ingester) HashRangeStats(_ context.Context, _ *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
 	if i.hashRangeRates == nil {
 		return nil, errNautilusDisabled
@@ -24,7 +28,8 @@ func (i *Ingester) HashRangeStats(_ context.Context, _ *client.HashRangeStatsReq
 	snap := i.hashRangeRates.Snapshot()
 
 	resp := &client.HashRangeStatsResponse{
-		Rates: make([]client.HashRangeRate, len(snap.Ranges)),
+		Rates:             make([]client.HashRangeRate, len(snap.Ranges)),
+		TotalActiveSeries: i.seriesCount.Load(),
 	}
 	for j, r := range snap.Ranges {
 		resp.Rates[j] = client.HashRangeRate{
