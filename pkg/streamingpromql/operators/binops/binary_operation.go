@@ -784,7 +784,7 @@ type Hints struct {
 //
 // For an 'on' binary operation, only matchers for labels in the 'on' list are kept.
 // For a 'without' binary operation, matchers for the excluded labels are dropped.
-// For default (implied 'without ()') matching, all matchers are returned unchanged.
+// For default (implied 'without ()') matching, all matchers except __name__ are returned.
 func filterMatchersForVectorMatching(matchers types.Matchers, vm parser.VectorMatching) types.Matchers {
 	if len(matchers) == 0 {
 		return matchers
@@ -830,8 +830,14 @@ func filterMatchersForVectorMatching(matchers types.Matchers, vm parser.VectorMa
 	}
 
 	// Default matching (implied 'without ()'): all non-__name__ labels are matching labels.
-	// Pass matchers through unchanged.
-	return matchers
+	// Drop any __name__ matchers, as __name__ is not a matching label in this case.
+	filtered := make(types.Matchers, 0, len(matchers))
+	for _, m := range matchers {
+		if m.Name != model.MetricNameLabel {
+			filtered = append(filtered, m)
+		}
+	}
+	return filtered
 }
 
 const (

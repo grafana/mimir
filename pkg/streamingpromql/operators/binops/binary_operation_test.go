@@ -145,10 +145,15 @@ func TestFilterMatchersForVectorMatching(t *testing.T) {
 			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"zone"}},
 			expected:       types.Matchers{regionMatcher},
 		},
-		"without() default matching passes all matchers through unchanged": {
+		"without() default matching passes non-__name__ matchers through": {
 			matchers:       types.Matchers{regionMatcher, zoneMatcher},
 			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
 			expected:       types.Matchers{regionMatcher, zoneMatcher},
+		},
+		"without() default matching drops __name__ matchers": {
+			matchers:       types.Matchers{regionMatcher, nameMatcher},
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
+			expected:       types.Matchers{regionMatcher},
 		},
 	}
 

@@ -28,13 +28,13 @@ import (
 // with a different region but the same zone to be discarded.
 func TestOneToOneVectorVectorBinaryOperation_MatcherPropagation(t *testing.T) {
 	testCases := map[string]struct {
-		vectorMatching  parser.VectorMatching
-		parentMatchers  types.Matchers
-		leftSeries      []labels.Labels
-		rightSeries     []labels.Labels
-		expectedLHS     types.Matchers
-		expectedRHS     types.Matchers
-		expectedSeries  int
+		vectorMatching parser.VectorMatching
+		parentMatchers types.Matchers
+		leftSeries     []labels.Labels
+		rightSeries    []labels.Labels
+		expectedLHS    types.Matchers
+		expectedRHS    types.Matchers
+		expectedSeries int
 	}{
 		"on(zone): region matcher is filtered out before reaching children": {
 			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"zone"}},
@@ -283,11 +283,11 @@ func TestAndUnlessBinaryOperation_MatcherPropagation(t *testing.T) {
 			expectedSeries: 1,
 		},
 		"and: nil parent matchers propagate as nil to both sides": {
-			isUnless:       false,
-			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"zone"}},
-			parentMatchers: nil,
-			leftSeries:     []labels.Labels{labels.FromStrings("zone", "1")},
-			rightSeries:    []labels.Labels{labels.FromStrings("zone", "1")},
+			isUnless:            false,
+			vectorMatching:      parser.VectorMatching{On: true, MatchingLabels: []string{"zone"}},
+			parentMatchers:      nil,
+			leftSeries:          []labels.Labels{labels.FromStrings("zone", "1")},
+			rightSeries:         []labels.Labels{labels.FromStrings("zone", "1")},
 			expectedLHSMatchers: nil,
 			expectedSeries:      1,
 		},
