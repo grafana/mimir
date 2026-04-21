@@ -259,7 +259,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	queryTime := s.currentTime()
 
 	if len(execReqs) > 0 {
-		execResps, err := doRequests(ctx, s.next, s.memoryConsumptionTrackerFactory, memoryTracker, execReqs)
+		execResps, err := doRequests(ctx, s.next, memoryTracker, execReqs)
 		if err != nil {
 			return nil, err
 		}
@@ -641,7 +641,7 @@ type requestResponse struct {
 }
 
 // doRequests executes a list of requests in parallel.
-func doRequests(ctx context.Context, downstream MetricsQueryHandler, inflightTracker *limiter.InflightMemoryConsumptionTracker, memoryTracker *limiter.MemoryConsumptionTracker, reqs []MetricsQueryRequest) ([]requestResponse, error) {
+func doRequests(ctx context.Context, downstream MetricsQueryHandler, memoryTracker *limiter.MemoryConsumptionTracker, reqs []MetricsQueryRequest) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
@@ -658,7 +658,7 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, inflightTra
 			defer span.End()
 
 			// Note this is not a managed tracker do we do not need to deregister it.
-			childTracker := inflightTracker.NewNestedMemoryConsumptionTracker(childCtx, req.GetQuery(), memoryTracker)
+			childTracker := memoryTracker.NewNestedMemoryConsumptionTracker(childCtx, req.GetQuery())
 			childCtx = limiter.AddMemoryTrackerToContext(childCtx, childTracker)
 
 			resp, err := downstream.Do(childCtx, req)

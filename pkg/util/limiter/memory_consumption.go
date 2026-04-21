@@ -237,21 +237,6 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 	t.inflight.Delete(tracker)
 }
 
-// NewNestedMemoryConsumptionTracker returns a MemoryConsumptionTracker which is backed by the given parent MemoryConsumptionTracker.
-// Any increment or decrement in memory is first passed through the parent before this tracker is updated.
-// Any functions for requesting the tracker values - such as PeakEstimatedMemoryConsumptionBytes() - returns this tracker's values.
-//
-// Note that the accumulated metrics reported by the InflightMemoryConsumptionTracker will not include this MemoryConsumptionTracker. Only
-// the metrics on the parent trackers are included in the InflightMemoryConsumptionTracker accumulations.
-func (t *InflightMemoryConsumptionTracker) NewNestedMemoryConsumptionTracker(ctx context.Context, queryDescription string, parent *MemoryConsumptionTracker) *MemoryConsumptionTracker {
-	if parent.parent != nil || parent.producer != t {
-		panic("cannot nest a tracker not created via this InflightMemoryConsumptionTracker")
-	}
-	tracker := NewMemoryConsumptionTracker(ctx, parent.maxEstimatedMemoryConsumptionBytes, t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
-	tracker.parent = parent
-	return tracker
-}
-
 // Describe implements prometheus.Collector.
 func (t *InflightMemoryConsumptionTracker) Describe(ch chan<- *prometheus.Desc) {
 	ch <- t.maxDesc
@@ -444,4 +429,19 @@ func (l *MemoryConsumptionTracker) DescribeCurrentMemoryConsumption() string {
 	}
 
 	return b.String()
+}
+
+// NewNestedMemoryConsumptionTracker returns a MemoryConsumptionTracker (nested) which is backed by this MemoryConsumptionTracker (parent).
+// Any increment or decrement in memory is first passed through the parent before the nested tracker is updated.
+// Any functions for requesting the nested tracker values - such as PeakEstimatedMemoryConsumptionBytes() - returns only the nested tracker's values.
+//
+// Note that the accumulated metrics reported by the InflightMemoryConsumptionTracker will not include the nested MemoryConsumptionTracker. Only
+// the metrics on the parent trackers are included in the InflightMemoryConsumptionTracker accumulations.
+func (l *MemoryConsumptionTracker) NewNestedMemoryConsumptionTracker(ctx context.Context, queryDescription string) *MemoryConsumptionTracker {
+	if l.producer == nil {
+		panic("cannot nest a tracker not created via a InflightMemoryConsumptionTracker")
+	}
+	tracker := NewMemoryConsumptionTracker(ctx, l.maxEstimatedMemoryConsumptionBytes, l.producer.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
+	tracker.parent = l
+	return tracker
 }
