@@ -141,13 +141,10 @@ func (s MemoryConsumptionSource) String() string {
 	}
 }
 
-var globalInflightMemoryConsumptionTrackerId = atomic.Uint64{}
-
 // InflightMemoryConsumptionTracker exposes metrics related to the cumulative in-flight MemoryConsumptionTrackers.
 type InflightMemoryConsumptionTracker struct {
-	inflight   sync.Map // map[uint64]*MemoryConsumptionTracker
-	instanceID uint64
-	nextID     atomic.Uint64
+	inflight sync.Map // map[uint64]*MemoryConsumptionTracker
+	nextID   atomic.Uint64
 
 	maxDesc     *prometheus.Desc
 	currentDesc *prometheus.Desc
@@ -201,9 +198,6 @@ func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer, queriesRejec
 		),
 		// Note that we do not register this counter. We just keep a reference to this counter so the memory consumption trackers can update it.
 		queriesRejectedDueToPeakMemoryConsumption: queriesRejectedDueToPeakMemoryConsumption,
-
-		// Allocate a unique ID for this tracker - we can ensure that memory trackers are not deregistered against the wrong inflight manager
-		instanceID: globalInflightMemoryConsumptionTrackerId.Inc(),
 	}
 
 	// reg may be nil when used in unit tests, and we do not wish to register these metrics
@@ -225,7 +219,7 @@ func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx conte
 	tracker := NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionBytes, t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
 	id := t.nextID.Add(1)
 	tracker.trackingId = id
-	tracker.instanceId = t.instanceID
+	tracker.producer = t
 	t.inflight.Store(id, tracker)
 	return tracker
 }
@@ -241,7 +235,7 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 
 	// This should never happen - as we expect there is only a single instance of a InflightMemoryConsumptionTracker per container.
 	// This will catch misconfigurations which could occur in unit tests.
-	if tracker.instanceId != t.instanceID {
+	if tracker.producer != t {
 		panic("cannot deregister inflight memory consumption tracker - the given tracker was allocated by another InflightMemoryConsumptionTracker")
 	}
 
@@ -252,10 +246,7 @@ func (t *InflightMemoryConsumptionTracker) Deregister(tracker *MemoryConsumption
 // Note that this function is only used by unit tests and will only return true on managed trackers.
 // Unmanaged and wrapped trackers will always return false.
 func (t *InflightMemoryConsumptionTracker) IsTracking(tracker *MemoryConsumptionTracker) bool {
-	if tracker.trackingId == 0 {
-		return false
-	}
-	if tracker.instanceId != t.instanceID {
+	if tracker.trackingId == 0 || tracker.producer != t {
 		return false
 	}
 	_, ok := t.inflight.Load(tracker.trackingId)
@@ -341,8 +332,9 @@ type MemoryConsumptionTracker struct {
 
 	// trackingId is the unique ID allocated to this tracker by the InflightMemoryConsumptionTracker
 	trackingId uint64
-	// instanceId is the unique ID of the InflightMemoryConsumptionTracker which created this tracker
-	instanceId uint64
+
+	// producer is InflightMemoryConsumptionTracker which created this tracker
+	producer *InflightMemoryConsumptionTracker
 
 	parent *MemoryConsumptionTracker
 }
