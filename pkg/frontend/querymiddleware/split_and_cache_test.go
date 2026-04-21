@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -2483,7 +2484,7 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			rejectCounter := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_queries_rejected_total"})
+			rejectCounter := promauto.With(reg).NewCounter(prometheus.CounterOpts{Name: "test_queries_rejected_total"})
 			inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, rejectCounter)
 
 			var cacheBackend cache.Cache
@@ -2531,7 +2532,7 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 				})
 				seedLimits := limits
 				seedLimits.maxEstimatedMemoryConsumptionPerQuery = 1024 * 1024
-				seedRejectCounter := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_queries_rejected_total"})
+				seedRejectCounter := promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test_queries_rejected_total"})
 				seedInflightTracker := limiter.NewInflightMemoryConsumptionTracker(nil, seedRejectCounter)
 				seedMw := newSplitAndCacheMiddleware(
 					true,
