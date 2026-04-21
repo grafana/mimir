@@ -136,3 +136,29 @@ To see the rate of blocked queries by tenant:
 ```promql
 sum by (user, reason) (rate(cortex_query_frontend_rejected_queries_total[$__interval]))
 ```
+
+## Troubleshoot invalid configuration
+
+Invalid rules are rejected when the runtime configuration is loaded. The behaviour differs depending on whether the invalid configuration is present at startup or introduced at runtime.
+
+**At startup**, Mimir logs an error at ERROR level and exits, resulting in a crash loop in Docker Compose or Kubernetes until the configuration is corrected. Search for `msg="module failed"` with `module=runtime-config` in your logs:
+
+Missing `pattern` field:
+
+```
+level=error msg="module failed" module=runtime-config err="starting module runtime-config: invalid service state: Failed, expected: Running, failure: failed to load runtime config: load file: tenant \"anonymous\": blocked_queries[0]: pattern is required"
+```
+
+Invalid regex pattern with `regex: true`:
+
+```
+level=error msg="module failed" module=runtime-config err="starting module runtime-config: invalid service state: Failed, expected: Running, failure: failed to load runtime config: load file: tenant \"anonymous\": blocked_queries[0]: invalid regex pattern \"[a-9}\": error parsing regexp: invalid character class range: `a-9`"
+```
+
+**At runtime**, Mimir rejects the updated config and continues running with the previous valid configuration. Search for `msg="failed to load config"` in your logs:
+
+```
+level=error msg="failed to load config" err="load file: tenant \"anonymous\": blocked_queries[1]: invalid regex pattern \"[a-9}\": error parsing regexp: invalid character class range: `a-9`"
+```
+
+In both cases, the `err` field identifies the tenant, rule index, and the specific problem. Correct or remove the invalid rule.
