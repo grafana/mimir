@@ -1885,7 +1885,8 @@ func TestQuery_ExecDeregistersTrackerOnFailure(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	reg := prometheus.NewPedanticRegistry()
-	inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, nil)
+	queryMetrics := stats.NewQueryMetrics(reg)
+	inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
 
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
@@ -1898,7 +1899,7 @@ func TestQuery_ExecDeregistersTrackerOnFailure(t *testing.T) {
 
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	engine, err := NewEngine(opts, stats.NewQueryMetrics(reg), planner)
+	engine, err := NewEngine(opts, queryMetrics, planner)
 	require.NoError(t, err)
 
 	q, err := engine.NewInstantQuery(context.Background(), storage, nil, "some_metric", timestamp.Time(0))

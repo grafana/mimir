@@ -363,10 +363,7 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64, source Me
 	if l.maxEstimatedMemoryConsumptionBytes > 0 && l.currentEstimatedMemoryConsumptionBytes+b > l.maxEstimatedMemoryConsumptionBytes {
 		if !l.haveRecordedRejection {
 			l.haveRecordedRejection = true
-			// This may be nil in unit tests
-			if l.rejectionCount != nil {
-				l.rejectionCount.Inc()
-			}
+			l.rejectionCount.Inc()
 		}
 
 		return NewMaxEstimatedMemoryConsumptionPerQueryLimitError(l.maxEstimatedMemoryConsumptionBytes)
