@@ -265,6 +265,17 @@ func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) 
 	ch <- prometheus.MustNewConstMetric(t.sampledDesc, prometheus.GaugeValue, float64(sampled))
 }
 
+// IsTracking returns true if the given tracker is being actively tracked by this InflightMemoryConsumptionTracker.
+// Note that this function is only used by unit tests and will only return true on managed trackers.
+// Unmanaged and nested trackers will always return false.
+func (t *InflightMemoryConsumptionTracker) IsTracking(tracker *MemoryConsumptionTracker) bool {
+	if tracker.producer != t {
+		return false
+	}
+	_, ok := t.inflight.Load(tracker)
+	return ok
+}
+
 // MemoryConsumptionTracker tracks the current memory utilisation of a single query, and applies any max in-memory bytes limit.
 //
 // It also tracks the peak number of in-memory bytes for use in query statistics.

@@ -1905,15 +1905,20 @@ func TestQuery_ExecDeregistersTrackerOnFailure(t *testing.T) {
 	q, err := engine.NewInstantQuery(context.Background(), storage, nil, "some_metric", timestamp.Time(0))
 	require.NoError(t, err)
 
+	const sampledMetric = "cortex_querier_inflight_query_sampled_count"
+	const sampledHelp = "# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.\n# TYPE cortex_querier_inflight_query_sampled_count gauge\n"
+
 	// The tracker should be registered before Exec.
 	require.True(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+	require.NoError(t, testutil.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+"cortex_querier_inflight_query_sampled_count 1\n"), sampledMetric))
 
 	// Exec should fail due to memory limit.
 	res := q.Exec(context.Background())
-	require.Error(t, res.Err)
+	require.ErrorContains(t, res.Err, "failed to prepare query: the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: 1 bytes) (err-mimir-max-estimated-memory-consumption-per-query).")
 
 	// The tracker must be deregistered even though we never called q.Close().
 	require.False(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+	require.NoError(t, testutil.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+"cortex_querier_inflight_query_sampled_count 0\n"), sampledMetric))
 }
 
 type noopEvaluationObserver struct{}
