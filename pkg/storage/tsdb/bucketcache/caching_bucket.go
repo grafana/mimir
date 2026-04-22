@@ -95,15 +95,7 @@ func getCacheOptions(slabs *pool.SafeSlabPool[byte]) []cache.Option {
 	return opts
 }
 
-// CachingBucket implementation that provides some caching features, based on passed configuration.
-type CachingBucket struct {
-	objstore.Bucket
-
-	bucketID     string
-	cfg          *CachingBucketConfig
-	invalidation *cacheInvalidation
-	logger       log.Logger
-
+type CachingBucketMetrics struct {
 	requestedGetRangeBytes *prometheus.CounterVec
 	fetchedGetRangeBytes   *prometheus.CounterVec
 	refetchedGetRangeBytes *prometheus.CounterVec
@@ -112,20 +104,9 @@ type CachingBucket struct {
 	operationHits     *prometheus.CounterVec
 }
 
-// NewCachingBucket creates new caching bucket with provided configuration. Configuration should not be
-// changed after creating caching bucket.
-func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
-	if bucketClient == nil {
-		return nil, errors.New("bucket is nil")
-	}
-
-	cb := &CachingBucket{
-		Bucket:       bucketClient,
-		bucketID:     bucketID,
-		cfg:          cfg,
-		invalidation: newCacheInvalidation(bucketID, cfg, logger),
-		logger:       logger,
-
+// NewCachingBucketMetrics creates and registers Prometheus metrics for a CachingBucket.
+func NewCachingBucketMetrics(reg prometheus.Registerer) *CachingBucketMetrics {
+	return &CachingBucketMetrics{
 		requestedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_getrange_requested_bytes_total",
 			Help: "Total number of bytes requested via GetRange.",
@@ -148,17 +129,45 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 			Help: "Number of operations served from cache for given config.",
 		}, []string{"operation", "config"}),
 	}
+}
+
+// CachingBucket implementation that provides some caching features, based on passed configuration.
+type CachingBucket struct {
+	objstore.Bucket
+
+	bucketID     string
+	cfg          *CachingBucketConfig
+	invalidation *cacheInvalidation
+	logger       log.Logger
+	metrics      *CachingBucketMetrics
+}
+
+// NewCachingBucket creates new caching bucket with provided configuration. Configuration should not be
+// changed after creating caching bucket.
+func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, metrics *CachingBucketMetrics) (*CachingBucket, error) {
+	if bucketClient == nil {
+		return nil, errors.New("bucket is nil")
+	}
+
+	cb := &CachingBucket{
+		Bucket:       bucketClient,
+		bucketID:     bucketID,
+		cfg:          cfg,
+		invalidation: newCacheInvalidation(bucketID, cfg, logger),
+		logger:       logger,
+		metrics:      metrics,
+	}
 
 	for op, names := range cfg.allConfigNames() {
 		for _, n := range names {
-			cb.operationRequests.WithLabelValues(op, n)
-			cb.operationHits.WithLabelValues(op, n)
+			cb.metrics.operationRequests.WithLabelValues(op, n)
+			cb.metrics.operationHits.WithLabelValues(op, n)
 
 			if op == objstore.OpGetRange {
-				cb.requestedGetRangeBytes.WithLabelValues(n)
-				cb.fetchedGetRangeBytes.WithLabelValues(originCache, n)
-				cb.fetchedGetRangeBytes.WithLabelValues(originBucket, n)
-				cb.refetchedGetRangeBytes.WithLabelValues(originCache, n)
+				cb.metrics.requestedGetRangeBytes.WithLabelValues(n)
+				cb.metrics.fetchedGetRangeBytes.WithLabelValues(originCache, n)
+				cb.metrics.fetchedGetRangeBytes.WithLabelValues(originBucket, n)
+				cb.metrics.refetchedGetRangeBytes.WithLabelValues(originCache, n)
 			}
 		}
 	}
@@ -219,13 +228,13 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 
 	// Lookup the cache.
 	if isCacheLookupEnabled(ctx) {
-		cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
+		cb.metrics.operationRequests.WithLabelValues(objstore.OpIter, cfgName).Inc()
 
 		data := cfg.cache.GetMulti(ctx, []string{key})
 		if data[key] != nil {
 			list, err := cfg.codec.Decode(data[key])
 			if err == nil {
-				cb.operationHits.WithLabelValues(objstore.OpIter, cfgName).Inc()
+				cb.metrics.operationHits.WithLabelValues(objstore.OpIter, cfgName).Inc()
 				for _, n := range list {
 					if err := f(n); err != nil {
 						return err
@@ -270,14 +279,14 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 
 	// Lookup the cache.
 	if isCacheLookupEnabled(ctx) {
-		cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
+		cb.metrics.operationRequests.WithLabelValues(objstore.OpExists, cfgName).Inc()
 
 		hits := cfg.cache.GetMulti(ctx, []string{key})
 
 		if ex := hits[key]; ex != nil {
 			exists, err := strconv.ParseBool(string(ex))
 			if err == nil {
-				cb.operationHits.WithLabelValues(objstore.OpExists, cfgName).Inc()
+				cb.metrics.operationHits.WithLabelValues(objstore.OpExists, cfgName).Inc()
 				return exists, nil
 			}
 			level.Warn(cb.logger).Log("msg", "unexpected cached 'exists' value", "key", key, "val", string(ex))
@@ -337,7 +346,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 			}()
 		}
 
-		cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName).Inc()
+		cb.metrics.operationRequests.WithLabelValues(objstore.OpGet, cfgName).Inc()
 
 		hits := cfg.cache.GetMulti(ctx, []string{contentKey, existsKey}, cacheOpts...)
 
@@ -348,14 +357,14 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 		// to check this before the actual cached content (if any).
 		if ex := hits[existsKey]; ex != nil {
 			if exists, err := strconv.ParseBool(string(ex)); err == nil && !exists {
-				cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
+				cb.metrics.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
 				return nil, errObjNotFound
 			}
 		}
 
 		// Check if the content was cached.
 		if hits[contentKey] != nil {
-			cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
+			cb.metrics.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
 
 			releaseSlabs = false
 			return &sizedSlabGetReader{bytes.NewBuffer(hits[contentKey]), slabs}, nil
@@ -420,14 +429,14 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name string, keyG
 
 	// Lookup the cache.
 	if isCacheLookupEnabled(ctx) {
-		cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
+		cb.metrics.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
 
 		hits := cache.GetMulti(ctx, []string{key})
 		if raw, ok := hits[key]; ok {
 			var attrs objstore.ObjectAttributes
 			err := json.Unmarshal(raw, &attrs)
 			if err == nil {
-				cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
+				cb.metrics.operationHits.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
 				return attrs, nil
 			}
 
@@ -504,7 +513,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, keyGen
 		releaseSlabs = true
 	)
 
-	cb.requestedGetRangeBytes.WithLabelValues(cfgName).Add(float64(length))
+	cb.metrics.requestedGetRangeBytes.WithLabelValues(cfgName).Add(float64(length))
 
 	// Lookup the cache.
 	if isCacheLookupEnabled(ctx) {
@@ -527,9 +536,9 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, keyGen
 			totalCachedBytes += int64(len(b))
 		}
 
-		cb.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(totalCachedBytes))
-		cb.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName).Inc()
-		cb.operationHits.WithLabelValues(objstore.OpGetRange, cfgName).Add(float64(len(hits)) / float64(len(keys)))
+		cb.metrics.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(totalCachedBytes))
+		cb.metrics.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName).Inc()
+		cb.metrics.operationHits.WithLabelValues(objstore.OpGetRange, cfgName).Add(float64(len(hits)) / float64(len(keys)))
 	}
 
 	if len(hits) < len(keys) {
@@ -610,10 +619,10 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 				hitsMutex.Unlock()
 
 				if storeToCache {
-					cb.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName).Add(float64(len(subrangeData)))
+					cb.metrics.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName).Add(float64(len(subrangeData)))
 					cfg.cache.SetMultiAsync(map[string][]byte{key: subrangeData}, cfg.subrangeTTL)
 				} else {
-					cb.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(len(subrangeData)))
+					cb.metrics.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(len(subrangeData)))
 				}
 			}
 

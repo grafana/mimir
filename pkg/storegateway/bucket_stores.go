@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -133,9 +134,11 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrap(indexcache.ErrUnsupportedIndexCacheBackend, "create index cache")
 	}
 
+	cachingBucketMetrics := bucketcache.NewCachingBucketMetrics(reg)
+
 	// Init index-header caching bucket with the memcached client from index cache, if enabled.
 	indexHeaderCachingBucket, err := tsdb.NewIndexHeaderCachingBucket(
-		metadataCache, cachingBucketConfig, indexCacheClient, cfg.BucketStore.IndexHeaderCache, bucketClient, logger, reg,
+		metadataCache, cachingBucketConfig, indexCacheClient, cfg.BucketStore.IndexHeaderCache, bucketClient, logger, reg, cachingBucketMetrics,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create index header caching bucket")
@@ -146,7 +149,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	if err != nil {
 		return nil, errors.Wrapf(err, "chunks-cache")
 	}
-	chunksCachingBucket, err := tsdb.NewChunksCachingBucket(metadataCache, cachingBucketConfig, chunksCacheClient, cfg.BucketStore.ChunksCache, bucketClient, logger, reg)
+	chunksCachingBucket, err := tsdb.NewChunksCachingBucket(metadataCache, cachingBucketConfig, chunksCacheClient, cfg.BucketStore.ChunksCache, bucketClient, logger, reg, cachingBucketMetrics)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create chunks caching bucket")
 	}

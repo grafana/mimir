@@ -78,7 +78,7 @@ func wrapBucketWithCache(bkt objstore.Bucket, cfg rulestore.Config, cacheTTL tim
 	// Cache rule group contents since they rarely change and when they do, we remove cached entries.
 	cacheCfg.CacheGet("rule-group", cacheClient, isRuleGroup, maxItemSize(cfg.Cache), cacheTTL, cacheTTL, cacheTTL)
 
-	return bucketcache.NewCachingBucket("ruler", bkt, cacheCfg, logger, reg)
+	return bucketcache.NewCachingBucket("ruler", bkt, cacheCfg, logger, bucketcache.NewCachingBucketMetrics(reg))
 }
 
 func isNotTenantsDir(name string) bool {
