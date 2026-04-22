@@ -443,11 +443,11 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/storegateway/...
 
 	# Ensure we never use the default registerer and we allow to use a custom one (improves testability).
-	# Also, ensure we use promauto.With() to reduce the chances we forget to register metrics.
+	# Also, ensure we use promauto.With() or github.com/grafana/mimir/pkg/util/promauto.WithIdempotent() to reduce the chances we forget to register metrics.
 	$(LINT_GO_ENV) faillint -paths \
-		"github.com/prometheus/client_golang/prometheus/promauto.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With,\
-		github.com/prometheus/client_golang/prometheus.{MustRegister,Register,DefaultRegisterer}=github.com/prometheus/client_golang/prometheus/promauto.With,\
-		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
+		"github.com/prometheus/client_golang/prometheus/promauto.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}='github.com/prometheus/client_golang/prometheus/promauto.With or github.com/grafana/mimir/pkg/util/promauto.WithIdempotent',\
+		github.com/prometheus/client_golang/prometheus.{MustRegister,Register,DefaultRegisterer}='github.com/prometheus/client_golang/prometheus/promauto.With or github.com/grafana/mimir/pkg/util/promauto.WithIdempotent',\
+		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}='github.com/prometheus/client_golang/prometheus/promauto.With or github.com/grafana/mimir/pkg/util/promauto.WithIdempotent'" \
 		./pkg/...
 
 	# Prefer using WithCancelCause in production code, so that cancelled contexts have more information available from context.Cause(ctx).

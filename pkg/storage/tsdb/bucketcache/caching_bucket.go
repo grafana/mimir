@@ -31,7 +31,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/util/pool"
-	"github.com/grafana/mimir/pkg/util/prom"
+	"github.com/grafana/mimir/pkg/util/promauto"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -126,27 +126,27 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 		invalidation: newCacheInvalidation(bucketID, cfg, logger),
 		logger:       logger,
 
-		requestedGetRangeBytes: prom.MustRegisterOrGet(reg, prometheus.NewCounterVec(prometheus.CounterOpts{
+		requestedGetRangeBytes: promauto.WithIdempotent(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_getrange_requested_bytes_total",
 			Help: "Total number of bytes requested via GetRange.",
-		}, []string{"config"})),
-		fetchedGetRangeBytes: prom.MustRegisterOrGet(reg, prometheus.NewCounterVec(prometheus.CounterOpts{
+		}, []string{"config"}),
+		fetchedGetRangeBytes: promauto.WithIdempotent(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_getrange_fetched_bytes_total",
 			Help: "Total number of bytes fetched because of GetRange operation. Data from bucket is then stored to cache.",
-		}, []string{"origin", "config"})),
-		refetchedGetRangeBytes: prom.MustRegisterOrGet(reg, prometheus.NewCounterVec(prometheus.CounterOpts{
+		}, []string{"origin", "config"}),
+		refetchedGetRangeBytes: promauto.WithIdempotent(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_getrange_refetched_bytes_total",
 			Help: "Total number of bytes re-fetched from storage because of GetRange operation, despite being in cache already.",
-		}, []string{"origin", "config"})),
+		}, []string{"origin", "config"}),
 
-		operationRequests: prom.MustRegisterOrGet(reg, prometheus.NewCounterVec(prometheus.CounterOpts{
+		operationRequests: promauto.WithIdempotent(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_operation_requests_total",
 			Help: "Number of requested operations matching given config which triggered a cache lookup.",
-		}, []string{"operation", "config"})),
-		operationHits: prom.MustRegisterOrGet(reg, prometheus.NewCounterVec(prometheus.CounterOpts{
+		}, []string{"operation", "config"}),
+		operationHits: promauto.WithIdempotent(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_operation_hits_total",
 			Help: "Number of operations served from cache for given config.",
-		}, []string{"operation", "config"})),
+		}, []string{"operation", "config"}),
 	}
 
 	for op, names := range cfg.allConfigNames() {
