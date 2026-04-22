@@ -166,7 +166,7 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 	// Batch stage: run after per-block settles. Skipped if fail-fast already tripped.
 	// Emit an explicit log line on skip so users who registered a BatchVerifier
 	// aren't left wondering why it didn't run.
-	batchShouldRun := !(report.HasFailures() && v.opts.failFast)
+	batchShouldRun := !report.HasFailures() || !v.opts.failFast
 	if batchShouldRun {
 		for _, bcheck := range v.opts.batchChecks {
 			if err := bcheck.Verify(ctx, refs); err != nil {
