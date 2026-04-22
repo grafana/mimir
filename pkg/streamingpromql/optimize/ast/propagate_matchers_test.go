@@ -142,6 +142,11 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	// Ensure that internal matchers are not propagated, as they are not actual labels on the data.
 	`up{__query_shard__="bar"} + up{__query_shard__="bar2"}`:                                     `up{__query_shard__="bar"} + up{__query_shard__="bar2"}`,
 	`sum without (x) (up{__query_shard__="bar"}) + sum without (x) (up{__query_shard__="bar2"})`: `sum without (x) (up{__query_shard__="bar"}) + sum without (x) (up{__query_shard__="bar2"})`,
+
+	// Check more complicated cases based on real world queries.
+	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1)`:                                                                                                                                                 `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1)`,
+	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1)`:                                                                                                                                                      `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1)`,
+	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1) == 1`: `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1) == 1`,
 }
 
 // TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.
