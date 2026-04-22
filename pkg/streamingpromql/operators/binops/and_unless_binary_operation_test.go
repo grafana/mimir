@@ -42,7 +42,7 @@ func TestAndUnlessBinaryOperation_PassesHintMatchersToRHS(t *testing.T) {
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "right-1"),
-				labels.FromStrings("env", "staging", "series", "right-2"), // these labels will be filtered out by hint matcher becuase theyre not in RHS
+				labels.FromStrings("env", "staging", "series", "right-2"), // these labels will be filtered out by hint matcher because they're not in RHS
 			},
 			expectedRHSMatchers: types.Matchers{
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
