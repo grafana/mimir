@@ -85,7 +85,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, projectionInclude bool, projectionLabels []string, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
 	var result ingester_client.CombinedQueryStreamResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
-		req, err := ingester_client.ToQueryRequest(from, to, projectionInclude, projectionLabels, matchers)
+		req, err := ingester_client.ToQueryRequest(from, to, matchers)
 		if err != nil {
 			return err
 		}
