@@ -39,21 +39,22 @@ func TestParseHashRangeKey_RejectsMalformed(t *testing.T) {
 
 // captureTrace builds a Trace as if rebalance() had just run with
 // the given inputs. Mirrors the production capture path so tests
-// exercise the same conversions (ratesToWire, cooldownsToWire) used
-// in production.
+// exercise the same conversions (ratesToWire, cooldownsToWire,
+// recentMovesToWire) used in production.
 func captureTrace(
 	t *testing.T,
 	r *Rebalancer,
 	current *assignment.Assignment,
 	rates []rangeRate,
-	orphans map[int32]int64,
+	partitionLByPID map[int32]int64,
 	activePartitions []int32,
 	now time.Time,
 ) Trace {
 	t.Helper()
 	startEntries := append([]assignment.Entry(nil), current.Entries...)
 	cooldownsSnapshot := cooldownsToWire(r.moveCooldowns)
-	end, actions := r.runSlicer(current, rates, orphans, activePartitions, now)
+	recentMovesSnapshot := recentMovesToWire(r.recentMoves)
+	end, actions := r.runSlicer(current, rates, partitionLByPID, r.recentMoves, activePartitions, now)
 	require.NoError(t, end.Validate())
 	return Trace{
 		SlicerVersion: SlicerVersion,
@@ -64,22 +65,24 @@ func captureTrace(
 		Now:              now,
 		Start:            startEntries,
 		Rates:            ratesToWire(rates),
-		Orphans:          orphans,
+		PartitionL:       partitionLByPID,
+		RecentMoves:      recentMovesSnapshot,
 		ActivePartitions: append([]int32(nil), activePartitions...),
 		Cooldowns:        cooldownsSnapshot,
 		Config: ConfigSnapshot{
-			LoadWeightSeries:  r.cfg.LoadWeightSeries,
-			LoadWeightSamples: r.cfg.LoadWeightSamples,
-			MovementBudget:    r.cfg.MovementBudget,
-			MoveCooldown:      r.cfg.MoveCooldown,
+			MovementBudget:     r.cfg.MovementBudget,
+			MoveCooldown:       r.cfg.MoveCooldown,
+			CompactionInterval: r.cfg.CompactionInterval,
 		},
 		End: append([]assignment.Entry(nil), end.Entries...),
 	}
 }
 
 // nonTrivialTrace constructs a captured trace from a scenario that
-// exercises every Phase of runSlicer: skewed per-range load, a stale
-// orphan backlog on one partition, multiple partitions.
+// exercises every Phase of runSlicer: skewed per-range load, an
+// above-average partition that the slicer must drain, multiple
+// partitions, pre-seeded cooldowns and recentMoves for serialization
+// coverage.
 func nonTrivialTrace(t *testing.T) Trace {
 	t.Helper()
 	partitions := []int32{0, 1, 2, 3}
@@ -89,29 +92,44 @@ func nonTrivialTrace(t *testing.T) Trace {
 	for i, e := range initial.Entries {
 		switch e.PartitionID {
 		case 0:
-			rates = append(rates, rangeRate{hr: e.Range, series: int64(1000 + i*10), samples: 50})
+			rates = append(rates, rangeRate{hr: e.Range, series: int64(1000 + i*10)})
 		case 1:
-			rates = append(rates, rangeRate{hr: e.Range, series: int64(2000 + i*5), samples: 100})
+			rates = append(rates, rangeRate{hr: e.Range, series: int64(2000 + i*5)})
 		case 2:
-			rates = append(rates, rangeRate{hr: e.Range, series: 50, samples: 5})
+			rates = append(rates, rangeRate{hr: e.Range, series: 50})
 		case 3:
-			rates = append(rates, rangeRate{hr: e.Range, series: 10, samples: 1})
+			rates = append(rates, rangeRate{hr: e.Range, series: 10})
 		}
 	}
-	orphans := map[int32]int64{2: 500}
+
+	// PartitionL skewed to match: P1 hottest, P0 elevated, P2/P3 cold.
+	partL := map[int32]int64{
+		0: 9000,
+		1: 17000,
+		2: 400,
+		3: 80,
+	}
 
 	cfg := Config{
-		MovementBudget:    0.5,
-		LoadWeightSeries:  0.8,
-		LoadWeightSamples: 0.2,
-		MoveCooldown:      90 * time.Second,
+		MovementBudget:     0.5,
+		MoveCooldown:       90 * time.Second,
+		CompactionInterval: 2 * time.Hour,
 	}
-	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
+	r := &Rebalancer{
+		cfg:           cfg,
+		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		recentMoves:   make(map[int32][]moveRecord),
+	}
 	// Pre-seed a cooldown so cooldown serialization is also exercised.
 	r.moveCooldowns[initial.Entries[0].Range] = time.Unix(2_000_000, 0)
+	// Pre-seed a recent move off P1 so recentMoves serialization is
+	// exercised and so a nonzero sumRecentMoves is in play.
+	r.recentMoves[1] = []moveRecord{
+		{hr: initial.Entries[10].Range, series: 500, at: time.Unix(999_000, 0)},
+	}
 
 	now := time.Unix(1_000_000, 0)
-	return captureTrace(t, r, initial, rates, orphans, partitions, now)
+	return captureTrace(t, r, initial, rates, partL, partitions, now)
 }
 
 // TestReplayTrace_Deterministic confirms that the slicer is a pure
@@ -323,4 +341,13 @@ func TestAdminState_TraceAt(t *testing.T) {
 	assert.False(t, ok, "out-of-range index returns ok=false")
 	_, ok = s.traceAt(-1)
 	assert.False(t, ok, "negative index returns ok=false")
+}
+
+// TestSlicerVersion_IsBumpedForNewModel is a smoke test that the
+// version marker has been advanced past "1" — older traces captured
+// under the orphan-series model must not silently replay against
+// this binary.
+func TestSlicerVersion_IsBumpedForNewModel(t *testing.T) {
+	assert.NotEqual(t, "1", SlicerVersion,
+		"SlicerVersion must be bumped when the load model changes incompatibly")
 }

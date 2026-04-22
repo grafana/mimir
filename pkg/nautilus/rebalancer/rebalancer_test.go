@@ -13,16 +13,29 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
-// samplesOnlyCfg returns a Config that puts all load weight on the
-// samples-per-second signal. Used by tests written before the
-// active-series signal existed; they construct rangeRates with only
-// samples populated.
-func samplesOnlyCfg(movementBudget float64) Config {
+// seriesCfg returns a Config with the given movement budget and a
+// long-enough compaction interval that recentMoves pruning won't fire
+// in a single-round test.
+func seriesCfg(movementBudget float64) Config {
 	return Config{
-		MovementBudget:    movementBudget,
-		LoadWeightSeries:  0,
-		LoadWeightSamples: 1,
+		MovementBudget:     movementBudget,
+		CompactionInterval: 2 * time.Hour,
 	}
+}
+
+// partitionLFromRates returns a partitionLByPID map derived by summing
+// per-range series on each partition, the natural "ground-truth" L_pid
+// for a test that doesn't otherwise model ingester totals.
+func partitionLFromRates(current *assignment.Assignment, rates []rangeRate) map[int32]int64 {
+	byRange := make(map[assignment.HashRange]int64, len(rates))
+	for _, r := range rates {
+		byRange[r.hr] += r.series
+	}
+	out := make(map[int32]int64)
+	for _, e := range current.Entries {
+		out[e.PartitionID] += byRange[e.Range]
+	}
+	return out
 }
 
 func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
@@ -34,15 +47,16 @@ func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 10000.0 / float64(initialSlicesPerPartition)})
+			rates = append(rates, rangeRate{hr: e.Range, series: 10000 / int64(initialSlicesPerPartition)})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 100.0 / float64(initialSlicesPerPartition)})
+			rates = append(rates, rangeRate{hr: e.Range, series: 100 / int64(initialSlicesPerPartition)})
 		}
 	}
 
-	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
+	r := &Rebalancer{cfg: seriesCfg(0.5)}
+	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// After rebalancing, partition 0 should own less hash space than
@@ -77,28 +91,36 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 
 	var rates []rangeRate
 	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, samples: 100.0})
+		rates = append(rates, rangeRate{hr: e.Range, series: 100})
 	}
 
-	r := &Rebalancer{cfg: samplesOnlyCfg(0.09)}
+	r := &Rebalancer{cfg: seriesCfg(0.09)}
+	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
-	lm := buildLoadMap(rates, 0, 1)
-	partitionLoad := make(map[int32]float64)
+	// Sum series per partition on the output assignment and check
+	// they're within a reasonable band of the target. When all ranges
+	// carry equal series and partitions started equal-sized, there's
+	// nothing to do and every partition should stay within a small
+	// delta of the mean.
+	partitionSeries := make(map[int32]int64)
 	for _, e := range result.Entries {
-		partitionLoad[e.PartitionID] += lm.load(e.Range)
+		for _, rr := range rates {
+			if rr.hr == e.Range {
+				partitionSeries[e.PartitionID] += rr.series
+				break
+			}
+		}
 	}
-
-	totalLoad := 0.0
-	for _, l := range partitionLoad {
-		totalLoad += l
+	var total int64
+	for _, s := range partitionSeries {
+		total += s
 	}
-	targetLoad := totalLoad / float64(len(partitions))
-
-	for _, load := range partitionLoad {
-		assert.InDelta(t, targetLoad, load, targetLoad*0.3, "partition load should be near target")
+	target := float64(total) / float64(len(partitions))
+	for _, s := range partitionSeries {
+		assert.InDelta(t, target, float64(s), target*0.3, "partition series should be near target")
 	}
 }
 
@@ -110,12 +132,13 @@ func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
 
 	var rates []rangeRate
 	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, samples: 100.0})
+		rates = append(rates, rangeRate{hr: e.Range, series: 100})
 	}
 
-	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
+	r := &Rebalancer{cfg: seriesCfg(0.5)}
+	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, nil, activePartitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, partL, nil, activePartitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	for _, e := range result.Entries {
@@ -131,15 +154,16 @@ func TestRunSlicer_SliceCountCapped(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 100000.0})
+			rates = append(rates, rangeRate{hr: e.Range, series: 100000})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 1.0})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1})
 		}
 	}
 
-	r := &Rebalancer{cfg: samplesOnlyCfg(0.09)}
+	r := &Rebalancer{cfg: seriesCfg(0.09)}
+	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	assert.LessOrEqual(t, len(result.Entries), maxSlicesPerPartition*len(partitions)+len(partitions),
@@ -201,12 +225,13 @@ func TestRunSlicer_Phase1_DistributesAcrossPartitions(t *testing.T) {
 
 	var rates []rangeRate
 	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, samples: 100.0})
+		rates = append(rates, rangeRate{hr: e.Range, series: 100})
 	}
 
-	r := &Rebalancer{cfg: samplesOnlyCfg(0.0)}
+	r := &Rebalancer{cfg: seriesCfg(0.0)}
+	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, nil, activePartitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, partL, nil, activePartitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	counts := make(map[int32]int)
@@ -221,10 +246,10 @@ func TestRunSlicer_Phase1_DistributesAcrossPartitions(t *testing.T) {
 	}
 }
 
-// TestRunSlicer_Phase4_ExhaustsBudget verifies the move phase continues
+// TestRunSlicer_Phase3_ExhaustsBudget verifies the move phase continues
 // making moves until the churn budget is exhausted, not stopping early
 // on a heuristic threshold.
-func TestRunSlicer_Phase4_ExhaustsBudget(t *testing.T) {
+func TestRunSlicer_Phase3_ExhaustsBudget(t *testing.T) {
 	partitions := []int32{0, 1}
 	initial := assignment.FineEvenSplit(partitions, initialSlicesPerPartition)
 
@@ -232,66 +257,70 @@ func TestRunSlicer_Phase4_ExhaustsBudget(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 120.0})
+			rates = append(rates, rangeRate{hr: e.Range, series: 120})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 80.0})
+			rates = append(rates, rangeRate{hr: e.Range, series: 80})
 		}
 	}
 
-	r := &Rebalancer{cfg: samplesOnlyCfg(0.5)}
+	r := &Rebalancer{cfg: seriesCfg(0.5)}
+	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
-	lm := buildLoadMap(rates, 0, 1)
-	loads := make(map[int32]float64)
+	// Sum per-range series per partition on the result.
+	byRange := make(map[assignment.HashRange]int64, len(rates))
+	for _, rr := range rates {
+		byRange[rr.hr] = rr.series
+	}
+	loads := make(map[int32]int64)
 	for _, e := range result.Entries {
-		loads[e.PartitionID] += lm.load(e.Range)
+		loads[e.PartitionID] += byRange[e.Range]
 	}
 
 	total := loads[0] + loads[1]
-	target := total / 2.0
+	target := float64(total) / 2.0
 	// With 50% budget and a 60/40 split, the algorithm should be able
-	// to equalize almost perfectly.
-	assert.InDelta(t, target, loads[0], target*0.05,
-		"p0 load should be near target after exhausting budget")
-	assert.InDelta(t, target, loads[1], target*0.05,
-		"p1 load should be near target after exhausting budget")
+	// to equalize reasonably well.
+	assert.InDelta(t, target, float64(loads[0]), target*0.15,
+		"p0 series should be near target after exhausting budget")
+	assert.InDelta(t, target, float64(loads[1]), target*0.15,
+		"p1 series should be near target after exhausting budget")
 }
 
-// TestRunSlicer_Phase5_SplitsAnyHotSlice verifies that Phase 5 splits
-// any slice that is ≥2x the mean slice load, regardless of whether
-// its partition is overloaded. This is per the paper: splitting captures
-// finer-grained load measurements for the next round.
-func TestRunSlicer_Phase5_SplitsAnyHotSlice(t *testing.T) {
+// TestRunSlicer_Phase4_SplitsAnyHotSlice verifies that Phase 4 splits
+// hot slices on overloaded partitions. Splitting adds fingrained
+// granularity for the next round's load measurement.
+func TestRunSlicer_Phase4_SplitsAnyHotSlice(t *testing.T) {
 	partitions := []int32{0, 1}
 	// 4 slices per partition = 8 total (well under 150 cap).
 	initial := assignment.FineEvenSplit(partitions, 4)
 
-	// Both partitions have the SAME total load, so neither is overloaded.
-	// But each has one hot slice (500) that is well above the mean
-	// slice load (1040/8 = 130, threshold = 260). The paper says these
-	// should be split to gain granularity for the next round.
+	// P0 has high total load with one dominant hot slice; P1 cold.
 	var rates []rangeRate
-	hotIdx := map[int]bool{0: true, 4: true}
+	hotIdx := map[int]bool{0: true}
 	for i, e := range initial.Entries {
+		if e.PartitionID != 0 {
+			rates = append(rates, rangeRate{hr: e.Range, series: 10})
+			continue
+		}
 		if hotIdx[i] {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 500.0})
+			rates = append(rates, rangeRate{hr: e.Range, series: 500})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 10.0})
+			rates = append(rates, rangeRate{hr: e.Range, series: 10})
 		}
 	}
 
-	r := &Rebalancer{cfg: samplesOnlyCfg(0.0)}
+	r := &Rebalancer{cfg: seriesCfg(0.0)}
+	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
-	// Both hot slices should split even though neither partition is
-	// overloaded. The current code only splits on overloaded partitions
-	// and would leave these untouched.
+	// The hot slice on the overloaded partition should have been split.
 	assert.Greater(t, len(result.Entries), len(initial.Entries),
-		"hot slices should be split for granularity even on balanced partitions")
+		"hot slice on overloaded partition should be split for granularity")
 }
 
 func TestAssignmentStore(t *testing.T) {
@@ -348,38 +377,31 @@ func TestGetAssignmentsResponse_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestLoadMap_SamplesOnly(t *testing.T) {
+func TestLoadMap_SeriesAt(t *testing.T) {
 	rates := []rangeRate{
-		{hr: assignment.HashRange{Lo: 0, Hi: 999}, samples: 100.0},
-		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, samples: 300.0},
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100},
+		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 300},
 	}
-	lm := buildLoadMap(rates, 0, 1)
+	lm := buildLoadMap(rates)
 
-	// Each range gets samples/totalSamples * weight.
-	assert.InDelta(t, 0.25, lm.load(assignment.HashRange{Lo: 0, Hi: 999}), 1e-9)
-	assert.InDelta(t, 0.75, lm.load(assignment.HashRange{Lo: 1000, Hi: 1999}), 1e-9)
-	assert.Equal(t, 0.0, lm.load(assignment.HashRange{Lo: 5000, Hi: 6000}))
+	assert.Equal(t, int64(100), lm.seriesAt(assignment.HashRange{Lo: 0, Hi: 999}))
+	assert.Equal(t, int64(300), lm.seriesAt(assignment.HashRange{Lo: 1000, Hi: 1999}))
+	assert.Equal(t, int64(0), lm.seriesAt(assignment.HashRange{Lo: 5000, Hi: 6000}))
 }
 
-func TestLoadMap_Combined(t *testing.T) {
+// TestLoadMap_SumsRatesFromMultipleOwners verifies that buildLoadMap
+// sums per-range series across owners (e.g. multiple zones reporting
+// the same range). This is the natural behaviour needed for R_r to
+// reflect total in-memory series for a range across replicas.
+func TestLoadMap_SumsRatesFromMultipleOwners(t *testing.T) {
+	hr := assignment.HashRange{Lo: 0, Hi: 999}
 	rates := []rangeRate{
-		// hot in samples, cold in series
-		{hr: assignment.HashRange{Lo: 0, Hi: 999}, samples: 900.0, series: 100},
-		// cold in samples, hot in series
-		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, samples: 100.0, series: 900},
+		{hr: hr, series: 100},
+		{hr: hr, series: 150},
 	}
-	// Weights: 50/50.
-	lm := buildLoadMap(rates, 0.5, 0.5)
+	lm := buildLoadMap(rates)
 
-	// Each range contributes 0.5*0.9 + 0.5*0.1 = 0.5 from one signal
-	// and the other way around for the other. Both should get exactly 0.5.
-	assert.InDelta(t, 0.5, lm.load(rates[0].hr), 1e-9)
-	assert.InDelta(t, 0.5, lm.load(rates[1].hr), 1e-9)
-
-	// Check raw stats are exposed.
-	s, n := lm.stat(rates[0].hr)
-	assert.Equal(t, 900.0, s)
-	assert.Equal(t, int64(100), n)
+	assert.Equal(t, int64(250), lm.seriesAt(hr))
 }
 
 // TestRunSlicer_MoveCooldown_BlocksRepeatMoves verifies that, when a
@@ -396,20 +418,21 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 1000.0})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1000})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, samples: 1.0})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1})
 		}
 	}
 
-	cfg := samplesOnlyCfg(0.5)
+	cfg := seriesCfg(0.5)
 	cfg.MoveCooldown = 90 * time.Second
 	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// First round: produces some moves and arms cooldowns.
-	result1, actions1 := r.runSlicer(initial, rates, nil, partitions, t0)
+	partL := partitionLFromRates(initial, rates)
+	result1, actions1 := r.runSlicer(initial, rates, partL, nil, partitions, t0)
 	require.NoError(t, result1.Validate())
 	r.recordMoveCooldowns(t0, actions1)
 
@@ -426,7 +449,7 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 	// pretend no stats have updated yet, which is the worst case).
 	t1 := t0.Add(30 * time.Second)
 	r.pruneExpiredCooldowns(t1)
-	_, actions2 := r.runSlicer(result1, rates, nil, partitions, t1)
+	_, actions2 := r.runSlicer(result1, rates, partL, nil, partitions, t1)
 	for _, a := range actions2 {
 		if a.Kind != ActionMove {
 			continue
@@ -481,183 +504,61 @@ func TestRunSlicer_MoveCooldown_OverlapMatchesSplitsAndMerges(t *testing.T) {
 }
 
 // stubPartitionRing implements partitionRingView for tests that need
-// to compute orphans without spinning up a real PartitionRing.
+// to compute partition L without spinning up a real PartitionRing.
 type stubPartitionRing map[int32][]string
 
 func (s stubPartitionRing) PartitionOwnerIDs(pid int32) []string { return s[pid] }
 
-func TestComputePartitionOrphans_DetectsOrphanSeries(t *testing.T) {
-	// Two partitions, one owner each. Partition 0 owns one range
-	// reporting 100 series; its owner reports 250 total in memory,
-	// implying 150 orphans (e.g. from a recently-moved range).
-	current := &assignment.Assignment{
-		Entries: []assignment.Entry{
-			{Range: assignment.HashRange{Lo: 0, Hi: 999}, PartitionID: 0},
-			{Range: assignment.HashRange{Lo: 1000, Hi: 1999}, PartitionID: 1},
-		},
-	}
-	rates := []rangeRate{
-		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100},
-		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 200},
-	}
+// TestPartitionL_MaxOverOwners verifies that partitionL takes the
+// worst-case owner total when a partition has multiple replicas
+// (typically one per zone). Balancing on the max keeps any single
+// ingester from approaching OOM.
+func TestPartitionL_MaxOverOwners(t *testing.T) {
 	instanceTotals := map[string]int64{
-		"ingester-0": 250, // 100 owned + 150 orphan
-		"ingester-1": 200, // matches owned exactly, no orphan
+		"ingester-z1": 1000,
+		"ingester-z2": 1500,
+		"ingester-z3": 700,
+		"ingester-s1": 400,
 	}
 	pRing := stubPartitionRing{
-		0: {"ingester-0"},
-		1: {"ingester-1"},
+		0: {"ingester-z1", "ingester-z2", "ingester-z3"},
+		1: {"ingester-s1"},
 	}
 
-	orphans := computePartitionOrphans(current, instanceTotals, rates, pRing)
-	assert.Equal(t, int64(150), orphans[0])
-	_, hasOne := orphans[1]
-	assert.False(t, hasOne, "partition 1 should not appear in orphan map")
+	m := partitionL(instanceTotals, pRing, []int32{0, 1})
+	assert.Equal(t, int64(1500), m[0], "partition 0 L = max over zone replicas")
+	assert.Equal(t, int64(400), m[1])
 }
 
-func TestComputePartitionOrphans_TakesMaxAcrossOwners(t *testing.T) {
-	// One partition with two replica owners (e.g. across zones).
-	// Owners have different orphan histories; the partition's
-	// orphan should be the worst-case (max), since rebalancing
-	// affects whichever ingester is the most pressured.
-	current := &assignment.Assignment{
-		Entries: []assignment.Entry{
-			{Range: assignment.HashRange{Lo: 0, Hi: 999}, PartitionID: 5},
-		},
-	}
-	rates := []rangeRate{
-		// Two owners both report 100 series for the same range.
-		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 200},
-	}
-	// Per-range sum is 200; per-owner expected owned series is 100
-	// (we sum across rates, but each owner contributes ~100).
-	// Owner-z1 has 350 in memory → orphan = 350 - 200 = 150.
-	// Owner-z2 has 500 in memory → orphan = 500 - 200 = 300.
-	instanceTotals := map[string]int64{
-		"ingester-z1": 350,
-		"ingester-z2": 500,
-	}
+// TestPartitionL_MissingOwnerIsZero verifies that a partition with no
+// healthy owner in instanceTotals maps to zero (not dropped). A
+// partition with L=0 simply can't be a hot source, but still shows up
+// for destination selection.
+func TestPartitionL_MissingOwnerIsZero(t *testing.T) {
 	pRing := stubPartitionRing{
-		5: {"ingester-z1", "ingester-z2"},
+		0: {"unknown-ingester"},
 	}
-
-	orphans := computePartitionOrphans(current, instanceTotals, rates, pRing)
-	assert.Equal(t, int64(300), orphans[5], "should pick the worst-case owner orphan")
+	m := partitionL(map[string]int64{}, pRing, []int32{0})
+	assert.Equal(t, int64(0), m[0])
 }
 
-func TestComputePartitionOrphans_FloorsAtZero(t *testing.T) {
-	// Owner reports fewer total series than the per-range sum
-	// suggests (e.g. histogram approximation overshoots). Orphan
-	// should clamp to 0, never go negative.
-	current := &assignment.Assignment{
-		Entries: []assignment.Entry{
-			{Range: assignment.HashRange{Lo: 0, Hi: 999}, PartitionID: 0},
-		},
-	}
-	rates := []rangeRate{
-		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 500},
-	}
-	instanceTotals := map[string]int64{
-		"ingester-0": 400, // less than sum(per-range)
-	}
-	pRing := stubPartitionRing{0: {"ingester-0"}}
-
-	orphans := computePartitionOrphans(current, instanceTotals, rates, pRing)
-	_, has := orphans[0]
-	assert.False(t, has, "negative orphan must not be recorded")
-}
-
-func TestLoadMap_OrphanContributesToPartitionLoad(t *testing.T) {
-	// Two ranges of equal series load on different partitions.
-	// Without orphans, partition loads are equal. With 50 orphans
-	// on partition 0, that partition's combined load grows.
-	rates := []rangeRate{
-		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100},
-		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 100},
-	}
-	orphans := map[int32]int64{0: 50}
-
-	lm := buildLoadMapWithOrphans(rates, orphans, 1.0, 0)
-	// Denominator is 100+100+50 = 250.
-	// Range load = 100/250 = 0.4 each.
-	// Orphan load on P0 = 50/250 = 0.2.
-	entries := []rangeLoad{
-		{entry: assignment.Entry{Range: rates[0].hr, PartitionID: 0}, load: lm.load(rates[0].hr)},
-		{entry: assignment.Entry{Range: rates[1].hr, PartitionID: 1}, load: lm.load(rates[1].hr)},
-	}
-
-	loads := lm.computePartitionLoads(entries)
-	assert.InDelta(t, 0.6, loads[0], 1e-9, "P0 = range + orphan")
-	assert.InDelta(t, 0.4, loads[1], 1e-9, "P1 = range only")
-
-	// All partition loads should sum to wSeries+wSamples = 1.0.
-	assert.InDelta(t, 1.0, loads[0]+loads[1], 1e-9)
-}
-
-// TestRunSlicer_OrphanBiasesSourceSelection verifies that, when two
-// partitions have equal per-range load but one carries a heavy orphan
-// backlog (recently-moved series still in memory), the slicer prefers
-// to drain the orphan-heavy partition.
-func TestRunSlicer_OrphanBiasesSourceSelection(t *testing.T) {
-	partitions := []int32{0, 1}
+// TestRunSlicer_ExhaustedBudgetDoesNotStallOthers reproduces the bug
+// (previously expressed as "orphan-locked partition"): Phase 3 of the
+// slicer must not terminate its loop when the nominally-hottest
+// partition has no profitable range to move. With the movable budget
+// as the primary gate, a partition whose entire above-mean surplus has
+// already been scheduled-out (sumRecentMoves >= L - meanL) simply
+// won't be selected as hot; but even when it is selected and no move
+// improves imbalance, the loop must exclude it and proceed to the
+// next-hottest partition, not break.
+func TestRunSlicer_ExhaustedBudgetDoesNotStallOthers(t *testing.T) {
+	partitions := []int32{0, 1, 2, 3}
 	initial := assignment.FineEvenSplit(partitions, 8)
 
-	// Equal per-range series load on both partitions.
-	var rates []rangeRate
-	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, series: 100})
-	}
-
-	// Partition 0 has a large orphan backlog; partition 1 doesn't.
-	// Total per-range series = 16 * 100 = 1600. Partition 0 owned
-	// series = 800. Orphan of 4000 puts the source ingester at
-	// roughly 6x its peer's memory pressure.
-	orphans := map[int32]int64{0: 4000}
-
-	cfg := Config{
-		MovementBudget:    0.5,
-		LoadWeightSeries:  1.0,
-		LoadWeightSamples: 0,
-	}
-	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
-
-	_, actions := r.runSlicer(initial, rates, orphans, partitions, time.Time{})
-
-	// At least one move should happen, and every move action should
-	// take ranges away from partition 0 (the orphan-heavy source).
-	var moves int
-	for _, a := range actions {
-		if a.Kind != ActionMove {
-			continue
-		}
-		moves++
-		assert.Equalf(t, int32(0), a.FromPart,
-			"orphan-heavy partition should be the source, got %v", a)
-	}
-	assert.Greater(t, moves, 0, "expected at least one move from the orphan-heavy partition")
-}
-
-// TestRunSlicer_OrphanLockedPartitionDoesNotStallOthers reproduces a
-// production bug where Phase 3 of the slicer broke out of its move
-// loop the moment the hottest partition couldn't yield a profitable
-// move. In a cluster with a partition whose load is dominated by
-// orphan series (uncompacted leftovers from prior moves) and whose
-// currently-owned ranges carry zero per-range load, the orphan-locked
-// partition is always the hottest, no move on it can reduce load,
-// and the loop terminated — preventing rebalancing of any other hot
-// partition for the entire round.
-//
-// With the fix, the orphan-locked partition is excluded after its
-// failed first iteration and Phase 3 proceeds to drain the next-
-// hottest partition, which in this test does have shedable load.
-func TestRunSlicer_OrphanLockedPartitionDoesNotStallOthers(t *testing.T) {
-	partitions := []int32{0, 1, 2}
-	initial := assignment.FineEvenSplit(partitions, 8)
-
-	// P0: zero per-range series (its owner is still draining a huge
-	// orphan backlog from a prior move; current ranges are inactive).
-	// P1: hot per-range load.
-	// P2: cold per-range load.
+	// P0: per-range series zero (its owner is still draining a huge
+	// backlog; current ranges are inactive).
+	// P1: genuinely hot, has shedable per-range load.
+	// P2, P3: cold.
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		switch e.PartitionID {
@@ -665,30 +566,33 @@ func TestRunSlicer_OrphanLockedPartitionDoesNotStallOthers(t *testing.T) {
 			rates = append(rates, rangeRate{hr: e.Range, series: 0})
 		case 1:
 			rates = append(rates, rangeRate{hr: e.Range, series: 1000})
-		case 2:
+		default:
 			rates = append(rates, rangeRate{hr: e.Range, series: 1})
 		}
 	}
 
-	// P0 carries a massive orphan backlog: enough that its TOTAL load
-	// (orphan-only) exceeds the per-range load on P1. This makes P0
-	// the "hottest" by orphan-aware ranking, but it has no shedable
-	// per-range load to move — so a naive Phase 3 would terminate.
-	// 8 ranges * 1000 = 8000 series on P1; orphan = 50000 dominates.
-	orphans := map[int32]int64{0: 50000}
-
-	cfg := Config{
-		MovementBudget:    0.5,
-		LoadWeightSeries:  1.0,
-		LoadWeightSamples: 0,
+	// Construct a partitionL where P0 is nominally the hottest but
+	// carries no per-range series it could shed, while P1 is also
+	// above mean and has real, shedable load. P2/P3 are cold. With
+	// mean pulled up by P0 but not so high that P1 falls below it,
+	// the slicer must:
+	//   1. try P0 first, fail to find any profitable range, exclude it;
+	//   2. proceed to drain P1.
+	partL := map[int32]int64{
+		0: 30000, // nominally hottest, no shedable ranges
+		1: 20000, // above mean, has shedable ranges
+		2: 100,
+		3: 100,
 	}
+	// mean = (30000 + 20000 + 100 + 100) / 4 = 12550
+	// movable(P0) = 30000 - 12550 = 17450 (but nothing to shed)
+	// movable(P1) = 20000 - 12550 = 7450 (and 8*1000=8000 series of shedable load)
+
+	cfg := seriesCfg(0.5)
 	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
 
-	_, actions := r.runSlicer(initial, rates, orphans, partitions, time.Time{})
+	_, actions := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
 
-	// Count moves originating from each partition. The fix is
-	// successful if at least one move comes off P1 (the genuinely
-	// hot partition with shedable load); without the fix, moves=0.
 	movesFromP1 := 0
 	for _, a := range actions {
 		if a.Kind != ActionMove {
@@ -699,32 +603,234 @@ func TestRunSlicer_OrphanLockedPartitionDoesNotStallOthers(t *testing.T) {
 		}
 	}
 	assert.Greaterf(t, movesFromP1, 0,
-		"orphan-locked P0 must not stall draining of hot P1; got actions=%v", actions)
+		"exhausted-budget P0 must not stall draining of hot P1; got actions=%v", actions)
 }
 
-func TestLoadMap_ShedableLoadExcludesOrphan(t *testing.T) {
-	rates := []rangeRate{
-		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100},
-		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 100},
-	}
-	orphans := map[int32]int64{0: 50}
+// TestRunSlicer_MovableBudgetCapsMovesPerWindow verifies that the
+// cross-round source-side budget shrinks with each move and caps total
+// moves off a partition within one CompactionInterval. The window
+// guards against the "keep draining what appears hot but has already
+// been moved off" case: the source's reported L_pid doesn't drop until
+// head compaction, so the budget must subtract in-flight moves.
+func TestRunSlicer_MovableBudgetCapsMovesPerWindow(t *testing.T) {
+	partitions := []int32{0, 1}
+	initial := assignment.FineEvenSplit(partitions, 16)
 
-	lm := buildLoadMapWithOrphans(rates, orphans, 1.0, 0)
-	entries := []rangeLoad{
-		{entry: assignment.Entry{Range: rates[0].hr, PartitionID: 0}, load: lm.load(rates[0].hr)},
-		{entry: assignment.Entry{Range: rates[1].hr, PartitionID: 1}, load: lm.load(rates[1].hr)},
+	// Set up a heavily-skewed starting state: P0 has a large
+	// above-mean surplus. We model L_pid directly, keeping per-range
+	// series constant so the slicer has ranges to move.
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		if e.PartitionID == 0 {
+			rates = append(rates, rangeRate{hr: e.Range, series: 100})
+		} else {
+			rates = append(rates, rangeRate{hr: e.Range, series: 10})
+		}
 	}
-	loads := lm.computePartitionLoads(entries)
 
-	// P0 total = range(0.4) + orphan(0.2) = 0.6; shedable = 0.4.
-	assert.InDelta(t, 0.4, lm.shedableLoad(loads, 0), 1e-9,
-		"shedable load excludes orphan contribution")
-	// P1 has no orphans; shedable equals total.
-	assert.InDelta(t, loads[1], lm.shedableLoad(loads, 1), 1e-9)
-	// nil receiver returns the raw total (defensive default used by
-	// callers that may not have constructed the loadMap yet).
-	var nilLM *loadMap
-	assert.Equal(t, loads[0], nilLM.shedableLoad(loads, 0))
+	partL := map[int32]int64{
+		0: 2000, // above mean: 2000 vs mean 1050
+		1: 100,
+	}
+	// meanL = 1050; movable(0) initially = 2000 - 1050 = 950.
+
+	cfg := seriesCfg(0.5)
+	cfg.CompactionInterval = 2 * time.Hour
+	r := &Rebalancer{
+		cfg:           cfg,
+		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		recentMoves:   make(map[int32][]moveRecord),
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Round 1: run slicer, record moves into r.recentMoves.
+	result1, actions1 := r.runSlicer(initial, rates, partL, r.recentMoves, partitions, now)
+	require.NoError(t, result1.Validate())
+	r.recordRecentMoves(now, actions1, buildLoadMap(rates))
+
+	var round1Moved int64
+	for _, a := range actions1 {
+		if a.Kind == ActionMove && a.FromPart == 0 {
+			round1Moved += a.Series
+		}
+	}
+	require.Greater(t, round1Moved, int64(0), "round 1 must move something off P0")
+	// The per-source budget should cap total series moved off P0 at
+	// movable(0) = 950. Some slack for float/int rounding and the
+	// stride of available range sizes.
+	assert.LessOrEqual(t, round1Moved, int64(950),
+		"round 1 must not exceed initial movable(P0) budget of ~950 series")
+
+	// Round 2 inside the CompactionInterval: L_pid hasn't dropped on
+	// P0 because the moved series are still uncompacted. recentMoves
+	// carries 950 from round 1, so movable(0) ~= 2000 - 1050 - 950 = 0.
+	// The slicer must not move anything more off P0.
+	now2 := now.Add(5 * time.Minute)
+	r.pruneRecentMoves(now2)
+	_, actions2 := r.runSlicer(result1, rates, partL, r.recentMoves, partitions, now2)
+
+	var round2Moved int64
+	for _, a := range actions2 {
+		if a.Kind == ActionMove && a.FromPart == 0 {
+			round2Moved += a.Series
+		}
+	}
+	assert.Equalf(t, int64(0), round2Moved,
+		"round 2 inside compaction window must not drain further; got %d", round2Moved)
+}
+
+// TestRunSlicer_BudgetResetsAfterCompactionInterval verifies that once
+// a move record ages past CompactionInterval, it no longer counts
+// against the source's movable budget (the moved series have
+// compacted away by assumption).
+func TestRunSlicer_BudgetResetsAfterCompactionInterval(t *testing.T) {
+	partitions := []int32{0, 1}
+	initial := assignment.FineEvenSplit(partitions, 16)
+
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		if e.PartitionID == 0 {
+			rates = append(rates, rangeRate{hr: e.Range, series: 100})
+		} else {
+			rates = append(rates, rangeRate{hr: e.Range, series: 10})
+		}
+	}
+
+	partL := map[int32]int64{0: 2000, 1: 100}
+
+	cfg := seriesCfg(0.5)
+	cfg.CompactionInterval = time.Hour
+	r := &Rebalancer{
+		cfg:           cfg,
+		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		recentMoves:   make(map[int32][]moveRecord),
+	}
+
+	// Seed recentMoves with an old record from a previous window.
+	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	r.recentMoves[0] = []moveRecord{
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 900, at: old},
+	}
+
+	// Advance past the window. pruneRecentMoves should drop the old
+	// record, restoring the full movable budget.
+	fresh := old.Add(2 * time.Hour)
+	r.pruneRecentMoves(fresh)
+	assert.Empty(t, r.recentMoves[0], "old records past CompactionInterval should prune")
+
+	_, actions := r.runSlicer(initial, rates, partL, r.recentMoves, partitions, fresh)
+	var moved int64
+	for _, a := range actions {
+		if a.Kind == ActionMove && a.FromPart == 0 {
+			moved += a.Series
+		}
+	}
+	assert.Greater(t, moved, int64(0),
+		"after CompactionInterval elapsed, source should be free to move again")
+}
+
+// TestRunSlicer_PlannedAdditionsPreventDestinationStuffing verifies the
+// within-round destination guard: with three cold partitions of equal
+// L, the slicer must spread moves across them rather than stuffing
+// everything onto the (initially) coldest one. The cold partition's
+// effective L inflates by plannedAdded as moves are booked.
+func TestRunSlicer_PlannedAdditionsPreventDestinationStuffing(t *testing.T) {
+	partitions := []int32{0, 1, 2, 3}
+	initial := assignment.FineEvenSplit(partitions, 16)
+
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		switch e.PartitionID {
+		case 0:
+			rates = append(rates, rangeRate{hr: e.Range, series: 100})
+		default:
+			rates = append(rates, rangeRate{hr: e.Range, series: 1})
+		}
+	}
+
+	partL := map[int32]int64{
+		0: 4000, // hot
+		1: 100,  // cold
+		2: 100,  // cold
+		3: 100,  // cold
+	}
+
+	cfg := seriesCfg(0.5)
+	r := &Rebalancer{
+		cfg:           cfg,
+		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		recentMoves:   make(map[int32][]moveRecord),
+	}
+
+	_, actions := r.runSlicer(initial, rates, partL, r.recentMoves, partitions, time.Time{})
+
+	destCounts := make(map[int32]int)
+	for _, a := range actions {
+		if a.Kind != ActionMove {
+			continue
+		}
+		destCounts[a.ToPart]++
+	}
+	require.GreaterOrEqual(t, len(destCounts), 2,
+		"moves should spread across multiple cold partitions, got %v", destCounts)
+	// And the hot partition should not receive moves.
+	assert.Equal(t, 0, destCounts[0], "hot partition should not be a destination")
+}
+
+// TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds verifies that
+// within-round plannedAdded state does NOT carry across rounds. In
+// round 2 the slicer should see fresh L_pid values (the test re-
+// submits the same partitionL) and be free to target the same cold
+// destinations again — no "this partition received moves last round"
+// penalty.
+func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
+	partitions := []int32{0, 1}
+	initial := assignment.FineEvenSplit(partitions, 16)
+
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		if e.PartitionID == 0 {
+			rates = append(rates, rangeRate{hr: e.Range, series: 100})
+		} else {
+			rates = append(rates, rangeRate{hr: e.Range, series: 1})
+		}
+	}
+
+	partL := map[int32]int64{0: 2000, 1: 100}
+	cfg := seriesCfg(0.5)
+	// Long compaction interval so recentMoves state doesn't
+	// interfere with observing destination selection freedom.
+	cfg.CompactionInterval = 2 * time.Hour
+	r := &Rebalancer{
+		cfg:           cfg,
+		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		recentMoves:   make(map[int32][]moveRecord),
+	}
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	result1, actions1 := r.runSlicer(initial, rates, partL, r.recentMoves, partitions, now)
+	r.recordRecentMoves(now, actions1, buildLoadMap(rates))
+
+	// Round 2: we give the slicer a fresh partitionL where P1 is
+	// back to being cold (pretend distributors haven't re-aimed at
+	// it yet, or that a re-measurement showed it absorbed the moves
+	// and then compacted). P0 is still the hottest but with the
+	// budget now smaller due to recentMoves. The slicer must be
+	// willing to target P1 again as the (still-only) cold destination
+	// for whatever budget remains.
+	now2 := now.Add(time.Minute)
+	r.pruneRecentMoves(now2)
+	_, actions2 := r.runSlicer(result1, rates, partL, r.recentMoves, partitions, now2)
+
+	// If any move happens in round 2, its destination must be P1
+	// (no prohibition from round 1's plannedAdded).
+	for _, a := range actions2 {
+		if a.Kind == ActionMove {
+			assert.Equal(t, int32(1), a.ToPart,
+				"round 2 moves should still target the cold P1; no cross-round destination penalty")
+		}
+	}
 }
 
 func TestFineEvenSplit(t *testing.T) {
@@ -741,4 +847,43 @@ func TestFineEvenSplit(t *testing.T) {
 	for _, pid := range partitions {
 		assert.Equal(t, 4, counts[pid])
 	}
+}
+
+// TestPruneRecentMoves_DropsOldRecords verifies the pruning logic used
+// between rounds: records at or older than the cutoff are dropped.
+func TestPruneRecentMoves_DropsOldRecords(t *testing.T) {
+	cfg := seriesCfg(0.5)
+	cfg.CompactionInterval = time.Hour
+	r := &Rebalancer{cfg: cfg, recentMoves: make(map[int32][]moveRecord)}
+
+	now := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	r.recentMoves[0] = []moveRecord{
+		{hr: assignment.HashRange{Lo: 0, Hi: 1}, series: 100, at: now.Add(-2 * time.Hour)},
+		{hr: assignment.HashRange{Lo: 2, Hi: 3}, series: 200, at: now.Add(-30 * time.Minute)},
+	}
+	r.recentMoves[1] = []moveRecord{
+		{hr: assignment.HashRange{Lo: 4, Hi: 5}, series: 50, at: now.Add(-90 * time.Minute)},
+	}
+
+	r.pruneRecentMoves(now)
+
+	require.Len(t, r.recentMoves[0], 1)
+	assert.Equal(t, int64(200), r.recentMoves[0][0].series)
+	_, hasP1 := r.recentMoves[1]
+	assert.False(t, hasP1, "P1's only record was past the cutoff; entry should be deleted")
+}
+
+// TestPruneRecentMoves_DisabledClearsAll verifies that disabling the
+// window (CompactionInterval=0) clears any accumulated records, so a
+// later re-enable doesn't silently gate moves against stale state.
+func TestPruneRecentMoves_DisabledClearsAll(t *testing.T) {
+	cfg := seriesCfg(0.5)
+	cfg.CompactionInterval = 0
+	r := &Rebalancer{cfg: cfg, recentMoves: make(map[int32][]moveRecord)}
+	r.recentMoves[0] = []moveRecord{
+		{hr: assignment.HashRange{Lo: 0, Hi: 1}, series: 100, at: time.Now()},
+	}
+
+	r.pruneRecentMoves(time.Now())
+	assert.Empty(t, r.recentMoves)
 }

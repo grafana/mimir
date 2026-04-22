@@ -15,19 +15,33 @@ import (
 // the time a Trace is captured. Bump this whenever a change to the
 // slicer would cause the same input Trace to produce a different
 // Actions slice on replay (i.e., any change to phase ordering, move
-// scoring, cooldown semantics, orphan accounting, etc.). Replay
+// scoring, cooldown semantics, movable-budget math, etc.). Replay
 // tools should refuse to verify a Trace whose SlicerVersion differs
 // from the binary's.
-const SlicerVersion = "1"
+//
+// Version "2" replaces the orphan-series model with a direct L_pid
+// (TotalActiveSeries) + CompactionInterval movable-budget model and
+// drops the samples signal from wire inputs. Traces captured under
+// SlicerVersion "1" are not replayable against this binary.
+const SlicerVersion = "2"
 
 // RangeRate is the JSON-serializable view of a per-range rate signal.
 // Mirrors the unexported rangeRate but with JSON tags suitable for
 // trace persistence and external replay.
 type RangeRate struct {
-	Lo      uint32  `json:"lo"`
-	Hi      uint32  `json:"hi"`
-	Samples float64 `json:"samples"`
-	Series  int64   `json:"series"`
+	Lo     uint32 `json:"lo"`
+	Hi     uint32 `json:"hi"`
+	Series int64  `json:"series"`
+}
+
+// MoveRecord is the JSON-serializable view of a moveRecord — a move
+// off a source partition that still counts against the partition's
+// movable budget while within the CompactionInterval window.
+type MoveRecord struct {
+	Lo     uint32    `json:"lo"`
+	Hi     uint32    `json:"hi"`
+	Series int64     `json:"series"`
+	At     time.Time `json:"at"`
 }
 
 // ConfigSnapshot freezes the slicer-relevant config knobs at the
@@ -35,10 +49,9 @@ type RangeRate struct {
 // parameters even if production config changes between capture and
 // replay.
 type ConfigSnapshot struct {
-	LoadWeightSeries  float64       `json:"load_weight_series"`
-	LoadWeightSamples float64       `json:"load_weight_samples"`
-	MovementBudget    float64       `json:"movement_budget"`
-	MoveCooldown      time.Duration `json:"move_cooldown"`
+	MovementBudget     float64       `json:"movement_budget"`
+	MoveCooldown       time.Duration `json:"move_cooldown"`
+	CompactionInterval time.Duration `json:"compaction_interval"`
 }
 
 // Trace is the full input/output of a single rebalance round, with
@@ -65,11 +78,14 @@ type Trace struct {
 	Round RoundLog `json:"round"`
 
 	// Inputs to runSlicer.
-	Now              time.Time          `json:"now"`
-	Start            []assignment.Entry `json:"start_assignment"`
-	Rates            []RangeRate        `json:"rates"`
-	Orphans          map[int32]int64    `json:"partition_orphans"`
-	ActivePartitions []int32            `json:"active_partitions"`
+	Now        time.Time          `json:"now"`
+	Start      []assignment.Entry `json:"start_assignment"`
+	Rates      []RangeRate        `json:"rates"`
+	PartitionL map[int32]int64    `json:"partition_l"`
+	// RecentMoves is keyed by partition ID (decimal string) so the
+	// JSON map is well-formed.
+	RecentMoves      map[string][]MoveRecord `json:"recent_moves"`
+	ActivePartitions []int32                 `json:"active_partitions"`
 	// Cooldowns is keyed by "lo:hi" (decimal) so the JSON map is
 	// well-formed; use FormatHashRangeKey / ParseHashRangeKey.
 	Cooldowns map[string]time.Time `json:"cooldowns"`
@@ -108,7 +124,7 @@ func ParseHashRangeKey(s string) (assignment.HashRange, error) {
 func ratesToWire(in []rangeRate) []RangeRate {
 	out := make([]RangeRate, len(in))
 	for i, r := range in {
-		out[i] = RangeRate{Lo: r.hr.Lo, Hi: r.hr.Hi, Samples: r.samples, Series: r.series}
+		out[i] = RangeRate{Lo: r.hr.Lo, Hi: r.hr.Hi, Series: r.series}
 	}
 	return out
 }
@@ -117,7 +133,7 @@ func ratesToWire(in []rangeRate) []RangeRate {
 func ratesFromWire(in []RangeRate) []rangeRate {
 	out := make([]rangeRate, len(in))
 	for i, r := range in {
-		out[i] = rangeRate{hr: assignment.HashRange{Lo: r.Lo, Hi: r.Hi}, samples: r.Samples, series: r.Series}
+		out[i] = rangeRate{hr: assignment.HashRange{Lo: r.Lo, Hi: r.Hi}, series: r.Series}
 	}
 	return out
 }
@@ -150,6 +166,48 @@ func cooldownsFromWire(in map[string]time.Time) map[assignment.HashRange]time.Ti
 	return out
 }
 
+// recentMovesToWire converts the slicer's internal recentMoves map
+// (keyed by partition ID) into the trace's string-keyed form. Like
+// cooldowns, entries older than CompactionInterval are carried through
+// because ReplayTrace invokes pruneRecentMoves before running the
+// slicer.
+func recentMovesToWire(in map[int32][]moveRecord) map[string][]MoveRecord {
+	out := make(map[string][]MoveRecord, len(in))
+	for pid, records := range in {
+		if len(records) == 0 {
+			continue
+		}
+		wire := make([]MoveRecord, len(records))
+		for i, m := range records {
+			wire[i] = MoveRecord{Lo: m.hr.Lo, Hi: m.hr.Hi, Series: m.series, At: m.at}
+		}
+		out[strconv.FormatInt(int64(pid), 10)] = wire
+	}
+	return out
+}
+
+// recentMovesFromWire is the inverse of recentMovesToWire. Malformed
+// partition keys are silently dropped.
+func recentMovesFromWire(in map[string][]MoveRecord) map[int32][]moveRecord {
+	out := make(map[int32][]moveRecord, len(in))
+	for k, records := range in {
+		pid, err := strconv.ParseInt(k, 10, 32)
+		if err != nil {
+			continue
+		}
+		list := make([]moveRecord, len(records))
+		for i, m := range records {
+			list[i] = moveRecord{
+				hr:     assignment.HashRange{Lo: m.Lo, Hi: m.Hi},
+				series: m.Series,
+				at:     m.At,
+			}
+		}
+		out[int32(pid)] = list
+	}
+	return out
+}
+
 // ReplayTrace runs runSlicer with the inputs captured in t and
 // returns the resulting assignment and actions. Used by external
 // verification tools (and the package's own determinism tests) to
@@ -160,15 +218,15 @@ func cooldownsFromWire(in map[string]time.Time) map[assignment.HashRange]time.Ti
 func ReplayTrace(t Trace) (*assignment.Assignment, []Action) {
 	r := &Rebalancer{
 		cfg: Config{
-			LoadWeightSeries:  t.Config.LoadWeightSeries,
-			LoadWeightSamples: t.Config.LoadWeightSamples,
-			MovementBudget:    t.Config.MovementBudget,
-			MoveCooldown:      t.Config.MoveCooldown,
+			MovementBudget:     t.Config.MovementBudget,
+			MoveCooldown:       t.Config.MoveCooldown,
+			CompactionInterval: t.Config.CompactionInterval,
 		},
 		moveCooldowns: cooldownsFromWire(t.Cooldowns),
+		recentMoves:   recentMovesFromWire(t.RecentMoves),
 	}
 	start := &assignment.Assignment{
 		Entries: append([]assignment.Entry(nil), t.Start...),
 	}
-	return r.runSlicer(start, ratesFromWire(t.Rates), t.Orphans, t.ActivePartitions, t.Now)
+	return r.runSlicer(start, ratesFromWire(t.Rates), t.PartitionL, r.recentMoves, t.ActivePartitions, t.Now)
 }

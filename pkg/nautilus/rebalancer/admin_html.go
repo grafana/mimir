@@ -72,17 +72,13 @@ details>summary::-webkit-details-marker{display:none}
 <div class="no-data">No assignment data yet. Waiting for first rebalance round.</div>
 {{else}}
 <div class="summary">
-	<div class="stat" title="In-memory TSDB head series across all owned ranges. This is the same denominator as cortex_ingester_memory_series (= prometheus_tsdb_head_series), NOT cortex_ingester_active_series (which is a ~10min sliding window). Series stay counted here until head compaction GCs them.">
+	<div class="stat" title="Σ L_pid (TSDB head series, max over owner ingesters per partition). Matches the denominator of cortex_ingester_memory_series.">
 		<div class="stat-label">Head Series</div>
-		<div class="stat-value">{{fmtSeries .TotalSeries}}</div>
+		<div class="stat-value">{{fmtSeries .TotalMemorySeries}}</div>
 	</div>
-	<div class="stat" title="In-memory head series an ingester still holds for hash ranges it no longer owns. These will be GC'd by the next TSDB head compaction (~2h) but in the meantime represent real memory pressure on the source ingester. The slicer treats orphan series as load attributed to the partition's current owner.">
-		<div class="stat-label">Orphan Series</div>
-		<div class="stat-value{{if gt .TotalOrphan 0}} warn{{end}}">{{fmtSeries .TotalOrphan}}</div>
-	</div>
-	<div class="stat">
-		<div class="stat-label">Samples / Sec</div>
-		<div class="stat-value">{{fmtRate .TotalSamples}}</div>
+	<div class="stat" title="Σ max(0, L_pid - meanL). Instantaneous imbalance across partitions before the recent-moves budget discount. The slicer's per-source movable budget equals this partition's contribution minus outstanding recentMoves series.">
+		<div class="stat-label">Above Average</div>
+		<div class="stat-value{{if gt .AboveAverage 0}} warn{{end}}">{{fmtSeries .AboveAverage}}</div>
 	</div>
 	<div class="stat">
 		<div class="stat-label">Partitions</div>
@@ -92,19 +88,19 @@ details>summary::-webkit-details-marker{display:none}
 		<div class="stat-label">Hash Ranges</div>
 		<div class="stat-value">{{.NumEntries}}</div>
 	</div>
-	<div class="stat">
-		<div class="stat-label">Mean Part Load</div>
-		<div class="stat-value">{{fmtLoad .MeanPartLoad}}</div>
+	<div class="stat" title="Σ L_pid / N_partitions. The target each partition is balanced toward.">
+		<div class="stat-label">Mean L</div>
+		<div class="stat-value">{{fmtSeries .MeanL}}</div>
 	</div>
 	<div class="stat">
-		<div class="stat-label">Max Part Load</div>
-		<div class="stat-value warn">{{fmtLoad .MaxPartLoad}}</div>
+		<div class="stat-label">Max L</div>
+		<div class="stat-value warn">{{fmtSeries .MaxL}}</div>
 	</div>
 	<div class="stat">
-		<div class="stat-label">Min Part Load</div>
-		<div class="stat-value good">{{fmtLoad .MinPartLoad}}</div>
+		<div class="stat-label">Min L</div>
+		<div class="stat-value good">{{fmtSeries .MinL}}</div>
 	</div>
-	<div class="stat">
+	<div class="stat" title="(maxL - minL) / meanL. Zero means perfectly balanced.">
 		<div class="stat-label">Imbalance</div>
 		<div class="stat-value{{if gt .ImbalanceRatio 0.5}} warn{{end}}">{{fmtImbalance .ImbalanceRatio}}</div>
 	</div>
@@ -112,14 +108,14 @@ details>summary::-webkit-details-marker{display:none}
 		<div class="stat-label">Last Moved</div>
 		<div class="stat-value">{{fmtPct1 .MovedFraction}}</div>
 	</div>
-	<div class="stat">
-		<div class="stat-label">Load Weights</div>
-		<div class="stat-value" style="font-size:13px;line-height:1.4">series {{fmtPct1 .WeightSeries}}<br>samples {{fmtPct1 .WeightSamples}}</div>
+	<div class="stat" title="Window over which moves off a source partition count against its movable budget. Matches the ingester's TSDB head compaction interval; L on a source does not drop until compaction.">
+		<div class="stat-label">Compaction Window</div>
+		<div class="stat-value" style="font-size:13px">{{.CompactionInterval}}</div>
 	</div>
 </div>
 
 <div class="heatmap-container">
-	<div class="heatmap-label">Hash Space Combined Load Distribution (0x00000000 → 0xffffffff)</div>
+	<div class="heatmap-label">Hash Space Head Series Distribution (0x00000000 → 0xffffffff)</div>
 	<div class="heatmap" id="heatmap"></div>
 </div>
 
@@ -139,22 +135,21 @@ details>summary::-webkit-details-marker{display:none}
 		<span class="part-id">P{{.PartitionID}}</span>
 		<span class="part-instance" title="{{.InstanceAddr}}">{{.InstanceID}}</span>
 		<span class="part-stats">
-			<span title="combined weighted load (per-range + orphan)">{{fmtLoad .TotalLoad}}</span>
-			<span title="in-memory TSDB head series (matches cortex_ingester_memory_series, not cortex_ingester_active_series)">{{fmtSeries .TotalSeries}}s</span>
-			{{if gt .OrphanSeries 0}}<span title="orphan head series held by owner ingester from previously-owned ranges, not yet GC'd by head compaction" style="color:#e67700">+{{fmtSeries .OrphanSeries}} orphan</span>{{end}}
-			<span title="samples per second">{{fmtRate .TotalSamples}}/s</span>
+			<span title="L_pid: max-over-owners of TotalActiveSeries, matches cortex_ingester_memory_series. This is what the slicer balances.">{{fmtSeries .MemorySeries}} L</span>
+			<span title="Per-round movable budget: max(0, L_pid - meanL) - Σ recentMoves[pid].series. Source-side only; decreases as the slicer books moves during the CompactionInterval window.">{{fmtSeries .MovableSeries}} movable</span>
+			<span title="Σ per-range series for ranges this partition currently owns. Should roughly match L; a gap indicates series still in the head from previously-owned ranges not yet compacted away.">{{fmtSeries .OwnedSeries}} owned</span>
 			<span>{{.NumRanges}} ranges</span>
 			<span>{{fmtPct .HashSpacePct}} hash</span>
 		</span>
 		<span class="part-bar-container">
-			<span class="part-bar{{if gt .TotalLoad $.MaxPartLoad}} hot{{else if gt .TotalLoad $.MeanPartLoad}} warm{{else}} cool{{end}}"
-			      style="width:{{loadBar .TotalLoad $.MaxPartLoad}}%"></span>
+			<span class="part-bar{{if gt .MemorySeries $.MaxL}} hot{{else if gt .MemorySeries $.MeanL}} warm{{else}} cool{{end}}"
+			      style="width:{{lBar .MemorySeries $.MaxL}}%"></span>
 		</span>
 	</summary>
 	<div class="part-ranges open">
 		<div class="range-grid">
 		{{range .Ranges}}
-			<span class="range {{actionClass .LastAction}}" title="Size: {{fmtPct .SizePct}} · Load: {{fmtLoad .Load}} · Samples: {{fmtRate .Samples}}/s · Head series: {{fmtSeries .Series}}">{{hexRange .Lo .Hi}}<span class="rate">{{fmtSeries .Series}}s · {{fmtRate .Samples}}/s</span></span>
+			<span class="range {{actionClass .LastAction}}" title="Size: {{fmtPct .SizePct}} · Head series: {{fmtSeries .Series}}">{{hexRange .Lo .Hi}}<span class="rate">{{fmtSeries .Series}}s</span></span>
 		{{end}}
 		</div>
 	</div>
@@ -172,7 +167,7 @@ details>summary::-webkit-details-marker{display:none}
 <div class="round">
 	<div class="round-header">
 		<strong>{{$r.Time.Format "15:04:05"}}</strong>
-		<span>Load: {{fmtLoad $r.TotalLoad}}</span>
+		<span>Σ L: {{fmtSeries $r.TotalL}}</span>
 		<span>Imbalance: {{fmtImbalance $r.ImbalanceRatio}}</span>
 		<span>Ranges: {{$r.NumEntries}}</span>
 		<span>Moved: {{fmtPct1 $r.MovedFraction}}</span>
@@ -182,7 +177,7 @@ details>summary::-webkit-details-marker{display:none}
 	{{if $r.Actions}}
 	<div class="round-actions">
 	{{range $r.Actions}}
-		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}</span>
+		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}{{if .Series}} ({{fmtSeries .Series}}s){{end}}</span>
 	{{end}}
 	</div>
 	{{end}}
@@ -212,7 +207,7 @@ details>summary::-webkit-details-marker{display:none}
 		var g = Math.round(219 - intensity * (219 - 49));
 		var b = Math.round(124 - intensity * (124 - 49));
 		d.style.backgroundColor = 'rgb(' + r + ',' + g + ',' + b + ')';
-		d.title = 'Bucket ' + i + ': ' + (raw[i] * 100).toFixed(2) + '% load';
+		d.title = 'Bucket ' + i + ': ' + raw[i].toFixed(0) + ' series';
 		frag.appendChild(d);
 	}
 	el.appendChild(frag);

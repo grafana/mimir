@@ -44,24 +44,19 @@ type Config struct {
 
 	// MoveCooldown is the minimum time a hash range must sit on its new
 	// partition after a move before it (or any range overlapping its
-	// former boundaries) is eligible to be moved again. Prevents
-	// over-correction during the warm-up window where the destination
-	// ingester's reported load lags the actual post-move load (distributor
-	// poll lag plus EWMA settle time). Set to 0 to disable.
+	// former boundaries) is eligible to be moved again. Acts as a
+	// per-range anti-flap guard; the partition-level CompactionInterval
+	// budget handles aggregate churn.
 	MoveCooldown time.Duration `yaml:"move_cooldown"`
 
-	// LoadWeightSeries and LoadWeightSamples control how the two
-	// per-range load signals (in-memory TSDB head series count and
-	// sample ingestion rate) are combined into a single scalar load
-	// value used by the slicer. Each component is first normalized by
-	// its global total so that both contribute fractions of total load,
-	// then weighted. Defaults give cardinality the dominant role since
-	// ingester memory (and OOM risk) is the primary scaling dimension.
-	// Note: "head series" here means series in the TSDB head (same
-	// denominator as cortex_ingester_memory_series), not the sliding
-	// window cortex_ingester_active_series metric.
-	LoadWeightSeries  float64 `yaml:"load_weight_series"`
-	LoadWeightSamples float64 `yaml:"load_weight_samples"`
+	// CompactionInterval bounds the window over which recent moves off
+	// a source partition count against its movable budget. Series moved
+	// off an ingester remain in its TSDB head (contributing to reported
+	// L_pid) until the next head compaction, so during this window the
+	// slicer must discount its apparent "above mean" budget by what's
+	// already been moved off. Should match the ingester's TSDB head
+	// compaction interval (default 2h).
+	CompactionInterval time.Duration `yaml:"compaction_interval"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -69,9 +64,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.09, "Maximum fraction of the hash space that can be moved per round.")
 	f.DurationVar(&cfg.IngesterRPCTimeout, prefix+"ingester-rpc-timeout", 4*time.Second, "Per-call timeout for HashRangeStats and SetHashRanges RPCs to each ingester. Prevents one stuck pod (e.g. mid-rollout) from stalling the whole rebalance round. 0 disables.")
 	f.IntVar(&cfg.IngesterRPCConcurrency, prefix+"ingester-rpc-concurrency", 10, "Maximum concurrent ingester RPCs per round. 0 means one per ingester (unbounded).")
-	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 90*time.Second, "Minimum time between consecutive moves of the same hash range (or any range overlapping it). Covers distributor poll lag plus ingester EWMA settle time. 0 disables.")
-	f.Float64Var(&cfg.LoadWeightSeries, prefix+"load-weight-series", 0.8, "Weight of normalized in-memory TSDB head series count in the per-range combined load metric.")
-	f.Float64Var(&cfg.LoadWeightSamples, prefix+"load-weight-samples", 0.2, "Weight of normalized sample ingestion rate in the per-range combined load metric.")
+	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 90*time.Second, "Minimum time between consecutive moves of the same hash range (or any range overlapping it). Per-range anti-flap guard complementing the compaction-interval partition-level budget. 0 disables.")
+	f.DurationVar(&cfg.CompactionInterval, prefix+"compaction-interval", 2*time.Hour, "Window over which recent moves off a source partition count against its movable budget. Series moved off an ingester stay in its TSDB head (reported L_pid) until head compaction GCs them. Should match the ingester's TSDB head compaction interval. 0 disables the movable-budget guard (moves are only gated by MovementBudget and MoveCooldown).")
 }
 
 // Rebalancer is a Mimir module that periodically queries ingesters for
@@ -100,6 +94,27 @@ type Rebalancer struct {
 	// its boundaries) becomes eligible to be moved again. Mutated only
 	// by rebalance(), which runs single-threaded via TimerService.
 	moveCooldowns map[assignment.HashRange]time.Time
+
+	// recentMoves records, per *source* partition, all moves off that
+	// partition within the current CompactionInterval window. Each
+	// entry's series count counts against the partition's movable
+	// budget until CompactionInterval elapses. Destinations do not need
+	// cross-round state because a destination's L_pid updates within one
+	// scrape interval as distributors route writes to it. Mutated only
+	// by rebalance().
+	recentMoves map[int32][]moveRecord
+}
+
+// moveRecord tracks one past move off a source partition during the
+// CompactionInterval window. The source ingester's reported
+// TotalActiveSeries does NOT drop until its next TSDB head compaction
+// GCs the moved series, so during this window the slicer must discount
+// the partition's apparent "above mean" budget by the sum of
+// outstanding moveRecord.series.
+type moveRecord struct {
+	hr     assignment.HashRange
+	series int64
+	at     time.Time
 }
 
 // New creates and returns a new Rebalancer.
@@ -111,6 +126,7 @@ func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partiti
 		pool:          pool,
 		partitionRing: partitionRing,
 		moveCooldowns: make(map[assignment.HashRange]time.Time),
+		recentMoves:   make(map[int32][]moveRecord),
 	}
 
 	r.Service = services.NewTimerService(cfg.RebalanceInterval, r.starting, r.rebalance, nil)
@@ -159,60 +175,62 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	// Compute per-partition "orphan" series: in-memory series an
-	// ingester still holds for hash ranges it no longer owns. These
-	// linger until TSDB head compaction (~2h) and represent real
-	// memory pressure on the source ingester even though no per-range
-	// signal accounts for them.
-	partitionOrphans := computePartitionOrphans(current, instanceTotals, rates, pRing)
-
-	lm := buildLoadMapWithOrphans(rates, partitionOrphans, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
-	r.admin.setLastStats(lm)
-
 	now := time.Now()
 	r.pruneExpiredCooldowns(now)
+	r.pruneRecentMoves(now)
+
+	// Compute per-partition L (head-series) from ingester totals, taking
+	// the max over owners in each partition's replica set. Max rather
+	// than mean captures worst-case memory pressure across replicas.
+	partitionLByPID := partitionL(instanceTotals, pRing, activePartitions)
+
+	lm := buildLoadMap(rates)
+	r.admin.setLastStats(lm, partitionLByPID, r.recentMoves, activePartitions)
 
 	// Snapshot pre-slicer state for the trace. Done BEFORE runSlicer
 	// mutates anything (it gets a fresh assignment, but the cooldown
-	// map is inspected as-of `now` and we want the snapshot to reflect
-	// what the slicer actually saw).
+	// map and recentMoves map are inspected as-of `now` and we want the
+	// snapshot to reflect what the slicer actually saw).
 	startEntries := append([]assignment.Entry(nil), current.Entries...)
 	cooldownsSnapshot := cooldownsToWire(r.moveCooldowns)
+	recentMovesSnapshot := recentMovesToWire(r.recentMoves)
 
-	newAssignment, actions := r.runSlicer(current, rates, partitionOrphans, activePartitions, now)
+	newAssignment, actions := r.runSlicer(current, rates, partitionLByPID, r.recentMoves, activePartitions, now)
 	if err := newAssignment.Validate(); err != nil {
 		level.Error(r.logger).Log("msg", "generated invalid assignment", "err", err)
 		return nil
 	}
 
 	r.recordMoveCooldowns(now, actions)
+	r.recordRecentMoves(now, actions, lm)
 
 	r.store.add(now, newAssignment)
 	r.pushRangesToIngesters(ctx, newAssignment)
 
-	// Compute round summary stats.
-	partLoads := lm.computePartitionLoads(buildRangeLoads(newAssignment, lm))
-	var totalLoad, maxPL, minPL float64
-	minPL = math.MaxFloat64
-	for _, pl := range partLoads {
-		totalLoad += pl
-		if pl > maxPL {
-			maxPL = pl
+	// Compute round summary stats using L (memory series) so the admin
+	// view tracks the same quantity the slicer balances.
+	var totalL, maxL, minL int64
+	minL = math.MaxInt64
+	for _, pid := range activePartitions {
+		l := partitionLByPID[pid]
+		totalL += l
+		if l > maxL {
+			maxL = l
 		}
-		if pl < minPL {
-			minPL = pl
+		if l < minL {
+			minL = l
 		}
 	}
-	if minPL == math.MaxFloat64 {
-		minPL = 0
+	if minL == math.MaxInt64 {
+		minL = 0
 	}
-	meanPL := 0.0
-	if len(partLoads) > 0 {
-		meanPL = totalLoad / float64(len(partLoads))
+	var meanL int64
+	if len(activePartitions) > 0 {
+		meanL = totalL / int64(len(activePartitions))
 	}
 	imbalance := 0.0
-	if meanPL > 0 {
-		imbalance = (maxPL - minPL) / meanPL
+	if meanL > 0 {
+		imbalance = float64(maxL-minL) / float64(meanL)
 	}
 	movedFraction := 0.0
 	hashSpaceSize := float64(uint64(math.MaxUint32) + 1)
@@ -224,13 +242,13 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 
 	round := RoundLog{
 		Time:           now,
-		TotalLoad:      totalLoad,
-		MeanPartLoad:   meanPL,
-		MaxPartLoad:    maxPL,
-		MinPartLoad:    minPL,
+		TotalL:         totalL,
+		MeanL:          meanL,
+		MaxL:           maxL,
+		MinL:           minL,
 		ImbalanceRatio: imbalance,
 		NumEntries:     len(newAssignment.Entries),
-		NumPartitions:  len(partLoads),
+		NumPartitions:  len(activePartitions),
 		MovedFraction:  movedFraction,
 		Actions:        actions,
 	}
@@ -241,14 +259,14 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		Now:              now,
 		Start:            startEntries,
 		Rates:            ratesToWire(rates),
-		Orphans:          partitionOrphans,
+		PartitionL:       partitionLByPID,
+		RecentMoves:      recentMovesSnapshot,
 		ActivePartitions: append([]int32(nil), activePartitions...),
 		Cooldowns:        cooldownsSnapshot,
 		Config: ConfigSnapshot{
-			LoadWeightSeries:  r.cfg.LoadWeightSeries,
-			LoadWeightSamples: r.cfg.LoadWeightSamples,
-			MovementBudget:    r.cfg.MovementBudget,
-			MoveCooldown:      r.cfg.MoveCooldown,
+			MovementBudget:     r.cfg.MovementBudget,
+			MoveCooldown:       r.cfg.MoveCooldown,
+			CompactionInterval: r.cfg.CompactionInterval,
 		},
 		End: append([]assignment.Entry(nil), newAssignment.Entries...),
 	})
@@ -269,9 +287,8 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 //
 // The second return value is keyed by ingester instance ID and holds
 // the total in-memory series count on that ingester (across all
-// tenants and all hash buckets, including ones not currently owned).
-// It is used to detect "orphan" series left behind by recent moves;
-// see computePartitionOrphans.
+// tenants and all hash buckets). It is the L_i signal that feeds into
+// partitionL and the movable-budget calculation.
 func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]int64, error) {
 	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
 	if err != nil {
@@ -310,9 +327,8 @@ func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]
 		rates := make([]rangeRate, len(resp.Rates))
 		for i, rate := range resp.Rates {
 			rates[i] = rangeRate{
-				hr:      assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
-				samples: rate.SamplesPerSecond,
-				series:  rate.ActiveSeries,
+				hr:     assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
+				series: rate.ActiveSeries,
 			}
 		}
 		results[idx] = result{
@@ -348,72 +364,35 @@ func (r *Rebalancer) withRPCTimeout(ctx context.Context) (context.Context, conte
 	return context.WithTimeout(ctx, r.cfg.IngesterRPCTimeout)
 }
 
-// computePartitionOrphans returns a per-partition estimate of "orphan"
-// in-memory series: series the partition's owner ingester(s) still
-// hold from a previously-owned hash range that has since been moved
-// away. These series will be garbage-collected by the next TSDB head
-// compaction (every ~2h by default), but in the meantime they
-// represent genuine memory pressure on the source ingester.
+// partitionL returns the per-partition L (TSDB head series) value,
+// derived from each partition's owner ingesters. For replicated
+// partitions (typically one owner per zone) the value is the max over
+// owners — i.e., the worst-case memory pressure across replicas. The
+// rebalancer balances on worst-case to keep any single ingester from
+// approaching OOM, even if other zones are cooler.
 //
-// We compute the orphan count per ingester as
-// (total in-memory series) - (sum of per-range series for ranges the
-// ingester currently owns), and attribute it to the partition that
-// instance owns. When a partition has multiple owners (e.g. one per
-// zone), we take the worst (max) orphan count across owners — that's
-// the partition's worst-case memory pressure.
-//
-// The orphan count is conservative when a single owner's per-range
-// histogram approximation undercounts owned series; in that case we
-// floor the orphan at zero to avoid negative values.
-func computePartitionOrphans(current *assignment.Assignment, instanceTotals map[string]int64, rates []rangeRate, pRing partitionRingView) map[int32]int64 {
-	if pRing == nil || len(instanceTotals) == 0 || current == nil {
+// Returns a map keyed by partition ID. Partitions with no healthy
+// owner in instanceTotals map to zero.
+func partitionL(instanceTotals map[string]int64, pRing partitionRingView, activePartitions []int32) map[int32]int64 {
+	if pRing == nil {
 		return nil
 	}
-
-	// Sum reported per-range series, keyed by range. An ingester
-	// reports at most one entry per owned range.
-	rangeSeries := make(map[assignment.HashRange]int64, len(rates))
-	for _, rr := range rates {
-		rangeSeries[rr.hr] += rr.series
-	}
-
-	// Sum the per-range series owned by each partition. Each entry
-	// in the assignment maps a range to exactly one partition.
-	partitionOwnedSeries := make(map[int32]int64)
-	for _, e := range current.Entries {
-		partitionOwnedSeries[e.PartitionID] += rangeSeries[e.Range]
-	}
-
-	// For each owner of a partition, the orphan count is total
-	// in-memory series on that ingester minus what it should be
-	// reporting for currently-owned ranges. Take the max across
-	// owners — that's the partition's worst-case memory pressure.
-	orphans := make(map[int32]int64)
-	for pid, ownedSeries := range partitionOwnedSeries {
+	m := make(map[int32]int64, len(activePartitions))
+	for _, pid := range activePartitions {
 		owners := pRing.PartitionOwnerIDs(pid)
 		var worst int64
-		for _, ownerID := range owners {
-			total, ok := instanceTotals[ownerID]
-			if !ok {
-				continue
-			}
-			orphan := total - ownedSeries
-			if orphan < 0 {
-				orphan = 0
-			}
-			if orphan > worst {
-				worst = orphan
+		for _, id := range owners {
+			if v, ok := instanceTotals[id]; ok && v > worst {
+				worst = v
 			}
 		}
-		if worst > 0 {
-			orphans[pid] = worst
-		}
+		m[pid] = worst
 	}
-	return orphans
+	return m
 }
 
 // partitionRingView is the subset of the partition ring API that the
-// orphan-computation code needs. Defined as an interface so tests can
+// partitionL helper needs. Defined as an interface so tests can
 // inject a stub without spinning up a full PartitionRing.
 type partitionRingView interface {
 	PartitionOwnerIDs(int32) []string
@@ -538,19 +517,22 @@ const (
 )
 
 // rangeRate is one entry from an ingester's HashRangeStats response.
-// It carries both raw load signals; the rebalancer combines them into
-// a single scalar load using configurable weights.
+// Per the reframed load model only the per-range in-memory TSDB head
+// series count (R_r) feeds the slicer.
 type rangeRate struct {
-	hr      assignment.HashRange
-	samples float64
-	series  int64
+	hr     assignment.HashRange
+	series int64
 }
 
+// rangeLoad carries a single assignment entry alongside its cost
+// metrics (head series count and the equivalent float used by Phase 2
+// /4 scoring helpers). `load` is defined as float64(series) so Phase
+// 2's merge score and Phase 4's split-threshold arithmetic don't need
+// a separate scaling.
 type rangeLoad struct {
-	entry   assignment.Entry
-	load    float64 // combined, weighted, normalized load
-	samples float64 // raw samples/sec (for logging/admin)
-	series  int64   // raw in-memory TSDB head series count (for logging/admin)
+	entry  assignment.Entry
+	load   float64 // float view of series, used by merge/split scoring
+	series int64   // raw in-memory TSDB head series count
 }
 
 // runSlicer implements the Slicer weighted-move algorithm (Adya et al.,
@@ -559,19 +541,37 @@ type rangeLoad struct {
 //  1. Reassign slices from inactive partitions.
 //  2. Merge adjacent cold slices to defragment (cap: 1% churn, floor:
 //     minSlicesPerPartition).
-//  3. Weighted-move: greedily move slices from the hottest partition to
-//     the coldest, picking the move with the best imbalance-reduction
-//     per unit of churn. Budget: cfg.MovementBudget (default 9%).
+//  3. Weighted-move: greedily move slices from the hottest partition
+//     (highest L_pid - recentMoves) to the coldest (lowest L_pid +
+//     plannedAdded), gated by a per-source movable budget of
+//     max(0, L_pid - meanL) - sumRecentMoves(pid). Budget:
+//     cfg.MovementBudget (default 9% of hash space, hard global cap).
 //  4. Split hot slices (>2× mean slice load) without changing
-//     assignments. This creates finer load signals for the next round.
-//     Cap: maxSlicesPerPartition.
+//     assignments. Cap: maxSlicesPerPartition.
 //
 // The `now` parameter is used to evaluate per-range move cooldowns
 // (see Config.MoveCooldown). Pass time.Now() in production; tests can
 // pass a deterministic value or the zero time to disable cooldown
 // filtering.
-func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate, partitionOrphans map[int32]int64, activePartitions []int32, now time.Time) (*assignment.Assignment, []Action) {
-	lm := buildLoadMapWithOrphans(rates, partitionOrphans, r.cfg.LoadWeightSeries, r.cfg.LoadWeightSamples)
+//
+// partitionLByPID provides L (TSDB head series) per partition, used for
+// hot/cold selection and movable-budget computation. When nil or
+// empty, the slicer falls back to computing per-partition load from
+// the sum of per-range series (useful in unit tests that don't model
+// the L_pid signal; production always provides it).
+//
+// recentMoves is the cross-round source-side budget state: moves off
+// each source partition that are still within CompactionInterval, and
+// therefore still counting against that partition's reported L_pid.
+func (r *Rebalancer) runSlicer(
+	current *assignment.Assignment,
+	rates []rangeRate,
+	partitionLByPID map[int32]int64,
+	recentMoves map[int32][]moveRecord,
+	activePartitions []int32,
+	now time.Time,
+) (*assignment.Assignment, []Action) {
+	lm := buildLoadMap(rates)
 	numPartitions := len(activePartitions)
 	var actions []Action
 
@@ -584,12 +584,11 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	entries := make([]rangeLoad, len(current.Entries))
 	rrIdx := 0
 	for i, e := range current.Entries {
-		samples, series := lm.stat(e.Range)
+		series := lm.seriesAt(e.Range)
 		entries[i] = rangeLoad{
-			entry:   e,
-			load:    lm.load(e.Range),
-			samples: samples,
-			series:  series,
+			entry:  e,
+			load:   float64(series),
+			series: series,
 		}
 		if !activeSet[e.PartitionID] {
 			newPID := activePartitions[rrIdx%numPartitions]
@@ -620,100 +619,9 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 		actions = append(actions, mergeActions...)
 	}
 
-	// --- Phase 3: weighted-move from hottest to coldest ----------------
-	movementBudget := r.cfg.MovementBudget * float64(uint64(math.MaxUint32)+1)
-	var moved float64
-
-	// Partitions that have been examined as "hottest" in this rebalance
-	// round but yielded no profitable move. Without this set, a single
-	// orphan-locked partition (one whose total load is dominated by
-	// orphan series — uncompacted leftovers from prior moves — and
-	// therefore has little or no shedable per-range load) would always
-	// be picked as the hottest and immediately fail to find a candidate,
-	// breaking out of the loop and starving the rest of the cluster of
-	// any moves at all. By excluding such partitions from subsequent
-	// iterations we let the slicer continue rebalancing the genuinely
-	// movable hot partitions behind them.
-	excludedHot := make(map[int32]bool)
-
-	for iter := 0; iter < len(entries); iter++ {
-		partitionLoads := lm.computePartitionLoads(entries)
-
-		var hottestPID, coldestPID int32
-		hottestLoad := -1.0
-		coldestLoad := math.MaxFloat64
-		hottestFound := false
-		for _, pid := range activePartitions {
-			load := partitionLoads[pid]
-			if !excludedHot[pid] && load > hottestLoad {
-				hottestLoad = load
-				hottestPID = pid
-				hottestFound = true
-			}
-			if load < coldestLoad {
-				coldestLoad = load
-				coldestPID = pid
-			}
-		}
-
-		if !hottestFound || hottestPID == coldestPID || (hottestLoad-coldestLoad) <= targetLoad*0.05 {
-			break
-		}
-
-		// Don't drain any partition below 25% of the target load.
-		minSourceLoad := targetLoad * 0.25
-
-		bestIdx := -1
-		bestScore := 0.0
-		for j, rl := range entries {
-			if rl.entry.PartitionID != hottestPID {
-				continue
-			}
-			if r.isInMoveCooldown(now, rl.entry.Range) {
-				continue
-			}
-			moveCost := float64(rl.entry.Range.Size())
-			if moved+moveCost > movementBudget {
-				continue
-			}
-			newHotLoad := hottestLoad - rl.load
-			if newHotLoad < minSourceLoad {
-				continue
-			}
-			newColdLoad := coldestLoad + rl.load
-			imbalanceBefore := math.Abs(hottestLoad-targetLoad) + math.Abs(coldestLoad-targetLoad)
-			imbalanceAfter := math.Abs(newHotLoad-targetLoad) + math.Abs(newColdLoad-targetLoad)
-			improvement := imbalanceBefore - imbalanceAfter
-			if improvement <= 0 {
-				continue
-			}
-			score := improvement / moveCost
-			if score > bestScore {
-				bestScore = score
-				bestIdx = j
-			}
-		}
-
-		if bestIdx < 0 {
-			// Either every range is in cooldown / over-budget, or
-			// every potential move yields no improvement. Don't
-			// terminate Phase 3: another partition may still have a
-			// profitable move. Mark this one as exhausted and retry.
-			excludedHot[hottestPID] = true
-			continue
-		}
-
-		fromPID := entries[bestIdx].entry.PartitionID
-		moved += float64(entries[bestIdx].entry.Range.Size())
-		entries[bestIdx].entry.PartitionID = coldestPID
-		actions = append(actions, Action{
-			Kind:     ActionMove,
-			Range:    entries[bestIdx].entry.Range,
-			FromPart: fromPID,
-			ToPart:   coldestPID,
-			Detail:   fmt.Sprintf("load=%.1f/s, hot P%d→cold P%d", entries[bestIdx].load, fromPID, coldestPID),
-		})
-	}
+	// --- Phase 3: weighted-move using L_pid -----------------------------
+	phase3Actions := r.runPhase3(entries, partitionLByPID, recentMoves, activePartitions, now)
+	actions = append(actions, phase3Actions...)
 
 	// --- Phase 4: split hot slices ----------------------------------------
 	// Only split ranges on OVERLOADED partitions (>= target load).
@@ -725,7 +633,7 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	// splits drag down the mean and cause everything to look "hot".
 	maxTotal := maxSlicesPerPartition * numPartitions
 	if len(entries) < maxTotal {
-		partitionLoads := lm.computePartitionLoads(entries)
+		partitionLoads := computePartitionLoads(entries)
 
 		var nonZeroCount int
 		var nonZeroLoad float64
@@ -755,10 +663,10 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 				mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
 				left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
 				right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
-				leftLoad := lm.load(left)
-				rightLoad := lm.load(right)
-				leftSamples, leftSeries := lm.stat(left)
-				rightSamples, rightSeries := lm.stat(right)
+				leftSeries := lm.seriesAt(left)
+				rightSeries := lm.seriesAt(right)
+				leftLoad := float64(leftSeries)
+				rightLoad := float64(rightSeries)
 				if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
 					// Newly split sub-ranges have no per-range data yet.
 					// Distribute the parent's load proportionally so the
@@ -766,20 +674,18 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 					leftFraction := float64(left.Size()) / float64(rl.entry.Range.Size())
 					leftLoad = rl.load * leftFraction
 					rightLoad = rl.load * (1 - leftFraction)
-					leftSamples = rl.samples * leftFraction
-					rightSamples = rl.samples * (1 - leftFraction)
 					leftSeries = int64(float64(rl.series) * leftFraction)
 					rightSeries = rl.series - leftSeries
 				}
 				newEntries = append(newEntries,
-					rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad, samples: leftSamples, series: leftSeries},
-					rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad, samples: rightSamples, series: rightSeries},
+					rangeLoad{entry: assignment.Entry{Range: left, PartitionID: rl.entry.PartitionID}, load: leftLoad, series: leftSeries},
+					rangeLoad{entry: assignment.Entry{Range: right, PartitionID: rl.entry.PartitionID}, load: rightLoad, series: rightSeries},
 				)
 				actions = append(actions, Action{
 					Kind:   ActionSplit,
 					Range:  rl.entry.Range,
 					ToPart: rl.entry.PartitionID,
-					Detail: fmt.Sprintf("load=%.1f/s > threshold=%.1f/s, split on P%d", rl.load, splitThreshold, rl.entry.PartitionID),
+					Detail: fmt.Sprintf("series=%d > threshold=%.0f, split on P%d", rl.series, splitThreshold, rl.entry.PartitionID),
 				})
 			} else {
 				newEntries = append(newEntries, rl)
@@ -802,26 +708,225 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	return result, actions
 }
 
-func buildRangeLoads(a *assignment.Assignment, lm *loadMap) []rangeLoad {
-	entries := make([]rangeLoad, len(a.Entries))
-	for i, e := range a.Entries {
-		samples, series := lm.stat(e.Range)
-		entries[i] = rangeLoad{
-			entry:   e,
-			load:    lm.load(e.Range),
-			samples: samples,
-			series:  series,
+// runPhase3 runs the weighted-move phase and appends any resulting
+// moves to actions. It mutates `entries` in place (updating PartitionID
+// for moved ranges). The source/destination asymmetry is handled as
+// follows:
+//
+//   - Source side: recentMoves (cross-round) plus moves accumulated in
+//     this round's loop are summed into sumRecentMoves(pid). The
+//     effective source L is `L_pid - sumRecentMoves(pid)`, the
+//     partition's projected head-series count once the in-flight moves
+//     compact away. A partition with exhausted budget has effective L
+//     at or below meanL and is not selected as hot.
+//
+//   - Destination side: a within-round plannedAdded[pid] inflates the
+//     effective cold L so the loop spreads moves across multiple cold
+//     partitions rather than stacking on one. No cross-round
+//     destination state: by the next round, the destination's L_pid
+//     already reflects writes routed to it (within one scrape
+//     interval), so there's nothing to carry forward.
+//
+// When partitionLByPID is nil/empty the slicer falls back to a
+// per-range-sum approximation (useful for unit tests).
+func (r *Rebalancer) runPhase3(
+	entries []rangeLoad,
+	partitionLByPID map[int32]int64,
+	recentMoves map[int32][]moveRecord,
+	activePartitions []int32,
+	now time.Time,
+) []Action {
+	numPartitions := len(activePartitions)
+	if numPartitions == 0 {
+		return nil
+	}
+
+	// Build effective L snapshot. If no partitionLByPID was provided
+	// (legacy callers), fall back to the per-range-sum approximation
+	// so tests without full ingester totals still exercise the
+	// phase. Production always provides partitionLByPID.
+	useRealL := len(partitionLByPID) > 0
+	effL := make(map[int32]int64, numPartitions)
+	if useRealL {
+		for _, pid := range activePartitions {
+			effL[pid] = partitionLByPID[pid]
+		}
+	} else {
+		for _, rl := range entries {
+			effL[rl.entry.PartitionID] += rl.series
 		}
 	}
-	return entries
+
+	var totalL int64
+	for _, pid := range activePartitions {
+		totalL += effL[pid]
+	}
+	meanL := int64(0)
+	if numPartitions > 0 {
+		meanL = totalL / int64(numPartitions)
+	}
+
+	// plannedAdded accumulates within-round additions per destination.
+	// Reset each round by being local to this call.
+	plannedAdded := make(map[int32]int64, numPartitions)
+	// thisRoundMoves shadows the slicer's growing knowledge of moves
+	// off each source during this phase. Combined with the cross-round
+	// recentMoves passed in, it feeds sumRecentMoves.
+	thisRoundMoves := make(map[int32]int64, numPartitions)
+
+	sumRecentMoves := func(pid int32) int64 {
+		var s int64
+		for _, m := range recentMoves[pid] {
+			s += m.series
+		}
+		s += thisRoundMoves[pid]
+		return s
+	}
+
+	effectiveSource := func(pid int32) int64 {
+		return effL[pid] - sumRecentMoves(pid)
+	}
+
+	effectiveDest := func(pid int32) int64 {
+		return effL[pid] + plannedAdded[pid]
+	}
+
+	movable := func(pid int32) int64 {
+		s := effectiveSource(pid)
+		if s <= meanL {
+			return 0
+		}
+		return s - meanL
+	}
+
+	movementBudget := r.cfg.MovementBudget * float64(uint64(math.MaxUint32)+1)
+	var moved float64
+
+	// Partitions excluded from "hottest" consideration: those that had
+	// no profitable range to move when examined. Without this guard a
+	// single budget-exhausted-but-still-nominally-hot partition could
+	// stall the whole round. Separate from movable-based filtering so
+	// that moving a range off P1 doesn't unintentionally unblock a
+	// previously-exhausted P0 — once excluded, stays excluded.
+	excludedHot := make(map[int32]bool)
+
+	var actions []Action
+
+	for iter := 0; iter < len(entries); iter++ {
+		// Hot: argmax effectiveSource among partitions with movable > 0
+		// and not excluded.
+		var hotPID, coldPID int32
+		hotL := int64(math.MinInt64)
+		coldL := int64(math.MaxInt64)
+		hotFound := false
+		coldFound := false
+		for _, pid := range activePartitions {
+			if !excludedHot[pid] && movable(pid) > 0 {
+				s := effectiveSource(pid)
+				if s > hotL {
+					hotL = s
+					hotPID = pid
+					hotFound = true
+				}
+			}
+		}
+		for _, pid := range activePartitions {
+			d := effectiveDest(pid)
+			if d < coldL {
+				coldL = d
+				coldPID = pid
+				coldFound = true
+			}
+		}
+		if !hotFound || !coldFound || hotPID == coldPID {
+			break
+		}
+
+		mov := movable(hotPID)
+
+		bestIdx := -1
+		var bestScore float64
+		for j, rl := range entries {
+			if rl.entry.PartitionID != hotPID {
+				continue
+			}
+			if r.isInMoveCooldown(now, rl.entry.Range) {
+				continue
+			}
+			moveCost := float64(rl.entry.Range.Size())
+			if moved+moveCost > movementBudget {
+				continue
+			}
+			// Per-source movable budget: can't move more series off
+			// than the "above mean" surplus (net of recent moves).
+			if rl.series > mov {
+				continue
+			}
+			// Imbalance improvement: the spread between hot and cold
+			// should narrow after the move. Use absolute distance
+			// from meanL on both sides.
+			newHot := hotL - rl.series
+			newCold := coldL + rl.series
+			imbalanceBefore := absInt64(hotL-meanL) + absInt64(coldL-meanL)
+			imbalanceAfter := absInt64(newHot-meanL) + absInt64(newCold-meanL)
+			improvement := imbalanceBefore - imbalanceAfter
+			if improvement <= 0 {
+				continue
+			}
+			score := float64(improvement) / moveCost
+			if score > bestScore {
+				bestScore = score
+				bestIdx = j
+			}
+		}
+
+		if bestIdx < 0 {
+			// Either every range is in cooldown, over-budget, too
+			// large for the movable budget, or every potential move
+			// yields no imbalance improvement. Exclude this hot and
+			// try the next-hottest candidate; don't terminate Phase 3
+			// because of one stuck source.
+			excludedHot[hotPID] = true
+			continue
+		}
+
+		fromPID := entries[bestIdx].entry.PartitionID
+		moved += float64(entries[bestIdx].entry.Range.Size())
+		seriesMoved := entries[bestIdx].series
+		entries[bestIdx].entry.PartitionID = coldPID
+
+		// Update phase-3 bookkeeping. plannedAdded delays re-picking
+		// the same cold in the next iteration; thisRoundMoves feeds
+		// movable() so the hot's budget shrinks as we move off it.
+		plannedAdded[coldPID] += seriesMoved
+		thisRoundMoves[fromPID] += seriesMoved
+
+		actions = append(actions, Action{
+			Kind:     ActionMove,
+			Range:    entries[bestIdx].entry.Range,
+			FromPart: fromPID,
+			ToPart:   coldPID,
+			Series:   seriesMoved,
+			Detail:   fmt.Sprintf("L=%d meanL=%d, P%d→P%d, series=%d, movable=%d", hotL, meanL, fromPID, coldPID, seriesMoved, mov),
+		})
+	}
+
+	return actions
+}
+
+// absInt64 returns the absolute value of x. Defined locally to avoid a
+// math.Abs float round-trip for int64 operands.
+func absInt64(x int64) int64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // computePartitionLoads sums the per-range combined load for each
-// partition. It does NOT include the orphan-series adjustment;
-// callers that want the orphan-aware per-partition load should use
-// loadMap.computePartitionLoads instead. Kept as a free function for
-// the defragmentation (merge) phase, where orphan accounting is not
-// useful.
+// partition. Used by the defragmentation (merge) and split phases.
+// Phase 3 no longer uses this; it ranks by partitionLByPID (from
+// ingester TotalActiveSeries) instead.
 func computePartitionLoads(entries []rangeLoad) map[int32]float64 {
 	m := make(map[int32]float64)
 	for _, rl := range entries {
@@ -830,145 +935,24 @@ func computePartitionLoads(entries []rangeLoad) map[int32]float64 {
 	return m
 }
 
-// rangeStats holds the raw per-range signals reported by ingesters.
-type rangeStats struct {
-	samples float64
-	series  int64
-}
-
-// loadMap holds per-range raw signals plus the global totals needed to
-// normalize them into a combined weighted load. Construct via
-// buildLoadMap (or buildLoadMapWithOrphans when partition-level
-// orphan counts are available) and query via load() / stat().
-//
-// totalSeries includes both per-range reported series AND the
-// per-partition orphan series (in-memory series an ingester still
-// holds for hash ranges it no longer owns). Including orphans in the
-// denominator keeps the load values normalized — the sum of all
-// per-partition loads (including orphan contributions) stays equal
-// to wSeries + wSamples regardless of how many series are orphaned.
+// loadMap holds per-range raw series counts. Construct via
+// buildLoadMap and query via seriesAt().
 type loadMap struct {
-	stats            map[assignment.HashRange]rangeStats
-	partitionOrphans map[int32]int64
-	totalSamples     float64
-	totalSeries      int64
-	wSeries          float64
-	wSamples         float64
+	series map[assignment.HashRange]int64
 }
 
-func buildLoadMap(rates []rangeRate, wSeries, wSamples float64) *loadMap {
-	return buildLoadMapWithOrphans(rates, nil, wSeries, wSamples)
-}
-
-func buildLoadMapWithOrphans(rates []rangeRate, partitionOrphans map[int32]int64, wSeries, wSamples float64) *loadMap {
-	lm := &loadMap{
-		stats:            make(map[assignment.HashRange]rangeStats, len(rates)),
-		partitionOrphans: partitionOrphans,
-		wSeries:          wSeries,
-		wSamples:         wSamples,
-	}
+func buildLoadMap(rates []rangeRate) *loadMap {
+	lm := &loadMap{series: make(map[assignment.HashRange]int64, len(rates))}
 	for _, rr := range rates {
-		s := lm.stats[rr.hr]
-		s.samples += rr.samples
-		s.series += rr.series
-		lm.stats[rr.hr] = s
-		lm.totalSamples += rr.samples
-		lm.totalSeries += rr.series
-	}
-	for _, orphan := range partitionOrphans {
-		lm.totalSeries += orphan
+		lm.series[rr.hr] += rr.series
 	}
 	return lm
 }
 
-// load returns the combined weighted load for the given hash range.
-// Returns 0 if the range is not present in the underlying map. The
-// returned value has no physical units; it's the sum of two
-// fraction-of-total components weighted by the configured weights, so
-// the global total of load() across all ranges PLUS partitionOrphanLoad
-// across all partitions is wSeries + wSamples (typically 1.0).
-func (lm *loadMap) load(hr assignment.HashRange) float64 {
-	s, ok := lm.stats[hr]
-	if !ok {
-		return 0
-	}
-	var l float64
-	if lm.totalSeries > 0 {
-		l += lm.wSeries * float64(s.series) / float64(lm.totalSeries)
-	}
-	if lm.totalSamples > 0 {
-		l += lm.wSamples * s.samples / lm.totalSamples
-	}
-	return l
-}
-
-// stat returns the raw samples/sec and series count for the range.
-func (lm *loadMap) stat(hr assignment.HashRange) (samples float64, series int64) {
-	s := lm.stats[hr]
-	return s.samples, s.series
-}
-
-// partitionOrphanLoad returns the load contribution from orphan
-// series attributed to the given partition. Orphans are series an
-// owner ingester still holds for ranges that have been moved to
-// another partition; they will be GC'd by the next TSDB head
-// compaction (~2h) but in the meantime represent real memory
-// pressure on the source ingester. Returns 0 when the range
-// component (wSeries) is zero, when no orphans were measured for the
-// partition, or when totalSeries is zero.
-func (lm *loadMap) partitionOrphanLoad(pid int32) float64 {
-	if lm == nil || lm.wSeries == 0 || lm.totalSeries == 0 {
-		return 0
-	}
-	orphan := lm.partitionOrphans[pid]
-	if orphan <= 0 {
-		return 0
-	}
-	return lm.wSeries * float64(orphan) / float64(lm.totalSeries)
-}
-
-// partitionOrphanSeries returns the raw orphan series count for the
-// given partition (0 if unknown).
-func (lm *loadMap) partitionOrphanSeries(pid int32) int64 {
-	if lm == nil || lm.partitionOrphans == nil {
-		return 0
-	}
-	return lm.partitionOrphans[pid]
-}
-
-// computePartitionLoads sums the per-range combined load for each
-// partition AND adds each partition's orphan-load contribution, so
-// the result reflects the source ingester's true memory pressure
-// (current ranges + as-yet-uncompacted series from former ranges).
-// Used by the slicer's hottest/coldest selection so we don't pile
-// load onto a partition whose owner is still working off a backlog.
-func (lm *loadMap) computePartitionLoads(entries []rangeLoad) map[int32]float64 {
-	m := computePartitionLoads(entries)
-	if lm == nil {
-		return m
-	}
-	for pid := range lm.partitionOrphans {
-		if extra := lm.partitionOrphanLoad(pid); extra > 0 {
-			m[pid] += extra
-		}
-	}
-	return m
-}
-
-// shedableLoad returns the per-range (movable) component of a
-// partition's load — i.e., total load minus the orphan contribution.
-// This is the load that can actually be reduced by moving ranges
-// away from the partition. Orphan load is held by the source
-// ingester until TSDB head compaction GCs it; no slicer move can
-// reduce it. Used to detect partitions whose total load is mostly
-// (or entirely) orphan, which would stall Phase 3 if picked as the
-// hottest source.
-func (lm *loadMap) shedableLoad(partitionLoads map[int32]float64, pid int32) float64 {
-	total := partitionLoads[pid]
-	if lm == nil {
-		return total
-	}
-	return total - lm.partitionOrphanLoad(pid)
+// seriesAt returns the raw in-memory TSDB head series count for the
+// given hash range, or 0 if the range is unknown.
+func (lm *loadMap) seriesAt(hr assignment.HashRange) int64 {
+	return lm.series[hr]
 }
 
 // isInMoveCooldown reports whether the given range overlaps any range
@@ -1021,6 +1005,65 @@ func (r *Rebalancer) pruneExpiredCooldowns(now time.Time) {
 	for hr, deadline := range r.moveCooldowns {
 		if !now.Before(deadline) {
 			delete(r.moveCooldowns, hr)
+		}
+	}
+}
+
+// recordRecentMoves appends move records for every ActionMove in the
+// round's actions, keyed by the source partition. Each record counts
+// against that source's movable budget in subsequent rounds until it
+// ages out of CompactionInterval. ActionReassign is intentionally
+// excluded (same rationale as recordMoveCooldowns).
+func (r *Rebalancer) recordRecentMoves(now time.Time, actions []Action, lm *loadMap) {
+	if r.cfg.CompactionInterval <= 0 {
+		return
+	}
+	if r.recentMoves == nil {
+		r.recentMoves = make(map[int32][]moveRecord)
+	}
+	for _, a := range actions {
+		if a.Kind != ActionMove {
+			continue
+		}
+		series := a.Series
+		if series == 0 && lm != nil {
+			// Defensive: if Action.Series wasn't populated (e.g.
+			// legacy callers), fall back to looking up by range.
+			series = lm.seriesAt(a.Range)
+		}
+		r.recentMoves[a.FromPart] = append(r.recentMoves[a.FromPart], moveRecord{
+			hr:     a.Range,
+			series: series,
+			at:     now,
+		})
+	}
+}
+
+// pruneRecentMoves drops move records older than CompactionInterval.
+// Partitions left with no surviving records have their slice deleted
+// entirely to keep the map small.
+func (r *Rebalancer) pruneRecentMoves(now time.Time) {
+	if r.cfg.CompactionInterval <= 0 {
+		// When the guard is disabled, also clear any accumulated
+		// records so they don't silently gate moves if the operator
+		// re-enables the feature later.
+		for pid := range r.recentMoves {
+			delete(r.recentMoves, pid)
+		}
+		return
+	}
+	cutoff := now.Add(-r.cfg.CompactionInterval)
+	for pid, records := range r.recentMoves {
+		keep := records[:0]
+		for _, m := range records {
+			if m.at.After(cutoff) {
+				keep = append(keep, m)
+			}
+		}
+		if len(keep) == 0 {
+			delete(r.recentMoves, pid)
+		} else {
+			r.recentMoves[pid] = keep
 		}
 	}
 }
@@ -1086,7 +1129,6 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 					})
 					prev.entry.Range = merged
 					prev.load = mergedLoad
-					prev.samples += curr.samples
 					prev.series += curr.series
 					churned += mergeCost
 					continue
@@ -1123,7 +1165,6 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 				prev.entry.Range = merged
 				prev.entry.PartitionID = receiverPID
 				prev.load = mergedLoad
-				prev.samples += curr.samples
 				prev.series += curr.series
 				churned += movedSize
 				continue

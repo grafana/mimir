@@ -27,21 +27,29 @@ const (
 )
 
 // Action records a single slicer operation from a rebalance round.
+// Series is populated for ActionMove and records the per-range head
+// series count moved off the source; it's both informational (for the
+// admin UI) and load-bearing (recordRecentMoves uses it to accumulate
+// each source's outstanding CompactionInterval budget).
 type Action struct {
 	Kind     ActionKind           `json:"kind"`
 	Range    assignment.HashRange `json:"range"`
 	FromPart int32                `json:"from_partition,omitempty"`
 	ToPart   int32                `json:"to_partition,omitempty"`
+	Series   int64                `json:"series,omitempty"`
 	Detail   string               `json:"detail,omitempty"`
 }
 
-// RoundLog captures the actions and summary stats from one rebalance round.
+// RoundLog captures the summary stats from one rebalance round. All
+// "L" fields are partition-level head-series values (max over owner
+// ingesters for each partition), matching the denominator of
+// cortex_ingester_memory_series.
 type RoundLog struct {
 	Time           time.Time `json:"time"`
-	TotalLoad      float64   `json:"total_load"`
-	MeanPartLoad   float64   `json:"mean_partition_load"`
-	MaxPartLoad    float64   `json:"max_partition_load"`
-	MinPartLoad    float64   `json:"min_partition_load"`
+	TotalL         int64     `json:"total_l"`
+	MeanL          int64     `json:"mean_l"`
+	MaxL           int64     `json:"max_l"`
+	MinL           int64     `json:"min_l"`
 	ImbalanceRatio float64   `json:"imbalance_ratio"`
 	NumEntries     int       `json:"num_entries"`
 	NumPartitions  int       `json:"num_partitions"`
@@ -51,12 +59,10 @@ type RoundLog struct {
 
 const maxRoundLogs = 20
 
-// rangeStatsView mirrors loadMap.stats for one range: raw signals plus
-// the combined weighted load value used for slicer decisions.
+// rangeStatsView mirrors loadMap for one range: the raw head series
+// count the ingester reported for it.
 type rangeStatsView struct {
-	Samples float64
-	Series  int64
-	Load    float64
+	Series int64
 }
 
 // adminState stores the data needed to render the admin page and to
@@ -64,11 +70,11 @@ type rangeStatsView struct {
 // hold both the lightweight Round summary (for HTML) and the full
 // inputs/outputs needed for deterministic replay.
 type adminState struct {
-	mu               sync.RWMutex
-	traces           []Trace
-	lastStats        map[assignment.HashRange]rangeStatsView
-	lastOrphanSeries map[int32]int64
-	lastOrphanLoad   map[int32]float64
+	mu             sync.RWMutex
+	traces         []Trace
+	lastStats      map[assignment.HashRange]rangeStatsView
+	lastPartitionL map[int32]int64
+	lastMovable    map[int32]int64
 }
 
 func (s *adminState) addTrace(tr Trace) {
@@ -80,38 +86,58 @@ func (s *adminState) addTrace(tr Trace) {
 	}
 }
 
-// setLastStats snapshots the current loadMap into the admin state.
-// Captures all per-range raw signals plus the combined load and the
-// per-partition orphan series count and orphan-derived load.
-func (s *adminState) setLastStats(lm *loadMap) {
-	stats := make(map[assignment.HashRange]rangeStatsView, len(lm.stats))
-	for hr, raw := range lm.stats {
-		stats[hr] = rangeStatsView{
-			Samples: raw.samples,
-			Series:  raw.series,
-			Load:    lm.load(hr),
-		}
+// setLastStats snapshots the current loadMap, partition L map, and
+// derived movable budgets into the admin state. The movable budget for
+// a partition is max(0, L_pid - meanL) - sumRecentMoves(pid), matching
+// the gate applied in Phase 3.
+func (s *adminState) setLastStats(
+	lm *loadMap,
+	partitionLByPID map[int32]int64,
+	recentMoves map[int32][]moveRecord,
+	activePartitions []int32,
+) {
+	stats := make(map[assignment.HashRange]rangeStatsView, len(lm.series))
+	for hr, n := range lm.series {
+		stats[hr] = rangeStatsView{Series: n}
 	}
 
-	orphanSeries := make(map[int32]int64, len(lm.partitionOrphans))
-	orphanLoad := make(map[int32]float64, len(lm.partitionOrphans))
-	for pid, n := range lm.partitionOrphans {
-		orphanSeries[pid] = n
-		orphanLoad[pid] = lm.partitionOrphanLoad(pid)
+	var totalL int64
+	for _, pid := range activePartitions {
+		totalL += partitionLByPID[pid]
+	}
+	var meanL int64
+	if len(activePartitions) > 0 {
+		meanL = totalL / int64(len(activePartitions))
+	}
+
+	partitionLCopy := make(map[int32]int64, len(partitionLByPID))
+	movable := make(map[int32]int64, len(partitionLByPID))
+	for _, pid := range activePartitions {
+		l := partitionLByPID[pid]
+		partitionLCopy[pid] = l
+		var sumRecent int64
+		for _, m := range recentMoves[pid] {
+			sumRecent += m.series
+		}
+		above := l - meanL - sumRecent
+		if above < 0 {
+			above = 0
+		}
+		movable[pid] = above
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastStats = stats
-	s.lastOrphanSeries = orphanSeries
-	s.lastOrphanLoad = orphanLoad
+	s.lastPartitionL = partitionLCopy
+	s.lastMovable = movable
 }
 
 // snapshot returns the current admin state for rendering. Returns
 // the lightweight Round summaries only — the full Trace inputs are
 // served separately via the JSON endpoints to keep HTML rendering
 // cheap.
-func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStatsView, map[int32]int64, map[int32]float64) {
+func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStatsView, map[int32]int64, map[int32]int64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -124,15 +150,15 @@ func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStats
 	for k, v := range s.lastStats {
 		stats[k] = v
 	}
-	orphanSeries := make(map[int32]int64, len(s.lastOrphanSeries))
-	for k, v := range s.lastOrphanSeries {
-		orphanSeries[k] = v
+	partitionL := make(map[int32]int64, len(s.lastPartitionL))
+	for k, v := range s.lastPartitionL {
+		partitionL[k] = v
 	}
-	orphanLoad := make(map[int32]float64, len(s.lastOrphanLoad))
-	for k, v := range s.lastOrphanLoad {
-		orphanLoad[k] = v
+	movable := make(map[int32]int64, len(s.lastMovable))
+	for k, v := range s.lastMovable {
+		movable[k] = v
 	}
-	return rounds, stats, orphanSeries, orphanLoad
+	return rounds, stats, partitionL, movable
 }
 
 // traceSnapshot returns a copy of all currently-buffered traces in
@@ -161,25 +187,21 @@ func (s *adminState) traceAt(displayIdx int) (Trace, bool) {
 
 // partitionView is the data for one partition row in the admin page.
 type partitionView struct {
-	PartitionID  int32
-	InstanceID   string
-	InstanceAddr string
-	TotalLoad    float64
-	TotalSamples float64
-	TotalSeries  int64
-	OrphanSeries int64
-	OrphanLoad   float64
-	HashSpacePct float64
-	NumRanges    int
-	Ranges       []rangeView
+	PartitionID   int32
+	InstanceID    string
+	InstanceAddr  string
+	MemorySeries  int64 // L_pid, matches cortex_ingester_memory_series (max over owners)
+	MovableSeries int64 // max(0, L_pid - meanL) - sumRecentMoves(pid)
+	OwnedSeries   int64 // Σ per-range series on this partition (from lm.series)
+	HashSpacePct  float64
+	NumRanges     int
+	Ranges        []rangeView
 }
 
 // rangeView is the data for one hash range in the admin page.
 type rangeView struct {
 	Lo         uint32
 	Hi         uint32
-	Load       float64
-	Samples    float64
 	Series     int64
 	SizePct    float64
 	LastAction ActionKind
@@ -187,35 +209,30 @@ type rangeView struct {
 
 // adminPageData is the full data structure passed to the template.
 type adminPageData struct {
-	GeneratedAt    string
-	TotalLoad      float64
-	TotalSamples   float64
-	TotalSeries    int64
-	TotalOrphan    int64
-	MeanPartLoad   float64
-	MaxPartLoad    float64
-	MinPartLoad    float64
-	ImbalanceRatio float64
-	NumPartitions  int
-	NumEntries     int
-	MovedFraction  float64
-	Partitions     []partitionView
-	Rounds         []RoundLog
-	HeatmapData    string
-
-	// Configuration echo.
-	WeightSeries  float64
-	WeightSamples float64
+	GeneratedAt        string
+	TotalMemorySeries  int64 // Σ L_pid across partitions
+	TotalOwnedSeries   int64 // Σ per-range series, sanity-check against TotalMemorySeries
+	AboveAverage       int64 // Σ max(0, L_pid - meanL)
+	MeanL              int64
+	MaxL               int64
+	MinL               int64
+	ImbalanceRatio     float64
+	NumPartitions      int
+	NumEntries         int
+	MovedFraction      float64
+	CompactionInterval time.Duration
+	Partitions         []partitionView
+	Rounds             []RoundLog
+	HeatmapData        string
 }
 
 func (r *Rebalancer) buildAdminPageData() adminPageData {
-	rounds, lastStats, lastOrphanSeries, lastOrphanLoad := r.admin.snapshot()
+	rounds, lastStats, lastPartitionL, lastMovable := r.admin.snapshot()
 	current := r.store.latest()
 
 	data := adminPageData{
-		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
-		WeightSeries:  r.cfg.LoadWeightSeries,
-		WeightSamples: r.cfg.LoadWeightSamples,
+		GeneratedAt:        time.Now().UTC().Format(time.RFC3339),
+		CompactionInterval: r.cfg.CompactionInterval,
 	}
 
 	if current == nil {
@@ -233,8 +250,7 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	// Build partition views.
 	partMap := make(map[int32]*partitionView)
 	hashSpaceTotal := float64(uint64(math.MaxUint32) + 1)
-	var totalLoad, totalSamples float64
-	var totalSeries int64
+	var totalOwnedSeries int64
 
 	for _, e := range current.Entries {
 		pv, ok := partMap[e.PartitionID]
@@ -251,20 +267,14 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		pv.Ranges = append(pv.Ranges, rangeView{
 			Lo:         e.Range.Lo,
 			Hi:         e.Range.Hi,
-			Load:       stat.Load,
-			Samples:    stat.Samples,
 			Series:     stat.Series,
 			SizePct:    sizePct,
 			LastAction: action,
 		})
-		pv.TotalLoad += stat.Load
-		pv.TotalSamples += stat.Samples
-		pv.TotalSeries += stat.Series
+		pv.OwnedSeries += stat.Series
 		pv.HashSpacePct += sizePct
 		pv.NumRanges++
-		totalLoad += stat.Load
-		totalSamples += stat.Samples
-		totalSeries += stat.Series
+		totalOwnedSeries += stat.Series
 	}
 
 	// Resolve instance IDs from the partition ring.
@@ -275,18 +285,27 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		idToAddr[inst.GetId()] = inst.Addr
 	}
 
-	var totalOrphan int64
+	var totalMemorySeries int64
+	var maxL, minL int64
+	minL = math.MaxInt64
 	for pid, pv := range partMap {
 		owners := pRing.PartitionOwnerIDs(pid)
 		if len(owners) > 0 {
 			pv.InstanceID = owners[0]
 			pv.InstanceAddr = idToAddr[owners[0]]
 		}
-		pv.OrphanSeries = lastOrphanSeries[pid]
-		pv.OrphanLoad = lastOrphanLoad[pid]
-		pv.TotalLoad += pv.OrphanLoad
-		totalOrphan += pv.OrphanSeries
-		totalLoad += pv.OrphanLoad
+		pv.MemorySeries = lastPartitionL[pid]
+		pv.MovableSeries = lastMovable[pid]
+		totalMemorySeries += pv.MemorySeries
+		if pv.MemorySeries > maxL {
+			maxL = pv.MemorySeries
+		}
+		if pv.MemorySeries < minL {
+			minL = pv.MemorySeries
+		}
+	}
+	if minL == math.MaxInt64 {
+		minL = 0
 	}
 
 	// Sort partitions by ID, and within each partition sort ranges by
@@ -307,44 +326,42 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	})
 
 	numPartitions := len(partitions)
-	meanPartLoad := 0.0
-	maxPartLoad := 0.0
-	minPartLoad := math.MaxFloat64
+	var meanL int64
 	if numPartitions > 0 {
-		meanPartLoad = totalLoad / float64(numPartitions)
-		for _, p := range partitions {
-			if p.TotalLoad > maxPartLoad {
-				maxPartLoad = p.TotalLoad
-			}
-			if p.TotalLoad < minPartLoad {
-				minPartLoad = p.TotalLoad
-			}
-		}
-	}
-	if minPartLoad == math.MaxFloat64 {
-		minPartLoad = 0
+		meanL = totalMemorySeries / int64(numPartitions)
 	}
 	imbalance := 0.0
-	if meanPartLoad > 0 {
-		imbalance = (maxPartLoad - minPartLoad) / meanPartLoad
+	if meanL > 0 {
+		imbalance = float64(maxL-minL) / float64(meanL)
+	}
+
+	var aboveAverage int64
+	for _, p := range partitions {
+		if p.MemorySeries > meanL {
+			aboveAverage += p.MemorySeries - meanL
+		}
 	}
 
 	// Build heatmap: 256 buckets across the hash space, weighted by
-	// combined load so the visualization matches what the slicer sees.
+	// per-range head series so the visualization matches what the
+	// slicer sees.
 	const heatmapBuckets = 256
 	heatmap := make([]float64, heatmapBuckets)
 	bucketSize := (uint64(math.MaxUint32) + 1) / uint64(heatmapBuckets)
 	for _, e := range current.Entries {
 		stat := lastStats[e.Range]
+		if stat.Series == 0 {
+			continue
+		}
 		startBucket := uint64(e.Range.Lo) / bucketSize
 		endBucket := uint64(e.Range.Hi) / bucketSize
 		if endBucket >= heatmapBuckets {
 			endBucket = heatmapBuckets - 1
 		}
 		bucketsSpanned := endBucket - startBucket + 1
-		loadPerBucket := stat.Load / float64(bucketsSpanned)
+		perBucket := float64(stat.Series) / float64(bucketsSpanned)
 		for b := startBucket; b <= endBucket; b++ {
-			heatmap[b] += loadPerBucket
+			heatmap[b] += perBucket
 		}
 	}
 	heatmapJSON, _ := json.Marshal(heatmap)
@@ -361,13 +378,12 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		reversedRounds[len(rounds)-1-i] = rl
 	}
 
-	data.TotalLoad = totalLoad
-	data.TotalSamples = totalSamples
-	data.TotalSeries = totalSeries
-	data.TotalOrphan = totalOrphan
-	data.MeanPartLoad = meanPartLoad
-	data.MaxPartLoad = maxPartLoad
-	data.MinPartLoad = minPartLoad
+	data.TotalMemorySeries = totalMemorySeries
+	data.TotalOwnedSeries = totalOwnedSeries
+	data.AboveAverage = aboveAverage
+	data.MeanL = meanL
+	data.MaxL = maxL
+	data.MinL = minL
 	data.ImbalanceRatio = imbalance
 	data.NumPartitions = numPartitions
 	data.NumEntries = len(current.Entries)

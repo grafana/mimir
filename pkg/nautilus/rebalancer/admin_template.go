@@ -77,6 +77,12 @@ var adminTemplate = template.Must(template.New("admin").Funcs(template.FuncMap{
 		}
 		return math.Min(load/maxLoad*100, 100)
 	},
+	"lBar": func(l, maxL int64) float64 {
+		if maxL <= 0 {
+			return 0
+		}
+		return math.Min(float64(l)/float64(maxL)*100, 100)
+	},
 }).Parse(adminHTML))
 
 func formatFloat(f float64, decimals int) string {
