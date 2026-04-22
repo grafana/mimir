@@ -172,7 +172,7 @@ details>summary::-webkit-details-marker{display:none}
 		<span>Ranges: {{$r.NumEntries}}</span>
 		<span>Moved: {{fmtPct1 $r.MovedFraction}}</span>
 		<span>Actions: {{len $r.Actions}}</span>
-		<span><a href="rounds/{{$i}}.json" title="Download full input/output trace for this round (for replay/verification)">trace.json</a></span>
+		<span><a href="/nautilus/rebalancer/rounds/{{$i}}.json" title="Download full input/output trace for this round (for replay/verification)">trace.json</a></span>
 	</div>
 	{{if $r.Actions}}
 	<div class="round-actions">

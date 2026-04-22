@@ -277,6 +277,21 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		totalOwnedSeries += stat.Series
 	}
 
+	// Partitions that don't currently own any hash ranges but still
+	// report a non-zero L_pid (or exist in the ring) need rows too,
+	// otherwise the table and the header stats silently exclude:
+	//   - "zombie" partitions that the slicer has drained but whose
+	//     TSDB head series haven't been compacted away yet, and
+	//   - partitions that exist in the ring but haven't received any
+	//     assignment yet (e.g. freshly scaled-up replicas).
+	// Without this, max_l / min_l / imbalance on the dashboard disagree
+	// with what the JSON trace reports.
+	for pid := range lastPartitionL {
+		if _, ok := partMap[pid]; !ok {
+			partMap[pid] = &partitionView{PartitionID: pid}
+		}
+	}
+
 	// Resolve instance IDs from the partition ring.
 	pRing := r.partitionRing.PartitionRing()
 	instances, _ := r.ingesterRing.GetAllHealthy(0)
