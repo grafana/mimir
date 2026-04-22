@@ -280,10 +280,10 @@ func TestJobTracker_PlanJobTracking(t *testing.T) {
 	assertIncompletePlanJobs := func(label string, expected int) {
 		t.Helper()
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_compactor_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
-			# TYPE cortex_compactor_incomplete_plan_jobs gauge
-			cortex_compactor_incomplete_plan_jobs %d
-		`, expected)), "cortex_compactor_incomplete_plan_jobs"), label)
+			# HELP cortex_compactor_scheduler_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
+			# TYPE cortex_compactor_scheduler_incomplete_plan_jobs gauge
+			cortex_compactor_scheduler_incomplete_plan_jobs %d
+		`, expected)), "cortex_compactor_scheduler_incomplete_plan_jobs"), label)
 	}
 
 	assertIncompletePlanJobs("no plan jobs yet", 0)
@@ -334,24 +334,34 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_compactor_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
-		# TYPE cortex_compactor_incomplete_plan_jobs gauge
-		cortex_compactor_incomplete_plan_jobs 2
-	`), "cortex_compactor_incomplete_plan_jobs"), "both tenants have a pending plan job")
+		# HELP cortex_compactor_scheduler_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
+		# TYPE cortex_compactor_scheduler_incomplete_plan_jobs gauge
+		cortex_compactor_scheduler_incomplete_plan_jobs 2
+	`), "cortex_compactor_scheduler_incomplete_plan_jobs"), "both tenants have a pending plan job")
+	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
+		# TYPE cortex_compactor_scheduler_pending_jobs gauge
+		cortex_compactor_scheduler_pending_jobs 4
+	`), "cortex_compactor_scheduler_pending_jobs"), "aggregate pending jobs across both tenants")
 
 	// Cleaning up tenant1 should only subtract its contribution, not zero the shared gauges.
 	jt1.CleanupMetrics()
 	assertTrackerBytes(t, reg, "only tenant1 bytes removed", 0, 200)
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_compactor_scheduler_pending_jobs_by_user The number of queued pending jobs, broken down by user.
+		# TYPE cortex_compactor_scheduler_pending_jobs_by_user gauge
+		cortex_compactor_scheduler_pending_jobs_by_user{user="tenant2"} 2
+	`), "cortex_compactor_scheduler_pending_jobs_by_user"), "only tenant2 pending jobs remain")
+	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
 		# TYPE cortex_compactor_scheduler_pending_jobs gauge
-		cortex_compactor_scheduler_pending_jobs{user="tenant2"} 2
-	`), "cortex_compactor_scheduler_pending_jobs"), "only tenant2 pending jobs remain")
+		cortex_compactor_scheduler_pending_jobs 2
+	`), "cortex_compactor_scheduler_pending_jobs"), "aggregate pending jobs drops to tenant2's contribution")
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_compactor_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
-		# TYPE cortex_compactor_incomplete_plan_jobs gauge
-		cortex_compactor_incomplete_plan_jobs 1
-	`), "cortex_compactor_incomplete_plan_jobs"), "only tenant2 plan job remains")
+		# HELP cortex_compactor_scheduler_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
+		# TYPE cortex_compactor_scheduler_incomplete_plan_jobs gauge
+		cortex_compactor_scheduler_incomplete_plan_jobs 1
+	`), "cortex_compactor_scheduler_incomplete_plan_jobs"), "only tenant2 plan job remains")
 }
 
 func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {

@@ -16,31 +16,41 @@ const (
 )
 
 type schedulerMetrics struct {
-	pendingJobs         *prometheus.GaugeVec
+	pendingJobs         prometheus.Gauge
+	pendingJobsByUser   *prometheus.GaugeVec
 	incompleteJobsBytes *prometheus.GaugeVec
 	incompletePlanJobs  prometheus.Gauge
-	activeJobs          *prometheus.GaugeVec
+	activeJobs          prometheus.Gauge
+	activeJobsByUser    *prometheus.GaugeVec
 	jobsCompleted       *prometheus.CounterVec
 	repeatedJobFailures prometheus.Counter
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 	m := &schedulerMetrics{
-		pendingJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		pendingJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_pending_jobs",
 			Help: "The number of queued pending jobs.",
+		}),
+		pendingJobsByUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_compactor_scheduler_pending_jobs_by_user",
+			Help: "The number of queued pending jobs, broken down by user.",
 		}, []string{"user"}),
 		incompleteJobsBytes: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes",
 			Help: "The total bytes of blocks in compaction jobs that have not yet completed (pending or active).",
 		}, []string{"compaction_type"}),
 		incompletePlanJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_compactor_incomplete_plan_jobs",
+			Name: "cortex_compactor_scheduler_incomplete_plan_jobs",
 			Help: "The total number of plan jobs that have not yet completed (pending or active).",
 		}),
-		activeJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		activeJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_active_jobs",
 			Help: "The number of jobs active in workers.",
+		}),
+		activeJobsByUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_compactor_scheduler_active_jobs_by_user",
+			Help: "The number of jobs active in workers, broken down by user.",
 		}, []string{"user"}),
 		jobsCompleted: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_compactor_scheduler_jobs_completed_total",
@@ -62,14 +72,16 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMetrics {
 	return &trackerMetrics{
 		queue: &queueMetrics{
-			pendingJobs:          s.pendingJobs.WithLabelValues(tenant),
-			activeJobs:           s.activeJobs.WithLabelValues(tenant),
+			pendingJobs:          s.pendingJobs,
+			pendingJobsByUser:    s.pendingJobsByUser.WithLabelValues(tenant),
+			activeJobs:           s.activeJobs,
+			activeJobsByUser:     s.activeJobsByUser.WithLabelValues(tenant),
 			incompleteSplitBytes: s.incompleteJobsBytes.WithLabelValues(compactionTypeSplit),
 			incompleteMergeBytes: s.incompleteJobsBytes.WithLabelValues(compactionTypeMerge),
 			incompletePlanJobs:   s.incompletePlanJobs,
 			clear: func() {
-				s.pendingJobs.DeleteLabelValues(tenant)
-				s.activeJobs.DeleteLabelValues(tenant)
+				s.pendingJobsByUser.DeleteLabelValues(tenant)
+				s.activeJobsByUser.DeleteLabelValues(tenant)
 			},
 		},
 		repeatedJobFailures: s.repeatedJobFailures,
@@ -87,9 +99,13 @@ func (m *trackerMetrics) Clear() {
 	m.queue.incompleteSplitBytes.Sub(float64(m.queue.splitBytes))
 	m.queue.incompleteMergeBytes.Sub(float64(m.queue.mergeBytes))
 	m.queue.incompletePlanJobs.Sub(float64(m.queue.planJobCount))
+	m.queue.pendingJobs.Sub(float64(m.queue.pendingJobsCount))
+	m.queue.activeJobs.Sub(float64(m.queue.activeJobsCount))
 	m.queue.splitBytes = 0
 	m.queue.mergeBytes = 0
 	m.queue.planJobCount = 0
+	m.queue.pendingJobsCount = 0
+	m.queue.activeJobsCount = 0
 	m.queue.clear()
 }
 
@@ -98,24 +114,28 @@ func (m *trackerMetrics) Clear() {
 // Callers are responsible for making valid transitions. Invalid calls (e.g. DropPending on an
 // empty queue) will produce incorrect gauge values. Methods are not thread-safe.
 type queueMetrics struct {
-	pendingJobs prometheus.Gauge
-	activeJobs  prometheus.Gauge
+	pendingJobsByUser prometheus.Gauge
+	activeJobsByUser  prometheus.Gauge
 
 	// shared across tenants
+	pendingJobs          prometheus.Gauge
+	activeJobs           prometheus.Gauge
 	incompleteSplitBytes prometheus.Gauge
 	incompleteMergeBytes prometheus.Gauge
 	incompletePlanJobs   prometheus.Gauge
 
-	// splitBytes, mergeBytes, and planJobCount track this tenant's contribution to the shared
-	// incomplete gauges so we can subtract exactly the right amount on tenant removal.
-	splitBytes   uint64
-	mergeBytes   uint64
-	planJobCount int
-	clear        func()
+	// Per-tenant contribution to the shared gauges, tracked so we can subtract exactly the right
+	// amount on tenant removal.
+	splitBytes       uint64
+	mergeBytes       uint64
+	planJobCount     int
+	pendingJobsCount int
+	activeJobsCount  int
+	clear            func()
 }
 
 func (q *queueMetrics) Pending(j TrackedJob) {
-	q.pendingJobs.Inc()
+	q.incPending()
 	if j.ID() == planJobId {
 		q.incompletePlanJobs.Inc()
 		q.planJobCount++
@@ -125,14 +145,14 @@ func (q *queueMetrics) Pending(j TrackedJob) {
 }
 
 func (q *queueMetrics) Leased(j TrackedJob) {
-	q.pendingJobs.Dec()
-	q.activeJobs.Inc()
+	q.decPending()
+	q.incActive()
 }
 
 // Recover records jobs restored from persisted state on startup.
 func (q *queueMetrics) Recover(pending, leased []TrackedJob) {
 	for _, j := range pending {
-		q.pendingJobs.Inc()
+		q.incPending()
 		if j.ID() == planJobId {
 			q.incompletePlanJobs.Inc()
 			q.planJobCount++
@@ -141,7 +161,7 @@ func (q *queueMetrics) Recover(pending, leased []TrackedJob) {
 		}
 	}
 	for _, j := range leased {
-		q.activeJobs.Inc()
+		q.incActive()
 		if j.ID() == planJobId {
 			q.incompletePlanJobs.Inc()
 			q.planJobCount++
@@ -153,13 +173,13 @@ func (q *queueMetrics) Recover(pending, leased []TrackedJob) {
 
 // Revive records a job moving from active back to pending (lease expired or cancelled).
 func (q *queueMetrics) Revive(j TrackedJob) {
-	q.activeJobs.Dec()
-	q.pendingJobs.Inc()
+	q.decActive()
+	q.incPending()
 }
 
 // Complete records a job leaving the system from the active queue (success or failure).
 func (q *queueMetrics) Complete(j TrackedJob) {
-	q.activeJobs.Dec()
+	q.decActive()
 	if j.ID() == planJobId {
 		q.incompletePlanJobs.Dec()
 		q.planJobCount--
@@ -170,13 +190,37 @@ func (q *queueMetrics) Complete(j TrackedJob) {
 
 // DropPending records a job leaving the system from the pending queue.
 func (q *queueMetrics) DropPending(j TrackedJob) {
-	q.pendingJobs.Dec()
+	q.decPending()
 	if j.ID() == planJobId {
 		q.incompletePlanJobs.Dec()
 		q.planJobCount--
 	} else {
 		q.subBytes(j.(*TrackedCompactionJob))
 	}
+}
+
+func (q *queueMetrics) incPending() {
+	q.pendingJobsByUser.Inc()
+	q.pendingJobs.Inc()
+	q.pendingJobsCount++
+}
+
+func (q *queueMetrics) decPending() {
+	q.pendingJobsByUser.Dec()
+	q.pendingJobs.Dec()
+	q.pendingJobsCount--
+}
+
+func (q *queueMetrics) incActive() {
+	q.activeJobsByUser.Inc()
+	q.activeJobs.Inc()
+	q.activeJobsCount++
+}
+
+func (q *queueMetrics) decActive() {
+	q.activeJobsByUser.Dec()
+	q.activeJobs.Dec()
+	q.activeJobsCount--
 }
 
 func (q *queueMetrics) addBytes(cj *TrackedCompactionJob) {
