@@ -24,14 +24,12 @@ func mustRegisterOrGet[T prometheus.Collector](reg prometheus.Registerer, c T) T
 	return c
 }
 
-// IdempotentFactory mirrors promauto.IdempotentFactory, but handles duplicate Collector registration,
+// IdempotentFactory mirrors promauto.Factory, but handles duplicate Collector registration,
 // returning the previously-registered Collector for a duplicate descriptor rather than panicking.
 type IdempotentFactory struct {
 	r prometheus.Registerer
 }
 
-// WithIdempotent creates an IdempotentFactory that registers metrics with reg, returning existing
-// collectors on duplicate registration instead of panicking.
 func WithIdempotent(reg prometheus.Registerer) IdempotentFactory {
 	return IdempotentFactory{r: reg}
 }
