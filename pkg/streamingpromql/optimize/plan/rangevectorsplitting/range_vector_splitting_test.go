@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -1169,10 +1170,12 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 }
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
+	return setupEngineAndCacheWithOpts(t, defaultSplittingOpts())
+}
+
+func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
 	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
-
-	opts := defaultSplittingOpts()
 
 	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -1245,9 +1248,11 @@ func trackRanges(promStorage storage.Storage) *rangeTrackingQueryable {
 type testCacheBackend struct {
 	items map[string][]byte
 
-	gets int
-	hits int
-	sets int
+	gets    int
+	hits    int
+	sets    int
+	hitKeys []string // keys returned on a cache hit, in order
+	setKeys []string // keys written via SetMultiAsync, in order
 }
 
 func newTestCacheBackend() *testCacheBackend {
@@ -1265,6 +1270,7 @@ func (c *testCacheBackend) GetMulti(_ context.Context, keys []string, _ ...dskit
 			// Clone bytes to simulate network serialization
 			result[key] = slices.Clone(data)
 			c.hits++
+			c.hitKeys = append(c.hitKeys, key)
 		}
 	}
 
@@ -1275,6 +1281,7 @@ func (c *testCacheBackend) SetMultiAsync(data map[string][]byte, _ time.Duration
 	c.sets++
 	for key, value := range data {
 		c.items[key] = value
+		c.setKeys = append(c.setKeys, key)
 	}
 }
 
@@ -1283,6 +1290,8 @@ func (c *testCacheBackend) Reset() {
 	c.hits = 0
 	c.sets = 0
 	c.gets = 0
+	c.hitKeys = nil
+	c.setKeys = nil
 }
 
 type rangeTrackingQueryable struct {
@@ -1301,4 +1310,56 @@ type errorStorage struct {
 
 func (e *errorStorage) Querier(_, _ int64) (storage.Querier, error) {
 	return nil, fmt.Errorf("injected storage error")
+}
+
+func TestQuerySplitting_SSE_SkipHistogramBucketRespected(t *testing.T) {
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(4 * time.Hour)
+
+	// Histogram at t=3h with positive buckets, within the single cacheable block (2h-1ms, 4h-1ms].
+	promStorage := teststorage.New(t)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+	app := promStorage.Appender(context.Background())
+	lbls := labels.FromStrings("__name__", "hist", "job", "test", "code", "ok")
+	h := &histogram.FloatHistogram{
+		Schema:          0,
+		Count:           3,
+		Sum:             2,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{2},
+	}
+	_, err := app.AppendHistogram(0, lbls, timestamp.FromTime(baseT.Add(3*time.Hour)), nil, h)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	backend, eng := setupEngineAndCache(t)
+	// With SSE, the hist{job="test"}[4h] nodes will be merged. The two initial nodes have different skip
+	// histogram bucket values. When combined, the hints are merged so the combined node DOES NOT skip bucket values.
+	query := `
+		histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h]))
+		* histogram_count(last_over_time(hist{job="test"}[4h]))`
+	r := runInstantQuery(t, eng, promStorage, query, ts)
+	require.NoError(t, r.Err)
+
+	// With a 4h range at ts=4h and 2h split interval, the single cacheable block is (2h-1ms, 4h-1ms].
+	countKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", job="test"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+	fractionKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", code!="err", job="test"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+
+	require.ElementsMatch(t, []string{countKey, fractionKey}, backend.setKeys)
+
+	// Both countKey and fractionKey must contain the full histogram (skip=false fetches buckets).
+	expectedH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+	expectedIntermediate := rangevectorsplitting.FirstLastOverTimeIntermediate{H: &expectedH}
+
+	var noSkipEntry cache.CachedSeries
+	require.NoError(t, noSkipEntry.Unmarshal(backend.items[countKey]))
+	var noSkipList rangevectorsplitting.FirstLastOverTimeIntermediateList
+	require.NoError(t, noSkipList.Unmarshal(noSkipEntry.Results))
+	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, noSkipList.Results)
+
+	var fractionEntry cache.CachedSeries
+	require.NoError(t, fractionEntry.Unmarshal(backend.items[fractionKey]))
+	var fractionList rangevectorsplitting.FirstLastOverTimeIntermediateList
+	require.NoError(t, fractionList.Unmarshal(fractionEntry.Results))
+	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, fractionList.Results)
 }
