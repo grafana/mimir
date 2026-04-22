@@ -113,7 +113,7 @@ func (v *VectorSelector) ChildrenLabels() []string {
 }
 
 func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	subsets, err := SubsetsToPrometheusType(v.Subsets)
+	subsets, err := SubsetsToSelectorType(v.Subsets)
 	if err != nil {
 		return nil, err
 	}

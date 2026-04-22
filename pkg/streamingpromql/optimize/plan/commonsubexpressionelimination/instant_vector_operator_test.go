@@ -855,7 +855,7 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 			LookbackDelta:            5 * time.Minute,
 			Matchers:                 types.Matchers{types.Matcher{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "metric"}},
 			MemoryConsumptionTracker: memoryConsumptionTracker,
-			Subsets:                  [][]*labels.Matcher{subset},
+			Subsets:                  []selectors.Subset{{Filter: subset}},
 		},
 		memoryConsumptionTracker,
 		stats,

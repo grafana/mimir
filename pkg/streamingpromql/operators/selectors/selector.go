@@ -52,7 +52,7 @@ type Selector struct {
 	ProjectionLabels  []string
 
 	// Subsets to report in operator stats.
-	Subsets [][]*labels.Matcher
+	Subsets []Subset
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -60,10 +60,15 @@ type Selector struct {
 	seriesSet storage.SeriesSet
 	series    *seriesList
 
-	subsetBitmaps      [][]bool // One slice per subset in Subsets. Each inner slice has true/false indicating whether the corresponding series matches the subset.
-	seriesSubsetBitmap []bool   // One entry per subset in Subsets. Reused for each call to Next().
+	seriesSubsetBitmap []bool // One entry per subset in Subsets. Reused for each call to Next().
 
 	seriesIdx int
+}
+
+type Subset struct {
+	Filter []*labels.Matcher
+
+	matchingSeries []bool // One entry per series. True means the corresponding series matches this subset.
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
@@ -148,18 +153,17 @@ func (s *Selector) computeSubsetBitmaps(metadata []types.SeriesMetadata) error {
 		return nil
 	}
 
-	s.subsetBitmaps = make([][]bool, 0, len(s.Subsets))
-	for _, subset := range s.Subsets {
+	for idx, subset := range s.Subsets {
 		bitmap, err := types.BoolSlicePool.Get(len(metadata), s.MemoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
 
 		for _, series := range metadata {
-			bitmap = append(bitmap, types.MatchersMatch(subset, series.Labels))
+			bitmap = append(bitmap, types.MatchersMatch(subset.Filter, series.Labels))
 		}
 
-		s.subsetBitmaps = append(s.subsetBitmaps, bitmap)
+		s.Subsets[idx].matchingSeries = bitmap
 	}
 
 	return nil
@@ -265,8 +269,8 @@ func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunke
 }
 
 func (s *Selector) updateSeriesSubsetBitmap() {
-	for subsetIdx := range s.Subsets {
-		s.seriesSubsetBitmap[subsetIdx] = s.subsetBitmaps[subsetIdx][s.seriesIdx]
+	for subsetIdx, subset := range s.Subsets {
+		s.seriesSubsetBitmap[subsetIdx] = subset.matchingSeries[s.seriesIdx]
 	}
 }
 
@@ -283,11 +287,11 @@ func (s *Selector) Close() {
 
 	s.seriesSet = nil
 
-	for _, bitmap := range s.subsetBitmaps {
-		types.BoolSlicePool.Put(&bitmap, s.MemoryConsumptionTracker)
+	for _, subset := range s.Subsets {
+		types.BoolSlicePool.Put(&subset.matchingSeries, s.MemoryConsumptionTracker)
 	}
 
-	s.subsetBitmaps = nil
+	s.Subsets = nil
 	types.BoolSlicePool.Put(&s.seriesSubsetBitmap, s.MemoryConsumptionTracker)
 }
 

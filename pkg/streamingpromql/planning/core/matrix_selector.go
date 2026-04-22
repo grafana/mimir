@@ -135,7 +135,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		selectorOffset = overrideTimeParams.Offset.Milliseconds()
 	}
 
-	subsets, err := SubsetsToPrometheusType(m.Subsets)
+	subsets, err := SubsetsToSelectorType(m.Subsets)
 	if err != nil {
 		return nil, err
 	}
