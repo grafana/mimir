@@ -18,5 +18,9 @@
     multi_zone_query_frontend_routing_enabled: false,
     multi_zone_ruler_routing_enabled: false,
     multi_zone_memcached_routing_enabled: false,
+
+    // Enable multi-az config for the ingester zone-a to prevent a rollout
+    // of zone-a when `multi_zone_ingester_multi_az_enabled` is set to true.
+    multi_zone_ingester_zone_a_multi_az_enabled: true,
   },
 }

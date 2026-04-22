@@ -12,9 +12,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 )
 
 const rejectedQueriesMetricName = "rejected_queries"
@@ -260,12 +262,12 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 
 func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	tt := NewInflightMemoryConsumptionTracker(reg)
+	tt := NewInflightMemoryConsumptionTracker(reg, nil)
 
 	tracker1Limit := 100
 	tracker2Limit := 200
-	tracker1 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker1Limit), nil, "query1")
-	tracker2 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker2Limit), nil, "query2")
+	tracker1 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker1Limit), "query1")
+	tracker2 := tt.NewMemoryConsumptionTracker(context.Background(), uint64(tracker2Limit), "query2")
 
 	// tracker1: add 30 ingester + 20 store-gateway = 50, remove 10 ingester -> current=40, peak=50
 	tracker1Ingester := 30
@@ -298,9 +300,11 @@ func TestMemoryConsumptionTrackerTracker_Aggregation(t *testing.T) {
 
 func TestMemoryConsumptionTrackerTracker_DeregisterNonManagedTracker(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	tt := NewInflightMemoryConsumptionTracker(reg)
+	tt := NewInflightMemoryConsumptionTracker(reg, nil)
 	nonManagedTracker := NewMemoryConsumptionTracker(context.Background(), 100, nil, "query3")
-	require.Panics(t, func() { tt.Deregister(nonManagedTracker) })
+	require.False(t, tt.IsTracking(nonManagedTracker))
+	tt.Deregister(nonManagedTracker)
+	require.False(t, tt.IsTracking(nonManagedTracker))
 }
 
 func assertTrackerTrackerMetrics(t *testing.T, reg prometheus.Gatherer, maxBytes, currentBytes, peakBytes float64, sampled int) {
@@ -351,5 +355,155 @@ func TestMemoryConsumptionTracker_NegativeMemoryConsumptionPanicWithTracing(t *t
 
 	require.PanicsWithValue(t, `Estimated memory consumption of all instances of ingester chunks in this query is 0 bytes when trying to return 10 bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar (trace ID: 00000000000000010000000000000002)`, func() {
 		tracker.DecreaseMemoryConsumption(10, IngesterChunks)
+	})
+}
+
+func TestNewUnlimintedInflightMemoryConsumptionTracker(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	factory := NewUnlimintedInflightMemoryConsumptionTracker(reg)
+	tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
+	err := tracker.IncreaseMemoryConsumption(5000, IngesterChunks)
+	require.NoError(t, err)
+}
+
+func TestMemoryTrackerNestedTrackers(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	rejectCounter := promauto.With(reg).NewCounter(prometheus.CounterOpts{Name: rejectedQueriesMetricName})
+	factory := NewInflightMemoryConsumptionTracker(reg, rejectCounter)
+
+	t.Run("simple managed tracker is deregistered", func(t *testing.T) {
+		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
+		require.True(t, factory.IsTracking(tracker))
+		factory.Deregister(tracker)
+		require.False(t, factory.IsTracking(tracker))
+		// idempotent
+		factory.Deregister(tracker)
+		require.False(t, factory.IsTracking(tracker))
+	})
+
+	// This case simulates the split_and_cache usage of a parent tracker passed to multiple child goroutines
+	t.Run("nested managed trackers - no memory limits exceeded", func(t *testing.T) {
+		parent := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
+		require.True(t, factory.IsTracking(parent))
+
+		routines := 5
+		g, _ := errgroup.WithContext(t.Context())
+		for i := range routines {
+			g.Go(func() error {
+				childTracker := parent.NewNestedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i))
+				require.Equal(t, parent.maxEstimatedMemoryConsumptionBytes, childTracker.maxEstimatedMemoryConsumptionBytes)
+				require.True(t, factory.IsTracking(parent))
+				require.False(t, factory.IsTracking(childTracker))
+				// do some work
+
+				// child reports just our memory allocation
+				require.NoError(t, childTracker.IncreaseMemoryConsumption(10, IngesterChunks))
+				childTracker.DecreaseMemoryConsumption(1, IngesterChunks)
+				require.Equal(t, uint64(9), childTracker.CurrentEstimatedMemoryConsumptionBytes())
+				require.Equal(t, fmt.Sprintf("child %d", i), childTracker.queryDescription)
+				require.GreaterOrEqual(t, parent.CurrentEstimatedMemoryConsumptionBytes(), uint64(9))
+
+				// This is safe to call but has no effect - as the parent is still being tracked
+				factory.Deregister(childTracker)
+				require.True(t, factory.IsTracking(parent))
+				require.False(t, factory.IsTracking(childTracker))
+
+				// Idempotent
+				factory.Deregister(childTracker)
+				require.True(t, factory.IsTracking(parent))
+				require.False(t, factory.IsTracking(childTracker))
+				return nil
+			})
+		}
+		require.NoError(t, g.Wait())
+
+		require.Equal(t, uint64(routines*9), parent.CurrentEstimatedMemoryConsumptionBytes())
+		require.Equal(t, "foo + bar", parent.queryDescription)
+		require.True(t, factory.IsTracking(parent))
+
+		factory.Deregister(parent)
+		require.False(t, factory.IsTracking(parent))
+
+		// idempotent
+		factory.Deregister(parent)
+		require.False(t, factory.IsTracking(parent))
+	})
+
+	t.Run("nested managed trackers with label increases - no memory limits exceeded", func(t *testing.T) {
+		parent := factory.NewMemoryConsumptionTracker(context.Background(), 1000, "foo + bar")
+		require.True(t, factory.IsTracking(parent))
+
+		sizeAllLabels := labels.FromStrings("key", "value", "key2", "value2").ByteSize()
+		sizeSomeLabels := labels.FromStrings("key", "value").ByteSize()
+
+		routines := 5
+		g, _ := errgroup.WithContext(t.Context())
+		children := make([]*MemoryConsumptionTracker, routines)
+		for i := range routines {
+			g.Go(func() error {
+				childTracker := parent.NewNestedMemoryConsumptionTracker(context.Background(), fmt.Sprintf("child %d", i))
+				children[i] = childTracker
+				// do some work
+				require.NoError(t, childTracker.IncreaseMemoryConsumptionForLabels(labels.FromStrings("key", "value", "key2", "value2")))
+				require.Equal(t, sizeAllLabels, childTracker.CurrentEstimatedMemoryConsumptionBytes())
+				require.GreaterOrEqual(t, parent.CurrentEstimatedMemoryConsumptionBytes(), uint64(22))
+				return nil
+			})
+		}
+		require.NoError(t, g.Wait())
+		require.Equal(t, uint64(routines)*sizeAllLabels, parent.CurrentEstimatedMemoryConsumptionBytes())
+
+		for _, child := range children {
+			child.DecreaseMemoryConsumptionForLabels(labels.FromStrings("key", "value"))
+			require.Equal(t, sizeAllLabels-sizeSomeLabels, child.CurrentEstimatedMemoryConsumptionBytes())
+			require.GreaterOrEqual(t, parent.CurrentEstimatedMemoryConsumptionBytes(), uint64(22))
+		}
+
+		require.Equal(t, uint64(routines)*(sizeAllLabels-sizeSomeLabels), parent.CurrentEstimatedMemoryConsumptionBytes())
+		require.Equal(t, uint64(routines)*sizeAllLabels, parent.PeakEstimatedMemoryConsumptionBytes())
+
+		factory.Deregister(parent)
+		require.False(t, factory.IsTracking(parent))
+	})
+
+	// As above, but this case simulates the goroutines exceeding the memory consumption
+	t.Run("nested managed trackers - with memory exceeded", func(t *testing.T) {
+		parent := factory.NewMemoryConsumptionTracker(context.Background(), 5, "foo + bar")
+		require.True(t, factory.IsTracking(parent))
+
+		routines := 5
+		g, _ := errgroup.WithContext(t.Context())
+		for range routines {
+			g.Go(func() error {
+				childTracker := parent.NewNestedMemoryConsumptionTracker(context.Background(), "child")
+				// do some work
+				require.Error(t, childTracker.IncreaseMemoryConsumption(10, IngesterChunks)) // this will exceed the allow memory consumption
+				factory.Deregister(childTracker)
+				require.True(t, factory.IsTracking(parent))
+				require.False(t, factory.IsTracking(childTracker))
+				return nil
+			})
+		}
+		require.NoError(t, g.Wait())
+
+		require.Equal(t, uint64(0), parent.CurrentEstimatedMemoryConsumptionBytes())
+		require.True(t, factory.IsTracking(parent))
+
+		factory.Deregister(parent)
+		require.False(t, factory.IsTracking(parent))
+	})
+
+	t.Run("panic when attempting to wrap a non manager tracker", func(t *testing.T) {
+		tracker := NewMemoryConsumptionTracker(context.Background(), 5, nil, "foo + bar")
+		require.False(t, factory.IsTracking(tracker))
+		require.PanicsWithValue(t, "cannot nest a tracker not created via a InflightMemoryConsumptionTracker", func() { tracker.NewNestedMemoryConsumptionTracker(context.Background(), "child") })
+	})
+
+	t.Run("panic when attempting to wrap a nested tracker", func(t *testing.T) {
+		tracker := factory.NewMemoryConsumptionTracker(context.Background(), 5, "foo + bar")
+		require.True(t, factory.IsTracking(tracker))
+		childTracker := tracker.NewNestedMemoryConsumptionTracker(context.Background(), "child")
+
+		require.PanicsWithValue(t, "cannot nest a tracker not created via a InflightMemoryConsumptionTracker", func() { childTracker.NewNestedMemoryConsumptionTracker(context.Background(), "child") })
 	})
 }

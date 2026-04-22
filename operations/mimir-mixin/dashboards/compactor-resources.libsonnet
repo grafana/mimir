@@ -8,20 +8,19 @@ local filename = 'mimir-compactor-resources.json';
     ($.dashboard('Compactor resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
-      $.row(if compactor_scheduler_enabled then 'CPU and memory (compactor)' else 'CPU and memory')
+      $.row('Compactor resources')
       .addPanel(
         $.containerCPUUsagePanelByComponent('compactor'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('compactor'),
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('compactor'),
       )
       .addPanel(
-        $.containerMemoryRSSPanelByComponent('compactor'),
+        $.containerEphemeralStoragePanelByComponent('compactor'),
       )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('compactor'),
-      )
-      .splitIntoLines([2, 2])
     )
     .addRow(
       $.row(if compactor_scheduler_enabled then 'Network (compactor)' else 'Network')
@@ -46,24 +45,23 @@ local filename = 'mimir-compactor-resources.json';
     )
     .addRowIf(
       compactor_scheduler_enabled,
-      ($.row('CPU and memory (scheduler)') + { collapse: true })
+      ($.row('Compactor-scheduler resources') + { collapse: true })
       .addPanel(
         $.containerCPUUsagePanelByComponent('compactor_scheduler'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('compactor_scheduler'),
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('compactor_scheduler'),
       )
       .addPanel(
-        $.containerMemoryRSSPanelByComponent('compactor_scheduler'),
+        $.containerEphemeralStoragePanelByComponent('compactor_scheduler'),
       )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('compactor_scheduler'),
-      )
-      .splitIntoLines([2, 2])
     )
     .addRowIf(
       compactor_scheduler_enabled,
-      ($.row('Network (scheduler)') + { collapse: true })
+      ($.row('Network (compactor-scheduler)') + { collapse: true })
       .addPanel(
         $.containerNetworkReceiveBytesPanelByComponent('compactor_scheduler'),
       )
@@ -73,7 +71,7 @@ local filename = 'mimir-compactor-resources.json';
     )
     .addRowIf(
       compactor_scheduler_enabled,
-      ($.row('Disk (scheduler)') + { collapse: true })
+      ($.row('Disk (compactor-scheduler)') + { collapse: true })
       .addPanel(
         $.containerDiskWritesPanelByComponent('compactor_scheduler'),
       )

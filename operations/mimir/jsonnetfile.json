@@ -45,6 +45,16 @@
         }
       },
       "version": "master"
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/jsonnet-libs/keda-libsonnet.git",
+          "subdir": "2.15"
+        }
+      },
+      "version": "main",
+      "name": "keda-libsonnet"
     }
   ],
   "legacyImports": true

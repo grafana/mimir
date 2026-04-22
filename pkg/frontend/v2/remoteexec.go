@@ -161,9 +161,10 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	}
 
 	req := &querierpb.EvaluateQueryRequest{
-		Plan:      *encodedPlan,
-		Nodes:     make([]querierpb.EvaluationNode, 0, len(nodeIndices)),
-		BatchSize: g.cfg.RemoteExecutionBatchSize,
+		Plan:                    *encodedPlan,
+		Nodes:                   make([]querierpb.EvaluationNode, 0, len(nodeIndices)),
+		BatchSize:               g.cfg.RemoteExecutionBatchSize,
+		SeriesMetadataBatchSize: g.cfg.RemoteExecutionSeriesMetadataBatchSize,
 	}
 
 	overallQueriedTimeRange := planning.NoDataQueried()
@@ -706,38 +707,58 @@ func (r *rangeVectorExecutionResponse) Close() {
 }
 
 func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluator, nodeStreamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	resp, releaseMessage, err := group.getNextMessageForStream(ctx, nodeStreamIndex)
-	if err != nil {
-		return nil, err
-	}
+	var combinedMetadata []types.SeriesMetadata
 
-	// The labels in the message contain references to the underlying buffer, so we can't release it immediately.
-	// The value returned by FromLabelAdaptersToLabels does not retain a reference to the underlying buffer,
-	// so we can release the buffer once that method returns.
-	defer releaseMessage()
-
-	seriesMetadata := resp.GetSeriesMetadata()
-	if seriesMetadata == nil {
-		return nil, fmt.Errorf("expected SeriesMetadata, got %T", resp.Message)
-	}
-
-	mqeSeries, err := types.SeriesMetadataSlicePool.Get(len(seriesMetadata.Series), memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, s := range seriesMetadata.Series {
-		m := types.SeriesMetadata{
-			Labels:   mimirpb.FromLabelAdaptersToLabels(s.Labels),
-			DropName: s.DropName,
-		}
-		mqeSeries, err = types.AppendSeriesMetadata(memoryConsumptionTracker, mqeSeries, m)
+	readOne := func() (int64, error) {
+		resp, releaseMessage, err := group.getNextMessageForStream(ctx, nodeStreamIndex)
 		if err != nil {
-			return nil, err
+			return -1, err
 		}
+
+		// The labels in the message contain references to the underlying buffer, so we can't release it immediately.
+		// The value returned by FromLabelAdaptersToLabels does not retain a reference to the underlying buffer,
+		// so we can release the buffer once that method returns.
+		msg := resp.GetSeriesMetadata()
+		defer releaseMessage()
+
+		if msg == nil {
+			return -1, fmt.Errorf("expected SeriesMetadata, got %T", resp.Message)
+		}
+
+		if combinedMetadata == nil {
+			// First message, allocate the slice now.
+			combinedMetadata, err = types.SeriesMetadataSlicePool.Get(max(len(msg.Series), int(msg.TotalSeriesCountForNode)), memoryConsumptionTracker)
+			if err != nil {
+				return -1, err
+			}
+		} else if len(combinedMetadata)+len(msg.Series) > cap(combinedMetadata) {
+			return -1, fmt.Errorf("expected %d series metadata, but got at least %d", cap(combinedMetadata), len(combinedMetadata)+len(msg.Series))
+		}
+
+		for _, s := range msg.Series {
+			m := types.SeriesMetadata{
+				Labels:   mimirpb.FromLabelAdaptersToLabels(s.Labels),
+				DropName: s.DropName,
+			}
+			combinedMetadata, err = types.AppendSeriesMetadata(memoryConsumptionTracker, combinedMetadata, m)
+			if err != nil {
+				return -1, err
+			}
+		}
+
+		return msg.TotalSeriesCountForNode, nil
 	}
 
-	return mqeSeries, nil
+	for {
+		if totalSeriesCount, err := readOne(); err != nil {
+			return nil, err
+		} else if int64(len(combinedMetadata)) >= totalSeriesCount {
+			// Either the querier doesn't support batching (TotalSeriesCountForNode == 0) and so there's only one message,
+			// or we've received the last message.
+			// We're done.
+			return combinedMetadata, nil
+		}
+	}
 }
 
 func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (*annotations.Annotations, stats.Stats) {

@@ -40,8 +40,9 @@ func NewEvaluator(nodeRequests []NodeEvaluationRequest, params *planning.Operato
 		originalExpression: originalExpression,
 
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-		annotations:              params.Annotations,
-		stats:                    params.QueryStats,
+
+		annotations: params.Annotations,
+		stats:       params.QueryStats,
 	}, nil
 }
 
@@ -372,8 +373,7 @@ func (e *Evaluator) Close() {
 	if e.cancel != nil {
 		e.cancel(errQueryClosed)
 	}
-
-	e.engine.inflightMemoryConsumptionTracker.Deregister(e.MemoryConsumptionTracker)
+	e.engine.memoryConsumptionTrackerFactory.Deregister(e.MemoryConsumptionTracker)
 }
 
 type EvaluationObserver interface {

@@ -193,6 +193,18 @@ local filename = 'mimir-block-builder.json';
     .addRow(
       $.row('Block builder resources')
       .addPanel(
+        $.containerCPUUsagePanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('block_builder'),
+      )
+      .addPanel(
         $.timeseriesPanel('In-memory series') +
         $.panelDescription(
           'In-memory series',
@@ -204,11 +216,18 @@ local filename = 'mimir-block-builder.json';
         ) +
         { fieldConfig+: { defaults+: { unit: 'short' }, custom+: { fillOpacity: 0 } } },
       )
+      .splitIntoLines([4, 1])  // Puts "in-memory series" panel below the rest of the resources
+    )
+    .addRow(
+      $.row('')
       .addPanel(
-        $.containerCPUUsagePanelByComponent('block_builder'),
+        $.containerDiskWritesPanelByComponent('block_builder')
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('block_builder'),
+        $.containerDiskReadsPanelByComponent('block_builder')
+      )
+      .addPanel(
+        $.containerDiskSpaceUtilizationPanelByComponent('block_builder'),
       )
     )
     .addRowIf(
@@ -225,12 +244,18 @@ local filename = 'mimir-block-builder.json';
       )
     )
     .addRow(
-      $.row('Scheduler resources')
+      $.row('Block-builder-scheduler resources')
       .addPanel(
         $.containerCPUUsagePanelByComponent('block_builder_scheduler'),
       )
       .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('block_builder_scheduler'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('block_builder_scheduler'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('block_builder_scheduler'),
       )
     ),
 }

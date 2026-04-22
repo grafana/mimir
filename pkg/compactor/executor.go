@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/timeutil"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -88,15 +90,16 @@ var (
 )
 
 type SchedulerClientConfig struct {
-	Enabled                      bool              `yaml:"enabled" category:"experimental"`
-	SchedulerEndpoint            string            `yaml:"scheduler_endpoint" category:"experimental"`
-	GRPCClientConfig             grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
-	LeasingMinBackoff            time.Duration     `yaml:"leasing_min_backoff" category:"experimental"`
-	LeasingMaxBackoff            time.Duration     `yaml:"leasing_max_backoff" category:"experimental"`
-	UpdateInterval               time.Duration     `yaml:"update_interval" category:"experimental"`
-	UpdateMinBackoff             time.Duration     `yaml:"update_min_backoff" category:"experimental"`
-	UpdateMaxBackoff             time.Duration     `yaml:"update_max_backoff" category:"experimental"`
-	CompactionDirCleanupInterval time.Duration     `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
+	Enabled                      bool                           `yaml:"enabled" category:"experimental"`
+	SchedulerEndpoint            string                         `yaml:"scheduler_endpoint" category:"experimental"`
+	GRPCClientConfig             grpcclient.Config              `yaml:"grpc_client_config" category:"experimental"`
+	LeasingMinBackoff            time.Duration                  `yaml:"leasing_min_backoff" category:"experimental"`
+	LeasingMaxBackoff            time.Duration                  `yaml:"leasing_max_backoff" category:"experimental"`
+	UpdateInterval               time.Duration                  `yaml:"update_interval" category:"experimental"`
+	UpdateMinBackoff             time.Duration                  `yaml:"update_min_backoff" category:"experimental"`
+	UpdateMaxBackoff             time.Duration                  `yaml:"update_max_backoff" category:"experimental"`
+	CompactionDirCleanupInterval time.Duration                  `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
+	MetadataCacheConfig          mimir_tsdb.MetadataCacheConfig `yaml:"metadata_cache" category:"experimental"`
 }
 
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -110,6 +113,7 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateMaxBackoff, flagPrefix+"update-max-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
+	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
 
 func (cfg *SchedulerClientConfig) Validate() error {
@@ -134,6 +138,9 @@ func (cfg *SchedulerClientConfig) Validate() error {
 	if cfg.UpdateMaxBackoff <= cfg.UpdateMinBackoff {
 		return errInvalidSchedulerUpdateMaxBackoff
 	}
+	if err := cfg.MetadataCacheConfig.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -153,13 +160,21 @@ type schedulerExecutor struct {
 	invalidClusterValidation *prometheus.CounterVec
 	retryable                failsafe.Executor[any]
 	lastCleanupTime          time.Time
+	metadataCache            cache.Cache
 }
 
-func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
+func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidClusterValidation *prometheus.CounterVec, reg prometheus.Registerer) (*schedulerExecutor, error) {
+	cacheReg := prometheus.WrapRegistererWithPrefix("thanos_", prometheus.WrapRegistererWith(prometheus.Labels{"component": "compactor"}, reg))
+	metadataCache, err := cache.CreateClient("metadata-cache", cfg.MetadataCacheConfig.BackendConfig, logger, cacheReg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create metadata cache: %w", err)
+	}
+
 	executor := &schedulerExecutor{
 		cfg:                      cfg,
 		logger:                   logger,
 		invalidClusterValidation: invalidClusterValidation,
+		metadataCache:            metadataCache,
 	}
 
 	executor.retryable = failsafe.With(retrypolicy.NewBuilder[any]().
@@ -181,9 +196,11 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidC
 
 	// Initialize scheduler client. This call will succeed even if scheduler is unreachable
 	// since grpc.Dial() creates the connection immediately and connects lazily.
-	var err error
 	executor.schedulerClient, executor.schedulerConn, err = executor.makeSchedulerClient()
 	if err != nil {
+		if metadataCache != nil {
+			metadataCache.Stop()
+		}
 		return nil, err
 	}
 
@@ -234,6 +251,9 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 }
 
 func (e *schedulerExecutor) stop() error {
+	if e.metadataCache != nil {
+		e.metadataCache.Stop()
+	}
 	if e.schedulerConn != nil {
 		return e.schedulerConn.Close()
 	}
@@ -466,18 +486,6 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 
-	// Omit ShardAwareDeduplicateFilter. Duplicates are cleaned up during planning via GarbageCollect().
-	// Keep LabelRemoverFilter to remove deprecated labels if applicable.
-	fetcherFilters := []block.MetadataFilter{
-		NewLabelRemoverFilter(compactionIgnoredLabels),
-	}
-
-	cacheDir := "" // indicates not wanting to cache metadata on disk
-	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, cacheDir, reg, fetcherFilters, 0)
-	if err != nil {
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to create meta fetcher: %w", err)
-	}
-
 	blockIDs := make([]ulid.ULID, len(spec.Job.BlockIds))
 	for i, id := range spec.Job.BlockIds {
 		if err := blockIDs[i].UnmarshalBinary(id); err != nil {
@@ -487,11 +495,15 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	}
 
 	startTime := time.Now()
-	metaMap, err := fetcher.FetchRequestedMetas(ctx, blockIDs)
+	filters := []block.MetadataFilter{
+		NewLabelRemoverFilter(compactionIgnoredLabels),
+	}
+	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, userID, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL)
+	metaMap, err := fetcher.fetchMetasFromIDs(ctx, blockIDs, filters)
 	if err != nil {
-		// If a block was not found, ABANDON the job, it will never succeed.
-		if errors.Is(err, block.ErrorSyncMetaNotFound) {
-			level.Warn(userLogger).Log("msg", "blocks not found in object storage, abandoning job", "err", err)
+		// Abandon the job if a block metadata was not found or corrupt
+		if errors.Is(err, block.ErrorSyncMetaNotFound) || errors.Is(err, block.ErrorSyncMetaCorrupted) {
+			level.Warn(userLogger).Log("msg", "block metadata missing or corrupt in object storage, abandoning job", "err", err)
 			return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
 		}
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to sync metas: %w", err)
@@ -569,23 +581,31 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		return nil, fmt.Errorf("creating bucket compactor: %w", err)
 	}
 
-	cacheDir := "" // indicates not wanting to cache metadata on disk
-	syncer, err := c.createMetaSyncerForUser(tenant, userBucket, userLogger, cacheDir, reg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create meta syncer: %w", err)
+	maxLookback := c.cfgProvider.CompactorMaxLookback(tenant)
+	if c.cfgProvider.CompactorBlockUploadEnabled(tenant) {
+		maxLookback = 0
 	}
 
+	// The BatchCachingMetaFetcher handles marker filtering on its own
+	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
+	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, tenant, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL)
+
 	level.Info(userLogger).Log("msg", "start sync of metas")
-	if err := syncer.SyncMetas(ctx); err != nil {
-		return nil, fmt.Errorf("meta sync failed: %w", err)
+	metas, err := fetcher.fetchCompactableMetasFromListing(ctx, maxLookback, []block.MetadataFilter{
+		NewLabelRemoverFilter(compactionIgnoredLabels),
+		deduplicateBlocksFilter,
+	}, block.NewFetcherMetrics(reg, nil))
+	if err != nil {
+		return nil, fmt.Errorf("meta fetch failed: %w", err)
 	}
 
 	level.Info(userLogger).Log("msg", "start of GC")
-	if err := syncer.GarbageCollect(ctx); err != nil {
+	gcMetrics := newSyncerMetrics(reg, c.blocksMarkedForDeletion)
+	if err := garbageCollectBlocks(ctx, userLogger, userBucket, deduplicateBlocksFilter.DuplicateIDs(), gcMetrics, metas); err != nil {
 		return nil, fmt.Errorf("blocks garbage collect: %w", err)
 	}
 
-	jobs, err := bucketCompactor.grouper.Groups(syncer.Metas())
+	jobs, err := bucketCompactor.grouper.Groups(metas)
 	if err != nil {
 		return nil, fmt.Errorf("group compaction jobs: %w", err)
 	}

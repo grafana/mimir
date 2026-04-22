@@ -8,7 +8,6 @@ package block
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path"
@@ -26,7 +25,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/util/extprom"
@@ -195,7 +193,6 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 var (
 	ErrorSyncMetaNotFound  = errors.New("meta.json not found")
 	ErrorSyncMetaCorrupted = errors.New("meta.json corrupted")
-	errNoBlocksProvided    = errors.New("no block metadata provided")
 )
 
 // loadMeta returns metadata from object storage or error.
@@ -536,51 +533,6 @@ func (f *MetaFetcher) countCached() int {
 	defer f.mtx.Unlock()
 
 	return len(f.cached)
-}
-
-// FetchRequestedMetas fetches metadata for specific block IDs directly from object storage,
-// without iterating the bucket. Filters are applied after loading.
-// Returns an error if any of the requested block metadata fails to load.
-func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) (map[ulid.ULID]*Meta, error) {
-	if len(blockIDs) == 0 {
-		return nil, errNoBlocksProvided
-	}
-
-	var mtx sync.Mutex
-	metas := make(map[ulid.ULID]*Meta, len(blockIDs))
-	idx := atomic.NewInt64(-1)
-	eg, egCtx := errgroup.WithContext(ctx)
-
-	for range min(f.concurrency, len(blockIDs)) {
-		eg.Go(func() error {
-			for {
-				i := int(idx.Inc())
-				if i >= len(blockIDs) {
-					return nil
-				}
-				id := blockIDs[i]
-				meta, err := f.loadMeta(egCtx, id)
-				if err != nil {
-					return fmt.Errorf("load meta for block %s: %w", id, err)
-				}
-				mtx.Lock()
-				metas[id] = meta
-				mtx.Unlock()
-			}
-		})
-	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	for _, filter := range f.filters {
-		if err := filter.Filter(ctx, metas, f.metrics.Synced); err != nil {
-			return nil, errors.Wrap(err, "filter metas")
-		}
-	}
-
-	return metas, nil
 }
 
 // BlockIDLabel is a special label that will have an ULID of the meta.json being referenced to.

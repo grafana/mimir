@@ -7,6 +7,7 @@ package mimir
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -87,12 +88,12 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 	}
 
 	if l.validate != nil {
-		for _, limits := range overrides.TenantLimits {
+		for tenantID, limits := range overrides.TenantLimits {
 			if limits == nil {
 				continue
 			}
 			if err := l.validate(limits); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("tenant %q: %w", tenantID, err)
 			}
 		}
 	}

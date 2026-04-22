@@ -20,10 +20,13 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
+	stdatomic "sync/atomic" //nolint:depguard
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -80,12 +83,13 @@ type Head struct {
 	// This should be typecasted to chunks.ChunkDiskMapperRef after loading.
 	minOOOMmapRef atomic.Uint64
 
-	metrics             *headMetrics
-	opts                *HeadOptions
-	wal, wbl            *wlog.WL
-	exemplarMetrics     *ExemplarMetrics
-	exemplars           ExemplarStorage
-	logger              *slog.Logger
+	metrics         *headMetrics
+	opts            *HeadOptions
+	wal, wbl        *wlog.WL
+	exemplarMetrics *ExemplarMetrics
+	exemplars       ExemplarStorage
+	logger          *slog.Logger
+	// TODO(bwplotka): Consider using record.Pools that's reused with WAL watchers.
 	refSeriesPool       zeropool.Pool[[]record.RefSeries]
 	floatsPool          zeropool.Pool[[]record.RefSample]
 	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
@@ -137,6 +141,10 @@ type Head struct {
 	closedMtx sync.Mutex
 	closed    bool
 
+	// For running the background goroutine which updates series_state.json.
+	seriesStateQuit chan struct{}
+	seriesStateWg   sync.WaitGroup
+
 	stats *HeadStats
 	reg   prometheus.Registerer
 
@@ -163,6 +171,15 @@ type HeadOptions struct {
 
 	OutOfOrderTimeWindow atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
+
+	// EnableSTStorage determines whether databases (WAL/WBL, tsdb,
+	// agent) should set a Start Time value per sample.
+	// Represents 'st-storage' feature flag.
+	EnableSTStorage atomic.Bool
+
+	// EnableXOR2Encoding enables XOR2 chunk encoding for float samples.
+	// Represents 'xor2-encoding' feature flag.
+	EnableXOR2Encoding atomic.Bool
 
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
@@ -219,6 +236,9 @@ type HeadOptions struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableMetadataWALRecords bool
+
+	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
+	EnableFastStartup bool
 }
 
 const (
@@ -317,6 +337,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		reg:               r,
 		secondaryHashFunc: shf,
 		pfmc:              opts.PostingsForMatchersCacheFactory.NewPostingsForMatchersCache([]attribute.KeyValue{attribute.String("block", headULID.String())}),
+		seriesStateQuit:   make(chan struct{}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -787,7 +808,7 @@ func (h *Head) Init(minValidTime int64) error {
 			snapIdx, snapOffset = -1, 0
 
 			// If this fails, data will be recovered from WAL.
-			// Hence we wont lose any data (given WAL is not corrupt).
+			// Hence we won't lose any data (given WAL is not corrupt).
 			mmappedChunks, oooMmappedChunks, lastMmapRef, err = h.removeCorruptedMmappedChunks(err)
 			if err != nil {
 				return err
@@ -815,6 +836,28 @@ func (h *Head) Init(minValidTime int64) error {
 	_, endAt, e := wlog.Segments(h.wal.Dir())
 	if e != nil {
 		return fmt.Errorf("finding WAL segments: %w", e)
+	}
+
+	if h.opts.EnableFastStartup {
+		state, err := h.readSeriesStateFile()
+		if err != nil && !os.IsNotExist(err) {
+			h.logger.Warn("Failed to read series state file, skipping the fast startup", "err", err)
+		}
+		if err == nil {
+			if state.CleanShutdown {
+				h.lastSeriesID.Store(state.LastSeriesID)
+				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "last_series_id", state.LastSeriesID)
+			} else {
+				h.logger.Info("Fast startup: unclean shutdown detected, performing WAL scan", "from_segment", state.LastWALSegment, "to_segment", endAt)
+				id, scanErr := h.findLastSeriesID(state, endAt)
+				if scanErr != nil {
+					h.logger.Error("Fast startup: WAL scan failed, skipping fast startup", "err", scanErr)
+				} else {
+					h.lastSeriesID.Store(id)
+					h.logger.Info("Fast startup: WAL scan completed", "last_series_id", id)
+				}
+			}
+		}
 	}
 
 	h.startWALReplayStatus(startFrom, endAt)
@@ -923,6 +966,13 @@ func (h *Head) Init(minValidTime int64) error {
 		"total_replay_duration", totalReplayDuration.String(),
 	)
 
+	// TODO(RushabhMehta2005): Remove this 'if' block and always run the series state ticker when the feature is fully implemented.
+	if h.opts.EnableFastStartup {
+		// Start the background goroutine that writes to series_state.json.
+		h.seriesStateWg.Add(1)
+		go h.runSeriesStateTicker()
+	}
+
 	return nil
 }
 
@@ -1011,6 +1061,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			// Hence remove this chunk.
 			ms.nextAt = 0
 			ms.headChunks = nil
+			ms.headChunkCount.Store(0)
 			ms.app = nil
 		}
 		return nil
@@ -1418,7 +1469,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		var cerr *chunks.CorruptionErr
 		if errors.As(err, &cerr) {
@@ -1712,7 +1763,7 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 	}
 
 	if h.wal != nil {
-		var enc record.Encoder
+		enc := record.Encoder{EnableSTStorage: h.opts.EnableSTStorage.Load()}
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
 			return err
 		}
@@ -1850,6 +1901,15 @@ func (h *Head) Close() error {
 	defer h.closedMtx.Unlock()
 	h.closed = true
 
+	// Stop the background series_state.json writer.
+	if h.opts.EnableFastStartup && h.seriesStateQuit != nil {
+		close(h.seriesStateQuit)
+		h.seriesStateWg.Wait()
+		h.seriesStateQuit = nil
+		// Flush the final clean state.
+		h.writeSeriesState(true)
+	}
+
 	// mmap all but last chunk in case we're performing snapshot since that only
 	// takes samples from most recent head chunk.
 	h.mmapHeadChunks()
@@ -1916,26 +1976,25 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	return s, true, nil
 }
 
-// mmapHeadChunks will iterate all memSeries stored on Head and call mmapHeadChunks() on each of them.
+// mmapHeadChunks iterates all memSeries stored on Head ready for m-mapping and calls
+// mmapChunks() on each of them.
 //
 // There are two types of chunks that store samples for each memSeries:
 // A) Head chunk - stored on Go heap, when new samples are appended they go there.
 // B) M-mapped chunks - memory mapped chunks, kernel manages the memory for us on-demand, these chunks
+// are read-only.
 //
-//	are read-only.
-//
-// Calling mmapHeadChunks() will iterate all memSeries and m-mmap all chunks that should be m-mapped.
-// The m-mapping operation is needs to be serialised and so it goes via central lock.
-// If there are multiple concurrent memSeries that need to m-map some chunk then they can block each-other.
-//
-// To minimise the effect of locking on TSDB operations m-mapping is serialised and done away from
-// sample append path, since waiting on a lock inside an append would lock the entire memSeries for
-// (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
+// M-mapping is serialised via the per-series lock and done away from the sample append path,
+// since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
-	for i := 0; i < h.series.size; i++ {
+	for i := range h.series.size {
 		h.series.locks[i].RLock()
 		for _, series := range h.series.series[i] {
+			if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
+				continue
+			}
+
 			series.Lock()
 			count += series.mmapChunks(h.chunkDiskMapper)
 			series.Unlock()
@@ -2218,15 +2277,24 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	)
 
 	for _, ref := range refs {
+		// Delete the reference from the series map.
+		// Copying getByID here to avoid locking and unlocking twice.
 		refShard := int(ref) & (h.series.size - 1)
 		h.series.locks[refShard].Lock()
-
-		// Copying getByID here to avoid locking and unlocking twice.
 		series := h.series.series[refShard][ref]
 		if series == nil {
 			h.series.locks[refShard].Unlock()
 			continue
 		}
+		delete(h.series.series[refShard], series.ref)
+		h.series.locks[refShard].Unlock()
+
+		// Delete the reference from the hash.
+		hash := series.lset.Hash()
+		hashShard := int(hash) & (h.series.size - 1)
+		h.series.locks[hashShard].Lock()
+		h.series.hashes[hashShard].del(hash, series.ref)
+		h.series.locks[hashShard].Unlock()
 
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
@@ -2234,28 +2302,17 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 			staleSeriesDeleted++
 		}
 
-		hash := series.lset.Hash()
-		hashShard := int(hash) & (h.series.size - 1)
-
 		chunksRemoved += len(series.mmappedChunks)
 		if series.headChunks != nil {
 			chunksRemoved += series.headChunks.len()
 		}
+		// Clear to prevent a double-subtraction from the chunksRemoved gauge if
+		// resetSeriesWithMMappedChunks is queued on the same WAL-replay processor
+		// after this deletion (it would otherwise subtract len(mmappedChunks) again).
+		series.mmappedChunks = nil
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
-
-		// Acquire hashShard lock if it differs from refShard to safely access hashes[hashShard].
-		if hashShard != refShard {
-			h.series.locks[hashShard].Lock()
-		}
-		h.series.hashes[hashShard].del(hash, series.ref)
-		delete(h.series.series[refShard], series.ref)
-		if hashShard != refShard {
-			h.series.locks[hashShard].Unlock()
-		}
-
-		h.series.locks[refShard].Unlock()
 	}
 
 	h.metrics.seriesRemoved.Add(float64(len(deleted)))
@@ -2478,8 +2535,9 @@ type memSeries struct {
 	// pN is the pointer to the mmappedChunk referred to by HeadChunkID=N
 	mmappedChunks []*mmappedChunk
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
-	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
+	// This is a linked list, headChunks points to the most recent chunk, headChunks.prev points
 	// to older chunk and so on.
+	// Please note the headChunkCount field tracking the number of headChunks.
 	headChunks   *memChunk
 	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
@@ -2494,6 +2552,13 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
+	// headChunkCount tracks the number of head chunks.
+	// It is incremented in cutNewHeadChunk and the histogram new-chunk paths,
+	// and reset by mmapChunks and truncateChunksBefore.
+	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
+	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
+	// between two bools and a float64.
+	headChunkCount stdatomic.Uint32
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -2562,7 +2627,7 @@ func (s *memSeries) maxTime() int64 {
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
 	if s.headChunks != nil {
-		var i int
+		var i uint32
 		var nextChk *memChunk
 		chk := s.headChunks
 		for chk != nil {
@@ -2573,9 +2638,11 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
 					s.headChunks = nil
+					s.headChunkCount.Store(0)
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
+					s.headChunkCount.Store(i)
 				}
 				s.mmappedChunks = nil
 				break
@@ -2641,6 +2708,22 @@ func (mc *memChunk) len() (count int) {
 		elem = elem.prev
 	}
 	return count
+}
+
+func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
+	if head == nil {
+		return buf
+	}
+	// Single walk: append newest-to-oldest (following prev pointers), then
+	// reverse to oldest-to-newest. Pointer-chasing the linked list is the
+	// expensive part; slices.Reverse on a contiguous array is essentially
+	// free by comparison.
+	hc := buf
+	for elem := head; elem != nil; elem = elem.prev {
+		hc = append(hc, elem)
+	}
+	slices.Reverse(hc)
+	return hc
 }
 
 // oldest returns the oldest element on the list.

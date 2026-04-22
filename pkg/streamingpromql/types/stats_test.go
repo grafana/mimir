@@ -946,3 +946,169 @@ func TestOperatorEvaluationStats_ExtendStepInvariant_WithSubsets(t *testing.T) {
 	stepInvariant.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
+
+func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
+	testCases := map[string]func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats{
+		"instant query, no subsets": func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
+			timeRange := NewInstantQueryTimeRange(timestamp.Time(1000))
+			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+			require.NoError(t, err)
+
+			stats.allSeries.samplesProcessedPerStep[0] = 100
+			stats.allSeries.newSamplesReadPerStep[0] = 200
+			require.Empty(t, stats.subsets)
+
+			return stats
+		},
+		"instant query, with subsets": func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
+			timeRange := NewInstantQueryTimeRange(timestamp.Time(1000))
+			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 2)
+			require.NoError(t, err)
+
+			stats.allSeries.samplesProcessedPerStep[0] = 100
+			stats.allSeries.newSamplesReadPerStep[0] = 200
+
+			stats.subsets[0].samplesProcessedPerStep[0] = 300
+			stats.subsets[0].newSamplesReadPerStep[0] = 400
+			stats.subsets[1].samplesProcessedPerStep[0] = 500
+			stats.subsets[1].newSamplesReadPerStep[0] = 600
+
+			return stats
+		},
+		"range query, no subsets": func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
+			startT := timestamp.Time(1000)
+			timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second)
+			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+			require.NoError(t, err)
+
+			stats.allSeries.samplesProcessedPerStep[0] = 100
+			stats.allSeries.samplesProcessedPerStep[1] = 101
+			stats.allSeries.samplesProcessedPerStep[2] = 102
+			stats.allSeries.newSamplesReadPerStep[0] = 200
+			stats.allSeries.newSamplesReadPerStep[1] = 201
+			stats.allSeries.newSamplesReadPerStep[2] = 202
+			require.Empty(t, stats.subsets)
+
+			return stats
+		},
+		"range query, with subsets": func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
+			startT := timestamp.Time(1000)
+			timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second)
+			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 2)
+			require.NoError(t, err)
+
+			stats.allSeries.samplesProcessedPerStep[0] = 100
+			stats.allSeries.samplesProcessedPerStep[1] = 101
+			stats.allSeries.samplesProcessedPerStep[2] = 102
+			stats.allSeries.newSamplesReadPerStep[0] = 200
+			stats.allSeries.newSamplesReadPerStep[1] = 201
+			stats.allSeries.newSamplesReadPerStep[2] = 202
+
+			stats.subsets[0].samplesProcessedPerStep[0] = 300
+			stats.subsets[0].samplesProcessedPerStep[1] = 301
+			stats.subsets[0].samplesProcessedPerStep[2] = 302
+			stats.subsets[0].newSamplesReadPerStep[0] = 400
+			stats.subsets[0].newSamplesReadPerStep[1] = 401
+			stats.subsets[0].newSamplesReadPerStep[2] = 402
+
+			stats.subsets[1].samplesProcessedPerStep[0] = 500
+			stats.subsets[1].samplesProcessedPerStep[1] = 501
+			stats.subsets[1].samplesProcessedPerStep[2] = 502
+			stats.subsets[1].newSamplesReadPerStep[0] = 600
+			stats.subsets[1].newSamplesReadPerStep[1] = 601
+			stats.subsets[1].newSamplesReadPerStep[2] = 602
+
+			return stats
+		},
+	}
+
+	for name, factory := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+			original := factory(t, memoryConsumptionTracker)
+
+			encodedBytes, err := original.Encode().Marshal()
+			require.NoError(t, err)
+			encoded := &EncodedOperatorEvaluationStats{}
+			require.NoError(t, encoded.Unmarshal(encodedBytes))
+
+			memoryConsumptionBeforeDecoding := memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes()
+			decoded, err := encoded.Decode(original.timeRange, memoryConsumptionTracker)
+			require.NoError(t, err)
+			require.Equal(t, original, decoded)
+
+			require.Greater(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionBeforeDecoding, "decoding a stats instance should increase the memory consumption estimate")
+
+			decoded.Close()
+			original.Close()
+			require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+		})
+	}
+}
+
+func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
+	testCases := map[string]struct {
+		encoded       *EncodedOperatorEvaluationStats
+		expectedError string
+	}{
+		"unfiltered set has different number of samples processed steps": {
+			encoded: &EncodedOperatorEvaluationStats{
+				AllSeries: EncodedSubsetStats{
+					SamplesProcessedPerStep: []int64{1, 2},
+					NewSamplesReadPerStep:   []int64{4, 5, 6},
+				},
+			},
+			expectedError: "number of samples processed steps in encoded form (2) does not match expected (3)",
+		},
+		"unfiltered set has different number of new samples read steps": {
+			encoded: &EncodedOperatorEvaluationStats{
+				AllSeries: EncodedSubsetStats{
+					SamplesProcessedPerStep: []int64{1, 2, 3},
+					NewSamplesReadPerStep:   []int64{4, 5},
+				},
+			},
+			expectedError: "number of new samples read steps in encoded form (2) does not match expected (3)",
+		},
+		"subset has different number of samples processed steps": {
+			encoded: &EncodedOperatorEvaluationStats{
+				AllSeries: EncodedSubsetStats{
+					SamplesProcessedPerStep: []int64{1, 2, 3},
+					NewSamplesReadPerStep:   []int64{4, 5, 6},
+				},
+				Subsets: []EncodedSubsetStats{
+					{
+						SamplesProcessedPerStep: []int64{7, 8},
+						NewSamplesReadPerStep:   []int64{10, 11, 12},
+					},
+				},
+			},
+			expectedError: "number of samples processed steps in encoded form (2) does not match expected (3)",
+		},
+		"subset has different number of new samples read steps": {
+			encoded: &EncodedOperatorEvaluationStats{
+				AllSeries: EncodedSubsetStats{
+					SamplesProcessedPerStep: []int64{1, 2, 3},
+					NewSamplesReadPerStep:   []int64{4, 5, 6},
+				},
+				Subsets: []EncodedSubsetStats{
+					{
+						SamplesProcessedPerStep: []int64{7, 8, 9},
+						NewSamplesReadPerStep:   []int64{10, 11},
+					},
+				},
+			},
+			expectedError: "number of new samples read steps in encoded form (2) does not match expected (3)",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+			startT := timestamp.Time(1000)
+			timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second) // 3 steps
+
+			_, err := testCase.encoded.Decode(timeRange, memoryConsumptionTracker)
+			require.EqualError(t, err, testCase.expectedError)
+		})
+	}
+}

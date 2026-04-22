@@ -3861,6 +3861,8 @@ When looking at `msg="query stats"` consider the following attributes;
 - status_code - the http response status code
 - response_time — total wall-clock time from request received to response sent
 - response_size_bytes — size of the HTTP response body
+- response_series_count — total number of series in the response
+- response_samples_count — total number of samples in the response
 - queue_time_seconds — time spent waiting in the query scheduler queue
 - query_wall_time_seconds — time spent actually executing the query
 - encode_time_seconds — time spent serialising the result to JSON

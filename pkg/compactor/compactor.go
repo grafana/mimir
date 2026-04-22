@@ -551,7 +551,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	if c.compactorCfg.SchedulerClientConfig.Enabled {
 		// Leases planning and compaction jobs from the compaction scheduler
-		c.executor, err = newSchedulerExecutor(c.compactorCfg.SchedulerClientConfig, c.logger, c.invalidClusterValidation)
+		c.executor, err = newSchedulerExecutor(c.compactorCfg.SchedulerClientConfig, c.logger, c.invalidClusterValidation, c.registerer)
 		if err != nil {
 			return fmt.Errorf("failed to create scheduler executor: %w", err)
 		}

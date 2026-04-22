@@ -61,6 +61,10 @@
     autoscaling_alertmanager_memory_target_utilization: 1,
   },
 
+  // Utility used to override a field only if exists in super.
+  local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
+    super[name] + override,
+
   // KEDA defaults to apiVersion: apps/v1 and kind: Deployment for scaleTargetRef, this function
   // avoids specifying apiVersion and kind if they are at their defaults.
   local scaleTargetRef(apiVersion, kind, name) = if apiVersion != 'apps/v1' || kind != 'Deployment' then {
@@ -800,9 +804,9 @@
     if !$._config.autoscaling_ruler_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  // Utility used to override a field only if exists in super.
-  local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
-    super[name] + override,
+  //
+  // Alertmanagers
+  //
 
   alertmanager_scaled_object: if !$._config.autoscaling_alertmanager_enabled then null else
     $.newResourceScaledObject(
@@ -826,4 +830,9 @@
     'alertmanager_statefulset',
     if !$._config.autoscaling_alertmanager_enabled then {} else $.removeReplicasFromSpec
   ),
+
+  //
+  // Store-gateway autoscaling is in store-gateway-autoscaling.libsonnet due to needing
+  // to be applied after multi-zone configuration.
+  //
 }

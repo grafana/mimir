@@ -4,8 +4,8 @@
 # Provenance-includes-copyright: The Cortex Authors.
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
-FROM alpine/helm:4.1.1@sha256:b5c85b997d83e89d9e8ff9215a14b03864274143981af45eb3fe729cdf782c73 AS helm
-FROM golang:1.25.8-trixie@sha256:bc16125656839ffe56154c675f7a9662bec2ef7d4060177239914e7c6d2fd8a8
+FROM alpine/helm:4.1.4@sha256:4b0bdd2cf18ff6bca12aba0b2c5671384dab5035c19c57f0c58b854a0baf65be AS helm
+FROM golang:1.25.9-trixie@sha256:091e6099f4a58e9393b8cc5615622a59c1cef64481b0ffcf349ec1574449059e
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -22,7 +22,7 @@ RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN npm install -g prettier@2.3.2
 
 # renovate: depName=github.com/mvdan/sh
-ENV SHFMT_VERSION=3.13.0
+ENV SHFMT_VERSION=3.13.1
 RUN GOARCH=$(go env GOARCH) && \
     URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
     curl -fsSLo shfmt "${URL}" && \
@@ -38,7 +38,7 @@ RUN GOARCH=$(go env GOARCH) && \
 RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.8.0
 
 # renovate: depName=github.com/containers/skopeo
-ENV SKOPEO_VERSION=v1.22.0
+ENV SKOPEO_VERSION=v1.22.2
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
     rm -rf /go/pkg /go/src /root/.cache
@@ -56,7 +56,7 @@ RUN GO111MODULE=on \
 	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.21.0 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.21.0 && \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2 && \
-	go install github.com/open-policy-agent/conftest@v0.66.0 && \
+	go install github.com/open-policy-agent/conftest@v0.68.2 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \
 	go install github.com/bufbuild/buf/cmd/buf@v1.67.0 && \
 	rm -rf /go/pkg /go/src /root/.cache

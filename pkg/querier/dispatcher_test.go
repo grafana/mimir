@@ -70,6 +70,16 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, batchSize, nil)
 	}
 
+	createQueryRequestWithSeriesMetadataBatchSize := func(expr string, timeRange types.QueryTimeRange, seriesMetadataBatchSize uint64) *prototypes.Any {
+		reqAny := createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, 128, nil)
+		req := &querierpb.EvaluateQueryRequest{}
+		require.NoError(t, prototypes.UnmarshalAny(reqAny, req))
+		req.SeriesMetadataBatchSize = seriesMetadataBatchSize
+		result, err := prototypes.MarshalAny(req)
+		require.NoError(t, err)
+		return result
+	}
+
 	createQueryRequestWithNoNodes := func() *prototypes.Any {
 		body := &querierpb.EvaluateQueryRequest{
 			BatchSize: 1,
@@ -899,6 +909,267 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
+
+		"query that returns an instant vector with series metadata batching, where all series fit exactly into one batch": {
+			req: createQueryRequestWithSeriesMetadataBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 3),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with series metadata batching, where all series fit into one batch with space to spare": {
+			req: createQueryRequestWithSeriesMetadataBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 4),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with series metadata batching, where the last batch is not completely full": {
+			req: createQueryRequestWithSeriesMetadataBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 2),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+				),
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with series metadata batching, where each series gets its own batch": {
+			req: createQueryRequestWithSeriesMetadataBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 1),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+				),
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+				),
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with no series, metadata batching disabled": {
+			req: createQueryRequest(`my_non_existent_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second)),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(3, 0),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   0,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with no series, metadata batching enabled": {
+			req: createQueryRequestWithBatchSize(`my_non_existent_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 3),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(3, 0),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   0,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns a range vector with no series, metadata batching disabled": {
+			req: createQueryRequest(`my_non_existent_series[2h]`, types.NewInstantQueryTimeRange(startT)),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(0, 0),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   0,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an range vector with no series, metadata batching enabled": {
+			req: createQueryRequestWithBatchSize(`my_non_existent_series[2h]`, types.NewInstantQueryTimeRange(startT), 3),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(0, 0),
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   0,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -1421,13 +1692,18 @@ func newErrorMessage(typ mimirpb.QueryErrorType, message string) *frontendv2pb.Q
 }
 
 func newSeriesMetadataMessage(nodeIndex int64, series ...querierpb.SeriesMetadata) *frontendv2pb.QueryResultStreamRequest {
+	return newBatchedSeriesMetadataMessage(nodeIndex, int64(len(series)), series...)
+}
+
+func newBatchedSeriesMetadataMessage(nodeIndex int64, totalSeriesCount int64, series ...querierpb.SeriesMetadata) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 					SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-						NodeIndex: nodeIndex,
-						Series:    series,
+						NodeIndex:               nodeIndex,
+						Series:                  series,
+						TotalSeriesCountForNode: totalSeriesCount,
 					},
 				},
 			},

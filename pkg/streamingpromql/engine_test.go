@@ -1868,6 +1868,111 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 	)
 }
 
+func TestQuery_ExecDeregistersTrackerOnFailure(t *testing.T) {
+	// Verify that when Query.Exec() fails (e.g. memory limit exceeded), the tracker is
+	// deregistered from the InflightMemoryConsumptionTracker even if the caller never
+	// calls Query.Close(). Successful queries still rely on Close() to deregister.
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{idx="1"} 0+1x5
+			some_metric{idx="2"} 0+1x5
+			some_metric{idx="3"} 0+1x5
+			some_metric{idx="4"} 0+1x5
+			some_metric{idx="5"} 0+1x5
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	reg := prometheus.NewPedanticRegistry()
+	queryMetrics := stats.NewQueryMetrics(reg)
+	inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.Reg = reg
+	opts.Pedantic = false // We intentionally don't call Close(), so disable pedantic mode.
+	opts.MemoryConsumptionTrackerFactory = inflightTracker
+
+	limits := NewStaticQueryLimitsProvider()
+	limits.MaxEstimatedMemoryConsumptionPerQuery = 1 // 1 byte limit — any query will exceed this.
+	opts.Limits = limits
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, queryMetrics, planner)
+	require.NoError(t, err)
+
+	q, err := engine.NewInstantQuery(context.Background(), storage, nil, "some_metric", timestamp.Time(0))
+	require.NoError(t, err)
+
+	const sampledMetric = "cortex_querier_inflight_query_sampled_count"
+	const sampledHelp = "# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.\n# TYPE cortex_querier_inflight_query_sampled_count gauge\n"
+
+	// The tracker should be registered before Exec.
+	require.True(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+	require.NoError(t, testutil.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+"cortex_querier_inflight_query_sampled_count 1\n"), sampledMetric))
+
+	// Exec should fail due to memory limit.
+	res := q.Exec(context.Background())
+	require.ErrorContains(t, res.Err, "failed to prepare query: the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: 1 bytes) (err-mimir-max-estimated-memory-consumption-per-query).")
+
+	// The tracker must be deregistered even though we never called q.Close().
+	require.False(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+	require.NoError(t, testutil.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+"cortex_querier_inflight_query_sampled_count 0\n"), sampledMetric))
+}
+
+func TestQuery_CloseDeregistersTrackerOnSuccess(t *testing.T) {
+	// Verify that when Query.Exec() succeeds, the tracker remains registered until
+	// the caller calls Query.Close(). This is the counterpart of
+	// TestQuery_ExecDeregistersTrackerOnFailure for the success path.
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{idx="1"} 0+1x5
+			some_metric{idx="2"} 0+1x5
+			some_metric{idx="3"} 0+1x5
+			some_metric{idx="4"} 0+1x5
+			some_metric{idx="5"} 0+1x5
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	reg := prometheus.NewPedanticRegistry()
+	queryMetrics := stats.NewQueryMetrics(reg)
+	inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.Reg = reg
+	opts.MemoryConsumptionTrackerFactory = inflightTracker
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, queryMetrics, planner)
+	require.NoError(t, err)
+
+	q, err := engine.NewInstantQuery(context.Background(), storage, nil, "some_metric", timestamp.Time(0))
+	require.NoError(t, err)
+
+	const sampledMetric = "cortex_querier_inflight_query_sampled_count"
+	const sampledHelp = "# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.\n# TYPE cortex_querier_inflight_query_sampled_count gauge\n"
+
+	// The tracker should be registered before Exec.
+	require.True(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+	require.NoError(t, testutil.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+"cortex_querier_inflight_query_sampled_count 1\n"), sampledMetric))
+
+	// Exec should succeed with an unlimited memory limit.
+	res := q.Exec(context.Background())
+	require.NoError(t, res.Err)
+
+	// The tracker should still be registered between Exec returning and Close being called.
+	require.True(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+	require.NoError(t, testutil.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+"cortex_querier_inflight_query_sampled_count 1\n"), sampledMetric))
+
+	q.Close()
+
+	// After Close, the tracker must be deregistered.
+	require.False(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+	require.NoError(t, testutil.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+"cortex_querier_inflight_query_sampled_count 0\n"), sampledMetric))
+}
+
 type noopEvaluationObserver struct{}
 
 func (n noopEvaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, series []types.SeriesMetadata) error {

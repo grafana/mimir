@@ -40,6 +40,8 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -79,10 +81,12 @@ func TestTripperware_RangeQuery(t *testing.T) {
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	codec := newTestCodec()
 	codec.lookbackDelta = 3 * time.Minute
+	limits := mockLimits{}
 	tw, err := NewTripperware(
 		Config{},
 		log.NewNopLogger(),
-		mockLimits{},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		codec,
 		nil,
 		engine,
@@ -91,6 +95,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -126,6 +131,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	codec := newTestCodec()
+	limits := mockLimits{totalShards: totalShards}
 
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
@@ -133,7 +139,8 @@ func TestTripperware_InstantQuery(t *testing.T) {
 			cfg.ShardedQueries = true
 		}),
 		log.NewNopLogger(),
-		mockLimits{totalShards: totalShards},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		codec,
 		nil,
 		engine,
@@ -142,6 +149,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	require.NoError(t, err)
 
@@ -458,10 +466,12 @@ func TestTripperware_Metrics(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 			reg := prometheus.NewPedanticRegistry()
+			limits := mockLimits{alignQueriesWithStep: testData.stepAlignEnabled}
 			tw, err := NewTripperware(
 				Config{},
 				log.NewNopLogger(),
-				mockLimits{alignQueriesWithStep: testData.stepAlignEnabled},
+				limits,
+				newMockQueryLimitsProvider(&limits),
 				newTestCodec(),
 				nil,
 				engine,
@@ -470,6 +480,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				false,
 				nil,
 				reg,
+				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
 			)
 			require.NoError(t, err)
 
@@ -526,6 +537,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 				},
 			},
 		},
+		streamingpromql.NewStaticQueryLimitsProvider(),
 		newTestCodec(),
 		nil,
 		engine,
@@ -534,6 +546,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -594,11 +607,13 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 
+	limits := mockLimits{alignQueriesWithStep: true}
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares := newQueryMiddlewares(
 		cfg,
 		log.NewNopLogger(),
-		mockLimits{alignQueriesWithStep: true},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		nil,
 		nil,
@@ -607,6 +622,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		engineOpts,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 
 	middlewaresByRequestType := map[string]struct {
@@ -832,6 +848,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				makeTestConfig(),
 				log.NewNopLogger(),
 				tc.limits,
+				newMockQueryLimitsProvider(&tc.limits),
 				newTestCodec(),
 				nil,
 				engine,
@@ -840,6 +857,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				false,
 				nil,
 				reg,
+				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
 			)
 
 			require.NoError(t, err)
@@ -957,6 +975,8 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))
 	})
 
+	limits := mockLimits{}
+
 	// Create the tripperware.
 	tw, err := NewTripperware(
 		makeTestConfig(func(cfg *Config) {
@@ -965,7 +985,8 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 			cfg.CacheResults = false
 		}),
 		log.NewNopLogger(),
-		mockLimits{},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		nil,
 		promEngine,
@@ -974,6 +995,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	require.NoError(t, err)
 

@@ -72,6 +72,8 @@ Consider passing `--client-side-copy` to avoid having to deal with that.
   --dry-run
 ```
 
+If both `--s3.<source|destination>.access-key-id` and `--s3.<source|destination>.secret-access-key` are omitted, credentials are resolved from the environment. This supports IAM roles for service accounts (IRSA) on EKS, ECS task roles, and EC2 instance metadata, and lets a single role that has access to both buckets authenticate the source and destination clients without passing static credentials.
+
 ### Example for copying between different providers
 
 Combine the relevant source and destination configuration options using the above examples as a guide.

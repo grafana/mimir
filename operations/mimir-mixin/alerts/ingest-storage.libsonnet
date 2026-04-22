@@ -89,9 +89,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // We use node_id to only alert if problems to the same Kafka node are repeating.
           // If problems are for different nodes (eg. during rollout), that is not a problem, and we don't need to trigger alert.
           expr: |||
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[1m]))
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[%(range)s]))
             > 0
-          ||| % $._config,
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.alertRangeInterval(1),
+          },
           labels: {
             severity: 'critical',
           },
@@ -133,16 +137,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
             (
               sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
                   # This is the old metric name. We're keeping support for backward compatibility.
-                rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
+                rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[%(range)s])
                 or
-                rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
+                rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[%(range)s])
               ) > 0
             )
 
             # Tolerate failures during the forced TSDB head compaction, because samples older than the
             # new "head min time" will fail to be appended while the forced compaction is running.
-            unless (max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[1m])) > 0)
-          ||| % $._config,
+            unless (max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[%(range)s])) > 0)
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.alertRangeInterval(1),
+          },
           labels: {
             severity: 'critical',
           },
@@ -194,8 +202,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('StrongConsistencyEnforcementFailed'),
           'for': '5m',
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
-          ||| % $._config,
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_strong_consistency_failures_total[%(range)s])) > 0
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.alertRangeInterval(1),
+          },
           labels: {
             severity: 'critical',
           },
@@ -209,11 +221,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('StrongConsistencyOffsetMissing'),
           'for': '5m',
           expr: |||
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="false"}[1m]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="false"}[%(range)s]))
             /
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"}[1m]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"}[%(range)s]))
             * 100 > 5
-          ||| % $._config,
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            range: $.alertRangeInterval(1),
+          },
           labels: {
             severity: 'warning',
           },
@@ -229,15 +244,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
                 # New metric.
-                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_distribution{quantile="1.0"}[1m])
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_distribution{quantile="1.0"}[%(range)s])
                 or
                 # Old metric.
-                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m])
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[%(range)s])
             )
             /
-            min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[1m]))
+            min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[%(range)s]))
             * 100 > 50
-          ||| % $._config,
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.alertRangeInterval(1),
+          },
           labels: {
             severity: 'critical',
           },
@@ -265,8 +284,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('BlockBuilderCompactAndUploadFailed'),
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
-          ||| % $._config,
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[%(range)s])) > 0
+          ||| % {
+
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.alertRangeInterval(1),
+          },
           labels: {
             severity: 'critical',
           },
@@ -334,8 +358,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('BlockBuilderPersistentJobFailure'),
           expr: |||
-            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[1m]) > 0
-          ||| % $._config,
+            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[%(range)s]) > 0
+          ||| % {
+            range: $.alertRangeInterval(1),
+          },
           labels: {
             severity: 'critical',
           },

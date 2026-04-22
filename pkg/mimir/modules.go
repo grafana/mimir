@@ -26,7 +26,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/featurecontrol"
-	"github.com/prometheus/alertmanager/matchers/compat"
+	"github.com/prometheus/alertmanager/matcher/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -866,15 +866,22 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
 
+	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
+
 	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
 	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
+		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(promqlEngineRegisterer)
 	case querier.MimirEngine:
 		var err error
-		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
+		// The streaming engine will use this same MemoryConsumptionTrackerFactory
+		queryMetrics := stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg)
+		memoryConsumptionTrackerFactory = limiter.NewInflightMemoryConsumptionTracker(mqeOpts.CommonOpts.Reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+		mqeOpts.MemoryConsumptionTrackerFactory = memoryConsumptionTrackerFactory
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, t.QueryFrontendQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
@@ -892,6 +899,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
 		t.Overrides,
+		t.QueryLimitsProvider,
 		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
 		eng,
@@ -900,6 +908,12 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
+
+		// The memoryConsumptionTrackerFactory is shared between the engine and the middleware.
+		// The tracker will be used in the query time split middleware to ensure that all split queries
+		// are tracked under a common memory consumption tracker.
+		// This is only set when using the streamingpromql engine.
+		memoryConsumptionTrackerFactory,
 	)
 	if err != nil {
 		return nil, err
@@ -1206,14 +1220,14 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	} else {
 		level.Info(util_log.Logger).Log("msg", "Starting Alertmanager in classic mode")
 	}
-	features, err := featurecontrol.NewFlags(util_log.Logger, mode)
+	features, err := featurecontrol.NewFlags(util_log.SlogFromGoKit(util_log.Logger), mode)
 	util_log.CheckFatal("initializing Alertmanager feature flags", err)
 
 	compatLogger := log.NewNopLogger()
 	if t.Cfg.Alertmanager.LogParsingLabelMatchers {
 		compatLogger = util_log.Logger
 	}
-	compat.InitFromFlags(compatLogger, features)
+	compat.InitFromFlags(util_log.SlogFromGoKit(compatLogger), features)
 
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)

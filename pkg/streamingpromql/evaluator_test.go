@@ -32,7 +32,7 @@ func TestEvaluator(t *testing.T) {
 	engine, err := NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
 	require.NoError(t, err)
 
-	memoryConsumptionTracker := engine.inflightMemoryConsumptionTracker.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	memoryConsumptionTracker := engine.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(context.Background(), 0, "")
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 	stats := types.NewQueryStats()
 	lookbackDelta := 5 * time.Minute

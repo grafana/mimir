@@ -281,6 +281,7 @@ type Ingester struct {
 	subservicesWatcher    *services.FailureWatcher
 	ownedSeriesService    *ownedSeriesService
 	compactionService     services.Service
+	shippingService       services.Service
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
 	statisticsService     services.Service
@@ -348,22 +349,6 @@ type Ingester struct {
 	ingestReader              *ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
-
-	// latestKafkaRecordTimestamp tracks the most recent Kafka record timestamp
-	// seen by the ingester (unix milliseconds). Used to provide a Kafka-time-aware
-	// "now" for active series purging when ingest storage is enabled.
-	latestKafkaRecordTimestamp atomic.Int64
-
-	// lastKafkaActiveSeriesUpdate tracks the last Kafka time (unix milliseconds) at which
-	// updateActiveSeries was triggered inline during record consumption. This ensures
-	// active series are purged at approximately UpdatePeriod intervals in Kafka time,
-	// even when records are replayed faster than real-time.
-	lastKafkaActiveSeriesUpdate atomic.Int64
-
-	// activeSeriesStartMs tracks when the ingester started receiving samples (unix milliseconds).
-	// For classic mode this is wall-clock time when the ticker starts; for Kafka mode it is the
-	// first Kafka record timestamp. Used to determine when active series counts become accurate.
-	activeSeriesStartMs atomic.Int64
 
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
@@ -593,6 +578,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil).WithName("ingester-compaction")
 	i.subservicesWatcher.WatchService(i.compactionService)
 
+	// Init shipping service, responsible to periodically ship TSDB blocks to long-term storage.
+	if cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
+		i.shippingService = services.NewBasicService(nil, i.shipBlocksLoop, nil).WithName("ingester-shipping")
+	}
+
 	// Init metrics updater service, responsible to periodically update ingester metrics and stats.
 	i.metricsUpdaterService = services.NewBasicService(nil, i.metricsUpdaterServiceRunning, nil).WithName("ingester-metrics-updater")
 	i.subservicesWatcher.WatchService(i.metricsUpdaterService)
@@ -725,9 +715,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	// Finally we start all services that should run after the ingester ring lifecycler.
 	var servs []services.Service
 
-	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
-		shippingService := services.NewBasicService(nil, i.shipBlocksLoop, nil)
-		servs = append(servs, shippingService)
+	if i.shippingService != nil {
+		servs = append(servs, i.shippingService)
 	}
 
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {

@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -959,6 +960,13 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 						queryExpr: parseQuery(t, "sum(bar1)"),
 					}
 
+					// Need to ensure that both engines have the same InflightMemoryConsumptionTracker otherwise we get an error
+					// with a managed MemoryConsumptionTracker being deregistered against the wrong factory.
+					// In a production environment we only have 1 instance of InflightMemoryConsumptionTracker
+					memoryConsumptionFactory := limiter.NewUnlimintedInflightMemoryConsumptionTracker(nil)
+					tc.engineShardingOpts = append(tc.engineShardingOpts, withMemoryConsumptionTrackerFactory(memoryConsumptionFactory))
+					tc.engineDownstreamOpts = append(tc.engineDownstreamOpts, withMemoryConsumptionTrackerFactory(memoryConsumptionFactory))
+
 					_, engineSharding := newEngineForTesting(t, engineType, tc.engineShardingOpts...)
 					_, engineDownstream := newEngineForTesting(t, engineType, tc.engineDownstreamOpts...)
 
@@ -1177,11 +1185,13 @@ func TestQuerySharding_Annotations(t *testing.T) {
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				reg := prometheus.NewPedanticRegistry()
 				shardingware := newQueryShardingMiddleware(log.NewNopLogger(), eng, mockLimits{totalShards: numShards}, 0, reg)
+				splitLimits := mockLimits{}
 				splitware := newSplitAndCacheMiddleware(
 					true,
 					false, // Cache disabled.
 					splitInterval,
-					mockLimits{},
+					splitLimits,
+					newMockQueryLimitsProvider(&splitLimits),
 					newTestCodec(),
 					nil,
 					nil,
@@ -1189,6 +1199,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 					nil,
 					log.NewNopLogger(),
 					reg,
+					limiter.NewInflightMemoryConsumptionTracker(reg, nil),
 				)
 				downstream := &downstreamHandler{
 					engine:                                  eng,

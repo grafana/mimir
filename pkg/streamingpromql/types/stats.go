@@ -50,8 +50,8 @@ type OperatorEvaluationStats struct {
 	timeRange                QueryTimeRange
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	allSeries *statsTracker
-	subsets   []*statsTracker
+	allSeries *subsetStats
+	subsets   []*subsetStats
 }
 
 // NewOperatorEvaluationStats creates a new OperatorEvaluationStats for the given time range.
@@ -59,28 +59,33 @@ type OperatorEvaluationStats struct {
 // subsetCount is the number of subsets to track. It is the caller's responsibility to track
 // which subset is which.
 func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
-	allSeries, err := newStatsTracker(timeRange, memoryConsumptionTracker)
+	allSeries, err := newSubsetStats(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	subsets := make([]*statsTracker, 0, subsetCount)
-	for range subsetCount {
-		stats, err := newStatsTracker(timeRange, memoryConsumptionTracker)
-		if err != nil {
-			return nil, err
-		}
-
-		subsets = append(subsets, stats)
-	}
-
-	return &OperatorEvaluationStats{
+	stats := &OperatorEvaluationStats{
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 
 		allSeries: allSeries,
-		subsets:   subsets,
-	}, nil
+	}
+
+	if subsetCount > 0 {
+		// Only bother allocating a slice if we actually need it.
+		stats.subsets = make([]*subsetStats, 0, subsetCount)
+
+		for range subsetCount {
+			subset, err := newSubsetStats(timeRange, memoryConsumptionTracker)
+			if err != nil {
+				return nil, err
+			}
+
+			stats.subsets = append(stats.subsets, subset)
+		}
+	}
+
+	return stats, nil
 }
 
 // TrackSampleForInstantVectorSelector records a sample for an instant vector selector at output timestamp stepT.
@@ -321,6 +326,54 @@ func sum(s []int64) int64 {
 	return sum
 }
 
+// Encode returns the encoded form of this instance, suitable for serialization.
+// The encoded form may share memory with this instance, and so may be modified
+// if this instance is modified, and becomes invalid when this instance is closed.
+func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
+	encoded := &EncodedOperatorEvaluationStats{
+		AllSeries: s.allSeries.Encode(),
+	}
+
+	if len(s.subsets) > 0 {
+		// Only bother allocating a slice for subsets if there are any.
+		encoded.Subsets = make([]EncodedSubsetStats, 0, len(s.subsets))
+		for _, subset := range s.subsets {
+			encoded.Subsets = append(encoded.Subsets, subset.Encode())
+		}
+	}
+
+	return encoded
+}
+
+func (e *EncodedOperatorEvaluationStats) Decode(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+	allSeries, err := e.AllSeries.decode(timeRange, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	decoded := &OperatorEvaluationStats{
+		timeRange:                timeRange,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+		allSeries:                allSeries,
+	}
+
+	if len(e.Subsets) > 0 {
+		// Only bother allocating a slice for subsets if there are any.
+		decoded.subsets = make([]*subsetStats, 0, len(e.Subsets))
+
+		for _, encodedSubset := range e.Subsets {
+			decodedSubset, err := encodedSubset.decode(timeRange, memoryConsumptionTracker)
+			if err != nil {
+				return nil, err
+			}
+
+			decoded.subsets = append(decoded.subsets, decodedSubset)
+		}
+	}
+
+	return decoded, nil
+}
+
 func (s *OperatorEvaluationStats) Close() {
 	s.allSeries.Close()
 
@@ -329,14 +382,14 @@ func (s *OperatorEvaluationStats) Close() {
 	}
 }
 
-type statsTracker struct {
+type subsetStats struct {
 	samplesProcessedPerStep []int64
 	newSamplesReadPerStep   []int64
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func newStatsTracker(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*statsTracker, error) {
+func newSubsetStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*subsetStats, error) {
 	samplesProcessed, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -347,19 +400,19 @@ func newStatsTracker(timeRange QueryTimeRange, memoryConsumptionTracker *limiter
 		return nil, err
 	}
 
-	return &statsTracker{
+	return &subsetStats{
 		samplesProcessedPerStep:  samplesProcessed[:timeRange.StepCount],
 		newSamplesReadPerStep:    newSamplesRead[:timeRange.StepCount],
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}, nil
 }
 
-func (s *statsTracker) Add(pointIndex int64, samplesProcessed int64, newSamplesRead int64) {
+func (s *subsetStats) Add(pointIndex int64, samplesProcessed int64, newSamplesRead int64) {
 	s.samplesProcessedPerStep[pointIndex] += samplesProcessed
 	s.newSamplesReadPerStep[pointIndex] += newSamplesRead
 }
 
-func (s *statsTracker) SetFromSubquery(source *statsTracker, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int) {
+func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int) {
 	for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
 		s.samplesProcessedPerStep[parentIdx] += source.samplesProcessedPerStep[innerIdx]
 	}
@@ -369,19 +422,46 @@ func (s *statsTracker) SetFromSubquery(source *statsTracker, parentIdx, firstInn
 	}
 }
 
-func (s *statsTracker) SetFromStepInvariant(samplesProcessed int64, newSamplesRead int64) {
+func (s *subsetStats) SetFromStepInvariant(samplesProcessed int64, newSamplesRead int64) {
 	s.newSamplesReadPerStep[0] = newSamplesRead
 	for idx := range s.samplesProcessedPerStep {
 		s.samplesProcessedPerStep[idx] = samplesProcessed
 	}
 }
 
-func (s *statsTracker) CopyFrom(source *statsTracker) {
+func (s *subsetStats) CopyFrom(source *subsetStats) {
 	copy(s.samplesProcessedPerStep, source.samplesProcessedPerStep)
 	copy(s.newSamplesReadPerStep, source.newSamplesReadPerStep)
 }
 
-func (s *statsTracker) Close() {
+func (s *subsetStats) Encode() EncodedSubsetStats {
+	return EncodedSubsetStats{
+		SamplesProcessedPerStep: s.samplesProcessedPerStep,
+		NewSamplesReadPerStep:   s.newSamplesReadPerStep,
+	}
+}
+
+func (e *EncodedSubsetStats) decode(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*subsetStats, error) {
+	if len(e.SamplesProcessedPerStep) != timeRange.StepCount {
+		return nil, fmt.Errorf("number of samples processed steps in encoded form (%d) does not match expected (%d)", len(e.SamplesProcessedPerStep), timeRange.StepCount)
+	}
+
+	if len(e.NewSamplesReadPerStep) != timeRange.StepCount {
+		return nil, fmt.Errorf("number of new samples read steps in encoded form (%d) does not match expected (%d)", len(e.NewSamplesReadPerStep), timeRange.StepCount)
+	}
+
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(e.SamplesProcessedPerStep)+cap(e.NewSamplesReadPerStep))*Int64Size, limiter.Int64Slices); err != nil {
+		return nil, err
+	}
+
+	return &subsetStats{
+		samplesProcessedPerStep:  e.SamplesProcessedPerStep,
+		newSamplesReadPerStep:    e.NewSamplesReadPerStep,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}, nil
+}
+
+func (s *subsetStats) Close() {
 	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)
 }

@@ -291,6 +291,10 @@ func (q *Query) returnResultToPool() {
 
 	// And nothing to do for strings: these don't come from a pool.
 	q.string = nil
+
+	// Note this will also be called in the evaluator close but this is safe and help ensure this is always deregistered as quickly as possible.
+	// This also avoids an issue where the Query (and underlying Evaluator) Close() may not be called on Query.Exec() error.
+	q.engine.memoryConsumptionTrackerFactory.Deregister(q.evaluator.MemoryConsumptionTracker)
 }
 
 func (q *Query) Statement() parser.Statement {

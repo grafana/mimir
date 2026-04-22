@@ -558,6 +558,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerEphemeralStoragePanelByComponent(componentName)::
+    $.containerEphemeralStoragePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerEphemeralStoragePanel(instanceName, containerName)::
+    if $._config.deployment_type == 'kubernetes' then
+      $.timeseriesPanel('Ephemeral Storage (log fs)') +
+      $.queryPanel($.resourceUtilizationAndLimitQueries('ephemeral_storage', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+      $.showAllTooltip +
+      {
+        fieldConfig+: {
+          overrides+: [
+            resourceRequestStyle,
+            resourceLimitStyle,
+          ],
+          defaults+: {
+            unit: 'bytes',
+            custom+: {
+              fillOpacity: 0,
+            },
+          },
+        },
+      }
+    else {},  // Nothing to render for non-kubernetes deployments
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
   containerNetworkReceiveBytesPanelByComponent(componentName, excludeComponentName='')::
     local excludeInstanceName = if excludeComponentName == '' then '' else $._config.instance_names[excludeComponentName];
@@ -915,19 +942,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
         metrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.
       |||
-    ),
-
-  cpuBasedAutoScalingRow(componentTitle)::
-    local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
-    super.row('%s – autoscaling' % [componentTitle])
-    .addPanel(
-      $.autoScalingActualReplicas(componentName)
-    )
-    .addPanel(
-      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'CPU', 'cpu')
-    )
-    .addPanel(
-      $.autoScalingFailuresPanel(componentName)
     ),
 
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::

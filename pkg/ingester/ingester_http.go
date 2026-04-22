@@ -51,15 +51,25 @@ const (
 	waitParam   = "wait"
 )
 
-// Blocks version of Flush handler. It force-compacts blocks, and triggers shipping.
+// FlushHandler force-compacts blocks, and triggers shipping.
 func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
-	// Don't allow callers to flush TSDB while we're in the middle of starting or shutting down.
-	if ingesterState := i.State(); ingesterState != services.Running {
+	// Allow flush during Starting state (useful when the ingester is stuck replaying from ingest
+	// storage because it hit the max series limit) and Running state.
+	if ingesterState := i.State(); ingesterState != services.Running && ingesterState != services.Starting {
 		err := newUnavailableError(ingesterState)
 		level.Warn(i.logger).Log("msg", "flushing TSDB blocks is not allowed", "err", err)
 
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(err.Error()))
+		return
+	}
+
+	// Flushing is only possible after the compaction service has started (see starting()),
+	// because the compaction loop consumes from forceCompactTrigger.
+	if i.compactionService.State() != services.Running {
+		level.Warn(i.logger).Log("msg", "flushing TSDB blocks is not allowed because compaction service is not running yet")
+
+		http.Error(w, "compaction service is not running", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -105,7 +115,9 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
+		// Only trigger shipping if the shipping service is running, otherwise the following code
+		// will block forever because no shipping will actually occur.
+		if i.shippingService != nil && i.shippingService.State() == services.Running {
 			shippingCallbackCh := make(chan struct{}) // must be new channel, as compactionCallbackCh is closed now.
 
 			level.Info(i.logger).Log("msg", "flushing TSDB blocks: triggering shipping")

@@ -128,6 +128,7 @@ type Limits struct {
 	IngestionBurstSize            int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
 	IngestionBurstFactor          float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
 	AcceptHASamples               bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HATrackerPerSampleDedupe      bool    `yaml:"ha_tracker_per_sample_dedupe" json:"ha_tracker_per_sample_dedupe" category:"experimental"`
 	HAClusterLabel                string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
 	HAReplicaLabel                string  `yaml:"ha_replica_label" json:"ha_replica_label"`
 	HAMaxClusters                 int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
@@ -339,6 +340,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionBurstSize, IngestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
 	f.Float64Var(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
+	f.BoolVar(&l.HATrackerPerSampleDedupe, "distributor.ha-tracker.per-sample-dedupe", false, "Experimental: evaluate HA deduplication per timeseries within a write request instead of applying the first series' decision to the whole request. Enables correct behavior for mixed-label requests such as Prometheus federation or metrics proxies.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	l.HATrackerUpdateTimeout = model.Duration(15 * time.Second)
@@ -393,7 +395,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
-	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.")
+	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
@@ -814,6 +816,13 @@ func (o *Overrides) IngestionBurstFactor(limitsKey string) float64 {
 // AcceptHASamples returns whether the distributor should track and accept samples from HA replicas for this user.
 func (o *Overrides) AcceptHASamples(userID string) bool {
 	return o.getOverridesForUser(userID).AcceptHASamples
+}
+
+// HATrackerPerSampleDedupe returns whether HA deduplication should be evaluated
+// per timeseries within a write request (instead of applying the first series'
+// decision to the whole request) for this user.
+func (o *Overrides) HATrackerPerSampleDedupe(userID string) bool {
+	return o.getOverridesForUser(userID).HATrackerPerSampleDedupe
 }
 
 // HAClusterLabel returns the cluster label to look for when deciding whether to accept a sample from a Prometheus HA replica.
@@ -1690,14 +1699,9 @@ func (o *Overrides) getOverridesForLimitsKey(limitsKey string) *Limits {
 
 	// The limitsKey includes metadata. Iterate KV pairs and merge limits.
 	dst := copyLimits(o.getOverridesForUser(userID))
-	tmpMd := tenant.NewMetadata()
-	for key, val := range tenantMd.Iter() {
-		tmpMd.Set(key, val)
-		full := tmpMd.WithTenant(userID)
-		suffix := full[len(userID):]
-		dst = mergeLimits(dst, o.tenantLimits.ByUserID(suffix))
-		dst = mergeLimits(dst, o.tenantLimits.ByUserID(full))
-		tmpMd.Remove(key)
+	for kv := range tenantMd.Divide() {
+		dst = mergeLimits(dst, o.tenantLimits.ByUserID(kv.Encode()))
+		dst = mergeLimits(dst, o.tenantLimits.ByUserID(kv.WithTenant(userID)))
 	}
 	dst = mergeLimits(dst, o.tenantLimits.ByUserID(limitsKey))
 	return dst

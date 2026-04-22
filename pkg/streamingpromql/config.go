@@ -14,14 +14,16 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type EngineOpts struct {
 	CommonOpts promql.EngineOpts `yaml:"-"`
 
-	ActiveQueryTracker QueryTracker `yaml:"-"`
-	Logger             log.Logger   `yaml:"-"`
+	ActiveQueryTracker              QueryTracker                              `yaml:"-"`
+	MemoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker `yaml:"-"`
+	Logger                          log.Logger                                `yaml:"-"`
 
 	// When operating in pedantic mode, we panic if memory consumption is > 0 after Query.Close()
 	// (indicating something was not returned to a pool).

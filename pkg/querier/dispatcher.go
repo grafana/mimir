@@ -185,6 +185,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		timeNow:                        d.timeNow,
 		originalExpression:             req.Plan.OriginalExpression,
 		batchSize:                      req.BatchSize,
+		seriesMetadataBatchSize:        req.SeriesMetadataBatchSize,
 		instantVectorSeriesDataBatches: make(map[planning.Node]*instantVectorSeriesDataBatch, instantVectorNodeCount),
 	}
 
@@ -332,11 +333,12 @@ func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.Quer
 }
 
 type evaluationObserver struct {
-	w           *queryResponseWriter
-	nodeIndices map[planning.Node]int64
-	batchSize   uint64
-	startTime   time.Time
-	timeNow     func() time.Time
+	w                       *queryResponseWriter
+	nodeIndices             map[planning.Node]int64
+	batchSize               uint64
+	seriesMetadataBatchSize uint64
+	startTime               time.Time
+	timeNow                 func() time.Time
 
 	instantVectorSeriesDataBatches map[planning.Node]*instantVectorSeriesDataBatch
 
@@ -364,23 +366,43 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 		return err
 	}
 
-	protoSeries := make([]querierpb.SeriesMetadata, 0, len(series))
-
-	for _, s := range series {
-		protoSeries = append(protoSeries, querierpb.SeriesMetadata{
-			Labels:   mimirpb.FromLabelsToLabelAdapters(s.Labels),
-			DropName: s.DropName,
-		})
+	batchSize := int(o.seriesMetadataBatchSize)
+	if batchSize == 0 {
+		// Frontend doesn't support batching metadata, so send everything in one batch.
+		batchSize = len(series)
 	}
 
-	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
-		Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-			SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-				NodeIndex: nodeIndex,
-				Series:    protoSeries,
+	sentOne := false
+
+	// Note the slightly unusual condition: we always send at least one message, even when there are no series.
+	for startIdx := 0; startIdx < len(series) || (len(series) == 0 && !sentOne); startIdx += batchSize {
+		endIdx := min(startIdx+batchSize, len(series))
+		batch := series[startIdx:endIdx]
+
+		protoSeries := make([]querierpb.SeriesMetadata, 0, len(batch))
+		for _, s := range batch {
+			protoSeries = append(protoSeries, querierpb.SeriesMetadata{
+				Labels:   mimirpb.FromLabelsToLabelAdapters(s.Labels),
+				DropName: s.DropName,
+			})
+		}
+
+		if err := o.w.Write(ctx, querierpb.EvaluateQueryResponse{
+			Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+				SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+					NodeIndex:               nodeIndex,
+					Series:                  protoSeries,
+					TotalSeriesCountForNode: int64(len(series)),
+				},
 			},
-		},
-	})
+		}); err != nil {
+			return err
+		}
+
+		sentOne = true
+	}
+
+	return nil
 }
 
 func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, node planning.Node, seriesIndex int, seriesCount int, seriesData types.InstantVectorSeriesData) error {

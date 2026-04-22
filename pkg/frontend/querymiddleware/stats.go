@@ -65,7 +65,11 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 	s.trackQueryExpressionSize(ctx, req)
 	s.populateQueryDetails(ctx, req)
 
-	return s.next.Do(ctx, req)
+	resp, err := s.next.Do(ctx, req)
+	if err == nil {
+		s.populateResponseDetails(ctx, resp)
+	}
+	return resp, err
 }
 
 func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
@@ -133,6 +137,21 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	}
 }
 
+func (s queryStatsMiddleware) populateResponseDetails(ctx context.Context, resp Response) {
+	details := QueryDetailsFromContext(ctx)
+	if details == nil || resp == nil {
+		return
+	}
+	pr, ok := resp.GetPrometheusResponse()
+	if !ok || pr == nil || pr.Data == nil {
+		return
+	}
+	details.ResponseSeriesCount += len(pr.Data.Result)
+	for _, stream := range pr.Data.Result {
+		details.ResponseSamplesCount += len(stream.Samples) + len(stream.Histograms)
+	}
+}
+
 func (s queryStatsMiddleware) trackReadConsistency(ctx context.Context) {
 	consistency, ok := api.ReadConsistencyLevelFromContext(ctx)
 	if !ok {
@@ -158,6 +177,11 @@ type QueryDetails struct {
 
 	ResultsCacheMissBytes int
 	ResultsCacheHitBytes  int
+
+	// ResponseSeriesCount is the number of series in the query response.
+	ResponseSeriesCount int
+	// ResponseSamplesCount is the total number of samples (floats or histograms) across all series in the query response.
+	ResponseSamplesCount int
 }
 
 type contextKey int

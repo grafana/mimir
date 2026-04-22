@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -308,6 +309,12 @@ func TestNewMockShardedQueryable(t *testing.T) {
 }
 
 type engineOpt func(o *streamingpromql.EngineOpts)
+
+func withMemoryConsumptionTrackerFactory(factory *limiter.InflightMemoryConsumptionTracker) engineOpt {
+	return func(o *streamingpromql.EngineOpts) {
+		o.MemoryConsumptionTrackerFactory = factory
+	}
+}
 
 func withTimeout(timeout time.Duration) engineOpt {
 	return func(o *streamingpromql.EngineOpts) {

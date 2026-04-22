@@ -871,6 +871,13 @@ func composeCachingKey(op, bucketID string, values ...string) string {
 	return b.String()
 }
 
+// ContentKey builds a cache key for content so callers may access
+// a cache directly outside of the caching bucket flow when needed.
+// Example cases are a GetMulti or a read without population on miss.
+func ContentKey(bucketID, name string) string {
+	return newCacheKeyBuilder(bucketID, name).content()
+}
+
 // Reader implementation that uses in-memory subranges.
 type subrangesReader struct {
 	subrangeSize int64

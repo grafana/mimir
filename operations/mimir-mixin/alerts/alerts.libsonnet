@@ -182,6 +182,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 # Kubernetes configmap propagation can be slow,
                 # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
                 (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
+                # Don't include configs that didn't exist one minute ago.
+                # changes() == 0 for metrics appearing for the first time,
+                # but this is still a "we're rolling out a new config" scenario.
+                and on (%(alert_aggregation_labels)s, sha256)
+                group by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash offset 1m)
             )  > 1
           ||| % $._config,
           'for': '1h',
@@ -1111,8 +1116,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('MemberlistZoneAwareRoutingAutoFailover'),
           expr: |||
-            sum by (%(alert_aggregation_labels)s) (rate(memberlist_client_zone_aware_routing_select_nodes_skipped_total[1m])) > 0
-          ||| % $._config,
+            sum by (%(alert_aggregation_labels)s) (rate(memberlist_client_zone_aware_routing_select_nodes_skipped_total[%(range)s])) > 0
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            range: $.alertRangeInterval(1),
+          },
           'for': '10m',
           labels: {
             severity: 'warning',

@@ -3546,7 +3546,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"}[$__rate_interval]))",
@@ -3568,165 +3568,6 @@ data:
                          }
                       ],
                       "title": "CPU",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 0,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "bytes"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 2,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}}",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Memory (go heap inuse)",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 0,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "bytes"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "request"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#FFC000",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "limit"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E02F44",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 3,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "max by(pod) (container_memory_rss{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}}",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "min(container_spec_memory_limit_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"} > 0)",
-                            "format": "time_series",
-                            "legendFormat": "limit",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",resource=\"memory\"})",
-                            "format": "time_series",
-                            "legendFormat": "request",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Memory (RSS)",
                       "type": "timeseries"
                    },
                    {
@@ -3832,7 +3673,7 @@ data:
                             }
                          ]
                       },
-                      "id": 4,
+                      "id": 2,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -3843,7 +3684,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
@@ -3872,13 +3713,172 @@ data:
                       ],
                       "title": "Memory (workingset)",
                       "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 3,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 4,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "CPU and memory",
+                "title": "Compactor resources",
                 "titleSize": "h6"
              },
              {
@@ -17450,7 +17450,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend|querier|ruler-query-frontend|ruler-querier\"}[$__rate_interval]))",
@@ -17498,7 +17498,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend|querier|ruler-query-frontend|ruler-querier\"})",
@@ -17546,7 +17546,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend|querier|ruler-query-frontend|ruler-querier\"})",
@@ -17556,6 +17556,117 @@ data:
                          }
                       ],
                       "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 100,
+                               "lineWidth": 0,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 4,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend|querier|ruler-query-frontend|ruler-querier\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend|querier|ruler-query-frontend|ruler-querier\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend|querier|ruler-query-frontend|ruler-querier\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -17646,7 +17757,7 @@ data:
                             }
                          ]
                       },
-                      "id": 4,
+                      "id": 5,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -17657,7 +17768,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend\"}[$__rate_interval]))",
@@ -17784,7 +17895,7 @@ data:
                             }
                          ]
                       },
-                      "id": 5,
+                      "id": 6,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -17795,7 +17906,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend\"})",
@@ -17850,7 +17961,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 6,
+                      "id": 7,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -17861,7 +17972,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend\"})",
@@ -17871,6 +17982,117 @@ data:
                          }
                       ],
                       "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 8,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-frontend\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -17961,7 +18183,7 @@ data:
                             }
                          ]
                       },
-                      "id": 7,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -17972,7 +18194,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-scheduler\"}[$__rate_interval]))",
@@ -18099,7 +18321,7 @@ data:
                             }
                          ]
                       },
-                      "id": 8,
+                      "id": 10,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -18110,7 +18332,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-scheduler\"})",
@@ -18165,7 +18387,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 9,
+                      "id": 11,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -18176,7 +18398,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-scheduler\"})",
@@ -18186,6 +18408,117 @@ data:
                          }
                       ],
                       "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-scheduler\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-scheduler\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"query-scheduler\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -18276,7 +18609,7 @@ data:
                             }
                          ]
                       },
-                      "id": 10,
+                      "id": 13,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -18287,7 +18620,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"querier\"}[$__rate_interval]))",
@@ -18414,7 +18747,7 @@ data:
                             }
                          ]
                       },
-                      "id": 11,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -18425,7 +18758,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"querier\"})",
@@ -18480,7 +18813,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -18491,7 +18824,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"querier\"})",
@@ -18501,6 +18834,117 @@ data:
                          }
                       ],
                       "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 16,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"querier\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"querier\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"querier\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -18591,7 +19035,7 @@ data:
                             }
                          ]
                       },
-                      "id": 13,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -18602,7 +19046,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"}[$__rate_interval]))",
@@ -18649,177 +19093,6 @@ data:
                             },
                             "unit": "bytes"
                          },
-                         "overrides": [ ]
-                      },
-                      "id": 14,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"})",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}}",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Memory (go heap inuse)",
-                      "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Ingester",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
-                   {
-                      "datasource": "$datasource",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 0,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "bytes"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "request"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#FFC000",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "limit"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E02F44",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 15,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "max by(pod) (container_memory_rss{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"})",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}}",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "min(container_spec_memory_limit_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"} > 0)",
-                            "format": "time_series",
-                            "legendFormat": "limit",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"memory\"})",
-                            "format": "time_series",
-                            "legendFormat": "request",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Memory (RSS)",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 0,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "bytes"
-                         },
                          "overrides": [
                             {
                                "matcher": {
@@ -18900,7 +19173,7 @@ data:
                             }
                          ]
                       },
-                      "id": 16,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -18911,7 +19184,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"})",
@@ -18940,190 +19213,7 @@ data:
                       ],
                       "title": "Memory (workingset)",
                       "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
-                   {
-                      "datasource": "$datasource",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 20,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "normal"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 17,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "sum by(pod) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}}",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Rules",
-                      "type": "timeseries"
                    },
-                   {
-                      "datasource": "$datasource",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 0,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "request"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#FFC000",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "limit"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E02F44",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 18,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"}[$__rate_interval]))",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}}",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"cpu\"})",
-                            "format": "time_series",
-                            "legendFormat": "limit",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"cpu\"})",
-                            "format": "time_series",
-                            "legendFormat": "request",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "CPU",
-                      "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Ruler",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
                    {
                       "datasource": "$datasource",
                       "fieldConfig": {
@@ -19147,85 +19237,7 @@ data:
                             },
                             "unit": "bytes"
                          },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "request"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#FFC000",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "limit"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E02F44",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byRegexp",
-                                  "options": "/.+ - oomkilled/"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E24D42",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.axisPlacement",
-                                     "value": "hidden"
-                                  },
-                                  {
-                                     "id": "custom.drawStyle",
-                                     "value": "points"
-                                  },
-                                  {
-                                     "id": "unit",
-                                     "value": "none"
-                                  }
-                               ]
-                            }
-                         ]
+                         "overrides": [ ]
                       },
                       "id": 19,
                       "links": [ ],
@@ -19238,34 +19250,16 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
-                            "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"})",
+                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"})",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
                             "legendLink": null
-                         },
-                         {
-                            "expr": "min(container_spec_memory_limit_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"} > 0)",
-                            "format": "time_series",
-                            "legendFormat": "limit",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"memory\"})",
-                            "format": "time_series",
-                            "legendFormat": "request",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}} - oomkilled",
-                            "legendLink": null
                          }
                       ],
-                      "title": "Memory (workingset)",
+                      "title": "Memory (go heap inuse)",
                       "type": "timeseries"
                    },
                    {
@@ -19291,7 +19285,58 @@ data:
                             },
                             "unit": "bytes"
                          },
-                         "overrides": [ ]
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
                       },
                       "id": 20,
                       "links": [ ],
@@ -19304,16 +19349,28 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"})",
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"})",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
                             "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
                          }
                       ],
-                      "title": "Memory (go heap inuse)",
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -19321,7 +19378,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Ingester",
                 "titleSize": "h6"
              },
              {
@@ -19415,7 +19472,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\"}[$__rate_interval]))",
@@ -19437,177 +19494,6 @@ data:
                          }
                       ],
                       "title": "CPU",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 0,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "bytes"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 22,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\"})",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}}",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Memory (go heap inuse)",
-                      "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Store-gateway",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
-                   {
-                      "datasource": "$datasource",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 0,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "bytes"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "request"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#FFC000",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            },
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "limit"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E02F44",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
-                      "id": 23,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 6,
-                      "targets": [
-                         {
-                            "expr": "max by(pod) (container_memory_rss{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\"})",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}}",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "min(container_spec_memory_limit_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\"} > 0)",
-                            "format": "time_series",
-                            "legendFormat": "limit",
-                            "legendLink": null
-                         },
-                         {
-                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\",resource=\"memory\"})",
-                            "format": "time_series",
-                            "legendFormat": "request",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Memory (RSS)",
                       "type": "timeseries"
                    },
                    {
@@ -19713,7 +19599,7 @@ data:
                             }
                          ]
                       },
-                      "id": 24,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -19724,7 +19610,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\"})",
@@ -19753,13 +19639,172 @@ data:
                       ],
                       "title": "Memory (workingset)",
                       "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 23,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 24,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"store-gateway\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Store-gateway",
                 "titleSize": "h6"
              },
              {
@@ -19919,6 +19964,480 @@ data:
                 "repeatRowId": null,
                 "showTitle": true,
                 "title": "",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 28,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"cpu\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"cpu\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "CPU",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/.+ - oomkilled/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E24D42",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.axisPlacement",
+                                     "value": "hidden"
+                                  },
+                                  {
+                                     "id": "custom.drawStyle",
+                                     "value": "points"
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "none"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 29,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(container_spec_memory_limit_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"} > 0)",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"memory\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}} - oomkilled",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Memory (workingset)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 30,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 31,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 20,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 32,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 12,
+                      "targets": [
+                         {
+                            "expr": "sum by(pod) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Rules",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Ruler",
                 "titleSize": "h6"
              }
           ],
@@ -27351,7 +27870,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-frontend\"}[$__rate_interval]))",
@@ -27489,7 +28008,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-frontend\"})",
@@ -27555,7 +28074,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-frontend\"})",
@@ -27565,6 +28084,117 @@ data:
                          }
                       ],
                       "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 4,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-frontend\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-frontend\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-frontend\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -27655,7 +28285,7 @@ data:
                             }
                          ]
                       },
-                      "id": 4,
+                      "id": 5,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -27666,7 +28296,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-scheduler\"}[$__rate_interval]))",
@@ -27793,7 +28423,7 @@ data:
                             }
                          ]
                       },
-                      "id": 5,
+                      "id": 6,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -27804,7 +28434,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-scheduler\"})",
@@ -27859,7 +28489,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 6,
+                      "id": 7,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -27870,7 +28500,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-scheduler\"})",
@@ -27880,6 +28510,117 @@ data:
                          }
                       ],
                       "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 8,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-scheduler\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-scheduler\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-query-scheduler\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -27970,7 +28711,7 @@ data:
                             }
                          ]
                       },
-                      "id": 7,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -27981,7 +28722,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-querier\"}[$__rate_interval]))",
@@ -28108,7 +28849,7 @@ data:
                             }
                          ]
                       },
-                      "id": 8,
+                      "id": 10,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -28119,7 +28860,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-querier\"})",
@@ -28174,7 +28915,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 9,
+                      "id": 11,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -28185,7 +28926,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-querier\"})",
@@ -28195,6 +28936,117 @@ data:
                          }
                       ],
                       "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-querier\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-querier\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler-querier\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -34552,7 +35404,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"}[$__rate_interval]))",
@@ -34690,7 +35542,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"})",
@@ -34756,7 +35608,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"})",
@@ -34766,6 +35618,117 @@ data:
                          }
                       ],
                       "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 16,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ruler\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -34956,7 +35919,7 @@ data:
                             }
                          ]
                       },
-                      "id": 16,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35010,7 +35973,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 18,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -35119,7 +36082,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 19,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -35216,7 +36179,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 20,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -35331,7 +36294,7 @@ data:
                             }
                          ]
                       },
-                      "id": 20,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35392,7 +36355,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35454,7 +36417,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35509,7 +36472,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35569,7 +36532,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35617,7 +36580,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 26,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35665,7 +36628,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35725,7 +36688,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35785,7 +36748,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35818,7 +36781,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 29,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35866,7 +36829,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 31,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -35963,7 +36926,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 32,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36060,7 +37023,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 33,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36157,7 +37120,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36254,7 +37217,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 35,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36351,7 +37314,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 36,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -44426,7 +45389,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"}[$__rate_interval]))",
@@ -44474,7 +45437,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"})",
@@ -44522,7 +45485,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"})",
@@ -44532,6 +45495,117 @@ data:
                          }
                       ],
                       "title": "Memory (go heap inuse)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 100,
+                               "lineWidth": 0,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 4,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -44622,7 +45696,7 @@ data:
                             }
                          ]
                       },
-                      "id": 4,
+                      "id": 5,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -44633,7 +45707,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\"}[$__rate_interval]))",
@@ -44760,7 +45834,7 @@ data:
                             }
                          ]
                       },
-                      "id": 5,
+                      "id": 6,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -44771,7 +45845,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\"})",
@@ -44826,92 +45900,6 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 6,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 4,
-                      "targets": [
-                         {
-                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\"})",
-                            "format": "time_series",
-                            "legendFormat": "{{pod}}",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Memory (go heap inuse)",
-                      "type": "timeseries"
-                   }
-                ],
-                "repeat": null,
-                "repeatIteration": null,
-                "repeatRowId": null,
-                "showTitle": true,
-                "title": "Distributor",
-                "titleSize": "h6"
-             },
-             {
-                "collapse": false,
-                "height": "250px",
-                "panels": [
-                   {
-                      "datasource": "$datasource",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 0,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [
-                            {
-                               "matcher": {
-                                  "id": "byName",
-                                  "options": "limit"
-                               },
-                               "properties": [
-                                  {
-                                     "id": "color",
-                                     "value": {
-                                        "fixedColor": "#E02F44",
-                                        "mode": "fixed"
-                                     }
-                                  },
-                                  {
-                                     "id": "custom.fillOpacity",
-                                     "value": 0
-                                  },
-                                  {
-                                     "id": "custom.lineStyle",
-                                     "value": {
-                                        "fill": "dash"
-                                     }
-                                  }
-                               ]
-                            }
-                         ]
-                      },
                       "id": 7,
                       "links": [ ],
                       "options": {
@@ -44923,22 +45911,16 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
+                            "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\"})",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
                             "legendLink": null
-                         },
-                         {
-                            "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"} > 0)",
-                            "format": "time_series",
-                            "legendFormat": "limit",
-                            "legendLink": null
                          }
                       ],
-                      "title": "In-memory series",
+                      "title": "Memory (go heap inuse)",
                       "type": "timeseries"
                    },
                    {
@@ -44962,7 +45944,7 @@ data:
                                "mode": "absolute",
                                "steps": [ ]
                             },
-                            "unit": "short"
+                            "unit": "bytes"
                          },
                          "overrides": [
                             {
@@ -45028,28 +46010,28 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 6,
+                      "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"}[$__rate_interval]))",
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\"})",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
                             "legendLink": null
                          },
                          {
-                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"cpu\"})",
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\",resource=\"ephemeral_storage\"})",
                             "format": "time_series",
                             "legendFormat": "limit",
                             "legendLink": null
                          },
                          {
-                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"cpu\"})",
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\",resource=\"ephemeral_storage\"})",
                             "format": "time_series",
                             "legendFormat": "request",
                             "legendLink": null
                          }
                       ],
-                      "title": "CPU",
+                      "title": "Ephemeral Storage (log fs)",
                       "type": "timeseries"
                    }
                 ],
@@ -45057,7 +46039,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Ingester",
+                "title": "Distributor",
                 "titleSize": "h6"
              },
              {
@@ -45085,7 +46067,7 @@ data:
                                "mode": "absolute",
                                "steps": [ ]
                             },
-                            "unit": "bytes"
+                            "unit": "short"
                          },
                          "overrides": [
                             {
@@ -45151,28 +46133,28 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
-                            "expr": "max by(pod) (container_memory_rss{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"})",
+                            "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
                             "legendLink": null
                          },
                          {
-                            "expr": "min(container_spec_memory_limit_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"} > 0)",
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"cpu\"})",
                             "format": "time_series",
                             "legendFormat": "limit",
                             "legendLink": null
                          },
                          {
-                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"memory\"})",
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"cpu\"})",
                             "format": "time_series",
                             "legendFormat": "request",
                             "legendLink": null
                          }
                       ],
-                      "title": "Memory (RSS)",
+                      "title": "CPU",
                       "type": "timeseries"
                    },
                    {
@@ -45289,7 +46271,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"})",
@@ -45355,7 +46337,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"})",
@@ -45366,13 +46348,204 @@ data:
                       ],
                       "title": "Memory (go heap inuse)",
                       "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"ephemeral_storage\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ephemeral Storage (log fs)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 13,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 12,
+                      "targets": [
+                         {
+                            "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"} > 0)",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "In-memory series",
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "",
+                "title": "Ingester",
                 "titleSize": "h6"
              },
              {
@@ -45404,7 +46577,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -45452,7 +46625,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -45503,7 +46676,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {

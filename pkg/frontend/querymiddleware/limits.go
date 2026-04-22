@@ -50,6 +50,10 @@ type Limits interface {
 	// query may be. 0 means "unlimited".
 	MaxQueryExpressionSizeBytes(userID string) int
 
+	// MaxEstimatedMemoryConsumptionPerQuery returns the maximum estimated memory
+	// a single query can consume, in bytes. 0 to disable.
+	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
+
 	// MaxCacheFreshness returns the period after which results are cacheable,
 	// to prevent caching of very recent results.
 	MaxCacheFreshness(userID string) time.Duration

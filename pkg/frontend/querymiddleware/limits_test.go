@@ -680,6 +680,10 @@ func (m multiTenantMockLimits) MaxQueryExpressionSizeBytes(userID string) int {
 	return m.byTenant[userID].maxQueryExpressionSizeBytes
 }
 
+func (m multiTenantMockLimits) MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64 {
+	return m.byTenant[userID].maxEstimatedMemoryConsumptionPerQuery
+}
+
 func (m multiTenantMockLimits) MaxQueryParallelism(userID string) int {
 	return m.byTenant[userID].maxQueryParallelism
 }
@@ -789,37 +793,38 @@ func (m multiTenantMockLimits) LabelsQueryOptimizerEnabled(userID string) bool {
 }
 
 type mockLimits struct {
-	maxQueryLookback                     time.Duration
-	maxQueryLength                       time.Duration
-	maxTotalQueryLength                  time.Duration
-	maxQueryExpressionSizeBytes          int
-	maxCacheFreshness                    time.Duration
-	maxQueryParallelism                  int
-	maxShardedQueries                    int
-	maxRegexpSizeBytes                   int
-	totalShards                          int
-	compactorShards                      int
-	compactorBlocksRetentionPeriod       time.Duration
-	outOfOrderTimeWindow                 time.Duration
-	creationGracePeriod                  time.Duration
-	nativeHistogramsIngestionEnabled     bool
-	resultsCacheTTL                      time.Duration
-	resultsCacheOutOfOrderWindowTTL      time.Duration
-	resultsCacheTTLForCardinalityQuery   time.Duration
-	resultsCacheTTLForLabelsQuery        time.Duration
-	resultsCacheTTLForErrors             time.Duration
-	resultsCacheForUnalignedQueryEnabled bool
-	enabledPromQLExperimentalFunctions   []string
-	enabledPromQLExtendedRangeSelectors  []string
-	prom2RangeCompat                     bool
-	blockedQueries                       []validation.BlockedQuery
-	limitedQueries                       []validation.LimitedQuery
-	blockedRequests                      []validation.BlockedRequest
-	alignQueriesWithStep                 bool
-	queryIngestersWithin                 time.Duration
-	ingestStorageReadConsistency         string
-	subquerySpinOffEnabled               bool
-	labelsQueryOptimizerEnabled          bool
+	maxQueryLookback                      time.Duration
+	maxQueryLength                        time.Duration
+	maxTotalQueryLength                   time.Duration
+	maxQueryExpressionSizeBytes           int
+	maxEstimatedMemoryConsumptionPerQuery uint64
+	maxCacheFreshness                     time.Duration
+	maxQueryParallelism                   int
+	maxShardedQueries                     int
+	maxRegexpSizeBytes                    int
+	totalShards                           int
+	compactorShards                       int
+	compactorBlocksRetentionPeriod        time.Duration
+	outOfOrderTimeWindow                  time.Duration
+	creationGracePeriod                   time.Duration
+	nativeHistogramsIngestionEnabled      bool
+	resultsCacheTTL                       time.Duration
+	resultsCacheOutOfOrderWindowTTL       time.Duration
+	resultsCacheTTLForCardinalityQuery    time.Duration
+	resultsCacheTTLForLabelsQuery         time.Duration
+	resultsCacheTTLForErrors              time.Duration
+	resultsCacheForUnalignedQueryEnabled  bool
+	enabledPromQLExperimentalFunctions    []string
+	enabledPromQLExtendedRangeSelectors   []string
+	prom2RangeCompat                      bool
+	blockedQueries                        []validation.BlockedQuery
+	limitedQueries                        []validation.LimitedQuery
+	blockedRequests                       []validation.BlockedRequest
+	alignQueriesWithStep                  bool
+	queryIngestersWithin                  time.Duration
+	ingestStorageReadConsistency          string
+	subquerySpinOffEnabled                bool
+	labelsQueryOptimizerEnabled           bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -835,6 +840,10 @@ func (m mockLimits) MaxTotalQueryLength(string) time.Duration {
 
 func (m mockLimits) MaxQueryExpressionSizeBytes(string) int {
 	return m.maxQueryExpressionSizeBytes
+}
+
+func (m mockLimits) MaxEstimatedMemoryConsumptionPerQuery(string) uint64 {
+	return m.maxEstimatedMemoryConsumptionPerQuery
 }
 
 func (m mockLimits) MaxQueryParallelism(string) int {
@@ -946,6 +955,30 @@ func (m mockLimits) SubquerySpinOffEnabled(string) bool {
 
 func (m mockLimits) LabelsQueryOptimizerEnabled(string) bool {
 	return m.labelsQueryOptimizerEnabled
+}
+
+// mockQueryLimits implements QueryLimitsProvider
+type mockQueryLimitsProvider struct {
+	m *mockLimits
+}
+
+func newMockQueryLimitsProvider(m *mockLimits) mockQueryLimitsProvider {
+	return mockQueryLimitsProvider{m: m}
+}
+
+func (m mockQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
+	return m.m.maxEstimatedMemoryConsumptionPerQuery, nil
+}
+
+func (m mockQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context) (bool, error) {
+	return false, nil
+}
+
+func (m mockQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error) {
+	return m.m.outOfOrderTimeWindow, nil
+}
+func (m mockQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	return m.m.resultsCacheTTL, nil
 }
 
 type mockHandler struct {

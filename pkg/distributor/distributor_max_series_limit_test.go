@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
@@ -280,6 +281,62 @@ func TestDistributor_ObserveAsyncUsageTrackerRejection(t *testing.T) {
 			`, tc.expectedMetricUser)), "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total"))
 		})
 	}
+}
+
+func TestPrePushMaxSeriesLimitMiddleware_CombinesRejectedSamplesFromPreFilterAndIngester(t *testing.T) {
+	const userID = "user-1"
+	now := time.Now()
+
+	// Create a write request with 3 series, each with 1 sample.
+	writeReq := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(now.UnixMilli(), 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_2"}, makeSamples(now.UnixMilli(), 2), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_3"}, makeSamples(now.UnixMilli(), 3), nil, nil),
+		},
+	}
+
+	// Pre-compute the hash for series_1 so the usage tracker can reject it.
+	series1Hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(writeReq.Timeseries[0].Labels))
+
+	// Set up usage tracker mock to reject series_1 (1 sample pre-filtered).
+	usageTracker := &usageTrackerClientMock{}
+	usageTracker.On("CanTrackAsync", userID).Return(false)
+	usageTracker.On("TrackSeries", mock.Anything, userID, mock.Anything).Return([]uint64{series1Hash}, nil)
+
+	// Build a minimal distributor with just the fields the middleware needs.
+	limits := prepareDefaultLimits()
+	reg := prometheus.NewRegistry()
+	d := &Distributor{
+		limits:                             validation.NewOverrides(*limits, nil),
+		usageTrackerClient:                 usageTracker,
+		discardedSamplesPerUserSeriesLimit: validation.DiscardedSamplesCounter(reg, reasonPerUserActiveSeriesLimit),
+	}
+
+	// The "next" function simulates the ingester returning a soft error with 2 rejected samples.
+	const ingesterRejectedSamples int64 = 2
+	next := func(_ context.Context, _ *Request) error {
+		return ingesterPushError{
+			message:         "per-user series limit reached",
+			cause:           mimirpb.ERROR_CAUSE_TENANT_LIMIT,
+			soft:            true,
+			rejectedSamples: ingesterRejectedSamples,
+		}
+	}
+
+	// Call the middleware.
+	ctx := user.InjectOrgID(t.Context(), userID)
+	pushReq := NewParsedRequest(writeReq, 0)
+	middleware := d.prePushMaxSeriesLimitMiddleware(next)
+	err := middleware(ctx, pushReq)
+	require.Error(t, err)
+
+	// The returned error should be an ingesterPushError with combined rejected samples:
+	// 1 sample from pre-filtering + 2 from the ingester = 3 total.
+	var ingErr ingesterPushError
+	require.True(t, errors.As(err, &ingErr), "expected ingesterPushError, got %T", err)
+	require.Equal(t, int64(3), ingErr.rejectedSamples,
+		"expected combined rejected samples from pre-filter (1) and ingester (2)")
 }
 
 func BenchmarkDistributor_prePushMaxSeriesLimitMiddleware(b *testing.B) {
