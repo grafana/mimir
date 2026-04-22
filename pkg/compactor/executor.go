@@ -354,7 +354,7 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 				cancel() // grace period expired
 			case <-graceCtx.Done():
 			}
-		case <-graceCtx.Done(): 
+		case <-graceCtx.Done():
 		}
 	}()
 
