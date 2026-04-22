@@ -1221,10 +1221,20 @@ type loadMap struct {
 	series map[assignment.HashRange]int64
 }
 
+// buildLoadMap aggregates per-range series counts across all
+// reporting ingesters by taking the max over replicas of the same
+// range. Max (not sum) is intentional: every healthy owner of a
+// partition reports counts for the same ranges (they are mirrors), so
+// summing would scale the per-range signal by the replication factor
+// while `partitionL` is on a 1× (max-over-owners) scale. Phase 3 of
+// the slicer compares per-range `series` directly to the partition-
+// level movable budget, so the two must share the same scale.
 func buildLoadMap(rates []rangeRate) *loadMap {
 	lm := &loadMap{series: make(map[assignment.HashRange]int64, len(rates))}
 	for _, rr := range rates {
-		lm.series[rr.hr] += rr.series
+		if rr.series > lm.series[rr.hr] {
+			lm.series[rr.hr] = rr.series
+		}
 	}
 	return lm
 }

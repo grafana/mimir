@@ -390,19 +390,25 @@ func TestLoadMap_SeriesAt(t *testing.T) {
 	assert.Equal(t, int64(0), lm.seriesAt(assignment.HashRange{Lo: 5000, Hi: 6000}))
 }
 
-// TestLoadMap_SumsRatesFromMultipleOwners verifies that buildLoadMap
-// sums per-range series across owners (e.g. multiple zones reporting
-// the same range). This is the natural behaviour needed for R_r to
-// reflect total in-memory series for a range across replicas.
-func TestLoadMap_SumsRatesFromMultipleOwners(t *testing.T) {
+// TestLoadMap_MaxOverReplicas verifies that buildLoadMap aggregates
+// per-range series across replicas by taking the max, not the sum.
+// Each healthy owner of a partition reports a near-identical count for
+// the same ranges (they are mirrors), and partitionL is already on a
+// max-over-owners scale. Phase 3 of the slicer mixes per-range series
+// with the partition-level movable budget, so both signals must share
+// the same scale; summing here would inflate the per-range load by the
+// replication factor and cause systematic over-rejection in Phase 3's
+// `rl.series > mov` gate.
+func TestLoadMap_MaxOverReplicas(t *testing.T) {
 	hr := assignment.HashRange{Lo: 0, Hi: 999}
 	rates := []rangeRate{
 		{hr: hr, series: 100},
 		{hr: hr, series: 150},
+		{hr: hr, series: 120},
 	}
 	lm := buildLoadMap(rates)
 
-	assert.Equal(t, int64(250), lm.seriesAt(hr))
+	assert.Equal(t, int64(150), lm.seriesAt(hr))
 }
 
 // TestRunSlicer_MoveCooldown_BlocksRepeatMoves verifies that, when a
