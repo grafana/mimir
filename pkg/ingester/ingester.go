@@ -359,10 +359,10 @@ type Ingester struct {
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
 
-	// hashRangeRates tracks per-hash-range ingestion rates for the
-	// nautilus rebalancer. The rebalancer pushes owned ranges via
-	// SetHashRanges; these are incremented on the push path.
-	hashRangeRates *hashRangeRates
+	// hashRangeSeries tracks per-hash-range active-series counts for
+	// the nautilus rebalancer. Populated by a periodic walk of each
+	// tenant's TSDB head; see updateHashRangeSeriesCounts.
+	hashRangeSeries *hashRangeSeries
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -439,7 +439,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
 	if cfg.NautilusEnabled {
-		i.hashRangeRates = newHashRangeRates(instanceIngestionRateTickInterval)
+		i.hashRangeSeries = newHashRangeSeries()
 	}
 
 	i.costAttributionMgr = costAttributionMgr

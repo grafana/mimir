@@ -27,7 +27,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -159,12 +158,6 @@ type userTSDB struct {
 	// plannerProvider is optional; if set, it will be used to generate and cache statistics for the user's head block.
 	// Other blocks' stats are immutable and the prometheus TSDB caches them itself.
 	plannerProvider *plannerProvider
-
-	// hashRangeRates, when non-nil, receives PostCreation/PostDeletion
-	// events as IncSeries/DecSeries calls so the rebalancer can see
-	// per-hash-range active series counts. Set when nautilus mode is
-	// enabled on the ingester.
-	hashRangeRates *hashRangeRates
 }
 
 // generateHeadStatistics generates statistics for this user's head block.
@@ -414,11 +407,6 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 	if u.postingsCache != nil {
 		u.postingsCache.InvalidateMetric(u.userID, metricName)
 	}
-
-	if u.hashRangeRates != nil {
-		hash := mimirpb.ShardByMetricNameLocalityLabels(u.userID, metricName, metric)
-		u.hashRangeRates.IncSeries(hash)
-	}
 }
 
 // PostDeletion implements tsdb.SeriesLifecycleCallback.
@@ -432,11 +420,6 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 			continue
 		}
 		u.seriesInMetric.decreaseSeriesForMetric(metricName)
-
-		if u.hashRangeRates != nil {
-			hash := mimirpb.ShardByMetricNameLocalityLabels(u.userID, metricName, lbls)
-			u.hashRangeRates.DecSeries(hash)
-		}
 	}
 
 	// We cannot update ownedSeriesCount here, as we don't know whether deleted series were owned by this ingester or not.

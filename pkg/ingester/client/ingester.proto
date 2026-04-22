@@ -50,11 +50,15 @@ message HashRangeStatsRequest {}
 message HashRangeRate {
   uint32 lo = 1;
   uint32 hi = 2;
-  double samples_per_second = 3;
+  reserved 3; // formerly samples_per_second; dropped when the rebalancer
+              // switched to a series-only load model.
   int64 active_series = 4;
 }
 
 message HashRangeStatsResponse {
+  // rates is a misnomer left over from an earlier load model that
+  // included a samples/sec EWMA per range. The field now carries only
+  // per-range active-series counts; see HashRangeRate.
   repeated HashRangeRate rates = 1 [(gogoproto.nullable) = false];
   // total_active_series is the total number of in-memory series on the
   // ingester, across all tenants. It includes series whose hashes fall
