@@ -288,8 +288,8 @@ func (s *Selector) Close() {
 
 	s.seriesSet = nil
 
-	for _, subset := range s.Subsets {
-		types.BoolSlicePool.Put(&subset.matchingSeries, s.MemoryConsumptionTracker)
+	for idx := range s.Subsets {
+		types.BoolSlicePool.Put(&s.Subsets[idx].matchingSeries, s.MemoryConsumptionTracker)
 	}
 
 	s.Subsets = nil
