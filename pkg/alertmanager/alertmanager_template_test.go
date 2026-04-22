@@ -117,7 +117,7 @@ func Test_loadTemplates(t *testing.T) {
 			exp:    "My Template 1",
 		},
 		{
-			name: "fails to reference nonexistant templates",
+			name: "fails to reference nonexistent templates",
 			loaded: []string{
 				`
 {{ define "my_tmpl_1" }}My Template 1{{ end }}
