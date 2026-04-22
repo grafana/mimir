@@ -7,13 +7,10 @@
 
 ### Framework
 
-- [x] **FRAMEWORK-01
-**: A verification module exists in `pkg/mimirtool/backfill/` (package location TBD in spec phase) with a pluggable interface so new checks can be added without modifying existing ones.
-- [x] **FRAMEWORK-02
-**: The interface supports both per-block checks and batch-level checks (multiple blocks in one invocation) so future duplicate-day and overlap checks fit cleanly.
+- [x] **FRAMEWORK-01**: A verification module exists in `pkg/mimirtool/backfill/` (package location TBD in spec phase) with a pluggable interface so new checks can be added without modifying existing ones.
+- [x] **FRAMEWORK-02**: The interface supports both per-block checks and batch-level checks (multiple blocks in one invocation) so future duplicate-day and overlap checks fit cleanly.
 - [ ] **FRAMEWORK-03**: Verification runs before the upload loop in `MimirClient.Backfill()` at `pkg/mimirtool/client/backfill.go:25-53`.
-- [x] **FRAMEWORK-04
-**: Failure reporting identifies which block failed which check and why, aggregated across all blocks so users see every issue in one run.
+- [x] **FRAMEWORK-04**: Failure reporting identifies which block failed which check and why, aggregated across all blocks so users see every issue in one run.
 
 ### Checks (v1)
 
