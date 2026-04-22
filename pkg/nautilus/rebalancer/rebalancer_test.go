@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -886,4 +887,161 @@ func TestPruneRecentMoves_DisabledClearsAll(t *testing.T) {
 
 	r.pruneRecentMoves(time.Now())
 	assert.Empty(t, r.recentMoves)
+}
+
+// TestStitchReportedEntries_FullCoverageNoGaps verifies the easy case:
+// reported ranges already tile [0, MaxUint32] with no gaps and no
+// overlaps; stitch returns them verbatim in sorted order.
+func TestStitchReportedEntries_FullCoverageNoGaps(t *testing.T) {
+	reported := []reportedEntry{
+		{partitionID: 1, hr: assignment.HashRange{Lo: 1000, Hi: math.MaxUint32}},
+		{partitionID: 0, hr: assignment.HashRange{Lo: 0, Hi: 999}},
+	}
+	// Pre-sort into canonical order (stitch's precondition).
+	sortReportedEntriesForTest(reported)
+
+	out := stitchReportedEntries(reported, []int32{0, 1}, log.NewNopLogger())
+	require.Len(t, out, 2)
+	assert.Equal(t, int32(0), out[0].PartitionID)
+	assert.Equal(t, uint32(0), out[0].Range.Lo)
+	assert.Equal(t, uint32(999), out[0].Range.Hi)
+	assert.Equal(t, int32(1), out[1].PartitionID)
+	assert.Equal(t, uint32(1000), out[1].Range.Lo)
+	assert.Equal(t, uint32(math.MaxUint32), out[1].Range.Hi)
+
+	a := &assignment.Assignment{Entries: out}
+	require.NoError(t, a.Validate())
+}
+
+// TestStitchReportedEntries_FillsGaps verifies that holes — leading,
+// middle, and trailing — are all filled by single-entry fillers.
+func TestStitchReportedEntries_FillsGaps(t *testing.T) {
+	// Reported coverage: [100..200], [500..600]. Expect 5 entries:
+	// leading [0..99], [100..200], middle [201..499], [500..600],
+	// trailing [601..MaxUint32].
+	reported := []reportedEntry{
+		{partitionID: 7, hr: assignment.HashRange{Lo: 100, Hi: 200}},
+		{partitionID: 9, hr: assignment.HashRange{Lo: 500, Hi: 600}},
+	}
+	sortReportedEntriesForTest(reported)
+
+	out := stitchReportedEntries(reported, []int32{3, 4, 5}, log.NewNopLogger())
+	require.Len(t, out, 5)
+
+	assert.Equal(t, uint32(0), out[0].Range.Lo)
+	assert.Equal(t, uint32(99), out[0].Range.Hi)
+	assert.Equal(t, int32(3), out[0].PartitionID, "first filler rotates to activePartitions[0]")
+
+	assert.Equal(t, uint32(100), out[1].Range.Lo)
+	assert.Equal(t, uint32(200), out[1].Range.Hi)
+	assert.Equal(t, int32(7), out[1].PartitionID)
+
+	assert.Equal(t, uint32(201), out[2].Range.Lo)
+	assert.Equal(t, uint32(499), out[2].Range.Hi)
+	assert.Equal(t, int32(4), out[2].PartitionID, "second filler rotates to activePartitions[1]")
+
+	assert.Equal(t, uint32(500), out[3].Range.Lo)
+	assert.Equal(t, uint32(600), out[3].Range.Hi)
+	assert.Equal(t, int32(9), out[3].PartitionID)
+
+	assert.Equal(t, uint32(601), out[4].Range.Lo)
+	assert.Equal(t, uint32(math.MaxUint32), out[4].Range.Hi)
+	assert.Equal(t, int32(5), out[4].PartitionID, "third filler rotates to activePartitions[2]")
+
+	a := &assignment.Assignment{Entries: out}
+	require.NoError(t, a.Validate())
+}
+
+// TestStitchReportedEntries_FirstReplicaWinsOnOverlap verifies that
+// when two different partitions claim overlapping hash space, the
+// earlier (lower-Lo) entry keeps its coverage and the later entry is
+// truncated to the uncovered tail.
+func TestStitchReportedEntries_FirstReplicaWinsOnOverlap(t *testing.T) {
+	reported := []reportedEntry{
+		{partitionID: 1, hr: assignment.HashRange{Lo: 0, Hi: 1000}},
+		{partitionID: 2, hr: assignment.HashRange{Lo: 500, Hi: 2000}}, // overlaps with 1 on [500..1000]
+	}
+	sortReportedEntriesForTest(reported)
+
+	out := stitchReportedEntries(reported, []int32{1, 2}, log.NewNopLogger())
+	require.Len(t, out, 3)
+
+	assert.Equal(t, int32(1), out[0].PartitionID)
+	assert.Equal(t, uint32(0), out[0].Range.Lo)
+	assert.Equal(t, uint32(1000), out[0].Range.Hi)
+
+	assert.Equal(t, int32(2), out[1].PartitionID)
+	assert.Equal(t, uint32(1001), out[1].Range.Lo, "overlap with partition 1 truncated off the front")
+	assert.Equal(t, uint32(2000), out[1].Range.Hi)
+
+	// Trailing gap from 2001 filled round-robin (next filler slot → activePartitions[0] = 1).
+	assert.Equal(t, int32(1), out[2].PartitionID)
+	assert.Equal(t, uint32(2001), out[2].Range.Lo)
+	assert.Equal(t, uint32(math.MaxUint32), out[2].Range.Hi)
+
+	a := &assignment.Assignment{Entries: out}
+	require.NoError(t, a.Validate())
+}
+
+// TestStitchReportedEntries_FullyCoveredRangeIsDropped verifies that a
+// late-arriving entry entirely contained within already-covered space
+// is dropped (not emitted as a zero-width entry).
+func TestStitchReportedEntries_FullyCoveredRangeIsDropped(t *testing.T) {
+	reported := []reportedEntry{
+		{partitionID: 1, hr: assignment.HashRange{Lo: 0, Hi: 1000}},
+		{partitionID: 2, hr: assignment.HashRange{Lo: 200, Hi: 500}}, // fully inside [0..1000]
+	}
+	sortReportedEntriesForTest(reported)
+
+	out := stitchReportedEntries(reported, []int32{1, 2}, log.NewNopLogger())
+	require.Len(t, out, 2, "should have only partition 1's range plus one trailing filler")
+	assert.Equal(t, int32(1), out[0].PartitionID)
+	assert.Equal(t, uint32(0), out[0].Range.Lo)
+	assert.Equal(t, uint32(1000), out[0].Range.Hi)
+	assert.Equal(t, uint32(1001), out[1].Range.Lo)
+	assert.Equal(t, uint32(math.MaxUint32), out[1].Range.Hi)
+
+	a := &assignment.Assignment{Entries: out}
+	require.NoError(t, a.Validate())
+}
+
+// TestStitchReportedEntries_EmptyInputReturnsFullRoundRobin verifies
+// that with no reported entries the stitch emits a single filler
+// covering [0, MaxUint32]. In production this path is unused because
+// reconstructAssignment short-circuits to FineEvenSplit when no ranges
+// are reported; this test exists to document stitch's behavior in
+// isolation.
+func TestStitchReportedEntries_EmptyInputReturnsFullRoundRobin(t *testing.T) {
+	out := stitchReportedEntries(nil, []int32{5, 6}, log.NewNopLogger())
+	require.Len(t, out, 1)
+	assert.Equal(t, int32(5), out[0].PartitionID)
+	assert.Equal(t, uint32(0), out[0].Range.Lo)
+	assert.Equal(t, uint32(math.MaxUint32), out[0].Range.Hi)
+}
+
+// TestStitchReportedEntries_BoundaryHiMaxUint32 verifies the edge case
+// where a reported range ends exactly at math.MaxUint32: no trailing
+// filler should be emitted (avoid a zero-width entry or overflow).
+func TestStitchReportedEntries_BoundaryHiMaxUint32(t *testing.T) {
+	reported := []reportedEntry{
+		{partitionID: 1, hr: assignment.HashRange{Lo: 100, Hi: math.MaxUint32}},
+	}
+	sortReportedEntriesForTest(reported)
+
+	out := stitchReportedEntries(reported, []int32{1, 2}, log.NewNopLogger())
+	// Expect: leading filler [0..99] via rr=0 → partition 1, then the reported range.
+	require.Len(t, out, 2)
+	assert.Equal(t, uint32(0), out[0].Range.Lo)
+	assert.Equal(t, uint32(99), out[0].Range.Hi)
+	assert.Equal(t, uint32(100), out[1].Range.Lo)
+	assert.Equal(t, uint32(math.MaxUint32), out[1].Range.Hi)
+
+	a := &assignment.Assignment{Entries: out}
+	require.NoError(t, a.Validate())
+}
+
+// sortReportedEntriesForTest is a thin alias over sortReportedEntries
+// for test readability.
+func sortReportedEntriesForTest(r []reportedEntry) {
+	sortReportedEntries(r)
 }

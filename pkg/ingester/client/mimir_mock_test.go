@@ -86,3 +86,8 @@ func (m *IngesterServerMock) SetHashRanges(ctx context.Context, req *SetHashRang
 	args := m.Called(ctx, req)
 	return args.Get(0).(*SetHashRangesResponse), args.Error(1)
 }
+
+func (m *IngesterServerMock) GetHashRanges(ctx context.Context, req *GetHashRangesRequest) (*GetHashRangesResponse, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(*GetHashRangesResponse), args.Error(1)
+}

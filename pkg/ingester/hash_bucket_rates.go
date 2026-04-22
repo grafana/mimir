@@ -205,6 +205,17 @@ func (h *hashRangeRates) HasRanges() bool {
 	return len(h.ranges) > 0
 }
 
+// Ranges returns a copy of the currently-configured owned ranges, in
+// the canonical sorted order established by SetRanges. The returned
+// slice is safe for the caller to retain and mutate.
+func (h *hashRangeRates) Ranges() []assignment.HashRange {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := make([]assignment.HashRange, len(h.ranges))
+	copy(out, h.ranges)
+	return out
+}
+
 // LogSummary logs a summary of all owned hash ranges with their EWMA
 // ingestion rates and active series counts.
 func (h *hashRangeRates) LogSummary(logger log.Logger) {

@@ -40,6 +40,7 @@ service Ingester {
 
   rpc HashRangeStats(HashRangeStatsRequest) returns (HashRangeStatsResponse) {}
   rpc SetHashRanges(SetHashRangesRequest) returns (SetHashRangesResponse) {}
+  rpc GetHashRanges(GetHashRangesRequest) returns (GetHashRangesResponse) {}
 
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
@@ -74,6 +75,12 @@ message SetHashRangesRequest {
 }
 
 message SetHashRangesResponse {}
+
+message GetHashRangesRequest {}
+
+message GetHashRangesResponse {
+  repeated HashRangeEntry ranges = 1 [(gogoproto.nullable) = false];
+}
 
 message LabelNamesAndValuesRequest {
   repeated LabelMatcher matchers = 1;

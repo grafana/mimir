@@ -242,6 +242,10 @@ func (i *ProfilingWrapper) SetHashRanges(ctx context.Context, request *client.Se
 	return i.ing.SetHashRanges(ctx, request)
 }
 
+func (i *ProfilingWrapper) GetHashRanges(ctx context.Context, request *client.GetHashRangesRequest) (*client.GetHashRangesResponse, error) {
+	return i.ing.GetHashRanges(ctx, request)
+}
+
 func (i *ProfilingWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if isTraceSampled(ctx) {

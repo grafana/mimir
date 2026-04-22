@@ -58,3 +58,27 @@ func (i *Ingester) SetHashRanges(_ context.Context, req *client.SetHashRangesReq
 	i.hashRangeRates.SetRanges(ranges)
 	return &client.SetHashRangesResponse{}, nil
 }
+
+// GetHashRanges returns the set of hash ranges this ingester currently
+// believes it owns (i.e. whatever was most recently set via
+// SetHashRanges). The rebalancer uses this on cold start to reconstruct
+// the existing fleet-wide assignment from whatever each ingester
+// locally remembers, rather than destroying rebalanced state with a
+// fresh even-split. An ingester that has never been told ranges
+// (newly-joined or fresh boot before the rebalancer's first round)
+// returns an empty list; nautilus-disabled ingesters return the
+// existing errNautilusDisabled so the caller can distinguish the two.
+func (i *Ingester) GetHashRanges(_ context.Context, _ *client.GetHashRangesRequest) (*client.GetHashRangesResponse, error) {
+	if i.hashRangeRates == nil {
+		return nil, errNautilusDisabled
+	}
+
+	ranges := i.hashRangeRates.Ranges()
+	resp := &client.GetHashRangesResponse{
+		Ranges: make([]client.HashRangeEntry, len(ranges)),
+	}
+	for j, r := range ranges {
+		resp.Ranges[j] = client.HashRangeEntry{Lo: r.Lo, Hi: r.Hi}
+	}
+	return resp, nil
+}

@@ -159,11 +159,22 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 
 	current := r.store.latest()
 	if current == nil {
-		current = assignment.FineEvenSplit(activePartitions, initialSlicesPerPartition)
-		level.Info(r.logger).Log("msg", "initialized assignment with fine even split",
-			"partitions", len(activePartitions),
-			"slices_per_partition", initialSlicesPerPartition,
-			"total_slices", len(current.Entries))
+		// Cold start: try to reconstruct the assignment from whatever
+		// each ingester locally remembers (via GetHashRanges). On a
+		// rolling rebalancer restart this preserves rebalanced state;
+		// on a truly-cold cluster it falls back to FineEvenSplit.
+		current = r.reconstructAssignment(ctx, activePartitions)
+		if current == nil {
+			current = assignment.FineEvenSplit(activePartitions, initialSlicesPerPartition)
+			level.Info(r.logger).Log("msg", "initialized assignment with fine even split",
+				"partitions", len(activePartitions),
+				"slices_per_partition", initialSlicesPerPartition,
+				"total_slices", len(current.Entries))
+		} else {
+			level.Info(r.logger).Log("msg", "initialized assignment from ingester reports",
+				"partitions", len(activePartitions),
+				"total_entries", len(current.Entries))
+		}
 		r.store.add(time.Now(), current)
 		r.pushRangesToIngesters(ctx, current)
 		return nil
@@ -362,6 +373,275 @@ func (r *Rebalancer) withRPCTimeout(ctx context.Context) (context.Context, conte
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, r.cfg.IngesterRPCTimeout)
+}
+
+// reconstructionQuorumNum / reconstructionQuorumDen together express the
+// minimum fraction of expected ingesters that must successfully return
+// their hash ranges for reconstruction to be trusted. Below this, we
+// fall back to FineEvenSplit rather than take a destructive action
+// (e.g. blowing up a range's ownership) on a minority view.
+const (
+	reconstructionQuorumNum = 1
+	reconstructionQuorumDen = 2
+)
+
+// reconstructAssignment queries all healthy ingesters for their
+// currently-owned hash ranges (via GetHashRanges) and reassembles a
+// fleet-wide assignment by mapping each reported range to the
+// partition its owner ingester belongs to. This lets the rebalancer
+// resume from whatever assignment is actually in effect on the fleet,
+// rather than destroying rebalanced state with a fresh even split on
+// cold start.
+//
+// Policy:
+//   - First-replica-wins on any overlap between different partitions:
+//     whichever partition's range we encounter first (in sorted-Lo
+//     order) keeps the overlapping hash space; any later range that
+//     overlaps is truncated or dropped. The next pushRangesToIngesters
+//     will reconcile the losing replica's view.
+//   - Gaps (holes in [0, MaxUint32] after merging) are filled verbatim:
+//     one entry per gap, round-robin across active partitions. The
+//     slicer may subsequently split the filler as part of normal
+//     Phase 4 (split hot slices) if it ends up carrying load.
+//   - If fewer than reconstructionQuorumNum/reconstructionQuorumDen of
+//     the expected ingesters respond, or if no ingester reports any
+//     ranges (truly-cold cluster), returns nil so the caller falls
+//     back to FineEvenSplit.
+//   - Any ingester whose instance ID doesn't map to an active
+//     partition (e.g. mid-scale-down) is silently ignored; its ranges
+//     become gaps that get refilled from the active partition set.
+func (r *Rebalancer) reconstructAssignment(ctx context.Context, activePartitions []int32) *assignment.Assignment {
+	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
+	if err != nil {
+		level.Warn(r.logger).Log("msg", "reconstructAssignment: failed to get healthy ingesters", "err", err)
+		return nil
+	}
+	if len(instances.Instances) == 0 {
+		return nil
+	}
+
+	pRing := r.partitionRing.PartitionRing()
+
+	// Build instanceID -> partitionID from active partitions only. An
+	// ingester not in this map is either unassigned or owns an
+	// inactive partition; either way, we ignore its reported ranges.
+	instanceToPartition := make(map[string]int32)
+	for _, pid := range activePartitions {
+		for _, ownerID := range pRing.PartitionOwnerIDs(pid) {
+			instanceToPartition[ownerID] = pid
+		}
+	}
+
+	reports := make([][]reportedEntry, len(instances.Instances))
+	var ok, failed, unmapped atomic.Int32
+
+	_ = concurrency.ForEachJob(ctx, len(instances.Instances), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
+		inst := instances.Instances[idx]
+
+		pid, known := instanceToPartition[inst.GetId()]
+		if !known {
+			unmapped.Add(1)
+			return nil
+		}
+
+		c, err := r.pool.GetClientForInstance(inst)
+		if err != nil {
+			failed.Add(1)
+			level.Warn(r.logger).Log("msg", "reconstructAssignment: failed to get client", "ingester", inst.Addr, "err", err)
+			return nil
+		}
+
+		callCtx, cancel := r.withRPCTimeout(jobCtx)
+		defer cancel()
+
+		resp, err := c.(ingester_client.IngesterClient).GetHashRanges(callCtx, &ingester_client.GetHashRangesRequest{})
+		if err != nil {
+			failed.Add(1)
+			level.Warn(r.logger).Log("msg", "reconstructAssignment: GetHashRanges RPC failed", "ingester", inst.Addr, "err", err)
+			return nil
+		}
+
+		entries := make([]reportedEntry, len(resp.Ranges))
+		for i, hr := range resp.Ranges {
+			entries[i] = reportedEntry{
+				partitionID: pid,
+				hr:          assignment.HashRange{Lo: hr.Lo, Hi: hr.Hi},
+			}
+		}
+		reports[idx] = entries
+		ok.Add(1)
+		return nil
+	})
+
+	expected := int32(len(instances.Instances)) - unmapped.Load()
+	if expected <= 0 {
+		level.Info(r.logger).Log("msg", "reconstructAssignment: no ingesters mapped to active partitions, falling back to even split")
+		return nil
+	}
+	// Quorum: ok.Load() / expected >= num/den.
+	if int64(ok.Load())*int64(reconstructionQuorumDen) < int64(expected)*int64(reconstructionQuorumNum) {
+		level.Warn(r.logger).Log(
+			"msg", "reconstructAssignment: not enough ingesters responded, falling back to even split",
+			"healthy", len(instances.Instances),
+			"unmapped", unmapped.Load(),
+			"ok", ok.Load(),
+			"failed", failed.Load(),
+			"quorum_num", reconstructionQuorumNum,
+			"quorum_den", reconstructionQuorumDen,
+		)
+		return nil
+	}
+
+	// Deduplicate (partitionID, range) pairs — different replicas of
+	// the same partition will redundantly report the same ranges.
+	type pRange struct {
+		pid int32
+		hr  assignment.HashRange
+	}
+	seen := make(map[pRange]struct{})
+	var merged []reportedEntry
+	for _, list := range reports {
+		for _, e := range list {
+			k := pRange{pid: e.partitionID, hr: e.hr}
+			if _, dup := seen[k]; dup {
+				continue
+			}
+			seen[k] = struct{}{}
+			merged = append(merged, e)
+		}
+	}
+
+	if len(merged) == 0 {
+		level.Info(r.logger).Log("msg", "reconstructAssignment: no ranges reported, falling back to even split")
+		return nil
+	}
+
+	// Sort by (Lo, partitionID) so first-replica-wins has a stable,
+	// deterministic ordering and tests are reproducible.
+	sortReportedEntries(merged)
+
+	entries := stitchReportedEntries(merged, activePartitions, r.logger)
+
+	a := &assignment.Assignment{Entries: entries}
+	if err := a.Validate(); err != nil {
+		level.Error(r.logger).Log("msg", "reconstructAssignment: stitched assignment invalid, falling back to even split", "err", err)
+		return nil
+	}
+
+	level.Info(r.logger).Log(
+		"msg", "reconstructAssignment: reassembled assignment from healthy ingesters",
+		"healthy", len(instances.Instances),
+		"unmapped", unmapped.Load(),
+		"ok", ok.Load(),
+		"failed", failed.Load(),
+		"reported_entries", len(merged),
+		"final_entries", len(entries),
+	)
+	return a
+}
+
+// reportedEntry is a (partition, range) pair collected from a
+// GetHashRanges response during assignment reconstruction.
+type reportedEntry struct {
+	partitionID int32
+	hr          assignment.HashRange
+}
+
+// sortReportedEntries sorts reported entries ascending by (Lo,
+// partitionID). Used both in production (reconstructAssignment) and in
+// tests to establish stitchReportedEntries' precondition.
+func sortReportedEntries(entries []reportedEntry) {
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].hr.Lo != entries[j].hr.Lo {
+			return entries[i].hr.Lo < entries[j].hr.Lo
+		}
+		return entries[i].partitionID < entries[j].partitionID
+	})
+}
+
+// stitchReportedEntries walks reported (partition, range) entries in
+// sorted (Lo, partitionID) order and produces a sequence of entries
+// covering [0, math.MaxUint32] with no gaps and no overlaps. Overlaps
+// between different partitions are resolved first-replica-wins: the
+// earlier entry keeps its coverage and any later entry is truncated
+// to [cursor, Hi] or dropped entirely if fully covered. Gaps (including
+// a leading gap before the first reported Lo and a trailing gap after
+// the last reported Hi) are filled with single entries round-robin
+// across activePartitions.
+//
+// Precondition: sorted is sorted ascending by (hr.Lo, partitionID).
+// Returns entries that are sorted and non-overlapping, with the first
+// Lo == 0 and the last Hi == math.MaxUint32, i.e. ready for
+// Assignment.Validate.
+func stitchReportedEntries(sorted []reportedEntry, activePartitions []int32, logger log.Logger) []assignment.Entry {
+	out := make([]assignment.Entry, 0, len(sorted)+1)
+	// gapRR is the round-robin cursor for assigning gap-filler entries
+	// to active partitions. Advances only when a filler is emitted.
+	gapRR := 0
+	emitGap := func(lo, hi uint32) {
+		if len(activePartitions) == 0 {
+			return
+		}
+		pid := activePartitions[gapRR%len(activePartitions)]
+		gapRR++
+		out = append(out, assignment.Entry{
+			Range:       assignment.HashRange{Lo: lo, Hi: hi},
+			PartitionID: pid,
+		})
+	}
+
+	// cursor tracks the next uncovered hash. Tracked as uint64 so we
+	// can represent "past MaxUint32" (i.e. fully covered) without
+	// overflow.
+	var cursor uint64
+	for _, e := range sorted {
+		lo := uint64(e.hr.Lo)
+		hi := uint64(e.hr.Hi)
+
+		if lo > cursor {
+			// Gap before this entry.
+			emitGap(uint32(cursor), uint32(lo-1))
+			cursor = lo
+		}
+
+		if hi < cursor {
+			// Entry is entirely behind the cursor; first-replica
+			// already won this span.
+			level.Warn(logger).Log(
+				"msg", "reconstructAssignment: dropping overlapped range",
+				"partition", e.partitionID,
+				"lo", e.hr.Lo,
+				"hi", e.hr.Hi,
+				"cursor", cursor,
+			)
+			continue
+		}
+
+		if lo < cursor {
+			// Partial overlap: truncate to [cursor, hi].
+			level.Warn(logger).Log(
+				"msg", "reconstructAssignment: truncating overlapped range",
+				"partition", e.partitionID,
+				"orig_lo", e.hr.Lo,
+				"orig_hi", e.hr.Hi,
+				"truncated_lo", cursor,
+			)
+			lo = cursor
+		}
+
+		out = append(out, assignment.Entry{
+			Range:       assignment.HashRange{Lo: uint32(lo), Hi: uint32(hi)},
+			PartitionID: e.partitionID,
+		})
+		cursor = hi + 1
+	}
+
+	// Trailing gap up to MaxUint32, if any.
+	if cursor <= uint64(math.MaxUint32) {
+		emitGap(uint32(cursor), math.MaxUint32)
+	}
+
+	return out
 }
 
 // partitionL returns the per-partition L (TSDB head series) value,

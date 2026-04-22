@@ -14,6 +14,32 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
+func TestHashRangeRates_RangesReturnsCopy(t *testing.T) {
+	h := newHashRangeRates(time.Second)
+
+	// Before any SetRanges, Ranges returns an empty slice (not nil is
+	// not required — just safe to range over).
+	assert.Empty(t, h.Ranges())
+
+	orig := []assignment.HashRange{
+		{Lo: 0, Hi: 999},
+		{Lo: 1000, Hi: math.MaxUint32},
+	}
+	h.SetRanges(orig)
+
+	got := h.Ranges()
+	require.Len(t, got, 2)
+	assert.Equal(t, uint32(0), got[0].Lo)
+	assert.Equal(t, uint32(999), got[0].Hi)
+	assert.Equal(t, uint32(1000), got[1].Lo)
+	assert.Equal(t, uint32(math.MaxUint32), got[1].Hi)
+
+	// Mutating the returned slice must not affect internal state.
+	got[0] = assignment.HashRange{Lo: 42, Hi: 42}
+	again := h.Ranges()
+	assert.Equal(t, uint32(0), again[0].Lo, "mutating the returned slice leaked back into hashRangeRates")
+}
+
 func TestHashRangeRates_NoRangesDropsSilently(t *testing.T) {
 	h := newHashRangeRates(time.Second)
 
