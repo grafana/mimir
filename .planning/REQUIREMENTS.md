@@ -9,7 +9,7 @@
 
 - [x] **FRAMEWORK-01**: A verification module exists in `pkg/mimirtool/backfill/` (package location TBD in spec phase) with a pluggable interface so new checks can be added without modifying existing ones.
 - [x] **FRAMEWORK-02**: The interface supports both per-block checks and batch-level checks (multiple blocks in one invocation) so future duplicate-day and overlap checks fit cleanly.
-- [ ] **FRAMEWORK-03**: Verification runs before the upload loop in `MimirClient.Backfill()` at `pkg/mimirtool/client/backfill.go:25-53`.
+- [x] **FRAMEWORK-03**: Verification runs before the upload loop in `MimirClient.Backfill()` at `pkg/mimirtool/client/backfill.go:25-53`.
 - [x] **FRAMEWORK-04**: Failure reporting identifies which block failed which check and why, aggregated across all blocks so users see every issue in one run.
 
 ### Checks (v1)
@@ -20,8 +20,8 @@
 
 ### Integration
 
-- [ ] **INT-01**: When verification fails, `mimirtool backfill` does not attempt any uploads and exits with a non-zero code and a clear error summary.
-- [ ] **INT-02**: Verification output follows existing mimirtool logging conventions (go-kit/log at the level used elsewhere in `client/backfill.go`).
+- [x] **INT-01**: When verification fails, `mimirtool backfill` does not attempt any uploads and exits with a non-zero code and a clear error summary.
+- [x] **INT-02**: Verification output follows existing mimirtool logging conventions (go-kit/log at the level used elsewhere in `client/backfill.go`).
 
 ## v2 Requirements
 
@@ -46,13 +46,13 @@
 |-------------|-------|--------|
 | FRAMEWORK-01 | Phase 1 | Complete |
 | FRAMEWORK-02 | Phase 1 | Complete |
-| FRAMEWORK-03 | Phase 1 | Pending |
+| FRAMEWORK-03 | Phase 1 | Complete |
 | FRAMEWORK-04 | Phase 1 | Complete |
 | CHECK-01 | Phase 1 | Complete |
 | CHECK-02 | Phase 1 | Complete |
 | CHECK-03 | Phase 1 | Complete |
-| INT-01 | Phase 1 | Pending |
-| INT-02 | Phase 1 | Pending |
+| INT-01 | Phase 1 | Complete |
+| INT-02 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 9 total

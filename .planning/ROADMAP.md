@@ -30,7 +30,7 @@ Plans:
 - [x] 01-01-PLAN.md — Create verify/ package skeleton (BlockVerifier, BatchVerifier, Verifier, Report, options) + framework seam tests
 - [x] 01-02-PLAN.md — WellFormedVerifier wrapping block.VerifyBlock + unit tests (valid / truncated / mangled / checksum-mismatch)
 - [x] 01-03-PLAN.md — SingleUTCDayVerifier (header math + deep OutsideChunks via VerifyBlock) + table-driven tests
-- [ ] 01-04-PLAN.md — MimirClient.BackfillWithOptions integration + httptest-based zero-upload assertions (verify-fail, dry-run, valid-batch, legacy-wrapper)
+- [x] 01-04-PLAN.md — MimirClient.BackfillWithOptions integration + httptest-based zero-upload assertions (verify-fail, dry-run, valid-batch, legacy-wrapper)
 - [ ] 01-05-PLAN.md — CLI flag wiring (--dry-run, --skip-chunk-verification, --full-report, --verify-concurrency), cmd.Validate mutual-exclusion, CHANGELOG, make format/lint/test/reference-help, human-verify checkpoint
 
 ## Progress
@@ -40,4 +40,4 @@ Phases execute in numeric order: 1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Backfill Pre-Verification | 3/5 | In progress | - |
+| 1. Backfill Pre-Verification | 4/5 | In progress | - |
