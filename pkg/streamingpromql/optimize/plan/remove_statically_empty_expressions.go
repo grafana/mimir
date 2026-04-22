@@ -4,10 +4,12 @@ package plan
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/timestamp"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -60,7 +62,7 @@ func NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg prometheus.Register
 }
 
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Name() string {
-	return "remove statically empty expressions"
+	return "Remove statically empty expressions"
 }
 
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
@@ -117,7 +119,9 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		}
 	}
 
-	if isAlwaysEmpty(node, params) {
+	if empty, err := isAlwaysEmpty(node, params); err != nil {
+		return nil, false, err
+	} else if empty {
 		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
 		return noOp, true, nil
 	}
@@ -127,83 +131,134 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 
 // isAlwaysEmpty returns true if node can be statically determined to produce an empty instant
 // vector for the entire query time range described by params.
-func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) bool {
+func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, error) {
 	node = unwrap(node)
 
 	switch node := node.(type) {
 	case *core.NoOp:
-		return true
+		return true, nil
 	case *core.BinaryExpression:
 		return isAlwaysEmptyBinaryExpression(node, params)
 	default:
-		return false
+		return false, nil
 	}
 }
 
-func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning.QueryParameters) bool {
-	earliestPossibleTimestampValueInMilliseconds := float64(params.TimeRange.StartT - params.LookbackDelta.Milliseconds())
-
+func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning.QueryParameters) (bool, error) {
 	if node.ReturnBool {
-		return false
+		return false, nil
 	}
 
 	switch node.Op {
 	case core.BINARY_LAND:
-		return isAlwaysEmpty(node.LHS, params) || isAlwaysEmpty(node.RHS, params)
+		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
+		if err != nil {
+			return false, err
+		}
+
+		if lhsEmpty {
+			return true, nil
+		}
+
+		return isAlwaysEmpty(node.RHS, params)
 
 	case core.BINARY_LSS:
-		// timestamp(v) < C: always empty when C <= the earliest value that timestamp() could return
-		// timestamp() returns the value in seconds since the epoch, so we need to convert to milliseconds.
-		if constant, ok := isTimestampComparison(node.LHS, node.RHS); ok {
-			return constant*1000 <= earliestPossibleTimestampValueInMilliseconds
-		}
+		// Check for timestamp(v) < C.
+		return isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, false, params)
 
 	case core.BINARY_LTE:
-		// timestamp(v) <= C: always empty when C < the earliest value that timestamp() could return
-		if constant, ok := isTimestampComparison(node.LHS, node.RHS); ok {
-			return constant*1000 < earliestPossibleTimestampValueInMilliseconds
-		}
+		// Check for timestamp(v) <= C.
+		return isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, true, params)
 
 	case core.BINARY_GTR:
-		// C > timestamp(v): equivalent to timestamp(v) < C.
-		if constant, ok := isTimestampComparison(node.RHS, node.LHS); ok {
-			return constant*1000 <= earliestPossibleTimestampValueInMilliseconds
-		}
+		// Check for C > timestamp(v), equivalent to timestamp(v) < C.
+		return isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, false, params)
 
 	case core.BINARY_GTE:
-		// C >= timestamp(v): equivalent to timestamp(v) <= C.
-		if constant, ok := isTimestampComparison(node.RHS, node.LHS); ok {
-			return constant*1000 < earliestPossibleTimestampValueInMilliseconds
-		}
+		// Check for C >= timestamp(v), equivalent to timestamp(v) <= C.
+		return isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, true, params)
 	}
 
-	return false
+	return false, nil
 }
 
-// isTimestampComparison checks whether timestampSide is (or wraps) a timestamp()
-// function call and constantSide is (or wraps) a NumberLiteral. If so, it returns the constant
-// value and true.
-func isTimestampComparison(timestampSide, constantSide planning.Node) (float64, bool) {
-	if !isTimestampCall(timestampSide) {
-		return 0, false
-	}
-
-	constantSide = unwrap(constantSide)
-	literal, ok := constantSide.(*core.NumberLiteral)
+// isAlwaysEmptyTimestampComparison returns true if timestampSide and constantSide represent
+// a timestamp(...) invocation and number literal respectively, and the value of constantSide
+// is such that the expression timestampSide < constantSide (inclusive=false) or
+// timestampSide <= constantSide (inclusive=true) can never return any results.
+func isAlwaysEmptyTimestampComparison(timestampSide, constantSide planning.Node, inclusive bool, params *planning.QueryParameters) (bool, error) {
+	timestampCall, ok := findTimestampCall(timestampSide)
 	if !ok {
-		return 0, false
+		return false, nil
 	}
 
-	return literal.Value, true
+	constant, ok := findConstant(constantSide)
+	if !ok {
+		return false, nil
+	}
+
+	if len(timestampCall.Args) < 1 {
+		// Should never happen, but check to avoid panicking here.
+		return false, fmt.Errorf("expected at least one argument in call to timestamp(), got %d", len(timestampCall.Args))
+	}
+
+	selector, timestampWrapsSelector := timestampCall.Args[0].(*core.VectorSelector)
+
+	// The expression timestamp(X) < C is guaranteed to return no results if the lowest possible
+	// value of timestamp(X) is greater than or equal to C.
+	//
+	// The expression timestamp(X) <= C is guaranteed to return no results if the lowest possible
+	// value of timestamp is greater than C.
+	//
+	// If X is a selector, then timestamp(X) will return the timestamps of the underlying samples, so we need to check
+	// the time range queried to account for the lookback window, offsets and @ modifiers.
+	//
+	// If X is not a selector, then timestamp(X) can only return timestamps of the steps in the query time range.
+
+	var earliestPossibleTimestampValueInMilliseconds float64
+	if timestampWrapsSelector {
+		timeRange, err := selector.QueriedTimeRange(params.TimeRange, params.LookbackDelta)
+		if err != nil {
+			return false, err
+		}
+		earliestPossibleTimestampValueInMilliseconds = float64(timestamp.FromTime(timeRange.MinT))
+	} else {
+		earliestPossibleTimestampValueInMilliseconds = float64(params.TimeRange.StartT)
+	}
+
+	constantInMilliseconds := constant.Value * 1000
+
+	if inclusive {
+		return earliestPossibleTimestampValueInMilliseconds > constantInMilliseconds, nil
+	}
+
+	return earliestPossibleTimestampValueInMilliseconds >= constantInMilliseconds, nil
 }
 
-// isTimestampCall returns true if node is (or wraps) a FunctionCall for the timestamp() function.
+// findTimestampCall returns the function node and true if node is (or wraps) a FunctionCall for the timestamp() function.
 // It unwraps DeduplicateAndMerge, DropName, and StepInvariantExpression layers transparently.
-func isTimestampCall(node planning.Node) bool {
+func findTimestampCall(node planning.Node) (*core.FunctionCall, bool) {
 	node = unwrap(node)
 
-	fc, ok := node.(*core.FunctionCall)
-	return ok && fc.Function == functions.FUNCTION_TIMESTAMP
+	f, ok := node.(*core.FunctionCall)
+	if !ok {
+		return nil, false
+	}
+
+	if f.Function == functions.FUNCTION_TIMESTAMP {
+		return f, true
+	}
+
+	return nil, false
+}
+
+// findConstant returns the number literal node and true if node is (or wraps) a NumberLiteral.
+// It unwraps DeduplicateAndMerge, DropName, and StepInvariantExpression layers transparently.
+func findConstant(node planning.Node) (*core.NumberLiteral, bool) {
+	node = unwrap(node)
+
+	literal, ok := node.(*core.NumberLiteral)
+	return literal, ok
 }
 
 // unwrap removes transparent wrapper nodes returning the innermost non-wrapper node.
@@ -216,6 +271,13 @@ func unwrap(node planning.Node) planning.Node {
 			node = n.Inner
 		case *core.StepInvariantExpression:
 			node = n.Inner
+		case *core.FunctionCall:
+			if (n.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1 || n.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2) && len(n.Args) > 0 {
+				// The Adaptive Metrics query rewriting can wrap a timestamp() call (eg. expression becomes wrapper(timestamp(...)) < T), so unwrap it.
+				node = n.Args[0]
+			} else {
+				return node
+			}
 		default:
 			return node
 		}
