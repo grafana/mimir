@@ -14,7 +14,7 @@
 
 ### Checks (v1)
 
-- [ ] **CHECK-01**: Well-formed block — `meta.json` valid, `index` file readable, chunk segments present on disk and internally consistent. Reuse Prometheus `tsdb.OpenBlock` or Thanos `block.VerifyIndex` rather than reimplementing.
+- [x] **CHECK-01**: Well-formed block — `meta.json` valid, `index` file readable, chunk segments present on disk and internally consistent. Reuse Prometheus `tsdb.OpenBlock` or Thanos `block.VerifyIndex` rather than reimplementing.
 - [ ] **CHECK-02**: 24-hour block duration — `MaxTime - MinTime == 24h` exactly, measured from block meta.
 - [ ] **CHECK-03**: UTC-day alignment — `MinTime` is a whole-hour UTC-midnight boundary (`MinTime % (24h in ms) == 0`). Paired with CHECK-02 so the block covers exactly one calendar UTC day.
 
@@ -48,7 +48,7 @@
 | FRAMEWORK-02 | Phase 1 | Complete |
 | FRAMEWORK-03 | Phase 1 | Pending |
 | FRAMEWORK-04 | Phase 1 | Complete |
-| CHECK-01 | Phase 1 | Pending |
+| CHECK-01 | Phase 1 | Complete |
 | CHECK-02 | Phase 1 | Pending |
 | CHECK-03 | Phase 1 | Pending |
 | INT-01 | Phase 1 | Pending |
@@ -61,4 +61,4 @@
 
 ---
 *Requirements defined: 2026-04-22*
-*Last updated: 2026-04-22 after initial definition*
+*Last updated: 2026-04-22 — CHECK-01 completed in Plan 01-02*
