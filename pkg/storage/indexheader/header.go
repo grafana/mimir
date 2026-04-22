@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel"
 
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 )
 
@@ -31,6 +32,7 @@ var NotFoundRangeErr = errors.New("range not found") //nolint:revive
 
 var (
 	errInvalidIndexHeaderLazyLoadingConcurrency = errors.New("invalid index-header lazy loading max concurrency; must be non-negative")
+	errInvalidBucketReaderBufferSize            = errors.New("invalid bucket reader buffer size; must be non-negative")
 )
 
 // Reader is an interface allowing to read essential, minimal number of index fields from the small portion of index file called header.
@@ -108,30 +110,33 @@ func (cfg *Config) Validate() error {
 }
 
 const (
-	//SectionSymbolsTable        Section = "symbols-table"
+	// SectionSymbolsTable        Section = "symbols-table"
 
 	SectionPostingsOffsetsTable string = "postings-offsets-table"
 
-	//SectionAll Section = "all"
+	// SectionAll Section = "all"
 )
 
-var (
-	errInvalidIndexHeaderSection = errors.New(fmt.Sprintf("invalid index-header section; must be one of: %s", SectionPostingsOffsetsTable))
-)
+var errInvalidIndexHeaderSection = errors.New(fmt.Sprintf("invalid index-header section; must be one of: %s", SectionPostingsOffsetsTable))
 
 type BucketReaderConfig struct {
 	Enabled             bool   `yaml:"enabled" category:"experimental"`
 	BucketIndexSections string `yaml:"index_sections"  category:"experimental"`
+	BufferSizeBytes     int    `yaml:"buffer_size_bytes" category:"experimental"`
 }
 
 func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.")
 	f.StringVar(&cfg.BucketIndexSections, prefix+"index-sections", SectionPostingsOffsetsTable, fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionPostingsOffsetsTable))
+	f.IntVar(&cfg.BufferSizeBytes, prefix+"buffer-size-bytes", streamencoding.DefaultBucketBufPoolSize, "Size in bytes of the buffer used for reading index-header sections from object storage.")
 }
 
 func (cfg *BucketReaderConfig) Validate() error {
 	if !slices.Contains([]string{SectionPostingsOffsetsTable}, cfg.BucketIndexSections) {
 		return errInvalidIndexHeaderSection
+	}
+	if cfg.BufferSizeBytes < 0 {
+		return errInvalidBucketReaderBufferSize
 	}
 	return nil
 }
