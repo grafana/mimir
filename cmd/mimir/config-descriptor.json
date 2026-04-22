@@ -2627,6 +2627,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_propagate_matchers",
+              "required": false,
+              "desc": "Enable propagating label matchers across binary expressions.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-propagate-matchers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_reduce_matchers",
               "required": false,
               "desc": "Enable eliminating duplicate or redundant matchers that are part of selector expressions.",
@@ -8635,17 +8646,6 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.rewrite-histogram-queries",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "rewrite_propagate_matchers",
-          "required": false,
-          "desc": "Set to true to enable rewriting queries to propagate label matchers across binary expressions.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.rewrite-propagate-matchers",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

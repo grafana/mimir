@@ -43,6 +43,7 @@ type EngineOpts struct {
 	EnableSubsetSelectorElimination        bool `yaml:"enable_subset_selector_elimination" category:"experimental"`
 	EnableNarrowBinarySelectors            bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 	EnableEliminateDeduplicateAndMerge     bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
+	EnablePropagateMatchers                bool `yaml:"enable_propagate_matchers" category:"experimental"`
 	EnableReduceMatchers                   bool `yaml:"enable_reduce_matchers" category:"experimental"`
 	EnableProjectionPushdown               bool `yaml:"enable_projection_pushdown" category:"experimental"`
 	EnableMultiAggregation                 bool `yaml:"enable_multi_aggregation" category:"experimental"`
@@ -72,6 +73,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", false, "Enable subset selector elimination when evaluating queries.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", true, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
+	f.BoolVar(&o.EnablePropagateMatchers, "querier.mimir-query-engine.enable-propagate-matchers", false, "Enable propagating label matchers across binary expressions.")
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
 	f.BoolVar(&o.EnableProjectionPushdown, "querier.mimir-query-engine.enable-projection-pushdown", false, "Enable projection pushdown to only fetch labels required for the query from storage.")
 	f.BoolVar(&o.EnableMultiAggregation, "querier.mimir-query-engine.enable-multi-aggregation", true, "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.")

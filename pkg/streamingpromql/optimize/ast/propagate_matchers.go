@@ -6,12 +6,47 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
+
+// PropagateMatchers optimizes queries by propagating matchers across binary operations.
+type PropagateMatchers struct {
+	propagateMatchersAttempts prometheus.Counter
+	propagateMatchersRewrites prometheus.Counter
+}
+
+func NewPropagateMatchers(reg prometheus.Registerer) *PropagateMatchers {
+	return &PropagateMatchers{
+		propagateMatchersAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_propagate_matchers_attempted_total",
+			Help: "Total number of queries that the optimization pass has attempted to rewrite by propagating matchers.",
+		}),
+		propagateMatchersRewrites: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_propagate_matchers_rewritten_total",
+			Help: "Total number of queries where the optimization pass has rewritten the query by propagating matchers.",
+		}),
+	}
+}
+
+func (p *PropagateMatchers) Name() string {
+	return "Propagate matchers"
+}
+
+func (p *PropagateMatchers) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	p.propagateMatchersAttempts.Inc()
+	mapper := NewPropagateMatchersMapper()
+	newExpr, err := mapper.Map(ctx, expr)
+	if mapper.HasChanged() {
+		p.propagateMatchersRewrites.Inc()
+	}
+	return newExpr, err
+}
 
 // NewPropagateMatchersMapper optimizes queries by propagating matchers across binary operations.
 func NewPropagateMatchersMapper() *astmapper.ASTExprMapperWithState {

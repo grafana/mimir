@@ -99,13 +99,17 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
 	}
 
+	if opts.EnablePropagateMatchers {
+		planner.RegisterASTOptimizationPass(ast.NewPropagateMatchers(opts.CommonOpts.Reg)) // Propagate matchers before reducing them.
+	}
+
 	// NOTE: This optimization pass MUST run before SortLabelsAndMatchers since it does not preserve the order of matchers.
 	if opts.EnableReduceMatchers {
 		planner.RegisterASTOptimizationPass(ast.NewReduceMatchers(opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
+	// After query sharding is moved here, we want to move reorder histogram aggregation here as well before query sharding.
 
 	// This optimization pass is registered before CSE to keep the query plan as a simple tree structure.
 	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,

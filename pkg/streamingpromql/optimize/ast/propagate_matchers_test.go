@@ -4,11 +4,16 @@ package ast_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -137,19 +142,31 @@ func TestPropagateMatchers(t *testing.T) {
 			expectedExpr, err := promqlext.NewPromQLParser().ParseExpr(expected)
 			require.NoError(t, err)
 
-			inputExpr, err := promqlext.NewPromQLParser().ParseExpr(input)
-			require.NoError(t, err)
-			inputExpr, err = preprocessQuery(t, inputExpr)
-			require.NoError(t, err)
-
-			optimizer := ast.NewPropagateMatchersMapper()
-			outputExpr, err := optimizer.Map(ctx, inputExpr)
-			require.NoError(t, err)
+			reg, outputExpr := runASTOptimizationPass(t, ctx, input, func(reg prometheus.Registerer) optimize.ASTOptimizationPass {
+				return ast.NewPropagateMatchers(reg)
+			})
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
-			require.Equal(t, input != expected, optimizer.HasChanged())
+			expectedChanged := 0
+			if input != expected {
+				expectedChanged = 1
+			}
+			checkPropagateMatchersMetrics(t, reg, 1, expectedChanged)
 		})
 	}
+}
+
+func checkPropagateMatchersMetrics(t *testing.T, g prometheus.Gatherer, expectedTotal, expectedChanged int) {
+	const metricNameTotal = "cortex_mimir_query_engine_propagate_matchers_attempted_total"
+	const metricNameChanged = "cortex_mimir_query_engine_propagate_matchers_rewritten_total"
+	expectedMetrics := fmt.Sprintf(`# HELP %[1]v Total number of queries that the optimization pass has attempted to rewrite by propagating matchers.
+# TYPE %[1]v counter
+%[1]v %[2]v
+# HELP %[3]v Total number of queries where the optimization pass has rewritten the query by propagating matchers.
+# TYPE %[3]v counter
+%[3]v %[4]v
+`, metricNameTotal, expectedTotal, metricNameChanged, expectedChanged)
+	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricNameTotal, metricNameChanged))
 }
 
 func TestPropagateMatchersWithData(t *testing.T) {

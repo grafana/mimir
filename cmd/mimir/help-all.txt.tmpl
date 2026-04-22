@@ -2237,6 +2237,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
   -querier.mimir-query-engine.enable-projection-pushdown
     	[experimental] Enable projection pushdown to only fetch labels required for the query from storage.
+  -querier.mimir-query-engine.enable-propagate-matchers
+    	[experimental] Enable propagating label matchers across binary expressions.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
@@ -2647,8 +2649,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -query-frontend.rewrite-histogram-queries
     	[experimental] Set to true to enable rewriting histogram queries for a more efficient order of execution.
-  -query-frontend.rewrite-propagate-matchers
-    	[experimental] Set to true to enable rewriting queries to propagate label matchers across binary expressions.
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-frontend.scheduler-dns-lookup-period duration
