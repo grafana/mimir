@@ -1470,7 +1470,10 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 	)
 	t.Server.GRPC.RegisterService(&rebalancer.NautilusRebalancerServiceDesc, t.NautilusRebalancer)
 
-	t.API.RegisterRoute("/nautilus/rebalancer", t.NautilusRebalancer, false, true, "GET")
+	// Mount as a prefix so the rebalancer's ServeHTTP can dispatch
+	// sub-routes (e.g. /rounds.json, /rounds/{idx}.json) used by
+	// external trace-replay tools alongside the HTML dashboard.
+	t.API.RegisterRoutesWithPrefix("/nautilus/rebalancer", t.NautilusRebalancer, false, true, 0, "GET")
 
 	return t.NautilusRebalancer, nil
 }

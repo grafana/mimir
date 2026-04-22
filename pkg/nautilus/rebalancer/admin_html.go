@@ -168,19 +168,20 @@ details>summary::-webkit-details-marker{display:none}
 {{if eq (len .Rounds) 0}}
 <div class="no-data">No rebalance rounds recorded yet.</div>
 {{else}}
-{{range .Rounds}}
+{{range $i, $r := .Rounds}}
 <div class="round">
 	<div class="round-header">
-		<strong>{{.Time.Format "15:04:05"}}</strong>
-		<span>Load: {{fmtLoad .TotalLoad}}</span>
-		<span>Imbalance: {{fmtImbalance .ImbalanceRatio}}</span>
-		<span>Ranges: {{.NumEntries}}</span>
-		<span>Moved: {{fmtPct1 .MovedFraction}}</span>
-		<span>Actions: {{len .Actions}}</span>
+		<strong>{{$r.Time.Format "15:04:05"}}</strong>
+		<span>Load: {{fmtLoad $r.TotalLoad}}</span>
+		<span>Imbalance: {{fmtImbalance $r.ImbalanceRatio}}</span>
+		<span>Ranges: {{$r.NumEntries}}</span>
+		<span>Moved: {{fmtPct1 $r.MovedFraction}}</span>
+		<span>Actions: {{len $r.Actions}}</span>
+		<span><a href="rounds/{{$i}}.json" title="Download full input/output trace for this round (for replay/verification)">trace.json</a></span>
 	</div>
-	{{if .Actions}}
+	{{if $r.Actions}}
 	<div class="round-actions">
-	{{range .Actions}}
+	{{range $r.Actions}}
 		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}</span>
 	{{end}}
 	</div>

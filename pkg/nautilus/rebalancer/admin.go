@@ -8,6 +8,8 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,21 +59,24 @@ type rangeStatsView struct {
 	Load    float64
 }
 
-// adminState stores the data needed to render the admin page.
+// adminState stores the data needed to render the admin page and to
+// serve per-round Trace JSON for external verification tools. Traces
+// hold both the lightweight Round summary (for HTML) and the full
+// inputs/outputs needed for deterministic replay.
 type adminState struct {
 	mu               sync.RWMutex
-	rounds           []RoundLog
+	traces           []Trace
 	lastStats        map[assignment.HashRange]rangeStatsView
 	lastOrphanSeries map[int32]int64
 	lastOrphanLoad   map[int32]float64
 }
 
-func (s *adminState) addRound(rl RoundLog) {
+func (s *adminState) addTrace(tr Trace) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.rounds = append(s.rounds, rl)
-	if len(s.rounds) > maxRoundLogs {
-		s.rounds = s.rounds[len(s.rounds)-maxRoundLogs:]
+	s.traces = append(s.traces, tr)
+	if len(s.traces) > maxRoundLogs {
+		s.traces = s.traces[len(s.traces)-maxRoundLogs:]
 	}
 }
 
@@ -102,13 +107,18 @@ func (s *adminState) setLastStats(lm *loadMap) {
 	s.lastOrphanLoad = orphanLoad
 }
 
-// snapshot returns the current admin state for rendering.
+// snapshot returns the current admin state for rendering. Returns
+// the lightweight Round summaries only — the full Trace inputs are
+// served separately via the JSON endpoints to keep HTML rendering
+// cheap.
 func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStatsView, map[int32]int64, map[int32]float64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	rounds := make([]RoundLog, len(s.rounds))
-	copy(rounds, s.rounds)
+	rounds := make([]RoundLog, len(s.traces))
+	for i, tr := range s.traces {
+		rounds[i] = tr.Round
+	}
 
 	stats := make(map[assignment.HashRange]rangeStatsView, len(s.lastStats))
 	for k, v := range s.lastStats {
@@ -123,6 +133,30 @@ func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStats
 		orphanLoad[k] = v
 	}
 	return rounds, stats, orphanSeries, orphanLoad
+}
+
+// traceSnapshot returns a copy of all currently-buffered traces in
+// chronological order (oldest first). Use traceAt for single-round
+// lookups by display index.
+func (s *adminState) traceSnapshot() []Trace {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Trace, len(s.traces))
+	copy(out, s.traces)
+	return out
+}
+
+// traceAt returns the trace at the given display index (0 = newest)
+// and true if found, or zero/false if out of range.
+func (s *adminState) traceAt(displayIdx int) (Trace, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if displayIdx < 0 || displayIdx >= len(s.traces) {
+		return Trace{}, false
+	}
+	// Display index 0 = newest = last in chronological slice.
+	internalIdx := len(s.traces) - 1 - displayIdx
+	return s.traces[internalIdx], true
 }
 
 // partitionView is the data for one partition row in the admin page.
@@ -345,10 +379,86 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	return data
 }
 
-func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+// ServeHTTP dispatches all requests under the rebalancer's admin
+// route prefix:
+//
+//	GET  /                       → HTML dashboard (default)
+//	GET  /rounds.json            → list of recent round summaries
+//	GET  /rounds/{idx}.json      → full Trace for one round
+//	                               (idx 0 = newest, up to maxRoundLogs-1)
+//
+// The JSON endpoints exist so external tools — including AI
+// verification agents — can fetch a round's complete inputs and
+// outputs and replay them locally via ReplayTrace to confirm slicer
+// determinism and check invariants.
+func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Trim the registered prefix so this handler only sees its own
+	// sub-path. The route registration uses a path prefix; the
+	// actual prefix value is whatever modules.go registered, which
+	// we discover by stripping anything up through the last
+	// "/nautilus/rebalancer" segment.
+	sub := strings.TrimPrefix(req.URL.Path, adminPathPrefix)
+	switch {
+	case sub == "" || sub == "/":
+		r.serveAdminHTML(w)
+	case sub == "/rounds.json":
+		r.serveRoundsList(w)
+	case strings.HasPrefix(sub, "/rounds/") && strings.HasSuffix(sub, ".json"):
+		idxStr := strings.TrimSuffix(strings.TrimPrefix(sub, "/rounds/"), ".json")
+		r.serveRoundTrace(w, idxStr)
+	default:
+		http.NotFound(w, req)
+	}
+}
+
+// adminPathPrefix is the URL prefix under which the rebalancer's
+// admin handlers are mounted (see modules.go). Kept here so URL
+// dispatch in ServeHTTP and link generation in the HTML template
+// stay in sync.
+const adminPathPrefix = "/nautilus/rebalancer"
+
+func (r *Rebalancer) serveAdminHTML(w http.ResponseWriter) {
 	data := r.buildAdminPageData()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := adminTemplate.Execute(w, data); err != nil {
 		http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
+	}
+}
+
+func (r *Rebalancer) serveRoundsList(w http.ResponseWriter) {
+	traces := r.admin.traceSnapshot()
+	// Reverse so the API returns newest-first, matching the indices
+	// used by /rounds/{idx}.json.
+	rounds := make([]RoundLog, len(traces))
+	for i, tr := range traces {
+		rounds[len(traces)-1-i] = tr.Round
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(struct {
+		SlicerVersion string     `json:"slicer_version"`
+		Rounds        []RoundLog `json:"rounds"`
+	}{SlicerVersion: SlicerVersion, Rounds: rounds}); err != nil {
+		http.Error(w, fmt.Sprintf("encode error: %v", err), http.StatusInternalServerError)
+	}
+}
+
+func (r *Rebalancer) serveRoundTrace(w http.ResponseWriter, idxStr string) {
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid round index %q", idxStr), http.StatusBadRequest)
+		return
+	}
+	tr, ok := r.admin.traceAt(idx)
+	if !ok {
+		http.NotFound(w, nil)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(tr); err != nil {
+		http.Error(w, fmt.Sprintf("encode error: %v", err), http.StatusInternalServerError)
 	}
 }

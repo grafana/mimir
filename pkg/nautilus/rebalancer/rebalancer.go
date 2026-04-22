@@ -172,6 +172,13 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	now := time.Now()
 	r.pruneExpiredCooldowns(now)
 
+	// Snapshot pre-slicer state for the trace. Done BEFORE runSlicer
+	// mutates anything (it gets a fresh assignment, but the cooldown
+	// map is inspected as-of `now` and we want the snapshot to reflect
+	// what the slicer actually saw).
+	startEntries := append([]assignment.Entry(nil), current.Entries...)
+	cooldownsSnapshot := cooldownsToWire(r.moveCooldowns)
+
 	newAssignment, actions := r.runSlicer(current, rates, partitionOrphans, activePartitions, now)
 	if err := newAssignment.Validate(); err != nil {
 		level.Error(r.logger).Log("msg", "generated invalid assignment", "err", err)
@@ -215,7 +222,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		}
 	}
 
-	r.admin.addRound(RoundLog{
+	round := RoundLog{
 		Time:           now,
 		TotalLoad:      totalLoad,
 		MeanPartLoad:   meanPL,
@@ -226,6 +233,24 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		NumPartitions:  len(partLoads),
 		MovedFraction:  movedFraction,
 		Actions:        actions,
+	}
+
+	r.admin.addTrace(Trace{
+		SlicerVersion:    SlicerVersion,
+		Round:            round,
+		Now:              now,
+		Start:            startEntries,
+		Rates:            ratesToWire(rates),
+		Orphans:          partitionOrphans,
+		ActivePartitions: append([]int32(nil), activePartitions...),
+		Cooldowns:        cooldownsSnapshot,
+		Config: ConfigSnapshot{
+			LoadWeightSeries:  r.cfg.LoadWeightSeries,
+			LoadWeightSamples: r.cfg.LoadWeightSamples,
+			MovementBudget:    r.cfg.MovementBudget,
+			MoveCooldown:      r.cfg.MoveCooldown,
+		},
+		End: append([]assignment.Entry(nil), newAssignment.Entries...),
 	})
 
 	level.Info(r.logger).Log("msg", "rebalance complete", "entries", len(newAssignment.Entries), "total_assignments", len(r.store.snapshot().Assignments))
