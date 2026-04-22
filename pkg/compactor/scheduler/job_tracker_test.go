@@ -338,12 +338,22 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	_, err = jt2.Maintenance(time.Minute, false, true, time.Hour, 0)
 	require.NoError(t, err)
 
+	// Lease both of tenant1's jobs
+	for range 2 {
+		_, _, err := jt1.Lease()
+		require.NoError(t, err)
+	}
+
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
 		# TYPE cortex_compactor_scheduler_pending_jobs gauge
-		cortex_compactor_scheduler_pending_jobs{job_type="compaction"} 2
-		cortex_compactor_scheduler_pending_jobs{job_type="plan"} 2
-	`), "cortex_compactor_scheduler_pending_jobs"), "aggregate pending jobs across both tenants")
+		cortex_compactor_scheduler_pending_jobs{job_type="compaction"} 1
+		cortex_compactor_scheduler_pending_jobs{job_type="plan"} 1
+		# HELP cortex_compactor_scheduler_active_jobs The number of jobs active in workers.
+		# TYPE cortex_compactor_scheduler_active_jobs gauge
+		cortex_compactor_scheduler_active_jobs{job_type="compaction"} 1
+		cortex_compactor_scheduler_active_jobs{job_type="plan"} 1
+	`), "cortex_compactor_scheduler_pending_jobs", "cortex_compactor_scheduler_active_jobs"), "tenant1 active, tenant2 pending")
 
 	// Cleaning up tenant1 should only subtract its contribution, not zero the shared gauges.
 	jt1.CleanupMetrics()
@@ -358,7 +368,11 @@ func TestJobTracker_Cleanup(t *testing.T) {
 		# TYPE cortex_compactor_scheduler_pending_jobs gauge
 		cortex_compactor_scheduler_pending_jobs{job_type="compaction"} 1
 		cortex_compactor_scheduler_pending_jobs{job_type="plan"} 1
-	`), "cortex_compactor_scheduler_pending_jobs"), "aggregate pending jobs drops to tenant2's contribution")
+		# HELP cortex_compactor_scheduler_active_jobs The number of jobs active in workers.
+		# TYPE cortex_compactor_scheduler_active_jobs gauge
+		cortex_compactor_scheduler_active_jobs{job_type="compaction"} 0
+		cortex_compactor_scheduler_active_jobs{job_type="plan"} 0
+	`), "cortex_compactor_scheduler_pending_jobs", "cortex_compactor_scheduler_active_jobs"), "tenant1's active contribution removed, tenant2's pending preserved")
 }
 
 func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
