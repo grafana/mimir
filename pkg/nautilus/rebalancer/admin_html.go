@@ -72,11 +72,11 @@ details>summary::-webkit-details-marker{display:none}
 <div class="no-data">No assignment data yet. Waiting for first rebalance round.</div>
 {{else}}
 <div class="summary">
-	<div class="stat">
-		<div class="stat-label">Active Series</div>
+	<div class="stat" title="In-memory TSDB head series across all owned ranges. This is the same denominator as cortex_ingester_memory_series (= prometheus_tsdb_head_series), NOT cortex_ingester_active_series (which is a ~10min sliding window). Series stay counted here until head compaction GCs them.">
+		<div class="stat-label">Head Series</div>
 		<div class="stat-value">{{fmtSeries .TotalSeries}}</div>
 	</div>
-	<div class="stat" title="In-memory series an ingester still holds for hash ranges it no longer owns. These will be GC'd by the next TSDB head compaction (~2h) but in the meantime represent real memory pressure on the source ingester. The slicer treats orphan series as load attributed to the partition's current owner.">
+	<div class="stat" title="In-memory head series an ingester still holds for hash ranges it no longer owns. These will be GC'd by the next TSDB head compaction (~2h) but in the meantime represent real memory pressure on the source ingester. The slicer treats orphan series as load attributed to the partition's current owner.">
 		<div class="stat-label">Orphan Series</div>
 		<div class="stat-value{{if gt .TotalOrphan 0}} warn{{end}}">{{fmtSeries .TotalOrphan}}</div>
 	</div>
@@ -140,8 +140,8 @@ details>summary::-webkit-details-marker{display:none}
 		<span class="part-instance" title="{{.InstanceAddr}}">{{.InstanceID}}</span>
 		<span class="part-stats">
 			<span title="combined weighted load (per-range + orphan)">{{fmtLoad .TotalLoad}}</span>
-			<span title="active series">{{fmtSeries .TotalSeries}}s</span>
-			{{if gt .OrphanSeries 0}}<span title="orphan series held by owner ingester from previously-owned ranges, not yet GC'd by head compaction" style="color:#e67700">+{{fmtSeries .OrphanSeries}} orphan</span>{{end}}
+			<span title="in-memory TSDB head series (matches cortex_ingester_memory_series, not cortex_ingester_active_series)">{{fmtSeries .TotalSeries}}s</span>
+			{{if gt .OrphanSeries 0}}<span title="orphan head series held by owner ingester from previously-owned ranges, not yet GC'd by head compaction" style="color:#e67700">+{{fmtSeries .OrphanSeries}} orphan</span>{{end}}
 			<span title="samples per second">{{fmtRate .TotalSamples}}/s</span>
 			<span>{{.NumRanges}} ranges</span>
 			<span>{{fmtPct .HashSpacePct}} hash</span>
@@ -154,7 +154,7 @@ details>summary::-webkit-details-marker{display:none}
 	<div class="part-ranges open">
 		<div class="range-grid">
 		{{range .Ranges}}
-			<span class="range {{actionClass .LastAction}}" title="Size: {{fmtPct .SizePct}} · Load: {{fmtLoad .Load}} · Samples: {{fmtRate .Samples}}/s · Series: {{fmtSeries .Series}}">{{hexRange .Lo .Hi}}<span class="rate">{{fmtSeries .Series}}s · {{fmtRate .Samples}}/s</span></span>
+			<span class="range {{actionClass .LastAction}}" title="Size: {{fmtPct .SizePct}} · Load: {{fmtLoad .Load}} · Samples: {{fmtRate .Samples}}/s · Head series: {{fmtSeries .Series}}">{{hexRange .Lo .Hi}}<span class="rate">{{fmtSeries .Series}}s · {{fmtRate .Samples}}/s</span></span>
 		{{end}}
 		</div>
 	</div>

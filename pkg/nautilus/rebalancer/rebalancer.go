@@ -51,12 +51,15 @@ type Config struct {
 	MoveCooldown time.Duration `yaml:"move_cooldown"`
 
 	// LoadWeightSeries and LoadWeightSamples control how the two
-	// per-range load signals (active series count and sample ingestion
-	// rate) are combined into a single scalar load value used by the
-	// slicer. Each component is first normalized by its global total
-	// so that both contribute fractions of total load, then weighted.
-	// Defaults give cardinality the dominant role since ingester memory
-	// (and OOM risk) is the primary scaling dimension.
+	// per-range load signals (in-memory TSDB head series count and
+	// sample ingestion rate) are combined into a single scalar load
+	// value used by the slicer. Each component is first normalized by
+	// its global total so that both contribute fractions of total load,
+	// then weighted. Defaults give cardinality the dominant role since
+	// ingester memory (and OOM risk) is the primary scaling dimension.
+	// Note: "head series" here means series in the TSDB head (same
+	// denominator as cortex_ingester_memory_series), not the sliding
+	// window cortex_ingester_active_series metric.
 	LoadWeightSeries  float64 `yaml:"load_weight_series"`
 	LoadWeightSamples float64 `yaml:"load_weight_samples"`
 }
@@ -67,7 +70,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.IngesterRPCTimeout, prefix+"ingester-rpc-timeout", 4*time.Second, "Per-call timeout for HashRangeStats and SetHashRanges RPCs to each ingester. Prevents one stuck pod (e.g. mid-rollout) from stalling the whole rebalance round. 0 disables.")
 	f.IntVar(&cfg.IngesterRPCConcurrency, prefix+"ingester-rpc-concurrency", 10, "Maximum concurrent ingester RPCs per round. 0 means one per ingester (unbounded).")
 	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 90*time.Second, "Minimum time between consecutive moves of the same hash range (or any range overlapping it). Covers distributor poll lag plus ingester EWMA settle time. 0 disables.")
-	f.Float64Var(&cfg.LoadWeightSeries, prefix+"load-weight-series", 0.8, "Weight of normalized active series count in the per-range combined load metric.")
+	f.Float64Var(&cfg.LoadWeightSeries, prefix+"load-weight-series", 0.8, "Weight of normalized in-memory TSDB head series count in the per-range combined load metric.")
 	f.Float64Var(&cfg.LoadWeightSamples, prefix+"load-weight-samples", 0.2, "Weight of normalized sample ingestion rate in the per-range combined load metric.")
 }
 
@@ -522,7 +525,7 @@ type rangeLoad struct {
 	entry   assignment.Entry
 	load    float64 // combined, weighted, normalized load
 	samples float64 // raw samples/sec (for logging/admin)
-	series  int64   // raw active series count (for logging/admin)
+	series  int64   // raw in-memory TSDB head series count (for logging/admin)
 }
 
 // runSlicer implements the Slicer weighted-move algorithm (Adya et al.,

@@ -255,9 +255,17 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		totalLoad += pv.OrphanLoad
 	}
 
-	// Sort partitions by ID.
+	// Sort partitions by ID, and within each partition sort ranges by
+	// descending head series count so the largest contributors surface
+	// first (with deterministic tie-break by hash range).
 	partitions := make([]partitionView, 0, len(partMap))
 	for _, pv := range partMap {
+		sort.Slice(pv.Ranges, func(i, j int) bool {
+			if pv.Ranges[i].Series != pv.Ranges[j].Series {
+				return pv.Ranges[i].Series > pv.Ranges[j].Series
+			}
+			return pv.Ranges[i].Lo < pv.Ranges[j].Lo
+		})
 		partitions = append(partitions, *pv)
 	}
 	sort.Slice(partitions, func(i, j int) bool {
