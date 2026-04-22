@@ -734,27 +734,33 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 
 All other claims in this document are verified against in-tree code or vendored dependency source. Planner should treat A1, A2, A3 as small-risk items worth a quick confirmation during Wave 0.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four open questions were resolved during planning via CONTEXT.md locked decisions and the planner's lock-in step. Resolution notes are inline with each question for auditability.
 
 1. **Which approach for the Backfill() signature change?**
    - What we know: The method is public; at least one internal caller (`commands/backfill.go`); unknown external callers.
    - What's unclear: Preference for (A) new method + default-delegating wrapper vs (B) outright break with CHANGELOG `[CHANGE]`.
    - Recommendation: Default to (A). It's low cost, breaks nothing, and keeps the diff focused on new capability. The planner may flip to (B) with a one-line rationale.
+   - **RESOLVED:** Option (A) — additive method `BackfillWithOptions(ctx, blocks, sleepTime, verifier, dryRun)`. The legacy `Backfill(ctx, blocks, sleepTime)` is preserved as a delegating wrapper that calls `BackfillWithOptions` with a no-op verifier (zero block checks registered) and `dryRun=false`. Zero public API break. See Plan 01-04.
 
 2. **Which of Pitfall 3's three deep-UTC options does the planner adopt?**
    - What we know: All three produce correct results; they differ on IO cost and code complexity.
    - What's unclear: How much we value code clarity vs peak deep-verify IO cost.
    - Recommendation: Option 1 (fold deep-UTC into `WellFormedVerifier` by passing UTC-day bounds). Simpler code, one walk per block. The only downside is that the failing block now has a less-specific error message ("chunks outside UTC day" instead of "chunks outside block range"). Acceptable tradeoff.
+   - **RESOLVED:** Deviation from the researcher's Option 1 per D-06 locked decision. Two distinct verifier structs (`WellFormedVerifier` and `SingleUTCDayVerifier`) preserve per-check naming in Report entries and log lines ("well-formed" vs "single-utc-day"). Deep-mode `SingleUTCDayVerifier` runs `block.VerifyBlock(ctx, log, dir, utcDayStart, utcDayEnd, checkChunks)` as a separate postings walk (approximately 1.3× IO cost over the optimal single-walk case, per-block — not 2×, because chunk-segment disk cache hits across the two calls). The IO cost is documented in the Plan 01-03 objective; the clarity win in logs/reports justifies it. See Plan 01-03.
 
 3. **Does the "summary log line on `--full-report`" list every failing check, or just counts?**
    - What we know: D-16 specifies one `level=error` line per failing check PLUS a summary line.
    - What's unclear: Is the summary expected to enumerate `{block: [checks]}` pairs inline, or just report `total_blocks=5, failures=7, outcome=all_checked`?
    - Recommendation: Summary carries counts only; the per-check error lines already enumerate. That keeps the summary grep-friendly and short.
+   - **RESOLVED:** Counts only. The `Verifier.Run` summary log line emits `total_blocks`, `failed_blocks`, `failures`, `outcome` (values: `all_checked` | `aborted`). No per-block enumeration in the summary line — individual failures are already carried in per-check `level=error` log lines during the run, and `Report.Err()` returns a summary-only string (does NOT enumerate). This is reinforced by checker review WARNING 3, which flagged unbounded error strings. See Plan 01-01.
 
 4. **What does `--verify-concurrency=1` mean?**
    - What we know: `errgroup.SetLimit(1)` gives strict serial execution.
    - What's unclear: Do we want `0` to mean "auto-detect" and `1` to mean "literally one", or do we want `0` to mean "disabled" (crash on zero)?
    - Recommendation: `0` = auto (default); `1` = single-threaded; negative = error at flag parse. Document in the flag help string. Matches `pkg/blockbuilder/tsdb.go:507` conditional (`if ShipConcurrency > 0`).
+   - **RESOLVED:** `0` = auto (`min(runtime.GOMAXPROCS(0), 4)` at `Verifier.Run` time); `1` = strict serial execution via `errgroup.SetLimit(1)`; negative values are clamped to 0 by `WithConcurrency` (no parse-time error — saves a kingpin validator). Documented in the flag help string. See Plans 01-01 and 01-05.
 
 ## Environment Availability
 

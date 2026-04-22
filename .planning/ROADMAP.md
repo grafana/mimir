@@ -24,10 +24,14 @@ Single-phase scope: add a pluggable client-side verification module to `mimirtoo
   3. Running `mimirtool backfill` against a directory containing a corrupted block (missing chunk file, truncated index, or invalid `meta.json`) exits non-zero with a well-formed-check failure and uploads nothing.
   4. The verifier interface accepts new per-block and batch-level check implementations without modifying existing check code (verified by adding a dummy no-op check in tests).
   5. New/changed code passes `make format`, `make lint`, `make test`, and has unit-test coverage for each check.
-**Plans**: TBD — will be split during `/gsd-plan-phase` after `/gsd-spec-phase` locks the contract.
+**Plans**: 5 plans
 
 Plans:
-- [ ] 01-01: TBD (finalized during plan-phase)
+- [ ] 01-01-PLAN.md — Create verify/ package skeleton (BlockVerifier, BatchVerifier, Verifier, Report, options) + framework seam tests
+- [ ] 01-02-PLAN.md — WellFormedVerifier wrapping block.VerifyBlock + unit tests (valid / truncated / mangled / checksum-mismatch)
+- [ ] 01-03-PLAN.md — SingleUTCDayVerifier (header math + deep OutsideChunks via VerifyBlock) + table-driven tests
+- [ ] 01-04-PLAN.md — MimirClient.BackfillWithOptions integration + httptest-based zero-upload assertions (verify-fail, dry-run, valid-batch, legacy-wrapper)
+- [ ] 01-05-PLAN.md — CLI flag wiring (--dry-run, --skip-chunk-verification, --full-report, --verify-concurrency), cmd.Validate mutual-exclusion, CHANGELOG, make format/lint/test/reference-help, human-verify checkpoint
 
 ## Progress
 
@@ -36,4 +40,4 @@ Phases execute in numeric order: 1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Backfill Pre-Verification | 0/TBD | Not started | - |
+| 1. Backfill Pre-Verification | 0/5 | Not started | - |
