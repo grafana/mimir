@@ -292,7 +292,7 @@ func TestChunksCaching(t *testing.T) {
 			cfg := NewCachingBucketConfig()
 			cfg.CacheGetRange(cfgName, cache, isTSDBChunkFile, subrangeSize, cache, time.Hour, time.Hour, tc.maxGetRangeRequests)
 
-			cachingBucket, err := NewCachingBucket(bucketID, inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			cachingBucket, err := NewCachingBucket(bucketID, inmem, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 			assert.NoError(t, err)
 
 			ctx := context.Background()
@@ -302,11 +302,11 @@ func TestChunksCaching(t *testing.T) {
 
 			verifyGetRange(ctx, t, cachingBucket, name, tc.offset, tc.length, tc.expectedLength)
 
-			assert.Equal(t, tc.expectedCacheRequests, int64(promtest.ToFloat64(cachingBucket.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName))))
-			assert.InDelta(t, tc.expectedCacheHits, promtest.ToFloat64(cachingBucket.operationHits.WithLabelValues(objstore.OpGetRange, cfgName)), 0.01)
-			assert.Equal(t, tc.expectedCachedBytes, int64(promtest.ToFloat64(cachingBucket.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName))))
-			assert.Equal(t, tc.expectedFetchedBytes, int64(promtest.ToFloat64(cachingBucket.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName))))
-			assert.Equal(t, tc.expectedRefetchedBytes, int64(promtest.ToFloat64(cachingBucket.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName))))
+			assert.Equal(t, tc.expectedCacheRequests, int64(promtest.ToFloat64(cachingBucket.metrics.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName))))
+			assert.InDelta(t, tc.expectedCacheHits, promtest.ToFloat64(cachingBucket.metrics.operationHits.WithLabelValues(objstore.OpGetRange, cfgName)), 0.01)
+			assert.Equal(t, tc.expectedCachedBytes, int64(promtest.ToFloat64(cachingBucket.metrics.fetchedGetRangeBytes.WithLabelValues(originCache, cfgName))))
+			assert.Equal(t, tc.expectedFetchedBytes, int64(promtest.ToFloat64(cachingBucket.metrics.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName))))
+			assert.Equal(t, tc.expectedRefetchedBytes, int64(promtest.ToFloat64(cachingBucket.metrics.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName))))
 		})
 	}
 }
@@ -368,7 +368,7 @@ func TestInvalidOffsetAndLength(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheGetRange("chunks", cache, func(string) bool { return true }, 10000, cache, time.Hour, time.Hour, 3)
 
-	c, err := NewCachingBucket("test", b, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	c, err := NewCachingBucket("test", b, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 	assert.NoError(t, err)
 
 	r, err := c.GetRange(context.Background(), "test", -1, 1000)
@@ -413,7 +413,7 @@ func TestCachedIter(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheIter(cfgName, cache, func(string) bool { return true }, 5*time.Minute, JSONIterCodec{})
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 	assert.NoError(t, err)
 
 	t.Run("Iter() should return objects list from the cache on cache hit", func(t *testing.T) {
@@ -460,14 +460,14 @@ func TestCachedIter(t *testing.T) {
 }
 
 func verifyIter(ctx context.Context, t *testing.T, cb *CachingBucket, expectedFiles []string, expectedCacheLookup, expectedFromCache bool, cfgName string) {
-	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
-	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
+	requestsBefore := int(promtest.ToFloat64(cb.metrics.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
+	hitsBefore := int(promtest.ToFloat64(cb.metrics.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
 
 	col := iterCollector{}
 	assert.NoError(t, cb.Iter(ctx, "/", col.collect))
 
-	requestsAfter := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
-	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
+	requestsAfter := int(promtest.ToFloat64(cb.metrics.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
+	hitsAfter := int(promtest.ToFloat64(cb.metrics.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
 
 	slices.Sort(col.items)
 	assert.Equal(t, expectedFiles, col.items)
@@ -505,7 +505,7 @@ func TestExists(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 	assert.NoError(t, err)
 
 	t.Run("Exists() should return cached value on cache hit", func(t *testing.T) {
@@ -558,7 +558,7 @@ func TestExistsCachingDisabled(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, func(string) bool { return false }, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 	assert.NoError(t, err)
 
 	t.Run("Exists() should not use the cache when caching is disabled for the given object", func(t *testing.T) {
@@ -577,15 +577,15 @@ func TestExistsCachingDisabled(t *testing.T) {
 }
 
 func verifyExists(ctx context.Context, t *testing.T, cb *CachingBucket, file string, expectedExists, expectedCacheLookup, expectedFromCache bool, cfgName string) {
-	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName)))
-	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpExists, cfgName)))
+	requestsBefore := int(promtest.ToFloat64(cb.metrics.operationRequests.WithLabelValues(objstore.OpExists, cfgName)))
+	hitsBefore := int(promtest.ToFloat64(cb.metrics.operationHits.WithLabelValues(objstore.OpExists, cfgName)))
 
 	ok, err := cb.Exists(ctx, file)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedExists, ok)
 
-	requestsAfter := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpExists, cfgName)))
-	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpExists, cfgName)))
+	requestsAfter := int(promtest.ToFloat64(cb.metrics.operationRequests.WithLabelValues(objstore.OpExists, cfgName)))
+	hitsAfter := int(promtest.ToFloat64(cb.metrics.operationHits.WithLabelValues(objstore.OpExists, cfgName)))
 
 	if expectedCacheLookup {
 		assert.Equal(t, 1, requestsAfter-requestsBefore)
@@ -612,7 +612,7 @@ func TestGet(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 	assert.NoError(t, err)
 
 	t.Run("Get() should cache non-existence of the requested object if it doesn't exist", func(t *testing.T) {
@@ -696,7 +696,7 @@ func TestGetTooBigObject(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 5, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -720,7 +720,7 @@ func TestGetPartialRead(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -740,8 +740,8 @@ func TestGetPartialRead(t *testing.T) {
 }
 
 func verifyGet(ctx context.Context, t *testing.T, cb *CachingBucket, file string, expectedData []byte, expectedCacheLookup, expectedFromCache bool, cfgName string) {
-	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName)))
-	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpGet, cfgName)))
+	requestsBefore := int(promtest.ToFloat64(cb.metrics.operationRequests.WithLabelValues(objstore.OpGet, cfgName)))
+	hitsBefore := int(promtest.ToFloat64(cb.metrics.operationHits.WithLabelValues(objstore.OpGet, cfgName)))
 
 	r, err := cb.Get(ctx, file)
 
@@ -756,8 +756,8 @@ func verifyGet(ctx context.Context, t *testing.T, cb *CachingBucket, file string
 		assert.Equal(t, expectedData, data)
 	}
 
-	requestsAfter := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpGet, cfgName)))
-	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpGet, cfgName)))
+	requestsAfter := int(promtest.ToFloat64(cb.metrics.operationRequests.WithLabelValues(objstore.OpGet, cfgName)))
+	hitsAfter := int(promtest.ToFloat64(cb.metrics.operationHits.WithLabelValues(objstore.OpGet, cfgName)))
 
 	if expectedCacheLookup {
 		assert.Equal(t, 1, requestsAfter-requestsBefore)
@@ -783,7 +783,7 @@ func TestAttributes(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheAttributes(cfgName, cache, matchAll, time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 	assert.NoError(t, err)
 
 	t.Run("Attributes() should not cache non existing objects", func(t *testing.T) {
@@ -966,7 +966,7 @@ func TestMutationInvalidatesCache(t *testing.T) {
 	cfg.CacheExists(cfgName, c, matchAll, time.Minute, time.Minute)
 	cfg.CacheAttributes(cfgName, c, matchAll, time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
 	require.NoError(t, err)
 
 	t.Run("invalidated on upload", func(t *testing.T) {
@@ -1104,8 +1104,8 @@ func BenchmarkCachingKey(b *testing.B) {
 }
 
 func verifyObjectAttrs(ctx context.Context, t *testing.T, cb *CachingBucket, file string, expectedLength int, expectedCacheLookup, expectedFromCache bool, cfgName string) {
-	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName)))
-	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName)))
+	requestsBefore := int(promtest.ToFloat64(cb.metrics.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName)))
+	hitsBefore := int(promtest.ToFloat64(cb.metrics.operationHits.WithLabelValues(objstore.OpAttributes, cfgName)))
 
 	attrs, err := cb.Attributes(ctx, file)
 	if expectedLength < 0 {
@@ -1115,8 +1115,8 @@ func verifyObjectAttrs(ctx context.Context, t *testing.T, cb *CachingBucket, fil
 		assert.Equal(t, int64(expectedLength), attrs.Size)
 	}
 
-	requestsAfter := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName)))
-	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName)))
+	requestsAfter := int(promtest.ToFloat64(cb.metrics.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName)))
+	hitsAfter := int(promtest.ToFloat64(cb.metrics.operationHits.WithLabelValues(objstore.OpAttributes, cfgName)))
 
 	if expectedCacheLookup {
 		assert.Equal(t, 1, requestsAfter-requestsBefore)
