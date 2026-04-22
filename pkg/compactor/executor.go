@@ -40,9 +40,9 @@ import (
 )
 
 var (
-	errCompactionJobHasNoBlocks = errors.New("compaction job has no blocks")
-	errNoBlockMetadataProvided  = errors.New("no block metadata provided")
-	errJobCanceledByScheduler   = errors.New("job canceled by scheduler")
+	errCompactionJobHasNoBlocks      = errors.New("compaction job has no blocks")
+	errNoBlockMetadataProvided       = errors.New("no block metadata provided")
+	errJobCanceledByScheduler        = errors.New("job canceled by scheduler")
 	errFinalStatusGracePeriodTimeout = errors.New("final status grace period timed out")
 )
 
