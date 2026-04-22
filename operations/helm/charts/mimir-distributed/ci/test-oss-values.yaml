@@ -78,6 +78,7 @@ metadata-cache:
 results-cache:
   enabled: true
   allocatedMemory: 10
+  maxItemMemory: 5
   resources:
     <<: *ci_resources
 

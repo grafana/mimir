@@ -60,7 +60,7 @@ spec:
           args:
             - -m 10
             - --extended=modern
-            - -I 25m
+            - -I 5m
             - -c 16384
             - -v
             - -u 11211
