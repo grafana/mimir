@@ -132,7 +132,10 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *parser.AggregateExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	include := !e.Without
 	if len(e.Grouping) == 0 && include {
-		// Shortcut if there are no labels allowed to propagate inwards or outwards.
+		// No labels are allowed to propagate inwards or outwards, but we still need to
+		// recurse into the inner expression so that any nested binary expressions are
+		// processed (e.g. propagating matchers within an "and on(...)" inside the aggregate).
+		mapper.extractVectorSelectors(e.Expr)
 		return nil, nil
 	}
 	vss, labelMatchers := mapper.extractVectorSelectors(e.Expr)
