@@ -7,10 +7,13 @@
 
 ### Framework
 
-- [ ] **FRAMEWORK-01**: A verification module exists in `pkg/mimirtool/backfill/` (package location TBD in spec phase) with a pluggable interface so new checks can be added without modifying existing ones.
-- [ ] **FRAMEWORK-02**: The interface supports both per-block checks and batch-level checks (multiple blocks in one invocation) so future duplicate-day and overlap checks fit cleanly.
+- [x] **FRAMEWORK-01
+**: A verification module exists in `pkg/mimirtool/backfill/` (package location TBD in spec phase) with a pluggable interface so new checks can be added without modifying existing ones.
+- [x] **FRAMEWORK-02
+**: The interface supports both per-block checks and batch-level checks (multiple blocks in one invocation) so future duplicate-day and overlap checks fit cleanly.
 - [ ] **FRAMEWORK-03**: Verification runs before the upload loop in `MimirClient.Backfill()` at `pkg/mimirtool/client/backfill.go:25-53`.
-- [ ] **FRAMEWORK-04**: Failure reporting identifies which block failed which check and why, aggregated across all blocks so users see every issue in one run.
+- [x] **FRAMEWORK-04
+**: Failure reporting identifies which block failed which check and why, aggregated across all blocks so users see every issue in one run.
 
 ### Checks (v1)
 
@@ -44,10 +47,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FRAMEWORK-01 | Phase 1 | Pending |
-| FRAMEWORK-02 | Phase 1 | Pending |
+| FRAMEWORK-01 | Phase 1 | Complete |
+| FRAMEWORK-02 | Phase 1 | Complete |
 | FRAMEWORK-03 | Phase 1 | Pending |
-| FRAMEWORK-04 | Phase 1 | Pending |
+| FRAMEWORK-04 | Phase 1 | Complete |
 | CHECK-01 | Phase 1 | Pending |
 | CHECK-02 | Phase 1 | Pending |
 | CHECK-03 | Phase 1 | Pending |

@@ -27,7 +27,7 @@ Single-phase scope: add a pluggable client-side verification module to `mimirtoo
 **Plans**: 5 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Create verify/ package skeleton (BlockVerifier, BatchVerifier, Verifier, Report, options) + framework seam tests
+- [x] 01-01-PLAN.md — Create verify/ package skeleton (BlockVerifier, BatchVerifier, Verifier, Report, options) + framework seam tests
 - [ ] 01-02-PLAN.md — WellFormedVerifier wrapping block.VerifyBlock + unit tests (valid / truncated / mangled / checksum-mismatch)
 - [ ] 01-03-PLAN.md — SingleUTCDayVerifier (header math + deep OutsideChunks via VerifyBlock) + table-driven tests
 - [ ] 01-04-PLAN.md — MimirClient.BackfillWithOptions integration + httptest-based zero-upload assertions (verify-fail, dry-run, valid-batch, legacy-wrapper)
@@ -40,4 +40,4 @@ Phases execute in numeric order: 1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Backfill Pre-Verification | 0/5 | Not started | - |
+| 1. Backfill Pre-Verification | 1/5 | In progress | - |
