@@ -956,6 +956,7 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 
 			stats.allSeries.samplesProcessedPerStep[0] = 100
 			stats.allSeries.newSamplesReadPerStep[0] = 200
+			require.Empty(t, stats.subsets)
 
 			return stats
 		},
@@ -986,6 +987,7 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 			stats.allSeries.newSamplesReadPerStep[0] = 200
 			stats.allSeries.newSamplesReadPerStep[1] = 201
 			stats.allSeries.newSamplesReadPerStep[2] = 202
+			require.Empty(t, stats.subsets)
 
 			return stats
 		},
