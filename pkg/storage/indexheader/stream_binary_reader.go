@@ -209,6 +209,7 @@ func NewStreamBinaryReader(
 	streamBinaryReader.symbolsTOC = indexHeaderTOC
 
 	if cfg.BucketReader.Enabled {
+		streamencoding.InitBucketBufPool(cfg.BucketReader.BufferSizeBytes)
 		bucketBlockIndexPath := filepath.Join(blockID.String(), block.IndexFilename)
 		bucketBlockIndexDecbufFactory := streamencoding.NewBucketDecbufFactory(ctx, bkt, bucketBlockIndexPath)
 		indexAttrs, err := bkt.Attributes(ctx, bucketBlockIndexPath)
