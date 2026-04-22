@@ -15,8 +15,8 @@
 ### Checks (v1)
 
 - [x] **CHECK-01**: Well-formed block — `meta.json` valid, `index` file readable, chunk segments present on disk and internally consistent. Reuse Prometheus `tsdb.OpenBlock` or Thanos `block.VerifyIndex` rather than reimplementing.
-- [ ] **CHECK-02**: 24-hour block duration — `MaxTime - MinTime == 24h` exactly, measured from block meta.
-- [ ] **CHECK-03**: UTC-day alignment — `MinTime` is a whole-hour UTC-midnight boundary (`MinTime % (24h in ms) == 0`). Paired with CHECK-02 so the block covers exactly one calendar UTC day.
+- [x] **CHECK-02**: 24-hour block duration — `MaxTime - MinTime == 24h` exactly, measured from block meta. (Per SPEC §6 this requirement was superseded by single-UTC-day semantics: a block may have any `MaxTime - MinTime <= 24h` so long as `[MinTime, MaxTime)` lies inside one calendar UTC day. Implemented by `SingleUTCDayVerifier` in Plan 01-03.)
+- [x] **CHECK-03**: UTC-day alignment — `MinTime` is a whole-hour UTC-midnight boundary (`MinTime % (24h in ms) == 0`). Paired with CHECK-02 so the block covers exactly one calendar UTC day. (Per SPEC §6, enforcement is via the half-open day-floor equality `floor(MinTime/msPerDay) == floor((MaxTime-1)/msPerDay)` — covers the "exactly one calendar UTC day" intent without requiring strict start-of-day alignment. Implemented by `SingleUTCDayVerifier` in Plan 01-03.)
 
 ### Integration
 
@@ -49,8 +49,8 @@
 | FRAMEWORK-03 | Phase 1 | Pending |
 | FRAMEWORK-04 | Phase 1 | Complete |
 | CHECK-01 | Phase 1 | Complete |
-| CHECK-02 | Phase 1 | Pending |
-| CHECK-03 | Phase 1 | Pending |
+| CHECK-02 | Phase 1 | Complete |
+| CHECK-03 | Phase 1 | Complete |
 | INT-01 | Phase 1 | Pending |
 | INT-02 | Phase 1 | Pending |
 
@@ -61,4 +61,4 @@
 
 ---
 *Requirements defined: 2026-04-22*
-*Last updated: 2026-04-22 — CHECK-01 completed in Plan 01-02*
+*Last updated: 2026-04-22 — CHECK-02, CHECK-03 completed in Plan 01-03 (single-UTC-day semantics per SPEC §6)*

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Plan 01-02 complete
-last_updated: "2026-04-22T18:55:02Z"
-last_activity: 2026-04-22 — Plan 01-02 complete
+stopped_at: Plan 01-03 complete
+last_updated: "2026-04-22T19:02:55Z"
+last_activity: 2026-04-22 — Plan 01-03 complete
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
-  percent: 40
+  completed_plans: 3
+  percent: 60
 ---
 
 # Project State
@@ -26,27 +26,28 @@ See: .planning/PROJECT.md (updated 2026-04-22)
 ## Current Position
 
 Phase: 1 of 1 (Backfill Pre-Verification) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Executing Phase 1
-Last activity: 2026-04-22 — Plan 01-02 complete
+Last activity: 2026-04-22 — Plan 01-03 complete
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 2
-- Average duration: 4.5 min
-- Total execution time: 9 min
+- Total plans completed: 3
+- Average duration: 4.0 min
+- Total execution time: 12 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Backfill Pre-Verification | 2 | 9 min | 4.5 min |
+| 1. Backfill Pre-Verification | 3 | 12 min | 4.0 min |
 | Phase 1 P01 | 5 min | 2 tasks | 4 files |
 | Phase 1 P02 | 4 min | 2 tasks | 3 files |
+| Phase 1 P03 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -59,6 +60,7 @@ Recent decisions affecting current work:
 - Phase 1: Single phase, not multi-milestone — scope is one coherent feature.
 - Phase 1 Plan 01: verify package uses functional-options (no globals, no init()); Report.Err() is summary-only to avoid unreadable errors on large batches.
 - Phase 1 Plan 02: WellFormedVerifier wraps block.VerifyBlock; Name() = "well-formed"; chunks.Sample fixtures lock to github.com/grafana/mimir/pkg/util/test.Sample{TS, Val}; chunk-CRC test flips byte at offset 10 (past segment header + uvarint len + encoding byte).
+- Phase 1 Plan 03: SingleUTCDayVerifier uses half-open header math `floor(MinTime/msPerDay) == floor((MaxTime-1)/msPerDay)`; deep mode calls block.VerifyBlock with (utcDayStart, utcDayEnd, checkChunks=false) to flag OutsideChunks without duplicating WellFormedVerifier's CRC32 walk; Name() = "single-utc-day"; empty/inverted guard fires before division.
 
 ### Pending Todos
 
@@ -76,8 +78,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-22T18:55:02Z
-Stopped at: Plan 01-02 complete
+Last session: 2026-04-22T19:02:55Z
+Stopped at: Plan 01-03 complete
 Resume file: None
 
 **Planned Phase:** 1 (Backfill Pre-Verification) — 5 plans — 2026-04-22T18:35:41.488Z
