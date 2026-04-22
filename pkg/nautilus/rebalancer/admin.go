@@ -336,7 +336,13 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		})
 		partitions = append(partitions, *pv)
 	}
+	// Sort partitions by descending L (memory series) so the heaviest
+	// — and most operationally interesting — surface at the top. Tie-break
+	// by partition ID for deterministic ordering.
 	sort.Slice(partitions, func(i, j int) bool {
+		if partitions[i].MemorySeries != partitions[j].MemorySeries {
+			return partitions[i].MemorySeries > partitions[j].MemorySeries
+		}
 		return partitions[i].PartitionID < partitions[j].PartitionID
 	})
 
