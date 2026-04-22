@@ -5,10 +5,10 @@ package ast
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -267,7 +267,7 @@ func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Ma
 	}
 	matchersToAdd := make([]*labels.Matcher, 0, length)
 	for _, m := range matchersSrc {
-		if isMetricNameMatcher(m) {
+		if isInternalMatcher(m) {
 			continue
 		}
 		if include != labelsSet.Contains(m.Name) {
@@ -296,8 +296,8 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet string
 	return matchers, changed
 }
 
-func isMetricNameMatcher(m *labels.Matcher) bool {
-	return m.Name == model.MetricNameLabel
+func isInternalMatcher(m *labels.Matcher) bool {
+	return strings.HasPrefix(m.Name, "__") && strings.HasSuffix(m.Name, "__")
 }
 
 type stringSet map[string]struct{}
