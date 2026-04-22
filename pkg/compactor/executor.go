@@ -345,19 +345,16 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, status compactorschedulerpb.UpdateType) {
 	graceCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	defer cancel(nil)
-	go func() {
+	stop := context.AfterFunc(ctx, func() {
+		timer := time.NewTimer(e.cfg.TerminatingFinalStatusTimeout)
+		defer timer.Stop()
 		select {
-		case <-ctx.Done():
-			timer := time.NewTimer(e.cfg.TerminatingFinalStatusTimeout)
-			defer timer.Stop()
-			select {
-			case <-timer.C:
-				cancel(errFinalStatusGracePeriodTimeout)
-			case <-graceCtx.Done():
-			}
+		case <-timer.C:
+			cancel(errFinalStatusGracePeriodTimeout)
 		case <-graceCtx.Done():
 		}
-	}()
+	})
+	defer stop()
 
 	jobId := key.Id
 	jobTenant := spec.Tenant
