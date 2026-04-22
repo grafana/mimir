@@ -43,6 +43,7 @@ var (
 	errCompactionJobHasNoBlocks = errors.New("compaction job has no blocks")
 	errNoBlockMetadataProvided  = errors.New("no block metadata provided")
 	errJobCanceledByScheduler   = errors.New("job canceled by scheduler")
+	errFinalStatusGracePeriodTimeout = errors.New("final status grace period timed out")
 )
 
 // compactionExecutor defines how compaction work is executed.
@@ -342,8 +343,8 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 // Compaction jobs send final statuses on completion, planning jobs only on failure for reassignment.
 // If ctx is canceled (e.g. during shutdown), attempting to send a final status can continue for up to TerminatingFinalStatusTimeout.
 func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, status compactorschedulerpb.UpdateType) {
-	graceCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	defer cancel()
+	graceCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	defer cancel(nil)
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -351,7 +352,7 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 			defer timer.Stop()
 			select {
 			case <-timer.C:
-				cancel() // grace period expired
+				cancel(errFinalStatusGracePeriodTimeout)
 			case <-graceCtx.Done():
 			}
 		case <-graceCtx.Done():
