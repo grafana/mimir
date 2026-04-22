@@ -129,6 +129,7 @@ func NewTestEngineOpts() EngineOpts {
 		EnableSubsetSelectorElimination:      true,
 		EnableNarrowBinarySelectors:          true,
 		EnableEliminateDeduplicateAndMerge:   true,
+		EnablePropagateMatchers:              true,
 		EnableReduceMatchers:                 true,
 		EnableProjectionPushdown:             true,
 		EnableMultiAggregation:               true,
