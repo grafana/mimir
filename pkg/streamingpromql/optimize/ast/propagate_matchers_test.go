@@ -83,6 +83,13 @@ var testCasesPropagateMatchers = map[string]string{
 	// Subqueries
 	`min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down[5m])[30m:1m])`: `min_over_time(rate(up{foo="bar"}[5m])[30m:1m]) + min_over_time(rate(down{foo="bar"}[5m])[30m:1m])`,
 
+	// Conflicting equality matchers on the same label must not be cross-propagated.
+	// This would arise e.g. when a sharding middleware rewrites a query to combine shard sub-queries
+	// with a binary operation: propagating __query_shard__="0_of_2" to the side that has
+	// __query_shard__="1_of_2" would create an impossible selector that matches no series.
+	`metric{shard="0"} + metric{shard="1"}`:                                     `metric{shard="0"} + metric{shard="1"}`,
+	`sum without (x) (metric{shard="0"}) + sum without (x) (metric{shard="1"})`: `sum without (x) (metric{shard="0"}) + sum without (x) (metric{shard="1"})`,
+
 	// Aggregations
 	`sum(up) / sum(down)`:                                                                                  `sum(up) / sum(down)`,
 	`sum(up{foo!="bar2"}) / sum(down)`:                                                                     `sum(up{foo!="bar2"}) / sum(down)`,
