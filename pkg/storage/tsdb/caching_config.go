@@ -137,7 +137,7 @@ func NewMetadataCachingBucketConfig(
 }
 
 // NewMetadataCachingBucket creates a caching bucket for metadata and indexes of the bucket store and its tenant TSDBs.
-func NewMetadataCachingBucket(metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+func NewMetadataCachingBucket(metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer, metrics *bucketcache.CachingBucketMetrics) (objstore.Bucket, error) {
 
 	metadataCache, cachingBucketConfig, err := NewMetadataCachingBucketConfig(
 		"metadata-cache", metadataConfig, logger, reg,
@@ -154,7 +154,7 @@ func NewMetadataCachingBucket(metadataConfig MetadataCacheConfig, bkt objstore.B
 	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
 	// ID. This is still fine, as far as all other caching bucket implementations specify their
 	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketConfig, logger, reg)
+	return bucketcache.NewCachingBucket("", bkt, cachingBucketConfig, logger, metrics)
 }
 
 func NewIndexHeaderCachingBucket(
@@ -165,6 +165,7 @@ func NewIndexHeaderCachingBucket(
 	bkt objstore.Bucket,
 	logger log.Logger,
 	reg prometheus.Registerer,
+	metrics *bucketcache.CachingBucketMetrics,
 ) (objstore.Bucket, error) {
 	var err error
 	cachingConfigured := metadataCache != nil
@@ -217,7 +218,7 @@ func NewIndexHeaderCachingBucket(
 	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
 	// ID. This is still fine, as far as all other caching bucket implementations specify their
 	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketConfig, logger, reg)
+	return bucketcache.NewCachingBucket("", bkt, cachingBucketConfig, logger, metrics)
 }
 
 // NewChunksCachingBucket creates a caching bucket for TSDB chunks.
@@ -230,6 +231,7 @@ func NewChunksCachingBucket(
 	bkt objstore.Bucket,
 	logger log.Logger,
 	reg prometheus.Registerer,
+	metrics *bucketcache.CachingBucketMetrics,
 ) (objstore.Bucket, error) {
 	var err error
 	cachingConfigured := metadataCache != nil
@@ -272,7 +274,7 @@ func NewChunksCachingBucket(
 	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
 	// ID. This is still fine, as far as all other caching bucket implementations specify their
 	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketConfig, logger, reg)
+	return bucketcache.NewCachingBucket("", bkt, cachingBucketConfig, logger, metrics)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)

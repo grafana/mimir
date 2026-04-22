@@ -44,6 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
@@ -211,11 +212,13 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create bucket client")
 	}
 
+	querierReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
 	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
 		storageCfg.BucketStore.MetadataCache,
 		bucketClient,
 		logger,
-		prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg),
+		querierReg,
+		bucketcache.NewCachingBucketMetrics(querierReg),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create caching bucket")

@@ -185,7 +185,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			// Initialize the second index-header reader,
 			// configured to read symbols from disk and postings offsets from bucket.
 			bucketCacheCfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
-			cachingBucket, err := bucketcache.NewCachingBucket("test", instrBkt, bucketCacheCfg, log.NewNopLogger(), bucketReg)
+			cachingBucket, err := bucketcache.NewCachingBucket("test", instrBkt, bucketCacheCfg, log.NewNopLogger(), bucketcache.NewCachingBucketMetrics(bucketReg))
 			require.NoError(b, err)
 
 			splitReaderCfg := Config{
@@ -287,7 +287,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 			// Initialize the second index-header reader,
 			// configured to read symbols from disk and postings offsets from bucket.
 			bucketCacheCfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
-			cachingBucket, err := bucketcache.NewCachingBucket("test", instrBkt, bucketCacheCfg, log.NewNopLogger(), bucketReg)
+			cachingBucket, err := bucketcache.NewCachingBucket("test", instrBkt, bucketCacheCfg, log.NewNopLogger(), bucketcache.NewCachingBucketMetrics(bucketReg))
 			require.NoError(b, err)
 
 			splitReaderCfg := Config{

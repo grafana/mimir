@@ -756,7 +756,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 						bktReg := prometheus.NewPedanticRegistry()
 
 						metricsBkt := objstore.WrapWithMetrics(instrBkt, prometheus.WrapRegistererWithPrefix("thanos_", bktReg), "")
-						cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bktReg)
+						cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bucketcache.NewCachingBucketMetrics(bktReg))
 						require.NoError(b, err)
 
 						// Time remains stopped while lazy reader is initialized;
