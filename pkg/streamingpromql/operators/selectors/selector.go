@@ -247,6 +247,7 @@ func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, s
 
 // Next returns the iterator and subset bitmap for the next series in this selector.
 //
+// Each entry in the subset bitmap corresponds to an entry in Subsets. True means this series matches the subset.
 // The subset bitmap is only valid until the next call to Next or Close.
 // This Selector instance is responsible for returning it to the pool on Close.
 func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, []bool, error) {
