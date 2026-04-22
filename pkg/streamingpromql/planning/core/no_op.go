@@ -88,7 +88,14 @@ func (n *NoOp) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryP
 	return planning.QueryPlanV9, nil
 }
 
-func MaterializeNoOp(_ *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	o := operators.NewNoOp(timeRange, params.MemoryConsumptionTracker)
+func MaterializeNoOp(n *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	var o types.Operator
+
+	if n.MatrixSelector {
+		o = operators.NewNoOpRange(timeRange, params.MemoryConsumptionTracker)
+	} else {
+		o = operators.NewNoOpInstant(timeRange, params.MemoryConsumptionTracker)
+	}
+
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

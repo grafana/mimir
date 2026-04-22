@@ -210,7 +210,9 @@ message DeduplicateAndMergeDetails {
 
 message DropNameDetails {}
 
-message NoOpDetails {}
+message NoOpDetails {
+  bool matrixSelector = 1;
+}
 
 message VectorMatchFillValues {
   double rhs = 1;
