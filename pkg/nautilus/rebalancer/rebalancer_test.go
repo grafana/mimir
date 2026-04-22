@@ -637,6 +637,96 @@ func TestRunSlicer_OrphanBiasesSourceSelection(t *testing.T) {
 	assert.Greater(t, moves, 0, "expected at least one move from the orphan-heavy partition")
 }
 
+// TestRunSlicer_OrphanLockedPartitionDoesNotStallOthers reproduces a
+// production bug where Phase 3 of the slicer broke out of its move
+// loop the moment the hottest partition couldn't yield a profitable
+// move. In a cluster with a partition whose load is dominated by
+// orphan series (uncompacted leftovers from prior moves) and whose
+// currently-owned ranges carry zero per-range load, the orphan-locked
+// partition is always the hottest, no move on it can reduce load,
+// and the loop terminated — preventing rebalancing of any other hot
+// partition for the entire round.
+//
+// With the fix, the orphan-locked partition is excluded after its
+// failed first iteration and Phase 3 proceeds to drain the next-
+// hottest partition, which in this test does have shedable load.
+func TestRunSlicer_OrphanLockedPartitionDoesNotStallOthers(t *testing.T) {
+	partitions := []int32{0, 1, 2}
+	initial := assignment.FineEvenSplit(partitions, 8)
+
+	// P0: zero per-range series (its owner is still draining a huge
+	// orphan backlog from a prior move; current ranges are inactive).
+	// P1: hot per-range load.
+	// P2: cold per-range load.
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		switch e.PartitionID {
+		case 0:
+			rates = append(rates, rangeRate{hr: e.Range, series: 0})
+		case 1:
+			rates = append(rates, rangeRate{hr: e.Range, series: 1000})
+		case 2:
+			rates = append(rates, rangeRate{hr: e.Range, series: 1})
+		}
+	}
+
+	// P0 carries a massive orphan backlog: enough that its TOTAL load
+	// (orphan-only) exceeds the per-range load on P1. This makes P0
+	// the "hottest" by orphan-aware ranking, but it has no shedable
+	// per-range load to move — so a naive Phase 3 would terminate.
+	// 8 ranges * 1000 = 8000 series on P1; orphan = 50000 dominates.
+	orphans := map[int32]int64{0: 50000}
+
+	cfg := Config{
+		MovementBudget:    0.5,
+		LoadWeightSeries:  1.0,
+		LoadWeightSamples: 0,
+	}
+	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
+
+	_, actions := r.runSlicer(initial, rates, orphans, partitions, time.Time{})
+
+	// Count moves originating from each partition. The fix is
+	// successful if at least one move comes off P1 (the genuinely
+	// hot partition with shedable load); without the fix, moves=0.
+	movesFromP1 := 0
+	for _, a := range actions {
+		if a.Kind != ActionMove {
+			continue
+		}
+		if a.FromPart == 1 {
+			movesFromP1++
+		}
+	}
+	assert.Greaterf(t, movesFromP1, 0,
+		"orphan-locked P0 must not stall draining of hot P1; got actions=%v", actions)
+}
+
+func TestLoadMap_ShedableLoadExcludesOrphan(t *testing.T) {
+	rates := []rangeRate{
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100},
+		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 100},
+	}
+	orphans := map[int32]int64{0: 50}
+
+	lm := buildLoadMapWithOrphans(rates, orphans, 1.0, 0)
+	entries := []rangeLoad{
+		{entry: assignment.Entry{Range: rates[0].hr, PartitionID: 0}, load: lm.load(rates[0].hr)},
+		{entry: assignment.Entry{Range: rates[1].hr, PartitionID: 1}, load: lm.load(rates[1].hr)},
+	}
+	loads := lm.computePartitionLoads(entries)
+
+	// P0 total = range(0.4) + orphan(0.2) = 0.6; shedable = 0.4.
+	assert.InDelta(t, 0.4, lm.shedableLoad(loads, 0), 1e-9,
+		"shedable load excludes orphan contribution")
+	// P1 has no orphans; shedable equals total.
+	assert.InDelta(t, loads[1], lm.shedableLoad(loads, 1), 1e-9)
+	// nil receiver returns the raw total (defensive default used by
+	// callers that may not have constructed the loadMap yet).
+	var nilLM *loadMap
+	assert.Equal(t, loads[0], nilLM.shedableLoad(loads, 0))
+}
+
 func TestFineEvenSplit(t *testing.T) {
 	partitions := []int32{0, 1, 2}
 	a := assignment.FineEvenSplit(partitions, 4)

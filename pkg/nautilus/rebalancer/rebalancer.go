@@ -599,17 +599,31 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 	movementBudget := r.cfg.MovementBudget * float64(uint64(math.MaxUint32)+1)
 	var moved float64
 
+	// Partitions that have been examined as "hottest" in this rebalance
+	// round but yielded no profitable move. Without this set, a single
+	// orphan-locked partition (one whose total load is dominated by
+	// orphan series — uncompacted leftovers from prior moves — and
+	// therefore has little or no shedable per-range load) would always
+	// be picked as the hottest and immediately fail to find a candidate,
+	// breaking out of the loop and starving the rest of the cluster of
+	// any moves at all. By excluding such partitions from subsequent
+	// iterations we let the slicer continue rebalancing the genuinely
+	// movable hot partitions behind them.
+	excludedHot := make(map[int32]bool)
+
 	for iter := 0; iter < len(entries); iter++ {
 		partitionLoads := lm.computePartitionLoads(entries)
 
 		var hottestPID, coldestPID int32
 		hottestLoad := -1.0
 		coldestLoad := math.MaxFloat64
+		hottestFound := false
 		for _, pid := range activePartitions {
 			load := partitionLoads[pid]
-			if load > hottestLoad {
+			if !excludedHot[pid] && load > hottestLoad {
 				hottestLoad = load
 				hottestPID = pid
+				hottestFound = true
 			}
 			if load < coldestLoad {
 				coldestLoad = load
@@ -617,7 +631,7 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 			}
 		}
 
-		if hottestPID == coldestPID || (hottestLoad-coldestLoad) <= targetLoad*0.05 {
+		if !hottestFound || hottestPID == coldestPID || (hottestLoad-coldestLoad) <= targetLoad*0.05 {
 			break
 		}
 
@@ -656,7 +670,12 @@ func (r *Rebalancer) runSlicer(current *assignment.Assignment, rates []rangeRate
 		}
 
 		if bestIdx < 0 {
-			break
+			// Either every range is in cooldown / over-budget, or
+			// every potential move yields no improvement. Don't
+			// terminate Phase 3: another partition may still have a
+			// profitable move. Mark this one as exhausted and retry.
+			excludedHot[hottestPID] = true
+			continue
 		}
 
 		fromPID := entries[bestIdx].entry.PartitionID
@@ -909,6 +928,22 @@ func (lm *loadMap) computePartitionLoads(entries []rangeLoad) map[int32]float64 
 		}
 	}
 	return m
+}
+
+// shedableLoad returns the per-range (movable) component of a
+// partition's load — i.e., total load minus the orphan contribution.
+// This is the load that can actually be reduced by moving ranges
+// away from the partition. Orphan load is held by the source
+// ingester until TSDB head compaction GCs it; no slicer move can
+// reduce it. Used to detect partitions whose total load is mostly
+// (or entirely) orphan, which would stall Phase 3 if picked as the
+// hottest source.
+func (lm *loadMap) shedableLoad(partitionLoads map[int32]float64, pid int32) float64 {
+	total := partitionLoads[pid]
+	if lm == nil {
+		return total
+	}
+	return total - lm.partitionOrphanLoad(pid)
 }
 
 // isInMoveCooldown reports whether the given range overlaps any range
