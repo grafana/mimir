@@ -24,7 +24,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.100
 	github.com/mitchellh/go-wordwrap v1.0.1
-	github.com/opentracing-contrib/go-grpc v0.1.2
+	github.com/opentracing-contrib/go-grpc v0.1.3
 	github.com/opentracing-contrib/go-stdlib v1.1.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
