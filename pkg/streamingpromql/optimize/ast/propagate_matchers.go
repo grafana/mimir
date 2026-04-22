@@ -290,29 +290,10 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet string
 		if include != labelsSet.Contains(m.Name) {
 			continue
 		}
-		if hasConflictingEqualityMatcher(matchers, m) {
-			continue
-		}
 		matchers = append(matchers, m)
 		changed = true
 	}
 	return matchers, changed
-}
-
-// hasConflictingEqualityMatcher returns true if matchers already contains an equality
-// matcher on the same label as newMatcher but with a different value. Adding a second
-// equality matcher with a different value creates an impossible condition that matches
-// no series, so such propagation must be skipped.
-func hasConflictingEqualityMatcher(matchers []*labels.Matcher, newMatcher *labels.Matcher) bool {
-	if newMatcher.Type != labels.MatchEqual {
-		return false
-	}
-	for _, existing := range matchers {
-		if existing.Name == newMatcher.Name && existing.Type == labels.MatchEqual && existing.Value != newMatcher.Value {
-			return true
-		}
-	}
-	return false
 }
 
 func isMetricNameMatcher(m *labels.Matcher) bool {
