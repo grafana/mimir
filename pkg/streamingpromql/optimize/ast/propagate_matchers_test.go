@@ -135,6 +135,22 @@ var testCasesPropagateMatchersWithData = map[string]string{
 	`info(up{foo="bar"}) + info(down{baz="fob"})`:                                 `info(up{foo="bar"}) + info(down{baz="fob"})`,
 	`sort(up{foo="bar"}) + sort(down{baz="fob"})`:                                 `sort(up{foo="bar"}) + sort(down{baz="fob"})`,
 	`sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`: `sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`,
+
+	// Ensure matchers are propagated across different kinds of nested expressions.
+
+	// Propagating matchers from the LHS of an "and on" into the RHS, inside a count() without grouping.
+	// "soo" is intentionally outside the on() label set so it does not propagate back to the LHS.
+	`count(up{foo="bar", baz="fob"} and on (foo, baz, boo, faf) down == 1)`:       `count(up{foo="bar", baz="fob"} and on (foo, baz, boo, faf) down{foo="bar", baz="fob"} == 1)`,
+	`count(up{foo="bar", baz="fob"} and on (foo, baz, boo) left{soo="sar"} == 1)`: `count(up{foo="bar", baz="fob"} and on (foo, baz, boo) left{soo="sar", foo="bar", baz="fob"} == 1)`,
+	// Single expression where the root is a BinaryExpr.
+	`count(up{foo="bar", baz="fob"} and on (foo, baz, boo, faf) down == 1) / count(up{foo="bar", baz="fob"} and on (foo, baz, boo) left{soo="sar"} == 1) == 1`: `count(up{foo="bar", baz="fob"} and on (foo, baz, boo, faf) down{foo="bar", baz="fob"} == 1) / count(up{foo="bar", baz="fob"} and on (foo, baz, boo) left{soo="sar", foo="bar", baz="fob"} == 1) == 1`,
+	// Propagation should work inside LOR arms even when or is the root or nested.
+	// (Matchers cannot propagate across an `or`, but inner BinaryExprs within each arm should still be processed.)
+	`(up{foo="bar"} * down) or left`:                      `(up{foo="bar"} * down{foo="bar"}) or left`,
+	`up{foo="bar"} / ((left * down) or right{baz="fob"})`: `up{foo="bar"} / ((left * down) or right{baz="fob"})`,
+	// Propagation should work inside unsupported Call args when the Call is nested in a BinaryExpr.
+	`scalar(up{foo="bar"} * down) / left`: `scalar(up{foo="bar"} * down{foo="bar"}) / left`,
+	`sort(up{foo="bar"} * down) / left`:   `sort(up{foo="bar"} * down{foo="bar"}) / left`,
 }
 
 // These test cases are only used in TestPropagateMatchers, so the metrics and labels can be freely chosen independently of the data loaded in TestPropagateMatchersWithData. Running them in TestPropagateMatchersWithData would be pointless as the results would be empty anyway.
