@@ -37,33 +37,65 @@ func WithIdempotent(reg prometheus.Registerer) IdempotentFactory {
 }
 
 func (f IdempotentFactory) NewCounter(opts prometheus.CounterOpts) prometheus.Counter {
-	return mustRegisterOrGet(f.r, prometheus.NewCounter(opts))
+	c := prometheus.NewCounter(opts)
+	if f.r != nil {
+		return mustRegisterOrGet(f.r, c)
+	}
+	return c
 }
 
 func (f IdempotentFactory) NewCounterVec(opts prometheus.CounterOpts, labelNames []string) *prometheus.CounterVec {
-	return mustRegisterOrGet(f.r, prometheus.NewCounterVec(opts, labelNames))
+	c := prometheus.NewCounterVec(opts, labelNames)
+	if f.r != nil {
+		return mustRegisterOrGet(f.r, c)
+	}
+	return c
 }
 
 func (f IdempotentFactory) NewGauge(opts prometheus.GaugeOpts) prometheus.Gauge {
-	return mustRegisterOrGet(f.r, prometheus.NewGauge(opts))
+	c := prometheus.NewGauge(opts)
+	if f.r != nil {
+		return mustRegisterOrGet(f.r, c)
+	}
+	return c
 }
 
 func (f IdempotentFactory) NewGaugeVec(opts prometheus.GaugeOpts, labelNames []string) *prometheus.GaugeVec {
-	return mustRegisterOrGet(f.r, prometheus.NewGaugeVec(opts, labelNames))
+	c := prometheus.NewGaugeVec(opts, labelNames)
+	if f.r != nil {
+		return mustRegisterOrGet(f.r, c)
+	}
+	return c
 }
 
 func (f IdempotentFactory) NewHistogram(opts prometheus.HistogramOpts) prometheus.Histogram {
-	return mustRegisterOrGet(f.r, prometheus.NewHistogram(opts))
+	c := prometheus.NewHistogram(opts)
+	if f.r != nil {
+		return mustRegisterOrGet(f.r, c)
+	}
+	return c
 }
 
 func (f IdempotentFactory) NewHistogramVec(opts prometheus.HistogramOpts, labelNames []string) *prometheus.HistogramVec {
-	return mustRegisterOrGet(f.r, prometheus.NewHistogramVec(opts, labelNames))
+	c := prometheus.NewHistogramVec(opts, labelNames)
+	if f.r != nil {
+		return mustRegisterOrGet(f.r, c)
+	}
+	return c
 }
 
 func (f IdempotentFactory) NewSummary(opts prometheus.SummaryOpts) prometheus.Summary {
-	return mustRegisterOrGet(f.r, prometheus.NewSummary(opts))
+	c := prometheus.NewSummary(opts)
+	if f.r != nil {
+		return mustRegisterOrGet(f.r, c)
+	}
+	return c
 }
 
 func (f IdempotentFactory) NewSummaryVec(opts prometheus.SummaryOpts, labelNames []string) *prometheus.SummaryVec {
-	return mustRegisterOrGet(f.r, prometheus.NewSummaryVec(opts, labelNames))
+	c := prometheus.NewSummaryVec(opts, labelNames)
+	if f.r != nil {
+		return mustRegisterOrGet(f.r, c)
+	}
+	return c
 }
