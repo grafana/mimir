@@ -274,7 +274,7 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet string
 }
 
 func isInternalMatcher(m *labels.Matcher) bool {
-	return strings.HasPrefix(m.Name, "__") && strings.HasSuffix(m.Name, "__")
+	return strings.HasPrefix(m.Name, "__")
 }
 
 type stringSet map[string]struct{}
