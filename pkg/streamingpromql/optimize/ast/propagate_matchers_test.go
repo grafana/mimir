@@ -13,7 +13,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
-var testCasesPropagateMatchers = map[string]string{
+// These test cases are to be used in both TestPropagateMatchers and TestPropagateMatchersWithData, so the metrics and labels should be the same as the ones in the data loaded in TestPropagateMatchersWithData.
+var testCasesPropagateMatchersWithData = map[string]string{
 	`up`:                                 `up`,
 	`up{foo="bar"}`:                      `up{foo="bar"}`,
 	`up * on(foo) group_left down`:       `up * on(foo) group_left down`,
@@ -114,6 +115,14 @@ var testCasesPropagateMatchers = map[string]string{
 	`max by (foo, baz) (avg without (foo) (up)) / down{foo="bar", baz="fob"}`:                              `max by (foo, baz) (avg without (foo) (up{baz="fob"})) / down{foo="bar", baz="fob"}`,
 	`max without (baz) (avg by (foo, baz) (up)) / down{foo="bar", baz="fob"}`:                              `max without (baz) (avg by (foo, baz) (up{foo="bar"})) / down{foo="bar", baz="fob"}`,
 
+	// Conflicting matchers should be allowed to propagate. They'd produce empty results anyway so might as well not fetch the data for the individual selectors.
+	`up{foo="bar"} + up{foo="bar2"}`:                                     `up{foo="bar", foo="bar2"} + up{foo="bar", foo="bar2"}`,
+	`sum by (foo) (up{foo="bar"}) + sum by (foo) (up{foo="bar2"})`:       `sum by (foo) (up{foo="bar", foo="bar2"}) + sum by (foo) (up{foo="bar", foo="bar2"})`,
+	`sum without (x) (up{foo="bar"}) + sum without (x) (up{foo="bar2"})`: `sum without (x) (up{foo="bar", foo="bar2"}) + sum without (x) (up{foo="bar", foo="bar2"})`,
+	// Note that they won't propagate when that label is excluded from the grouping.
+	`sum by (x) (up{foo="bar"}) + sum by (x) (up{foo="bar2"})`:               `sum by (x) (up{foo="bar"}) + sum by (x) (up{foo="bar2"})`,
+	`sum without (foo) (up{foo="bar"}) + sum without (foo) (up{foo="bar2"})`: `sum without (foo) (up{foo="bar"}) + sum without (foo) (up{foo="bar2"})`,
+
 	// Not supported
 	`scalar(up{foo="bar"} * down)`:                                       `scalar(up{foo="bar"} * down{foo="bar"})`,
 	`scalar(up{foo="bar"}) * down`:                                       `scalar(up{foo="bar"}) * down`,
@@ -128,8 +137,24 @@ var testCasesPropagateMatchers = map[string]string{
 	`sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`: `sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`,
 }
 
+// These test cases are only used in TestPropagateMatchers, so the metrics and labels can be freely chosen independently of the data loaded in TestPropagateMatchersWithData. Running them in TestPropagateMatchersWithData would be pointless as the results would be empty anyway.
+var testCasesPropagateMatchersWithoutData = map[string]string{
+	// Ensure that internal matchers are not propagated, as they are not actual labels on the data.
+	`up{__query_shard__="bar"} + up{__query_shard__="bar2"}`:                                     `up{__query_shard__="bar"} + up{__query_shard__="bar2"}`,
+	`sum without (x) (up{__query_shard__="bar"}) + sum without (x) (up{__query_shard__="bar2"})`: `sum without (x) (up{__query_shard__="bar"}) + sum without (x) (up{__query_shard__="bar2"})`,
+}
+
+// TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.
 func TestPropagateMatchers(t *testing.T) {
 	ctx := context.Background()
+
+	testCasesPropagateMatchers := make(map[string]string)
+	for k, v := range testCasesPropagateMatchersWithData {
+		testCasesPropagateMatchers[k] = v
+	}
+	for k, v := range testCasesPropagateMatchersWithoutData {
+		testCasesPropagateMatchers[k] = v
+	}
 
 	for input, expected := range testCasesPropagateMatchers {
 		t.Run(input, func(t *testing.T) {
@@ -152,6 +177,7 @@ func TestPropagateMatchers(t *testing.T) {
 	}
 }
 
+// TestPropagateMatchersWithData tests that the rewritten query produces the same results as the original one on sample data.
 func TestPropagateMatchersWithData(t *testing.T) {
 	testASTOptimizationPassWithData(t, `
 		load 1m
@@ -163,7 +189,7 @@ func TestPropagateMatchersWithData(t *testing.T) {
 			down{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+6x<num samples>
 			left{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+7x<num samples>
 			right{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+8x<num samples>
-	`, testCasesPropagateMatchers)
+	`, testCasesPropagateMatchersWithData)
 }
 
 func TestFunctionsForVectorSelectorArgumentIndex(t *testing.T) {
