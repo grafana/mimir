@@ -100,9 +100,9 @@ details>summary::-webkit-details-marker{display:none}
 		<div class="stat-label">Min L</div>
 		<div class="stat-value good">{{fmtSeries .MinL}}</div>
 	</div>
-	<div class="stat" title="(maxL - minL) / meanL. Zero means perfectly balanced.">
+	<div class="stat" title="maxL / meanL (Slicer paper definition). 1.00× means perfectly balanced; values above 1.00× indicate the hottest partition exceeds the average by that factor.">
 		<div class="stat-label">Imbalance</div>
-		<div class="stat-value{{if gt .ImbalanceRatio 0.5}} warn{{end}}">{{fmtImbalance .ImbalanceRatio}}</div>
+		<div class="stat-value{{if gt .ImbalanceRatio 1.5}} warn{{end}}">{{fmtImbalance .ImbalanceRatio}}</div>
 	</div>
 	<div class="stat">
 		<div class="stat-label">Last Moved</div>

@@ -345,9 +345,11 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	if numPartitions > 0 {
 		meanL = totalMemorySeries / int64(numPartitions)
 	}
+	// Per the Slicer paper, load imbalance is defined as max / mean.
+	// 1.0 means perfectly balanced.
 	imbalance := 0.0
 	if meanL > 0 {
-		imbalance = float64(maxL-minL) / float64(meanL)
+		imbalance = float64(maxL) / float64(meanL)
 	}
 
 	var aboveAverage int64

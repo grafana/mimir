@@ -47,7 +47,7 @@ var adminTemplate = template.Must(template.New("admin").Funcs(template.FuncMap{
 		return formatFloat(f, 1)
 	},
 	"fmtImbalance": func(f float64) string {
-		return formatFloat(f*100, 1) + "%"
+		return formatFloat(f, 2) + "×"
 	},
 	"fmtTime": func(t interface{}) string {
 		switch v := t.(type) {

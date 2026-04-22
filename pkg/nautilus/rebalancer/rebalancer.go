@@ -239,9 +239,12 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	if len(activePartitions) > 0 {
 		meanL = totalL / int64(len(activePartitions))
 	}
+	// Per the Slicer paper, load imbalance is defined as max / mean.
+	// 1.0 means perfectly balanced; values above 1.0 indicate the
+	// hottest partition exceeds the average by that factor.
 	imbalance := 0.0
 	if meanL > 0 {
-		imbalance = float64(maxL-minL) / float64(meanL)
+		imbalance = float64(maxL) / float64(meanL)
 	}
 	movedFraction := 0.0
 	hashSpaceSize := float64(uint64(math.MaxUint32) + 1)

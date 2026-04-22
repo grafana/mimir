@@ -202,31 +202,26 @@ func (s *simulation) partitionLoads() map[int32]float64 {
 	return loads
 }
 
+// imbalanceRatio returns max / mean partition load, per the Slicer
+// paper's definition. 1.0 means perfectly balanced.
 func (s *simulation) imbalanceRatio() float64 {
 	loads := s.partitionLoads()
 	if len(loads) == 0 {
 		return 0
 	}
-	var maxLoad, minLoad float64
-	maxLoad = -1
-	minLoad = math.MaxFloat64
+	maxLoad := -1.0
+	total := 0.0
 	for _, l := range loads {
 		if l > maxLoad {
 			maxLoad = l
 		}
-		if l < minLoad {
-			minLoad = l
-		}
-	}
-	total := 0.0
-	for _, l := range loads {
 		total += l
 	}
 	avg := total / float64(len(loads))
 	if avg == 0 {
 		return 0
 	}
-	return (maxLoad - minLoad) / avg
+	return maxLoad / avg
 }
 
 func logRound(t *testing.T, round int, s *simulation) {
@@ -301,8 +296,8 @@ func TestSimulation_SkewedLoadConverges(t *testing.T) {
 	logRound(t, 0, sim)
 
 	initialImbalance := sim.imbalanceRatio()
-	require.Greater(t, initialImbalance, 1.0,
-		"initial setup should be heavily imbalanced")
+	require.Greater(t, initialImbalance, 2.0,
+		"initial setup should be heavily imbalanced (max/mean > 2.0)")
 
 	for round := 1; round <= rebalanceRounds; round++ {
 		sim.rebalance()
@@ -317,10 +312,12 @@ func TestSimulation_SkewedLoadConverges(t *testing.T) {
 	finalImbalance := sim.imbalanceRatio()
 	t.Logf("--- Final: imbalance went from %.2f to %.2f ---", initialImbalance, finalImbalance)
 
-	require.Less(t, finalImbalance, 0.3,
-		"rebalancer should converge to within 30%% imbalance, got %.2f", finalImbalance)
-	require.Less(t, finalImbalance, initialImbalance*0.5,
-		"rebalancer should reduce imbalance by at least 50%%")
+	require.Less(t, finalImbalance, 1.3,
+		"rebalancer should converge to max/mean < 1.3, got %.2f", finalImbalance)
+	// The deviation from perfectly balanced (max/mean - 1) should drop
+	// by at least 50%.
+	require.Less(t, finalImbalance-1.0, (initialImbalance-1.0)*0.5,
+		"rebalancer should halve the deviation from balanced")
 }
 
 // TestSimulation_RealisticProductionWorkload simulates a scenario matching
@@ -391,8 +388,8 @@ func TestSimulation_RealisticProductionWorkload(t *testing.T) {
 	finalImbalance := sim.imbalanceRatio()
 	t.Logf("--- Final: imbalance %.2f -> %.2f ---", initialImbalance, finalImbalance)
 
-	require.Less(t, finalImbalance, 0.5,
-		"should converge to <50%% imbalance, got %.2f", finalImbalance)
+	require.Less(t, finalImbalance, 1.5,
+		"should converge to max/mean < 1.5, got %.2f", finalImbalance)
 }
 
 // TestSimulation_LoadShiftMidway verifies that the rebalancer adapts
@@ -439,8 +436,8 @@ func TestSimulation_LoadShiftMidway(t *testing.T) {
 	}
 
 	phase1Imbalance := sim.imbalanceRatio()
-	require.Less(t, phase1Imbalance, 0.4,
-		"phase 1 should converge, got imbalance %.2f", phase1Imbalance)
+	require.Less(t, phase1Imbalance, 1.4,
+		"phase 1 should converge to max/mean < 1.4, got %.2f", phase1Imbalance)
 
 	// Phase 2: shift load -- partition 0's hot sources go cold,
 	// partition 3 gets new hot sources.
@@ -471,8 +468,8 @@ func TestSimulation_LoadShiftMidway(t *testing.T) {
 
 	phase2Imbalance := sim.imbalanceRatio()
 	t.Logf("--- Phase 2 final imbalance: %.2f ---", phase2Imbalance)
-	require.Less(t, phase2Imbalance, 0.5,
-		"phase 2 should re-converge after load shift, got %.2f", phase2Imbalance)
+	require.Less(t, phase2Imbalance, 1.5,
+		"phase 2 should re-converge to max/mean < 1.5, got %.2f", phase2Imbalance)
 }
 
 // TestSimulation_EvenLoadStaysStable verifies that an already-balanced
@@ -515,6 +512,6 @@ func TestSimulation_EvenLoadStaysStable(t *testing.T) {
 	}
 
 	finalImbalance := sim.imbalanceRatio()
-	require.Less(t, finalImbalance, 0.3,
-		"balanced load should stay balanced, got imbalance %.2f", finalImbalance)
+	require.Less(t, finalImbalance, 1.3,
+		"balanced load should stay balanced (max/mean < 1.3), got %.2f", finalImbalance)
 }
