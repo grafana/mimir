@@ -220,7 +220,7 @@
             //
             // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
             // but queriers are busy.
-            query: queryWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]))' % queryParams, weight),
+            query: queryWithWeight('(sum(rate(cortex_querier_request_duration_seconds_sum{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m])) or vector(0))' % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
             // We only need to pass ignore_null_values if it's false

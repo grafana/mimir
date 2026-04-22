@@ -2118,7 +2118,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_hpa_default_requests_duration
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default"}[1m]))
+      query: (sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default"}[1m]))
+        or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "7"
     name: cortex_querier_hpa_default_requests_duration
