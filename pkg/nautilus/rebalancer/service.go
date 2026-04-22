@@ -18,13 +18,13 @@ import (
 // GetAssignmentsRequest is the request message for GetAssignments.
 type GetAssignmentsRequest struct{}
 
-func (m *GetAssignmentsRequest) Reset()                            {}
-func (m *GetAssignmentsRequest) String() string                    { return "{}" }
-func (m *GetAssignmentsRequest) ProtoMessage()                     {}
-func (m *GetAssignmentsRequest) Marshal() ([]byte, error)          { return nil, nil }
+func (m *GetAssignmentsRequest) Reset()                             {}
+func (m *GetAssignmentsRequest) String() string                     { return "{}" }
+func (m *GetAssignmentsRequest) ProtoMessage()                      {}
+func (m *GetAssignmentsRequest) Marshal() ([]byte, error)           { return nil, nil }
 func (m *GetAssignmentsRequest) MarshalTo(dAtA []byte) (int, error) { return 0, nil }
-func (m *GetAssignmentsRequest) Unmarshal(dAtA []byte) error       { return nil }
-func (m *GetAssignmentsRequest) Size() int                         { return 0 }
+func (m *GetAssignmentsRequest) Unmarshal(dAtA []byte) error        { return nil }
+func (m *GetAssignmentsRequest) Size() int                          { return 0 }
 
 // GetAssignmentsResponse contains the full set of timed assignments.
 // Wire format uses JSON encoding inside a single length-delimited
@@ -35,8 +35,8 @@ type GetAssignmentsResponse struct {
 
 // TimedAssignmentProto is the wire representation of a timed assignment.
 type TimedAssignmentProto struct {
-	FromUnixMs  int64                    `json:"from_unix_ms"`
-	Entries     []AssignmentEntryProto   `json:"entries"`
+	FromUnixMs int64                  `json:"from_unix_ms"`
+	Entries    []AssignmentEntryProto `json:"entries"`
 }
 
 // AssignmentEntryProto is the wire representation of a hash-range-to-partition mapping.
