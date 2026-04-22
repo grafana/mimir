@@ -85,6 +85,10 @@ type enrichedVectorSelector struct {
 
 func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	if e.Op == parser.LOR {
+		// Matchers cannot propagate across an `or`, but we still need to recurse into both
+		// sides so that any nested BinaryExprs within each arm are processed.
+		mapper.extractVectorSelectors(e.LHS)
+		mapper.extractVectorSelectors(e.RHS)
 		return nil, nil
 	}
 
@@ -148,6 +152,11 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 				return nil, nil
 			}
 			return mapper.extractVectorSelectors(e.Args[i])
+		}
+		// Even for unsupported functions, recurse into all args to process any nested
+		// BinaryExprs (e.g. `scalar(up{foo="bar"} * down)` nested inside another BinaryExpr).
+		for _, arg := range e.Args {
+			mapper.extractVectorSelectors(arg)
 		}
 		return nil, nil
 	case *parser.AggregateExpr:
