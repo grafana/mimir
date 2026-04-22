@@ -1143,7 +1143,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 			assert.Nil(t, err)
 
 			queryMetrics := stats.NewQueryMetrics(reg[0])
-			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, false, nil, tc.matchers...)
+			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, tc.matchers...)
 
 			if tc.expectedError == nil {
 				require.NoError(t, err)
@@ -2589,7 +2589,7 @@ func TestSlowQueries(t *testing.T) {
 			})
 
 			queryMetrics := stats.NewQueryMetrics(reg[0])
-			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, false, nil, nameMatcher)
+			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, nameMatcher)
 			assert.Equal(t, expectedErr, err)
 		})
 	}

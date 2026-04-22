@@ -1464,7 +1464,7 @@ func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matc
 
 var errDistributorError = fmt.Errorf("errDistributorError")
 
-func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, bool, []string, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	return client.CombinedQueryStreamResponse{}, errDistributorError
 }
 func (m *errDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
