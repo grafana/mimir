@@ -70,12 +70,25 @@ func (r *BucketReader) Seek(offset int64, whence int) (int64, error) {
 	return offset, nil
 }
 
-var bucketBufPool = sync.Pool{
-	New: func() any {
-		// 1MiB buffer chosen as starting point;
-		// we could make this configurable and benchmark.
-		return bufio.NewReaderSize(nil, 1<<20)
-	},
+const DefaultBucketBufPoolSize = 1024 * 128 // 128 KiB
+
+var (
+	bucketBufPool = sync.Pool{
+		New: func() any {
+			return bufio.NewReaderSize(nil, DefaultBucketBufPoolSize)
+		},
+	}
+	bucketBufPoolOnce sync.Once
+)
+
+func InitBucketBufPool(bufferSizeBytes int) {
+	bucketBufPoolOnce.Do(func() {
+		bucketBufPool = sync.Pool{
+			New: func() any {
+				return bufio.NewReaderSize(nil, bufferSizeBytes)
+			},
+		}
+	})
 }
 
 type BucketBufReader struct {
