@@ -12,4 +12,6 @@ weight: 15
 
 # Set up Mimir
 
+- [Planning capacity](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/run-production-environment/planning-capacity/)
+
 {{< section menuTitle="true" >}}
