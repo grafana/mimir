@@ -568,6 +568,63 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 	require.Equal(t, 2, mockSchedulerClient.GetUpdateJobCallCount(), "should have sent exactly 2 updates: one successful, then one NOT_FOUND")
 }
 
+func TestSchedulerExecutor_TerminatingFinalJobStatus(t *testing.T) {
+	key := &compactorschedulerpb.JobKey{Id: "test-job"}
+	spec := &compactorschedulerpb.JobSpec{
+		Tenant:  "tenant",
+		JobType: compactorschedulerpb.JOB_TYPE_PLANNING,
+	}
+
+	t.Run("canceled_context_uses_fresh_context_for_update", func(t *testing.T) {
+		mock := &mockCompactorSchedulerClient{
+			UpdatePlanJobFunc: func(ctx context.Context, _ *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+				assert.NoError(t, ctx.Err())
+				return &compactorschedulerpb.UpdateJobResponse{}, nil
+			},
+		}
+		exec := newTestSchedulerExecutor(t, makeTestCompactorConfig(), mock)
+
+		canceledCtx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		exec.sendFinalJobStatus(canceledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+		require.Equal(t, 1, mock.GetUpdateJobCallCount())
+	})
+
+	t.Run("canceled_context_returns_after_final_status_timeout", func(t *testing.T) {
+		mock := &mockCompactorSchedulerClient{
+			UpdatePlanJobFunc: func(ctx context.Context, _ *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			},
+		}
+		cfg := makeTestCompactorConfig()
+		cfg.SchedulerClientConfig.TerminatingFinalStatusTimeout = time.Millisecond // arbitrary
+
+		exec := newTestSchedulerExecutor(t, cfg, mock)
+		cancelledCtx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		synctest.Test(t, func(t *testing.T) {
+			done := make(chan struct{})
+			go func() {
+				exec.sendFinalJobStatus(cancelledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+				close(done) // unblock select
+			}()
+
+			// Advance synctest time past timeout
+			time.Sleep(cfg.SchedulerClientConfig.TerminatingFinalStatusTimeout + time.Millisecond)
+			synctest.Wait()
+
+			select {
+			case <-done:
+			default:
+				t.Fatal("sendFinalJobStatus should have returned after FinalStatusTimeout elapsed")
+			}
+		})
+	})
+}
+
 func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 	tests := map[string]struct {
 		spec           *compactorschedulerpb.JobSpec
