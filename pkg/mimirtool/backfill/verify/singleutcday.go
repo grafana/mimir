@@ -16,45 +16,37 @@ import (
 const msPerDay int64 = 24 * 60 * 60 * 1000 // 86_400_000
 
 // SingleUTCDayVerifier enforces that a block's [MinTime, MaxTime) range lies
-// entirely within a single calendar UTC day. It accepts sparse blocks whose
-// span is less than 24 hours, and rejects 2-hour Prometheus-default blocks
-// and any block crossing a UTC-midnight boundary.
+// entirely within a single calendar UTC day. It is a pure header-arithmetic
+// check over meta.json: it accepts sparse blocks whose span is less than 24
+// hours and rejects 2-hour Prometheus-default blocks or any block whose
+// header crosses a UTC-midnight boundary.
 //
-// Header check (always): floor(MinTime / msPerDay) == floor((MaxTime-1) / msPerDay).
+// Formula: floor(MinTime / msPerDay) == floor((MaxTime-1) / msPerDay).
 // MaxTime is exclusive (see pkg/storage/tsdb/block/block_generator.go:173
 // "MaxTime: specs.MaxTime() + 1, // Not included.").
 //
-// Deep check (when constructed with Deep mode): delegates to block.VerifyBlock
-// with (minTime=utcDayStart, maxTime=utcDayEnd, checkChunks=false) so any
-// chunk outside the UTC-day window is flagged via HealthStats.OutsideChunks.
-// checkChunks is false here because WellFormedVerifier already performs the
-// CRC32 walk in deep mode; running it twice would double deep-mode IO cost.
-// This costs ~1 extra postings walk per block in deep mode — acceptable for
-// v1. If benchmarks ever need to collapse the two walks, a future plan can
-// introduce a per-block HealthStats cache shared between verifiers.
+// SingleUTCDayVerifier does NOT call block.VerifyBlock. Any chunks that
+// extend outside the block's declared [MinTime, MaxTime) range are caught
+// by WellFormedVerifier (which runs block.VerifyBlock against meta's own
+// range and reports OutsideChunks via HealthStats). Running both checks is
+// sufficient to detect every case the earlier deep-UTC-day walk caught.
 type SingleUTCDayVerifier struct {
 	logger log.Logger
-	deep   bool
 }
 
-// NewSingleUTCDayVerifier constructs a SingleUTCDayVerifier configured for
-// the given Mode. Deep mode enables the extra postings-walk check for chunks
-// straddling a UTC-day boundary; Medium mode does only the header arithmetic.
-func NewSingleUTCDayVerifier(logger log.Logger, mode Mode) *SingleUTCDayVerifier {
-	return &SingleUTCDayVerifier{logger: logger, deep: mode == Deep}
+// NewSingleUTCDayVerifier constructs a SingleUTCDayVerifier. Depth mode has
+// no effect on this verifier — it always does the same header arithmetic.
+func NewSingleUTCDayVerifier(logger log.Logger) *SingleUTCDayVerifier {
+	return &SingleUTCDayVerifier{logger: logger}
 }
 
 // Name returns the stable check name used in log lines and Report entries.
 func (v *SingleUTCDayVerifier) Name() string { return "single-utc-day" }
 
-// Verify returns nil if the block at blockDir is confined to a single
-// calendar UTC day. See the type comment for the exact formula and the deep
-// vs medium behavior split.
-func (v *SingleUTCDayVerifier) Verify(ctx context.Context, blockDir string, meta block.Meta) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
+// Verify returns nil if the block's declared [MinTime, MaxTime) range is
+// confined to a single calendar UTC day. See the type comment for the exact
+// formula.
+func (v *SingleUTCDayVerifier) Verify(_ context.Context, _ string, meta block.Meta) error {
 	if meta.MinTime >= meta.MaxTime {
 		return fmt.Errorf("block time range is empty or inverted: MinTime=%d MaxTime=%d",
 			meta.MinTime, meta.MaxTime)
@@ -67,16 +59,5 @@ func (v *SingleUTCDayVerifier) Verify(ctx context.Context, blockDir string, meta
 			meta.MinTime, meta.MaxTime, startDay, endDay)
 	}
 
-	if !v.deep {
-		return nil
-	}
-
-	utcDayStart := startDay * msPerDay
-	utcDayEnd := utcDayStart + msPerDay
-	// checkChunks=false: WellFormedVerifier already did the CRC walk in deep mode.
-	// We only need the postings walk to flag chunks outside the UTC-day window.
-	if err := block.VerifyBlock(ctx, v.logger, blockDir, utcDayStart, utcDayEnd, false); err != nil {
-		return fmt.Errorf("block has chunks outside UTC day [%d, %d): %w", utcDayStart, utcDayEnd, err)
-	}
 	return nil
 }

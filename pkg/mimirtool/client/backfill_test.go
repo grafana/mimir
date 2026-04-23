@@ -99,7 +99,7 @@ func TestBackfillWithOptions_VerificationFailureZeroUploads(t *testing.T) {
 	})
 
 	v := verify.NewVerifier(log.NewNopLogger(),
-		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(log.NewNopLogger(), verify.Medium)),
+		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(log.NewNopLogger())),
 	)
 
 	err := cli.BackfillWithOptions(context.Background(),
@@ -118,7 +118,7 @@ func TestBackfillWithOptions_DryRunZeroUploads(t *testing.T) {
 	})
 
 	v := verify.NewVerifier(log.NewNopLogger(),
-		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(log.NewNopLogger(), verify.Medium)),
+		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(log.NewNopLogger())),
 	)
 
 	err := cli.BackfillWithOptions(context.Background(),
@@ -137,7 +137,7 @@ func TestBackfillWithOptions_ValidBatchUploads(t *testing.T) {
 	})
 
 	v := verify.NewVerifier(log.NewNopLogger(),
-		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(log.NewNopLogger(), verify.Medium)),
+		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(log.NewNopLogger())),
 	)
 
 	err := cli.BackfillWithOptions(context.Background(),

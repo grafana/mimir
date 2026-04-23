@@ -148,7 +148,7 @@ func (c *BackfillCommand) backfill(logger log.Logger) error {
 		verify.WithFailFast(!c.fullReport),
 		verify.WithConcurrency(c.verifyConcurrency),
 		verify.WithBlockCheck(verify.NewWellFormedVerifier(logger, mode)),
-		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(logger, mode)),
+		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(logger)),
 	)
 
 	return cli.BackfillWithOptions(context.Background(), c.blocks, c.sleepTime, verifier, c.dryRun)
