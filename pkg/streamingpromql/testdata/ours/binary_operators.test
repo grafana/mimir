@@ -1895,3 +1895,49 @@ eval range from 0 to 18m step 6m left and on(env) right
 eval range from 0 to 18m step 6m left unless on(env) right
   left{env="prod", pod="a"} _ 2 _ 4
   left{env="prod", pod="b"} _ 6 _ 8
+
+clear
+
+# Test that the ignoring(...) narrowing optimisation for 'and'/'unless' produces correct results.
+# When VectorMatching.On is false, the operator computes the intersection of label names present
+# in all LHS series (excluding the ignored labels) and uses them as RHS hints. Here the common
+# non-ignored label is "env", so a matcher env=~"prod" is built and passed to the RHS, filtering
+# out the env="staging" series which could never match the LHS anyway.
+load 6m
+  left{env="prod",    pod="a"} 1 2 3 4
+  left{env="prod",    pod="b"} 5 6 7 8
+  right{env="prod",   pod="x"} 10 _ 30 _
+  right{env="staging", pod="y"} _  _ _  _
+
+# and ignoring(pod): env="staging" RHS series is narrowed away by hint matcher env=~"prod".
+# The result is identical to what it would be without narrowing.
+eval range from 0 to 18m step 6m left and ignoring(pod) right
+  left{env="prod", pod="a"} 1 _ 3 _
+  left{env="prod", pod="b"} 5 _ 7 _
+
+# unless ignoring(pod): same narrowing applies; env="prod" LHS series are suppressed at steps
+# where env="prod" RHS has data (t=0, t=12), and returned at other steps.
+eval range from 0 to 18m step 6m left unless ignoring(pod) right
+  left{env="prod", pod="a"} _ 2 _ 4
+  left{env="prod", pod="b"} _ 6 _ 8
+
+clear
+
+# Test that when LHS series have heterogeneous label sets, the ignoring(...) narrowing uses only
+# labels common to all LHS series, to avoid over-narrowing the RHS. Here "region" is absent from
+# the second LHS series, so only "env" (common to all) is used as a hint. If "region" were also
+# used, right{env="staging"} would be incorrectly filtered out, breaking the match for left-b.
+load 6m
+  left{env="prod",    region="us", pod="a"} 1 2 3 4
+  left{env="staging", pod="b"}              5 6 7 8
+  right{env="prod",    region="us", pod="x"} 10 _ 30 _
+  right{env="staging", pod="y"}              _  _ 30 _
+  right{env="dev",     pod="z"}              _  _ _  _
+
+eval range from 0 to 18m step 6m left and ignoring(pod) right
+  left{env="prod",    region="us", pod="a"} 1 _ 3 _
+  left{env="staging", pod="b"}              _ _ 7 _
+
+eval range from 0 to 18m step 6m left unless ignoring(pod) right
+  left{env="prod",    region="us", pod="a"} _ 2 _ 4
+  left{env="staging", pod="b"}              5 6 _ 8
