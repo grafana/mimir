@@ -146,3 +146,63 @@ func TestBackfillCommand_VerifyConcurrencyParsesInt(t *testing.T) {
 	})
 	assert.Equal(t, 2, cmd.verifyConcurrency, "--verify-concurrency must populate the struct field")
 }
+
+// TestBackfillCommand_DryRunOmitsAddressAndID asserts --dry-run accepts the command
+// without --address or --id being set. The tempdir will legitimately fail meta-parse
+// at verification time, but the parse/validate stage must not reject the command.
+func TestBackfillCommand_DryRunOmitsAddressAndID(t *testing.T) {
+	app, _ := buildBackfillApp(t)
+	validDir := t.TempDir()
+	_, err := app.Parse([]string{
+		"backfill",
+		"--dry-run",
+		validDir,
+	})
+	// A verification error from the empty tempdir is fine; a flag-parse error is not.
+	if err != nil {
+		assert.NotContains(t, err.Error(), "required",
+			"--dry-run must permit --address and --id to be omitted")
+	}
+}
+
+func TestBackfillCommand_NonDryRunRequiresAddress(t *testing.T) {
+	app, _ := buildBackfillApp(t)
+	validDir := t.TempDir()
+	_, err := app.Parse([]string{
+		"backfill",
+		"--id=tenant-1",
+		validDir,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--address",
+		"non-dry-run without --address must fail with a clear error")
+	assert.Contains(t, err.Error(), "required unless --dry-run")
+}
+
+func TestBackfillCommand_NonDryRunRequiresID(t *testing.T) {
+	app, _ := buildBackfillApp(t)
+	validDir := t.TempDir()
+	_, err := app.Parse([]string{
+		"backfill",
+		"--address=http://localhost",
+		validDir,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--id",
+		"non-dry-run without --id must fail with a clear error")
+	assert.Contains(t, err.Error(), "required unless --dry-run")
+}
+
+func TestBackfillCommand_NonDryRunMissingBoth(t *testing.T) {
+	app, _ := buildBackfillApp(t)
+	validDir := t.TempDir()
+	_, err := app.Parse([]string{
+		"backfill",
+		validDir,
+	})
+	require.Error(t, err)
+	// Both flag names should appear in the error message.
+	assert.Contains(t, err.Error(), "--address")
+	assert.Contains(t, err.Error(), "--id")
+	assert.Contains(t, err.Error(), "required unless --dry-run")
+}

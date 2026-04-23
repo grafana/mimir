@@ -56,9 +56,9 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 	})
 	cmd.Arg("block-dir", "block to upload").Required().SetValue(&c.blocks)
 
-	cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").
+	cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+". Required unless --dry-run is set.").
 		Envar(envVars.Address).
-		Required().
+		Default("").
 		StringVar(&c.clientConfig.Address)
 
 	cmd.Flag("user",
@@ -67,9 +67,9 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Envar(envVars.APIUser).
 		StringVar(&c.clientConfig.User)
 
-	cmd.Flag("id", "Grafana Mimir tenant ID. Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided. Alternatively, set "+envVars.TenantID+".").
+	cmd.Flag("id", "Grafana Mimir tenant ID. Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided. Alternatively, set "+envVars.TenantID+". Required unless --dry-run is set.").
 		Envar(envVars.TenantID).
-		Required().
+		Default("").
 		StringVar(&c.clientConfig.ID)
 
 	cmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
@@ -125,6 +125,18 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 	cmd.Validate(func(_ *kingpin.CmdClause) error {
 		if c.skipChunkVerification && c.fullReport {
 			return fmt.Errorf("--full-report requires deep analysis and cannot be combined with --skip-chunk-verification")
+		}
+		if !c.dryRun {
+			var missing []string
+			if c.clientConfig.Address == "" {
+				missing = append(missing, "--address")
+			}
+			if c.clientConfig.ID == "" {
+				missing = append(missing, "--id")
+			}
+			if len(missing) > 0 {
+				return fmt.Errorf("%s required unless --dry-run is set", strings.Join(missing, " and "))
+			}
 		}
 		return nil
 	})
