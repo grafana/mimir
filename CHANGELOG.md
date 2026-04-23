@@ -200,6 +200,7 @@
   * `-ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard` from `80` to `40`
   * `-ingest-storage.kafka.max-buffered-bytes` from `100MB` to `1GB`
 * [ENHANCEMENT] MQE: Enable narrow selectors optimisation and hints passing for `and`/`unless` binary operation. #15096
+* [BUGFIX] API: Scope activity tracking middleware to query routes only, preventing it from rejecting write requests that have an unexpected `Content-Type` header with HTTP 500. #15129
 * [BUGFIX] Ingester: enforce a minimum 10s delay between TSDB head compaction iterations when an iteration approaches or exceeds the configured `-blocks-storage.tsdb.head-compaction-interval`, so ingestion is not starved by back-to-back compactions. #15061
 * [BUGFIX] Update to Go v1.25.9. #15030
 * [BUGFIX] Distributor: OTLP partial success responses now correctly populate `RejectedDataPoints` with the actual count of rejected samples, instead of always reporting 0. In classical architecture, this includes rejected samples propagated from the ingester. #14789
