@@ -4,6 +4,7 @@ package binops
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -677,4 +678,118 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 			}
 		})
 	}
+}
+
+// BenchmarkAndUnlessDerivedHints measures the cost of SeriesMetadata for and/unless operations
+// and validates that the optimisation actually narrows the RHS series fetched.
+//
+// The scenario has LHS series covering 2 out of 10 env values, and a large RHS spread
+// across all 10 env values. The optimised paths (on/ignoring) should derive matchers that
+// filter the RHS to ~20% of total, which is visible in the rhs_series_fetched metric.
+func BenchmarkAndUnlessDerivedHints(b *testing.B) {
+	const totalEnvValues = 10
+	const lhsEnvValues = 2 // LHS only uses env-0 and env-1
+
+	makeLHS := func(count int) []labels.Labels {
+		out := make([]labels.Labels, count)
+		for i := range count {
+			out[i] = labels.FromStrings(
+				"__name__", "http_requests_total",
+				"env", fmt.Sprintf("env-%d", i%lhsEnvValues),
+				"handler", fmt.Sprintf("/api/v%d", i%5),
+				"pod", fmt.Sprintf("pod-%d", i),
+			)
+		}
+		return out
+	}
+
+	makeRHS := func(count int) []labels.Labels {
+		out := make([]labels.Labels, count)
+		for i := range count {
+			out[i] = labels.FromStrings(
+				"__name__", "up",
+				"env", fmt.Sprintf("env-%d", i%totalEnvValues),
+				"handler", fmt.Sprintf("/api/v%d", i%5),
+				"pod", fmt.Sprintf("pod-%d", i),
+			)
+		}
+		return out
+	}
+
+	for _, rhsCount := range []int{1_000, 10_000} {
+		lhsSeries := makeLHS(100)
+		rhsSeries := makeRHS(rhsCount)
+
+		// on(env): matching labels are static — derived directly from VectorMatching.
+		// Narrows RHS to lhsEnvValues/totalEnvValues of total series.
+		b.Run(fmt.Sprintf("on(env)/rhs=%d", rhsCount), func(b *testing.B) {
+			vm := parser.VectorMatching{On: true, MatchingLabels: []string{"env"}}
+			runAndUnlessBench(b, lhsSeries, rhsSeries, vm)
+		})
+
+		// ignoring(handler): matching labels computed at runtime as the intersection of
+		// non-ignored label names across all LHS series.
+		// env and pod are common to all LHS series, so both become RHS matchers.
+		b.Run(fmt.Sprintf("ignoring(handler)/rhs=%d", rhsCount), func(b *testing.B) {
+			vm := parser.VectorMatching{On: false, MatchingLabels: []string{"handler"}}
+			runAndUnlessBench(b, lhsSeries, rhsSeries, vm)
+		})
+
+		// Baseline: on() with no matching labels produces no hints, so the full RHS is fetched.
+		// rhs_series_fetched should equal rhsCount, confirming no narrowing occurs.
+		b.Run(fmt.Sprintf("baseline_no_hints/rhs=%d", rhsCount), func(b *testing.B) {
+			vm := parser.VectorMatching{On: true, MatchingLabels: nil}
+			runAndUnlessBench(b, lhsSeries, rhsSeries, vm)
+		})
+	}
+}
+
+// runAndUnlessBench is a helper that benchmarks a single SeriesMetadata call for the given
+// VectorMatching configuration. It reports rhs_series_fetched — the number of RHS series that
+// survived the derived matcher filter — so callers can confirm the optimisation is active.
+func runAndUnlessBench(b *testing.B, lhsSeries, rhsSeries []labels.Labels, vm parser.VectorMatching) {
+	b.Helper()
+
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	// Pre-allocate backing arrays to amortise slice allocation cost across iterations.
+	lhsBuf := make([]labels.Labels, len(lhsSeries))
+	rhsBuf := make([]labels.Labels, len(rhsSeries))
+
+	var rhsSeriesFetched int
+	for b.Loop() {
+		// TestOperator.SeriesMetadata filters t.Series in-place, so each iteration needs
+		// a fresh copy of the slice (the underlying labels.Labels values are immutable).
+		copy(lhsBuf, lhsSeries)
+		copy(rhsBuf, rhsSeries)
+
+		memTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+		left := &operators.TestOperator{
+			Series:                   lhsBuf,
+			Data:                     make([]types.InstantVectorSeriesData, len(lhsBuf)),
+			MemoryConsumptionTracker: memTracker,
+		}
+		right := &operators.TestOperator{
+			Series:                   rhsBuf,
+			Data:                     make([]types.InstantVectorSeriesData, len(rhsBuf)),
+			MemoryConsumptionTracker: memTracker,
+		}
+
+		o := NewAndUnlessBinaryOperation(left, right, vm, memTracker, false, timeRange, posrange.PositionRange{}, nil, log.NewNopLogger())
+		outputSeries, err := o.SeriesMetadata(ctx, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		rhsSeriesFetched = len(right.Series)
+
+		types.SeriesMetadataSlicePool.Put(&outputSeries, memTracker)
+		if err := o.Finalize(ctx); err != nil {
+			b.Fatal(err)
+		}
+		o.Close()
+	}
+
+	b.ReportMetric(float64(rhsSeriesFetched), "rhs_series_fetched")
 }
