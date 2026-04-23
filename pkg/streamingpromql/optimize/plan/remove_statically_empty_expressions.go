@@ -184,7 +184,8 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, 
 }
 
 func hasConflictingEqualsMatchers(matchers []*core.LabelMatcher) bool {
-	var equals map[string]string
+	equals := make(map[string]string)
+
 	for _, m := range matchers {
 		if m.Type != labels.MatchEqual {
 			continue
@@ -194,9 +195,6 @@ func hasConflictingEqualsMatchers(matchers []*core.LabelMatcher) bool {
 			return true
 		}
 
-		if equals == nil {
-			equals = make(map[string]string)
-		}
 		equals[m.Name] = m.Value
 	}
 
