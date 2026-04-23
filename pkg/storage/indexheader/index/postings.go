@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -97,12 +98,6 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(name string, value string) (r in
 		return index.Range{}, false, nil
 	}
 
-	d := t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
-	defer runutil.CloseWithErrCapture(&err, &d, "get sparsePostingsOffsets SparseTableOffsets")
-	if err := d.Err(); err != nil {
-		return index.Range{}, false, err
-	}
-
 	i := sort.Search(len(e.SparseTableOffsets), func(i int) bool { return e.SparseTableOffsets[i].Value >= value })
 
 	if i == len(e.SparseTableOffsets) {
@@ -115,7 +110,28 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(name string, value string) (r in
 		i--
 	}
 
-	d.ResetAt(e.SparseTableOffsets[i].Offset)
+	var d streamencoding.Decbuf
+	if bf, ok := t.decbufFactory.(*streamencoding.BucketDecbufFactory); ok {
+		var sparseTableOffsetsEnd int
+		if i+1 < len(e.SparseTableOffsets)-1 {
+			// We may need to read one extra entry to get the correct range end offset.
+			sparseTableOffsetsEnd = e.SparseTableOffsets[i+2].Offset
+		} else {
+			// Set this to something that will always be greater than the length of the table
+			sparseTableOffsetsEnd = math.MaxInt
+		}
+		// At this point we know that our value is somewhere between the i-th offset and the next one;
+		// we shouldn't need to read/cache bucket ops beyond that.
+		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[i].Offset, sparseTableOffsetsEnd)
+	} else {
+		d = t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
+		d.ResetAt(e.SparseTableOffsets[i].Offset)
+	}
+	defer runutil.CloseWithErrCapture(&err, &d, "get sparsePostingsOffsets SparseTableOffsets")
+	if err := d.Err(); err != nil {
+		return index.Range{}, false, err
+	}
+
 	nAndNameSize := 0
 
 	for d.Err() == nil {
@@ -186,12 +202,26 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 	}
 	offsets := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.SparseSampleFactor)
 
-	// Don't Crc32 the entire postings offset table, this is very slow
-	// so hope any issues were caught at startup.
-	d := t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
-	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
+	var d streamencoding.Decbuf
+	if bf, ok := t.decbufFactory.(*streamencoding.BucketDecbufFactory); ok {
+		var endOffset int
 
-	d.ResetAt(e.SparseTableOffsets[offsetsStart].Offset)
+		if offsetsEnd+1 < len(e.SparseTableOffsets) {
+			// We buffer the end with the distance to one more sparse offset in case the last matching entry is right at the end of the section.
+			endOffset = e.SparseTableOffsets[offsetsEnd+1].Offset
+		} else {
+			endOffset = math.MaxInt
+		}
+		// For the BucketDecbufFactory, we only read the section we care about to optimize
+		// the size of cached GetRange bucket ops.
+		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[offsetsStart].Offset, endOffset)
+	} else {
+		// Don't Crc32 the entire postings offset table, this is very slow
+		// so hope any issues were caught at startup.
+		d = t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
+		d.ResetAt(e.SparseTableOffsets[offsetsStart].Offset)
+	}
+	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
 	// The last value of a label gets its own offset in e.SparseTableOffsets.
 	// If that value matches, then later we should use e.LastValOffset

@@ -33,19 +33,30 @@ func NewBucketDecbufFactory(ctx context.Context, bkt objstore.BucketReader, obje
 	}
 }
 
-func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
+func (bf *BucketDecbufFactory) getCachedContentLength(offset int) (int, bool) {
+	bf.mu.Lock()
+	defer bf.mu.Unlock()
+	length, ok := bf.sectionLenCache[offset]
+	return length, ok
+}
+
+func (bf *BucketDecbufFactory) getContentLength(offset int) (int, error) {
+	// Check for content length before making a bucket attributes call.
+	if length, ok := bf.getCachedContentLength(offset); ok {
+		return length, nil
+	}
 	attrs, err := bf.bkt.Attributes(bf.ctx, bf.objectPath)
 	if err != nil {
-		return Decbuf{E: fmt.Errorf("get size from %s: %w", bf.objectPath, err)}
+		return 0, fmt.Errorf("get size from %s: %w", bf.objectPath, err)
 	}
 	if offset > int(attrs.Size) {
-		return Decbuf{E: fmt.Errorf("offset greater than object size of %s", bf.objectPath)}
+		return 0, fmt.Errorf("offset greater than object size of %s", bf.objectPath)
 	}
 
 	var contentLength int
 	bf.mu.Lock()
 	if cachedContentLength, ok := bf.sectionLenCache[offset]; ok {
-		// Section length is cached
+		// Section length may have been cached since we last checked
 		contentLength = cachedContentLength
 	} else {
 		// We do not know section length yet;
@@ -58,16 +69,24 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 		n, err := metaReader.Read(lengthBytes)
 		if err != nil {
 			bf.mu.Unlock()
-			return Decbuf{E: err}
+			return 0, err
 		}
 		if n != numLenBytes {
 			bf.mu.Unlock()
-			return Decbuf{E: fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, numLenBytes, ErrInvalidSize)}
+			return 0, fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, numLenBytes, ErrInvalidSize)
 		}
 		contentLength = int(binary.BigEndian.Uint32(lengthBytes))
 		bf.sectionLenCache[offset] = contentLength
 	}
 	bf.mu.Unlock()
+	return contentLength, nil
+}
+
+func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
+	contentLength, err := bf.getContentLength(offset)
+	if err != nil {
+		return Decbuf{E: err}
+	}
 
 	bufferLength := numLenBytes + contentLength + crc32.Size
 
@@ -90,6 +109,36 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	}
 
 	return d
+}
+
+// NewDecbufInSection creates a Decbuf which can only read a section of a table.
+// sectionStartOffset and sectionEndOffset are relative offsets from tableOffset (an absolute offset).
+// If sectionEndOffset is beyond the end of the table, length is adjusted to only read to the end of the table.
+func (bf *BucketDecbufFactory) NewDecbufInSection(tableOffset, sectionStartOffset, sectionEndOffset int) Decbuf {
+	length, err := bf.getContentLength(tableOffset)
+	if err != nil {
+		return Decbuf{E: err}
+	}
+
+	tableRelativeEndOffset := numLenBytes + length
+
+	// Force the reader to stop at the end of the table first
+	if tableRelativeEndOffset < sectionEndOffset {
+		sectionEndOffset = tableRelativeEndOffset
+	}
+	sectionLength := sectionEndOffset - sectionStartOffset
+	if sectionLength <= 0 {
+		return Decbuf{E: fmt.Errorf("section length must be greater than 0")}
+	}
+	bufReader := NewBucketBufReader(
+		bf.ctx,
+		bf.bkt,
+		bf.objectPath,
+		tableOffset+sectionStartOffset,
+		sectionLength,
+	)
+
+	return Decbuf{r: bufReader}
 }
 
 func (bf *BucketDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
