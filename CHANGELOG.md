@@ -945,6 +945,7 @@
 * [BUGFIX] Fix issue where `remote-read` doesn't behave like other mimirtool commands for authentication. #11402
 * [BUGFIX] Fix issue where `remote-read export` could omit some samples if the query time range spans multiple blocks. #12025
 * [BUGFIX] Fix issue where `remote-read export` could omit some output blocks in the list printed to the console or fail with `read/write on closed pipe`. #12025
+* [BUGFIX] Add `--tls-ca-path`, `--tls-cert-path`, `--tls-key-path`, and `--tls-insecure-skip-verify` flags (and the matching `MIMIR_TLS_*` env vars) to the `remote-read` subcommands so they can talk to Mimir instances that require TLS client authentication, matching the other mimirtool subcommands. #8274
 
 ### Mimir Continuous Test
 
