@@ -151,7 +151,7 @@ func (v *VectorSelector) ExpressionPosition() (posrange.PositionRange, error) {
 	return v.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (v *VectorSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	if v.Smoothed {
 		return planning.QueryPlanV4
 	}

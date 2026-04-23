@@ -94,7 +94,7 @@ func (n *DropName) ExpressionPosition() (posrange.PositionRange, error) {
 	return n.Inner.ExpressionPosition()
 }
 
-func (n *DropName) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (n *DropName) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanV1
 }
 

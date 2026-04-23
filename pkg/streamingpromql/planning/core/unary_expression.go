@@ -119,6 +119,6 @@ func (u *UnaryExpression) ExpressionPosition() (posrange.PositionRange, error) {
 	return u.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (u *UnaryExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (u *UnaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }

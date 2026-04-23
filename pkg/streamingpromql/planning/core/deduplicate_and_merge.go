@@ -94,7 +94,7 @@ func (d *DeduplicateAndMerge) ExpressionPosition() (posrange.PositionRange, erro
 	return d.Inner.ExpressionPosition()
 }
 
-func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }
 

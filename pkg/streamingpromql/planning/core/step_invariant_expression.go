@@ -53,7 +53,7 @@ func (s *StepInvariantExpression) ChildCount() int {
 	return 1
 }
 
-func (s *StepInvariantExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (s *StepInvariantExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanV1
 }
 

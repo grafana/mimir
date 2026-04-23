@@ -167,7 +167,7 @@ type Node interface {
 
 	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes this node.
 	// It does not consider the query plan version required by any of its children (for that, use planning.MinimumRequiredPlanVersion).
-	MinimumRequiredPlanVersion() QueryPlanVersion
+	MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) QueryPlanVersion
 
 	// FIXME: implementations for many of the above methods can be generated automatically
 }
@@ -324,15 +324,16 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 	if p.Root == nil {
 		return errors.New("query plan version can not be determined without a root node")
 	}
-	p.Version = MinimumRequiredPlanVersion(p.Root)
+	p.Version = MinimumRequiredPlanVersion(p.Root, p.Parameters.TimeRange)
 	return nil
 }
 
 // MinimumRequiredPlanVersion returns the minimum required query plan version of node and all its children.
-func MinimumRequiredPlanVersion(node Node) QueryPlanVersion {
-	maxVersion := node.MinimumRequiredPlanVersion()
+func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) QueryPlanVersion {
+	maxVersion := node.MinimumRequiredPlanVersion(timeRange)
+	childTimeRange := node.ChildrenTimeRange(timeRange)
 	for child := range ChildrenIter(node) {
-		maxVersion = max(maxVersion, MinimumRequiredPlanVersion(child))
+		maxVersion = max(maxVersion, MinimumRequiredPlanVersion(child, childTimeRange))
 	}
 	return maxVersion
 }

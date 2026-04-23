@@ -109,7 +109,7 @@ func (g *MultiAggregationGroup) ExpressionPosition() (posrange.PositionRange, er
 	return g.Inner.ExpressionPosition()
 }
 
-func (g *MultiAggregationGroup) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanV5
 }
 
@@ -215,7 +215,7 @@ func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange,
 	return a.Group.ExpressionPosition()
 }
 
-func (a *MultiAggregationInstance) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (a *MultiAggregationInstance) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	if len(a.Filters) > 0 {
 		return planning.QueryPlanV8
 	}

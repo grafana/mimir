@@ -84,7 +84,7 @@ func (n *NoOp) ExpressionPosition() (posrange.PositionRange, error) {
 	return posrange.PositionRange{}, nil
 }
 
-func (n *NoOp) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (n *NoOp) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanV9
 }
 

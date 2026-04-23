@@ -89,6 +89,6 @@ func (n *NumberLiteral) ExpressionPosition() (posrange.PositionRange, error) {
 	return n.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (n *NumberLiteral) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (n *NumberLiteral) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }

@@ -124,7 +124,7 @@ func (r *RemoteExecutionGroup) ExpressionPosition() (posrange.PositionRange, err
 	return posrange.PositionRange{}, errors.New("cannot call ExpressionPosition on RemoteExecutionGroup node directly, call ExpressionPosition on consumer node instead")
 }
 
-func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	if len(r.Nodes) > 1 {
 		return planning.QueryPlanV3
 	}
@@ -251,7 +251,7 @@ func (c *RemoteExecutionConsumer) getEvaluatedNode() (planning.Node, error) {
 	return c.Group.Nodes[c.NodeIndex], nil
 }
 
-func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	// Even though this node type was introduced around the time of query plan v3, this node type is only
 	// ever used in query-frontends, and is needed to support remote execution of single nodes against
 	// queriers supporting v2 or earlier.

@@ -2192,6 +2192,6 @@ func (t *versioningTestNode) ExpressionPosition() (posrange.PositionRange, error
 	return posrange.PositionRange{}, nil
 }
 
-func (t *versioningTestNode) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (t *versioningTestNode) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanVersion(t.Value)
 }

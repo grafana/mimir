@@ -185,7 +185,7 @@ func (m *MatrixSelector) ExpressionPosition() (posrange.PositionRange, error) {
 	return m.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (m *MatrixSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	if m.Anchored || m.Smoothed {
 		return planning.QueryPlanV4
 	}

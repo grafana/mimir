@@ -240,7 +240,7 @@ func (a *AggregateExpression) ExpressionPosition() (posrange.PositionRange, erro
 	return a.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (a *AggregateExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (a *AggregateExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	switch a.Op {
 	case AGGREGATION_LIMITK, AGGREGATION_LIMIT_RATIO:
 		return planning.QueryPlanV2

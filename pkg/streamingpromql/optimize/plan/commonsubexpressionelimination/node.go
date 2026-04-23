@@ -107,7 +107,7 @@ func (d *Duplicate) ExpressionPosition() (posrange.PositionRange, error) {
 	return d.Inner.ExpressionPosition()
 }
 
-func (d *Duplicate) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (d *Duplicate) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }
 
@@ -239,7 +239,7 @@ func (f *DuplicateFilter) ExpressionPosition() (posrange.PositionRange, error) {
 	return f.Inner.ExpressionPosition()
 }
 
-func (f *DuplicateFilter) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (f *DuplicateFilter) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return planning.QueryPlanV7
 }
 

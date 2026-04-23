@@ -1955,7 +1955,7 @@ type nodeWithOverriddenVersion struct {
 	child   planning.Node
 }
 
-func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
 	return n.version
 }
 
