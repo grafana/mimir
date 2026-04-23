@@ -119,7 +119,6 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 	eg.SetLimit(limit)
 
 	for _, dir := range blockDirs {
-		dir := dir
 		eg.Go(func() error {
 			if err := egCtx.Err(); err != nil {
 				// Context cancelled (fail-fast peer). Do not schedule new work.
