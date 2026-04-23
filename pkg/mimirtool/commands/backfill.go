@@ -161,6 +161,7 @@ func (c *BackfillCommand) backfill(logger log.Logger) error {
 		verify.WithConcurrency(c.verifyConcurrency),
 		verify.WithBlockCheck(verify.NewWellFormedVerifier(logger, mode)),
 		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(logger)),
+		verify.WithBatchCheck(verify.NewDuplicateDayVerifier(logger)),
 	)
 
 	return cli.BackfillWithOptions(context.Background(), c.blocks, c.sleepTime, verifier, c.dryRun)
