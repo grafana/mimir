@@ -2605,12 +2605,12 @@
             },
             {
               "kind": "field",
-              "name": "enable_range_vector_common_subexpression_elimination",
+              "name": "enable_range_query_range_vector_common_subexpression_elimination",
               "required": false,
               "desc": "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "querier.mimir-query-engine.enable-range-vector-common-subexpression-elimination",
+              "fieldFlag": "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },

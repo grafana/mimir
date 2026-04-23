@@ -1480,7 +1480,7 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 }
 
 func TestOptimizationPass_RangeVectorCSEDisabled(t *testing.T) {
-	runTest := func(t *testing.T, expr string, rangeVectorCSEEnabled bool, isRangeQuery bool, expectedPlan string) {
+	runTest := func(t *testing.T, expr string, rangeQueryRangeVectorEliminationEnabled bool, isRangeQuery bool, expectedPlan string) {
 		t.Helper()
 
 		ctx := context.Background()
@@ -1497,7 +1497,7 @@ func TestOptimizationPass_RangeVectorCSEDisabled(t *testing.T) {
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, rangeVectorCSEEnabled, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, rangeQueryRangeVectorEliminationEnabled, nil, opts.Logger))
 
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -1596,6 +1596,70 @@ func TestOptimizationPass_RangeVectorCSEDisabled(t *testing.T) {
 					- FunctionCall: increase(...)
 						- ref#1 Duplicate ...
 		`)
+	})
+}
+
+func TestOptimizationPass_RangeVectorCSEVersionGating(t *testing.T) {
+	runTest := func(t *testing.T, expr string, isRangeQuery bool, maxVersion planning.QueryPlanVersion, expectedPlan string, expectedPlanVersion planning.QueryPlanVersion) {
+		t.Helper()
+
+		ctx := context.Background()
+		observer := streamingpromql.NoopPlanningObserver{}
+
+		var timeRange types.QueryTimeRange
+		if isRangeQuery {
+			timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(time.Hour), time.Minute)
+		} else {
+			timeRange = types.NewInstantQueryTimeRange(time.Now())
+		}
+
+		opts := streamingpromql.NewTestEngineOpts()
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxVersion))
+		require.NoError(t, err)
+		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, nil, opts.Logger))
+
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+		require.NoError(t, err)
+		require.Equal(t, testutils.TrimIndent(expectedPlan), p.String())
+		require.Equal(t, expectedPlanVersion, p.Version)
+	}
+
+	expr := `rate(foo[5m]) + increase(foo[5m])`
+
+	deduplicatedPlan := `
+		- BinaryExpression: LHS + RHS
+			- LHS: DeduplicateAndMerge
+				- FunctionCall: rate(...)
+					- ref#1 Duplicate
+						- MatrixSelector: {__name__="foo"}[5m0s]
+			- RHS: DeduplicateAndMerge
+				- FunctionCall: increase(...)
+					- ref#1 Duplicate ...
+	`
+
+	t.Run("range query, querier supports V10", func(t *testing.T) {
+		// Range vector CSE should be applied, and the plan version should be V10.
+		runTest(t, expr, true, planning.QueryPlanV10, deduplicatedPlan, planning.QueryPlanV10)
+	})
+
+	t.Run("range query, querier does not support V10", func(t *testing.T) {
+		// Range vector CSE should not be applied when the querier doesn't support V10, even if the
+		// flag is enabled. Plan should be unchanged.
+		runTest(t, expr, true, planning.QueryPlanV9, `
+			- BinaryExpression: LHS + RHS
+				- LHS: DeduplicateAndMerge
+					- FunctionCall: rate(...)
+						- MatrixSelector: {__name__="foo"}[5m0s]
+				- RHS: DeduplicateAndMerge
+					- FunctionCall: increase(...)
+						- MatrixSelector: {__name__="foo"}[5m0s]
+		`, planning.QueryPlanVersionZero)
+	})
+
+	t.Run("instant query, querier does not support V10", func(t *testing.T) {
+		// Matrix selectors in instant queries are always deduplicated (they don't need V10).
+		runTest(t, expr, false, planning.QueryPlanV9, deduplicatedPlan, planning.QueryPlanVersionZero)
 	})
 }
 

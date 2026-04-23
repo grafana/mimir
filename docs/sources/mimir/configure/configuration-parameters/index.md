@@ -1969,8 +1969,8 @@ mimir_query_engine:
   # (experimental) Enable deduplication of range vector selectors in range
   # queries as part of common subexpression elimination. Requires common
   # subexpression elimination to be enabled.
-  # CLI flag: -querier.mimir-query-engine.enable-range-vector-common-subexpression-elimination
-  [enable_range_vector_common_subexpression_elimination: <boolean> | default = false]
+  # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
+  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
