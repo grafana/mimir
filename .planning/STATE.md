@@ -7,11 +7,11 @@ stopped_at: Phase 1 complete and approved; all 9 REQ-IDs green; ready for manual
 last_updated: "2026-04-23T15:36:43.403Z"
 last_activity: 2026-04-22 — Plan 01-03 complete
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
   total_plans: 5
   completed_plans: 5
-  percent: 100
+  percent: 50
 ---
 
 # Project State
@@ -69,6 +69,10 @@ None yet.
 ### Blockers/Concerns
 
 None yet.
+
+### Roadmap Evolution
+
+- 2026-04-23: Phase 2 added — Duplicate UTC-day detection (CHECK-04). Promoted from v2 future-checks list to Phase 2 scope. Lands on the `BatchVerifier` seam shipped in Phase 1.
 
 ## Deferred Items
 

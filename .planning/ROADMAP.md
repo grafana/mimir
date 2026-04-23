@@ -2,7 +2,7 @@
 
 ## Overview
 
-Single-phase scope: add a pluggable client-side verification module to `mimirtool backfill` that validates blocks are well-formed and exactly-one-UTC-day-aligned 24-hour blocks before any upload happens. Framework is designed to accept additional checks (duplicate-day, overlap, etc.) in follow-up work without structural change.
+Client-side verification module for `mimirtool backfill` that rejects malformed or non-single-UTC-day blocks before upload. Phase 1 shipped the framework plus well-formed and single-UTC-day (header) checks. Phase 2 adds the batch-level duplicate-UTC-day check, landing on the `BatchVerifier` seam Phase 1 was designed to support.
 
 ## Phases
 
@@ -10,7 +10,8 @@ Single-phase scope: add a pluggable client-side verification module to `mimirtoo
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Backfill Pre-Verification** - Pluggable client-side verifier module plus well-formed + 24hr + UTC-alignment checks wired into the backfill upload path.
+- [x] **Phase 1: Backfill Pre-Verification** - Pluggable client-side verifier module plus well-formed + 24hr + UTC-alignment checks wired into the backfill upload path.
+- [ ] **Phase 2: Duplicate UTC-day detection** - BatchVerifier that rejects batches containing two or more blocks covering the same UTC day.
 
 ## Phase Details
 
@@ -33,11 +34,27 @@ Plans:
 - [x] 01-04-PLAN.md — MimirClient.BackfillWithOptions integration + httptest-based zero-upload assertions (verify-fail, dry-run, valid-batch, legacy-wrapper)
 - [x] 01-05-PLAN.md — CLI flag wiring (--dry-run, --skip-chunk-verification, --full-report, --verify-concurrency), cmd.Validate mutual-exclusion, CHANGELOG, make format/lint/test/reference-help, human-verify checkpoint
 
+### Phase 2: Duplicate UTC-day detection
+**Goal**: Mimirtool's backfill rejects a batch when two or more blocks in the batch cover the same UTC day, preventing accidental duplicate uploads that would create compaction conflicts.
+**Depends on**: Phase 1 (uses the `BatchVerifier` seam already shipped)
+**Requirements**: CHECK-04
+**Success Criteria** (what must be TRUE):
+  1. Running `mimirtool backfill` against a batch containing two blocks whose `[MinTime, MaxTime)` ranges land on the same UTC day exits non-zero with a clear error naming the two offending block ULIDs and the shared date.
+  2. Running `mimirtool backfill` against a batch where every block covers a distinct UTC day verifies and uploads successfully (no regression on the existing happy path).
+  3. The new check is implemented as a `verify.BatchVerifier` registered via `WithBatchCheck` — no changes to `Verifier.Run` or the `BlockVerifier` interface.
+  4. Unit tests cover: distinct days pass; two blocks same day fail; N>2 blocks same day fail and all colliding ULIDs are named; a single-block batch trivially passes.
+  5. Changed code passes `make format`, `make lint`, `make test`.
+**Plans**: TBD (run `/gsd-plan-phase 2` to break down)
+
+Plans:
+- [ ] TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1
+Phases execute in numeric order: 1 → 2
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Backfill Pre-Verification |  5/5 |  Complete | - |
+| 1. Backfill Pre-Verification | 5/5 | Complete | 2026-04-23 |
+| 2. Duplicate UTC-day detection | 0/TBD | Not started | - |

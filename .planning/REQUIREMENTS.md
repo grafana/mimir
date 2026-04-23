@@ -23,11 +23,14 @@
 - [x] **INT-01**: When verification fails, `mimirtool backfill` does not attempt any uploads and exits with a non-zero code and a clear error summary.
 - [x] **INT-02**: Verification output follows existing mimirtool logging conventions (go-kit/log at the level used elsewhere in `client/backfill.go`).
 
+### Batch Checks (Phase 2)
+
+- [ ] **CHECK-04**: Batch-level duplicate-day detection — reject a batch if two or more blocks cover the same UTC day. Implemented as a `verify.BatchVerifier` registered via `WithBatchCheck`.
+
 ## v2 Requirements
 
 ### Future Checks
 
-- **CHECK-04**: Batch-level duplicate-day detection — reject if two blocks in the same batch cover the same UTC day.
 - **CHECK-05**: Batch-level overlap detection — reject if any two blocks have overlapping time ranges.
 - **CHECK-06**: Tenant-scoped cardinality / series-limit pre-flight — requires server-side metadata; out of scope for v1.
 
@@ -53,12 +56,13 @@
 | CHECK-03 | Phase 1 | Complete |
 | INT-01 | Phase 1 | Complete |
 | INT-02 | Phase 1 | Complete |
+| CHECK-04 | Phase 2 | Pending |
 
 **Coverage:**
-- v1 requirements: 9 total
-- Mapped to phases: 9
+- Requirements: 10 total (9 v1 delivered + 1 Phase 2)
+- Mapped to phases: 10
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-22*
-*Last updated: 2026-04-23 — all 9 v1 requirements complete. Phase 1 finished via Plans 01-01 through 01-05.*
+*Last updated: 2026-04-23 — Phase 1 complete; Phase 2 (CHECK-04 duplicate-day detection) added to milestone.*
