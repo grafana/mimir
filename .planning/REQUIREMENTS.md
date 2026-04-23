@@ -61,4 +61,4 @@
 
 ---
 *Requirements defined: 2026-04-22*
-*Last updated: 2026-04-22 — CHECK-02, CHECK-03 completed in Plan 01-03 (single-UTC-day semantics per SPEC §6)*
+*Last updated: 2026-04-23 — all 9 v1 requirements complete. Phase 1 finished via Plans 01-01 through 01-05.*
