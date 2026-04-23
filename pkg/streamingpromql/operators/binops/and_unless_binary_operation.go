@@ -4,8 +4,10 @@ package binops
 
 import (
 	"context"
+	"slices"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -98,16 +100,20 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		return nil, nil
 	}
 
-	// Build RHS matchers: when hints are set, build matchers from LHS metadata to narrow
-	// the RHS series fetch. When no hints are available, pass nil (do not apply parent matchers
-	// to the RHS — see SeriesMetadata for why).
+	// Build RHS matchers: first try to derive hints from VectorMatching at runtime (using the
+	// actual LHS label values), then fall back to planner-provided hints. When neither provides
+	// hints, pass nil to RHS (do not apply parent matchers to the RHS — see SeriesMetadata for why).
 	var rhsMatchers types.Matchers
-	if a.hints != nil {
-		rhsMatchers = BuildMatchers(leftMetadata, a.hints)
+	hints := a.hintsFromVectorMatching(leftMetadata)
+	if hints == nil {
+		hints = a.hints
+	}
+	if hints != nil {
+		rhsMatchers = BuildMatchers(leftMetadata, hints)
 		sl := spanlogger.FromContext(ctx, a.logger)
 		sl.DebugLog(
 			"msg", "binary operator passing additional matchers to RHS",
-			"fields", a.hints.Include,
+			"fields", hints.Include,
 			"hint_matchers", len(rhsMatchers),
 		)
 	}
@@ -355,6 +361,69 @@ func (a *AndUnlessBinaryOperation) Stats(ctx context.Context) (*types.OperatorEv
 func (a *AndUnlessBinaryOperation) Close() {
 	a.Left.Close()
 	a.Right.Close()
+}
+
+// hintsFromVectorMatching builds Hints from the VectorMatching at runtime using the actual LHS
+// series metadata.
+//
+// For on(...) matching, it returns the matching labels directly — they are already known at
+// construction time and are safe to use as-is.
+//
+// For ignoring(...) matching, it computes the intersection of label names across all LHS series,
+// excluding the ignored labels and __name__. We use the intersection (not the union) to avoid
+// over-narrowing: if a label is absent from some LHS series, adding a matcher for it would
+// incorrectly filter out RHS series that are valid matches for those LHS series.
+func (a *AndUnlessBinaryOperation) hintsFromVectorMatching(leftMetadata []types.SeriesMetadata) *Hints {
+	if a.VectorMatching.On {
+		if len(a.VectorMatching.MatchingLabels) == 0 {
+			return nil
+		}
+		return &Hints{Include: a.VectorMatching.MatchingLabels}
+	}
+
+	// ignoring(...) case: build the ignored set, then compute the intersection of label names
+	// present in every LHS series.
+	ignoredSet := make(map[string]struct{}, len(a.VectorMatching.MatchingLabels)+1)
+	ignoredSet["__name__"] = struct{}{}
+	for _, l := range a.VectorMatching.MatchingLabels {
+		ignoredSet[l] = struct{}{}
+	}
+
+	var commonLabels map[string]struct{}
+	for i, s := range leftMetadata {
+		seriesLabels := make(map[string]struct{})
+		s.Labels.Range(func(l labels.Label) {
+			if _, ignored := ignoredSet[l.Name]; !ignored {
+				seriesLabels[l.Name] = struct{}{}
+			}
+		})
+
+		if i == 0 {
+			commonLabels = seriesLabels
+		} else {
+			for name := range commonLabels {
+				if _, exists := seriesLabels[name]; !exists {
+					delete(commonLabels, name)
+				}
+			}
+		}
+
+		if len(commonLabels) == 0 {
+			return nil
+		}
+	}
+
+	if len(commonLabels) == 0 {
+		return nil
+	}
+
+	matchingLabels := make([]string, 0, len(commonLabels))
+	for name := range commonLabels {
+		matchingLabels = append(matchingLabels, name)
+	}
+	slices.Sort(matchingLabels)
+
+	return &Hints{Include: matchingLabels}
 }
 
 type andGroup struct {
