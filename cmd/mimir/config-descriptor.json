@@ -9385,6 +9385,17 @@
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ingester_partition_metric_label_enabled",
+          "required": false,
+          "desc": "True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingest-storage.ingester-partition-metric-label-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
