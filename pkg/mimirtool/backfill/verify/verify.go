@@ -153,7 +153,9 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 					if v.opts.failFast {
 						return errFailFast
 					}
+					continue
 				}
+				level.Info(blockLogger).Log("check", check.Name(), "msg", "passed")
 			}
 
 			level.Info(blockLogger).Log("msg", "verified")
@@ -169,10 +171,13 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 	batchShouldRun := !report.HasFailures() || !v.opts.failFast
 	if batchShouldRun {
 		for _, bcheck := range v.opts.batchChecks {
+			level.Info(v.logger).Log("check", bcheck.Name(), "msg", "running batch check")
 			if err := bcheck.Verify(ctx, refs); err != nil {
 				level.Error(v.logger).Log("check", bcheck.Name(), "msg", err.Error())
 				report.Add("", bcheck.Name(), "", err)
+				continue
 			}
+			level.Info(v.logger).Log("check", bcheck.Name(), "msg", "passed")
 		}
 	} else if len(v.opts.batchChecks) > 0 {
 		level.Info(v.logger).Log(
