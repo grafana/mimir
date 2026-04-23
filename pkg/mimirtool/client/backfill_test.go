@@ -147,6 +147,42 @@ func TestBackfillWithOptions_ValidBatchUploads(t *testing.T) {
 		"a verified block should produce at least one upload request")
 }
 
+// TestBackfillWithOptions_DuplicateDayRejected verifies CHECK-04: a batch
+// containing two blocks whose time ranges land on the same UTC day is
+// rejected by the BatchVerifier, and zero upload requests reach the server.
+//
+// Both blocks are well-formed and individually single-UTC-day, so per-block
+// checks pass and fail-fast does not trip before the batch stage runs. This
+// keeps the test exercising the real production code path used by mimirtool
+// backfill (medium mode here skips the CRC walk — that path is covered in
+// Phase 1 tests).
+func TestBackfillWithOptions_DuplicateDayRejected(t *testing.T) {
+	ts, uploadCount := uploadCountingServer(t)
+	cli := newTestClient(t, ts)
+
+	dirA, _ := generateValidBlockInline(t, t.TempDir(), []chunks.Sample{
+		sampleAt(1_000, 1.0), sampleAt(2_000, 2.0),
+	})
+	dirB, _ := generateValidBlockInline(t, t.TempDir(), []chunks.Sample{
+		sampleAt(3_000, 3.0), sampleAt(4_000, 4.0),
+	})
+
+	v := verify.NewVerifier(log.NewNopLogger(),
+		verify.WithMode(verify.Medium),
+		verify.WithBlockCheck(verify.NewWellFormedVerifier(log.NewNopLogger(), verify.Medium)),
+		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(log.NewNopLogger())),
+		verify.WithBatchCheck(verify.NewDuplicateDayVerifier(log.NewNopLogger())),
+	)
+
+	err := cli.BackfillWithOptions(context.Background(),
+		[]string{dirA, dirB}, time.Millisecond, v, false)
+	require.Error(t, err, "batch with two same-UTC-day blocks must fail verification")
+	assert.Contains(t, err.Error(), "verification failed",
+		"aggregated error is the Report summary; per-check detail is in log lines")
+	assert.Equal(t, int64(0), uploadCount.Load(),
+		"no /api/v1/upload/block/... request should have been issued when duplicate-day is detected")
+}
+
 func TestBackfill_LegacyWrapperBehavesAsBefore(t *testing.T) {
 	ts, uploadCount := uploadCountingServer(t)
 	cli := newTestClient(t, ts)
