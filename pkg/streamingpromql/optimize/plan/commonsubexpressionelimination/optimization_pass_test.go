@@ -1479,10 +1479,8 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 	})
 }
 
-func TestOptimizationPass_RangeVectorCSEDisabled(t *testing.T) {
+func TestOptimizationPass_RangeQueryRangeVectorCSEDisabled(t *testing.T) {
 	runTest := func(t *testing.T, expr string, rangeQueryRangeVectorEliminationEnabled bool, isRangeQuery bool, expectedPlan string) {
-		t.Helper()
-
 		ctx := context.Background()
 		observer := streamingpromql.NoopPlanningObserver{}
 
@@ -1506,8 +1504,6 @@ func TestOptimizationPass_RangeVectorCSEDisabled(t *testing.T) {
 
 	// Get the "no optimization" plan for expressions that should be unchanged.
 	unchangedPlan := func(t *testing.T, expr string, isRangeQuery bool) string {
-		t.Helper()
-
 		ctx := context.Background()
 		observer := streamingpromql.NoopPlanningObserver{}
 
@@ -1599,10 +1595,8 @@ func TestOptimizationPass_RangeVectorCSEDisabled(t *testing.T) {
 	})
 }
 
-func TestOptimizationPass_RangeVectorCSEVersionGating(t *testing.T) {
+func TestOptimizationPass_RangeQueryRangeVectorCSEVersionGating(t *testing.T) {
 	runTest := func(t *testing.T, expr string, isRangeQuery bool, maxVersion planning.QueryPlanVersion, expectedPlan string, expectedPlanVersion planning.QueryPlanVersion) {
-		t.Helper()
-
 		ctx := context.Background()
 		observer := streamingpromql.NoopPlanningObserver{}
 
