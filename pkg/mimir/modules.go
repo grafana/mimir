@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
@@ -126,6 +127,7 @@ const (
 	UsageTracker                     string = "usage-tracker"
 	UsageTrackerInstanceRing         string = "usage-tracker-instance-ring"
 	UsageTrackerPartitionRing        string = "usage-tracker-partition-ring"
+	NautilusRebalancer               string = "nautilus-rebalancer"
 	Vault                            string = "vault"
 
 	All string = "all"
@@ -1472,6 +1474,24 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 	}, nil), nil
 }
 
+func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
+	t.NautilusRebalancer = rebalancer.New(
+		t.Cfg.NautilusRebalancer,
+		t.IngesterRing,
+		t.Distributor.GetIngesterPool(),
+		t.IngesterPartitionInstanceRing,
+		util_log.Logger,
+	)
+	t.Server.GRPC.RegisterService(&rebalancer.NautilusRebalancerServiceDesc, t.NautilusRebalancer)
+
+	// Mount as a prefix so the rebalancer's ServeHTTP can dispatch
+	// sub-routes (e.g. /rounds.json, /rounds/{idx}.json) used by
+	// external trace-replay tools alongside the HTML dashboard.
+	t.API.RegisterRoutesWithPrefix("/nautilus/rebalancer", t.NautilusRebalancer, false, true, 0, "GET")
+
+	return t.NautilusRebalancer, nil
+}
+
 func (t *Mimir) setupModuleManager() error {
 	mm := modules.NewManager(util_log.Logger)
 
@@ -1495,6 +1515,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV)
+	mm.RegisterModule(NautilusRebalancer, t.initNautilusRebalancer)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(Querier, t.initQuerier)
@@ -1542,6 +1563,7 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
 		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
 		MemberlistKV:                     {API, Vault},
+		NautilusRebalancer:               {Distributor, IngesterRing, IngesterPartitionRing},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},

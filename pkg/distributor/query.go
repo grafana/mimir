@@ -9,6 +9,7 @@ package distributor
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"slices"
 	"time"
@@ -55,7 +56,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 			return err
 		}
 
-		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 		if err != nil {
 			return err
 		}
@@ -92,7 +93,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 
 		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 
-		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 		if err != nil {
 			return err
 		}
@@ -114,7 +115,10 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 // that must be queried for a read operation.
 //
 // If multiple ring.ReplicationSets are returned, each must be queried separately, and results merged.
-func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([]ring.ReplicationSet, error) {
+//
+// When ingest storage is enabled and matchers contain an exact __name__ match, only the partitions
+// that serve the metric name's hash range are returned (query locality optimization).
+func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, matchers []*labels.Matcher) ([]ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
@@ -135,6 +139,10 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 			return nil, err
 		}
 
+		if metricName, ok := extractExactMetricName(matchers); ok {
+			return d.getReplicationSetsForMetricName(r, userID, metricName)
+		}
+
 		return r.GetReplicationSetsForOperation(readNoExtend)
 	}
 
@@ -153,6 +161,96 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	}
 
 	return []ring.ReplicationSet{replicationSet}, nil
+}
+
+// extractExactMetricName returns the metric name from an exact __name__="..." matcher.
+// Returns ("", false) if no such matcher exists.
+func extractExactMetricName(matchers []*labels.Matcher) (string, bool) {
+	for _, m := range matchers {
+		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value != "" {
+			return m.Value, true
+		}
+	}
+	return "", false
+}
+
+// getReplicationSetsForMetricName returns ReplicationSets for only the partitions that
+// serve the hash range of the given metric name. This is the query locality optimization:
+// instead of fanning out to all partitions, we only query the ones that can contain
+// series for this metric.
+func (d *Distributor) getReplicationSetsForMetricName(r *ring.PartitionInstanceRing, userID string, metricName string) ([]ring.ReplicationSet, error) {
+	partRing := r.PartitionRing()
+	lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
+
+	// Find all partition IDs that own tokens in the hash range [lo, hi].
+	// We sample keys across the range to find partition boundaries.
+	partitionIDs := make(map[int32]struct{})
+	const sampleCount = 64
+	step := uint32(1)
+	rangeSize := hi - lo
+	if rangeSize > sampleCount {
+		step = rangeSize / sampleCount
+	}
+	for key := lo; key <= hi; key += step {
+		partID, err := partRing.ActivePartitionForKey(key)
+		if err != nil {
+			if errors.Is(err, ring.ErrNoActivePartitionFound) {
+				continue
+			}
+			return nil, err
+		}
+		partitionIDs[partID] = struct{}{}
+	}
+	// Always check the endpoint to avoid missing a partition at the boundary.
+	if partID, err := partRing.ActivePartitionForKey(hi); err == nil {
+		partitionIDs[partID] = struct{}{}
+	}
+
+	if len(partitionIDs) == 0 {
+		return nil, ring.ErrNoActivePartitionFound
+	}
+
+	// Build ReplicationSets for the filtered partitions.
+	instRing := r.InstanceRing()
+	result := make([]ring.ReplicationSet, 0, len(partitionIDs))
+
+	for partID := range partitionIDs {
+		ownerIDs := partRing.PartitionOwnerIDs(partID)
+		instances := make([]ring.InstanceDesc, 0, len(ownerIDs))
+
+		for _, instanceID := range ownerIDs {
+			instance, err := instRing.GetInstance(instanceID)
+			if err != nil {
+				continue
+			}
+			instances = append(instances, instance)
+		}
+
+		if len(instances) == 0 {
+			return nil, fmt.Errorf("partition %d: %w", partID, ring.ErrTooManyUnhealthyInstances)
+		}
+
+		zonesBuffer := make([]string, 0, 3)
+		for _, inst := range instances {
+			found := false
+			for _, z := range zonesBuffer {
+				if z == inst.Zone {
+					found = true
+					break
+				}
+			}
+			if !found {
+				zonesBuffer = append(zonesBuffer, inst.Zone)
+			}
+		}
+
+		result = append(result, ring.ReplicationSet{
+			Instances:            instances,
+			ZoneAwarenessEnabled: true,
+			MaxUnavailableZones:  len(zonesBuffer) - 1,
+		})
+	}
+	return result, nil
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.

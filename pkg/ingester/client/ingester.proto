@@ -38,7 +38,52 @@ service Ingester {
 
   rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {}
 
+  rpc HashRangeStats(HashRangeStatsRequest) returns (HashRangeStatsResponse) {}
+  rpc SetHashRanges(SetHashRangesRequest) returns (SetHashRangesResponse) {}
+  rpc GetHashRanges(GetHashRangesRequest) returns (GetHashRangesResponse) {}
+
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
+}
+
+message HashRangeStatsRequest {}
+
+message HashRangeRate {
+  uint32 lo = 1;
+  uint32 hi = 2;
+  reserved 3; // formerly samples_per_second; dropped when the rebalancer
+              // switched to a series-only load model.
+  int64 active_series = 4;
+}
+
+message HashRangeStatsResponse {
+  // rates is a misnomer left over from an earlier load model that
+  // included a samples/sec EWMA per range. The field now carries only
+  // per-range active-series counts; see HashRangeRate.
+  repeated HashRangeRate rates = 1 [(gogoproto.nullable) = false];
+  // total_active_series is the total number of in-memory series on the
+  // ingester, across all tenants. It includes series whose hashes fall
+  // outside of any currently-owned range (i.e. series the ingester used
+  // to own but that haven't yet been GC'd by head compaction). The
+  // rebalancer can compare this to sum(rates[].active_series) to detect
+  // stale post-move cardinality and weight source-side load accordingly.
+  int64 total_active_series = 2;
+}
+
+message HashRangeEntry {
+  uint32 lo = 1;
+  uint32 hi = 2;
+}
+
+message SetHashRangesRequest {
+  repeated HashRangeEntry ranges = 1 [(gogoproto.nullable) = false];
+}
+
+message SetHashRangesResponse {}
+
+message GetHashRangesRequest {}
+
+message GetHashRangesResponse {
+  repeated HashRangeEntry ranges = 1 [(gogoproto.nullable) = false];
 }
 
 message LabelNamesAndValuesRequest {

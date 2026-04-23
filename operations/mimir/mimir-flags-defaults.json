@@ -138,6 +138,7 @@
   "distributor.reactive-limiter.correlation-window": 50,
   "distributor.reactive-limiter.initial-rejection-factor": 1,
   "distributor.reactive-limiter.max-rejection-factor": 2,
+  "distributor.nautilus-rebalancer-address": "",
   "querier.query-store-after": 43200000000000,
   "querier.store-gateway-client.grpc-max-recv-msg-size": 104857600,
   "querier.store-gateway-client.grpc-max-send-msg-size": 104857600,

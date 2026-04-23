@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	syncatomic "sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -47,11 +48,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
@@ -231,6 +236,15 @@ type Distributor struct {
 
 	reactiveLimiter reactivelimiter.ReactiveLimiter
 
+	// nautilusAssignments holds the timed assignment set polled from the
+	// nautilus rebalancer. The latest assignment is used to route series
+	// to partitions instead of the partition ring's default hashing.
+	nautilusAssignments syncatomic.Pointer[assignment.TimedAssignmentSet]
+
+	// nautilusRebalancerConn is the gRPC connection to the rebalancer.
+	nautilusRebalancerConn io.Closer
+	clusterValidationLabel string
+
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
 	now   func() time.Time
@@ -238,6 +252,18 @@ type Distributor struct {
 
 func defaultSleep(d time.Duration) { time.Sleep(d) }
 func defaultNow() time.Time        { return time.Now() }
+
+// GetNautilusAssignments returns the current timed assignment set, or nil
+// if none has been polled yet.
+func (d *Distributor) GetNautilusAssignments() *assignment.TimedAssignmentSet {
+	return d.nautilusAssignments.Load()
+}
+
+// GetIngesterPool returns the ingester client pool, allowing other modules
+// (such as the nautilus rebalancer) to communicate with ingesters via gRPC.
+func (d *Distributor) GetIngesterPool() *ring_client.Pool {
+	return d.ingesterPool
+}
 
 // OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
 type OTelResourceAttributePromotionConfig interface {
@@ -322,6 +348,10 @@ type Config struct {
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
 
 	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
+
+	// NautilusRebalancerAddress is the gRPC address of the nautilus
+	// rebalancer. When set, the distributor polls it for assignments.
+	NautilusRebalancerAddress string `yaml:"nautilus_rebalancer_address" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -373,6 +403,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
+	f.StringVar(&cfg.NautilusRebalancerAddress, "distributor.nautilus-rebalancer-address", "", "gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -521,6 +552,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		partitionsRing:              partitionsRing,
 		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount:       atomic.NewUint32(0),
+		clusterValidationLabel:      clientConfig.GRPCClientConfig.ClusterValidation.Label,
 		healthyInstancesInZoneCount: atomic.NewUint32(0),
 		ringZonesCount:              atomic.NewUint32(1),
 		limits:                      limits,
@@ -885,12 +917,39 @@ func (d *Distributor) starting(ctx context.Context) error {
 		}
 	}
 
+	if d.cfg.NautilusRebalancerAddress != "" {
+		dialOpts := []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(),
+		}
+		if d.clusterValidationLabel != "" {
+			dialOpts = append(dialOpts, grpc.WithUnaryInterceptor(
+				middleware.ClusterUnaryClientInterceptor(d.clusterValidationLabel, middleware.NoOpInvalidClusterValidationReporter),
+			))
+		}
+		// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
+		conn, err := grpc.DialContext(ctx, d.cfg.NautilusRebalancerAddress, dialOpts...)
+		if err != nil {
+			return errors.Wrap(err, "connecting to nautilus rebalancer")
+		}
+		d.nautilusRebalancerConn = conn
+		level.Info(d.log).Log("msg", "connected to nautilus rebalancer", "address", d.cfg.NautilusRebalancerAddress)
+	}
+
 	return nil
 }
 
 func (d *Distributor) running(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
+
+	var nautilusTickerChan <-chan time.Time
+	if d.nautilusRebalancerConn != nil {
+		nautilusTicker := time.NewTicker(10 * time.Second)
+		defer nautilusTicker.Stop()
+		nautilusTickerChan = nautilusTicker.C
+		d.pollNautilusAssignments(ctx)
+	}
 
 	for {
 		select {
@@ -902,8 +961,31 @@ func (d *Distributor) running(ctx context.Context) error {
 
 		case err := <-d.subservicesWatcher.Chan():
 			return errors.Wrap(err, "distributor subservice failed")
+
+		case <-nautilusTickerChan:
+			d.pollNautilusAssignments(ctx)
 		}
 	}
+}
+
+func (d *Distributor) pollNautilusAssignments(ctx context.Context) {
+	conn, ok := d.nautilusRebalancerConn.(*grpc.ClientConn)
+	if !ok || conn == nil {
+		return
+	}
+
+	client := rebalancer.NewNautilusRebalancerClient(conn)
+	tctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	resp, err := client.GetAssignments(tctx, &rebalancer.GetAssignmentsRequest{})
+	if err != nil {
+		level.Warn(d.log).Log("msg", "failed to poll nautilus rebalancer", "err", err)
+		return
+	}
+
+	set := resp.ToTimedAssignmentSet()
+	d.nautilusAssignments.Store(set)
+	level.Debug(d.log).Log("msg", "polled nautilus assignments", "count", len(set.Assignments))
 }
 
 func (d *Distributor) cleanupInactiveUser(userID string) {
@@ -958,6 +1040,9 @@ func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 
 // Called after distributor is asked to stop via StopAsync.
 func (d *Distributor) stopping(_ error) error {
+	if d.nautilusRebalancerConn != nil {
+		_ = d.nautilusRebalancerConn.Close()
+	}
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
@@ -2242,8 +2327,18 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
 	defer cleanup()
 
-	// Group keys by partition.
-	partitionKeys, err := tenantRing.GetKeysByPartition(ctx, keys)
+	var partitionKeys []ring.PartitionKeys
+	var err error
+
+	var nautilusAssignment *assignment.Assignment
+	if s := d.nautilusAssignments.Load(); s != nil {
+		nautilusAssignment = s.Latest()
+	}
+	if nautilusAssignment != nil {
+		partitionKeys, err = d.getKeysByAssignment(ctx, nautilusAssignment, keys)
+	} else {
+		partitionKeys, err = tenantRing.GetKeysByPartition(ctx, keys)
+	}
 	if err != nil {
 		return errors.Wrap(err, "send data to partitions")
 	}
@@ -2281,6 +2376,42 @@ func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys 
 	return keys, initialMetadataIndex
 }
 
+// getKeysByAssignment groups keys by partition using the nautilus assignment,
+// falling back to the partition ring's ActivePartitionForKey for keys that
+// don't have a valid assignment (e.g. assigned partition is inactive).
+func (d *Distributor) getKeysByAssignment(ctx context.Context, a *assignment.Assignment, keys []uint32) ([]ring.PartitionKeys, error) {
+	pRing := d.partitionsRing.PartitionRing()
+
+	partitionIndexes := make(map[int32][]int)
+	for i, key := range keys {
+		if i%10e3 == 0 {
+			if err := context.Cause(ctx); err != nil {
+				return nil, err
+			}
+		}
+
+		pid, ok := a.Lookup(key)
+		if !ok {
+			level.Warn(d.log).Log("msg", "key not found in assignment; falling back to partition ring", "key", key)
+			var err error
+			pid, err = pRing.ActivePartitionForKey(key)
+			if err != nil {
+				return nil, err
+			}
+		}
+		partitionIndexes[pid] = append(partitionIndexes[pid], i)
+	}
+
+	result := make([]ring.PartitionKeys, 0, len(partitionIndexes))
+	for pid, indexes := range partitionIndexes {
+		result = append(result, ring.PartitionKeys{
+			PartitionID: pid,
+			Indexes:     indexes,
+		})
+	}
+	return result, nil
+}
+
 func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
 	if len(series) == 0 {
 		return nil
@@ -2305,8 +2436,15 @@ func getTokensForMetadata(userID string, metadata []*mimirpb.MetricMetadata) []u
 	return metadataKeys
 }
 
-func tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return mimirpb.ShardByAllLabelAdapters(userID, labels)
+func tokenForLabels(userID string, lbls []mimirpb.LabelAdapter) uint32 {
+	metricName := ""
+	for _, l := range lbls {
+		if l.Name == model.MetricNameLabel {
+			metricName = l.Value
+			break
+		}
+	}
+	return mimirpb.ShardByMetricNameLocality(userID, metricName, lbls)
 }
 
 func tokenForMetadata(userID string, metricName string) uint32 {
@@ -2443,7 +2581,7 @@ func queryIngesterPartitionsRingZoneSorter(preferredZones []string) ring.ZoneSor
 // LabelValuesForLabelName returns the label values associated with the given labelName, among all series with samples
 // timestamp between from and to, and series labels matching the optional matchers.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2488,7 +2626,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 //   - inmemory: in-memory series in ingesters.
 //   - active: in-memory series in ingesters which are also tracked as active ones.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2644,7 +2782,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2868,7 +3006,7 @@ func (d *Distributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers
 }
 
 func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*labels.Matcher, nativeHistograms bool) (*activeSeriesResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3169,7 +3307,7 @@ func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
 // the input optional series label matchers. The returned label names are sorted.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3210,7 +3348,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints
 // MetricsForLabelMatchers returns a list of series with samples timestamps between from and through, and series labels
 // matching the optional label matchers. The returned series are not sorted.
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3322,7 +3460,7 @@ func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string
 
 // MetricsMetadata returns the metrics metadata based on the provided req.
 func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3359,7 +3497,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.CountMethod) (*UserStats, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

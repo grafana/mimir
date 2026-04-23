@@ -102,7 +102,369 @@ var ActiveSeriesRequest_RequestType_value = map[string]int32{
 }
 
 func (ActiveSeriesRequest_RequestType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{8, 0}
+	return fileDescriptor_60f6df4f3586b478, []int{16, 0}
+}
+
+type HashRangeStatsRequest struct {
+}
+
+func (m *HashRangeStatsRequest) Reset()      { *m = HashRangeStatsRequest{} }
+func (*HashRangeStatsRequest) ProtoMessage() {}
+func (*HashRangeStatsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{0}
+}
+func (m *HashRangeStatsRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *HashRangeStatsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_HashRangeStatsRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *HashRangeStatsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HashRangeStatsRequest.Merge(m, src)
+}
+func (m *HashRangeStatsRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *HashRangeStatsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_HashRangeStatsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_HashRangeStatsRequest proto.InternalMessageInfo
+
+type HashRangeRate struct {
+	Lo uint32 `protobuf:"varint,1,opt,name=lo,proto3" json:"lo,omitempty"`
+	Hi uint32 `protobuf:"varint,2,opt,name=hi,proto3" json:"hi,omitempty"`
+	// switched to a series-only load model.
+	ActiveSeries int64 `protobuf:"varint,4,opt,name=active_series,json=activeSeries,proto3" json:"active_series,omitempty"`
+}
+
+func (m *HashRangeRate) Reset()      { *m = HashRangeRate{} }
+func (*HashRangeRate) ProtoMessage() {}
+func (*HashRangeRate) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{1}
+}
+func (m *HashRangeRate) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *HashRangeRate) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_HashRangeRate.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *HashRangeRate) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HashRangeRate.Merge(m, src)
+}
+func (m *HashRangeRate) XXX_Size() int {
+	return m.Size()
+}
+func (m *HashRangeRate) XXX_DiscardUnknown() {
+	xxx_messageInfo_HashRangeRate.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_HashRangeRate proto.InternalMessageInfo
+
+func (m *HashRangeRate) GetLo() uint32 {
+	if m != nil {
+		return m.Lo
+	}
+	return 0
+}
+
+func (m *HashRangeRate) GetHi() uint32 {
+	if m != nil {
+		return m.Hi
+	}
+	return 0
+}
+
+func (m *HashRangeRate) GetActiveSeries() int64 {
+	if m != nil {
+		return m.ActiveSeries
+	}
+	return 0
+}
+
+type HashRangeStatsResponse struct {
+	// rates is a misnomer left over from an earlier load model that
+	// included a samples/sec EWMA per range. The field now carries only
+	// per-range active-series counts; see HashRangeRate.
+	Rates []HashRangeRate `protobuf:"bytes,1,rep,name=rates,proto3" json:"rates"`
+	// total_active_series is the total number of in-memory series on the
+	// ingester, across all tenants. It includes series whose hashes fall
+	// outside of any currently-owned range (i.e. series the ingester used
+	// to own but that haven't yet been GC'd by head compaction). The
+	// rebalancer can compare this to sum(rates[].active_series) to detect
+	// stale post-move cardinality and weight source-side load accordingly.
+	TotalActiveSeries int64 `protobuf:"varint,2,opt,name=total_active_series,json=totalActiveSeries,proto3" json:"total_active_series,omitempty"`
+}
+
+func (m *HashRangeStatsResponse) Reset()      { *m = HashRangeStatsResponse{} }
+func (*HashRangeStatsResponse) ProtoMessage() {}
+func (*HashRangeStatsResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{2}
+}
+func (m *HashRangeStatsResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *HashRangeStatsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_HashRangeStatsResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *HashRangeStatsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HashRangeStatsResponse.Merge(m, src)
+}
+func (m *HashRangeStatsResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *HashRangeStatsResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_HashRangeStatsResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_HashRangeStatsResponse proto.InternalMessageInfo
+
+func (m *HashRangeStatsResponse) GetRates() []HashRangeRate {
+	if m != nil {
+		return m.Rates
+	}
+	return nil
+}
+
+func (m *HashRangeStatsResponse) GetTotalActiveSeries() int64 {
+	if m != nil {
+		return m.TotalActiveSeries
+	}
+	return 0
+}
+
+type HashRangeEntry struct {
+	Lo uint32 `protobuf:"varint,1,opt,name=lo,proto3" json:"lo,omitempty"`
+	Hi uint32 `protobuf:"varint,2,opt,name=hi,proto3" json:"hi,omitempty"`
+}
+
+func (m *HashRangeEntry) Reset()      { *m = HashRangeEntry{} }
+func (*HashRangeEntry) ProtoMessage() {}
+func (*HashRangeEntry) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{3}
+}
+func (m *HashRangeEntry) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *HashRangeEntry) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_HashRangeEntry.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *HashRangeEntry) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HashRangeEntry.Merge(m, src)
+}
+func (m *HashRangeEntry) XXX_Size() int {
+	return m.Size()
+}
+func (m *HashRangeEntry) XXX_DiscardUnknown() {
+	xxx_messageInfo_HashRangeEntry.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_HashRangeEntry proto.InternalMessageInfo
+
+func (m *HashRangeEntry) GetLo() uint32 {
+	if m != nil {
+		return m.Lo
+	}
+	return 0
+}
+
+func (m *HashRangeEntry) GetHi() uint32 {
+	if m != nil {
+		return m.Hi
+	}
+	return 0
+}
+
+type SetHashRangesRequest struct {
+	Ranges []HashRangeEntry `protobuf:"bytes,1,rep,name=ranges,proto3" json:"ranges"`
+}
+
+func (m *SetHashRangesRequest) Reset()      { *m = SetHashRangesRequest{} }
+func (*SetHashRangesRequest) ProtoMessage() {}
+func (*SetHashRangesRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{4}
+}
+func (m *SetHashRangesRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SetHashRangesRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SetHashRangesRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SetHashRangesRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SetHashRangesRequest.Merge(m, src)
+}
+func (m *SetHashRangesRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *SetHashRangesRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_SetHashRangesRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SetHashRangesRequest proto.InternalMessageInfo
+
+func (m *SetHashRangesRequest) GetRanges() []HashRangeEntry {
+	if m != nil {
+		return m.Ranges
+	}
+	return nil
+}
+
+type SetHashRangesResponse struct {
+}
+
+func (m *SetHashRangesResponse) Reset()      { *m = SetHashRangesResponse{} }
+func (*SetHashRangesResponse) ProtoMessage() {}
+func (*SetHashRangesResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{5}
+}
+func (m *SetHashRangesResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SetHashRangesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SetHashRangesResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SetHashRangesResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SetHashRangesResponse.Merge(m, src)
+}
+func (m *SetHashRangesResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *SetHashRangesResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_SetHashRangesResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SetHashRangesResponse proto.InternalMessageInfo
+
+type GetHashRangesRequest struct {
+}
+
+func (m *GetHashRangesRequest) Reset()      { *m = GetHashRangesRequest{} }
+func (*GetHashRangesRequest) ProtoMessage() {}
+func (*GetHashRangesRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{6}
+}
+func (m *GetHashRangesRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetHashRangesRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetHashRangesRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetHashRangesRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetHashRangesRequest.Merge(m, src)
+}
+func (m *GetHashRangesRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetHashRangesRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetHashRangesRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetHashRangesRequest proto.InternalMessageInfo
+
+type GetHashRangesResponse struct {
+	Ranges []HashRangeEntry `protobuf:"bytes,1,rep,name=ranges,proto3" json:"ranges"`
+}
+
+func (m *GetHashRangesResponse) Reset()      { *m = GetHashRangesResponse{} }
+func (*GetHashRangesResponse) ProtoMessage() {}
+func (*GetHashRangesResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_60f6df4f3586b478, []int{7}
+}
+func (m *GetHashRangesResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetHashRangesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetHashRangesResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetHashRangesResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetHashRangesResponse.Merge(m, src)
+}
+func (m *GetHashRangesResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetHashRangesResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetHashRangesResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetHashRangesResponse proto.InternalMessageInfo
+
+func (m *GetHashRangesResponse) GetRanges() []HashRangeEntry {
+	if m != nil {
+		return m.Ranges
+	}
+	return nil
 }
 
 type LabelNamesAndValuesRequest struct {
@@ -113,7 +475,7 @@ type LabelNamesAndValuesRequest struct {
 func (m *LabelNamesAndValuesRequest) Reset()      { *m = LabelNamesAndValuesRequest{} }
 func (*LabelNamesAndValuesRequest) ProtoMessage() {}
 func (*LabelNamesAndValuesRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{0}
+	return fileDescriptor_60f6df4f3586b478, []int{8}
 }
 func (m *LabelNamesAndValuesRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -163,7 +525,7 @@ type LabelNamesAndValuesResponse struct {
 func (m *LabelNamesAndValuesResponse) Reset()      { *m = LabelNamesAndValuesResponse{} }
 func (*LabelNamesAndValuesResponse) ProtoMessage() {}
 func (*LabelNamesAndValuesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{1}
+	return fileDescriptor_60f6df4f3586b478, []int{9}
 }
 func (m *LabelNamesAndValuesResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -207,7 +569,7 @@ type LabelValues struct {
 func (m *LabelValues) Reset()      { *m = LabelValues{} }
 func (*LabelValues) ProtoMessage() {}
 func (*LabelValues) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{2}
+	return fileDescriptor_60f6df4f3586b478, []int{10}
 }
 func (m *LabelValues) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -259,7 +621,7 @@ type LabelValuesCardinalityRequest struct {
 func (m *LabelValuesCardinalityRequest) Reset()      { *m = LabelValuesCardinalityRequest{} }
 func (*LabelValuesCardinalityRequest) ProtoMessage() {}
 func (*LabelValuesCardinalityRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{3}
+	return fileDescriptor_60f6df4f3586b478, []int{11}
 }
 func (m *LabelValuesCardinalityRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -316,7 +678,7 @@ type LabelValuesCardinalityResponse struct {
 func (m *LabelValuesCardinalityResponse) Reset()      { *m = LabelValuesCardinalityResponse{} }
 func (*LabelValuesCardinalityResponse) ProtoMessage() {}
 func (*LabelValuesCardinalityResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{4}
+	return fileDescriptor_60f6df4f3586b478, []int{12}
 }
 func (m *LabelValuesCardinalityResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -360,7 +722,7 @@ type LabelValueSeriesCount struct {
 func (m *LabelValueSeriesCount) Reset()      { *m = LabelValueSeriesCount{} }
 func (*LabelValueSeriesCount) ProtoMessage() {}
 func (*LabelValueSeriesCount) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{5}
+	return fileDescriptor_60f6df4f3586b478, []int{13}
 }
 func (m *LabelValueSeriesCount) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -416,7 +778,7 @@ type QueryRequest struct {
 func (m *QueryRequest) Reset()      { *m = QueryRequest{} }
 func (*QueryRequest) ProtoMessage() {}
 func (*QueryRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{6}
+	return fileDescriptor_60f6df4f3586b478, []int{14}
 }
 func (m *QueryRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -496,7 +858,7 @@ type ExemplarQueryRequest struct {
 func (m *ExemplarQueryRequest) Reset()      { *m = ExemplarQueryRequest{} }
 func (*ExemplarQueryRequest) ProtoMessage() {}
 func (*ExemplarQueryRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{7}
+	return fileDescriptor_60f6df4f3586b478, []int{15}
 }
 func (m *ExemplarQueryRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -554,7 +916,7 @@ type ActiveSeriesRequest struct {
 func (m *ActiveSeriesRequest) Reset()      { *m = ActiveSeriesRequest{} }
 func (*ActiveSeriesRequest) ProtoMessage() {}
 func (*ActiveSeriesRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{8}
+	return fileDescriptor_60f6df4f3586b478, []int{16}
 }
 func (m *ActiveSeriesRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -614,7 +976,7 @@ type QueryStreamResponse struct {
 func (m *QueryStreamResponse) Reset()      { *m = QueryStreamResponse{} }
 func (*QueryStreamResponse) ProtoMessage() {}
 func (*QueryStreamResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{9}
+	return fileDescriptor_60f6df4f3586b478, []int{17}
 }
 func (m *QueryStreamResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -672,7 +1034,7 @@ type QueryStreamSeries struct {
 func (m *QueryStreamSeries) Reset()      { *m = QueryStreamSeries{} }
 func (*QueryStreamSeries) ProtoMessage() {}
 func (*QueryStreamSeries) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{10}
+	return fileDescriptor_60f6df4f3586b478, []int{18}
 }
 func (m *QueryStreamSeries) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -716,7 +1078,7 @@ type QueryStreamSeriesChunks struct {
 func (m *QueryStreamSeriesChunks) Reset()      { *m = QueryStreamSeriesChunks{} }
 func (*QueryStreamSeriesChunks) ProtoMessage() {}
 func (*QueryStreamSeriesChunks) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{11}
+	return fileDescriptor_60f6df4f3586b478, []int{19}
 }
 func (m *QueryStreamSeriesChunks) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -769,7 +1131,7 @@ type ExemplarQueryResponse struct {
 func (m *ExemplarQueryResponse) Reset()      { *m = ExemplarQueryResponse{} }
 func (*ExemplarQueryResponse) ProtoMessage() {}
 func (*ExemplarQueryResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{12}
+	return fileDescriptor_60f6df4f3586b478, []int{20}
 }
 func (m *ExemplarQueryResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -816,7 +1178,7 @@ type LabelValuesRequest struct {
 func (m *LabelValuesRequest) Reset()      { *m = LabelValuesRequest{} }
 func (*LabelValuesRequest) ProtoMessage() {}
 func (*LabelValuesRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{13}
+	return fileDescriptor_60f6df4f3586b478, []int{21}
 }
 func (m *LabelValuesRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -887,7 +1249,7 @@ type LabelValuesResponse struct {
 func (m *LabelValuesResponse) Reset()      { *m = LabelValuesResponse{} }
 func (*LabelValuesResponse) ProtoMessage() {}
 func (*LabelValuesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{14}
+	return fileDescriptor_60f6df4f3586b478, []int{22}
 }
 func (m *LabelValuesResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -933,7 +1295,7 @@ type LabelNamesRequest struct {
 func (m *LabelNamesRequest) Reset()      { *m = LabelNamesRequest{} }
 func (*LabelNamesRequest) ProtoMessage() {}
 func (*LabelNamesRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{15}
+	return fileDescriptor_60f6df4f3586b478, []int{23}
 }
 func (m *LabelNamesRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -997,7 +1359,7 @@ type LabelNamesResponse struct {
 func (m *LabelNamesResponse) Reset()      { *m = LabelNamesResponse{} }
 func (*LabelNamesResponse) ProtoMessage() {}
 func (*LabelNamesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{16}
+	return fileDescriptor_60f6df4f3586b478, []int{24}
 }
 func (m *LabelNamesResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1040,7 +1402,7 @@ type UserStatsRequest struct {
 func (m *UserStatsRequest) Reset()      { *m = UserStatsRequest{} }
 func (*UserStatsRequest) ProtoMessage() {}
 func (*UserStatsRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{17}
+	return fileDescriptor_60f6df4f3586b478, []int{25}
 }
 func (m *UserStatsRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1086,7 +1448,7 @@ type UserStatsResponse struct {
 func (m *UserStatsResponse) Reset()      { *m = UserStatsResponse{} }
 func (*UserStatsResponse) ProtoMessage() {}
 func (*UserStatsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{18}
+	return fileDescriptor_60f6df4f3586b478, []int{26}
 }
 func (m *UserStatsResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1151,7 +1513,7 @@ type UserIDStatsResponse struct {
 func (m *UserIDStatsResponse) Reset()      { *m = UserIDStatsResponse{} }
 func (*UserIDStatsResponse) ProtoMessage() {}
 func (*UserIDStatsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{19}
+	return fileDescriptor_60f6df4f3586b478, []int{27}
 }
 func (m *UserIDStatsResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1201,7 +1563,7 @@ type UsersStatsResponse struct {
 func (m *UsersStatsResponse) Reset()      { *m = UsersStatsResponse{} }
 func (*UsersStatsResponse) ProtoMessage() {}
 func (*UsersStatsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{20}
+	return fileDescriptor_60f6df4f3586b478, []int{28}
 }
 func (m *UsersStatsResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1247,7 +1609,7 @@ type MetricsForLabelMatchersRequest struct {
 func (m *MetricsForLabelMatchersRequest) Reset()      { *m = MetricsForLabelMatchersRequest{} }
 func (*MetricsForLabelMatchersRequest) ProtoMessage() {}
 func (*MetricsForLabelMatchersRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{21}
+	return fileDescriptor_60f6df4f3586b478, []int{29}
 }
 func (m *MetricsForLabelMatchersRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1314,7 +1676,7 @@ type MetricsForLabelMatchersResponse struct {
 func (m *MetricsForLabelMatchersResponse) Reset()      { *m = MetricsForLabelMatchersResponse{} }
 func (*MetricsForLabelMatchersResponse) ProtoMessage() {}
 func (*MetricsForLabelMatchersResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{22}
+	return fileDescriptor_60f6df4f3586b478, []int{30}
 }
 func (m *MetricsForLabelMatchersResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1359,7 +1721,7 @@ type MetricsMetadataRequest struct {
 func (m *MetricsMetadataRequest) Reset()      { *m = MetricsMetadataRequest{} }
 func (*MetricsMetadataRequest) ProtoMessage() {}
 func (*MetricsMetadataRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{23}
+	return fileDescriptor_60f6df4f3586b478, []int{31}
 }
 func (m *MetricsMetadataRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1416,7 +1778,7 @@ type MetricsMetadataResponse struct {
 func (m *MetricsMetadataResponse) Reset()      { *m = MetricsMetadataResponse{} }
 func (*MetricsMetadataResponse) ProtoMessage() {}
 func (*MetricsMetadataResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{24}
+	return fileDescriptor_60f6df4f3586b478, []int{32}
 }
 func (m *MetricsMetadataResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1465,7 +1827,7 @@ type ActiveSeriesResponse struct {
 func (m *ActiveSeriesResponse) Reset()      { *m = ActiveSeriesResponse{} }
 func (*ActiveSeriesResponse) ProtoMessage() {}
 func (*ActiveSeriesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{25}
+	return fileDescriptor_60f6df4f3586b478, []int{33}
 }
 func (m *ActiveSeriesResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1518,7 +1880,7 @@ type Chunk struct {
 func (m *Chunk) Reset()      { *m = Chunk{} }
 func (*Chunk) ProtoMessage() {}
 func (*Chunk) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{26}
+	return fileDescriptor_60f6df4f3586b478, []int{34}
 }
 func (m *Chunk) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1575,7 +1937,7 @@ type LabelMatchers struct {
 func (m *LabelMatchers) Reset()      { *m = LabelMatchers{} }
 func (*LabelMatchers) ProtoMessage() {}
 func (*LabelMatchers) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{27}
+	return fileDescriptor_60f6df4f3586b478, []int{35}
 }
 func (m *LabelMatchers) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1620,7 +1982,7 @@ type LabelMatcher struct {
 func (m *LabelMatcher) Reset()      { *m = LabelMatcher{} }
 func (*LabelMatcher) ProtoMessage() {}
 func (*LabelMatcher) Descriptor() ([]byte, []int) {
-	return fileDescriptor_60f6df4f3586b478, []int{28}
+	return fileDescriptor_60f6df4f3586b478, []int{36}
 }
 func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1674,6 +2036,14 @@ func init() {
 	proto.RegisterEnum("cortex.CountMethod", CountMethod_name, CountMethod_value)
 	proto.RegisterEnum("cortex.MatchType", MatchType_name, MatchType_value)
 	proto.RegisterEnum("cortex.ActiveSeriesRequest_RequestType", ActiveSeriesRequest_RequestType_name, ActiveSeriesRequest_RequestType_value)
+	proto.RegisterType((*HashRangeStatsRequest)(nil), "cortex.HashRangeStatsRequest")
+	proto.RegisterType((*HashRangeRate)(nil), "cortex.HashRangeRate")
+	proto.RegisterType((*HashRangeStatsResponse)(nil), "cortex.HashRangeStatsResponse")
+	proto.RegisterType((*HashRangeEntry)(nil), "cortex.HashRangeEntry")
+	proto.RegisterType((*SetHashRangesRequest)(nil), "cortex.SetHashRangesRequest")
+	proto.RegisterType((*SetHashRangesResponse)(nil), "cortex.SetHashRangesResponse")
+	proto.RegisterType((*GetHashRangesRequest)(nil), "cortex.GetHashRangesRequest")
+	proto.RegisterType((*GetHashRangesResponse)(nil), "cortex.GetHashRangesResponse")
 	proto.RegisterType((*LabelNamesAndValuesRequest)(nil), "cortex.LabelNamesAndValuesRequest")
 	proto.RegisterType((*LabelNamesAndValuesResponse)(nil), "cortex.LabelNamesAndValuesResponse")
 	proto.RegisterType((*LabelValues)(nil), "cortex.LabelValues")
@@ -1709,116 +2079,128 @@ func init() {
 func init() { proto.RegisterFile("ingester.proto", fileDescriptor_60f6df4f3586b478) }
 
 var fileDescriptor_60f6df4f3586b478 = []byte{
-	// 1737 bytes of a gzipped FileDescriptorProto
+	// 1931 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x58, 0x4b, 0x6f, 0x1b, 0xd7,
-	0x15, 0xe6, 0x25, 0x29, 0x46, 0x3c, 0xa4, 0xe5, 0xd1, 0x95, 0x6c, 0x31, 0xa3, 0x78, 0xa4, 0x4c,
-	0xe1, 0x84, 0xcd, 0x43, 0x7e, 0x36, 0x70, 0xd2, 0x74, 0x41, 0xc9, 0x8c, 0x4d, 0x35, 0x94, 0x9c,
-	0xa1, 0x9c, 0x3e, 0x80, 0x60, 0x30, 0x24, 0xaf, 0xa4, 0xa9, 0x38, 0xc3, 0xe9, 0xdc, 0xcb, 0xc0,
-	0xca, 0xaa, 0xe8, 0xa2, 0xeb, 0xfe, 0x80, 0x6e, 0xba, 0x2b, 0xba, 0x6d, 0x81, 0x6e, 0xfa, 0x03,
-	0xbc, 0x29, 0xe0, 0x45, 0x17, 0x41, 0x81, 0x1a, 0xb5, 0xbc, 0xe9, 0x32, 0x3f, 0x21, 0xb8, 0x8f,
-	0x79, 0x92, 0x7a, 0x38, 0x40, 0xb2, 0xe2, 0xdc, 0x73, 0xce, 0x3d, 0xf7, 0xdc, 0x6f, 0xbe, 0xf3,
-	0xe0, 0xc0, 0x82, 0xeb, 0x1f, 0x10, 0xca, 0x48, 0xb8, 0x11, 0x84, 0x63, 0x36, 0xc6, 0x95, 0xc1,
-	0x38, 0x64, 0xe4, 0x89, 0x7e, 0xf3, 0xc0, 0x65, 0x87, 0x93, 0xfe, 0xc6, 0x60, 0xec, 0xdd, 0x38,
-	0x08, 0x9d, 0x7d, 0xc7, 0x77, 0x6e, 0x78, 0xae, 0xe7, 0x86, 0x37, 0x82, 0xa3, 0x03, 0xf9, 0x14,
-	0xf4, 0xe5, 0xaf, 0xdc, 0xa9, 0x2f, 0x1f, 0x8c, 0x0f, 0xc6, 0xe2, 0xf1, 0x06, 0x7f, 0x92, 0x52,
-	0xf3, 0x0f, 0x08, 0xf4, 0x4f, 0x9d, 0x3e, 0x19, 0xed, 0x38, 0x1e, 0xa1, 0x2d, 0x7f, 0xf8, 0xb9,
-	0x33, 0x9a, 0x10, 0x6a, 0x91, 0xdf, 0x4e, 0x08, 0x65, 0xf8, 0x26, 0xcc, 0x7b, 0x0e, 0x1b, 0x1c,
-	0x92, 0x90, 0x36, 0xd0, 0x7a, 0xa9, 0x59, 0xbb, 0xbd, 0xbc, 0x21, 0x23, 0xd8, 0x10, 0xbb, 0xba,
-	0x52, 0x69, 0xc5, 0x56, 0xf8, 0x03, 0xa8, 0x0f, 0xc6, 0x13, 0x9f, 0xd9, 0x1e, 0x61, 0x87, 0xe3,
-	0x61, 0xa3, 0xb8, 0x8e, 0x9a, 0x0b, 0xb7, 0x97, 0xa2, 0x5d, 0x5b, 0x5c, 0xd7, 0x15, 0x2a, 0xab,
-	0x36, 0x48, 0x16, 0xe6, 0x43, 0x58, 0x9d, 0x19, 0x07, 0x0d, 0xc6, 0x3e, 0x25, 0xf8, 0xc7, 0x30,
-	0xe7, 0x32, 0xe2, 0x45, 0x51, 0x2c, 0x65, 0xa2, 0x50, 0xb6, 0xd2, 0xc2, 0xbc, 0x0f, 0xb5, 0x94,
-	0x14, 0x5f, 0x03, 0x18, 0xf1, 0xa5, 0xed, 0x3b, 0x1e, 0x69, 0xa0, 0x75, 0xd4, 0xac, 0x5a, 0xd5,
-	0x51, 0x74, 0x14, 0xbe, 0x0a, 0x95, 0x2f, 0x85, 0x61, 0xa3, 0xb8, 0x5e, 0x6a, 0x56, 0x2d, 0xb5,
-	0x32, 0xff, 0x8a, 0xe0, 0x5a, 0xca, 0xcd, 0x96, 0x13, 0x0e, 0x5d, 0xdf, 0x19, 0xb9, 0xec, 0x38,
-	0xc2, 0x66, 0x0d, 0x6a, 0x89, 0x63, 0x19, 0x58, 0xd5, 0x82, 0xd8, 0x33, 0xcd, 0x80, 0x57, 0xfc,
-	0x4e, 0xe0, 0x95, 0x2e, 0x08, 0xde, 0x63, 0x30, 0x4e, 0x8b, 0x55, 0xe1, 0x77, 0x27, 0x8b, 0xdf,
-	0xb5, 0x69, 0xfc, 0x7a, 0x24, 0x74, 0x09, 0x15, 0x47, 0x44, 0x48, 0x3e, 0x47, 0x70, 0x65, 0xa6,
-	0xc1, 0x79, 0xa0, 0x3a, 0x80, 0xa5, 0x5a, 0x80, 0x69, 0x53, 0xb1, 0x53, 0x61, 0x70, 0xe7, 0xcc,
-	0xa3, 0xa7, 0xa4, 0x6d, 0x9f, 0x85, 0xc7, 0x96, 0x36, 0xca, 0x89, 0xf5, 0xad, 0xe9, 0xd0, 0x84,
-	0x29, 0xd6, 0xa0, 0x74, 0x44, 0x8e, 0x55, 0x4c, 0xfc, 0x11, 0x2f, 0xc3, 0x9c, 0x88, 0x43, 0x70,
-	0xb1, 0x6c, 0xc9, 0xc5, 0x47, 0xc5, 0x7b, 0xc8, 0xfc, 0x5b, 0x11, 0xea, 0x9f, 0x4d, 0x48, 0x18,
-	0xbf, 0xd3, 0xf7, 0x00, 0x53, 0xe6, 0x84, 0xcc, 0x66, 0xae, 0x47, 0x28, 0x73, 0xbc, 0xc0, 0x16,
-	0x98, 0xa1, 0x66, 0xc9, 0xd2, 0x84, 0x66, 0x2f, 0x52, 0x74, 0x29, 0x6e, 0x82, 0x46, 0xfc, 0x61,
-	0xd6, 0xb6, 0x28, 0x6c, 0x17, 0x88, 0x3f, 0x4c, 0x5b, 0xa6, 0xa9, 0x50, 0xba, 0x10, 0x15, 0xde,
-	0x07, 0x1c, 0x84, 0xe3, 0xdf, 0x90, 0x01, 0x73, 0xc7, 0xbe, 0xed, 0xfa, 0x83, 0xd1, 0x64, 0x48,
-	0x1a, 0xe5, 0x75, 0xd4, 0x9c, 0xb7, 0x16, 0x13, 0x4d, 0x47, 0x2a, 0xf0, 0xbb, 0x90, 0x12, 0xda,
-	0x02, 0x2d, 0xda, 0x98, 0x13, 0x94, 0xd4, 0x12, 0x85, 0x38, 0x8b, 0xe2, 0x9f, 0xc1, 0x2a, 0x65,
-	0x21, 0x71, 0x3c, 0xd7, 0x3f, 0xb0, 0x07, 0x87, 0x13, 0xff, 0x88, 0xda, 0x7d, 0x7e, 0xb0, 0x4d,
-	0xdd, 0xaf, 0x48, 0x63, 0x28, 0x60, 0x6a, 0xc4, 0x26, 0x5b, 0xc2, 0x62, 0x93, 0x1b, 0xf4, 0xdc,
-	0xaf, 0x88, 0xf9, 0x67, 0x04, 0xcb, 0xed, 0x27, 0xc4, 0x0b, 0x46, 0x4e, 0xf8, 0x83, 0xa0, 0x77,
-	0x6b, 0x0a, 0xbd, 0x2b, 0xb3, 0xd0, 0xa3, 0x09, 0x7c, 0xe6, 0x3f, 0x11, 0x2c, 0xb5, 0x06, 0xcc,
-	0xfd, 0x52, 0x71, 0xe3, 0xbb, 0x17, 0xb4, 0x9f, 0x42, 0x99, 0x1d, 0x07, 0x44, 0x15, 0xb2, 0xb7,
-	0x23, 0xeb, 0x19, 0xce, 0x37, 0xd4, 0xef, 0xde, 0x71, 0x40, 0x2c, 0xb1, 0xc9, 0xfc, 0x00, 0x6a,
-	0x29, 0x21, 0x06, 0xa8, 0xf4, 0xda, 0x56, 0xa7, 0xdd, 0xd3, 0x0a, 0x78, 0x15, 0x56, 0x76, 0x5a,
-	0x7b, 0x9d, 0xcf, 0xdb, 0xf6, 0xc3, 0x4e, 0x6f, 0x6f, 0xf7, 0x81, 0xd5, 0xea, 0xda, 0x4a, 0x89,
-	0xcc, 0xdf, 0x17, 0x61, 0x49, 0x40, 0xdb, 0x13, 0x2f, 0x21, 0x4e, 0xe3, 0x6d, 0xd0, 0x92, 0x37,
-	0xa7, 0xd2, 0x4a, 0x22, 0xf2, 0x7a, 0x14, 0x58, 0x6a, 0x9b, 0x8c, 0x6e, 0xb3, 0xfc, 0xf4, 0xf9,
-	0x5a, 0xc1, 0xba, 0x1c, 0x6f, 0x94, 0x62, 0x7c, 0x17, 0x56, 0x5c, 0x6a, 0xf3, 0x57, 0x30, 0xde,
-	0x57, 0xbe, 0x6c, 0x69, 0xa3, 0x68, 0xb6, 0xe4, 0xd2, 0xb6, 0x3f, 0xdc, 0xdd, 0x97, 0xf6, 0xd2,
-	0x25, 0xfe, 0x02, 0x56, 0xf2, 0x11, 0x28, 0x0a, 0x09, 0xba, 0xd5, 0x6e, 0xaf, 0x9d, 0x1a, 0x88,
-	0xe2, 0x91, 0x0c, 0xe7, 0x4a, 0x2e, 0x1c, 0xa9, 0xdc, 0x2e, 0xcf, 0x23, 0xad, 0xb8, 0x5d, 0x9e,
-	0x2f, 0x6a, 0x25, 0xf3, 0x4f, 0x08, 0x16, 0xa7, 0x9c, 0xe0, 0x7d, 0xa8, 0x28, 0x7a, 0x67, 0x5b,
-	0x41, 0xd0, 0x97, 0x6f, 0xf0, 0x91, 0xe3, 0x86, 0x9b, 0x1f, 0xf2, 0x33, 0xfe, 0xf3, 0x7c, 0xed,
-	0xd6, 0x45, 0xda, 0xa4, 0xdc, 0xd7, 0x1a, 0x3a, 0x01, 0x23, 0xa1, 0xa5, 0xbc, 0xf3, 0xf2, 0x2e,
-	0xee, 0x65, 0x8b, 0x42, 0xab, 0x98, 0x09, 0x42, 0x24, 0x2a, 0x95, 0xe9, 0xc2, 0xca, 0x29, 0x57,
-	0xc4, 0x6f, 0x42, 0x5d, 0x41, 0xe3, 0xfa, 0x43, 0xf2, 0x44, 0xa4, 0x40, 0xd9, 0xaa, 0x49, 0x59,
-	0x87, 0x8b, 0xf0, 0xbb, 0x50, 0x51, 0xb0, 0xc9, 0xb2, 0x78, 0x29, 0x2e, 0xf2, 0x5c, 0xaa, 0x40,
-	0x52, 0x26, 0x66, 0x0f, 0xae, 0xe4, 0x12, 0x4e, 0xf1, 0xe1, 0x23, 0x00, 0x91, 0x3f, 0x92, 0x09,
-	0x59, 0x42, 0x07, 0xfd, 0x0d, 0x9e, 0x44, 0x19, 0x12, 0xa4, 0xac, 0xcd, 0x7f, 0x23, 0xc0, 0xe9,
-	0xf6, 0xa9, 0x32, 0xe4, 0x9c, 0xd2, 0x3e, 0x3b, 0xc7, 0x8b, 0xaf, 0x90, 0xe3, 0xa5, 0x73, 0x73,
-	0x9c, 0xd3, 0xef, 0xfc, 0x1c, 0xe7, 0x75, 0x7d, 0xe4, 0x7a, 0x2e, 0x6b, 0xcc, 0x09, 0x8f, 0x72,
-	0x61, 0xde, 0x83, 0xa5, 0xcc, 0xad, 0x14, 0x52, 0x6f, 0x42, 0x3d, 0xd5, 0x92, 0xa2, 0x76, 0x5d,
-	0x4b, 0xfa, 0x0a, 0x35, 0xff, 0x8e, 0x60, 0x31, 0x99, 0x41, 0x7e, 0xd8, 0xa2, 0xf6, 0x6a, 0x17,
-	0x2e, 0xa7, 0x2f, 0xfc, 0x13, 0xf5, 0x1a, 0x55, 0xd4, 0xea, 0xbe, 0xe7, 0x4d, 0x27, 0xe6, 0x36,
-	0x68, 0x8f, 0x29, 0x09, 0x7b, 0xcc, 0x61, 0xf1, 0x5d, 0xf3, 0xf3, 0x07, 0xba, 0xe0, 0xfc, 0xf1,
-	0x0f, 0x04, 0x8b, 0x29, 0x67, 0x2a, 0x84, 0xeb, 0xd1, 0xf4, 0xca, 0x5b, 0x52, 0xe8, 0x30, 0xc9,
-	0x26, 0x64, 0x5d, 0x8a, 0xa5, 0x96, 0xc3, 0x08, 0x27, 0x9c, 0x3f, 0xf1, 0x92, 0x21, 0x81, 0xa7,
-	0x4a, 0xd5, 0x9f, 0x44, 0xf9, 0xfe, 0x1e, 0x60, 0x27, 0x70, 0xed, 0x9c, 0xa7, 0x92, 0xf0, 0xa4,
-	0x39, 0x81, 0xdb, 0xc9, 0x38, 0xdb, 0x80, 0xa5, 0x70, 0x32, 0x22, 0x79, 0xf3, 0xb2, 0x30, 0x5f,
-	0xe4, 0xaa, 0x8c, 0xbd, 0xf9, 0x05, 0x2c, 0xf1, 0xc0, 0x3b, 0xf7, 0xb3, 0xa1, 0xaf, 0xc0, 0x6b,
-	0x13, 0x4a, 0x42, 0xdb, 0x1d, 0xaa, 0x0c, 0xa8, 0xf0, 0x65, 0x67, 0x88, 0xdf, 0x87, 0xf2, 0xd0,
-	0x61, 0x8e, 0x08, 0x33, 0x55, 0x74, 0xa7, 0x2e, 0x6f, 0x09, 0x33, 0xf3, 0x01, 0x60, 0xae, 0xa2,
-	0x59, 0xef, 0xb7, 0x60, 0x8e, 0x72, 0x81, 0x4a, 0xd8, 0xd5, 0xb4, 0x97, 0x5c, 0x24, 0x96, 0xb4,
-	0x34, 0x9f, 0x22, 0x30, 0xba, 0x84, 0x85, 0xee, 0x80, 0x7e, 0x32, 0x0e, 0xb3, 0x04, 0xf9, 0x9e,
-	0x89, 0x7a, 0x0f, 0xea, 0x11, 0x03, 0x6d, 0x4a, 0xd8, 0xd9, 0x1d, 0xb8, 0x16, 0x99, 0xf6, 0x08,
-	0x3b, 0x85, 0xaf, 0x3f, 0x87, 0xb5, 0x53, 0x6f, 0xa2, 0x00, 0x6a, 0x42, 0xc5, 0x13, 0x26, 0x0a,
-	0x21, 0x2d, 0x29, 0x69, 0x72, 0xab, 0xa5, 0xf4, 0x66, 0x00, 0x57, 0x95, 0xb3, 0x2e, 0x61, 0x0e,
-	0xc7, 0x3c, 0x82, 0x23, 0x3e, 0x9c, 0x23, 0xb0, 0xa8, 0x0e, 0xe7, 0xd7, 0x16, 0x0f, 0x76, 0x40,
-	0x42, 0x5b, 0x9d, 0x51, 0x14, 0x06, 0x0b, 0x42, 0xfe, 0x88, 0x84, 0xd2, 0x1f, 0xff, 0x63, 0xa0,
-	0xf4, 0x25, 0xc9, 0x00, 0x75, 0xe2, 0x2e, 0xac, 0x4c, 0x9d, 0xa8, 0xc2, 0xbe, 0x0b, 0xf3, 0x9e,
-	0x92, 0xa9, 0xc0, 0x1b, 0xf9, 0xc0, 0xe3, 0x3d, 0xb1, 0xa5, 0x39, 0x80, 0xe5, 0xec, 0x30, 0xf1,
-	0xaa, 0x20, 0xf0, 0xda, 0xd6, 0x9f, 0x0c, 0x8e, 0x08, 0x8b, 0x7b, 0x55, 0x89, 0xb7, 0x1b, 0x29,
-	0x93, 0xcd, 0xea, 0x5f, 0x08, 0xe6, 0x44, 0x67, 0xf9, 0xde, 0x68, 0xa2, 0xc3, 0x3c, 0xf1, 0x07,
-	0xe3, 0xa1, 0xeb, 0x1f, 0x08, 0xc4, 0xe6, 0xac, 0x78, 0x8d, 0x1f, 0xa9, 0xac, 0xe1, 0x3c, 0xa8,
-	0x6f, 0x7e, 0xac, 0x9a, 0xf3, 0xdd, 0x0b, 0x35, 0xe7, 0xc7, 0x3e, 0x75, 0xf6, 0xc9, 0xe6, 0x31,
-	0x23, 0xbd, 0x91, 0x3b, 0x88, 0x12, 0xab, 0x05, 0x97, 0x32, 0xd4, 0x79, 0xf5, 0xc1, 0xce, 0xb4,
-	0xa1, 0x9e, 0xd6, 0xe0, 0xeb, 0x6a, 0xd0, 0x93, 0x45, 0x6f, 0x31, 0xda, 0x2d, 0xd4, 0xc9, 0x48,
-	0x87, 0x31, 0x94, 0x45, 0x67, 0x2c, 0x0a, 0x56, 0x88, 0xe7, 0xe4, 0x1f, 0x86, 0xa4, 0x8a, 0x5c,
-	0xbc, 0xd3, 0x84, 0x5a, 0xaa, 0x62, 0xe2, 0x4b, 0x50, 0xed, 0xec, 0xd8, 0xdd, 0x76, 0x77, 0xd7,
-	0xfa, 0x95, 0x56, 0xe0, 0xb3, 0x60, 0x6b, 0x8b, 0xcf, 0x7f, 0x1a, 0x7a, 0x67, 0x1b, 0xaa, 0xf1,
-	0x31, 0xb8, 0x0a, 0x73, 0xed, 0xcf, 0x1e, 0xb7, 0x3e, 0xd5, 0x0a, 0x7c, 0xcb, 0xce, 0xee, 0x9e,
-	0x2d, 0x97, 0x08, 0x5f, 0x86, 0x9a, 0xd5, 0x7e, 0xd0, 0xfe, 0xa5, 0xdd, 0x6d, 0xed, 0x6d, 0x3d,
-	0xd4, 0x8a, 0x18, 0xc3, 0x82, 0x14, 0xec, 0xec, 0x2a, 0x59, 0xe9, 0xf6, 0x7f, 0x5f, 0x83, 0xf9,
-	0x8e, 0xfa, 0x68, 0x80, 0x3f, 0x84, 0xf2, 0xa3, 0x09, 0x3d, 0xc4, 0x57, 0x13, 0xee, 0xfc, 0x22,
-	0x74, 0x19, 0x51, 0x49, 0xa2, 0xaf, 0x4c, 0xc9, 0x25, 0xf9, 0xcc, 0x02, 0xbe, 0x0f, 0xb5, 0xd4,
-	0x78, 0x83, 0x97, 0x33, 0x63, 0x5d, 0xb4, 0x7f, 0x75, 0xc6, 0xb0, 0x97, 0xf8, 0xb8, 0x89, 0xf0,
-	0x2e, 0x2c, 0x08, 0x55, 0x34, 0xbe, 0x50, 0xfc, 0x46, 0xb4, 0x65, 0xd6, 0x5f, 0x08, 0xfd, 0xda,
-	0x29, 0xda, 0x38, 0xac, 0x87, 0xd9, 0x7f, 0xf7, 0xfa, 0xac, 0x0f, 0x01, 0xf9, 0xe0, 0x66, 0xcc,
-	0x03, 0x66, 0x01, 0xb7, 0x01, 0x92, 0xbe, 0x89, 0x5f, 0xcf, 0x18, 0xa7, 0x27, 0x00, 0x5d, 0x9f,
-	0xa5, 0x8a, 0xdd, 0x6c, 0x42, 0x35, 0xae, 0xfe, 0xb8, 0x31, 0xa3, 0x21, 0x48, 0x27, 0xa7, 0xb7,
-	0x0a, 0xb3, 0x80, 0x3f, 0x81, 0x7a, 0x6b, 0x34, 0xba, 0x88, 0x1b, 0x3d, 0xad, 0xa1, 0x79, 0x3f,
-	0xa3, 0xb8, 0x36, 0xe5, 0x4b, 0x2b, 0x7e, 0x2b, 0xe6, 0xf3, 0x99, 0x5d, 0x44, 0x7f, 0xfb, 0x5c,
-	0xbb, 0xf8, 0xb4, 0x3d, 0xb8, 0x9c, 0xab, 0x84, 0xd8, 0xc8, 0xed, 0xce, 0x15, 0x65, 0x7d, 0xed,
-	0x54, 0x7d, 0xec, 0xb5, 0xaf, 0xe6, 0xb7, 0xec, 0x87, 0x20, 0x6c, 0x4e, 0xbf, 0x84, 0xfc, 0xd7,
-	0x2a, 0xfd, 0x47, 0x67, 0xda, 0xa4, 0x58, 0x79, 0x04, 0x57, 0x67, 0x7f, 0x2f, 0xc1, 0xd7, 0x67,
-	0x70, 0x66, 0xfa, 0xdb, 0x8f, 0xfe, 0xd6, 0x79, 0x66, 0xa9, 0xc3, 0xba, 0x50, 0x4f, 0xd7, 0x77,
-	0xbc, 0x7a, 0xc6, 0x5f, 0x48, 0xfd, 0x8d, 0xd9, 0xca, 0xc4, 0xdd, 0xe6, 0xc7, 0xcf, 0x5e, 0x18,
-	0x85, 0xaf, 0x5f, 0x18, 0x85, 0x6f, 0x5e, 0x18, 0xe8, 0x77, 0x27, 0x06, 0xfa, 0xcb, 0x89, 0x81,
-	0x9e, 0x9e, 0x18, 0xe8, 0xd9, 0x89, 0x81, 0xfe, 0x77, 0x62, 0xa0, 0xff, 0x9f, 0x18, 0x85, 0x6f,
-	0x4e, 0x0c, 0xf4, 0xc7, 0x97, 0x46, 0xe1, 0xd9, 0x4b, 0xa3, 0xf0, 0xf5, 0x4b, 0xa3, 0xf0, 0xeb,
-	0xca, 0x60, 0xe4, 0x12, 0x9f, 0xf5, 0x2b, 0xe2, 0xb3, 0xdf, 0x9d, 0x6f, 0x03, 0x00, 0x00, 0xff,
-	0xff, 0xd2, 0xb1, 0xe6, 0x3a, 0x58, 0x14, 0x00, 0x00,
+	0x15, 0xe6, 0x90, 0x14, 0x2b, 0x1e, 0x52, 0x32, 0x75, 0xa9, 0x07, 0x43, 0x45, 0x23, 0x67, 0x02,
+	0x27, 0x6a, 0x1e, 0xf2, 0xb3, 0x81, 0x93, 0xa6, 0x0b, 0x4a, 0x66, 0x24, 0xaa, 0xa6, 0x64, 0x0f,
+	0xe5, 0xb4, 0x0d, 0x10, 0x0c, 0x86, 0xe4, 0x15, 0x35, 0xd5, 0x70, 0x86, 0x9d, 0x7b, 0x19, 0x58,
+	0xe9, 0xa6, 0xe8, 0xa2, 0xeb, 0xfe, 0x80, 0x6e, 0xba, 0x2b, 0xba, 0x6d, 0x81, 0x6e, 0xfa, 0x03,
+	0xbc, 0x29, 0xe0, 0x45, 0x17, 0x41, 0x17, 0x46, 0x2d, 0x6f, 0xba, 0xcc, 0x4f, 0x28, 0xee, 0x63,
+	0x9e, 0x1c, 0xea, 0x61, 0x20, 0x5e, 0x91, 0xf7, 0x9c, 0x73, 0xcf, 0x39, 0xf7, 0x9b, 0xf3, 0xba,
+	0x17, 0xe6, 0x2d, 0x67, 0x80, 0x09, 0xc5, 0xde, 0xe6, 0xc8, 0x73, 0xa9, 0x8b, 0x0a, 0x3d, 0xd7,
+	0xa3, 0xf8, 0x69, 0xfd, 0xd6, 0xc0, 0xa2, 0xc7, 0xe3, 0xee, 0x66, 0xcf, 0x1d, 0xde, 0x1c, 0x78,
+	0xe6, 0x91, 0xe9, 0x98, 0x37, 0x87, 0xd6, 0xd0, 0xf2, 0x6e, 0x8e, 0x4e, 0x06, 0xe2, 0xdf, 0xa8,
+	0x2b, 0x7e, 0xc5, 0xce, 0xfa, 0xe2, 0xc0, 0x1d, 0xb8, 0xfc, 0xef, 0x4d, 0xf6, 0x4f, 0x50, 0xb5,
+	0x15, 0x58, 0xda, 0x35, 0xc9, 0xb1, 0x6e, 0x3a, 0x03, 0xdc, 0xa1, 0x26, 0x25, 0x3a, 0xfe, 0xcd,
+	0x18, 0x13, 0xaa, 0x7d, 0x05, 0x73, 0x01, 0x43, 0x37, 0x29, 0x46, 0xf3, 0x90, 0xb5, 0xdd, 0x9a,
+	0x72, 0x5d, 0xd9, 0x98, 0xd3, 0xb3, 0xb6, 0xcb, 0xd6, 0xc7, 0x56, 0x2d, 0x2b, 0xd6, 0xc7, 0x16,
+	0x7a, 0x17, 0xe6, 0xcc, 0x1e, 0xb5, 0xbe, 0xc1, 0x06, 0xc1, 0x9e, 0x85, 0x49, 0x2d, 0x7f, 0x5d,
+	0xd9, 0xc8, 0xe9, 0x65, 0x41, 0xec, 0x70, 0xda, 0x5e, 0x7e, 0x36, 0x57, 0xc9, 0x6b, 0xbf, 0x85,
+	0xe5, 0xa4, 0x51, 0x32, 0x72, 0x1d, 0x82, 0xd1, 0x6d, 0x98, 0xf1, 0x4c, 0x8a, 0x49, 0x4d, 0xb9,
+	0x9e, 0xdb, 0x28, 0xdd, 0x59, 0xda, 0x14, 0xc7, 0xdd, 0x8c, 0xb9, 0xb2, 0x95, 0x7f, 0xf6, 0x62,
+	0x3d, 0xa3, 0x0b, 0x49, 0xb4, 0x09, 0x55, 0xea, 0x52, 0xd3, 0x36, 0xe2, 0xd6, 0xb3, 0xdc, 0xfa,
+	0x02, 0x67, 0x35, 0x22, 0x2e, 0x68, 0xb7, 0x60, 0x3e, 0xd0, 0xd6, 0x74, 0xa8, 0x77, 0x7a, 0xd1,
+	0xc9, 0xb4, 0x87, 0xb0, 0xd8, 0xc1, 0x34, 0xd8, 0xe4, 0x43, 0x84, 0xee, 0x41, 0xc1, 0xe3, 0x04,
+	0xe9, 0xed, 0xf2, 0x84, 0xb7, 0x5c, 0xbf, 0x74, 0x57, 0xca, 0x32, 0xc4, 0x13, 0xda, 0xc4, 0xd9,
+	0xb5, 0x65, 0x58, 0xdc, 0x49, 0x31, 0xa3, 0xb5, 0x61, 0x69, 0x27, 0x6d, 0xc3, 0x6b, 0xda, 0xff,
+	0x83, 0x02, 0xf5, 0x87, 0x66, 0x17, 0xdb, 0xfb, 0xe6, 0x10, 0x93, 0x86, 0xd3, 0xff, 0xd2, 0xb4,
+	0xc7, 0xe1, 0xa1, 0x6e, 0xc1, 0xec, 0xd0, 0xa4, 0xbd, 0x63, 0xec, 0xf9, 0x6a, 0x17, 0x7d, 0xb5,
+	0x7c, 0x57, 0x5b, 0x30, 0xf5, 0x40, 0x0a, 0x7d, 0x02, 0xe5, 0x9e, 0x3b, 0x76, 0xa8, 0x31, 0xc4,
+	0xf4, 0xd8, 0xed, 0x73, 0xe0, 0xe6, 0xef, 0x54, 0xfd, 0x5d, 0xdb, 0x8c, 0xd7, 0xe6, 0x2c, 0xbd,
+	0xd4, 0x0b, 0x17, 0xda, 0x2e, 0xac, 0xa6, 0xfa, 0x21, 0x4f, 0xf7, 0x63, 0x98, 0xb1, 0x28, 0x1e,
+	0xfa, 0x5e, 0x54, 0x63, 0x5e, 0x48, 0x59, 0x21, 0xa1, 0x3d, 0x80, 0x52, 0x84, 0x8a, 0xd6, 0x00,
+	0x6c, 0xb6, 0x34, 0x1c, 0x73, 0x88, 0xf9, 0x77, 0x2d, 0xea, 0x45, 0xdb, 0x37, 0x85, 0x96, 0xa1,
+	0xf0, 0x0d, 0x17, 0xac, 0x65, 0xaf, 0xe7, 0x36, 0x8a, 0xba, 0x5c, 0x69, 0x7f, 0x55, 0x60, 0x2d,
+	0xa2, 0x66, 0xdb, 0xf4, 0xfa, 0x96, 0x63, 0xda, 0x16, 0x3d, 0xf5, 0xb1, 0x59, 0x87, 0x52, 0xa8,
+	0x58, 0x38, 0x56, 0xd4, 0x21, 0xd0, 0x4c, 0x62, 0xe0, 0x65, 0x5f, 0x0b, 0xbc, 0xdc, 0x25, 0xc1,
+	0x7b, 0x02, 0xea, 0x34, 0x5f, 0x25, 0x7e, 0x77, 0xe3, 0xf8, 0xad, 0x4d, 0xe2, 0x27, 0x12, 0x82,
+	0x9b, 0xf0, 0x91, 0x7c, 0xa1, 0xc0, 0x52, 0xaa, 0xc0, 0x45, 0xa0, 0x9a, 0x80, 0x04, 0x9b, 0x83,
+	0x19, 0x26, 0x21, 0x33, 0x7d, 0xf7, 0x5c, 0xd3, 0x13, 0x54, 0x1e, 0xb4, 0x7a, 0xc5, 0x4e, 0x90,
+	0xeb, 0xdb, 0x93, 0xae, 0x89, 0xfc, 0xad, 0x40, 0xee, 0x04, 0x9f, 0x4a, 0x9f, 0xd8, 0x5f, 0xb4,
+	0x08, 0x33, 0xdc, 0x0f, 0x1e, 0x8b, 0x79, 0x5d, 0x2c, 0x3e, 0xcb, 0xde, 0x57, 0xb4, 0xbf, 0x65,
+	0xa1, 0xfc, 0x78, 0x8c, 0xbd, 0xe0, 0x9b, 0x7e, 0x04, 0x88, 0x50, 0xd3, 0xa3, 0x06, 0xb5, 0x86,
+	0x98, 0x50, 0x73, 0x38, 0x32, 0x38, 0x66, 0xac, 0x7a, 0x54, 0x38, 0xe7, 0xd0, 0x67, 0xb4, 0x09,
+	0xda, 0x80, 0x0a, 0x76, 0xfa, 0x71, 0x59, 0x51, 0x69, 0xe6, 0xb1, 0xd3, 0x8f, 0x4a, 0x46, 0x43,
+	0x21, 0x77, 0xa9, 0x50, 0xf8, 0x18, 0xd0, 0xc8, 0x73, 0x7f, 0x8d, 0x7b, 0xd4, 0x72, 0x1d, 0xc3,
+	0x72, 0x7a, 0xf6, 0xb8, 0x8f, 0x79, 0x15, 0x9d, 0xd5, 0x17, 0x42, 0x4e, 0x4b, 0x30, 0xd0, 0x87,
+	0x10, 0x21, 0x1a, 0x1c, 0x2d, 0x52, 0x9b, 0xe1, 0x21, 0x59, 0x09, 0x19, 0xdc, 0x16, 0x41, 0x3f,
+	0x83, 0x55, 0x42, 0x3d, 0x6c, 0x0e, 0x2d, 0x67, 0x60, 0xf4, 0x8e, 0xc7, 0xce, 0x09, 0x31, 0xba,
+	0xcc, 0xb0, 0x41, 0xac, 0x6f, 0x71, 0xad, 0xcf, 0x61, 0xaa, 0x05, 0x22, 0xdb, 0x5c, 0x62, 0x8b,
+	0x09, 0x74, 0xac, 0x6f, 0xb1, 0xf6, 0x67, 0x05, 0x16, 0x9b, 0x4f, 0xf1, 0x70, 0x64, 0x9b, 0xde,
+	0x1b, 0x41, 0xef, 0xf6, 0x04, 0x7a, 0x4b, 0x69, 0xe8, 0x91, 0x10, 0x3e, 0xed, 0x9f, 0x0a, 0x54,
+	0xa3, 0x85, 0xfe, 0xf5, 0x0b, 0xda, 0x4f, 0x21, 0x4f, 0x4f, 0x47, 0x58, 0x16, 0xb2, 0xf7, 0x7d,
+	0xe9, 0x14, 0xe5, 0x9b, 0xf2, 0xf7, 0xf0, 0x74, 0x84, 0x75, 0xbe, 0x49, 0xfb, 0x04, 0x4a, 0x11,
+	0x22, 0x02, 0x28, 0x74, 0x9a, 0x7a, 0xab, 0xd9, 0xa9, 0x64, 0xd0, 0x2a, 0xac, 0xec, 0x37, 0x0e,
+	0x5b, 0x5f, 0x36, 0x8d, 0xdd, 0x56, 0xe7, 0xf0, 0x60, 0x47, 0x6f, 0xb4, 0x0d, 0xc9, 0x54, 0xb4,
+	0xdf, 0x67, 0xa1, 0xca, 0xa1, 0xed, 0xf0, 0x8f, 0x10, 0xa4, 0xf1, 0x1e, 0x54, 0xc2, 0x2f, 0x27,
+	0xd3, 0x4a, 0x20, 0xf2, 0x96, 0xef, 0x58, 0x64, 0x9b, 0xf0, 0x4e, 0x56, 0xfc, 0x6b, 0xc1, 0x46,
+	0x41, 0x46, 0xf7, 0x60, 0xc5, 0x22, 0x06, 0xfb, 0x04, 0xee, 0x91, 0xd4, 0x65, 0x08, 0x19, 0x19,
+	0x66, 0x55, 0x8b, 0x34, 0x9d, 0xfe, 0xc1, 0x91, 0x90, 0x17, 0x2a, 0xd1, 0xd7, 0xb0, 0x92, 0xf4,
+	0x40, 0x86, 0x10, 0x0f, 0xb7, 0xd2, 0x9d, 0xf5, 0xa9, 0x8e, 0xc8, 0x38, 0x12, 0xee, 0x2c, 0x25,
+	0xdc, 0x11, 0xcc, 0xbd, 0xfc, 0xac, 0x52, 0xc9, 0xee, 0xe5, 0x67, 0xb3, 0x95, 0x9c, 0xf6, 0x27,
+	0x05, 0x16, 0x26, 0x94, 0xa0, 0x23, 0x28, 0xc8, 0xf0, 0x8e, 0xb7, 0x82, 0x51, 0x57, 0x7c, 0xc1,
+	0x47, 0xa6, 0xe5, 0x6d, 0x7d, 0xca, 0x6c, 0xfc, 0xe7, 0xc5, 0xfa, 0xed, 0xcb, 0x0c, 0x46, 0x62,
+	0x5f, 0xa3, 0x6f, 0x8e, 0x28, 0xf6, 0x74, 0xa9, 0x9d, 0x95, 0x77, 0x7e, 0x2e, 0x83, 0x17, 0x5a,
+	0x19, 0x99, 0xc0, 0x49, 0xbc, 0x52, 0x69, 0x16, 0xac, 0x4c, 0x39, 0x22, 0x7a, 0x07, 0xca, 0x12,
+	0x1a, 0xcb, 0xe9, 0xe3, 0xa7, 0x3c, 0x05, 0xf2, 0x7a, 0x49, 0xd0, 0x5a, 0x8c, 0x84, 0x3e, 0x84,
+	0x82, 0x84, 0x4d, 0x94, 0xc5, 0xb9, 0xa0, 0xc8, 0x33, 0xaa, 0xdf, 0xa5, 0x85, 0x88, 0xd6, 0x81,
+	0xa5, 0x44, 0xc2, 0xc9, 0x78, 0xf8, 0x0c, 0x80, 0xe7, 0x8f, 0x88, 0x84, 0x78, 0x40, 0x8f, 0xba,
+	0x9b, 0x2c, 0x89, 0x62, 0x41, 0x10, 0x91, 0xd6, 0xfe, 0xad, 0x00, 0x8a, 0xb6, 0x4f, 0x99, 0x21,
+	0x17, 0x94, 0xf6, 0xf4, 0x1c, 0xcf, 0x5e, 0x21, 0xc7, 0x73, 0x17, 0xe6, 0x38, 0x0b, 0xbf, 0x8b,
+	0x73, 0x9c, 0xd5, 0x75, 0xdb, 0x1a, 0x5a, 0xb4, 0x36, 0xc3, 0x35, 0x8a, 0x85, 0x76, 0x1f, 0xaa,
+	0xb1, 0x53, 0x49, 0xa4, 0xde, 0x81, 0x72, 0xa4, 0x25, 0xf9, 0xed, 0xba, 0x14, 0xf6, 0x15, 0xa2,
+	0xfd, 0x5d, 0x81, 0x85, 0x70, 0x06, 0x79, 0xb3, 0x45, 0xed, 0x6a, 0x07, 0xce, 0x47, 0x0f, 0xfc,
+	0x13, 0xf9, 0x19, 0xa5, 0xd7, 0xf2, 0xbc, 0x17, 0x4d, 0x27, 0xda, 0x1e, 0x54, 0x9e, 0x10, 0xec,
+	0x45, 0xc7, 0xfc, 0x89, 0xf9, 0x43, 0xb9, 0xe4, 0xfc, 0xf1, 0x0f, 0x05, 0x16, 0x22, 0xca, 0xa4,
+	0x0b, 0x37, 0xfc, 0xfb, 0x0a, 0x6b, 0x49, 0x6c, 0x3c, 0xe7, 0xfa, 0x14, 0x7d, 0x2e, 0xa0, 0xf2,
+	0xab, 0xc4, 0x1a, 0x80, 0x33, 0x1e, 0x46, 0x27, 0xf5, 0xbc, 0x5e, 0x74, 0xc6, 0x7e, 0xbe, 0x7f,
+	0x04, 0xc8, 0x1c, 0x59, 0x46, 0x42, 0x53, 0x8e, 0x6b, 0xaa, 0x98, 0x23, 0xab, 0x15, 0x53, 0xb6,
+	0x09, 0x55, 0x6f, 0x6c, 0xe3, 0xa4, 0x78, 0x9e, 0x8b, 0x2f, 0x30, 0x56, 0x4c, 0x5e, 0xfb, 0x1a,
+	0xaa, 0xcc, 0xf1, 0xd6, 0x83, 0xb8, 0xeb, 0x2b, 0xf0, 0xa3, 0x31, 0xc1, 0x9e, 0x61, 0xf5, 0x65,
+	0x06, 0x14, 0xd8, 0xb2, 0xd5, 0x47, 0x1f, 0x43, 0xbe, 0x6f, 0x52, 0x93, 0xbb, 0x19, 0x29, 0xba,
+	0x13, 0x87, 0xd7, 0xb9, 0x98, 0xb6, 0x03, 0x88, 0xb1, 0xc8, 0xc4, 0xbd, 0x86, 0x30, 0x82, 0x4c,
+	0xd8, 0xd5, 0xa8, 0x96, 0x84, 0x27, 0xba, 0x90, 0xd4, 0x9e, 0x29, 0xa0, 0xb6, 0x31, 0xf5, 0xac,
+	0x1e, 0xf9, 0xc2, 0xf5, 0xe2, 0x01, 0xf2, 0x03, 0x07, 0xea, 0x7d, 0x28, 0xfb, 0x11, 0x68, 0x10,
+	0x4c, 0xcf, 0xef, 0xc0, 0x25, 0x5f, 0xb4, 0x83, 0xe9, 0x94, 0x78, 0xfd, 0x39, 0xac, 0x4f, 0x3d,
+	0x89, 0x04, 0x68, 0x03, 0x0a, 0x43, 0x2e, 0x22, 0x11, 0xaa, 0x84, 0x25, 0x4d, 0x6c, 0xd5, 0x25,
+	0x5f, 0x1b, 0xc1, 0xb2, 0x54, 0xd6, 0xc6, 0xd4, 0x64, 0x98, 0xfb, 0x70, 0x04, 0xc6, 0x19, 0x02,
+	0x0b, 0xd2, 0x38, 0x3b, 0x36, 0xff, 0x63, 0x8c, 0xb0, 0x67, 0x48, 0x1b, 0x59, 0x2e, 0x30, 0xcf,
+	0xe9, 0x8f, 0xb0, 0x27, 0xf4, 0xb1, 0x8b, 0x81, 0xe4, 0xe7, 0x44, 0x04, 0x48, 0x8b, 0x07, 0xb0,
+	0x32, 0x61, 0x31, 0xb8, 0x82, 0xcd, 0x0e, 0x25, 0x4d, 0x3a, 0x5e, 0x4b, 0x3a, 0x1e, 0xec, 0x09,
+	0x24, 0xb5, 0x1e, 0x2c, 0xc6, 0x87, 0x89, 0xab, 0x82, 0xc0, 0x6a, 0x5b, 0x77, 0xdc, 0x3b, 0xc1,
+	0x34, 0xe8, 0x55, 0x39, 0xd6, 0x6e, 0x04, 0x4d, 0x34, 0xab, 0x7f, 0x29, 0x30, 0xc3, 0x3b, 0xcb,
+	0x0f, 0x16, 0x26, 0x75, 0x98, 0xc5, 0x4e, 0xcf, 0xed, 0x5b, 0xce, 0x80, 0x23, 0x36, 0xa3, 0x07,
+	0x6b, 0xf4, 0x48, 0x66, 0x0d, 0x8b, 0x83, 0xf2, 0xd6, 0xe7, 0xb2, 0x39, 0xdf, 0xbb, 0x54, 0x73,
+	0x7e, 0xe2, 0x10, 0xf3, 0x08, 0x6f, 0x9d, 0x52, 0xdc, 0xb1, 0xad, 0x9e, 0x9f, 0x58, 0x0d, 0x98,
+	0x8b, 0x85, 0xce, 0xd5, 0x07, 0x3b, 0xcd, 0x80, 0x72, 0x94, 0x83, 0x6e, 0xc8, 0x41, 0x4f, 0x14,
+	0xbd, 0x05, 0x7f, 0x37, 0x67, 0x87, 0x23, 0x1d, 0x42, 0x90, 0xe7, 0x9d, 0x31, 0xcb, 0xa3, 0x82,
+	0xff, 0x0f, 0x6f, 0x18, 0x22, 0x54, 0xc4, 0xe2, 0x83, 0x0d, 0x28, 0x45, 0x2a, 0x26, 0x9a, 0x83,
+	0x62, 0x6b, 0xdf, 0x68, 0x37, 0xdb, 0x07, 0xfa, 0xaf, 0x2a, 0x19, 0x36, 0x0b, 0x36, 0xb6, 0xd9,
+	0xfc, 0x57, 0x51, 0x3e, 0xd8, 0x83, 0x62, 0x60, 0x06, 0x15, 0x61, 0xa6, 0xf9, 0xf8, 0x49, 0xe3,
+	0x61, 0x25, 0xc3, 0xb6, 0xec, 0x1f, 0x1c, 0x1a, 0x62, 0xa9, 0xa0, 0x6b, 0x50, 0xd2, 0x9b, 0x3b,
+	0xcd, 0x5f, 0x1a, 0xed, 0xc6, 0xe1, 0xf6, 0x6e, 0x25, 0x8b, 0x10, 0xcc, 0x0b, 0xc2, 0xfe, 0x81,
+	0xa4, 0xe5, 0xee, 0x3c, 0x2f, 0xc2, 0x6c, 0x4b, 0x3e, 0x13, 0xa1, 0x4f, 0x21, 0xff, 0x68, 0x4c,
+	0x8e, 0xd1, 0x72, 0x18, 0x3b, 0xbf, 0xf0, 0x2c, 0x8a, 0x65, 0x92, 0xd4, 0x57, 0x26, 0xe8, 0xf2,
+	0xf9, 0x21, 0x83, 0x1e, 0x40, 0x29, 0x32, 0xde, 0xa0, 0xc5, 0xd8, 0x58, 0xe7, 0xef, 0x5f, 0x4d,
+	0x19, 0xf6, 0x42, 0x1d, 0xb7, 0x14, 0x74, 0x00, 0xf3, 0x9c, 0xe5, 0x8f, 0x2f, 0x04, 0xbd, 0xed,
+	0x6f, 0x49, 0xbb, 0x42, 0xd4, 0xd7, 0xa6, 0x70, 0x03, 0xb7, 0x76, 0xe3, 0xb7, 0xfb, 0x7a, 0xda,
+	0x43, 0x40, 0xd2, 0xb9, 0x94, 0x79, 0x40, 0xcb, 0xa0, 0x26, 0x40, 0xd8, 0x37, 0xd1, 0x5b, 0x31,
+	0xe1, 0xe8, 0x04, 0x50, 0xaf, 0xa7, 0xb1, 0x02, 0x35, 0x5b, 0x50, 0x0c, 0xaa, 0x3f, 0xaa, 0xa5,
+	0x34, 0x04, 0xa1, 0x64, 0x7a, 0xab, 0xd0, 0x32, 0xe8, 0x0b, 0x28, 0x37, 0x6c, 0xfb, 0x32, 0x6a,
+	0xea, 0x51, 0x0e, 0x49, 0xea, 0xb1, 0x83, 0xda, 0x94, 0x2c, 0xad, 0xe8, 0xbd, 0x20, 0x9e, 0xcf,
+	0xed, 0x22, 0xf5, 0xf7, 0x2f, 0x94, 0x0b, 0xac, 0x1d, 0xc2, 0xb5, 0x44, 0x25, 0x44, 0x6a, 0x62,
+	0x77, 0xa2, 0x28, 0xd7, 0xd7, 0xa7, 0xf2, 0x03, 0xad, 0x5d, 0x39, 0xbf, 0xc5, 0x1f, 0x82, 0x90,
+	0x36, 0xf9, 0x11, 0x92, 0xaf, 0x55, 0xf5, 0x77, 0xcf, 0x95, 0x89, 0x44, 0xe5, 0x09, 0x2c, 0xa7,
+	0xbf, 0x97, 0xa0, 0x1b, 0x29, 0x31, 0x33, 0xf9, 0xf6, 0x53, 0x7f, 0xef, 0x22, 0xb1, 0x88, 0xb1,
+	0x36, 0x94, 0xa3, 0xf5, 0x1d, 0xad, 0x9e, 0x73, 0x85, 0xac, 0xbf, 0x9d, 0xce, 0x8c, 0xa8, 0x7b,
+	0x1c, 0x79, 0xb1, 0x14, 0xd1, 0xb2, 0x36, 0xf1, 0xd2, 0x17, 0x0b, 0x19, 0x75, 0x1a, 0x3b, 0x80,
+	0x7c, 0x1f, 0xe6, 0x62, 0x8f, 0x90, 0x61, 0x8e, 0xa6, 0xbd, 0x74, 0x86, 0x39, 0x9a, 0xfe, 0x72,
+	0xc9, 0xf5, 0xed, 0xa4, 0xeb, 0xdb, 0x39, 0x57, 0xdf, 0x4e, 0xba, 0xbe, 0xad, 0xcf, 0x9f, 0xbf,
+	0x54, 0x33, 0xdf, 0xbd, 0x54, 0x33, 0xdf, 0xbf, 0x54, 0x95, 0xdf, 0x9d, 0xa9, 0xca, 0x5f, 0xce,
+	0x54, 0xe5, 0xd9, 0x99, 0xaa, 0x3c, 0x3f, 0x53, 0x95, 0xff, 0x9e, 0xa9, 0xca, 0xff, 0xce, 0xd4,
+	0xcc, 0xf7, 0x67, 0xaa, 0xf2, 0xc7, 0x57, 0x6a, 0xe6, 0xf9, 0x2b, 0x35, 0xf3, 0xdd, 0x2b, 0x35,
+	0xf3, 0x55, 0xa1, 0x67, 0x5b, 0xd8, 0xa1, 0xdd, 0x02, 0x7f, 0xdb, 0xbe, 0xfb, 0xff, 0x00, 0x00,
+	0x00, 0xff, 0xff, 0x06, 0x4d, 0xe1, 0xd4, 0x3d, 0x17, 0x00, 0x00,
 }
 
 func (x CountMethod) String() string {
@@ -1841,6 +2223,216 @@ func (x ActiveSeriesRequest_RequestType) String() string {
 		return s
 	}
 	return strconv.Itoa(int(x))
+}
+func (this *HashRangeStatsRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HashRangeStatsRequest)
+	if !ok {
+		that2, ok := that.(HashRangeStatsRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	return true
+}
+func (this *HashRangeRate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HashRangeRate)
+	if !ok {
+		that2, ok := that.(HashRangeRate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Lo != that1.Lo {
+		return false
+	}
+	if this.Hi != that1.Hi {
+		return false
+	}
+	if this.ActiveSeries != that1.ActiveSeries {
+		return false
+	}
+	return true
+}
+func (this *HashRangeStatsResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HashRangeStatsResponse)
+	if !ok {
+		that2, ok := that.(HashRangeStatsResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Rates) != len(that1.Rates) {
+		return false
+	}
+	for i := range this.Rates {
+		if !this.Rates[i].Equal(&that1.Rates[i]) {
+			return false
+		}
+	}
+	if this.TotalActiveSeries != that1.TotalActiveSeries {
+		return false
+	}
+	return true
+}
+func (this *HashRangeEntry) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HashRangeEntry)
+	if !ok {
+		that2, ok := that.(HashRangeEntry)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Lo != that1.Lo {
+		return false
+	}
+	if this.Hi != that1.Hi {
+		return false
+	}
+	return true
+}
+func (this *SetHashRangesRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SetHashRangesRequest)
+	if !ok {
+		that2, ok := that.(SetHashRangesRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Ranges) != len(that1.Ranges) {
+		return false
+	}
+	for i := range this.Ranges {
+		if !this.Ranges[i].Equal(&that1.Ranges[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *SetHashRangesResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SetHashRangesResponse)
+	if !ok {
+		that2, ok := that.(SetHashRangesResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	return true
+}
+func (this *GetHashRangesRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GetHashRangesRequest)
+	if !ok {
+		that2, ok := that.(GetHashRangesRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	return true
+}
+func (this *GetHashRangesResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GetHashRangesResponse)
+	if !ok {
+		that2, ok := that.(GetHashRangesResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Ranges) != len(that1.Ranges) {
+		return false
+	}
+	for i := range this.Ranges {
+		if !this.Ranges[i].Equal(&that1.Ranges[i]) {
+			return false
+		}
+	}
+	return true
 }
 func (this *LabelNamesAndValuesRequest) Equal(that interface{}) bool {
 	if that == nil {
@@ -2780,6 +3372,105 @@ func (this *LabelMatcher) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *HashRangeStatsRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&client.HashRangeStatsRequest{")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *HashRangeRate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&client.HashRangeRate{")
+	s = append(s, "Lo: "+fmt.Sprintf("%#v", this.Lo)+",\n")
+	s = append(s, "Hi: "+fmt.Sprintf("%#v", this.Hi)+",\n")
+	s = append(s, "ActiveSeries: "+fmt.Sprintf("%#v", this.ActiveSeries)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *HashRangeStatsResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&client.HashRangeStatsResponse{")
+	if this.Rates != nil {
+		vs := make([]HashRangeRate, len(this.Rates))
+		for i := range vs {
+			vs[i] = this.Rates[i]
+		}
+		s = append(s, "Rates: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "TotalActiveSeries: "+fmt.Sprintf("%#v", this.TotalActiveSeries)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *HashRangeEntry) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&client.HashRangeEntry{")
+	s = append(s, "Lo: "+fmt.Sprintf("%#v", this.Lo)+",\n")
+	s = append(s, "Hi: "+fmt.Sprintf("%#v", this.Hi)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SetHashRangesRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&client.SetHashRangesRequest{")
+	if this.Ranges != nil {
+		vs := make([]HashRangeEntry, len(this.Ranges))
+		for i := range vs {
+			vs[i] = this.Ranges[i]
+		}
+		s = append(s, "Ranges: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SetHashRangesResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&client.SetHashRangesResponse{")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *GetHashRangesRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&client.GetHashRangesRequest{")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *GetHashRangesResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&client.GetHashRangesResponse{")
+	if this.Ranges != nil {
+		vs := make([]HashRangeEntry, len(this.Ranges))
+		for i := range vs {
+			vs[i] = this.Ranges[i]
+		}
+		s = append(s, "Ranges: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *LabelNamesAndValuesRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -3215,6 +3906,9 @@ type IngesterClient interface {
 	// The listing order of the labels is not guaranteed.
 	LabelValuesCardinality(ctx context.Context, in *LabelValuesCardinalityRequest, opts ...grpc.CallOption) (Ingester_LabelValuesCardinalityClient, error)
 	ActiveSeries(ctx context.Context, in *ActiveSeriesRequest, opts ...grpc.CallOption) (Ingester_ActiveSeriesClient, error)
+	HashRangeStats(ctx context.Context, in *HashRangeStatsRequest, opts ...grpc.CallOption) (*HashRangeStatsResponse, error)
+	SetHashRanges(ctx context.Context, in *SetHashRangesRequest, opts ...grpc.CallOption) (*SetHashRangesResponse, error)
+	GetHashRanges(ctx context.Context, in *GetHashRangesRequest, opts ...grpc.CallOption) (*GetHashRangesResponse, error)
 }
 
 type ingesterClient struct {
@@ -3425,6 +4119,33 @@ func (x *ingesterActiveSeriesClient) Recv() (*ActiveSeriesResponse, error) {
 	return m, nil
 }
 
+func (c *ingesterClient) HashRangeStats(ctx context.Context, in *HashRangeStatsRequest, opts ...grpc.CallOption) (*HashRangeStatsResponse, error) {
+	out := new(HashRangeStatsResponse)
+	err := c.cc.Invoke(ctx, "/cortex.Ingester/HashRangeStats", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ingesterClient) SetHashRanges(ctx context.Context, in *SetHashRangesRequest, opts ...grpc.CallOption) (*SetHashRangesResponse, error) {
+	out := new(SetHashRangesResponse)
+	err := c.cc.Invoke(ctx, "/cortex.Ingester/SetHashRanges", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ingesterClient) GetHashRanges(ctx context.Context, in *GetHashRangesRequest, opts ...grpc.CallOption) (*GetHashRangesResponse, error) {
+	out := new(GetHashRangesResponse)
+	err := c.cc.Invoke(ctx, "/cortex.Ingester/GetHashRanges", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IngesterServer is the server API for Ingester service.
 type IngesterServer interface {
 	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
@@ -3444,6 +4165,9 @@ type IngesterServer interface {
 	// The listing order of the labels is not guaranteed.
 	LabelValuesCardinality(*LabelValuesCardinalityRequest, Ingester_LabelValuesCardinalityServer) error
 	ActiveSeries(*ActiveSeriesRequest, Ingester_ActiveSeriesServer) error
+	HashRangeStats(context.Context, *HashRangeStatsRequest) (*HashRangeStatsResponse, error)
+	SetHashRanges(context.Context, *SetHashRangesRequest) (*SetHashRangesResponse, error)
+	GetHashRanges(context.Context, *GetHashRangesRequest) (*GetHashRangesResponse, error)
 }
 
 // UnimplementedIngesterServer can be embedded to have forward compatible implementations.
@@ -3485,6 +4209,15 @@ func (*UnimplementedIngesterServer) LabelValuesCardinality(req *LabelValuesCardi
 }
 func (*UnimplementedIngesterServer) ActiveSeries(req *ActiveSeriesRequest, srv Ingester_ActiveSeriesServer) error {
 	return status.Errorf(codes.Unimplemented, "method ActiveSeries not implemented")
+}
+func (*UnimplementedIngesterServer) HashRangeStats(ctx context.Context, req *HashRangeStatsRequest) (*HashRangeStatsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HashRangeStats not implemented")
+}
+func (*UnimplementedIngesterServer) SetHashRanges(ctx context.Context, req *SetHashRangesRequest) (*SetHashRangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetHashRanges not implemented")
+}
+func (*UnimplementedIngesterServer) GetHashRanges(ctx context.Context, req *GetHashRangesRequest) (*GetHashRangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetHashRanges not implemented")
 }
 
 func RegisterIngesterServer(s *grpc.Server, srv IngesterServer) {
@@ -3719,6 +4452,60 @@ func (x *ingesterActiveSeriesServer) Send(m *ActiveSeriesResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Ingester_HashRangeStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HashRangeStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IngesterServer).HashRangeStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cortex.Ingester/HashRangeStats",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IngesterServer).HashRangeStats(ctx, req.(*HashRangeStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ingester_SetHashRanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetHashRangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IngesterServer).SetHashRanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cortex.Ingester/SetHashRanges",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IngesterServer).SetHashRanges(ctx, req.(*SetHashRangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ingester_GetHashRanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetHashRangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IngesterServer).GetHashRanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cortex.Ingester/GetHashRanges",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IngesterServer).GetHashRanges(ctx, req.(*GetHashRangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Ingester_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "cortex.Ingester",
 	HandlerType: (*IngesterServer)(nil),
@@ -3755,6 +4542,18 @@ var _Ingester_serviceDesc = grpc.ServiceDesc{
 			MethodName: "MetricsMetadata",
 			Handler:    _Ingester_MetricsMetadata_Handler,
 		},
+		{
+			MethodName: "HashRangeStats",
+			Handler:    _Ingester_HashRangeStats_Handler,
+		},
+		{
+			MethodName: "SetHashRanges",
+			Handler:    _Ingester_SetHashRanges_Handler,
+		},
+		{
+			MethodName: "GetHashRanges",
+			Handler:    _Ingester_GetHashRanges_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -3779,6 +4578,262 @@ var _Ingester_serviceDesc = grpc.ServiceDesc{
 		},
 	},
 	Metadata: "ingester.proto",
+}
+
+func (m *HashRangeStatsRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *HashRangeStatsRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HashRangeStatsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *HashRangeRate) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *HashRangeRate) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HashRangeRate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.ActiveSeries != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.ActiveSeries))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.Hi != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.Hi))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Lo != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.Lo))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *HashRangeStatsResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *HashRangeStatsResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HashRangeStatsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.TotalActiveSeries != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.TotalActiveSeries))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Rates) > 0 {
+		for iNdEx := len(m.Rates) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Rates[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *HashRangeEntry) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *HashRangeEntry) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HashRangeEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Hi != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.Hi))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Lo != 0 {
+		i = encodeVarintIngester(dAtA, i, uint64(m.Lo))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SetHashRangesRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SetHashRangesRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SetHashRangesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Ranges) > 0 {
+		for iNdEx := len(m.Ranges) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Ranges[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SetHashRangesResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SetHashRangesResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SetHashRangesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *GetHashRangesRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetHashRangesRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetHashRangesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *GetHashRangesResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetHashRangesResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetHashRangesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Ranges) > 0 {
+		for iNdEx := len(m.Ranges) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Ranges[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintIngester(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
 }
 
 func (m *LabelNamesAndValuesRequest) Marshal() (dAtA []byte, err error) {
@@ -5061,6 +6116,114 @@ func encodeVarintIngester(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
+func (m *HashRangeStatsRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *HashRangeRate) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Lo != 0 {
+		n += 1 + sovIngester(uint64(m.Lo))
+	}
+	if m.Hi != 0 {
+		n += 1 + sovIngester(uint64(m.Hi))
+	}
+	if m.ActiveSeries != 0 {
+		n += 1 + sovIngester(uint64(m.ActiveSeries))
+	}
+	return n
+}
+
+func (m *HashRangeStatsResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Rates) > 0 {
+		for _, e := range m.Rates {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	if m.TotalActiveSeries != 0 {
+		n += 1 + sovIngester(uint64(m.TotalActiveSeries))
+	}
+	return n
+}
+
+func (m *HashRangeEntry) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Lo != 0 {
+		n += 1 + sovIngester(uint64(m.Lo))
+	}
+	if m.Hi != 0 {
+		n += 1 + sovIngester(uint64(m.Hi))
+	}
+	return n
+}
+
+func (m *SetHashRangesRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Ranges) > 0 {
+		for _, e := range m.Ranges {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *SetHashRangesResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *GetHashRangesRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *GetHashRangesResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Ranges) > 0 {
+		for _, e := range m.Ranges {
+			l = e.Size()
+			n += 1 + l + sovIngester(uint64(l))
+		}
+	}
+	return n
+}
+
 func (m *LabelNamesAndValuesRequest) Size() (n int) {
 	if m == nil {
 		return 0
@@ -5619,6 +6782,102 @@ func sovIngester(x uint64) (n int) {
 func sozIngester(x uint64) (n int) {
 	return sovIngester(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
+func (this *HashRangeStatsRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HashRangeStatsRequest{`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HashRangeRate) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HashRangeRate{`,
+		`Lo:` + fmt.Sprintf("%v", this.Lo) + `,`,
+		`Hi:` + fmt.Sprintf("%v", this.Hi) + `,`,
+		`ActiveSeries:` + fmt.Sprintf("%v", this.ActiveSeries) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HashRangeStatsResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForRates := "[]HashRangeRate{"
+	for _, f := range this.Rates {
+		repeatedStringForRates += strings.Replace(strings.Replace(f.String(), "HashRangeRate", "HashRangeRate", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForRates += "}"
+	s := strings.Join([]string{`&HashRangeStatsResponse{`,
+		`Rates:` + repeatedStringForRates + `,`,
+		`TotalActiveSeries:` + fmt.Sprintf("%v", this.TotalActiveSeries) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HashRangeEntry) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HashRangeEntry{`,
+		`Lo:` + fmt.Sprintf("%v", this.Lo) + `,`,
+		`Hi:` + fmt.Sprintf("%v", this.Hi) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SetHashRangesRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForRanges := "[]HashRangeEntry{"
+	for _, f := range this.Ranges {
+		repeatedStringForRanges += strings.Replace(strings.Replace(f.String(), "HashRangeEntry", "HashRangeEntry", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForRanges += "}"
+	s := strings.Join([]string{`&SetHashRangesRequest{`,
+		`Ranges:` + repeatedStringForRanges + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SetHashRangesResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SetHashRangesResponse{`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetHashRangesRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GetHashRangesRequest{`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetHashRangesResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForRanges := "[]HashRangeEntry{"
+	for _, f := range this.Ranges {
+		repeatedStringForRanges += strings.Replace(strings.Replace(f.String(), "HashRangeEntry", "HashRangeEntry", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForRanges += "}"
+	s := strings.Join([]string{`&GetHashRangesResponse{`,
+		`Ranges:` + repeatedStringForRanges + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *LabelNamesAndValuesRequest) String() string {
 	if this == nil {
 		return "nil"
@@ -6050,6 +7309,622 @@ func valueToStringIngester(v interface{}) string {
 	}
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
+}
+func (m *HashRangeStatsRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: HashRangeStatsRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: HashRangeStatsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *HashRangeRate) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: HashRangeRate: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: HashRangeRate: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Lo", wireType)
+			}
+			m.Lo = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Lo |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Hi", wireType)
+			}
+			m.Hi = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Hi |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ActiveSeries", wireType)
+			}
+			m.ActiveSeries = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ActiveSeries |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *HashRangeStatsResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: HashRangeStatsResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: HashRangeStatsResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Rates", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Rates = append(m.Rates, HashRangeRate{})
+			if err := m.Rates[len(m.Rates)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TotalActiveSeries", wireType)
+			}
+			m.TotalActiveSeries = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.TotalActiveSeries |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *HashRangeEntry) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: HashRangeEntry: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: HashRangeEntry: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Lo", wireType)
+			}
+			m.Lo = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Lo |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Hi", wireType)
+			}
+			m.Hi = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Hi |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SetHashRangesRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SetHashRangesRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SetHashRangesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Ranges", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Ranges = append(m.Ranges, HashRangeEntry{})
+			if err := m.Ranges[len(m.Ranges)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SetHashRangesResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SetHashRangesResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SetHashRangesResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetHashRangesRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetHashRangesRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetHashRangesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetHashRangesResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIngester
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetHashRangesResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetHashRangesResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Ranges", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowIngester
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthIngester
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Ranges = append(m.Ranges, HashRangeEntry{})
+			if err := m.Ranges[len(m.Ranges)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipIngester(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
 func (m *LabelNamesAndValuesRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)

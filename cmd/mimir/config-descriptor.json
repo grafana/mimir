@@ -2075,6 +2075,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "nautilus_rebalancer_address",
+          "required": false,
+          "desc": "gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "distributor.nautilus-rebalancer-address",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -5322,6 +5333,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "nautilus_enabled",
+          "required": false,
+          "desc": "Enable nautilus hash-range tracking. When enabled, the ingester accepts SetHashRanges/HashRangeStats RPCs and tracks per-range ingestion rates.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.nautilus-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

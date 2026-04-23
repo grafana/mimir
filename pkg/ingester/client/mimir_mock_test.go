@@ -76,3 +76,18 @@ func (m *IngesterServerMock) ActiveSeries(req *ActiveSeriesRequest, srv Ingester
 	args := m.Called(req, srv)
 	return args.Error(0)
 }
+
+func (m *IngesterServerMock) HashRangeStats(ctx context.Context, req *HashRangeStatsRequest) (*HashRangeStatsResponse, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(*HashRangeStatsResponse), args.Error(1)
+}
+
+func (m *IngesterServerMock) SetHashRanges(ctx context.Context, req *SetHashRangesRequest) (*SetHashRangesResponse, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(*SetHashRangesResponse), args.Error(1)
+}
+
+func (m *IngesterServerMock) GetHashRanges(ctx context.Context, req *GetHashRangesRequest) (*GetHashRangesResponse, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(*GetHashRangesResponse), args.Error(1)
+}
