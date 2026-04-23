@@ -53,7 +53,7 @@ RUN GO111MODULE=on \
 	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.6.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
 	go install github.com/mikefarah/yq/v4@v4.53.2 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.21.0 && \
+	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.22.0 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.22.0 && \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2 && \
 	go install github.com/open-policy-agent/conftest@v0.68.2 && \
