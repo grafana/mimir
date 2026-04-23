@@ -6,6 +6,7 @@
 package api
 
 import (
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -377,4 +378,45 @@ func TestNewRouteMaxBodySize(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestActivityTrackingNotAppliedToPushRoute verifies that the activity tracking middleware is not
+// applied to routes registered without a max body size (like /api/v1/push). A remote write v1
+// request with Content-Type: application/x-www-form-urlencoded and a protobuf body containing
+// 0x3B (';') must reach the inner handler. If the middleware ran, it would call r.ParseForm() on
+// the body and Go 1.17+ would reject the semicolon with "invalid semicolon separator in query",
+// returning HTTP 500 before the handler is ever called.
+func TestActivityTrackingNotAppliedToPushRoute(t *testing.T) {
+	activityFile := filepath.Join(t.TempDir(), "activity-tracker")
+	reg := prometheus.NewPedanticRegistry()
+	at, err := activitytracker.NewActivityTracker(activitytracker.Config{Filepath: activityFile, MaxEntries: 1024}, reg)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, at.Close()) })
+
+	cfg := Config{}
+	serverCfg := getServerConfig(t)
+	federationCfg := tenantfederation.Config{}
+	srv, err := server.New(serverCfg)
+	require.NoError(t, err)
+
+	api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), at)
+	require.NoError(t, err)
+
+	var innerHandlerCalled bool
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		innerHandlerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// RegisterRoute passes maxBodySizeIfAny=0, matching how /api/v1/push is registered.
+	api.RegisterRoute("/api/v1/push", inner, false, false, http.MethodPost)
+
+	body := []byte{0x0a, 0x12, 0x3B, 0x08, 0x01, 0x12, 0x0e}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/push", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	api.server.HTTP.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, innerHandlerCalled, "activity tracking middleware must not run on routes registered without a max body size")
 }

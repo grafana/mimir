@@ -302,3 +302,4 @@ func TestActivityTrackingMiddleware_SlowUpload(t *testing.T) {
 	// URL query params are captured even though the body was not buffered.
 	require.Equal(t, toActivityTrackerString(req, "", map[string][]string{"path": {"chunks/000001"}}), capturedActivity)
 }
+
