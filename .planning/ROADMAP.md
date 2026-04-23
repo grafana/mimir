@@ -11,7 +11,7 @@ Client-side verification module for `mimirtool backfill` that rejects malformed 
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Backfill Pre-Verification** - Pluggable client-side verifier module plus well-formed + 24hr + UTC-alignment checks wired into the backfill upload path.
-- [ ] **Phase 2: Duplicate UTC-day detection** - BatchVerifier that rejects batches containing two or more blocks covering the same UTC day.
+- [x] **Phase 2: Duplicate UTC-day detection** - BatchVerifier that rejects batches containing two or more blocks covering the same UTC day.
 
 ## Phase Details
 
@@ -47,8 +47,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Implement DuplicateDayVerifier (BatchVerifier) + unit tests covering empty / single / distinct / collisions / multi-group / determinism
-- [ ] 02-02-PLAN.md — Wire into CLI (commands/backfill.go), end-to-end zero-upload test, CHANGELOG entry, make format/lint/test gate
+- [x] 02-01-PLAN.md — Implement DuplicateDayVerifier (BatchVerifier) + unit tests covering empty / single / distinct / collisions / multi-group / determinism
+- [x] 02-02-PLAN.md — Wire into CLI (commands/backfill.go), end-to-end zero-upload test, CHANGELOG entry, make format/lint/test gate
 
 ## Progress
 
@@ -58,4 +58,4 @@ Phases execute in numeric order: 1 → 2
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Backfill Pre-Verification | 5/5 | Complete | 2026-04-23 |
-| 2. Duplicate UTC-day detection | 0/2 | Not started | - |
+| 2. Duplicate UTC-day detection | 2/2 | Complete | 2026-04-23 |

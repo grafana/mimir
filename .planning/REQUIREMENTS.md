@@ -25,7 +25,7 @@
 
 ### Batch Checks (Phase 2)
 
-- [ ] **CHECK-04**: Batch-level duplicate-day detection — reject a batch if two or more blocks cover the same UTC day. Implemented as a `verify.BatchVerifier` registered via `WithBatchCheck`.
+- [x] **CHECK-04**: Batch-level duplicate-day detection — reject a batch if two or more blocks cover the same UTC day. Implemented as a `verify.BatchVerifier` registered via `WithBatchCheck`.
 
 ## v2 Requirements
 
@@ -56,7 +56,7 @@
 | CHECK-03 | Phase 1 | Complete |
 | INT-01 | Phase 1 | Complete |
 | INT-02 | Phase 1 | Complete |
-| CHECK-04 | Phase 2 | Pending |
+| CHECK-04 | Phase 2 | Complete |
 
 **Coverage:**
 - Requirements: 10 total (9 v1 delivered + 1 Phase 2)
@@ -65,4 +65,4 @@
 
 ---
 *Requirements defined: 2026-04-22*
-*Last updated: 2026-04-23 — Phase 1 complete; Phase 2 (CHECK-04 duplicate-day detection) added to milestone.*
+*Last updated: 2026-04-23 — Phase 1 + Phase 2 complete; all 10 requirements delivered.*
