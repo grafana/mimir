@@ -1480,7 +1480,7 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 }
 
 func TestOptimizationPass_RangeQueryRangeVectorCSEDisabled(t *testing.T) {
-	runTest := func(t *testing.T, expr string, rangeQueryRangeVectorEliminationEnabled bool, isRangeQuery bool, expectedPlan string) {
+	getPlan := func(t *testing.T, expr string, enabled bool, isRangeQuery bool) string {
 		ctx := context.Background()
 		observer := streamingpromql.NoopPlanningObserver{}
 
@@ -1495,33 +1495,20 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEDisabled(t *testing.T) {
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, rangeQueryRangeVectorEliminationEnabled, nil, opts.Logger))
-
-		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
-		require.NoError(t, err)
-		require.Equal(t, testutils.TrimIndent(expectedPlan), p.String())
-	}
-
-	// Get the "no optimization" plan for expressions that should be unchanged.
-	unchangedPlan := func(t *testing.T, expr string, isRangeQuery bool) string {
-		ctx := context.Background()
-		observer := streamingpromql.NoopPlanningObserver{}
-
-		var timeRange types.QueryTimeRange
-		if isRangeQuery {
-			timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(time.Hour), time.Minute)
-		} else {
-			timeRange = types.NewInstantQueryTimeRange(time.Now())
-		}
-
-		opts := streamingpromql.NewTestEngineOpts()
-		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-		require.NoError(t, err)
-		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, enabled, nil, opts.Logger))
 
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
 		return p.String()
+	}
+
+	runTest := func(t *testing.T, expr string, enabled bool, isRangeQuery bool, expectedPlan string) {
+		plan := getPlan(t, expr, enabled, isRangeQuery)
+		require.Equal(t, testutils.TrimIndent(expectedPlan), plan)
+	}
+
+	unchangedPlan := func(t *testing.T, expr string, isRangeQuery bool) string {
+		return getPlan(t, expr, false, isRangeQuery)
 	}
 
 	// Range query with duplicate matrix selectors and different outer functions.
