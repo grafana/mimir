@@ -138,8 +138,8 @@ func (t *testNode) ExpressionPosition() (posrange.PositionRange, error) {
 	panic("not supported")
 }
 
-func (t *testNode) MinimumRequiredPlanVersion(types.QueryTimeRange) QueryPlanVersion {
-	return t.minimumRequiredPlanVersion
+func (t *testNode) MinimumRequiredPlanVersion(types.QueryTimeRange) (QueryPlanVersion, error) {
+	return t.minimumRequiredPlanVersion, nil
 }
 
 func TestQueryPlanVersion(t *testing.T) {

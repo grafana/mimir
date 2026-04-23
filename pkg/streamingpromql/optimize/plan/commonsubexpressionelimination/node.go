@@ -107,8 +107,8 @@ func (d *Duplicate) ExpressionPosition() (posrange.PositionRange, error) {
 	return d.Inner.ExpressionPosition()
 }
 
-func (d *Duplicate) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
-	return planning.QueryPlanVersionZero
+func (d *Duplicate) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }
 
 func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
@@ -239,8 +239,8 @@ func (f *DuplicateFilter) ExpressionPosition() (posrange.PositionRange, error) {
 	return f.Inner.ExpressionPosition()
 }
 
-func (f *DuplicateFilter) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
-	return planning.QueryPlanV7
+func (f *DuplicateFilter) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV7, nil
 }
 
 func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {

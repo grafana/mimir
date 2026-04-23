@@ -185,11 +185,11 @@ func (m *MatrixSelector) ExpressionPosition() (posrange.PositionRange, error) {
 	return m.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (m *MatrixSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
+func (m *MatrixSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if m.Anchored || m.Smoothed {
-		return planning.QueryPlanV4
+		return planning.QueryPlanV4, nil
 	}
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionZero, nil
 }
 
 func (m *MatrixSelector) GetRange() time.Duration {

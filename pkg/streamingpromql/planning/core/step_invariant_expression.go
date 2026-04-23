@@ -53,8 +53,8 @@ func (s *StepInvariantExpression) ChildCount() int {
 	return 1
 }
 
-func (s *StepInvariantExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
-	return planning.QueryPlanV1
+func (s *StepInvariantExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV1, nil
 }
 
 func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {

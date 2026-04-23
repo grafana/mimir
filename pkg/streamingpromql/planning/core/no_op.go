@@ -84,8 +84,8 @@ func (n *NoOp) ExpressionPosition() (posrange.PositionRange, error) {
 	return posrange.PositionRange{}, nil
 }
 
-func (n *NoOp) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
-	return planning.QueryPlanV9
+func (n *NoOp) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV9, nil
 }
 
 func MaterializeNoOp(_ *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

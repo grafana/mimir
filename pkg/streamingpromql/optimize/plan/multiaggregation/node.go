@@ -109,8 +109,8 @@ func (g *MultiAggregationGroup) ExpressionPosition() (posrange.PositionRange, er
 	return g.Inner.ExpressionPosition()
 }
 
-func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
-	return planning.QueryPlanV5
+func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV5, nil
 }
 
 type MultiAggregationInstance struct {
@@ -215,12 +215,12 @@ func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange,
 	return a.Group.ExpressionPosition()
 }
 
-func (a *MultiAggregationInstance) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
+func (a *MultiAggregationInstance) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if len(a.Filters) > 0 {
-		return planning.QueryPlanV8
+		return planning.QueryPlanV8, nil
 	}
 
-	return planning.QueryPlanV5
+	return planning.QueryPlanV5, nil
 }
 
 func MaterializeMultiAggregationGroup(node *MultiAggregationGroup, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

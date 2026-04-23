@@ -313,8 +313,8 @@ func (b *BinaryExpression) ExpressionPosition() (posrange.PositionRange, error) 
 	return b.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (b *BinaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) planning.QueryPlanVersion {
-	return planning.QueryPlanVersionZero
+func (b *BinaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }
 
 func (v *VectorMatching) Equals(other *VectorMatching) bool {
