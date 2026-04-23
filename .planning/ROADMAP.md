@@ -44,10 +44,11 @@ Plans:
   3. The new check is implemented as a `verify.BatchVerifier` registered via `WithBatchCheck` — no changes to `Verifier.Run` or the `BlockVerifier` interface.
   4. Unit tests cover: distinct days pass; two blocks same day fail; N>2 blocks same day fail and all colliding ULIDs are named; a single-block batch trivially passes.
   5. Changed code passes `make format`, `make lint`, `make test`.
-**Plans**: TBD (run `/gsd-plan-phase 2` to break down)
+**Plans**: 2 plans
 
 Plans:
-- [ ] TBD
+- [ ] 02-01-PLAN.md — Implement DuplicateDayVerifier (BatchVerifier) + unit tests covering empty / single / distinct / collisions / multi-group / determinism
+- [ ] 02-02-PLAN.md — Wire into CLI (commands/backfill.go), end-to-end zero-upload test, CHANGELOG entry, make format/lint/test gate
 
 ## Progress
 
@@ -57,4 +58,4 @@ Phases execute in numeric order: 1 → 2
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Backfill Pre-Verification | 5/5 | Complete | 2026-04-23 |
-| 2. Duplicate UTC-day detection | 0/TBD | Not started | - |
+| 2. Duplicate UTC-day detection | 0/2 | Not started | - |
