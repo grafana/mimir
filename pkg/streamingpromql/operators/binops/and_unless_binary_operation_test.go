@@ -20,12 +20,16 @@ import (
 )
 
 func TestAndUnlessBinaryOperation_PassesHintMatchersToRHS(t *testing.T) {
-	// Test that when hints are provided, matchers derived from the LHS series' label values are
-	// passed to the RHS SeriesMetadata call to narrow what the RHS fetches. When hints are nil,
-	// the RHS receives nil matchers (which is what happened before).
+	// Test that matchers derived from LHS series label values are passed to the RHS SeriesMetadata
+	// call to narrow what the RHS fetches.
+	//
+	// For on(...) matching, the matching labels are known from VectorMatching and used directly.
+	// For ignoring(...) matching, the effective matching labels are computed as the intersection
+	// of label names present in all LHS series, excluding the ignored labels.
 	testCases := map[string]struct {
-		isUnless bool
-		hints    *Hints
+		isUnless       bool
+		hints          *Hints
+		vectorMatching parser.VectorMatching
 
 		leftSeries  []labels.Labels
 		rightSeries []labels.Labels
@@ -33,16 +37,17 @@ func TestAndUnlessBinaryOperation_PassesHintMatchersToRHS(t *testing.T) {
 		expectedRHSMatchers  types.Matchers
 		expectedOutputSeries []labels.Labels
 	}{
-		"and op with hints: RHS receives matcher derived from LHS label values, filtering non-matching RHS series": {
-			isUnless: false,
-			hints:    &Hints{Include: []string{"env"}},
+		"and op, on(...): RHS receives matcher derived from LHS label values, filtering non-matching RHS series": {
+			isUnless:       false,
+			hints:          nil,
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"env"}},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "left-1"),
 				labels.FromStrings("env", "prod", "series", "left-2"),
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "right-1"),
-				labels.FromStrings("env", "staging", "series", "right-2"), // these labels will be filtered out by hint matcher because they're not in RHS
+				labels.FromStrings("env", "staging", "series", "right-2"), // filtered out: "staging" not in LHS env values
 			},
 			expectedRHSMatchers: types.Matchers{
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
@@ -52,29 +57,31 @@ func TestAndUnlessBinaryOperation_PassesHintMatchersToRHS(t *testing.T) {
 				labels.FromStrings("env", "prod", "series", "left-2"),
 			},
 		},
-		"unless op with hints: RHS receives matchers for all LHS env values; RHS series not in LHS env values are filtered out": {
-			isUnless: true,
-			hints:    &Hints{Include: []string{"env"}},
+		"unless op, on(...): RHS receives matchers for all LHS env values; RHS series not in LHS env values are filtered out": {
+			isUnless:       true,
+			hints:          nil,
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"env"}},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "left-1"),
 				labels.FromStrings("env", "staging", "series", "left-2"),
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "right-1"),
-				labels.FromStrings("env", "dev", "series", "right-2"), // filtered out by hint matcher like above
+				labels.FromStrings("env", "dev", "series", "right-2"), // filtered out: "dev" not in LHS env values
 			},
 			expectedRHSMatchers: types.Matchers{
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
 			},
-			// the SeriesMetadata for unless should always returns all of the LHS series, filtering happens in a different part of the pipeline
+			// the SeriesMetadata for unless always returns all LHS series; filtering happens later
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "left-1"),
 				labels.FromStrings("env", "staging", "series", "left-2"),
 			},
 		},
-		"and op with no hints: RHS receives nil matchers": {
-			isUnless: false,
-			hints:    nil,
+		"and op, on() with empty matching labels: RHS receives nil matchers": {
+			isUnless:       false,
+			hints:          nil,
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: nil},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "left-1"),
 			},
@@ -86,21 +93,107 @@ func TestAndUnlessBinaryOperation_PassesHintMatchersToRHS(t *testing.T) {
 				labels.FromStrings("env", "prod", "series", "left-1"),
 			},
 		},
-		"unless op with no hints: RHS receives nil matchers": {
-			isUnless: true,
-			hints:    nil,
+		"and op, ignoring(...): RHS receives matchers for labels common to all LHS series, excluding ignored labels": {
+			isUnless:       false,
+			hints:          nil,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"series"}},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "left-1"),
 				labels.FromStrings("env", "staging", "series", "left-2"),
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "right-1"),
+				labels.FromStrings("env", "staging", "series", "right-2"),
+				labels.FromStrings("env", "dev", "series", "right-3"), // filtered out: "dev" not in LHS env values
 			},
+			// "series" is excluded (it's in the ignoring set), "env" is common to all LHS series
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+		},
+		"and op, ignoring(...): labels not common to all LHS series are excluded from matchers to avoid over-narrowing": {
+			isUnless:       false,
+			hints:          nil,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"series"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east", "series", "left-1"),
+				labels.FromStrings("env", "staging", "series", "left-2"), // no "region" label
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east", "series", "right-1"),
+				labels.FromStrings("env", "staging", "series", "right-2"),
+				labels.FromStrings("env", "dev", "series", "right-3"), // filtered out
+			},
+			// "region" is absent from some LHS series, so only "env" (present in all) is used.
+			// Using "region" would incorrectly filter out right-2, a valid match for left-2.
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east", "series", "left-1"),
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+		},
+		"and op, ignoring() with no labels to ignore: RHS receives matchers for all LHS labels, filtering non-matching RHS series": {
+			isUnless:       false,
+			hints:          nil,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: nil},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),    // matches all LHS labels → kept
+				labels.FromStrings("env", "prod", "series", "right-1"),   // series differs → filtered out
+				labels.FromStrings("env", "staging", "series", "left-1"), // env differs → filtered out
+			},
+			// All LHS label names (env, series) become hints since ignoring() excludes nothing
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "series", Value: "left-1"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+			},
+		},
+		"and op, ignoring(...) with heterogeneous LHS and no common non-ignored labels: RHS receives nil matchers": {
+			isUnless:       false,
+			hints:          nil,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"series"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("region", "us-east", "series", "left-2"), // no "env", different label set
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+				labels.FromStrings("region", "us-east", "series", "right-2"),
+			},
+			// no labels common to all LHS series (excluding ignored "series"), so no matchers
 			expectedRHSMatchers: nil,
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "series", "left-1"),
-				// the SeriesMetadata for unless should always returns all of the LHS series, filtering happens in a different part of the pipeline
-				labels.FromStrings("env", "staging", "series", "left-2"),
+				labels.FromStrings("region", "us-east", "series", "left-2"),
+			},
+		},
+		"planner hints are used as fallback when VectorMatching yields no hints (on() with empty labels)": {
+			isUnless:       false,
+			hints:          &Hints{Include: []string{"env"}},
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: nil},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+				labels.FromStrings("env", "staging", "series", "right-2"), // filtered by planner hint
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
 			},
 		},
 	}
@@ -112,8 +205,7 @@ func TestAndUnlessBinaryOperation_PassesHintMatchersToRHS(t *testing.T) {
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
-			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"env"}}
-			o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{}, testCase.hints, log.NewNopLogger())
+			o := NewAndUnlessBinaryOperation(left, right, testCase.vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{}, testCase.hints, log.NewNopLogger())
 
 			outputSeries, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
