@@ -60,7 +60,7 @@ func Test_withCustomFunctions(t *testing.T) {
 				},
 			},
 			template:      `{{ queryFromGeneratorURL (index .Alerts 0).GeneratorURL }}`,
-			expectedError: "query not found in the generator URL",
+			expectedError: `query not found in the generator URL, no "g0.expr" or "left" parameter`,
 		},
 		{
 			name: "error on URL decoding query in GeneratorURL",

@@ -68,7 +68,7 @@ func queryFromGeneratorURL(generatorURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to parse generator URL: %w", err)
 	}
-  queryValues := u.Query()
+	queryValues := u.Query()
 	// See https://github.com/prometheus/prometheus/blob/259bb5c69263635887541964d1bfd7acc46682c6/util/strutil/strconv.go#L28
 	queryParam, ok := queryValues["g0.expr"]
 	if ok && len(queryParam) > 0 {
@@ -78,7 +78,7 @@ func queryFromGeneratorURL(generatorURL string) (string, error) {
 	// See https://github.com/grafana/loki/blob/3868af26763bd6a836b9163dfd302d46ac72acb8/pkg/ruler/base/ruler.go#L399
 	queryParam, ok = queryValues["left"]
 	if !ok || len(queryParam) < 1 {
-		return "", fmt.Errorf("query not found in the generator URL")
+		return "", fmt.Errorf(`query not found in the generator URL, no "g0.expr" or "left" parameter`)
 	}
 	type query struct {
 		Expr string `json:"expr"`
