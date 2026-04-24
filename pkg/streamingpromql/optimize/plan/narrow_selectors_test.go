@@ -441,6 +441,26 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"group_left binary expression on raw vector selectors should have hints added": {
+			expr: `many_side * on (env) group_left () one_side`,
+			expectedPlan: `
+				- BinaryExpression: LHS * on (env) group_left () RHS, hints (env)
+					- LHS: VectorSelector: {__name__="many_side"}
+					- RHS: VectorSelector: {__name__="one_side"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"group_right binary expression on raw vector selectors should have hints added": {
+			expr: `one_side * on (env) group_right () many_side`,
+			expectedPlan: `
+				- BinaryExpression: LHS * on (env) group_right () RHS, hints (env)
+					- LHS: VectorSelector: {__name__="one_side"}
+					- RHS: VectorSelector: {__name__="many_side"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
 	}
 
 	for name, testCase := range testCases {
