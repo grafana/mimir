@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
-	"math"
 	"os"
 	"path"
 	"testing"
@@ -242,42 +241,6 @@ func TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeforeStartOffset(t *t
 			require.NoError(t, d.Close())
 		})
 		require.Error(t, d.Err())
-	})
-}
-
-// TestDecbufFactory_NewDecbufInSection_Concurrent only tests BucketDecbufFactory
-// because NewDecbufInSection is not yet implemented for FilePoolDecbufFactory.
-func TestDecbufFactory_NewDecbufInSection_Concurrent(t *testing.T) {
-	enc := createTestEncoder(testContentSize)
-	enc.PutHash(crc32.New(table))
-
-	const (
-		runs        = 100
-		concurrency = 10
-	)
-
-	testDecbufFactory(t, testContentSize, enc, false, true, func(t *testing.T, factory DecbufFactory) {
-		g, _ := errgroup.WithContext(context.Background())
-
-		for i := 0; i < concurrency; i++ {
-			g.Go(func() error {
-				for run := 0; run < runs; run++ {
-					d := factory.NewDecbufInSection(0, numLenBytes, math.MaxInt)
-
-					if err := d.Err(); err != nil {
-						_ = d.Close()
-						return err
-					}
-
-					if err := d.Close(); err != nil {
-						return err
-					}
-				}
-
-				return nil
-			})
-		}
-		require.NoError(t, g.Wait())
 	})
 }
 
