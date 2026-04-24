@@ -54,10 +54,13 @@ const (
 type BucketStores struct {
 	services.Service
 
-	logger             log.Logger
-	cfg                tsdb.BlocksStorageConfig
-	limits             *validation.Overrides
-	indexHeaderBkt     objstore.Bucket
+	logger log.Logger
+	cfg    tsdb.BlocksStorageConfig
+	limits *validation.Overrides
+	// Bucket client for index-header reader access;
+	// separate from storeBkt to enable different in CachingBucket configuration.
+	indexHeaderBkt objstore.Bucket
+	// Bucket client for all other usage (bucket index, postings, series, chunks);
 	storeBkt           objstore.Bucket
 	bucketStoreMetrics *BucketStoreMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics
@@ -99,59 +102,18 @@ type BucketStores struct {
 func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	var err error
 
-	// Init the metadata cache client and its corresponding bucket caching config.
-	// The client and initialized metadata caching config may be applied
-	// to the caching bucket clients for both the index-header and chunks.
-	metadataCache, cachingBucketConfig, err := tsdb.NewMetadataCachingBucketConfig(
-		"metadata-cache", cfg.BucketStore.MetadataCache, logger, reg,
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "create metadata cache")
-	}
-
 	// Init the index cache.
-	// If the index cache uses a memcached backend, the same client is used for the index-header bucket cache.
-	// The in-memory index cache implementation does not provide a compatible cache.Cache backend.
-	var indexCacheClient cache.Cache //
-	var indexCache indexcache.IndexCache
-	switch cfg.BucketStore.IndexCache.Backend {
-	case indexcache.BackendInMemory:
-		indexCache, err = indexcache.NewInMemoryIndexCacheWithConfig(cfg.BucketStore.IndexCache.InMemory, reg, logger)
-		if err != nil {
-			return nil, errors.Wrap(err, "create index cache")
-		}
-	case indexcache.BackendMemcached:
-		indexMemcachedClient, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.BucketStore.IndexCache.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", reg))
-		if err != nil {
-			return nil, errors.Wrap(err, "create index cache memcached client")
-		}
-		indexCache, err = indexcache.NewMemcachedIndexCache(indexMemcachedClient, logger, reg)
-		if err != nil {
-			return nil, errors.Wrap(err, "create index cache")
-		}
-		indexCacheClient = indexMemcachedClient
-	default:
-		return nil, errors.Wrap(indexcache.ErrUnsupportedIndexCacheBackend, "create index cache")
+	// indexCacheClient will be nil in the case of in-memory index-cache config.
+	indexCacheClient, indexCache, err := initIndexCache(cfg, logger, reg)
+	if err != nil {
+		return nil, err
 	}
 
-	cachingBucketMetrics := bucketcache.NewCachingBucketMetrics(reg)
-
-	// Init index-header caching bucket with the memcached client from index cache, if enabled.
-	indexHeaderCachingBucket, err := tsdb.NewIndexHeaderCachingBucket(
-		metadataCache, cachingBucketConfig, indexCacheClient, cfg.BucketStore.IndexHeaderCache, bucketClient, logger, reg, cachingBucketMetrics,
-	)
+	// Init caching buckets with respective configs; one for index-header and one for all other bucket accesses.
+	// Handles nil indexCacheClient.
+	indexHeaderCachingBucket, chunksCachingBucket, err := initCachingBuckets(bucketClient, cfg, indexCacheClient, logger, reg)
 	if err != nil {
-		return nil, errors.Wrapf(err, "create index header caching bucket")
-	}
-
-	// Init the chunks cache.
-	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
-	if err != nil {
-		return nil, errors.Wrapf(err, "chunks-cache")
-	}
-	chunksCachingBucket, err := tsdb.NewChunksCachingBucket(metadataCache, cachingBucketConfig, chunksCacheClient, cfg.BucketStore.ChunksCache, bucketClient, logger, reg, cachingBucketMetrics)
-	if err != nil {
-		return nil, errors.Wrapf(err, "create chunks caching bucket")
+		return nil, err
 	}
 
 	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
@@ -241,6 +203,74 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	u.Service = services.NewIdleService(u.initialSync, u.stopBucketStores)
 
 	return u, nil
+}
+
+func initIndexCache(
+	cfg tsdb.BlocksStorageConfig, logger log.Logger, reg prometheus.Registerer,
+) (indexCacheClient cache.Cache, indexCache indexcache.IndexCache, err error) {
+	switch cfg.BucketStore.IndexCache.Backend {
+	case indexcache.BackendInMemory:
+		indexCache, err = indexcache.NewInMemoryIndexCacheWithConfig(cfg.BucketStore.IndexCache.InMemory, reg, logger)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "create index cache")
+		}
+		// The in-memory index cache implementation does not provide a compatible cache.Cache backend.
+		return nil, indexCache, nil
+	case indexcache.BackendMemcached:
+		indexMemcachedClient, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.BucketStore.IndexCache.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "create index cache memcached client")
+		}
+		indexCache, err = indexcache.NewMemcachedIndexCache(indexMemcachedClient, logger, reg)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "create index cache")
+		}
+		// If the index cache uses a memcached backend, the same client can be used for the index-header bucket cache.
+		return indexMemcachedClient, indexCache, nil
+	default:
+		return nil, nil, errors.Wrap(indexcache.ErrUnsupportedIndexCacheBackend, "create index cache")
+	}
+}
+
+func initCachingBuckets(
+	bucketClient objstore.Bucket,
+	cfg tsdb.BlocksStorageConfig,
+	indexCacheClient cache.Cache,
+	logger log.Logger,
+	reg prometheus.Registerer,
+) (indexHeaderBkt, chunksBkt objstore.Bucket, err error) {
+	// Init the metadata cache client and its corresponding bucket caching config.
+	// The client and initialized metadata caching config may be applied
+	// to the caching bucket clients for both the index-header and chunks.
+	metadataCache, cachingBucketConfig, err := tsdb.NewMetadataCachingBucketConfig(
+		"metadata-cache", cfg.BucketStore.MetadataCache, logger, reg,
+	)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "create metadata cache")
+	}
+
+	// Metrics are shared across caching buckets as they have the same labels.
+	cachingBucketMetrics := bucketcache.NewCachingBucketMetrics(reg)
+
+	// Init index-header caching bucket with the memcached client from index cache, if enabled.
+	indexHeaderBkt, err = tsdb.NewIndexHeaderCachingBucket(
+		metadataCache, cachingBucketConfig, indexCacheClient, cfg.BucketStore.IndexHeaderCache, bucketClient, logger, reg, cachingBucketMetrics,
+	)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "create index header caching bucket")
+	}
+
+	// Init the chunks cache.
+	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "chunks-cache")
+	}
+	chunksBkt, err = tsdb.NewChunksCachingBucket(metadataCache, cachingBucketConfig, chunksCacheClient, cfg.BucketStore.ChunksCache, bucketClient, logger, reg, cachingBucketMetrics)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "create chunks caching bucket")
+	}
+
+	return indexHeaderBkt, chunksBkt, nil
 }
 
 func (u *BucketStores) stopBucketStores(error) error {
