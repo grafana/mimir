@@ -118,12 +118,7 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 		planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 	}
 
-	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
-	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
-
-	// Range vector splitting doesn't support projection pushdown at the moment. Its optimisation pass should therefore
-	// run before the projection pushdown pass. If a selector is wrapped in a SplitFunctionCall, it will be skipped by
-	// projection pushdown.
+	// Range vector splitting must run before projection pushdown and skip histogram decoding, if those are enabled.
 	if opts.RangeVectorSplitting.Enabled {
 		splitInterval := opts.RangeVectorSplitting.SplitInterval
 		if splitInterval <= 0 {
@@ -131,6 +126,9 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 		}
 		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, timeNow, opts.CommonOpts.Reg, opts.Logger))
 	}
+
+	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
+	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 
 	if opts.EnableProjectionPushdown {
 		// This optimization pass must be registered before common subexpression elimination, if that is enabled.

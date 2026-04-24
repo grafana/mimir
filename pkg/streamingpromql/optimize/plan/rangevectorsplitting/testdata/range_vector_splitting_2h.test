@@ -584,3 +584,22 @@ eval instant at 6h avg_over_time(mixed_histo_avg[5h])
   expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_avg"
 
 clear
+
+# Splitting disables skipping buckets.
+# Test queries that would usually skip histogram buckets (e.g. histogram_count()).
+load 1h
+  hist_no_tail{env="prod"} _ _ {{schema:0 sum:3600 count:3600 buckets:[3600]}} {{schema:0 sum:7200 count:7200 buckets:[7200]}} {{schema:0 sum:10800 count:10800 buckets:[10800]}} {{schema:0 sum:14400 count:14400 buckets:[14400]}}
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h]))
+  {env="prod"} 1
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h]))
+  {env="prod"} 1
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h])) + histogram_fraction(0, 10, rate(hist_no_tail[5h]))
+  {env="prod"} 2
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h])) + histogram_fraction(0, 10, rate(hist_no_tail[5h]))
+  {env="prod"} 2
+
+clear
