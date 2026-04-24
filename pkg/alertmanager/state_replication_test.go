@@ -120,22 +120,22 @@ func TestStateReplication(t *testing.T) {
 		name               string
 		replicationFactor  int
 		message            *clusterpb.Part
-		replicationResults map[string]clusterpb.Part
-		storeResults       map[string]clusterpb.Part
+		replicationResults map[string]*clusterpb.Part
+		storeResults       map[string]*clusterpb.Part
 	}{
 		{
 			name:               "with a replication factor of <= 1, state is not replicated but loaded from storage.",
 			replicationFactor:  1,
 			message:            &clusterpb.Part{Key: "nflog", Data: []byte("OK")},
-			replicationResults: map[string]clusterpb.Part{},
-			storeResults:       map[string]clusterpb.Part{testUserID: {Key: "nflog", Data: []byte("OK")}},
+			replicationResults: map[string]*clusterpb.Part{},
+			storeResults:       map[string]*clusterpb.Part{testUserID: {Key: "nflog", Data: []byte("OK")}},
 		},
 		{
 			name:               "with a replication factor of > 1, state is broadcasted for replication.",
 			replicationFactor:  3,
 			message:            &clusterpb.Part{Key: "nflog", Data: []byte("OK")},
-			replicationResults: map[string]clusterpb.Part{testUserID: {Key: "nflog", Data: []byte("OK")}},
-			storeResults:       map[string]clusterpb.Part{},
+			replicationResults: map[string]*clusterpb.Part{testUserID: {Key: "nflog", Data: []byte("OK")}},
+			storeResults:       map[string]*clusterpb.Part{},
 		},
 	}
 
@@ -148,7 +148,7 @@ func TestStateReplication(t *testing.T) {
 			store := newFakeAlertStore()
 			for user, part := range tt.storeResults {
 				require.NoError(t, store.SetFullState(context.Background(), user, alertspb.FullStateDesc{
-					State: &clusterpb.FullState{Parts: []clusterpb.Part{part}},
+					State: &clusterpb.FullState{Parts: []*clusterpb.Part{part}},
 				}))
 			}
 
@@ -240,8 +240,8 @@ func TestStateReplication_Settle(t *testing.T) {
 			replicationFactor: 3,
 			read: readStateResult{
 				res: []*clusterpb.FullState{
-					{Parts: []clusterpb.Part{{Key: "key1", Data: []byte("Datum1")}, {Key: "key2", Data: []byte("Datum2")}}},
-					{Parts: []clusterpb.Part{{Key: "key1", Data: []byte("Datum3")}, {Key: "key2", Data: []byte("Datum4")}}},
+					{Parts: []*clusterpb.Part{{Key: "key1", Data: []byte("Datum1")}, {Key: "key2", Data: []byte("Datum2")}}},
+					{Parts: []*clusterpb.Part{{Key: "key1", Data: []byte("Datum3")}, {Key: "key2", Data: []byte("Datum4")}}},
 				},
 			},
 			results: map[string][][]byte{
@@ -254,7 +254,7 @@ func TestStateReplication_Settle(t *testing.T) {
 			name:              "with full state having no parts, nothing is merged.",
 			replicationFactor: 3,
 			read: readStateResult{
-				res: []*clusterpb.FullState{{Parts: []clusterpb.Part{}}},
+				res: []*clusterpb.FullState{{Parts: []*clusterpb.Part{}}},
 			},
 			results: map[string][][]byte{
 				"key1": nil,
@@ -266,7 +266,7 @@ func TestStateReplication_Settle(t *testing.T) {
 			name:              "with an unknown key, parts in the same state are merged.",
 			replicationFactor: 3,
 			read: readStateResult{
-				res: []*clusterpb.FullState{{Parts: []clusterpb.Part{
+				res: []*clusterpb.FullState{{Parts: []*clusterpb.Part{
 					{Key: "unknown", Data: []byte("Wow")},
 					{Key: "key1", Data: []byte("Datum1")},
 				}}},
@@ -282,8 +282,8 @@ func TestStateReplication_Settle(t *testing.T) {
 			replicationFactor: 3,
 			read: readStateResult{
 				res: []*clusterpb.FullState{
-					{Parts: []clusterpb.Part{{Key: "unknown", Data: []byte("Wow")}}},
-					{Parts: []clusterpb.Part{{Key: "key1", Data: []byte("Datum1")}}},
+					{Parts: []*clusterpb.Part{{Key: "unknown", Data: []byte("Wow")}}},
+					{Parts: []*clusterpb.Part{{Key: "key1", Data: []byte("Datum1")}}},
 				},
 			},
 			results: map[string][][]byte{
@@ -299,7 +299,7 @@ func TestStateReplication_Settle(t *testing.T) {
 			storeStates: map[string]alertspb.FullStateDesc{
 				"user-1": {
 					State: &clusterpb.FullState{
-						Parts: []clusterpb.Part{{Key: "key1", Data: []byte("Datum1")}},
+						Parts: []*clusterpb.Part{{Key: "key1", Data: []byte("Datum1")}},
 					},
 				},
 			},
@@ -397,7 +397,7 @@ func TestStateReplication_GetFullState(t *testing.T) {
 			name: "no keys",
 			data: map[string][]byte{},
 			result: &clusterpb.FullState{
-				Parts: []clusterpb.Part{},
+				Parts: []*clusterpb.Part{},
 			},
 		},
 		{
@@ -406,7 +406,7 @@ func TestStateReplication_GetFullState(t *testing.T) {
 				"key1": {},
 			},
 			result: &clusterpb.FullState{
-				Parts: []clusterpb.Part{
+				Parts: []*clusterpb.Part{
 					{Key: "key1", Data: []byte{}},
 				},
 			},
@@ -418,7 +418,7 @@ func TestStateReplication_GetFullState(t *testing.T) {
 				"key2": []byte("Datum2"),
 			},
 			result: &clusterpb.FullState{
-				Parts: []clusterpb.Part{
+				Parts: []*clusterpb.Part{
 					{Key: "key1", Data: []byte("Datum1")},
 					{Key: "key2", Data: []byte("Datum2")},
 				},
@@ -440,7 +440,7 @@ func TestStateReplication_GetFullState(t *testing.T) {
 			require.NoError(t, err)
 
 			// Key ordering is undefined for the code under test.
-			slices.SortFunc(result.Parts, func(a, b clusterpb.Part) int {
+			slices.SortFunc(result.Parts, func(a, b *clusterpb.Part) int {
 				return strings.Compare(a.Key, b.Key)
 			})
 

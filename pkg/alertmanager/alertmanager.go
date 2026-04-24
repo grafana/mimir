@@ -51,7 +51,6 @@ import (
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/timeinterval"
 	"github.com/prometheus/alertmanager/types"
-	"github.com/prometheus/alertmanager/ui"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	commoncfg "github.com/prometheus/common/config"
@@ -135,21 +134,6 @@ type Alertmanager struct {
 	configHashMetric prometheus.Gauge
 
 	rateLimitedNotifications *prometheus.CounterVec
-}
-
-var (
-	webReload = make(chan chan error)
-)
-
-func init() {
-	go func() {
-		// Since this is not a "normal" Alertmanager which reads its config
-		// from disk, we just accept and ignore web-based reload signals. Config
-		// updates are only applied externally via ApplyConfig().
-		// nolint:revive // We want to drain the channel, we don't need to do anything inside the loop body.
-		for range webReload {
-		}
-	}()
 }
 
 // State helps with replication and synchronization of notifications and silences across several alertmanager replicas.
@@ -300,12 +284,11 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	router := route.New().WithPrefix(am.cfg.ExternalURL.Path)
 
-	ui.Register(router, webReload, utillog.SlogFromGoKit(log.With(am.logger, "component", "ui")))
 	am.mux = am.api.Register(router, am.cfg.ExternalURL.Path)
 
 	// Override some extra paths registered in the router (eg. /metrics which by default exposes prometheus.DefaultRegisterer).
 	// Entire router is registered in Mux to "/" path, so there is no conflict with overwriting specific paths.
-	for _, p := range []string{"/metrics", "/-/reload", "/debug/"} {
+	for _, p := range []string{"/metrics", "/debug/"} {
 		a := path.Join(am.cfg.ExternalURL.Path, p)
 		// Preserve end slash, as for Mux it means entire subtree.
 		if strings.HasSuffix(p, "/") {
@@ -488,13 +471,13 @@ func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*aler
 func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
 
 	var (
-		errs         types.MultiError
+		errs         []error
 		integrations []notify.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l *slog.Logger) (notify.Notifier, error)) {
 			integrationLogger := utillog.SlogFromGoKit(log.With(logger, "integration", name))
 			n, err := f(integrationLogger)
 			if err != nil {
-				errs.Add(err)
+				errs = append(errs, err)
 				return
 			}
 			n = wrapper(name, n)
@@ -578,8 +561,8 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		})
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
-	if errs.Len() > 0 {
-		return nil, &errs
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 	return integrations, nil
 }
@@ -760,6 +743,8 @@ func (a *alertsLimiter) PostDelete(alert *types.Alert) {
 	delete(a.sizes, fp)
 	a.count--
 }
+
+func (a *alertsLimiter) PostGC(_ model.Fingerprints) {}
 
 func (a *alertsLimiter) currentStats() (count, totalSize int) {
 	a.mx.Lock()

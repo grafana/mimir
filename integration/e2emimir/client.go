@@ -1234,7 +1234,7 @@ func (c *Client) GetAlertGroups(ctx context.Context) ([]AlertGroup, error) {
 }
 
 // CreateSilence creates a new silence and returns the unique identifier of the silence.
-func (c *Client) CreateSilence(ctx context.Context, silence types.Silence) (string, error) {
+func (c *Client) CreateSilence(ctx context.Context, silence Silence) (string, error) {
 	u := c.alertmanagerClient.URL("alertmanager/api/v2/silences", nil)
 
 	data, err := json.Marshal(silence)
@@ -1269,7 +1269,7 @@ func (c *Client) CreateSilence(ctx context.Context, silence types.Silence) (stri
 	return decoded.SilenceID, nil
 }
 
-func (c *Client) GetSilences(ctx context.Context) ([]types.Silence, error) {
+func (c *Client) GetSilences(ctx context.Context) ([]Silence, error) {
 	u := c.alertmanagerClient.URL("alertmanager/api/v2/silences", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
@@ -1290,7 +1290,7 @@ func (c *Client) GetSilences(ctx context.Context) ([]types.Silence, error) {
 		return nil, fmt.Errorf("getting silences failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
-	decoded := []types.Silence{}
+	decoded := []Silence{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, err
 	}
@@ -1298,30 +1298,30 @@ func (c *Client) GetSilences(ctx context.Context) ([]types.Silence, error) {
 	return decoded, nil
 }
 
-func (c *Client) GetSilence(ctx context.Context, id string) (types.Silence, error) {
+func (c *Client) GetSilence(ctx context.Context, id string) (Silence, error) {
 	u := c.alertmanagerClient.URL(fmt.Sprintf("alertmanager/api/v2/silence/%s", url.PathEscape(id)), nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return types.Silence{}, fmt.Errorf("error creating request: %v", err)
+		return Silence{}, fmt.Errorf("error creating request: %v", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
 	if err != nil {
-		return types.Silence{}, err
+		return Silence{}, err
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		return types.Silence{}, ErrNotFound
+		return Silence{}, ErrNotFound
 	}
 
 	if resp.StatusCode/100 != 2 {
-		return types.Silence{}, fmt.Errorf("getting silence failed with status %d and error %v", resp.StatusCode, string(body))
+		return Silence{}, fmt.Errorf("getting silence failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
-	decoded := types.Silence{}
+	decoded := Silence{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return types.Silence{}, err
+		return Silence{}, err
 	}
 
 	return decoded, nil

@@ -27,6 +27,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	googleproto "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
@@ -332,18 +334,17 @@ func testLimiter(t *testing.T, limits Limits, ops []callbackOp) {
 	}
 }
 
-// cloneSilence returns a shallow copy of a silence. It is used in tests.
+// cloneSilence returns a deep copy of a silence. It is used in tests.
 func cloneSilence(t *testing.T, sil *silencepb.Silence) *silencepb.Silence {
 	t.Helper()
-	s := *sil
-	return &s
+	return googleproto.Clone(sil).(*silencepb.Silence)
 }
 
 func toMeshSilence(t *testing.T, sil *silencepb.Silence, retention time.Duration) *silencepb.MeshSilence {
 	t.Helper()
 	return &silencepb.MeshSilence{
 		Silence:   sil,
-		ExpiresAt: sil.EndsAt.Add(retention),
+		ExpiresAt: timestamppb.New(sil.EndsAt.AsTime().Add(retention)),
 	}
 }
 
@@ -380,8 +381,8 @@ func TestSilenceLimits(t *testing.T) {
 	// Insert sil1 should succeed without error.
 	sil1 := &silencepb.Silence{
 		Matchers: []*silencepb.Matcher{{Name: "a", Pattern: "b"}},
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(5 * time.Minute),
+		StartsAt: timestamppb.Now(),
+		EndsAt:   timestamppb.New(time.Now().Add(5 * time.Minute)),
 	}
 	require.NoError(t, am.silences.Set(ctx, sil1))
 
@@ -389,8 +390,8 @@ func TestSilenceLimits(t *testing.T) {
 	// exceeded.
 	sil2 := &silencepb.Silence{
 		Matchers: []*silencepb.Matcher{{Name: "c", Pattern: "d"}},
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(5 * time.Minute),
+		StartsAt: timestamppb.Now(),
+		EndsAt:   timestamppb.New(time.Now().Add(5 * time.Minute)),
 	}
 	require.EqualError(t, am.silences.Set(ctx, sil2), "exceeded maximum number of silences: 1 (limit: 1)")
 
@@ -421,16 +422,16 @@ func TestSilenceLimits(t *testing.T) {
 		},
 		CreatedBy: strings.Repeat("i", 2<<9),
 		Comment:   strings.Repeat("j", 2<<9),
-		StartsAt:  time.Now(),
-		EndsAt:    time.Now().Add(5 * time.Minute),
+		StartsAt:  timestamppb.Now(),
+		EndsAt:    timestamppb.New(time.Now().Add(5 * time.Minute)),
 	}
-	require.EqualError(t, am.silences.Set(ctx, sil3), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil3, 0).Size()))
+	require.EqualError(t, am.silences.Set(ctx, sil3), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", googleproto.Size(toMeshSilence(t, sil3, 0))))
 
 	// Should be able to insert sil4.
 	sil4 := &silencepb.Silence{
 		Matchers: []*silencepb.Matcher{{Name: "k", Pattern: "l"}},
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(5 * time.Minute),
+		StartsAt: timestamppb.Now(),
+		EndsAt:   timestamppb.New(time.Now().Add(5 * time.Minute)),
 	}
 	require.NoError(t, am.silences.Set(ctx, sil4))
 
@@ -452,12 +453,12 @@ func TestSilenceLimits(t *testing.T) {
 	// exceed the maximum number of silences, which counts both active and
 	// expired silences.
 	sil7 := cloneSilence(t, sil6)
-	sil7.StartsAt = time.Now().Add(5 * time.Minute)
-	sil7.EndsAt = time.Now().Add(10 * time.Minute)
+	sil7.StartsAt = timestamppb.New(time.Now().Add(5 * time.Minute))
+	sil7.EndsAt = timestamppb.New(time.Now().Add(10 * time.Minute))
 	require.EqualError(t, am.silences.Set(ctx, sil7), "exceeded maximum number of silences: 1 (limit: 1)")
 
 	// sil6 should not be expired because the update failed.
-	sils, _, err := am.silences.Query(ctx, silence.QState(types.SilenceStateExpired))
+	sils, _, err := am.silences.Query(ctx, silence.QState(silence.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
 
@@ -466,10 +467,10 @@ func TestSilenceLimits(t *testing.T) {
 	limits.maxSilencesCount = 2
 	sil8 := cloneSilence(t, sil6)
 	sil8.Comment = strings.Repeat("m", 2<<11)
-	require.EqualError(t, am.silences.Set(ctx, sil8), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil8, 0).Size()))
+	require.EqualError(t, am.silences.Set(ctx, sil8), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", googleproto.Size(toMeshSilence(t, sil8, 0))))
 
 	// sil6 should not be expired because the update failed.
-	sils, _, err = am.silences.Query(ctx, silence.QState(types.SilenceStateExpired))
+	sils, _, err = am.silences.Query(ctx, silence.QState(silence.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
 
@@ -481,10 +482,10 @@ func TestSilenceLimits(t *testing.T) {
 	// should still be active.
 	sil9 := cloneSilence(t, sil8)
 	sil9.Matchers = []*silencepb.Matcher{{Name: "n", Pattern: "o"}}
-	require.EqualError(t, am.silences.Set(ctx, sil9), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil9, 0).Size()))
+	require.EqualError(t, am.silences.Set(ctx, sil9), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", googleproto.Size(toMeshSilence(t, sil9, 0))))
 
 	// sil6 should not be expired because the update failed.
-	sils, _, err = am.silences.Query(ctx, silence.QState(types.SilenceStateExpired))
+	sils, _, err = am.silences.Query(ctx, silence.QState(silence.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
 }

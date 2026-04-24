@@ -1182,7 +1182,7 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 		am.ServeHTTP(w, req.WithContext(ctx))
 
 		_ = w.Result()
-		require.Equal(t, 301, w.Code) // redirect to UI
+		require.Equal(t, 404, w.Code) // no UI registered
 	}
 
 	// Create a configuration for the user in storage.
@@ -1201,7 +1201,7 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 		w := httptest.NewRecorder()
 		am.ServeHTTP(w, req.WithContext(ctx))
 
-		require.Equal(t, 301, w.Code) // redirect to UI
+		require.Equal(t, 404, w.Code) // no UI registered
 	}
 
 	// Verify that GET /metrics returns 404 even when AM is active.
@@ -1240,7 +1240,7 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 		am.ServeHTTP(w, req.WithContext(ctx))
 
 		_ = w.Result()
-		require.Equal(t, 301, w.Code) // redirect to UI
+		require.Equal(t, 404, w.Code) // no UI registered
 	}
 }
 
@@ -2053,13 +2053,20 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 			multitenantAM.alertmanagersMtx.Unlock()
 
 			// 3. Now that we have our alertmanager user, let's create a silence and make sure it is replicated.
-			silence := types.Silence{
+			silence := struct {
+				Matchers  labels.Matchers `json:"matchers"`
+				Comment   string          `json:"comment,omitempty"`
+				CreatedBy string          `json:"createdBy"`
+				StartsAt  time.Time       `json:"startsAt"`
+				EndsAt    time.Time       `json:"endsAt"`
+			}{
 				Matchers: labels.Matchers{
 					{Name: "instance", Value: "prometheus-one"},
 				},
-				Comment:  "Created for a test case.",
-				StartsAt: time.Now(),
-				EndsAt:   time.Now().Add(time.Hour),
+				Comment:   "Created for a test case.",
+				CreatedBy: "test",
+				StartsAt:  time.Now(),
+				EndsAt:    time.Now().Add(time.Hour),
 			}
 			data, err := json.Marshal(silence)
 			require.NoError(t, err)
@@ -2204,13 +2211,20 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 			}
 
 			writeSilence := func(i *MultitenantAlertmanager, userID string) {
-				silence := types.Silence{
+				silence := struct {
+					Matchers  labels.Matchers `json:"matchers"`
+					Comment   string          `json:"comment,omitempty"`
+					CreatedBy string          `json:"createdBy"`
+					StartsAt  time.Time       `json:"startsAt"`
+					EndsAt    time.Time       `json:"endsAt"`
+				}{
 					Matchers: labels.Matchers{
 						{Name: "instance", Value: "prometheus-one"},
 					},
-					Comment:  "Created for a test case.",
-					StartsAt: time.Now(),
-					EndsAt:   time.Now().Add(time.Hour),
+					Comment:   "Created for a test case.",
+					CreatedBy: "test",
+					StartsAt:  time.Now(),
+					EndsAt:    time.Now().Add(time.Hour),
 				}
 				data, err := json.Marshal(silence)
 				require.NoError(t, err)
