@@ -1319,12 +1319,13 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.11.0
 ## explicit; go 1.24.0
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.20.7
-## explicit; go 1.24.0
+# github.com/twmb/franz-go v1.21.0
+## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
 github.com/twmb/franz-go/pkg/kgo
 github.com/twmb/franz-go/pkg/kgo/internal/sticky
+github.com/twmb/franz-go/pkg/kgo/internal/xsync
 github.com/twmb/franz-go/pkg/kversion
 github.com/twmb/franz-go/pkg/sasl
 github.com/twmb/franz-go/pkg/sasl/aws
@@ -1337,15 +1338,15 @@ github.com/twmb/franz-go/pkg/kadm
 # github.com/twmb/franz-go/pkg/kfake v0.0.0-20260121195810-e0832fcbdccb
 ## explicit; go 1.24.0
 github.com/twmb/franz-go/pkg/kfake
-# github.com/twmb/franz-go/pkg/kmsg v1.12.1-0.20251024215757-aea970d4d0d2
+# github.com/twmb/franz-go/pkg/kmsg v1.13.1
 ## explicit; go 1.24.0
 github.com/twmb/franz-go/pkg/kmsg
 github.com/twmb/franz-go/pkg/kmsg/internal/kbin
 # github.com/twmb/franz-go/plugin/kotel v1.6.0
 ## explicit; go 1.22.0
 github.com/twmb/franz-go/plugin/kotel
-# github.com/twmb/franz-go/plugin/kprom v1.3.0
-## explicit; go 1.23.8
+# github.com/twmb/franz-go/plugin/kprom v1.4.0
+## explicit; go 1.25.0
 github.com/twmb/franz-go/plugin/kprom
 # github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 ## explicit
@@ -1681,7 +1682,7 @@ go.yaml.in/yaml/v3
 ## explicit; go 1.18
 go.yaml.in/yaml/v4
 go.yaml.in/yaml/v4/internal/libyaml
-# golang.org/x/crypto v0.49.0
+# golang.org/x/crypto v0.50.0
 ## explicit; go 1.25.0
 golang.org/x/crypto/argon2
 golang.org/x/crypto/bcrypt
@@ -1741,17 +1742,17 @@ golang.org/x/oauth2/jwt
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.42.0
+# golang.org/x/sys v0.43.0
 ## explicit; go 1.25.0
 golang.org/x/sys/cpu
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/term v0.41.0
+# golang.org/x/term v0.42.0
 ## explicit; go 1.25.0
 golang.org/x/term
-# golang.org/x/text v0.35.0
+# golang.org/x/text v0.36.0
 ## explicit; go 1.25.0
 golang.org/x/text/cases
 golang.org/x/text/internal
