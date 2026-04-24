@@ -296,7 +296,7 @@ require (
 	github.com/hashicorp/memberlist v0.5.4 // indirect
 	github.com/hashicorp/serf v0.10.2 // indirect
 	github.com/hashicorp/vault/api/auth/approle v0.12.0
-	github.com/hashicorp/vault/api/auth/kubernetes v0.10.0
+	github.com/hashicorp/vault/api/auth/kubernetes v0.12.0
 	github.com/hashicorp/vault/api/auth/userpass v0.12.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jessevdk/go-flags v1.6.1 // indirect
