@@ -32,5 +32,11 @@ type DecbufFactory interface {
 	// use NewDecbufAtUnchecked or NewDecbufAtChecked.
 	NewRawDecbuf() Decbuf
 
+	// NewDecbufInSection returns a new binary decoding reader positioned at tableOffset + relativeSectionStartOffset,
+	// spanning to tableOffset+relativeSectionEndOffset or the end of the table, whichever comes first.
+	// It expects the first 4 bytes after tableOffset to hold the big-endian encoded content length.
+	// This method mUST NOT validate or compute the CRC of the content.
+	NewDecbufInSection(tableOffset, relativeSectionStartOffset, relativeSectionEndOffset int) Decbuf
+
 	Close() error
 }
