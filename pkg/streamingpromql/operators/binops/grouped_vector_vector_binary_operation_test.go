@@ -4,6 +4,7 @@ package binops
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -686,4 +687,114 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			o.Close()
 		})
 	}
+}
+
+// BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering measures the benefit of
+// the hints-based optimization introduced for GroupedVectorVectorBinaryOperation.
+//
+// The scenario is a group_left (many-to-one) with:
+//   - a small "one" side covering oneSideEnvs distinct env values
+//   - a large "many" side covering manySideEnvsTotal distinct env values (most having no match)
+//
+// Without hints the many-side operator returns all series and computeOutputSeries discards the
+// non-matching ones. With hints the one side's env values are used to build a matcher that is
+// passed to the many-side operator before it returns any series, so the many side only
+// materialises the fraction of series that can actually contribute to the output.
+//
+// Custom metrics reported:
+//   - one-series/op: series fetched from the one (right) side per operation
+//   - many-series/op: series fetched from the many (left) side per operation
+//   - total-series/op: sum of both sides per operation
+//
+// Run with:
+//
+//	go test ./pkg/streamingpromql/operators/binops/ -run=^$ -bench=BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering -benchmem
+func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B) {
+	const (
+		oneSideEnvs          = 10
+		manySideEnvsTotal    = 100 // 90 % of the many-side envs have no one-side match
+		manySideSeriesPerEnv = 10
+	)
+
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	vectorMatching := parser.VectorMatching{
+		Card:           parser.CardManyToOne,
+		MatchingLabels: []string{"env"},
+		On:             true,
+	}
+	hints := &Hints{Include: []string{"env"}}
+
+	// One side: env-0 … env-9 (the smaller, "one" side).
+	oneSeries := make([]labels.Labels, oneSideEnvs)
+	for i := range oneSideEnvs {
+		oneSeries[i] = labels.FromStrings("env", fmt.Sprintf("env-%d", i))
+	}
+
+	// Many side: env-0 … env-99, each with manySideSeriesPerEnv distinct pods.
+	// Only env-0 … env-9 will match the one side.
+	allManySeries := make([]labels.Labels, 0, manySideEnvsTotal*manySideSeriesPerEnv)
+	for e := range manySideEnvsTotal {
+		for p := range manySideSeriesPerEnv {
+			allManySeries = append(allManySeries, labels.FromStrings(
+				"env", fmt.Sprintf("env-%d", e),
+				"pod", fmt.Sprintf("pod-%d", p),
+			))
+		}
+	}
+
+	run := func(b *testing.B, h *Hints) {
+		b.Helper()
+		b.ReportAllocs()
+
+		var totalOneSeries, totalManySeries int
+
+		for b.Loop() {
+			// Fresh operators are required each iteration because TestOperator mutates its
+			// Series slice in-place when hint-based matchers are applied to it.
+			memTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+			left := &operators.TestOperator{
+				Series:                   append([]labels.Labels(nil), allManySeries...),
+				Data:                     make([]types.InstantVectorSeriesData, len(allManySeries)),
+				MemoryConsumptionTracker: memTracker,
+			}
+			right := &operators.TestOperator{
+				Series:                   append([]labels.Labels(nil), oneSeries...),
+				Data:                     make([]types.InstantVectorSeriesData, len(oneSeries)),
+				MemoryConsumptionTracker: memTracker,
+			}
+
+			op, err := NewGroupedVectorVectorBinaryOperation(
+				left, right, vectorMatching, parser.MUL, false,
+				memTracker, annotations.New(), posrange.PositionRange{}, timeRange, h, log.NewNopLogger(),
+			)
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			if _, err = op.SeriesMetadata(ctx, nil); err != nil {
+				b.Fatal(err)
+			}
+
+			// Capture series counts after SeriesMetadata has applied any hint-based filtering.
+			// For CardManyToOne: left=many side, right=one side.
+			// TestOperator retains only the series that passed the matcher filter in t.Series.
+			totalManySeries += len(left.Series)
+			totalOneSeries += len(right.Series)
+
+			if err = op.Finalize(ctx); err != nil {
+				b.Fatal(err)
+			}
+			op.Close()
+		}
+
+		b.ReportMetric(float64(totalOneSeries)/float64(b.N), "one-series/op")
+		b.ReportMetric(float64(totalManySeries)/float64(b.N), "many-series/op")
+		b.ReportMetric(float64(totalOneSeries+totalManySeries)/float64(b.N), "total-series/op")
+	}
+
+	b.Run("with_hints", func(b *testing.B) { run(b, hints) })
+	b.Run("without_hints", func(b *testing.B) { run(b, nil) })
 }
