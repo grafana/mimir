@@ -823,8 +823,8 @@ github.com/hashicorp/vault/api/auth/approle
 # github.com/hashicorp/vault/api/auth/kubernetes v0.10.0
 ## explicit; go 1.23.0
 github.com/hashicorp/vault/api/auth/kubernetes
-# github.com/hashicorp/vault/api/auth/userpass v0.11.0
-## explicit; go 1.23.0
+# github.com/hashicorp/vault/api/auth/userpass v0.12.0
+## explicit; go 1.24.0
 github.com/hashicorp/vault/api/auth/userpass
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
