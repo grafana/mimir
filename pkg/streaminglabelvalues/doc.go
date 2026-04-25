@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package streaminglabelvalues provides string-value filters and filter-builder
 // helpers used by the Mimir streaming label/value search RPCs. Filters
 // implement the Prometheus storage.Filter interface; servers receive a
