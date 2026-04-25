@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -128,4 +129,56 @@ func TestFilterSubsequenceValidates(t *testing.T) {
 	require.Error(t, err)
 	_, err = NewFilterSubsequence("a", 1.5, true)
 	require.Error(t, err)
+}
+
+// scoreFilter is a test-only Filter that returns a fixed score.
+type scoreFilter struct {
+	accepted bool
+	score    float64
+}
+
+func (s scoreFilter) Accept(string) (bool, float64) { return s.accepted, s.score }
+
+func TestFilterOr(t *testing.T) {
+	a := scoreFilter{accepted: false, score: 0}
+	b := scoreFilter{accepted: true, score: 0.5}
+	c := scoreFilter{accepted: true, score: 0.9}
+
+	or := newFilterOr(a, b, c)
+	require.NotNil(t, or)
+	accepted, score := or.Accept("anything")
+	assert.True(t, accepted)
+	assert.InDelta(t, 0.9, score, 1e-9, "filterOr returns max score across accepting children")
+}
+
+func TestFilterOrAllReject(t *testing.T) {
+	a := scoreFilter{accepted: false, score: 0}
+	b := scoreFilter{accepted: false, score: 0}
+	or := newFilterOr(a, b)
+	accepted, score := or.Accept("anything")
+	assert.False(t, accepted)
+	assert.Equal(t, 0.0, score)
+}
+
+func TestFilterOrShortCircuitsAtPerfectMatch(t *testing.T) {
+	called := 0
+	tracking := func(score float64) storage.Filter {
+		return countingFilter{counter: &called, accepted: true, score: score}
+	}
+	or := newFilterOr(tracking(1.0), tracking(0.5))
+	accepted, score := or.Accept("anything")
+	assert.True(t, accepted)
+	assert.Equal(t, 1.0, score)
+	assert.Equal(t, 1, called, "second filter must not be invoked once a child returns 1.0")
+}
+
+type countingFilter struct {
+	counter  *int
+	accepted bool
+	score    float64
+}
+
+func (c countingFilter) Accept(string) (bool, float64) {
+	*c.counter++
+	return c.accepted, c.score
 }

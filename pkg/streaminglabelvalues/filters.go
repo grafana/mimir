@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -124,4 +125,36 @@ func (f *FilterSubsequence) Accept(value string) (bool, float64) {
 	}
 	score := f.matcher.Score(value)
 	return score > 0 && score >= f.threshold, score
+}
+
+// filterOr is the OR-max combinator across multiple child filters. Returns
+// (any-accepted, max-score-across-accepts). Short-circuits on score 1.0.
+// Equivalent of Prometheus PR #18573's private orSearchesFilter.
+type filterOr struct {
+	filters []storage.Filter
+}
+
+func newFilterOr(filters ...storage.Filter) *filterOr {
+	return &filterOr{filters: filters}
+}
+
+func (o *filterOr) Accept(value string) (bool, float64) {
+	var (
+		any  bool
+		best float64
+	)
+	for _, f := range o.filters {
+		accepted, score := f.Accept(value)
+		if !accepted {
+			continue
+		}
+		any = true
+		if score > best {
+			best = score
+		}
+		if score >= 1.0 {
+			return true, 1.0
+		}
+	}
+	return any, best
 }
