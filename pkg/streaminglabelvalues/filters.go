@@ -158,3 +158,57 @@ func (o *filterOr) Accept(value string) (bool, float64) {
 	}
 	return any, best
 }
+
+// filterFallback is the substring-then-fuzzy combinator per term. Tries
+// substring first (cheap); if substring rejects, falls through to fuzzy.
+// Equivalent of Prometheus PR #18573's private orFilter.
+type filterFallback struct {
+	substring storage.Filter
+	fuzzy     storage.Filter
+}
+
+func (f *filterFallback) Accept(value string) (bool, float64) {
+	if accepted, score := f.substring.Accept(value); accepted {
+		return true, score
+	}
+	return f.fuzzy.Accept(value)
+}
+
+// BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)
+// when Params is nil or has zero Terms — a nil storage.Filter accepts every
+// value with score 1.0 by Prometheus convention.
+//
+// Per term, builds a filterFallback{FilterContains, fuzzy} (substring tried
+// first, fuzzy fallback). Across terms, combines with filterOr (OR-max).
+// FuzzThreshold (int 0-100) is divided by 100 internally.
+func BuildFilter(p *Params) (storage.Filter, error) {
+	if p == nil || len(p.Terms) == 0 {
+		return nil, nil
+	}
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
+	threshold := float64(p.FuzzThreshold) / 100.0
+	perTerm := make([]storage.Filter, 0, len(p.Terms))
+	for _, term := range p.Terms {
+		substring, err := NewFilterContains(term, p.CaseSensitive)
+		if err != nil {
+			return nil, err
+		}
+		var fuzzy storage.Filter
+		switch p.FuzzAlg {
+		case FuzzAlgJaroWinkler:
+			fuzzy, err = NewFilterJaro(term, threshold, p.CaseSensitive)
+		default: // FuzzAlgSubsequence
+			fuzzy, err = NewFilterSubsequence(term, threshold, p.CaseSensitive)
+		}
+		if err != nil {
+			return nil, err
+		}
+		perTerm = append(perTerm, &filterFallback{substring: substring, fuzzy: fuzzy})
+	}
+	if len(perTerm) == 1 {
+		return perTerm[0], nil
+	}
+	return newFilterOr(perTerm...), nil
+}

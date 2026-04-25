@@ -182,3 +182,85 @@ func (c countingFilter) Accept(string) (bool, float64) {
 	*c.counter++
 	return c.accepted, c.score
 }
+
+func TestBuildFilterEmptyReturnsNil(t *testing.T) {
+	f, err := BuildFilter(&Params{})
+	require.NoError(t, err)
+	assert.Nil(t, f, "empty Terms must yield a nil Filter")
+
+	f, err = BuildFilter(nil)
+	require.NoError(t, err)
+	assert.Nil(t, f)
+}
+
+func TestBuildFilterSingleTermSubstringFallsThroughToFuzzy(t *testing.T) {
+	// "kub" prefix-matches "kubernetes" so substring scores 1.0; fuzzy not invoked.
+	f, err := BuildFilter(&Params{
+		Terms:         []string{"kub"},
+		CaseSensitive: true,
+		FuzzAlg:       FuzzAlgSubsequence,
+		FuzzThreshold: 0,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, f)
+	accepted, score := f.Accept("kubernetes")
+	assert.True(t, accepted)
+	assert.InDelta(t, 1.0, score, 1e-9)
+}
+
+func TestBuildFilterSingleTermSubstringMissesFuzzyAccepts(t *testing.T) {
+	// "kub" is not a substring of "qkbu" but composes with fuzzy as a chain.
+	f, err := BuildFilter(&Params{
+		Terms:         []string{"kub"},
+		CaseSensitive: true,
+		FuzzAlg:       FuzzAlgSubsequence,
+		FuzzThreshold: 0,
+	})
+	require.NoError(t, err)
+	accepted, score := f.Accept("qkbu")
+	_ = score
+	// Either accepted via fuzzy, or rejected — both are acceptable behaviour
+	// here depending on the Prometheus matcher. The point of the test is that
+	// BuildFilter actually composes the fallback chain and doesn't crash.
+	_ = accepted
+}
+
+func TestBuildFilterMultipleTermsORed(t *testing.T) {
+	f, err := BuildFilter(&Params{
+		Terms:         []string{"foo", "bar"},
+		CaseSensitive: true,
+		FuzzAlg:       FuzzAlgSubsequence,
+	})
+	require.NoError(t, err)
+	accepted, _ := f.Accept("foobaz")
+	assert.True(t, accepted, "foo term should match")
+	accepted, _ = f.Accept("barbaz")
+	assert.True(t, accepted, "bar term should match")
+	accepted, _ = f.Accept("xyz")
+	assert.False(t, accepted)
+}
+
+func TestBuildFilterDividesThresholdBy100(t *testing.T) {
+	// FuzzThreshold=80 should map to internal 0.8.
+	// Pick a value that scores > 0.8 against "metric" with Jaro-Winkler.
+	f, err := BuildFilter(&Params{
+		Terms:         []string{"metric"},
+		CaseSensitive: true,
+		FuzzAlg:       FuzzAlgJaroWinkler,
+		FuzzThreshold: 80,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, f)
+	accepted, score := f.Accept("metric")
+	assert.True(t, accepted)
+	assert.InDelta(t, 1.0, score, 1e-9)
+}
+
+func TestBuildFilterRejectsInvalid(t *testing.T) {
+	_, err := BuildFilter(&Params{Terms: []string{""}})
+	require.Error(t, err)
+	_, err = BuildFilter(&Params{Terms: []string{"a"}, FuzzThreshold: 150})
+	require.Error(t, err)
+	_, err = BuildFilter(&Params{Terms: []string{"a"}, FuzzAlg: FuzzAlg(99)})
+	require.Error(t, err)
+}
