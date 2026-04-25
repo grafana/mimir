@@ -87,3 +87,45 @@ func TestFilterJaroExactMatchIsOne(t *testing.T) {
 	require.True(t, accepted)
 	assert.InDelta(t, 1.0, score, 1e-9)
 }
+
+func TestFilterSubsequenceAcceptsAboveThreshold(t *testing.T) {
+	tests := []struct {
+		name          string
+		pattern       string
+		threshold     float64
+		caseSensitive bool
+		value         string
+		want          bool
+		wantScore     float64
+	}{
+		{name: "prefix scores 1.0 regardless of raw score", pattern: "kub", threshold: 0.5, caseSensitive: true, value: "kubernetes", want: true, wantScore: 1.0},
+		{name: "exact match scores 1.0", pattern: "abc", threshold: 0.5, caseSensitive: true, value: "abc", want: true, wantScore: 1.0},
+		{name: "non-prefix subseq with low threshold", pattern: "ks", threshold: 0.0, caseSensitive: true, value: "kubernetes", want: true},
+		{name: "non-subsequence rejected", pattern: "xyz", threshold: 0.0, caseSensitive: true, value: "kubernetes", want: false},
+		{name: "case-insensitive matches", pattern: "KUB", threshold: 0.5, caseSensitive: false, value: "kubernetes", want: true, wantScore: 1.0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := NewFilterSubsequence(tt.pattern, tt.threshold, tt.caseSensitive)
+			require.NoError(t, err)
+			gotAccepted, gotScore := f.Accept(tt.value)
+			assert.Equal(t, tt.want, gotAccepted, "score=%v", gotScore)
+			if gotAccepted {
+				assert.LessOrEqual(t, gotScore, 1.0)
+				assert.GreaterOrEqual(t, gotScore, 0.0)
+				if tt.wantScore != 0 {
+					assert.InDelta(t, tt.wantScore, gotScore, 1e-9)
+				}
+			}
+		})
+	}
+}
+
+func TestFilterSubsequenceValidates(t *testing.T) {
+	_, err := NewFilterSubsequence("", 0.5, true)
+	require.Error(t, err)
+	_, err = NewFilterSubsequence("a", -0.1, true)
+	require.Error(t, err)
+	_, err = NewFilterSubsequence("a", 1.5, true)
+	require.Error(t, err)
+}
