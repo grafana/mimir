@@ -2,7 +2,10 @@ package streaminglabelvalues
 
 import (
 	"errors"
+	"fmt"
 	"strings"
+
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // FilterContains accepts values that contain a fixed substring. Score is
@@ -39,4 +42,41 @@ func (f *FilterContains) Accept(value string) (bool, float64) {
 		return true, 1.0
 	}
 	return true, 0.9
+}
+
+// FilterJaro accepts values whose Jaro-Winkler similarity to a fixed term is
+// at least threshold. The underlying matcher caches term runes lazily on the
+// first Unicode candidate and is therefore not safe for concurrent use.
+type FilterJaro struct {
+	matcher       *strutil.JaroWinklerMatcher
+	threshold     float64
+	caseSensitive bool
+}
+
+// NewFilterJaro returns a Jaro-Winkler filter. Term must be non-empty;
+// threshold must lie in [0, 1] (the native matcher unit).
+func NewFilterJaro(term string, threshold float64, caseSensitive bool) (*FilterJaro, error) {
+	if term == "" {
+		return nil, errors.New("FilterJaro: empty term")
+	}
+	if threshold < 0 || threshold > 1 {
+		return nil, fmt.Errorf("FilterJaro: threshold %v out of [0,1]", threshold)
+	}
+	if !caseSensitive {
+		term = strings.ToLower(term)
+	}
+	return &FilterJaro{
+		matcher:       strutil.NewJaroWinklerMatcher(term),
+		threshold:     threshold,
+		caseSensitive: caseSensitive,
+	}, nil
+}
+
+// Accept returns (score >= threshold, score).
+func (f *FilterJaro) Accept(value string) (bool, float64) {
+	if !f.caseSensitive {
+		value = strings.ToLower(value)
+	}
+	score := f.matcher.Score(value)
+	return score >= f.threshold, score
 }
