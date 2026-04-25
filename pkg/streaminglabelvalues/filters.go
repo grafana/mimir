@@ -80,3 +80,48 @@ func (f *FilterJaro) Accept(value string) (bool, float64) {
 	score := f.matcher.Score(value)
 	return score >= f.threshold, score
 }
+
+// FilterSubsequence accepts values where the configured pattern occurs as a
+// subsequence and the resulting similarity score is at least threshold.
+// Prefix matches always score 1.0 (overrides raw subseq score). Score 0 is
+// always rejected (no subsequence match). Mirrors Prometheus PR #18573's
+// SubsequenceFilter semantics. Underlying matcher is not concurrency-safe.
+type FilterSubsequence struct {
+	pattern       string // stored locally for prefix check; matcher does not expose its pattern.
+	matcher       *strutil.SubsequenceMatcher
+	threshold     float64
+	caseSensitive bool
+}
+
+// NewFilterSubsequence returns a subsequence filter. Pattern must be
+// non-empty and threshold must lie in [0, 1].
+func NewFilterSubsequence(pattern string, threshold float64, caseSensitive bool) (*FilterSubsequence, error) {
+	if pattern == "" {
+		return nil, errors.New("FilterSubsequence: empty pattern")
+	}
+	if threshold < 0 || threshold > 1 {
+		return nil, fmt.Errorf("FilterSubsequence: threshold %v out of [0,1]", threshold)
+	}
+	if !caseSensitive {
+		pattern = strings.ToLower(pattern)
+	}
+	return &FilterSubsequence{
+		pattern:       pattern,
+		matcher:       strutil.NewSubsequenceMatcher(pattern),
+		threshold:     threshold,
+		caseSensitive: caseSensitive,
+	}, nil
+}
+
+// Accept returns (true, 1.0) on prefix match; otherwise (score > 0 &&
+// score >= threshold, score).
+func (f *FilterSubsequence) Accept(value string) (bool, float64) {
+	if !f.caseSensitive {
+		value = strings.ToLower(value)
+	}
+	if strings.HasPrefix(value, f.pattern) {
+		return true, 1.0
+	}
+	score := f.matcher.Score(value)
+	return score > 0 && score >= f.threshold, score
+}
