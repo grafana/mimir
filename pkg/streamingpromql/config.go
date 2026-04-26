@@ -120,13 +120,14 @@ func NewTestEngineOpts() EngineOpts {
 		Logger:   log.NewNopLogger(),
 		Limits:   NewStaticQueryLimitsProvider(),
 
-		EnablePruneToggles:                   true,
-		EnableCommonSubexpressionElimination: true,
-		EnableSubsetSelectorElimination:      true,
-		EnableNarrowBinarySelectors:          true,
-		EnableEliminateDeduplicateAndMerge:   true,
-		EnableReduceMatchers:                 true,
-		EnableProjectionPushdown:             true,
-		EnableMultiAggregation:               true,
+		EnablePruneToggles:                     true,
+		EnableCommonSubexpressionElimination:   true,
+		EnableSubsetSelectorElimination:        true,
+		EnableNarrowBinarySelectors:            true,
+		EnableEliminateDeduplicateAndMerge:     true,
+		EnableReduceMatchers:                   true,
+		EnableProjectionPushdown:               true,
+		EnableMultiAggregation:                 true,
+		EnableRemoveStaticallyEmptyExpressions: true,
 	}
 }
