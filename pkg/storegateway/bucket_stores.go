@@ -407,6 +407,38 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
+// SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
+// Full implementation arrives in the next task.
+func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	userID := getUserIDFromGRPCContext(srv.Context())
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return nil
+	}
+
+	return store.SearchLabelNames(req, srv)
+}
+
+// SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
+// Full implementation arrives in the next task.
+func (u *BucketStores) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	userID := getUserIDFromGRPCContext(srv.Context())
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return nil
+	}
+
+	return store.SearchLabelValues(req, srv)
+}
+
 // scanUsers in the bucket and return the list of found users, respecting any specifically
 // enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {

@@ -379,6 +379,18 @@ func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return g.stores.LabelValues(ctx, req)
 }
 
+// SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
+// Full implementation arrives in the next task.
+func (g *StoreGateway) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	return g.stores.SearchLabelNames(req, srv)
+}
+
+// SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
+// Full implementation arrives in the next task.
+func (g *StoreGateway) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	return g.stores.SearchLabelValues(req, srv)
+}
+
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	user := getUserIDFromGRPCContext(ctx)
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)

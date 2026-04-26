@@ -245,3 +245,62 @@ message LabelValuesResponseHints {
   // queried_blocks is the list of blocks that have been queried.
   repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
 }
+
+// SearchOrdering selects the result ordering wire-side. Values mirror the
+// Prometheus storage.Ordering enum so the server-side translation is 1:1.
+enum SearchOrdering {
+  ORDER_BY_VALUE_ASC = 0;
+  ORDER_BY_VALUE_DESC = 1;
+  ORDER_BY_SCORE_DESC = 2;
+}
+
+// SearchFilter is the wire encoding of the filter applied to a search
+// request. Field names match Prometheus PR #18573's HTTP URL params so the
+// HTTP-to-gRPC translation in the querier (later PR) is verbatim.
+message SearchFilter {
+  // Terms are the search terms; combined with OR-max by filterOr at the server.
+  repeated string terms = 1;
+  // CaseSensitive matches Prometheus's case_sensitive URL param polarity.
+  // Prometheus's HTTP default is true; this proto field's zero value is
+  // false. The HTTP handler in the later PR sets this explicitly.
+  bool case_sensitive = 2;
+
+  enum FuzzAlg {
+    FUZZ_ALG_SUBSEQUENCE = 0;
+    FUZZ_ALG_JARO_WINKLER = 1;
+  }
+  FuzzAlg fuzz_alg = 3;
+  // FuzzThreshold is the minimum fuzzy score expressed as int 0-100,
+  // matching Prometheus PR #18573's fuzz_threshold URL param. The server
+  // divides by 100 to compare against the matcher's [0,1] score.
+  int32 fuzz_threshold = 4;
+}
+
+message SearchLabelNamesRequest {
+  int64 start = 1;
+  int64 end = 2;
+  repeated LabelMatcher matchers = 3 [(gogoproto.nullable) = false];
+  SearchFilter filter = 4;
+  SearchOrdering ordering = 5;
+  int64 limit = 6;
+}
+
+message SearchLabelValuesRequest {
+  int64 start = 1;
+  int64 end = 2;
+  string label = 3;
+  repeated LabelMatcher matchers = 4 [(gogoproto.nullable) = false];
+  SearchFilter filter = 5;
+  SearchOrdering ordering = 6;
+  int64 limit = 7;
+}
+
+// SearchResultBatch carries one batch of (value, score) pairs in a streaming
+// reply. Both SearchLabel{Names,Values} use this shape.
+message SearchResultBatch {
+  message Result {
+    string value = 1;
+    double score = 2;
+  }
+  repeated Result results = 1;
+}
