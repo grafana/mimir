@@ -76,7 +76,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
@@ -192,7 +192,7 @@ jobs:
       - name: Check if Go build cache exists
         id: check-cache
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /home/runner/.cache/go-build
           key: go-build-cache-integration-${{ hashFiles('go.sum') }}
@@ -212,7 +212,7 @@ jobs:
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: du -sh /home/runner/.cache/go-build
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /home/runner/.cache/go-build
@@ -234,7 +234,7 @@ jobs:
       - name: Check if Go build cache exists
         id: check-cache
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
@@ -252,7 +252,7 @@ jobs:
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: du -sh /go/cache
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /go/cache
@@ -274,7 +274,7 @@ jobs:
       - name: Check if Go build cache exists
         id: check-cache
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
@@ -292,7 +292,7 @@ jobs:
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: du -sh /go/cache
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /go/cache
@@ -323,7 +323,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
@@ -375,7 +375,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
@@ -399,7 +399,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
@@ -423,7 +423,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
@@ -447,7 +447,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
@@ -471,7 +471,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
@@ -511,7 +511,7 @@ jobs:
           persist-credentials: false
       # Race-enabled image uses CGO_ENABLED=1 -race -tags=netgo,stringlabels, same as unit tests.
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ hashFiles('go.sum') }}
@@ -564,7 +564,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /home/runner/.cache/go-build
           key: go-build-cache-integration-${{ hashFiles('go.sum') }}
