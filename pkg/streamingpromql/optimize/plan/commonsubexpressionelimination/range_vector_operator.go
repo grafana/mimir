@@ -160,6 +160,8 @@ func (b *RangeVectorDuplicationBuffer) cacheAllStepsForSeries(ctx context.Contex
 
 	for {
 		stepData, err := b.Inner.NextStepSamples(ctx)
+
+		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
 			break
 		}
@@ -221,6 +223,8 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 	// Pass-through mode: read directly from the inner operator without buffering.
 	if consumer.passThrough {
 		stepData, err := b.Inner.NextStepSamples(ctx)
+
+		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
 			consumer.hasReadCurrentSeriesSamples = true
 			return nil, types.EOS
@@ -269,6 +273,8 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 		consumer.passThrough = true
 
 		stepData, err := b.Inner.NextStepSamples(ctx)
+
+		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
 			consumer.hasReadCurrentSeriesSamples = true
 			return nil, types.EOS
