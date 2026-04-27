@@ -73,7 +73,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Name() string {
 }
 
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	if maximumSupportedQueryPlanVersion < planning.QueryPlanV9 {
+	if maximumSupportedQueryPlanVersion < planning.QueryPlanV10 {
 		// NoOp node is not supported by the downstream querier.
 		return plan, nil
 	}
