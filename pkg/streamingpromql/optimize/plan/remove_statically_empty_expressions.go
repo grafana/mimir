@@ -84,7 +84,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Con
 	}
 
 	if modified {
-		logger.DebugLog("msg", "replaced statically empty expression(s) with no-op", "count", modified)
+		logger.DebugLog("msg", "replaced statically empty expression(s) with no-op")
 		s.modified.Inc()
 	}
 
