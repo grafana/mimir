@@ -22,8 +22,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/s2"
+	amalert "github.com/prometheus/alertmanager/alert"
 	alertConfig "github.com/prometheus/alertmanager/config"
-	"github.com/prometheus/alertmanager/types"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -1148,7 +1148,7 @@ func (c *Client) DeleteAlertmanagerConfig(ctx context.Context) error {
 func (c *Client) SendAlertToAlermanager(ctx context.Context, alert *model.Alert) error {
 	u := c.alertmanagerClient.URL("/alertmanager/api/v2/alerts", nil)
 
-	data, err := json.Marshal([]types.Alert{{Alert: *alert}})
+	data, err := json.Marshal([]amalert.Alert{{Alert: *alert}})
 	if err != nil {
 		return fmt.Errorf("error marshaling the alert: %v", err)
 	}

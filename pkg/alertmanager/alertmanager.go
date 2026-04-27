@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	amalert "github.com/prometheus/alertmanager/alert"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -274,7 +275,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 			Help:    "Histogram of request durations for the Alertmanager API.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"handler"}),
-		GroupFunc: func(ctx context.Context, f1 func(*dispatch.Route) bool, f2 func(*types.Alert, time.Time) bool) (dispatch.AlertGroups, map[model.Fingerprint][]string, error) {
+		GroupFunc: func(ctx context.Context, f1 func(*dispatch.Route) bool, f2 func(*amalert.Alert, time.Time) bool) (dispatch.AlertGroups, map[model.Fingerprint][]string, error) {
 			return am.dispatcher.Groups(ctx, f1, f2)
 		},
 	})
@@ -382,10 +383,29 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		am.dispatcherMetrics,
 	)
 
+	// Update the config-hash metric before the load barrier below so the metric
+	// reflects the new config even if we bail out on a concurrent shutdown.
+	am.configHashMetric.Set(md5HashAsMetricValue([]byte(rawCfg)))
+
 	go am.dispatcher.Run(time.Now())
+	// Wait for the dispatcher to finish initial loading before returning. Without
+	// this barrier, a concurrent Stop() can race with Run() in two ways: Stop's
+	// WaitGroup.Wait may return before Run has called finished.Add(1), and Stop's
+	// d.cancel() can race with Run's writes to fields like routeGroupsSlice. The
+	// d.loaded channel is closed after both happen, so waiting on it provides the
+	// necessary happens-before relationship. We also unblock on maintenanceStop in
+	// case Stop() runs concurrently and flips the dispatcher state to Stopped before
+	// Run's CAS, in which case Run returns early without closing d.loaded. In that
+	// case we bail out of ApplyConfig: starting the inhibitor on a torn-down
+	// Alertmanager would leak its goroutines (Stop ran before Run, so the inhibitor's
+	// cancel func wasn't yet set when Stop tried to call it).
+	select {
+	case <-am.dispatcher.LoadingDone():
+	case <-am.maintenanceStop:
+		return nil
+	}
 	go am.inhibitor.Run()
 
-	am.configHashMetric.Set(md5HashAsMetricValue([]byte(rawCfg)))
 	return nil
 }
 
@@ -677,7 +697,7 @@ func newAlertsLimiter(tenant string, limits Limits, reg prometheus.Registerer) *
 	return limiter
 }
 
-func (a *alertsLimiter) PreStore(alert *types.Alert, existing bool) error {
+func (a *alertsLimiter) PreStore(alert *amalert.Alert, existing bool) error {
 	if alert == nil {
 		return nil
 	}
@@ -709,7 +729,7 @@ func (a *alertsLimiter) PreStore(alert *types.Alert, existing bool) error {
 	return nil
 }
 
-func (a *alertsLimiter) PostStore(alert *types.Alert, existing bool) {
+func (a *alertsLimiter) PostStore(alert *amalert.Alert, existing bool) {
 	if alert == nil {
 		return
 	}
@@ -729,7 +749,7 @@ func (a *alertsLimiter) PostStore(alert *types.Alert, existing bool) {
 	a.totalSize += newSize
 }
 
-func (a *alertsLimiter) PostDelete(alert *types.Alert) {
+func (a *alertsLimiter) PostDelete(alert *amalert.Alert) {
 	if alert == nil {
 		return
 	}

@@ -43,12 +43,12 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
+	"github.com/prometheus/alertmanager/alert"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
-	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -767,7 +767,7 @@ receivers:
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 				// Create an alert to push.
-				alerts := types.Alerts(&types.Alert{
+				alerts := alert.Alerts(&alert.Alert{
 					Alert: model.Alert{
 						Labels:   map[model.LabelName]model.LabelValue{model.AlertNameLabel: "test"},
 						StartsAt: time.Now().Add(-time.Minute),
@@ -2448,7 +2448,7 @@ receivers:
 	ctx = notify.WithNow(ctx, time.Now())
 
 	// Verify that rate-limiter is in place for email notifier.
-	_, _, err = uam.lastPipeline.Exec(ctx, utillog.SlogFromGoKit(log.NewNopLogger()), &types.Alert{})
+	_, _, err = uam.lastPipeline.Exec(ctx, utillog.SlogFromGoKit(log.NewNopLogger()), &alert.Alert{})
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), errRateLimited.Error())
 }

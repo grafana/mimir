@@ -9,8 +9,8 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/prometheus/alertmanager/alert"
 	"github.com/prometheus/alertmanager/notify"
-	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -1028,8 +1028,8 @@ func populateAlertmanager(base float64) *prometheus.Registry {
 	}
 
 	m := newMarkerMetrics(reg)
-	m.alerts.WithLabelValues(string(types.AlertStateActive)).Add(base)
-	m.alerts.WithLabelValues(string(types.AlertStateSuppressed)).Add(base * 2)
+	m.alerts.WithLabelValues(string(alert.AlertStateActive)).Add(base)
+	m.alerts.WithLabelValues(string(alert.AlertStateSuppressed)).Add(base * 2)
 
 	v1APIMetrics := newAPIMetrics("v1", reg)
 	v1APIMetrics.firing.Add(base * 2)
