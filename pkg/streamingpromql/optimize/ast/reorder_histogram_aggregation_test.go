@@ -54,6 +54,9 @@ var testCasesReorderHistogramAggregation = map[string]string{
 	`histogram_sum(sum by (__name__) (foo))`:            `histogram_sum(sum by (__name__) (foo))`,
 	`histogram_sum(sum({__name__=~"foo.*"}))`:           `histogram_sum(sum({__name__=~"foo.*"}))`,
 	`histogram_sum(sum(rate({__name__=~"foo.*"}[2m])))`: `histogram_sum(sum(rate({__name__=~"foo.*"}[2m])))`,
+
+	// not sure what exactly what this should look like, but the point is that it does not get reordered
+	`histogram_sum(aggregated_wrapper(sum(foo{__aggregation__!~"(foo):(count|max|min|sum:counter)"})))`: `sum(histogram_sum(foo))`,
 }
 
 func TestReorderHistogramAggregation(t *testing.T) {

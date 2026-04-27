@@ -54,6 +54,9 @@ var testCasesPruneToggles = map[string]string{
 	// complicate the algorithm and isn't required to reduce chunks
 	// loading.
 	`(avg(rate(foo[2m]))) and on() (vector(0) == 1) or avg(rate(bar[2m])) and on() (vector(1) == 1)`: `(vector(0) == 1) or avg(rate(bar[2m]))`,
+
+	`(histogram_quantile(0.99, aggregated_wrapper(sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{__aggregation__!~"(cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate):(count|max|min|sum:counter)",cluster=~"dev-us-central-0",job=~"(cell)/((gateway|cortex-gw.*))",route=~"(prometheus|api_prom)_api_v1_.+"})))) and on () (vector(-1) == 1)`: `(vector(-1) == 1)`,
+	`(histogram_quantile(0.99, aggregated_wrapper(sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{__aggregation__!~"(cluster_job_route:cortex_request_duration_seconds:sum_rate):(count|max|min|sum:counter)",cluster=~"dev-us-central-0",job=~"(cell)/((gateway|cortex-gw.*))",route=~"(prometheus|api_prom)_api_v1_.+"})))) and on () (vector(-1) == -1)`:                       `(histogram_quantile(0.99, aggregated_wrapper(sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{__aggregation__!~"(cluster_job_route:cortex_request_duration_seconds:sum_rate):(count|max|min|sum:counter)",cluster=~"dev-us-central-0",job=~"(cell)/((gateway|cortex-gw.*))",route=~"(prometheus|api_prom)_api_v1_.+"}))))`,
 }
 
 func TestPruneToggles(t *testing.T) {
