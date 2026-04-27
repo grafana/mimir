@@ -261,6 +261,7 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	}
 
 	if len(g.oneSideMetadata) == 0 {
+		// No series on left-hand side, we'll never have any output series.
 		return false, nil
 	}
 
@@ -287,6 +288,7 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	}
 
 	if len(g.manySideMetadata) == 0 {
+		// No series on right-hand side, we'll never have any output series.
 		return false, nil
 	}
 
