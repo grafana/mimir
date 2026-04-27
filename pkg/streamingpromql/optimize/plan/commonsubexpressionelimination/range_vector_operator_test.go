@@ -1160,9 +1160,7 @@ func TestRangeVectorOperator_Stats(t *testing.T) {
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-// TestRangeVectorOperator_Buffering_MultipleStepsPerSeries verifies that the buffer correctly
-// handles range queries where each series has multiple steps.
-func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
+func TestRangeVectorOperator_Buffering_RangeQuery(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
