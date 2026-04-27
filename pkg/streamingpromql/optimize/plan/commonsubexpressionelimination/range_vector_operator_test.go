@@ -1310,15 +1310,15 @@ type multiStepTestRangeOperator struct {
 	currentSeriesIdx int
 	currentStepIdx   int
 
-	floatBuf  *types.FPointRingBuffer
-	floatView *types.FPointRingBufferView
-	histBuf   *types.HPointRingBuffer
-	histView  *types.HPointRingBufferView
+	floatBuffer     *types.FPointRingBuffer
+	floatView       *types.FPointRingBufferView
+	histogramBuffer *types.HPointRingBuffer
+	histogramView   *types.HPointRingBufferView
 
 	Finalized bool
 	Closed    bool
 
-	memTracker *limiter.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 func createMultiStepTestRangeOperator(t *testing.T, stepsData [][]float64, memTracker *limiter.MemoryConsumptionTracker) *multiStepTestRangeOperator {
@@ -1330,15 +1330,15 @@ func createMultiStepTestRangeOperator(t *testing.T, stepsData [][]float64, memTr
 	}
 
 	return &multiStepTestRangeOperator{
-		series:           series,
-		stepsData:        stepsData,
-		currentSeriesIdx: -1,
-		memTracker:       memTracker,
+		series:                   series,
+		stepsData:                stepsData,
+		currentSeriesIdx:         -1,
+		memoryConsumptionTracker: memTracker,
 	}
 }
 
 func (o *multiStepTestRangeOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
-	metadata, err := types.SeriesMetadataSlicePool.Get(len(o.series), o.memTracker)
+	metadata, err := types.SeriesMetadataSlicePool.Get(len(o.series), o.memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -1348,7 +1348,7 @@ func (o *multiStepTestRangeOperator) SeriesMetadata(_ context.Context, _ types.M
 	for i, l := range o.series {
 		metadata[i].Labels = l
 
-		if err := o.memTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
+		if err := o.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
 			return nil, err
 		}
 	}
@@ -1374,30 +1374,30 @@ func (o *multiStepTestRangeOperator) NextStepSamples(_ context.Context) (*types.
 		return nil, types.EOS
 	}
 
-	if o.floatBuf == nil {
-		o.floatBuf = types.NewFPointRingBuffer(o.memTracker)
+	if o.floatBuffer == nil {
+		o.floatBuffer = types.NewFPointRingBuffer(o.memoryConsumptionTracker)
 	}
 
-	if o.histBuf == nil {
-		o.histBuf = types.NewHPointRingBuffer(o.memTracker)
+	if o.histogramBuffer == nil {
+		o.histogramBuffer = types.NewHPointRingBuffer(o.memoryConsumptionTracker)
 	}
 
-	o.floatBuf.Reset()
+	o.floatBuffer.Reset()
 
 	stepT := int64(o.currentStepIdx) * time.Minute.Milliseconds()
 
-	if err := o.floatBuf.Append(promql.FPoint{T: stepT, F: steps[o.currentStepIdx]}); err != nil {
+	if err := o.floatBuffer.Append(promql.FPoint{T: stepT, F: steps[o.currentStepIdx]}); err != nil {
 		return nil, err
 	}
 
-	o.floatView = o.floatBuf.ViewUntilSearchingBackwards(stepT, o.floatView)
-	o.histBuf.Reset()
-	o.histView = o.histBuf.ViewUntilSearchingBackwards(stepT, o.histView)
+	o.floatView = o.floatBuffer.ViewUntilSearchingBackwards(stepT, o.floatView)
+	o.histogramBuffer.Reset()
+	o.histogramView = o.histogramBuffer.ViewUntilSearchingBackwards(stepT, o.histogramView)
 	o.currentStepIdx++
 
 	return &types.RangeVectorStepData{
 		Floats:     o.floatView,
-		Histograms: o.histView,
+		Histograms: o.histogramView,
 		StepT:      stepT,
 		RangeStart: 0,
 		RangeEnd:   stepT,
@@ -1419,16 +1419,16 @@ func (o *multiStepTestRangeOperator) AfterPrepare(_ context.Context) error {
 func (o *multiStepTestRangeOperator) Finalize(_ context.Context) error {
 	o.Finalized = true
 
-	if o.floatBuf != nil {
-		o.floatBuf.Close()
-		o.floatBuf = nil
+	if o.floatBuffer != nil {
+		o.floatBuffer.Close()
+		o.floatBuffer = nil
 		o.floatView = nil
 	}
 
-	if o.histBuf != nil {
-		o.histBuf.Close()
-		o.histBuf = nil
-		o.histView = nil
+	if o.histogramBuffer != nil {
+		o.histogramBuffer.Close()
+		o.histogramBuffer = nil
+		o.histogramView = nil
 	}
 
 	return nil
@@ -1442,17 +1442,17 @@ func (o *multiStepTestRangeOperator) Close() {
 	o.Closed = true
 }
 
-func requireEqualFloatStep(t *testing.T, expectedFloat float64, actual *types.RangeVectorStepData, memTracker *limiter.MemoryConsumptionTracker) {
+func requireEqualFloatStep(t *testing.T, expectedFloat float64, actual *types.RangeVectorStepData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	t.Helper()
 
 	pts, err := actual.Floats.CopyPoints()
 	require.NoError(t, err)
 	require.Len(t, pts, 1)
 	require.InDelta(t, expectedFloat, pts[0].F, 1e-9)
-	types.FPointSlicePool.Put(&pts, memTracker)
+	types.FPointSlicePool.Put(&pts, memoryConsumptionTracker)
 
 	hpts, err := actual.Histograms.CopyPoints()
 	require.NoError(t, err)
 	require.Empty(t, hpts)
-	types.HPointSlicePool.Put(&hpts, memTracker)
+	types.HPointSlicePool.Put(&hpts, memoryConsumptionTracker)
 }
