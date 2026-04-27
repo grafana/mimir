@@ -1164,19 +1164,33 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	// 3 series, each with 3 steps.
-	// stepsData[seriesIdx][stepIdx] = float value at that step.
-	stepsData := [][]float64{
-		{10, 11, 12},
-		{20, 21, 22},
-		{30, 31, 32},
-	}
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{idx="0"} 10 11 12
+			metric{idx="1"} 20 21 22
+			metric{idx="2"} 30 31 32
+	`)
+	t.Cleanup(func() { _ = storage.Close() })
 
-	inner := createMultiStepTestRangeOperator(t, stepsData, memoryConsumptionTracker)
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
+	selector := selectors.NewRangeVectorSelector(
+		&selectors.Selector{
+			Queryable:                storage,
+			TimeRange:                timeRange,
+			Matchers:                 types.Matchers{types.Matcher{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "metric"}},
+			Range:                    time.Minute,
+			MemoryConsumptionTracker: memoryConsumptionTracker,
+		},
+		memoryConsumptionTracker,
+		types.NewQueryStats(),
+	)
+	inner := &rangeVectorOperatorStateTracker{RangeVectorOperator: selector}
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker, timeRange, log.NewNopLogger())
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
+
+	require.NoError(t, consumer1.Prepare(ctx, nil))
+	require.NoError(t, consumer2.Prepare(ctx, nil))
 
 	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
@@ -1271,7 +1285,7 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 	// Consumer1 will then read series 2 in pass-through mode (no buffering).
 	require.NoError(t, consumer2.Finalize(ctx))
 	consumer2.Close()
-	require.False(t, inner.Finalized, "inner should not be finalized until all consumers are finalized")
+	require.False(t, inner.finalized, "inner should not be finalized until all consumers are finalized")
 
 	require.NoError(t, consumer1.NextSeries(ctx))
 	require.Equal(t, 0, buffer.buffer.Size())
@@ -1294,150 +1308,25 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 	require.Nil(t, d)
 
 	require.NoError(t, consumer1.Finalize(ctx))
-	require.True(t, inner.Finalized)
+	require.True(t, inner.finalized)
 
 	consumer1.Close()
-	require.True(t, inner.Closed)
+	require.True(t, inner.closed)
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-// multiStepTestRangeOperator is a test RangeVectorOperator that returns multiple steps per series.
-// stepsData[seriesIdx][stepIdx] contains the float value for each step.
-type multiStepTestRangeOperator struct {
-	series    []labels.Labels
-	stepsData [][]float64
-
-	currentSeriesIdx int
-	currentStepIdx   int
-
-	floatBuffer     *types.FPointRingBuffer
-	floatView       *types.FPointRingBufferView
-	histogramBuffer *types.HPointRingBuffer
-	histogramView   *types.HPointRingBufferView
-
-	Finalized bool
-	Closed    bool
-
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+type rangeVectorOperatorStateTracker struct {
+	types.RangeVectorOperator
+	finalized bool
+	closed    bool
 }
 
-func createMultiStepTestRangeOperator(t *testing.T, stepsData [][]float64, memTracker *limiter.MemoryConsumptionTracker) *multiStepTestRangeOperator {
-	t.Helper()
-
-	series := make([]labels.Labels, len(stepsData))
-	for i := range stepsData {
-		series[i] = labels.FromStrings("idx", strconv.Itoa(i))
-	}
-
-	return &multiStepTestRangeOperator{
-		series:                   series,
-		stepsData:                stepsData,
-		currentSeriesIdx:         -1,
-		memoryConsumptionTracker: memTracker,
-	}
+func (r *rangeVectorOperatorStateTracker) Finalize(ctx context.Context) error {
+	r.finalized = true
+	return r.RangeVectorOperator.Finalize(ctx)
 }
 
-func (o *multiStepTestRangeOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
-	metadata, err := types.SeriesMetadataSlicePool.Get(len(o.series), o.memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	metadata = metadata[:len(o.series)]
-
-	for i, l := range o.series {
-		metadata[i].Labels = l
-
-		if err := o.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
-			return nil, err
-		}
-	}
-
-	return metadata, nil
-}
-
-func (o *multiStepTestRangeOperator) NextSeries(_ context.Context) error {
-	if o.currentSeriesIdx+1 >= len(o.series) {
-		return types.EOS
-	}
-
-	o.currentSeriesIdx++
-	o.currentStepIdx = 0
-
-	return nil
-}
-
-func (o *multiStepTestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVectorStepData, error) {
-	steps := o.stepsData[o.currentSeriesIdx]
-
-	if o.currentStepIdx >= len(steps) {
-		return nil, types.EOS
-	}
-
-	if o.floatBuffer == nil {
-		o.floatBuffer = types.NewFPointRingBuffer(o.memoryConsumptionTracker)
-	}
-
-	if o.histogramBuffer == nil {
-		o.histogramBuffer = types.NewHPointRingBuffer(o.memoryConsumptionTracker)
-	}
-
-	o.floatBuffer.Reset()
-
-	stepT := int64(o.currentStepIdx) * time.Minute.Milliseconds()
-
-	if err := o.floatBuffer.Append(promql.FPoint{T: stepT, F: steps[o.currentStepIdx]}); err != nil {
-		return nil, err
-	}
-
-	o.floatView = o.floatBuffer.ViewUntilSearchingBackwards(stepT, o.floatView)
-	o.histogramBuffer.Reset()
-	o.histogramView = o.histogramBuffer.ViewUntilSearchingBackwards(stepT, o.histogramView)
-	o.currentStepIdx++
-
-	return &types.RangeVectorStepData{
-		Floats:     o.floatView,
-		Histograms: o.histogramView,
-		StepT:      stepT,
-		RangeStart: 0,
-		RangeEnd:   stepT,
-	}, nil
-}
-
-func (o *multiStepTestRangeOperator) ExpressionPosition() posrange.PositionRange {
-	return posrange.PositionRange{}
-}
-
-func (o *multiStepTestRangeOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
-	return nil
-}
-
-func (o *multiStepTestRangeOperator) AfterPrepare(_ context.Context) error {
-	return nil
-}
-
-func (o *multiStepTestRangeOperator) Finalize(_ context.Context) error {
-	o.Finalized = true
-
-	if o.floatBuffer != nil {
-		o.floatBuffer.Close()
-		o.floatBuffer = nil
-		o.floatView = nil
-	}
-
-	if o.histogramBuffer != nil {
-		o.histogramBuffer.Close()
-		o.histogramBuffer = nil
-		o.histogramView = nil
-	}
-
-	return nil
-}
-
-func (o *multiStepTestRangeOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
-	panic("not implemented")
-}
-
-func (o *multiStepTestRangeOperator) Close() {
-	o.Closed = true
+func (r *rangeVectorOperatorStateTracker) Close() {
+	r.closed = true
+	r.RangeVectorOperator.Close()
 }
