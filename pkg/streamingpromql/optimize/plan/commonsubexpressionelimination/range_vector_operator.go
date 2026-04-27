@@ -290,19 +290,18 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 	return consumer.nextStepFromBuffer(d)
 }
 
-// nextStepFromBuffer returns the next step for the consumer from a buffered series.
-func (consumer *RangeVectorDuplicationConsumer) nextStepFromBuffer(d bufferedRangeVectorSeriesData) (*types.RangeVectorStepData, error) {
-	if consumer.currentSeriesStepIndex >= len(d) {
-		consumer.hasReadCurrentSeriesSamples = true
+func (d *RangeVectorDuplicationConsumer) nextStepFromBuffer(data bufferedRangeVectorSeriesData) (*types.RangeVectorStepData, error) {
+	if d.currentSeriesStepIndex >= len(data) {
+		d.hasReadCurrentSeriesSamples = true
 		return nil, types.EOS
 	}
 
-	stepData := d[consumer.currentSeriesStepIndex].stepData
-	consumer.currentSeriesStepIndex++
+	stepData := data[d.currentSeriesStepIndex].stepData
+	d.currentSeriesStepIndex++
 
-	if consumer.currentSeriesStepIndex >= len(d) {
+	if d.currentSeriesStepIndex >= len(data) {
 		// This was the last step; the next call will return EOS.
-		consumer.hasReadCurrentSeriesSamples = true
+		d.hasReadCurrentSeriesSamples = true
 	}
 
 	return stepData, nil
