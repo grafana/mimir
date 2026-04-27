@@ -173,9 +173,10 @@ func TestAlertmanagerClassicMode(t *testing.T) {
 		Matchers: amlabels.Matchers{
 			{Name: "foo", Value: "bar"},
 		},
-		Comment:  "This is a test silence.",
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(time.Minute),
+		Comment:   "This is a test silence.",
+		CreatedBy: "test",
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, silenceID)
@@ -184,9 +185,10 @@ func TestAlertmanagerClassicMode(t *testing.T) {
 		Matchers: amlabels.Matchers{
 			{Name: "bar🙂", Value: "baz"},
 		},
-		Comment:  "This is a test silence.",
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(time.Minute),
+		Comment:   "This is a test silence.",
+		CreatedBy: "test",
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(time.Minute),
 	})
 	require.EqualError(t, err, "creating the silence failed with status 400 and error \"invalid silence: invalid label matcher 0 in set 0: invalid label name \\\"bar🙂\\\"\"\n")
 	require.Empty(t, silenceID)
@@ -252,9 +254,10 @@ func TestAlertmanagerUTF8StrictMode(t *testing.T) {
 		Matchers: amlabels.Matchers{
 			{Name: "foo", Value: "bar"},
 		},
-		Comment:  "This is a test silence.",
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(time.Minute),
+		Comment:   "This is a test silence.",
+		CreatedBy: "test",
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, silenceID)
@@ -263,9 +266,10 @@ func TestAlertmanagerUTF8StrictMode(t *testing.T) {
 		Matchers: amlabels.Matchers{
 			{Name: "bar🙂", Value: "baz"},
 		},
-		Comment:  "This is a test silence.",
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(time.Minute),
+		Comment:   "This is a test silence.",
+		CreatedBy: "test",
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, silenceID)
@@ -535,9 +539,10 @@ func TestAlertmanagerSharding(t *testing.T) {
 					Matchers: amlabels.Matchers{
 						{Name: "instance", Value: "prometheus-one"},
 					},
-					Comment:  comment(i),
-					StartsAt: time.Now(),
-					EndsAt:   time.Now().Add(time.Hour),
+					Comment:   comment(i),
+					CreatedBy: "test",
+					StartsAt:  time.Now(),
+					EndsAt:    time.Now().Add(time.Hour),
 				}
 			}
 
@@ -916,9 +921,10 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 							Matchers: amlabels.Matchers{
 								{Name: "instance", Value: "prometheus-one"},
 							},
-							Comment:  fmt.Sprintf("Silence Comment #%d", j),
-							StartsAt: time.Now(),
-							EndsAt:   time.Now().Add(time.Hour),
+							Comment:   fmt.Sprintf("Silence Comment #%d", j),
+							CreatedBy: "test",
+							StartsAt:  time.Now(),
+							EndsAt:    time.Now().Add(time.Hour),
 						}
 
 						_, err = client.CreateSilence(context.Background(), silence)

@@ -764,6 +764,10 @@ func (a *alertsLimiter) PostDelete(alert *amalert.Alert) {
 	a.count--
 }
 
+// PostGC is a no-op: upstream's mem.Alerts.GC() already calls PostDelete for every
+// garbage-collected alert before invoking PostGC, and PostDelete handles all the
+// limiter bookkeeping (count, totalSize, sizes). Keeping PostGC empty avoids
+// double-decrementing.
 func (a *alertsLimiter) PostGC(_ model.Fingerprints) {}
 
 func (a *alertsLimiter) currentStats() (count, totalSize int) {

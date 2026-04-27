@@ -1172,17 +1172,20 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
-	// Request when fallback user configuration is used, as user hasn't
-	// created a configuration yet.
-	req := httptest.NewRequest("GET", externalURL.String(), nil)
+	// We hit a real API endpoint (the alertmanager v0.32.0 dropped the UI, so we
+	// can no longer rely on the redirect-to-UI 301 to confirm the per-tenant
+	// alertmanager is reachable). /api/v2/status is served by the AM and returns
+	// 200 when the request was correctly routed to a live alertmanager instance.
+	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	ctx := user.InjectOrgID(req.Context(), "user1")
 
+	// Request when fallback user configuration is used, as user hasn't created a
+	// configuration yet — the AM should still answer with the fallback config.
 	{
 		w := httptest.NewRecorder()
 		am.ServeHTTP(w, req.WithContext(ctx))
 
-		_ = w.Result()
-		require.Equal(t, 404, w.Code) // no UI registered
+		require.Equal(t, http.StatusOK, w.Code)
 	}
 
 	// Create a configuration for the user in storage.
@@ -1196,12 +1199,12 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	// Request when AM is active.
+	// Request when AM is active with the user's config.
 	{
 		w := httptest.NewRecorder()
 		am.ServeHTTP(w, req.WithContext(ctx))
 
-		require.Equal(t, 404, w.Code) // no UI registered
+		require.Equal(t, http.StatusOK, w.Code)
 	}
 
 	// Verify that GET /metrics returns 404 even when AM is active.
@@ -1234,13 +1237,12 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		// Request when the alertmanager is gone should result in setting the
-		// default fallback config, thus redirecting to the ui.
+		// Request when the alertmanager is gone should result in the multitenant
+		// AM falling back to the default config and answering the API request.
 		w := httptest.NewRecorder()
 		am.ServeHTTP(w, req.WithContext(ctx))
 
-		_ = w.Result()
-		require.Equal(t, 404, w.Code) // no UI registered
+		require.Equal(t, http.StatusOK, w.Code)
 	}
 }
 
