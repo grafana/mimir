@@ -22,7 +22,6 @@ import (
 	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -1583,22 +1582,17 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEDisabled(t *testing.T) {
 }
 
 func TestOptimizationPass_RangeQueryRangeVectorCSEVersionGating(t *testing.T) {
-	runTest := func(t *testing.T, expr string, isRangeQuery bool, maxVersion planning.QueryPlanVersion, expectedPlan string, expectedPlanVersion planning.QueryPlanVersion) {
+	instantTimeRange := types.NewInstantQueryTimeRange(time.Now())
+	rangeTimeRange := types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(time.Hour), time.Minute)
+
+	runTest := func(t *testing.T, expr string, timeRange types.QueryTimeRange, maxVersion planning.QueryPlanVersion, rangeQueryRangeVectorCSEEnabled bool, expectedPlan string, expectedPlanVersion planning.QueryPlanVersion) {
 		ctx := context.Background()
 		observer := streamingpromql.NoopPlanningObserver{}
-
-		var timeRange types.QueryTimeRange
-		if isRangeQuery {
-			timeRange = types.NewRangeQueryTimeRange(time.Now(), time.Now().Add(time.Hour), time.Minute)
-		} else {
-			timeRange = types.NewInstantQueryTimeRange(time.Now())
-		}
-
 		opts := streamingpromql.NewTestEngineOpts()
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxVersion))
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, rangeQueryRangeVectorCSEEnabled, nil, opts.Logger))
 
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -1619,64 +1613,53 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEVersionGating(t *testing.T) {
 					- ref#1 Duplicate ...
 	`
 
-	t.Run("range query, querier supports V10", func(t *testing.T) {
-		// Range vector CSE should be applied, and the plan version should be V10.
-		runTest(t, expr, true, planning.QueryPlanV10, deduplicatedPlan, planning.QueryPlanV10)
+	unchangedPlan := `
+		- BinaryExpression: LHS + RHS
+			- LHS: DeduplicateAndMerge
+				- FunctionCall: rate(...)
+					- MatrixSelector: {__name__="foo"}[5m0s]
+			- RHS: DeduplicateAndMerge
+				- FunctionCall: increase(...)
+					- MatrixSelector: {__name__="foo"}[5m0s]
+	`
+
+	t.Run("enabled", func(t *testing.T) {
+		rangeQueryRangeVectorCSEEnabled := true
+
+		t.Run("range query, querier supports v10", func(t *testing.T) {
+			// Range vector CSE should be applied, and the plan version should be v10.
+			runTest(t, expr, rangeTimeRange, planning.QueryPlanV10, rangeQueryRangeVectorCSEEnabled, deduplicatedPlan, planning.QueryPlanV10)
+		})
+
+		t.Run("range query, querier does not support v10", func(t *testing.T) {
+			// Range vector CSE should not be applied when the querier doesn't support v10, even if the flag is enabled.
+			runTest(t, expr, rangeTimeRange, planning.QueryPlanV9, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
+		})
+
+		t.Run("instant query, querier does not support v10", func(t *testing.T) {
+			// Matrix selectors in instant queries are always deduplicated (they don't need v10).
+			runTest(t, expr, instantTimeRange, planning.QueryPlanV9, rangeQueryRangeVectorCSEEnabled, deduplicatedPlan, planning.QueryPlanVersionZero)
+		})
 	})
 
-	t.Run("range query, querier does not support V10", func(t *testing.T) {
-		// Range vector CSE should not be applied when the querier doesn't support V10, even if the
-		// flag is enabled. Plan should be unchanged.
-		runTest(t, expr, true, planning.QueryPlanV9, `
-			- BinaryExpression: LHS + RHS
-				- LHS: DeduplicateAndMerge
-					- FunctionCall: rate(...)
-						- MatrixSelector: {__name__="foo"}[5m0s]
-				- RHS: DeduplicateAndMerge
-					- FunctionCall: increase(...)
-						- MatrixSelector: {__name__="foo"}[5m0s]
-		`, planning.QueryPlanVersionZero)
+	t.Run("disabled", func(t *testing.T) {
+		rangeQueryRangeVectorCSEEnabled := false
+
+		t.Run("range query, querier supports v10", func(t *testing.T) {
+			// Range vector CSE should not be applied.
+			runTest(t, expr, rangeTimeRange, planning.QueryPlanV10, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
+		})
+
+		t.Run("range query, querier does not support v10", func(t *testing.T) {
+			// Range vector CSE should not be applied when the querier doesn't support v10, even if the flag is enabled.
+			runTest(t, expr, rangeTimeRange, planning.QueryPlanV9, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
+		})
+
+		t.Run("instant query, querier does not support v10", func(t *testing.T) {
+			// Matrix selectors in instant queries are always deduplicated (they don't need v10 or the flag enabled).
+			runTest(t, expr, instantTimeRange, planning.QueryPlanV9, rangeQueryRangeVectorCSEEnabled, deduplicatedPlan, planning.QueryPlanVersionZero)
+		})
 	})
-
-	t.Run("instant query, querier does not support V10", func(t *testing.T) {
-		// Matrix selectors in instant queries are always deduplicated (they don't need V10).
-		runTest(t, expr, false, planning.QueryPlanV9, deduplicatedPlan, planning.QueryPlanVersionZero)
-	})
-}
-
-func TestOptimizationPass_RangeVectorSplittingEnabled(t *testing.T) {
-	ctx := context.Background()
-	timeRange := types.NewInstantQueryTimeRange(time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC))
-	observer := streamingpromql.NoopPlanningObserver{}
-
-	opts := streamingpromql.NewTestEngineOpts()
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-	planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(2*time.Hour, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, nil, opts.Logger))
-
-	expr := `sum(rate(metric{env="prod"}[6h])) / sum(rate(metric[6h]))`
-	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
-	require.NoError(t, err)
-
-	expectedPlan := `
-		- BinaryExpression: LHS / RHS
-			- LHS: AggregateExpression: sum
-				- DeduplicateAndMerge
-					- SplitFunctionCall: splits=4 [(1773079200000,1773086399999], (1773086399999,1773093599999]*, (1773093599999,1773100799999]*, (1773100799999,1773100800000]]
-						- FunctionCall: rate(...)
-							- DuplicateFilter: {env="prod"}, subset index: 0
-								- ref#1 Duplicate
-									- MatrixSelector: {__name__="metric"}[6h0m0s], subsets: {env="prod"}
-			- RHS: AggregateExpression: sum
-				- DeduplicateAndMerge
-					- SplitFunctionCall: splits=4 [(1773079200000,1773086399999], (1773086399999,1773093599999]*, (1773093599999,1773100799999]*, (1773100799999,1773100800000]]
-						- FunctionCall: rate(...)
-							- ref#1 Duplicate ...
-		`
-
-	require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
 }
 
 func BenchmarkOptimizationPass(b *testing.B) {
