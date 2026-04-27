@@ -1190,17 +1190,17 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err := consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 10, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 10}}}, d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 11, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 11}}}, d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 12, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 12}}}, d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
@@ -1212,16 +1212,16 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 20, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 20}}}, d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 21, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 21}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 22, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 22}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1232,16 +1232,16 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 10, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 10}}}, d, memoryConsumptionTracker)
 	require.Equal(t, 2, buffer.buffer.Size(), "data should remain buffered until the next NextSeries call")
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 11, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 11}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 12, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 12}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1253,15 +1253,15 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 20, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 20}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 21, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 21}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 22, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 22}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1278,16 +1278,16 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 30, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 30}}}, d, memoryConsumptionTracker)
 	require.Equal(t, 0, buffer.buffer.Size(), "sole remaining consumer should not buffer series 2")
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 31, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 31}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualFloatStep(t, 32, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 32}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1440,19 +1440,4 @@ func (o *multiStepTestRangeOperator) Stats(_ context.Context) (*types.OperatorEv
 
 func (o *multiStepTestRangeOperator) Close() {
 	o.Closed = true
-}
-
-func requireEqualFloatStep(t *testing.T, expectedFloat float64, actual *types.RangeVectorStepData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	t.Helper()
-
-	pts, err := actual.Floats.CopyPoints()
-	require.NoError(t, err)
-	require.Len(t, pts, 1)
-	require.InDelta(t, expectedFloat, pts[0].F, 1e-9)
-	types.FPointSlicePool.Put(&pts, memoryConsumptionTracker)
-
-	hpts, err := actual.Histograms.CopyPoints()
-	require.NoError(t, err)
-	require.Empty(t, hpts)
-	types.HPointSlicePool.Put(&hpts, memoryConsumptionTracker)
 }
