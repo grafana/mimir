@@ -1198,6 +1198,14 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 	require.NoError(t, err)
 	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
+
+	expectedMetadata := []types.SeriesMetadata{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "idx", "0")},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "idx", "1")},
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "idx", "2")},
+	}
+	require.Equal(t, expectedMetadata, metadata1, "first consumer should get expected series metadata")
+	require.Equal(t, expectedMetadata, metadata2, "second consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
 
