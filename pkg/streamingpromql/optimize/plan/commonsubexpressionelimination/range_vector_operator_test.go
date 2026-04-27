@@ -846,6 +846,8 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 }
 
 func requireEqualDataAndReturnToPool(t *testing.T, expected types.InstantVectorSeriesData, actual *types.RangeVectorStepData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	t.Helper()
+
 	actualFloats, err := actual.Floats.CopyPoints()
 	require.NoError(t, err)
 	require.Equal(t, expected.Floats, actualFloats)
@@ -1165,10 +1167,10 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	storage := promqltest.LoadedStorage(t, `
-		load 1m
-			metric{idx="0"} 10 11 12
-			metric{idx="1"} 20 21 22
-			metric{idx="2"} 30 31 32
+		load 30s
+			metric{idx="0"} 10 10.5 11 11.5 12
+			metric{idx="1"} 20 20.5 21 21.5 22
+			metric{idx="2"} 30 30.5 31 31.5 32
 	`)
 	t.Cleanup(func() { _ = storage.Close() })
 
@@ -1178,7 +1180,7 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 			Queryable:                storage,
 			TimeRange:                timeRange,
 			Matchers:                 types.Matchers{types.Matcher{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "metric"}},
-			Range:                    time.Minute,
+			Range:                    2 * time.Minute,
 			MemoryConsumptionTracker: memoryConsumptionTracker,
 		},
 		memoryConsumptionTracker,
@@ -1209,12 +1211,12 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 11}}}, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 30000, F: 10.5}, {T: 60000, F: 11}}}, d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 12}}}, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 10.5}, {T: 60000, F: 11}, {T: 90000, F: 11.5}, {T: 120000, F: 12}}}, d, memoryConsumptionTracker)
 	require.Equal(t, 1, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
@@ -1231,11 +1233,11 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 21}}}, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 30000, F: 20.5}, {T: 60000, F: 21}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 22}}}, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 20.5}, {T: 60000, F: 21}, {T: 90000, F: 21.5}, {T: 120000, F: 22}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1251,11 +1253,11 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 11}}}, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 30000, F: 10.5}, {T: 60000, F: 11}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 12}}}, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 10.5}, {T: 60000, F: 11}, {T: 90000, F: 11.5}, {T: 120000, F: 12}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1271,11 +1273,11 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 21}}}, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 30000, F: 20.5}, {T: 60000, F: 21}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 22}}}, d, memoryConsumptionTracker)
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 20.5}, {T: 60000, F: 21}, {T: 90000, F: 21.5}, {T: 120000, F: 22}}}, d, memoryConsumptionTracker)
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1297,12 +1299,10 @@ func TestRangeVectorOperator_Buffering_MultipleStepsPerSeries(t *testing.T) {
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 60000, F: 31}}}, d, memoryConsumptionTracker)
-
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 30}, {T: 30000, F: 30.5}, {T: 60000, F: 31}}}, d, memoryConsumptionTracker)
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 120000, F: 32}}}, d, memoryConsumptionTracker)
-
+	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 30.5}, {T: 60000, F: 31}, {T: 90000, F: 31.5}, {T: 120000, F: 32}}}, d, memoryConsumptionTracker)
 	d, err = consumer1.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
 	require.Nil(t, d)
