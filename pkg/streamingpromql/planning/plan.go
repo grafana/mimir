@@ -65,7 +65,10 @@ const QueryPlanV8 = QueryPlanVersion(8)
 // QueryPlanV9 introduces the NoOp node.
 const QueryPlanV9 = QueryPlanVersion(9)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV9
+// QueryPlanV10 introduces a matrix variant of the NoOp node.
+const QueryPlanV10 = QueryPlanVersion(10)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV10
 
 type QueryPlan struct {
 	Root       Node

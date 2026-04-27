@@ -256,7 +256,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- DeduplicateAndMerge
 					- FunctionCall: avg_over_time(...)
-						- NoOp
+						- NoOp: matrix
 			`,
 		},
 		"conflicting equals matchers on LHS of binary expression: should optimize": {
