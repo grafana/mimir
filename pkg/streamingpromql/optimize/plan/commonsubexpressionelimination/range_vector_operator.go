@@ -142,7 +142,7 @@ func (b *RangeVectorDuplicationBuffer) NextSeries(consumer *RangeVectorDuplicati
 }
 
 func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Context, desiredSeriesIndex int, desiredStepIndex int) (bufferedRangeVectorStepData, error) {
-	var lastSeriesData bufferedRangeVectorStepData
+	var lastStepData bufferedRangeVectorStepData
 
 	for b.lastNextSeriesCallIndex < desiredSeriesIndex || (b.lastNextSeriesCallIndex == desiredSeriesIndex && b.lastNextStepSamplesCallIndex < desiredStepIndex) {
 		if b.lastNextStepSamplesCallIndex == b.timeRange.StepCount-1 || b.lastNextSeriesCallIndex == -1 {
@@ -172,10 +172,10 @@ func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Contex
 		}
 
 		b.buffer.Append(clonedData, b.lastNextSeriesCallIndex, b.lastNextStepSamplesCallIndex)
-		lastSeriesData = clonedData
+		lastStepData = clonedData
 	}
 
-	return lastSeriesData, nil
+	return lastStepData, nil
 }
 
 func (b *RangeVectorDuplicationBuffer) anyConsumerWillReadSeries(unfilteredSeriesIndex int, ignore *RangeVectorDuplicationConsumer) bool {
