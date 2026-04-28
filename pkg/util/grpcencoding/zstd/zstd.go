@@ -25,6 +25,9 @@ var encoderOptions = []zstd.EOption{
 	zstd.WithWindowSize(512 * 1024),
 	// The default zstd compression level is 2
 	zstd.WithEncoderLevel(zstd.SpeedDefault),
+	// gRPC compresses each message in a single goroutine, so extra
+	// concurrency only wastes memory on duplicate hash tables and buffers.
+	zstd.WithEncoderConcurrency(1),
 	// Enable low memory mode
 	zstd.WithLowerEncoderMem(true),
 }
