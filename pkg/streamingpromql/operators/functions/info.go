@@ -237,9 +237,9 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
 	}
 
-	// Build f.sigTimestamps from sigTimestampsByMetric. This ensures that when
-	// duplicate resolution picks a winner (newer original timestamp), only the
-	// winner's labels appear in f.sigTimestamps — not both old and new.
+	// Summarise the info series by recording per timestamp and labels-only signature
+	// the series labels we've seen. We do this in a second pass so the inner loop's
+	// per-(metric, sig) duplicate resolution finalises before we write the result.
 	for _, metricSigTimestamps := range sigTimestampsByMetric {
 		for t, sigsAtTimestamp := range metricSigTimestamps {
 			sigAtTimestamp, exists := f.sigTimestamps[t]
