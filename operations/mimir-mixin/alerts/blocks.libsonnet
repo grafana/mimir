@@ -14,13 +14,13 @@
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 0)
             and
             # Only if the ingester has ingested samples over the last 4h.
-            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(recording_rules_range_interval)s[4h])) > 0)
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(rate_interval)s[4h])) > 0)
             and
             # Only if the ingester was ingesting samples 4h ago. This protects against the case where the ingester replica
             # had ingested samples in the past, then no traffic was received for a long period and then it starts
             # receiving samples again. Without this check, the alert would fire as soon as it gets back receiving
             # samples, while the a block shipping is expected within the next 4h.
-            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(recording_rules_range_interval)s[1h] offset 4h)) > 0)
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(rate_interval)s[1h] offset 4h)) > 0)
             # And only if blocks aren't shipped by the block-builder.
             unless on (%(alert_aggregation_labels)s)
             (max by (%(alert_aggregation_labels)s) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
@@ -28,7 +28,7 @@
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
             alert_aggregation_rule_prefix: $._config.alert_aggregation_rule_prefix,
-            recording_rules_range_interval: $._config.recording_rules_range_interval,
+            rate_interval: $.rateInterval('1m'),
           },
           labels: {
             severity: 'critical',
@@ -45,7 +45,7 @@
           expr: |||
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) == 0)
             and
-            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(recording_rules_range_interval)s[4h])) > 0)
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(rate_interval)s[4h])) > 0)
             # Only if blocks aren't shipped by the block-builder.
             unless on (%(alert_aggregation_labels)s)
             (max by (%(alert_aggregation_labels)s) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
@@ -53,7 +53,7 @@
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
             alert_aggregation_rule_prefix: $._config.alert_aggregation_rule_prefix,
-            recording_rules_range_interval: $._config.recording_rules_range_interval,
+            rate_interval: $.rateInterval('1m'),
           },
           labels: {
             severity: 'critical',
