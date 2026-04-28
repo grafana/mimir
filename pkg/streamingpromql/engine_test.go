@@ -4882,6 +4882,13 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				800000: 18,
 			},
+
+			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
+			// See https://github.com/prometheus/prometheus/issues/16638 for details.
+			expectedTotalSamplesWithMQE: 450,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				800000: 450,
+			},
 		},
 
 		// Outer subquery wrapping inner range-vector (evalSubquery path):
@@ -4895,6 +4902,13 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				240000: 6,
+			},
+
+			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
+			// See https://github.com/prometheus/prometheus/issues/16638 for details.
+			expectedTotalSamplesWithMQE: 6,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
 				240000: 6,
 			},
 		},
