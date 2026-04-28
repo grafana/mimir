@@ -41,10 +41,9 @@ check_expressions() {
     # Each line is a single expression (newlines replaced with spaces by yq).
     # Extract all [duration] and [duration:step] brackets.
     # For subquery notation [range:step], we only check the range (first part before the colon).
-    # Note: (:[^]]*) uses * (zero-or-more) to also match the bare-subquery form [10m:].
     local remaining="$line"
-    while [[ $remaining =~ \[([0-9]+[smh])(:[^]]*)\]|\[([0-9]+[smh])\] ]]; do
-      duration="${BASH_REMATCH[1]}${BASH_REMATCH[3]}"
+    while [[ $remaining =~ \[([0-9]+[smh])[^]]*\] ]]; do
+      duration="${BASH_REMATCH[1]}"
       seconds=$(parse_duration_to_seconds "$duration")
 
       if [[ $seconds -lt $MIN_RATE_INTERVAL_SECONDS ]]; then
