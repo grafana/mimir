@@ -72,7 +72,14 @@ func newCompressor() *compressor {
 }
 
 func (c *compressor) Compress(w io.Writer) (io.WriteCloser, error) {
-	z := c.poolCompressor.Get().(*writer)
+	z, ok := c.poolCompressor.Get().(*writer)
+	if !ok {
+		enc, err := zstd.NewWriter(w, encoderOptions...)
+		if err != nil {
+			return nil, err
+		}
+		return &writer{Encoder: enc, pool: &c.poolCompressor}, nil
+	}
 	z.Encoder.Reset(w)
 	return z, nil
 }
