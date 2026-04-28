@@ -254,8 +254,15 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 
 	// Load the "one" side first: it is the smaller side, and once we have its metadata
 	// we can use it to build hint-based matchers for the "many" side.
+	//
+	// Labels in VectorMatching.Include come from the many side, so any outer matchers for
+	// those labels must not be forwarded to the one side: the one side won't have them and
+	// would be incorrectly over-filtered. Split them out and keep them to forward to the
+	// many side instead.
+	oneSideMatchers, includeMatchers := separateIncludeLabelMatchers(matchers, g.VectorMatching.Include)
+
 	var err error
-	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, matchers)
+	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, oneSideMatchers)
 	if err != nil {
 		return false, err
 	}
@@ -267,11 +274,12 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 
 	// Use the "one" side series to narrow the data we need to fetch on the "many" side.
 	// When hints have been set by the optimization pass, build matchers from the "one" side
-	// metadata. Otherwise fall back to the same matchers used for the "one" side.
+	// metadata and merge them with any outer matchers for included labels (which belong to the
+	// many side). Otherwise fall back to the same outer matchers used for the "one" side.
 	manySideMatchers := matchers
 	if g.hints != nil {
 		ignored := matchers
-		manySideMatchers = BuildMatchers(g.oneSideMetadata, g.hints)
+		manySideMatchers = append(BuildMatchers(g.oneSideMetadata, g.hints), includeMatchers...)
 
 		sl := spanlogger.FromContext(ctx, g.logger)
 		sl.DebugLog(
@@ -783,6 +791,30 @@ func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantV
 	}
 
 	return merged, nil
+}
+
+// separateIncludeLabelMatchers partitions matchers into two groups: those whose label name
+// appears in includeLabels (extra labels sourced from the many side), and all others.
+// If includeLabels is empty or matchers is empty, the original slice is returned unchanged
+// and includeMatchers is nil.
+func separateIncludeLabelMatchers(matchers types.Matchers, includeLabels []string) (otherMatchers, includeMatchers types.Matchers) {
+	if len(matchers) == 0 || len(includeLabels) == 0 {
+		return matchers, nil
+	}
+
+	includeSet := make(map[string]struct{}, len(includeLabels))
+	for _, l := range includeLabels {
+		includeSet[l] = struct{}{}
+	}
+
+	for _, m := range matchers {
+		if _, ok := includeSet[m.Name]; ok {
+			includeMatchers = append(includeMatchers, m)
+		} else {
+			otherMatchers = append(otherMatchers, m)
+		}
+	}
+	return otherMatchers, includeMatchers
 }
 
 func (g *GroupedVectorVectorBinaryOperation) oneSideHandedness() string {

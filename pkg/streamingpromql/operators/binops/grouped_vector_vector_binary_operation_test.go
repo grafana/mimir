@@ -692,6 +692,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) {
 	testCases := map[string]struct {
 		card          parser.VectorMatchCardinality
+		includeLabels []string // VectorMatching.Include: extra labels sourced from the many side
 		leftSeries    []labels.Labels
 		rightSeries   []labels.Labels
 		hints         *Hints
@@ -765,19 +766,98 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 			expectedLeftMatchers:  nil,
 			expectedRightMatchers: nil,
 		},
+
+		// The following cases cover a bug where outer matchers for VectorMatching.Include
+		// labels (which come from the many side) were incorrectly forwarded to the one side,
+		// and were discarded instead of being passed to the many side when hints were set.
+
+		"group_left with hints and include-label outer matchers: include-label matchers stripped from one side and merged onto many side": {
+			card:          parser.CardManyToOne,
+			includeLabels: []string{"region"}, // region comes from the many (left) side
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+				labels.FromStrings("env", "prod", "region", "eu"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			hints: &Hints{Include: []string{"env"}},
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "region", Value: "us"},
+			},
+			// one side (right) must not receive the region matcher: region comes from many side
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			// many side (left) gets hint-built env matcher merged with the region matcher
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "region", Value: "us"},
+			},
+		},
+		"group_right with hints and include-label outer matchers: include-label matchers stripped from one side and merged onto many side": {
+			card:          parser.CardOneToMany,
+			includeLabels: []string{"region"}, // region comes from the many (right) side
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+				labels.FromStrings("env", "prod", "region", "eu"),
+			},
+			hints: &Hints{Include: []string{"env"}},
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "region", Value: "us"},
+			},
+			// one side (left) must not receive the region matcher: region comes from many side
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			// many side (right) gets hint-built env matcher merged with the region matcher
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "region", Value: "us"},
+			},
+		},
+		"group_left without hints and include-label outer matchers: include-label matchers still stripped from one side": {
+			card:          parser.CardManyToOne,
+			includeLabels: []string{"region"},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			hints: nil,
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "region", Value: "us"},
+			},
+			// one side (right) must not receive the region matcher
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			// many side (left) gets all outer matchers unchanged
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "region", Value: "us"},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
-			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 
 			o, err := NewGroupedVectorVectorBinaryOperation(
 				left,
 				right,
-				parser.VectorMatching{Card: testCase.card, MatchingLabels: []string{"env"}, On: true},
+				parser.VectorMatching{Card: testCase.card, MatchingLabels: []string{"env"}, On: true, Include: testCase.includeLabels},
 				parser.ADD,
 				false,
 				memoryConsumptionTracker,
