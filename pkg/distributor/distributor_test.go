@@ -3678,7 +3678,12 @@ func TestDistributor_ActiveSeries_TerminalErrors(t *testing.T) {
 	// zones are queried initially. When the first zone returns
 	// ErrResponseTooLarge and that error is treated as terminal, the operation
 	// should abort immediately without starting a request to the 3rd zone.
-	assert.Equal(t, 2, countMockIngestersCalled(ingesters, "ActiveSeries"))
+	//
+	// Sometimes, if the first ingester is very fast, the error is processed by the distributor
+	// while the query is still in-flight to the second ingester.
+	// In that case, the query to the second ingester is cancelled.
+	// Hence, we expect 1 or 2 ingesters to be queried here, but never 3.
+	assert.LessOrEqual(t, 2, countMockIngestersCalled(ingesters, "ActiveSeries"))
 }
 
 func BenchmarkDistributor_ActiveSeries(b *testing.B) {
