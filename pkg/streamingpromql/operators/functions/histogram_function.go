@@ -28,6 +28,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
+const (
+	// intentionallyEmptyMetricName exists for annotations compatibility with prometheus.
+	// This is only used for backwards compatibility when delayed __name__ removal is not enabled.
+	intentionallyEmptyMetricName = ""
+)
+
 // HistogramFunction performs a function over each series in an instant vector,
 // with special handling for classic and native histograms.
 // At the moment, it supports only histogram_quantile and histogram_fraction.
@@ -37,6 +43,7 @@ type HistogramFunction struct {
 	currentInnerSeriesIndex  int
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	timeRange                types.QueryTimeRange
+	enableDelayedNameRemoval bool
 
 	annotations            *annotations.Annotations
 	expressionPosition     posrange.PositionRange
@@ -44,6 +51,7 @@ type HistogramFunction struct {
 
 	seriesGroupPairs []seriesGroupPair // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
 	remainingGroups  []*bucketGroup    // One entry per group, in the order we want to return them.
+	nextGroupIdx     int               // Index into remainingGroups for the next group to return.
 }
 
 var _ types.InstantVectorOperator = &HistogramFunction{}
@@ -74,6 +82,37 @@ type seriesGroupPair struct {
 var bucketGroupPool = zeropool.New(func() *bucketGroup {
 	return &bucketGroup{}
 })
+
+const (
+	seriesGroupPairSize    = uint64(unsafe.Sizeof(seriesGroupPair{}))
+	bucketGroupPointerSize = uint64(unsafe.Sizeof((*bucketGroup)(nil)))
+)
+
+// seriesGroupPairPool is defined locally and not added to the collection of pools provided by the types package
+// because it is being used for seriesGroupPair which is not an exported type.
+// If seriesGroupPair were to be exported then this pool should be moved into limiting_pool.go
+var seriesGroupPairPool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []seriesGroupPair {
+		return make([]seriesGroupPair, 0, size)
+	}),
+	limiter.SeriesGroupPairSlices,
+	seriesGroupPairSize,
+	true, // clearOnGet: zero out stale pointers and strings from previous use
+	nil,
+	nil,
+)
+
+// bucketGroupPointerSlicePool is defined locally for the same reason as seriesGroupPairPool above.
+var bucketGroupPointerSlicePool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []*bucketGroup {
+		return make([]*bucketGroup, 0, size)
+	}),
+	limiter.BucketGroupPointerSlices,
+	bucketGroupPointerSize,
+	true, // clearOnGet: zero out stale pointers from previous use
+	nil,
+	nil,
+)
 
 var pointBucketPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) []promql.Buckets {
@@ -114,6 +153,7 @@ func NewHistogramQuantileFunction(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *HistogramFunction {
 	innerSeriesMetricNames := &operators.MetricNames{}
 
@@ -124,6 +164,7 @@ func NewHistogramQuantileFunction(
 			annotations:              annotations,
 			innerSeriesMetricNames:   innerSeriesMetricNames,
 			innerExpressionPosition:  inner.ExpressionPosition(),
+			enableDelayedNameRemoval: enableDelayedNameRemoval,
 		},
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
@@ -131,6 +172,7 @@ func NewHistogramQuantileFunction(
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -142,6 +184,7 @@ func NewHistogramFractionFunction(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *HistogramFunction {
 	innerSeriesMetricNames := &operators.MetricNames{}
 
@@ -159,6 +202,7 @@ func NewHistogramFractionFunction(
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -166,12 +210,12 @@ func (h *HistogramFunction) ExpressionPosition() posrange.PositionRange {
 	return h.expressionPosition
 }
 
-func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := h.f.LoadArguments(ctx); err != nil {
 		return nil, err
 	}
 
-	innerSeries, err := h.inner.SeriesMetadata(ctx)
+	innerSeries, err := h.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +228,11 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 
 	h.innerSeriesMetricNames.CaptureMetricNames(innerSeries)
 	groups := map[string]groupWithLabels{}
-	h.seriesGroupPairs = make([]seriesGroupPair, len(innerSeries))
+	h.seriesGroupPairs, err = seriesGroupPairPool.Get(len(innerSeries), h.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+	h.seriesGroupPairs = h.seriesGroupPairs[:len(innerSeries)]
 	b := make([]byte, 0, 1024)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -233,9 +281,19 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		return nil, err
 	}
 
-	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
+	h.remainingGroups, err = bucketGroupPointerSlicePool.Get(len(groups), h.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 	for _, g := range groups {
-		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
+		var labelsMetadata types.SeriesMetadata
+		if h.enableDelayedNameRemoval {
+			labelsMetadata = types.SeriesMetadata{Labels: g.labels, DropName: true}
+		} else {
+			//nolint:staticcheck // SA1019: DropMetricName is deprecated.
+			labelsMetadata = types.SeriesMetadata{Labels: g.labels.DropMetricName()}
+		}
+		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)
 		if err != nil {
 			return nil, err
 		}
@@ -251,14 +309,13 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 }
 
 func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	if len(h.remainingGroups) == 0 {
+	if h.nextGroupIdx >= len(h.remainingGroups) {
 		// No more groups left.
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
-	// Determine next group to return
-	thisGroup := h.remainingGroups[0]
-	h.remainingGroups = h.remainingGroups[1:]
+	thisGroup := h.remainingGroups[h.nextGroupIdx]
+	h.nextGroupIdx++
 	defer func() {
 		// Reset the group before returning to the pool
 		thisGroup.lastInputSeriesIdx = 0
@@ -274,6 +331,16 @@ func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVector
 	}
 
 	return h.computeOutputSeriesForGroup(thisGroup)
+}
+
+// getMetricNameForSeries returns the metric name from innerSeriesMetricNames for the given series index.
+// If enableDelayedNameRemoval is not enabled, this func will return "" to maintain compatibility with Prometheus.
+func (h *HistogramFunction) getMetricNameForSeries(seriesIndex int) string {
+	if h.enableDelayedNameRemoval {
+		return h.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex)
+	} else {
+		return intentionallyEmptyMetricName
+	}
 }
 
 // accumulateUntilGroupComplete gathers all the series associated with the given bucketGroup
@@ -324,7 +391,7 @@ func (h *HistogramFunction) saveFloatsToGroup(fPoints []promql.FPoint, le string
 	if err != nil {
 		// The le label was invalid. Record it:
 		h.annotations.Add(annotations.NewBadBucketLabelWarning(
-			h.innerSeriesMetricNames.GetMetricNameForSeries(h.currentInnerSeriesIndex),
+			h.getMetricNameForSeries(g.lastInputSeriesIdx),
 			le,
 			h.inner.ExpressionPosition(),
 		))
@@ -405,7 +472,7 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 			// At this data point, we have classic histogram buckets and a native histogram with the same name and labels.
 			// No value is returned, so emit an annotation and continue.
 			h.annotations.Add(annotations.NewMixedClassicNativeHistogramsWarning(
-				h.innerSeriesMetricNames.GetMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition(),
+				h.getMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition(),
 			))
 			continue
 		}
@@ -465,11 +532,35 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 }
 
 func (h *HistogramFunction) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := h.f.Prepare(ctx, params)
-	if err != nil {
+	if err := h.f.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return h.inner.Prepare(ctx, params)
+}
+
+func (h *HistogramFunction) AfterPrepare(ctx context.Context) error {
+	if err := h.f.AfterPrepare(ctx); err != nil {
+		return err
+	}
+
+	return h.inner.AfterPrepare(ctx)
+}
+
+func (h *HistogramFunction) Finalize(ctx context.Context) error {
+	seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
+	bucketGroupPointerSlicePool.Put(&h.remainingGroups, h.memoryConsumptionTracker)
+	h.nextGroupIdx = 0
+
+	if err := h.f.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return h.inner.Finalize(ctx)
+}
+
+func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, h.f, h.inner)
 }
 
 func (h *HistogramFunction) Close() {
@@ -504,6 +595,9 @@ type histogramFunction interface {
 	ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64
 	ComputeNativeHistogramResult(pointIndex int, seriesIndex int, h *histogram.FloatHistogram) (float64, annotations.Annotations)
 	Prepare(ctx context.Context, params *types.PrepareParams) error
+	AfterPrepare(ctx context.Context) error
+	Finalize(ctx context.Context) error
+	Stats(ctx context.Context) (*types.OperatorEvaluationStats, error)
 	Close()
 }
 
@@ -515,6 +609,7 @@ type histogramQuantile struct {
 	annotations              *annotations.Annotations
 	innerSeriesMetricNames   *operators.MetricNames
 	innerExpressionPosition  posrange.PositionRange
+	enableDelayedNameRemoval bool
 }
 
 func (q *histogramQuantile) LoadArguments(ctx context.Context) error {
@@ -537,33 +632,57 @@ func (q *histogramQuantile) LoadArguments(ctx context.Context) error {
 	return nil
 }
 
+// getMetricNameForSeries returns the metric name from innerSeriesMetricNames for the given series index.
+// If enableDelayedNameRemoval is not enabled, this func will return "" to maintain compatibility with Prometheus.
+func (q *histogramQuantile) getMetricNameForSeries(seriesIndex int) string {
+	if q.enableDelayedNameRemoval {
+		return q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex)
+	} else {
+		return intentionallyEmptyMetricName
+	}
+}
+
 func (q *histogramQuantile) ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64 {
 	ph := q.phValues.Samples[pointIndex].F
-	res, forcedMonotonicity, _ := promql.BucketQuantile(ph, buckets)
+	quantile, forcedMonotonicity, _, _, _, _ := promql.BucketQuantile(ph, buckets)
 
 	if forcedMonotonicity {
+		// Set the last few values to 0 to use original version of histogram quantile info
+		// annotations for now until merging annotations is fully supported in MQE.
 		q.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
-			q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex),
+			q.getMetricNameForSeries(seriesIndex),
 			q.innerExpressionPosition,
+			0, 0, 0, 0,
 		))
 	}
 
-	return res
+	return quantile
 }
 
 func (q *histogramQuantile) ComputeNativeHistogramResult(pointIndex int, seriesIndex int, h *histogram.FloatHistogram) (float64, annotations.Annotations) {
 	ph := q.phValues.Samples[pointIndex].F
-	return promql.HistogramQuantile(ph, h, q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex), q.innerExpressionPosition)
+	return promql.HistogramQuantile(ph, h, q.getMetricNameForSeries(seriesIndex), q.innerExpressionPosition)
 }
 
 func (q *histogramQuantile) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return q.phArg.Prepare(ctx, params)
 }
 
+func (q *histogramQuantile) AfterPrepare(ctx context.Context) error {
+	return q.phArg.AfterPrepare(ctx)
+}
+
+func (q *histogramQuantile) Finalize(ctx context.Context) error {
+	types.FPointSlicePool.Put(&q.phValues.Samples, q.memoryConsumptionTracker)
+	return q.phArg.Finalize(ctx)
+}
+
+func (q *histogramQuantile) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return q.phArg.Stats(ctx)
+}
+
 func (q *histogramQuantile) Close() {
 	q.phArg.Close()
-
-	types.FPointSlicePool.Put(&q.phValues.Samples, q.memoryConsumptionTracker)
 }
 
 type histogramFraction struct {
@@ -614,10 +733,31 @@ func (f *histogramFraction) Prepare(ctx context.Context, params *types.PreparePa
 	return f.upperArg.Prepare(ctx, params)
 }
 
+func (f *histogramFraction) AfterPrepare(ctx context.Context) error {
+	err := f.lowerArg.AfterPrepare(ctx)
+	if err != nil {
+		return err
+	}
+	return f.upperArg.AfterPrepare(ctx)
+}
+
+func (f *histogramFraction) Finalize(ctx context.Context) error {
+	types.FPointSlicePool.Put(&f.lowerValues.Samples, f.memoryConsumptionTracker)
+	types.FPointSlicePool.Put(&f.upperValues.Samples, f.memoryConsumptionTracker)
+
+	err := f.lowerArg.Finalize(ctx)
+	if err != nil {
+		return err
+	}
+
+	return f.upperArg.Finalize(ctx)
+}
+
+func (f *histogramFraction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, f.lowerArg, f.upperArg)
+}
+
 func (f *histogramFraction) Close() {
 	f.lowerArg.Close()
 	f.upperArg.Close()
-
-	types.FPointSlicePool.Put(&f.lowerValues.Samples, f.memoryConsumptionTracker)
-	types.FPointSlicePool.Put(&f.upperValues.Samples, f.memoryConsumptionTracker)
 }

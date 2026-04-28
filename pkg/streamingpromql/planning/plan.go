@@ -3,11 +3,14 @@
 package planning
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -15,15 +18,74 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type QueryPlan struct {
-	TimeRange types.QueryTimeRange
-	Root      Node
+type QueryPlanVersion uint64
 
-	OriginalExpression string
+func (v QueryPlanVersion) String() string {
+	return strconv.FormatUint(uint64(v), 10)
+}
+
+// IMPORTANT:
+// Do not change the value or meaning of these constants once they have been merged.
+// Doing so could result in queriers receiving query plans they don't understand, which could
+// lead to errors or silently incorrect behaviour or results.
+
+const QueryPlanVersionZero = QueryPlanVersion(0)
+
+// QueryPlanV1 introduces:
+// 1. DropName node
+// 2. StepInvariantExpression node
+const QueryPlanV1 = QueryPlanVersion(1)
+
+// QueryPlanV2 introduces support for limitk and limit_ratio PromQL aggregates
+const QueryPlanV2 = QueryPlanVersion(2)
+
+// QueryPlanV3 introduces support for evaluating multiple query plan nodes in a single querier request.
+const QueryPlanV3 = QueryPlanVersion(3)
+
+// QueryPlanV4 introduces support for evaluating smoothed and anchored extended range modifiers.
+const QueryPlanV4 = QueryPlanVersion(4)
+
+// QueryPlanV5 introduces support for multi-aggregation nodes.
+const QueryPlanV5 = QueryPlanVersion(5)
+
+// QueryPlanV6 introduces support for query splitting with intermediate result caching.
+const QueryPlanV6 = QueryPlanVersion(6)
+
+// QueryPlanV7 introduces support for subset selector elimination.
+const QueryPlanV7 = QueryPlanVersion(7)
+
+// QueryPlanV8 introduces support for subset selector elimination in multi-aggregation nodes.
+const QueryPlanV8 = QueryPlanVersion(8)
+
+// QueryPlanV9 introduces the NoOp node.
+const QueryPlanV9 = QueryPlanVersion(9)
+
+// QueryPlanV10 introduces a matrix variant of the NoOp node.
+const QueryPlanV10 = QueryPlanVersion(10)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV10
+
+type QueryPlan struct {
+	Root       Node
+	Parameters *QueryParameters
+
+	// The version of this query plan.
+	//
+	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
+	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
+	Version QueryPlanVersion
+}
+
+type QueryParameters struct {
+	OriginalExpression       string
+	TimeRange                types.QueryTimeRange
+	EnableDelayedNameRemoval bool
+	LookbackDelta            time.Duration
 }
 
 // Node represents a node in the query plan graph.
@@ -34,28 +96,43 @@ type Node interface {
 	// NodeType returns the identifier of this node that should be used during serialization.
 	NodeType() NodeType
 
-	// Children returns a slice of all children of this node, if any.
+	// Child returns the child at index idx.
 	//
-	// Modifying the returned slice has no effect, however, modifying the elements of the returned slice
-	// modifies the corresponding child of this node.
+	// Children are returned in the same order as they are provided to SetChildren and ReplaceChild.
 	//
-	// eg. Children()[0] = nil has no effect
-	//
-	// eg. Children()[0].DoStuff = true modifies the first child of this node
-	Children() []Node
+	// Child panics if idx is out of range. The number of children can be determined by calling ChildCount.
+	Child(idx int) Node
+
+	// ChildCount returns the number of children of this node.
+	ChildCount() int
 
 	// SetChildren replaces the children of this node with the provided nodes.
 	//
 	// SetChildren will return an error if an unsupported number of children is provided.
-	//
-	// Calling SetChildren(Children()) is a no-op.
 	SetChildren(children []Node) error
 
-	// EquivalentTo returns true if other represents the same operation as this node.
+	// ReplaceChild replaces the child at index idx with the provided node.
+	//
+	// idx is zero-based and counts in the same order as ChildrenIter and SetChildren.
+	//
+	// ReplaceChild will return an error if idx is out of range.
+	ReplaceChild(idx int, child Node) error
+
+	// EquivalentToIgnoringHintsAndChildren returns true if other represents the same operation as this node.
+	//
+	// The equivalence of child nodes should not be considered when determining equivalence
 	//
 	// Information such as the position of the corresponding expression in the original query string
-	// should be ignored.
-	EquivalentTo(other Node) bool
+	// or hints should not be considered when determining equivalence.
+	EquivalentToIgnoringHintsAndChildren(other Node) bool
+
+	// MergeHints merges any hints from other into this node.
+	//
+	// It does not apply this recursively to its children.
+	//
+	// Calling MergeHints with two nodes that are different types or not equivalent may result
+	// in an error or undefined behavior.
+	MergeHints(other Node) error
 
 	// Describe returns a human-readable representation of this node.
 	//
@@ -85,13 +162,32 @@ type Node interface {
 	// and its children.
 	//
 	// If no data is queried by this node and its children, QueriedTimeRange.AnyDataQueried will be false.
-	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange
+	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (QueriedTimeRange, error)
 
 	// ExpressionPosition returns the position of the subexpression this node represents in the original
 	// expression.
-	ExpressionPosition() posrange.PositionRange
+	ExpressionPosition() (posrange.PositionRange, error)
+
+	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes this node.
+	// It does not consider the query plan version required by any of its children (for that, use planning.MinimumRequiredPlanVersion).
+	MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (QueryPlanVersion, error)
 
 	// FIXME: implementations for many of the above methods can be generated automatically
+}
+
+// ChildrenIter returns an iterator over all children of n.
+//
+// Children are returned in the same order as they are provided to SetChildren and ReplaceChild.
+func ChildrenIter(n Node) func(func(Node) bool) {
+	return func(yield func(Node) bool) {
+		count := n.ChildCount()
+
+		for idx := range count {
+			if !yield(n.Child(idx)) {
+				return
+			}
+		}
+	}
 }
 
 type QueriedTimeRange struct {
@@ -144,28 +240,120 @@ type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
-	LookbackDelta            time.Duration
+	QueryStats               *types.QueryStats
 	EagerLoadSelectors       bool
+	QueryParameters          *QueryParameters
+	Logger                   log.Logger
 }
 
-func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
+// RangeParams describes the time range parameters for range vector selectors and subqueries.
+// It includes the range duration (e.g., [5m]) and optional time modifiers (offset and @ timestamp).
+type RangeParams struct {
+	IsSet  bool
+	Range  time.Duration
+	Offset time.Duration
+	// Timestamp is a non-pointer value with HasTimestamp flag to make RangeParams
+	// suitable for use as a map key in OperatorFactoryKey.
+	HasTimestamp bool
+	Timestamp    time.Time
+}
+
+// SplitNode represents a planning node that supports range vector splitting with intermediate result caching.
+// Nodes implementing this interface can be split into sub-ranges for parallel execution and caching.
+type SplitNode interface {
+	Node
+
+	// IsSplittable returns true if the node can actually be split. While a node satisfying this interface can usually
+	// be split, there might be some edge cases where it's not possible or not implemented yet.
+	IsSplittable() bool
+
+	// SplittingCacheKey returns a cache key for this node's intermediate results.
+	SplittingCacheKey() string
+
+	GetRangeParams() RangeParams
+}
+
+// ToEncodedPlan converts this query plan to its encoded form.
+//
+// If nodes is not empty:
+// - only nodes reachable from the provided nodes will be encoded
+// - the corresponding indices in the encoded plan for the provided nodes will be returned
+// - RootNode on the returned plan will not be populated
+//
+// If nodes is empty:
+// - all nodes reachable from the plan's root will be encoded
+// - the corresponding index in the encoded plan for the root node will be returned
+// - RootNode on the returned plan will be populated
+func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool, nodes ...Node) (*EncodedQueryPlan, []int64, error) {
 	encoder := newQueryPlanEncoder(includeDescriptions, includeDetails)
-	rootNode, err := encoder.encodeNode(p.Root)
-	if err != nil {
-		return nil, err
-	}
 
 	encoded := &EncodedQueryPlan{
-		TimeRange:          toEncodedTimeRange(p.TimeRange),
-		Nodes:              encoder.nodes,
-		RootNode:           rootNode,
-		OriginalExpression: p.OriginalExpression,
+		TimeRange:                ToEncodedTimeRange(p.Parameters.TimeRange),
+		OriginalExpression:       p.Parameters.OriginalExpression,
+		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
+		LookbackDelta:            p.Parameters.LookbackDelta,
+		Version:                  p.Version,
 	}
 
-	return encoded, nil
+	var encodedNodeIndices []int64
+
+	if len(nodes) > 0 {
+		encodedNodeIndices = make([]int64, 0, len(nodes))
+
+		for _, n := range nodes {
+			idx, err := encoder.encodeNode(n)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			encodedNodeIndices = append(encodedNodeIndices, idx)
+		}
+	} else {
+		idx, err := encoder.encodeNode(p.Root)
+		if err != nil {
+			return nil, nil, err
+		}
+		encoded.RootNode = idx
+		encodedNodeIndices = []int64{idx}
+	}
+
+	encoded.Nodes = encoder.nodes
+
+	return encoded, encodedNodeIndices, nil
 }
 
-func toEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
+// DeterminePlanVersion will set the plan Version to the largest MinimumRequiredPlanVersion found within the plan nodes.
+func (p *QueryPlan) DeterminePlanVersion() error {
+	if p.Root == nil {
+		return errors.New("query plan version can not be determined without a root node")
+	}
+
+	var err error
+	p.Version, err = MinimumRequiredPlanVersion(p.Root, p.Parameters.TimeRange)
+	return err
+}
+
+// MinimumRequiredPlanVersion returns the minimum required query plan version of node and all its children.
+func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (QueryPlanVersion, error) {
+	maxVersion, err := node.MinimumRequiredPlanVersion(timeRange)
+	if err != nil {
+		return 0, err
+	}
+
+	childTimeRange := node.ChildrenTimeRange(timeRange)
+	for child := range ChildrenIter(node) {
+		childVersion, err := MinimumRequiredPlanVersion(child, childTimeRange)
+		if err != nil {
+			return 0, err
+		}
+
+		maxVersion = max(maxVersion, childVersion)
+	}
+
+	return maxVersion, nil
+}
+
+func ToEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
 	return EncodedQueryTimeRange{
 		StartT:               t.StartT,
 		EndT:                 t.EndT,
@@ -198,23 +386,22 @@ func newQueryPlanEncoder(includeDescriptions bool, includeDetails bool) *queryPl
 }
 
 func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
-	encoded := &EncodedNode{}
-	children := n.Children()
+	if idx, haveWritten := e.nodesToIndex[n]; haveWritten {
+		return idx, nil
+	}
 
-	if len(children) > 0 {
-		childIndices := make([]int64, 0, len(children))
+	encoded := &EncodedNode{}
+	childCount := n.ChildCount()
+
+	if childCount > 0 {
+		childIndices := make([]int64, 0, childCount)
 
 		// Check all children have been encoded already.
-		for _, child := range children {
-			idx, haveWritten := e.nodesToIndex[child]
-
-			if !haveWritten {
-				var err error
-				idx, err = e.encodeNode(child)
-
-				if err != nil {
-					return -1, err
-				}
+		for childIdx := range childCount {
+			child := n.Child(childIdx)
+			idx, err := e.encodeNode(child)
+			if err != nil {
+				return -1, err
 			}
 
 			childIndices = append(childIndices, idx)
@@ -252,34 +439,33 @@ func NodeTypeName(n Node) string {
 	return reflect.TypeOf(n).Elem().Name()
 }
 
-// ToDecodedPlan converts this encoded plan to its decoded form.
-// It returns references to the specified nodeIndices.
-func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []Node, error) {
-	if p.RootNode < 0 || p.RootNode >= int64(len(p.Nodes)) {
-		return nil, nil, fmt.Errorf("root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
+// DecodeNodes decodes nodes for the provided nodeIndices from the encoded plan.
+func (p *EncodedQueryPlan) DecodeNodes(nodeIndices ...int64) ([]Node, error) {
+	if p.Version > MaximumSupportedQueryPlanVersion {
+		return nil, apierror.Newf(apierror.TypeBadData, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)
-	root, err := decoder.decodeNode(p.RootNode)
-
-	if err != nil {
-		return nil, nil, err
-	}
 
 	nodes := make([]Node, 0, len(nodeIndices))
 	for _, idx := range nodeIndices {
 		n, err := decoder.decodeNode(idx)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		nodes = append(nodes, n)
 	}
 
-	return &QueryPlan{
-		TimeRange:          p.TimeRange.ToDecodedTimeRange(),
-		Root:               root,
-		OriginalExpression: p.OriginalExpression,
-	}, nodes, nil
+	return nodes, nil
+}
+
+func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
+	return &QueryParameters{
+		OriginalExpression:       p.OriginalExpression,
+		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
+		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		LookbackDelta:            p.LookbackDelta,
+	}
 }
 
 type queryPlanDecoder struct {
@@ -385,7 +571,7 @@ func (p *planPrinter) identifyRepeatedNodes(n Node) {
 		return
 	}
 
-	for _, child := range n.Children() {
+	for child := range ChildrenIter(n) {
 		p.identifyRepeatedNodes(child)
 	}
 }
@@ -423,9 +609,8 @@ func (p *planPrinter) printNode(n Node, indent int, label string) {
 	}
 
 	p.builder.WriteRune('\n')
-	childLabels := n.ChildrenLabels()
 
-	for childIdx, child := range n.Children() {
-		p.printNode(child, indent+1, childLabels[childIdx])
+	for childIdx, label := range n.ChildrenLabels() {
+		p.printNode(n.Child(childIdx), indent+1, label)
 	}
 }

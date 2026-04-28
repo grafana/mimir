@@ -6,6 +6,7 @@
 package indexheader
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -30,6 +31,7 @@ import (
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -75,6 +77,90 @@ func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 	})
+}
+
+// TestNewaLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore tests if StreamBinaryReader uses
+// a sparse index header that's already present in the object store instead of recreating it.
+func TestNewLazyStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
+	const samplingRate = 32
+	ctx := context.Background()
+	logger := log.NewLogfmtLogger(os.Stderr)
+
+	tmpDir := filepath.Join(t.TempDir(), "test-sparse-headers-from-objstore")
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	bkt := objstore.WithNoopInstr(ubkt)
+
+	t.Cleanup(func() {
+		require.NoError(t, bkt.Close())
+		require.NoError(t, ubkt.Close())
+	})
+
+	// Create block with sample data
+	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("b", "3"),
+	}, 100, 0, 1000, labels.EmptyLabels())
+	require.NoError(t, err)
+
+	// Upload block to bucket
+	_, err = block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	require.NoError(t, err)
+
+	// First, create a StreamBinaryReader to generate the sparse header file
+	origReader, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
+	require.NoError(t, err)
+	require.NoError(t, origReader.Close())
+
+	// Get the generated sparse header file path
+	sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
+
+	// Read the sparse header file content and save its size
+	originalSparseData, err := os.ReadFile(sparseHeadersPath)
+	require.NoError(t, err)
+	originalSparseHeader, err := unzipSparseHeader(originalSparseData, logger)
+	require.NoError(t, err)
+
+	// Delete the local sparse header file to ensure we'll need to get it from the object store
+	require.NoError(t, os.Remove(sparseHeadersPath))
+
+	// Delete the local block directory to ensure nothing is read from local disk
+	require.NoError(t, os.RemoveAll(filepath.Join(tmpDir, blockID.String())))
+
+	// Upload the sparse header directly to the object store
+	sparseHeaderObjPath := filepath.Join(blockID.String(), block.SparseIndexHeaderFilename)
+	require.NoError(t, bkt.Upload(ctx, sparseHeaderObjPath, bytes.NewReader(originalSparseData)))
+
+	// Create a bucket that can track downloads and verify content
+	trackedBkt := &trackedBucket{
+		InstrumentedBucketReader: bkt,
+	}
+
+	factory := func() (Reader, error) {
+		return NewStreamBinaryReader(ctx, blockID, trackedBkt, tmpDir, Config{}, samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
+	}
+
+	// Create a new StreamBinaryReader - it should use the sparse header from the object store
+	newReader, err := NewLazyBinaryReader(ctx, Config{}, factory, logger, trackedBkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	require.NoError(t, err)
+	defer newReader.Close()
+
+	// The sparse header file should have been downloaded from object store
+	require.True(t, trackedBkt.getWasCalled, "The sparse header file should have been requested from the bucket")
+	require.Equal(t, sparseHeaderObjPath, trackedBkt.downloadedPath, "The correct path should have been downloaded")
+
+	// Verify that the sparse header file exists locally
+	newSparseData, err := os.ReadFile(sparseHeadersPath)
+	require.NoError(t, err)
+	newSparseHeader, err := unzipSparseHeader(newSparseData, logger)
+	require.NoError(t, err)
+	require.Equal(t, originalSparseHeader, newSparseHeader, "Downloaded file should have the same size as the original")
+
+	// Check that the reader is functional by performing a label names query
+	labelNames, err := newReader.LabelNames(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"a", "b"}, labelNames)
 }
 
 func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
@@ -201,7 +287,8 @@ func initBucketAndBlocksForTest(t testing.TB) (string, objstore.InstrumentedBuck
 		labels.FromStrings("a", "3"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	require.NoError(t, err)
 	return tmpDir, bkt, blockID
 }
 
@@ -209,10 +296,10 @@ func testLazyBinaryReader(t *testing.T, bkt objstore.InstrumentedBucketReader, d
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 	factory := func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+		return NewStreamBinaryReader(ctx, id, bkt, dir, Config{}, 3, logger, NewStreamBinaryReaderMetrics(nil))
 	}
 
-	reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	reader, err := NewLazyBinaryReader(ctx, Config{}, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, reader.Close()) })
 	}
@@ -256,7 +343,7 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 
 	for i := 0; i < numLazyReader; i++ {
 		var err error
-		lazyReaders[i], err = NewLazyBinaryReader(context.Background(), factory, logger, bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+		lazyReaders[i], err = NewLazyBinaryReader(context.Background(), Config{}, factory, logger, bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 		require.NoError(t, err)
 		readerToClose := lazyReaders[i]
 		t.Cleanup(func() { require.NoError(t, readerToClose.Close()) })
@@ -290,7 +377,7 @@ func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
 	factory := func() (Reader, error) { return nil, errors.New("error") }
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	lazyReader, err := NewLazyBinaryReader(context.Background(), Config{}, factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
 
@@ -383,7 +470,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading(t
 	}
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	lazyReader, err := NewLazyBinaryReader(context.Background(), Config{}, factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
 
@@ -430,7 +517,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_L
 	}
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	lazyReader, err := NewLazyBinaryReader(context.Background(), Config{}, factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
@@ -483,7 +570,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_N
 	}
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	lazyReader, err := NewLazyBinaryReader(context.Background(), Config{}, factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
 
 	require.NoError(t, err)
@@ -553,7 +640,7 @@ func BenchmarkNewLazyBinaryReader(b *testing.B) {
 		return reader, nil
 	}
 
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	lazyReader, err := NewLazyBinaryReader(context.Background(), Config{}, factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -576,4 +663,127 @@ func BenchmarkNewLazyBinaryReader(b *testing.B) {
 			wg.Wait()
 		})
 	}
+}
+
+// BenchmarkLazyBinaryReader_LoadReader benchmarks the cost of the index header Reader when it is finally loaded.
+// With lazy-loading enabled, the Readers are not fully initialized until they are first queried,
+// which incurs different costs depending on the Reader implementation.
+func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
+	ctx := context.Background()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	instrBkt := objstore.WithNoopInstr(bkt)
+	b.Cleanup(func() {
+		require.NoError(b, bkt.Close())
+	})
+
+	// Each benchmark iteration requires a fresh LazyBinaryReader.
+	// Re-using the same lazy reader will not incur the cost of initializing the underlying Reader implementations.
+	type benchFactory func(*bucketcache.CachingBucket, *prometheus.Registry) *LazyBinaryReader
+
+	for _, nameCount := range []int{50, 100} {
+		for _, valueCount := range []int{100, 500, 1000} {
+			nameSymbols := generateSymbols("name", nameCount)
+			valueSymbols := generateSymbols("value", valueCount)
+
+			idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+			require.NoError(b, err)
+			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+			require.NoError(b, err)
+
+			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+
+			diskReaderBenchFactory := func(
+				cachingBucket *bucketcache.CachingBucket,
+				bktReg *prometheus.Registry,
+			) *LazyBinaryReader {
+				ll := log.NewNopLogger()
+				diskReaderFactory := func() (Reader, error) {
+					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, Config{}, 32, ll, NewStreamBinaryReaderMetrics(nil))
+				}
+				lazyReader, err := NewLazyBinaryReader(
+					ctx, Config{},
+					diskReaderFactory, ll, cachingBucket, bucketDir, idIndexV2,
+					NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop(),
+				)
+				require.NoError(b, err)
+
+				return lazyReader
+			}
+
+			splitReaderBenchFactory := func(
+				cachingBucket *bucketcache.CachingBucket,
+				bktReg *prometheus.Registry,
+			) *LazyBinaryReader {
+				ll := log.NewNopLogger()
+				splitReaderCfg := Config{
+					BucketReader: BucketReaderConfig{
+						Enabled:             true,
+						BucketIndexSections: SectionPostingsOffsetsTable,
+					},
+				}
+				splitReaderFactory := func() (Reader, error) {
+					return NewStreamBinaryReader(ctx, idIndexV2, cachingBucket, bucketDir, splitReaderCfg, 32, ll, NewStreamBinaryReaderMetrics(nil))
+				}
+				lazyReader, err := NewLazyBinaryReader(
+					ctx, splitReaderCfg,
+					splitReaderFactory, ll, cachingBucket, bucketDir, idIndexV2,
+					NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop(),
+				)
+				require.NoError(b, err)
+
+				return lazyReader
+			}
+
+			benchFactories := []struct {
+				name    string
+				factory benchFactory
+			}{
+				{"disk", diskReaderBenchFactory},
+				{"split", splitReaderBenchFactory},
+			}
+			b.ResetTimer()
+			for _, benchFactory := range benchFactories {
+				b.Run(fmt.Sprintf("Names=%d/Values=%d/Reader=%s", len(nameSymbols), len(valueSymbols), benchFactory.name), func(b *testing.B) {
+					b.ReportAllocs()
+
+					for i := 0; i < b.N; i++ {
+						b.StopTimer()
+						cfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
+						bktReg := prometheus.NewPedanticRegistry()
+
+						metricsBkt := objstore.WrapWithMetrics(instrBkt, prometheus.WrapRegistererWithPrefix("thanos_", bktReg), "")
+						cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bktReg)
+						require.NoError(b, err)
+
+						// Time remains stopped while lazy reader is initialized;
+						// we only want to measure the cost of when the actual lazy load occurs later.
+						lazyReader := benchFactory.factory(cachingBucket, bktReg)
+
+						// CachingBucket metrics are re-used between iterations; record baseline for later diff.
+						baselineMetrics := test.RecordBucketMetrics(b, bktReg, []string{"get", "get_range"})
+						b.StartTimer()
+
+						reader, err := lazyReader.loadReader()
+						require.NoError(b, err)
+
+						b.StopTimer()
+
+						err = reader.Close()
+						require.NoError(b, err)
+						err = lazyReader.Close()
+						require.NoError(b, err)
+
+						metricsDiff := test.RecordBucketMetricsDiff(b, bktReg, []string{"get", "get_range"}, baselineMetrics)
+						test.ReportBucketMetrics(b, metricsDiff)
+					}
+
+				})
+			}
+		}
+	}
+
 }

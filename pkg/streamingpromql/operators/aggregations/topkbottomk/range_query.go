@@ -52,12 +52,12 @@ type RangeQuery struct {
 
 var _ types.InstantVectorOperator = &RangeQuery{}
 
-func (t *RangeQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (t *RangeQuery) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := t.getK(ctx); err != nil {
 		return nil, err
 	}
 
-	innerSeries, err := t.Inner.SeriesMetadata(ctx)
+	innerSeries, err := t.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -423,10 +423,14 @@ func (t *RangeQuery) Prepare(ctx context.Context, params *types.PrepareParams) e
 	return t.Param.Prepare(ctx, params)
 }
 
-func (t *RangeQuery) Close() {
-	t.Inner.Close()
-	t.Param.Close()
+func (t *RangeQuery) AfterPrepare(ctx context.Context) error {
+	if err := t.Inner.AfterPrepare(ctx); err != nil {
+		return err
+	}
+	return t.Param.AfterPrepare(ctx)
+}
 
+func (t *RangeQuery) Finalize(ctx context.Context) error {
 	types.Int64SlicePool.Put(&t.k, t.MemoryConsumptionTracker)
 
 	if t.currentGroup != nil {
@@ -439,6 +443,21 @@ func (t *RangeQuery) Close() {
 	}
 
 	t.remainingGroups = nil
+
+	if err := t.Inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return t.Param.Finalize(ctx)
+}
+
+func (t *RangeQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, t.Inner, t.Param)
+}
+
+func (t *RangeQuery) Close() {
+	t.Inner.Close()
+	t.Param.Close()
 }
 
 type rangeQueryGroup struct {

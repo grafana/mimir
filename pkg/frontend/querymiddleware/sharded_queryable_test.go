@@ -23,10 +23,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestShardedQuerier_Select(t *testing.T) {
 	ctx := context.Background()
+	p := promqlext.NewPromQLParser()
+
 	var testExpr = []struct {
 		name    string
 		querier *shardedQuerier
@@ -65,7 +68,9 @@ func TestShardedQuerier_Select(t *testing.T) {
 					},
 				)
 
-				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(`http_requests_total{cluster="prod"}`, nil)})
+				expr, err := p.ParseExpr(`http_requests_total{cluster="prod"}`)
+				require.NoError(t, err)
+				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(expr, nil)})
 				require.Nil(t, err)
 				set := q.Select(
 					ctx,
@@ -86,7 +91,9 @@ func TestShardedQuerier_Select(t *testing.T) {
 				nil,
 			)),
 			fn: func(t *testing.T, q *shardedQuerier) {
-				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(`http_requests_total{cluster="prod"}`, nil)})
+				expr, err := p.ParseExpr(`http_requests_total{cluster="prod"}`)
+				require.NoError(t, err)
+				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(expr, nil)})
 				require.Nil(t, err)
 				set := q.Select(
 					ctx,
@@ -143,7 +150,9 @@ func TestShardedQuerier_Select(t *testing.T) {
 				nil,
 			)),
 			fn: func(t *testing.T, q *shardedQuerier) {
-				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(`http_requests_total{cluster="prod"}`, nil)})
+				expr, err := p.ParseExpr(`http_requests_total{cluster="prod"}`)
+				require.NoError(t, err)
+				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(expr, nil)})
 				require.Nil(t, err)
 				set := q.Select(
 					ctx,
@@ -212,7 +221,9 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 
 	embeddedQueries := make([]astmapper.EmbeddedQuery, len(embeddedQueriesRaw))
 	for i, query := range embeddedQueriesRaw {
-		embeddedQueries[i] = astmapper.NewEmbeddedQuery(query, nil)
+		expr, err := promqlext.NewPromQLParser().ParseExpr(query)
+		require.NoError(t, err)
+		embeddedQueries[i] = astmapper.NewEmbeddedQuery(expr, nil)
 	}
 
 	ctx := context.Background()

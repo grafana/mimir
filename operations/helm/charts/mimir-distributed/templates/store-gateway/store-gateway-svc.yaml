@@ -1,4 +1,4 @@
-{{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.store_gateway.enabled }}
 {{- $args := dict "ctx" $ "component" "store-gateway" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
@@ -24,6 +24,9 @@ spec:
   type: {{ .Values.store_gateway.service.type }}
   {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
   internalTrafficPolicy: {{ .Values.store_gateway.service.internalTrafficPolicy }}
+  {{- end }}
+  {{- if .Values.store_gateway.service.trafficDistribution }}
+  trafficDistribution: {{ .Values.store_gateway.service.trafficDistribution }}
   {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" . }}

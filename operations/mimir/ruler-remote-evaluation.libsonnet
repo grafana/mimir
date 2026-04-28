@@ -15,10 +15,15 @@
   local useRulerQueryFrontend = $._config.ruler_remote_evaluation_enabled && !$._config.ruler_remote_evaluation_migration_enabled,
 
   ruler_args+:: if !useRulerQueryFrontend then {} else {
-    'ruler.query-frontend.address': 'dns:///ruler-query-frontend.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
+    // Note: We use a headless service because the ruler uses gRPC load balancing.
+    'ruler.query-frontend.address': 'dns:///ruler-query-frontend-headless.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
 
     // The ruler send a query request to the ruler-query-frontend.
     'ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
+  },
+
+  local rulerQuerierRingArgs = {
+    'querier.ring.prefix': 'ruler-querier/',
   },
 
   local container = $.core.v1.container,
@@ -33,10 +38,12 @@
     $.querier_args +
     $.querierUseQuerySchedulerArgs(rulerQuerySchedulerName) + {
       'querier.max-concurrent': $._config.ruler_querier_max_concurrency,
-    } + if !useRulerQueryFrontend then {} else {
-      // The ruler-querier sends a query response back to the ruler-query-frontend
-      'querier.frontend-client.grpc-max-send-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
-    },
+    } +
+    (if !useRulerQueryFrontend then {} else {
+       // The ruler-querier sends a query response back to the ruler-query-frontend
+       'querier.frontend-client.grpc-max-send-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
+     }) +
+    rulerQuerierRingArgs,
 
   ruler_querier_env_map:: $.querier_env_map {
     // Do not dynamically set GOMAXPROCS for ruler-querier. We don't expect ruler-querier resources
@@ -75,7 +82,11 @@
       'server.grpc-max-recv-msg-size-bytes': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
       // The ruler-query-frontend sends the query response back to the ruler.
       'server.grpc-max-send-msg-size-bytes': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
-    },
+
+      // The 100 default limit can be too low for large query frontends evaluating many rules.
+      'server.grpc-max-concurrent-streams': 300,
+    } +
+    rulerQuerierRingArgs,
 
   ruler_query_frontend_env_map:: $.query_frontend_env_map,
 
@@ -88,8 +99,11 @@
     $.newQueryFrontendDeployment('ruler-query-frontend', $.ruler_query_frontend_container, $.ruler_query_frontend_node_affinity_matchers),
 
   ruler_query_frontend_service: if !$._config.ruler_remote_evaluation_enabled then {} else
+    $.util.serviceFor($.ruler_query_frontend_deployment, $._config.service_ignored_labels),
+
+  ruler_query_frontend_headless_service: if !$._config.ruler_remote_evaluation_enabled then null else
     $.util.serviceFor($.ruler_query_frontend_deployment, $._config.service_ignored_labels) +
-    // Note: We use a headless service because the ruler uses gRPC load balancing.
+    service.mixin.metadata.withName('ruler-query-frontend-headless') +
     service.mixin.spec.withClusterIp('None'),
 
   ruler_query_frontend_pdb: if !$._config.ruler_remote_evaluation_enabled then null else

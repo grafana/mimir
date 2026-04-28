@@ -1,7 +1,11 @@
 package kprom
 
 import (
+	"maps"
+	"reflect"
+
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -13,9 +17,11 @@ type cfg struct {
 	gatherer prometheus.Gatherer
 
 	withClientLabel  bool
+	withConstLabels  prometheus.Labels
 	histograms       map[Histogram][]float64
 	defBuckets       []float64
 	fetchProduceOpts fetchProduceOpts
+	brokerLabels     []string
 
 	handlerOpts  promhttp.HandlerOpts
 	goCollectors bool
@@ -33,15 +39,16 @@ func newCfg(namespace string, opts ...Opt) cfg {
 			uncompressedBytes: true,
 			labels:            []string{"node_id", "topic"},
 		},
+		brokerLabels: []string{"node_id"},
 	}
 
 	for _, opt := range opts {
 		opt.apply(&cfg)
 	}
 
-	if cfg.goCollectors {
-		cfg.reg.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
-		cfg.reg.MustRegister(prometheus.NewGoCollector())
+	if cfg.goCollectors && cfg.reg != nil {
+		cfg.reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+		cfg.reg.MustRegister(collectors.NewGoCollector())
 	}
 
 	return cfg
@@ -64,10 +71,18 @@ type RegistererGatherer interface {
 // Registry sets the registerer and gatherer to add metrics to, rather than a
 // new registry. Use this option if you want to configure both Gatherer and
 // Registerer with the same object.
+// Additionally, passing a `nil`  RegistererGatherer allows registering an external registry,
+// exposing kprom as a custom prometheus collector, this option is mutually
+// exclusive with GoCollectors
 func Registry(rg RegistererGatherer) Opt {
 	return opt{func(c *cfg) {
-		c.reg = rg
-		c.gatherer = rg
+		if rg == nil || (reflect.ValueOf(rg).Kind() == reflect.Ptr && reflect.ValueOf(rg).IsNil()) {
+			c.reg = nil
+			c.gatherer = nil
+		} else {
+			c.reg = rg
+			c.gatherer = rg
+		}
 	}}
 }
 
@@ -82,7 +97,7 @@ func Gatherer(gatherer prometheus.Gatherer) Opt {
 }
 
 // GoCollectors adds the prometheus.NewProcessCollector and
-// prometheus.NewGoCollector collectors the the Metric's registry.
+// prometheus.NewGoCollector collectors the Metric's registry.
 func GoCollectors() Opt {
 	return opt{func(c *cfg) { c.goCollectors = true }}
 }
@@ -99,6 +114,13 @@ func HandlerOpts(opts promhttp.HandlerOpts) Opt {
 // WithClientLabel adds a "cliend_id" label to all metrics.
 func WithClientLabel() Opt {
 	return opt{func(c *cfg) { c.withClientLabel = true }}
+}
+
+// WithStaticLabel adds a static label to all metrics.
+func WithStaticLabel(labels prometheus.Labels) Opt {
+	return opt{func(c *cfg) {
+		c.withConstLabels = maps.Clone(labels)
+	}}
 }
 
 // Subsystem sets the subsystem for the kprom metrics, overriding the default
@@ -146,7 +168,7 @@ type HistogramOpts struct {
 //	 		Buckets: prometheus.LinearBuckets(10, 10, 8),
 //	 	},
 //	 	kprom.HistogramOpts{
-//	 		Enable: kprom.ReadeTime,
+//	 		Enable: kprom.ReadTime,
 //	 		// kprom default bucket will be used
 //	 	},
 //	 ),
@@ -176,7 +198,7 @@ func Histograms(hs ...Histogram) Opt {
 	return HistogramsFromOpts(hos...)
 }
 
-// A Detail is a label that can be set on fetch/produce metrics
+// A Detail is a label that can be set on fetch/produce metrics.
 type Detail uint8
 
 const (
@@ -230,4 +252,44 @@ func FetchAndProduceDetail(details ...Detail) Opt {
 			c.fetchProduceOpts.labels = labels
 		},
 	}
+}
+
+// A BrokerLabel is a label that can be set on broker-level metrics.
+type BrokerLabel uint8
+
+const (
+	BrokerNodeID BrokerLabel = iota // Include "node_id" label on broker metrics.
+	BrokerHost                      // Include "host" label on broker metrics.
+	BrokerRack                      // Include "rack" label on broker metrics.
+)
+
+// BrokerLabels configures which labels are included on broker-level
+// connection, read, write, and request metrics, overriding the default
+// of (BrokerNodeID).
+// Calling with no arguments removes all broker-level labels, aggregating
+// metrics across all brokers:
+//
+//	kprom.BrokerLabels( /* none */ )
+//
+// This is useful for reducing metrics cardinality in environments with many or
+// frequently changing broker IDs.
+func BrokerLabels(labels ...BrokerLabel) Opt {
+	return opt{func(c *cfg) {
+		seen := make(map[BrokerLabel]bool)
+		c.brokerLabels = nil
+		for _, l := range labels {
+			if seen[l] {
+				continue
+			}
+			seen[l] = true
+			switch l {
+			case BrokerNodeID:
+				c.brokerLabels = append(c.brokerLabels, "node_id")
+			case BrokerHost:
+				c.brokerLabels = append(c.brokerLabels, "host")
+			case BrokerRack:
+				c.brokerLabels = append(c.brokerLabels, "rack")
+			}
+		}
+	}}
 }

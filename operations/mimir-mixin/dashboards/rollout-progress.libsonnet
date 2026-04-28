@@ -22,7 +22,7 @@ local filename = 'mimir-rollout-progress.json';
     assert std.md5(filename) == '7f0b5567d543a1698e695b530eb7f5de' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Rollout progress') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
-    .addShowNativeLatencyVariable() + {
+    .addShowNativeLatencyVariable($.latencyVariableDefault()) + {
       // This dashboard uses the new grid system in order to place panels (using gridPos).
       // Because of this we can't use the mixin's addRow() and addPanel().
       schemaVersion: 27,
@@ -163,7 +163,7 @@ local filename = 'mimir-rollout-progress.json';
         // Writes
         //
         $.panel('Writes - 2xx') +
-        $.ncSumCountRateStatPanel(
+        $.ncSumCountRateRatioStatPanel(
           metric=config.requests_per_second_metric,
           selectors=config.write_job_selector,
           extra_selector=[utils.selector.re('status_code', '2.+')],
@@ -174,7 +174,7 @@ local filename = 'mimir-rollout-progress.json';
         },
 
         $.panel('Writes - 4xx') +
-        $.ncSumCountRateStatPanel(
+        $.ncSumCountRateRatioStatPanel(
           metric=config.requests_per_second_metric,
           selectors=config.write_job_selector,
           extra_selector=[utils.selector.re('status_code', '4.+')],
@@ -189,7 +189,7 @@ local filename = 'mimir-rollout-progress.json';
         },
 
         $.panel('Writes - 5xx') +
-        $.ncSumCountRateStatPanel(
+        $.ncSumCountRateRatioStatPanel(
           metric=config.requests_per_second_metric,
           selectors=config.write_job_selector,
           extra_selector=[utils.selector.re('status_code', '5.+')],
@@ -221,7 +221,7 @@ local filename = 'mimir-rollout-progress.json';
         // Reads
         //
         $.panel('Reads - 2xx') +
-        $.ncSumCountRateStatPanel(
+        $.ncSumCountRateRatioStatPanel(
           metric=config.requests_per_second_metric,
           selectors=config.read_job_selector,
           extra_selector=[utils.selector.re('status_code', '2.+')],
@@ -232,7 +232,7 @@ local filename = 'mimir-rollout-progress.json';
         },
 
         $.panel('Reads - 4xx') +
-        $.ncSumCountRateStatPanel(
+        $.ncSumCountRateRatioStatPanel(
           metric=config.requests_per_second_metric,
           selectors=config.read_job_selector,
           extra_selector=[utils.selector.re('status_code', '4.+')],
@@ -247,7 +247,7 @@ local filename = 'mimir-rollout-progress.json';
         },
 
         $.panel('Reads - 5xx') +
-        $.ncSumCountRateStatPanel(
+        $.ncSumCountRateRatioStatPanel(
           metric=config.requests_per_second_metric,
           selectors=config.read_job_selector,
           extra_selector=[utils.selector.re('status_code', '5.+')],

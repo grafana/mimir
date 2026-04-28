@@ -60,7 +60,6 @@ spec:
             - "-server.grpc.keepalive.max-connection-idle=1m"
             - "-shutdown-delay=90s"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}

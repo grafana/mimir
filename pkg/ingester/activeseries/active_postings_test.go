@@ -30,12 +30,11 @@ func TestPostings_Expand(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, nil)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, false, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime, nil)
-	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
-	require.True(t, valid)
+	activeSeries.Purge(mockedTime, nil)
+	allActive, _, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.Equal(t, 2, allActive)
 
 	activeSeriesPostings := NewPostings(activeSeries, storagePostings)
@@ -62,12 +61,11 @@ func TestPostings_Seek(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, nil)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, false, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime, nil)
-	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
-	require.True(t, valid)
+	activeSeries.Purge(mockedTime, nil)
+	allActive, _, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.Equal(t, 2, allActive)
 
 	activeSeriesPostings := NewPostings(activeSeries, storagePostings)
@@ -94,12 +92,11 @@ func TestPostings_SeekToEnd(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, nil)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, false, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime, nil)
-	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
-	require.True(t, valid)
+	activeSeries.Purge(mockedTime, nil)
+	allActive, _, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.Equal(t, 0, allActive)
 
 	activeSeriesPostings := NewPostings(activeSeries, storagePostings)

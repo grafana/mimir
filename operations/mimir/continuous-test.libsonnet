@@ -13,6 +13,7 @@ local k = import 'ksonnet-util/kausal.libsonnet';
   local deployment = k.apps.v1.deployment,
 
   continuous_test_args:: {
+    target: 'continuous-test',
     'tests.write-endpoint': $._config.continuous_test_write_endpoint,
     'tests.read-endpoint': $._config.continuous_test_read_endpoint,
     'tests.tenant-id': $._config.continuous_test_tenant_id,

@@ -22,16 +22,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"maps"
 	"math/rand"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/benbjohnson/clock"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/coder/quartz"
 	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/alertmanager/cluster"
 	pb "github.com/prometheus/alertmanager/nflog/nflogpb"
@@ -74,11 +76,105 @@ func QGroupKey(gk string) QueryParam {
 	}
 }
 
+// Store abstracts the NFLog's receiver data storage as a mutable key/value store. A store
+// can be generated from a nflogpb.Entry and then written via the call to Log.
+//
+// Every key in the Store is associated with either an int, float, or string value.
+type Store struct {
+	data map[string]*pb.ReceiverDataValue
+}
+
+// NewStore creates a Store from the entry's receiver data. If entry is nil, the resulting
+// Store is empty.
+func NewStore(entry *pb.Entry) *Store {
+	var receiverData map[string]*pb.ReceiverDataValue
+	if entry != nil {
+		receiverData = maps.Clone(entry.ReceiverData)
+	}
+	if receiverData == nil {
+		receiverData = make(map[string]*pb.ReceiverDataValue)
+	}
+	return &Store{
+		data: receiverData,
+	}
+}
+
+// GetInt finds the integer value associated with the key, if any, and returns it.
+func (s *Store) GetInt(key string) (int64, bool) {
+	dataValue, ok := s.data[key]
+	if !ok {
+		return 0, false
+	}
+	intVal, ok := dataValue.Value.(*pb.ReceiverDataValue_IntVal)
+	if !ok {
+		return 0, false
+	}
+	return intVal.IntVal, true
+}
+
+// GetFloat finds the float value associated with the key, if any, and returns it.
+func (s *Store) GetFloat(key string) (float64, bool) {
+	dataValue, ok := s.data[key]
+	if !ok {
+		return 0, false
+	}
+	floatVal, ok := dataValue.Value.(*pb.ReceiverDataValue_DoubleVal)
+	if !ok {
+		return 0, false
+	}
+	return floatVal.DoubleVal, true
+}
+
+// GetFloat finds the string value associated with the key, if any, and returns it.
+func (s *Store) GetStr(key string) (string, bool) {
+	dataValue, ok := s.data[key]
+	if !ok {
+		return "", false
+	}
+	strVal, ok := dataValue.Value.(*pb.ReceiverDataValue_StrVal)
+	if !ok {
+		return "", false
+	}
+	return strVal.StrVal, true
+}
+
+// SetInt associates an integer value with the provided key, overwriting any existing value.
+func (s *Store) SetInt(key string, v int64) {
+	s.data[key] = &pb.ReceiverDataValue{
+		Value: &pb.ReceiverDataValue_IntVal{
+			IntVal: v,
+		},
+	}
+}
+
+// SetFloat associates a float value with the provided key, overwriting any existing value.
+func (s *Store) SetFloat(key string, v float64) {
+	s.data[key] = &pb.ReceiverDataValue{
+		Value: &pb.ReceiverDataValue_DoubleVal{
+			DoubleVal: v,
+		},
+	}
+}
+
+// SetStr associates a string value with the provided key, overwriting any existing value.
+func (s *Store) SetStr(key, v string) {
+	s.data[key] = &pb.ReceiverDataValue{
+		Value: &pb.ReceiverDataValue_StrVal{
+			StrVal: v,
+		},
+	}
+}
+
+// Delete deletes any value associated with the key.
+func (s *Store) Delete(key string) {
+	delete(s.data, key)
+}
+
 // Log holds the notification log state for alerts that have been notified.
 type Log struct {
-	clock clock.Clock
+	clock quartz.Clock
 
-	logger    log.Logger
+	logger    *slog.Logger
 	metrics   *metrics
 	retention time.Duration
 
@@ -108,37 +204,37 @@ type metrics struct {
 func newMetrics(r prometheus.Registerer) *metrics {
 	m := &metrics{}
 
-	m.gcDuration = prometheus.NewSummary(prometheus.SummaryOpts{
+	m.gcDuration = promauto.With(r).NewSummary(prometheus.SummaryOpts{
 		Name:       "alertmanager_nflog_gc_duration_seconds",
 		Help:       "Duration of the last notification log garbage collection cycle.",
 		Objectives: map[float64]float64{},
 	})
-	m.snapshotDuration = prometheus.NewSummary(prometheus.SummaryOpts{
+	m.snapshotDuration = promauto.With(r).NewSummary(prometheus.SummaryOpts{
 		Name:       "alertmanager_nflog_snapshot_duration_seconds",
 		Help:       "Duration of the last notification log snapshot.",
 		Objectives: map[float64]float64{},
 	})
-	m.snapshotSize = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.snapshotSize = promauto.With(r).NewGauge(prometheus.GaugeOpts{
 		Name: "alertmanager_nflog_snapshot_size_bytes",
 		Help: "Size of the last notification log snapshot in bytes.",
 	})
-	m.maintenanceTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.maintenanceTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "alertmanager_nflog_maintenance_total",
 		Help: "How many maintenances were executed for the notification log.",
 	})
-	m.maintenanceErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.maintenanceErrorsTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "alertmanager_nflog_maintenance_errors_total",
 		Help: "How many maintenances were executed for the notification log that failed.",
 	})
-	m.queriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.queriesTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "alertmanager_nflog_queries_total",
 		Help: "Number of notification log queries were received.",
 	})
-	m.queryErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.queryErrorsTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "alertmanager_nflog_query_errors_total",
 		Help: "Number notification log received queries that failed.",
 	})
-	m.queryDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+	m.queryDuration = promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 		Name:                            "alertmanager_nflog_query_duration_seconds",
 		Help:                            "Duration of notification log query evaluation.",
 		Buckets:                         prometheus.DefBuckets,
@@ -146,24 +242,11 @@ func newMetrics(r prometheus.Registerer) *metrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
-	m.propagatedMessagesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.propagatedMessagesTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "alertmanager_nflog_gossip_messages_propagated_total",
 		Help: "Number of received gossip messages that have been further gossiped.",
 	})
 
-	if r != nil {
-		r.MustRegister(
-			m.gcDuration,
-			m.snapshotDuration,
-			m.snapshotSize,
-			m.queriesTotal,
-			m.queryErrorsTotal,
-			m.queryDuration,
-			m.propagatedMessagesTotal,
-			m.maintenanceTotal,
-			m.maintenanceErrorsTotal,
-		)
-	}
 	return m
 }
 
@@ -171,9 +254,7 @@ type state map[string]*pb.MeshEntry
 
 func (s state) clone() state {
 	c := make(state, len(s))
-	for k, v := range s {
-		c[k] = v
-	}
+	maps.Copy(c, s)
 	return c
 }
 
@@ -239,13 +320,17 @@ type Options struct {
 
 	Retention time.Duration
 
-	Logger  log.Logger
+	Logger  *slog.Logger
 	Metrics prometheus.Registerer
 }
 
 func (o *Options) validate() error {
 	if o.SnapshotFile != "" && o.SnapshotReader != nil {
 		return errors.New("only one of SnapshotFile and SnapshotReader must be set")
+	}
+
+	if o.Metrics == nil {
+		return errors.New("missing prometheus.Registerer")
 	}
 
 	return nil
@@ -259,9 +344,9 @@ func New(o Options) (*Log, error) {
 	}
 
 	l := &Log{
-		clock:     clock.New(),
+		clock:     quartz.NewReal(),
 		retention: o.Retention,
-		logger:    log.NewNopLogger(),
+		logger:    promslog.NewNopLogger(),
 		st:        state{},
 		broadcast: func([]byte) {},
 		metrics:   newMetrics(o.Metrics),
@@ -276,7 +361,7 @@ func New(o Options) (*Log, error) {
 			if !os.IsNotExist(err) {
 				return nil, err
 			}
-			level.Debug(l.logger).Log("msg", "notification log snapshot file doesn't exist", "err", err)
+			l.logger.Debug("notification log snapshot file doesn't exist", "err", err)
 		} else {
 			o.SnapshotReader = r
 			defer r.Close()
@@ -302,10 +387,10 @@ func (l *Log) now() time.Time {
 // If not nil, the last argument is an override for what to do as part of the maintenance - for advanced usage.
 func (l *Log) Maintenance(interval time.Duration, snapf string, stopc <-chan struct{}, override MaintenanceFunc) {
 	if interval == 0 || stopc == nil {
-		level.Error(l.logger).Log("msg", "interval or stop signal are missing - not running maintenance")
+		l.logger.Error("interval or stop signal are missing - not running maintenance")
 		return
 	}
-	t := l.clock.Ticker(interval)
+	t := l.clock.NewTicker(interval)
 	defer t.Stop()
 
 	var doMaintenance MaintenanceFunc
@@ -335,14 +420,14 @@ func (l *Log) Maintenance(interval time.Duration, snapf string, stopc <-chan str
 	runMaintenance := func(do func() (int64, error)) error {
 		l.metrics.maintenanceTotal.Inc()
 		start := l.now().UTC()
-		level.Debug(l.logger).Log("msg", "Running maintenance")
+		l.logger.Debug("Running maintenance")
 		size, err := do()
 		l.metrics.snapshotSize.Set(float64(size))
 		if err != nil {
 			l.metrics.maintenanceErrorsTotal.Inc()
 			return err
 		}
-		level.Debug(l.logger).Log("msg", "Maintenance done", "duration", l.now().Sub(start), "size", size)
+		l.logger.Debug("Maintenance done", "duration", l.now().Sub(start), "size", size)
 		return nil
 	}
 
@@ -353,7 +438,7 @@ Loop:
 			break Loop
 		case <-t.C:
 			if err := runMaintenance(doMaintenance); err != nil {
-				level.Error(l.logger).Log("msg", "Running maintenance failed", "err", err)
+				l.logger.Error("Running maintenance failed", "err", err)
 			}
 		}
 	}
@@ -363,7 +448,7 @@ Loop:
 		return
 	}
 	if err := runMaintenance(doMaintenance); err != nil {
-		level.Error(l.logger).Log("msg", "Creating shutdown snapshot failed", "err", err)
+		l.logger.Error("Creating shutdown snapshot failed", "err", err)
 	}
 }
 
@@ -377,7 +462,7 @@ func stateKey(k string, r *pb.Receiver) string {
 	return fmt.Sprintf("%s:%s", k, receiverKey(r))
 }
 
-func (l *Log) Log(r *pb.Receiver, gkey string, firingAlerts, resolvedAlerts []uint64, expiry time.Duration) error {
+func (l *Log) Log(r *pb.Receiver, gkey string, firingAlerts, resolvedAlerts []uint64, store *Store, expiry time.Duration) error {
 	// Write all st with the same timestamp.
 	now := l.now()
 	key := stateKey(gkey, r)
@@ -398,6 +483,11 @@ func (l *Log) Log(r *pb.Receiver, gkey string, firingAlerts, resolvedAlerts []ui
 		expiresAt = now.Add(expiry)
 	}
 
+	var receiverData map[string]*pb.ReceiverDataValue
+	if store != nil {
+		receiverData = store.data
+	}
+
 	e := &pb.MeshEntry{
 		Entry: &pb.Entry{
 			Receiver:       r,
@@ -405,6 +495,7 @@ func (l *Log) Log(r *pb.Receiver, gkey string, firingAlerts, resolvedAlerts []ui
 			Timestamp:      now,
 			FiringAlerts:   firingAlerts,
 			ResolvedAlerts: resolvedAlerts,
+			ReceiverData:   receiverData,
 		},
 		ExpiresAt: expiresAt,
 	}
@@ -534,7 +625,7 @@ func (l *Log) Merge(b []byte) error {
 			// all nodes already.
 			l.broadcast(b)
 			l.metrics.propagatedMessagesTotal.Inc()
-			level.Debug(l.logger).Log("msg", "gossiping new entry", "entry", e)
+			l.logger.Debug("gossiping new entry", "entry", e)
 		}
 	}
 	return nil
@@ -555,13 +646,13 @@ type replaceFile struct {
 }
 
 func (f *replaceFile) Close() error {
-	if err := f.File.Sync(); err != nil {
+	if err := f.Sync(); err != nil {
 		return err
 	}
 	if err := f.File.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.File.Name(), f.filename)
+	return os.Rename(f.Name(), f.filename)
 }
 
 // openReplace opens a new temporary file that is moved to filename on closing.

@@ -81,11 +81,13 @@
       $.tracing_env_mixin
     else {},
 
+  alertmanager_termination_grace_period_seconds:: 900,
+
   alertmanager_statefulset:
     if $._config.alertmanager_enabled then
       $.newMimirStatefulSet('alertmanager', $._config.alertmanager.replicas, $.alertmanager_container, $.alertmanager_pvc, podManagementPolicy=null) +
       $.newMimirNodeAffinityMatchers($.alertmanager_node_affinity_matchers) +
-      statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
+      statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.alertmanager_termination_grace_period_seconds) +
       $.mimirVolumeMounts +
       statefulSet.mixin.spec.template.spec.withVolumesMixin(
         if hasFallbackConfig then

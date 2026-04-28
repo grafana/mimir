@@ -79,6 +79,8 @@ const (
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
+	MaxActiveSeries ID = "max-active-series"
+
 	DistributorMaxWriteMessageSize         ID = "distributor-max-write-message-size"
 	DistributorMaxOTLPRequestSize          ID = "distributor-max-otlp-request-size"
 	DistributorMaxWriteRequestDataItemSize ID = "distributor-max-write-request-data-item-size"
@@ -95,10 +97,6 @@ const (
 	NativeHistogramCustomBucketsInvalid      ID = "native-histogram-custom-buckets-invalid"
 	NativeHistogramCustomBucketsInfinite     ID = "native-histogram-custom-buckets-infinite"
 	NativeHistogramCustomBucketsNotReducible ID = "native-histogram-custom-buckets-not-reducible"
-
-	// Alertmanager errors
-	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"
-	AlertmanagerMaxGrafanaStateSize  ID = "alertmanager-max-grafana-state-size"
 )
 
 // Message returns the provided msg, appending the error id.

@@ -9,8 +9,6 @@ keywords:
   - dashboards
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Visualize metric data
 
 [Grafana](/grafana/download/) has built-in support for Mimir through the Prometheus data source type.

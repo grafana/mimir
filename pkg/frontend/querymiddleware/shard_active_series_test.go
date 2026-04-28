@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/klauspost/compress/s2"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,14 +32,6 @@ import (
 )
 
 func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
-	for _, useZeroAllocationDecoder := range []bool{false, true} {
-		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
-			runTestShardActiveSeriesMiddlewareRoundTrip(t, useZeroAllocationDecoder)
-		})
-	}
-}
-
-func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocationDecoder bool) {
 	const tenantShardCount = 4
 	const tenantMaxShardCount = 128
 
@@ -173,16 +166,16 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			request: validReqWithShardHeader(3),
 
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "3")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "3")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "3"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "3"),
 				},
 			},
 		},
@@ -190,18 +183,18 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			name:    "uses tenant's default shard count if none is specified in the request header",
 			request: validReq,
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "3")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "4")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "3")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "4")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "3"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "4"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "3"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "4"),
 				},
 			},
 			expectedShardCount: tenantShardCount,
@@ -210,15 +203,15 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			name:    "no sharding, request passed through",
 			request: validReqWithShardHeader(1),
 
-			validResponses:   [][]labels.Labels{{labels.FromStrings(labels.MetricName, "metric")}},
+			validResponses:   [][]labels.Labels{{labels.FromStrings(model.MetricNameLabel, "metric")}},
 			checkResponseErr: noError,
-			expect:           result{Data: []labels.Labels{labels.FromStrings(labels.MetricName, "metric")}},
+			expect:           result{Data: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "metric")}},
 		},
 		{
 			name:    "handles empty shards",
 			request: validReqWithShardHeader(6),
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
 				{},
 				{},
 				{},
@@ -228,7 +221,7 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
 				},
 			},
 			expectedShardCount: 6,
@@ -242,14 +235,14 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 				return r
 			},
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2"),
 				},
 			},
 			expectContentEncoding: encodingTypeSnappyFramed,
@@ -265,14 +258,14 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 				return req
 			},
 			validResponses: [][]labels.Labels{
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
-				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1")},
+				{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
-					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
-					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1"),
+					labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2"),
 				},
 			},
 		},
@@ -322,7 +315,6 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			// Run the request through the middleware.
 			s := newShardActiveSeriesMiddleware(
 				upstream,
-				useZeroAllocationDecoder,
 				mockLimits{maxShardedQueries: tenantMaxShardCount, totalShards: tenantShardCount},
 				log.NewNopLogger(),
 			)
@@ -367,14 +359,6 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 }
 
 func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
-	for _, useZeroAllocationDecoder := range []bool{false, true} {
-		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
-			runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t, useZeroAllocationDecoder)
-		})
-	}
-}
-
-func runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t *testing.T, useZeroAllocationDecoder bool) {
 	const shardCount = 4
 
 	upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -392,7 +376,6 @@ func runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t *testing.T, useZero
 
 	s := newShardActiveSeriesMiddleware(
 		upstream,
-		useZeroAllocationDecoder,
 		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
 		log.NewNopLogger(),
 	)
@@ -444,15 +427,7 @@ func runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t *testing.T, useZero
 }
 
 func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
-	for _, useZeroAllocationDecoder := range []bool{false, true} {
-		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
-			runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t, useZeroAllocationDecoder)
-		})
-	}
-}
-
-func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testing.T, useZeroAllocationDecoder bool) {
-	s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+	s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(fmt.Errorf("test ran to completion"))
 
@@ -468,18 +443,8 @@ func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testi
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 	}
-	var resp *http.Response
 
-	if useZeroAllocationDecoder {
-		resp = s.mergeResponsesWithZeroAllocationDecoder(ctx, responses, "")
-	} else {
-		defer func() {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-		}()
-
-		resp = s.mergeResponses(ctx, responses, "")
-	}
+	resp := s.mergeResponses(ctx, responses, "")
 
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
@@ -547,13 +512,13 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 				benchResponses[i] = responses
 			}
 
-			s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+			s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 
 			b.ResetTimer()
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				resp := s.mergeResponsesWithZeroAllocationDecoder(context.Background(), benchResponses[i], encoding)
+				resp := s.mergeResponses(context.Background(), benchResponses[i], encoding)
 
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()

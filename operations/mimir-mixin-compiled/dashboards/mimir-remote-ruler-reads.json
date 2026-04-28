@@ -253,6 +253,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -309,156 +324,6 @@
                                  }
                               }
                            ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "1xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EAB839",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "2xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "3xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#6ED0E0",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "4xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EF843C",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "5xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Canceled"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "OK"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "cancel"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "error"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
                         }
                      ]
                   },
@@ -476,13 +341,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -512,7 +377,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -531,37 +396,37 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_native"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_native"
                      },
                      {
-                        "expr": "(1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_native"
@@ -679,7 +544,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))\n",
+                        "expr": "(sum (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "Requests/s",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(sum (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Requests/s",
                         "legendLink": null
@@ -695,7 +566,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 10,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -710,7 +581,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -729,22 +600,40 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
-                        "legendFormat": "99th Percentile",
+                        "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
-                        "legendFormat": "50th Percentile",
+                        "legendFormat": "99th percentile",
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
+                        "refId": "B_classic"
+                     },
+                     {
+                        "expr": "(sum(histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
+                     },
+                     {
+                        "expr": "(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) /\nsum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C_classic"
                      }
                   ],
                   "title": "Latency (Time in Queue)",
@@ -854,7 +743,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -872,10 +761,16 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
+                        "expr": "(label_replace(histogram_quantile(0.99, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                         "refId": "A"
+                     },
+                     {
+                        "expr": "(label_replace(histogram_quantile(0.99, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
+                        "refId": "A_classic"
                      }
                   ],
                   "title": "99th Percentile Latency by Expected Query Component",
@@ -904,7 +799,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -922,10 +817,16 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
+                        "expr": "(label_replace(histogram_quantile(0.50, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                         "refId": "A"
+                     },
+                     {
+                        "expr": "(label_replace(histogram_quantile(0.50, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
+                        "refId": "A_classic"
                      }
                   ],
                   "title": "50th Percentile Latency by Expected Query Component",
@@ -954,7 +855,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -972,10 +873,16 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
+                        "expr": "(label_replace(sum by (additional_queue_dimensions) (histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) /\nsum by (additional_queue_dimensions) (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average: {{ additional_queue_dimensions }}",
                         "refId": "C"
+                     },
+                     {
+                        "expr": "(label_replace(sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) /\nsum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "Average: {{ additional_queue_dimensions }}",
+                        "refId": "C_classic"
                      }
                   ],
                   "title": "Average Latency by Expected Query Component",
@@ -1250,7 +1157,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "{{status}}",
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_querier_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -1280,7 +1193,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -1299,22 +1212,40 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) * 1e3",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
-                        "refId": "A"
+                        "refId": "A_classic"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) * 1e3",
+                        "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "refId": "A_native"
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
-                        "refId": "B"
+                        "refId": "B_classic"
                      },
                      {
-                        "expr": "1e3 * sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}) / sum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})",
+                        "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
+                        "refId": "B_native"
+                     },
+                     {
+                        "expr": "(sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}) /\nsum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
-                        "refId": "C"
+                        "refId": "C_classic"
+                     },
+                     {
+                        "expr": "(sum(histogram_sum(cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) /\nsum(histogram_count(cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}))\n) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C_native"
                      }
                   ],
                   "title": "Latency",
@@ -1361,7 +1292,14 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "",
+                        "legendLink": null
+                     },
+                     {
+                        "exemplar": true,
+                        "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_querier_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "",
                         "legendLink": null
@@ -1485,6 +1423,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -1541,156 +1494,6 @@
                                  }
                               }
                            ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "1xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EAB839",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "2xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "3xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#6ED0E0",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "4xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EF843C",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "5xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Canceled"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "OK"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "cancel"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "error"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
                         }
                      ]
                   },
@@ -1708,13 +1511,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -1745,7 +1548,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -1764,37 +1567,37 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_native"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_native"
                      },
                      {
-                        "expr": "(1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_native"
@@ -1976,6 +1779,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -2032,156 +1850,6 @@
                                  }
                               }
                            ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "1xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EAB839",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "2xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "3xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#6ED0E0",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "4xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EF843C",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "5xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Canceled"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "OK"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "cancel"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "error"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
                         }
                      ]
                   },
@@ -2199,13 +1867,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -2221,7 +1889,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 10,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -2236,7 +1904,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -2255,22 +1923,40 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
-                        "legendFormat": "99th Percentile",
+                        "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
-                        "legendFormat": "50th Percentile",
+                        "legendFormat": "99th percentile",
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
+                        "refId": "B_classic"
+                     },
+                     {
+                        "expr": "(sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
+                     },
+                     {
+                        "expr": "(sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C_classic"
                      }
                   ],
                   "title": "Latency",
@@ -2467,6 +2153,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -2523,156 +2224,6 @@
                                  }
                               }
                            ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "1xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EAB839",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "2xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "3xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#6ED0E0",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "4xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EF843C",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "5xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Canceled"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "OK"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "cancel"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "error"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
                         }
                      ]
                   },
@@ -2690,13 +2241,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",route=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",route=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",route=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\",route=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -2727,7 +2278,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -2746,37 +2297,37 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"}))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"}))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_native"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"}))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"}))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_native"
                      },
                      {
-                        "expr": "(1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"})\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"})\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
                      },
                      {
-                        "expr": "(1e3 * sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"}))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\", route=~\"/gatewaypb.StoreGateway/.*\"}))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_native"
@@ -2958,6 +2509,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -3014,156 +2580,6 @@
                                  }
                               }
                            ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "1xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EAB839",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "2xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "3xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#6ED0E0",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "4xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#EF843C",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "5xx"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Canceled"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "OK"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "cancel"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#A9A9A9",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "error"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E24D42",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
                         }
                      ]
                   },
@@ -3181,13 +2597,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_storegateway_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_storegateway_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -3203,7 +2619,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 10,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -3218,7 +2634,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -3237,22 +2653,40 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
-                        "legendFormat": "99th Percentile",
+                        "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum(rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
-                        "legendFormat": "50th Percentile",
+                        "legendFormat": "99th percentile",
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "sum(rate(cortex_storegateway_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_storegateway_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
+                        "refId": "B_classic"
+                     },
+                     {
+                        "expr": "(sum(histogram_sum(rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
+                     },
+                     {
+                        "expr": "(sum(rate(cortex_storegateway_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) /\nsum(rate(cortex_storegateway_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C_classic"
                      }
                   ],
                   "title": "Latency",
@@ -3435,19 +2869,19 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"}\n  # Add the scaletargetref_name label for readability\n  * on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    group by (cluster, namespace, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"})\n)\n",
+                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"}\n  # Add the scaletargetref_name label for readability\n  * on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    group by (cluster, namespace, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"})\n)\n",
                         "format": "time_series",
                         "legendFormat": "Max {{ scaletargetref_name }}",
                         "legendLink": null
                      },
                      {
-                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"}\n  # Add the scaletargetref_name label for readability\n  * on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    group by (cluster, namespace, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"})\n)\n",
+                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"}\n  # Add the scaletargetref_name label for readability\n  * on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    group by (cluster, namespace, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"})\n)\n",
                         "format": "time_series",
                         "legendFormat": "Current {{ scaletargetref_name }}",
                         "legendLink": null
                      },
                      {
-                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"}\n  # Add the scaletargetref_name label for readability\n  * on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    group by (cluster, namespace, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"})\n)\n",
+                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"}\n  # Add the scaletargetref_name label for readability\n  * on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    group by (cluster, namespace, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"})\n)\n",
                         "format": "time_series",
                         "legendFormat": "Min {{ scaletargetref_name }}",
                         "legendLink": null
@@ -3496,7 +2930,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                        "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
                         "format": "time_series",
                         "legendFormat": "{{scaler}} failures",
                         "legendLink": null
@@ -3557,7 +2991,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      )\n    )\n)\n",
+                        "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      )\n    )\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{ scaler }}",
                         "legendLink": null
@@ -3606,7 +3040,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      )\n    )\n)\n",
+                        "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      )\n    )\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{ scaler }}",
                         "legendLink": null
@@ -3655,7 +3089,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*queries.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      )\n    )\n)\n",
+                        "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*queries.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-(?:mimir-)?ruler-querier.*\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(?:mimir-)?(.*)\"\n      )\n    )\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{ scaler }}",
                         "legendLink": null

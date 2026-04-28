@@ -6,11 +6,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/go-kit/log"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -37,7 +36,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 }
 
 func (cfg *Config) Validate() error {
-	if !util.StringsContain(modes, cfg.Mode) {
+	if !slices.Contains(modes, cfg.Mode) {
 		return fmt.Errorf("unsupported query-scheduler service discovery mode (supported values are: %s)", strings.Join(modes, ", "))
 	}
 	if cfg.MaxUsedInstances > 0 && cfg.Mode != ModeRing {

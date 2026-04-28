@@ -15,6 +15,7 @@ import (
 
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
 	"go.opentelemetry.io/otel/trace"
@@ -22,6 +23,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // To keep logs and error messages in sync, we define the following keys:
@@ -31,6 +33,8 @@ const (
 	matchersLogKey = "matchers"
 	startLogKey    = "start"
 )
+
+var errCantGetQueryOptsForRemoteReadRequest = errors.New("cannot get PromQL query options from remote read query request")
 
 type remoteReadRoundTripper struct {
 	next http.RoundTripper
@@ -225,6 +229,10 @@ type remoteReadQueryRequest struct {
 	promQuery string
 }
 
+func (r *remoteReadQueryRequest) GetQueryOpts() (promql.QueryOpts, error) {
+	return nil, errCantGetQueryOptsForRemoteReadRequest
+}
+
 func (r *remoteReadQueryRequest) AddSpanTags(_ trace.Span) {
 	// No-op.
 }
@@ -280,6 +288,18 @@ func (r *remoteReadQueryRequest) GetPath() string {
 
 func (r *remoteReadQueryRequest) GetQuery() string {
 	return r.promQuery
+}
+
+func (r *remoteReadQueryRequest) GetParsedQuery() parser.Expr {
+	panic("remoteReadQueryRequest.GetParsedQuery() should not be called")
+}
+
+func (r *remoteReadQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
+	if r.promQuery == "" {
+		return nil, errRequestNoQuery
+	}
+
+	return promqlext.NewPromQLParser().ParseExpr(r.promQuery)
 }
 
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {

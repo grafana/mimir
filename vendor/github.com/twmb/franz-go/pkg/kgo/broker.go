@@ -15,10 +15,12 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kbin"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo/internal/xsync"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl"
 )
@@ -156,37 +158,45 @@ type broker struct {
 	cxnGroup   *brokerCxn
 	cxnSlow    *brokerCxn
 
-	reapMu sync.Mutex // held when modifying a brokerCxn
+	reapMu xsync.Mutex // held when modifying a brokerCxn
 
 	// reqs manages incoming message requests.
-	reqs ringReq
+	reqs ring[promisedReq]
 	// dead is an atomic so a backed up reqs cannot block broker stoppage.
-	dead atomicBool
+	dead atomic.Bool
 }
 
 // brokerVersions is loaded once (and potentially a few times concurrently if
 // multiple connections are opening at once) and then forever stored for a
 // broker.
 type brokerVersions struct {
-	maxVers  [kmsg.MaxKey + 1]int16
-	minVers  [kmsg.MaxKey + 1]int16
+	maxVers  map[int16]int16
+	minVers  map[int16]int16
 	features map[string]int16
 }
 
-func newBrokerVersions() *brokerVersions {
+func (v *brokerVersions) maxVersion(key int16) int16 {
+	if version, ok := v.maxVers[key]; ok {
+		return version
+	}
+	return -1
+}
+
+func (v *brokerVersions) minVersion(key int16) int16 {
+	if version, ok := v.minVers[key]; ok {
+		return version
+	}
+	return -1
+}
+
+func newBrokerVersions(capacity int) *brokerVersions {
 	v := &brokerVersions{
+		maxVers:  make(map[int16]int16, capacity),
+		minVers:  make(map[int16]int16, capacity),
 		features: make(map[string]int16),
-	}
-	for i := range &v.maxVers {
-		v.maxVers[i] = -1
-	}
-	for i := range &v.minVers {
-		v.minVers[i] = -1
 	}
 	return v
 }
-
-func (*brokerVersions) len() int { return kmsg.MaxKey + 1 }
 
 func (b *broker) loadVersions() *brokerVersions {
 	loaded := b.versions.Load()
@@ -256,10 +266,10 @@ func (b *broker) do(
 
 	first, dead := b.reqs.push(pr)
 
-	if first {
-		go b.handleReqs(pr)
-	} else if dead {
+	if dead {
 		promise(nil, errChosenBrokerDead)
+	} else if first {
+		go b.handleReqs(pr)
 	}
 }
 
@@ -314,15 +324,15 @@ start:
 
 	v := b.loadVersions()
 
-	if int(req.Key()) > v.len() || b.cl.cfg.maxVersions != nil && !b.cl.cfg.maxVersions.HasKey(req.Key()) {
+	if b.cl.cfg.maxVersions != nil && !b.cl.cfg.maxVersions.HasKey(req.Key()) {
 		pr.promise(nil, errUnknownRequestKey)
 		return
 	}
 
-	// If v.maxVers[0] is non-negative, then we loaded API
+	// If v.maxVersion(0) is non-negative, then we loaded API
 	// versions. If the version for this request is negative, we
 	// know the broker cannot handle this request.
-	if v.maxVers[0] >= 0 && v.maxVers[req.Key()] < 0 {
+	if v.maxVersion(0) >= 0 && v.maxVersion(req.Key()) < 0 {
 		pr.promise(nil, errBrokerTooOld)
 		return
 	}
@@ -340,10 +350,10 @@ start:
 
 	// If we have no broker versions, we are pinned pre 0.10.0 and did not
 	// issue ApiVersions.
-	if brokerMax := v.maxVers[req.Key()]; brokerMax >= 0 && brokerMax < ourMax {
+	if brokerMax := v.maxVersion(req.Key()); brokerMax >= 0 && brokerMax < ourMax {
 		ourMax = brokerMax
 	}
-	if brokerMin := v.minVers[req.Key()]; brokerMin >= 0 && brokerMin > ourMin {
+	if brokerMin := v.minVersion(req.Key()); brokerMin >= 0 && brokerMin > ourMin {
 		ourMin = brokerMin
 	}
 
@@ -470,9 +480,17 @@ start:
 	corrID, bytesWritten, writeWait, timeToWrite, readEnqueue, writeErr := cxn.writeRequest(pr.ctx, pr.enqueue, req)
 
 	if writeErr != nil {
-		pr.promise(nil, writeErr)
 		cxn.die()
 		cxn.hookWriteE2E(req.Key(), bytesWritten, writeWait, timeToWrite, writeErr)
+		// If we wrote 0 bytes, the broker never saw the request.
+		// Safe to retry once on a new connection, same as the
+		// loadConnection retry above. Does not count against the
+		// client's retry budget.
+		if bytesWritten == 0 && !retriedOnNewConnection {
+			retriedOnNewConnection = true
+			goto start
+		}
+		pr.promise(nil, writeErr)
 		return
 	}
 
@@ -523,7 +541,7 @@ func newBufPool() bufPool {
 func (p bufPool) get() []byte  { return (*p.p.Get().(*[]byte))[:0] }
 func (p bufPool) put(b []byte) { p.p.Put(&b) }
 
-// loadConection returns the broker's connection, creating it if necessary
+// loadConnection returns the broker's connection, creating it if necessary
 // and returning an error of if that fails.
 func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerCxn, error) {
 	var (
@@ -532,12 +550,13 @@ func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerC
 		isFetchCxn   bool
 		reqKey       = req.Key()
 		_, isTimeout = req.(kmsg.TimeoutRequest)
+		reuse        = true
 	)
 	switch {
 	case reqKey == 0:
 		pcxn = &b.cxnProduce
 		isProduceCxn = true
-	case reqKey == 1:
+	case reqKey == 1 || reqKey == 78: // Fetch or ShareFetch (both long-poll)
 		pcxn = &b.cxnFetch
 		isFetchCxn = true
 	case reqKey == 11 || reqKey == 14: // join || sync
@@ -546,7 +565,15 @@ func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerC
 		pcxn = &b.cxnSlow
 	}
 
-	if *pcxn != nil && !(*pcxn).dead.Load() {
+	// Do not reuse a connection that has been idle for longer than idle timeout.
+	// Kill it instead.
+	if *pcxn != nil && !(*pcxn).dead.Load() && (*pcxn).isIdleTimeout(b.cl.cfg.connIdleTimeout) {
+		// die() in a goroutine to avoid blocking
+		go (*pcxn).die()
+		reuse = false
+	}
+
+	if reuse && *pcxn != nil && !(*pcxn).dead.Load() {
 		return *pcxn, nil
 	}
 
@@ -600,6 +627,22 @@ doConnect:
 
 	b.reapMu.Lock()
 	defer b.reapMu.Unlock()
+
+	// If stopForever ran while we were connecting, the broker is
+	// dead and we must not store the connection. stopForever kills
+	// cxnProduce/etc under reapMu, but if the connection was nil at
+	// that time (we were mid-connect), stopForever's die() was a
+	// no-op. Without this check, the connection escapes destruction
+	// and a produce request succeeds on a connection that will never
+	// be reused, which -- combined with other connections from other
+	// broker objects for the same nodeID -- breaks the single-
+	// connection-per-broker ordering guarantee that Kafka requires
+	// for idempotent produce.
+	if b.dead.Load() {
+		cxn.closeConn()
+		return nil, errChosenBrokerDead
+	}
+
 	*pcxn = cxn
 	return cxn, nil
 }
@@ -664,14 +707,7 @@ func (b *broker) reapConnections(idleTimeout time.Duration) (total int) {
 		//
 		// - produce can write but never read
 		// - fetch can hang for a while reading (infrequent writes)
-
-		lastWrite := time.Unix(0, cxn.lastWrite.Load())
-		lastRead := time.Unix(0, cxn.lastRead.Load())
-
-		writeIdle := time.Since(lastWrite) > idleTimeout && !cxn.writing.Load()
-		readIdle := time.Since(lastRead) > idleTimeout && !cxn.reading.Load()
-
-		if writeIdle && readIdle {
+		if cxn.isIdleTimeout(idleTimeout) {
 			cxn.die()
 			total++
 		}
@@ -687,7 +723,7 @@ func (b *broker) connect(ctx context.Context) (net.Conn, error) {
 		if !errors.Is(err, ErrClientClosed) && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "operation was canceled") {
 			if errors.Is(err, io.EOF) {
 				b.cl.cfg.logger.Log(LogLevelWarn, "unable to open connection to broker due to an immediate EOF, which often means the client is using TLS when the broker is not expecting it (is TLS misconfigured?)", "addr", b.addr, "broker", logID(b.meta.NodeID), "err", err)
-				return nil, &ErrFirstReadEOF{kind: firstReadTLS, err: err}
+				return nil, &ErrFirstReadEOF{kind: firstReadDial, err: err, retry: b.cl.cfg.alwaysRetryEOF}
 			}
 			b.cl.cfg.logger.Log(LogLevelWarn, "unable to open connection to broker", "addr", b.addr, "broker", logID(b.meta.NodeID), "err", err)
 		}
@@ -700,7 +736,7 @@ func (b *broker) connect(ctx context.Context) (net.Conn, error) {
 // brokerCxn manages an actual connection to a Kafka broker. This is separate
 // the broker struct to allow lazy connection (re)creation.
 type brokerCxn struct {
-	throttleUntil atomicI64 // atomic nanosec
+	throttleUntil atomic.Int64 // atomic nanosec
 
 	conn net.Conn
 
@@ -717,36 +753,43 @@ type brokerCxn struct {
 	// The following four fields are used for connection reaping.
 	// Write is only updated in one location; read is updated in three
 	// due to readConn, readConnAsync, and discard.
-	lastWrite atomicI64
-	lastRead  atomicI64
-	writing   atomicBool
-	reading   atomicBool
+	lastWrite atomic.Int64
+	lastRead  atomic.Int64
+	writing   atomic.Bool
+	reading   atomic.Bool
 
 	successes uint64
 
+	sizeBuf [4]byte // reused in readConn, tiny win
+
 	// resps manages reading kafka responses.
-	resps ringResp
+	resps ring[promisedResp]
 	// dead is an atomic so that a backed up resps cannot block cxn death.
-	dead atomicBool
+	dead atomic.Bool
 	// closed in cloneConn; allows throttle waiting to quit
 	deadCh chan struct{}
 }
 
 func (cxn *brokerCxn) init(isProduceCxn bool, tries int) error {
-	hasVersions := cxn.b.loadVersions() != nil
-	if !hasVersions {
-		if cxn.b.cl.cfg.maxVersions == nil || cxn.b.cl.cfg.maxVersions.HasKey(18) {
-			if err := cxn.requestAPIVersions(tries); err != nil {
-				if !errors.Is(err, ErrClientClosed) && !isRetryableBrokerErr(err) {
-					cxn.cl.cfg.logger.Log(LogLevelError, "unable to request api versions", "broker", logID(cxn.b.meta.NodeID), "err", err)
-				}
-				return err
+	// We always send ApiVersions on every new connection, even if we have
+	// already cached the broker's versions from a previous connection.
+	// ApiVersions is how we advertise our ClientSoftwareName/Version to the
+	// broker for the lifetime of this connection (KIP-714 client metrics
+	// match on these). If we skip it on a reused-broker connection, that
+	// connection registers as "unknown" software on the broker side, and
+	// any broker-side metric subscriptions scoped to our software name
+	// silently miss it. See twmb/franz-go#1296.
+	if cxn.b.cl.cfg.maxVersions == nil || cxn.b.cl.cfg.maxVersions.HasKey(18) {
+		if err := cxn.requestAPIVersions(tries); err != nil {
+			if !errors.Is(err, ErrClientClosed) && !isRetryableBrokerErr(err) {
+				cxn.cl.cfg.logger.Log(LogLevelError, "unable to request api versions", "broker", logID(cxn.b.meta.NodeID), "err", err)
 			}
-		} else {
-			// We have a max versions, and it indicates no support
-			// for ApiVersions. We just store a default -1 set.
-			cxn.b.storeVersions(newBrokerVersions())
+			return err
 		}
+	} else if cxn.b.loadVersions() == nil {
+		// We have a max versions, and it indicates no support for
+		// ApiVersions. We just store a default empty map (once).
+		cxn.b.storeVersions(newBrokerVersions(0))
 	}
 
 	if err := cxn.sasl(); err != nil {
@@ -793,8 +836,12 @@ start:
 	// api versions does *not* use flexible response headers; see comment in promisedResp
 	rawResp, err := cxn.readResponse(nil, req.Key(), req.GetVersion(), corrID, false, rt, bytesWritten, writeWait, timeToWrite, readEnqueue)
 	if err != nil {
-		if strings.HasSuffix(err.Error(), "connection reset by peer") {
+		var errno syscall.Errno
+		if errors.As(err, &errno) && isConnReset(errno) {
 			return &errApiVersionsReset{err}
+		} else if errors.Is(err, io.EOF) {
+			cxn.b.cl.cfg.logger.Log(LogLevelWarn, "read from broker received EOF during api versions discovery, which often happens when the broker requires TLS and the client is not using it (is TLS misconfigured?)", "addr", cxn.b.addr, "broker", logID(cxn.b.meta.NodeID), "err", err)
+			err = &ErrFirstReadEOF{kind: firstReadTLS, err: err, retry: cxn.b.cl.cfg.alwaysRetryEOF}
 		}
 		return err
 	}
@@ -841,11 +888,8 @@ start:
 		return errors.New("ApiVersions response invalidly contained no ApiKeys")
 	}
 
-	v := newBrokerVersions()
+	v := newBrokerVersions(len(resp.ApiKeys))
 	for _, key := range resp.ApiKeys {
-		if key.ApiKey > kmsg.MaxKey || key.ApiKey < 0 {
-			continue
-		}
 		v.maxVers[key.ApiKey] = key.MaxVersion
 		v.minVers[key.ApiKey] = key.MinVersion
 	}
@@ -871,9 +915,16 @@ func (cxn *brokerCxn) sasl() error {
 	req := kmsg.NewPtrSASLHandshakeRequest()
 
 start:
-	if mechanism.Name() != "GSSAPI" && v.maxVers[req.Key()] >= 0 {
+	// KIP-152 establishes the modern SASL flow: ApiVersions, then
+	// SaslHandshake, then SaslAuthenticate for all mechanisms. The
+	// legacy raw GSSAPI flow (where GSSAPI clients could skip the
+	// handshake) only worked when GSSAPI bytes were the *first* packet
+	// on the connection. Since we send ApiVersions first, we must send
+	// SaslHandshake for all mechanisms including GSSAPI. KIP-896 removed
+	// support for the legacy raw GSSAPI protocol entirely in Kafka 4.0.
+	if v.maxVersion(req.Key()) >= 0 {
 		req.Mechanism = mechanism.Name()
-		req.Version = v.maxVers[req.Key()]
+		req.Version = v.maxVersion(req.Key())
 		cxn.cl.cfg.logger.Log(LogLevelDebug, "issuing SASLHandshakeRequest", "broker", logID(cxn.b.meta.NodeID))
 		corrID, bytesWritten, writeWait, timeToWrite, readEnqueue, writeErr := cxn.writeRequest(nil, time.Now(), req)
 		if writeErr != nil {
@@ -960,39 +1011,38 @@ func (cxn *brokerCxn) doSasl(authenticate bool) error {
 		} else {
 			req := kmsg.NewPtrSASLAuthenticateRequest()
 			req.SASLAuthBytes = clientWrite
-			req.Version = cxn.b.loadVersions().maxVers[req.Key()]
+			req.Version = cxn.b.loadVersions().maxVersion(req.Key())
 			cxn.cl.cfg.logger.Log(LogLevelDebug, "issuing SASLAuthenticate", "broker", logID(cxn.b.meta.NodeID), "version", req.Version, "step", step)
 
 			// Lifetime: we take the timestamp before we write our
 			// request; see usage below for why.
 			prereq = time.Now()
 			corrID, bytesWritten, writeWait, timeToWrite, readEnqueue, writeErr := cxn.writeRequest(nil, time.Now(), req)
-
-			// As mentioned above, we could have one final write
-			// without reading a response back (kerberos). If this
-			// is the case, we need to e2e.
-			if writeErr != nil || done {
+			if writeErr != nil {
 				cxn.hookWriteE2E(req.Key(), bytesWritten, writeWait, timeToWrite, writeErr)
-				if writeErr != nil {
-					return writeErr
-				}
+				return writeErr
 			}
-			if !done {
-				rawResp, err := cxn.readResponse(nil, req.Key(), req.GetVersion(), corrID, req.IsFlexible(), rt, bytesWritten, writeWait, timeToWrite, readEnqueue)
-				if err != nil {
-					return err
-				}
-				resp := req.ResponseKind().(*kmsg.SASLAuthenticateResponse)
-				if err = resp.ReadFrom(rawResp); err != nil {
-					return err
-				}
 
-				if err := errCodeMessage(resp.ErrorCode, resp.ErrorMessage); err != nil {
-					return err
-				}
-				challenge = resp.SASLAuthBytes
-				lifetimeMillis = resp.SessionLifetimeMillis
+			// Unlike the raw SASL path, SaslAuthenticate always has
+			// a response for every request. Per KIP-152, "server
+			// always sends a response to each SASL_AUTHENTICATE
+			// request". We must read this response even when the
+			// SASL session is complete to avoid leaving data in the
+			// connection buffer.
+			rawResp, err := cxn.readResponse(nil, req.Key(), req.GetVersion(), corrID, req.IsFlexible(), rt, bytesWritten, writeWait, timeToWrite, readEnqueue)
+			if err != nil {
+				return err
 			}
+			resp := req.ResponseKind().(*kmsg.SASLAuthenticateResponse)
+			if err = resp.ReadFrom(rawResp); err != nil {
+				return err
+			}
+
+			if err := errCodeMessage(resp.ErrorCode, resp.ErrorMessage); err != nil {
+				return err
+			}
+			challenge = resp.SASLAuthBytes
+			lifetimeMillis = resp.SessionLifetimeMillis
 		}
 
 		clientWrite = nil
@@ -1027,10 +1077,7 @@ func (cxn *brokerCxn) doSasl(authenticate bool) error {
 		// every second after, we add between 0.05s or 0.08s to our
 		// backoff. At 12hr, we reauth ~24 to 28min before the
 		// lifetime.
-		usePessimismMillis := maxPessimismMillis
-		if minPessimismMillis > maxPessimismMillis {
-			usePessimismMillis = minPessimismMillis
-		}
+		usePessimismMillis := max(minPessimismMillis, maxPessimismMillis)
 		useLifetimeMillis := lifetimeMillis - int64(usePessimismMillis)
 
 		// Subtracting our min pessimism may result in our connection
@@ -1083,7 +1130,7 @@ func (cxn *brokerCxn) writeRequest(ctx context.Context, enqueuedForWritingAt tim
 			if writeErr != nil {
 				after.Stop()
 				writeWait = time.Since(enqueuedForWritingAt)
-				return
+				return corrID, bytesWritten, writeWait, timeToWrite, readEnqueue, writeErr
 			}
 		}
 	}
@@ -1109,14 +1156,14 @@ func (cxn *brokerCxn) writeRequest(ctx context.Context, enqueuedForWritingAt tim
 	}
 
 	if writeErr != nil {
-		return
+		return corrID, bytesWritten, writeWait, timeToWrite, readEnqueue, writeErr
 	}
 	corrID = cxn.corrID
 	cxn.corrID++
 	if cxn.corrID < 0 {
 		cxn.corrID = 0
 	}
-	return
+	return corrID, bytesWritten, writeWait, timeToWrite, readEnqueue, writeErr
 }
 
 func (cxn *brokerCxn) writeConn(
@@ -1165,7 +1212,7 @@ func (cxn *brokerCxn) writeConn(
 			maybeUpdateCtxErr(cxn.cl.ctx, ctx, &writeErr)
 		}
 	}
-	return
+	return bytesWritten, writeWait, timeToWrite, readEnqueue, writeErr
 }
 
 func (cxn *brokerCxn) readConn(
@@ -1189,17 +1236,16 @@ func (cxn *brokerCxn) readConn(
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		sizeBuf := make([]byte, 4)
 		readStart := time.Now()
 		defer func() {
 			timeToRead = time.Since(readStart)
 			readWait = readStart.Sub(enqueuedForReadingAt)
 		}()
-		if nread, err = io.ReadFull(cxn.conn, sizeBuf); err != nil {
+		if nread, err = io.ReadFull(cxn.conn, cxn.sizeBuf[:]); err != nil {
 			return
 		}
 		var size int32
-		if size, err = cxn.parseReadSize(sizeBuf); err != nil {
+		if size, err = cxn.parseReadSize(cxn.sizeBuf[:]); err != nil {
 			return
 		}
 		buf = make([]byte, size)
@@ -1227,7 +1273,7 @@ func (cxn *brokerCxn) readConn(
 			maybeUpdateCtxErr(cxn.cl.ctx, ctx, &err)
 		}
 	}
-	return
+	return nread, buf, readWait, timeToRead, err
 }
 
 // Parses a length 4 slice and enforces the min / max read size based off the
@@ -1420,7 +1466,7 @@ func (cxn *brokerCxn) discard() {
 			err        error
 			timeToRead time.Duration
 
-			deadlineMu  sync.Mutex
+			deadlineMu  xsync.Mutex
 			deadlineSet bool
 
 			readDone = make(chan struct{})
@@ -1546,9 +1592,11 @@ func (cxn *brokerCxn) handleResp(pr promisedResp) {
 			} else {
 				cxn.b.cl.cfg.logger.Log(LogLevelWarn, "read from broker errored, killing connection after 0 successful responses (is SASL missing?)", "req", kmsg.Key(pr.resp.Key()).Name(), "addr", cxn.b.addr, "broker", logID(cxn.b.meta.NodeID), "err", err)
 				if err == io.EOF { // specifically avoid checking errors.Is to ensure this is not already wrapped
-					err = &ErrFirstReadEOF{kind: firstReadSASL, err: err}
+					err = &ErrFirstReadEOF{kind: firstReadSASL, err: err, retry: cxn.b.cl.cfg.alwaysRetryEOF}
 				}
 			}
+		} else {
+			cxn.b.cl.cfg.logger.Log(LogLevelDebug, "read from broker canceled, closing connection and killing any other in-flight requests on this connection", "req", kmsg.Key(pr.resp.Key()).Name(), "addr", cxn.b.addr, "broker", logID(cxn.b.meta.NodeID), "err", err)
 		}
 		pr.promise(nil, err)
 		cxn.die()
@@ -1591,4 +1639,13 @@ func (cxn *brokerCxn) handleResp(pr promisedResp) {
 	}
 
 	pr.promise(pr.resp, readErr)
+}
+
+func (cxn *brokerCxn) isIdleTimeout(idleTimeout time.Duration) bool {
+	lastWrite := time.Unix(0, cxn.lastWrite.Load())
+	lastRead := time.Unix(0, cxn.lastRead.Load())
+
+	writeIdle := time.Since(lastWrite) > idleTimeout && !cxn.writing.Load()
+	readIdle := time.Since(lastRead) > idleTimeout && !cxn.reading.Load()
+	return writeIdle && readIdle
 }

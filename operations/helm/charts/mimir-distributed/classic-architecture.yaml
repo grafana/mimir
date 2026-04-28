@@ -1,0 +1,20 @@
+# These values override the default configuration to run Grafana Mimir in classic architecture.
+# The "classic" architecture is what Mimir 2.x (mimir-distributed Helm chart version 5.x) used by default.
+# In this mode, Grafana Mimir doesn't use Kafka to decouple write and read paths. Instead,
+# the distributors push series directly to the ingesters.
+
+kafka:
+  enabled: false
+
+mimir:
+  structuredConfig:
+    ingest_storage:
+      enabled: false
+      kafka:
+        address: null
+        topic: null
+        auto_create_topic_default_partitions: null
+    distributor:
+      remote_timeout: null
+    ingester:
+      push_grpc_method_enabled: null

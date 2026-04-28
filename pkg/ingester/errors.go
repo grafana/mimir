@@ -37,13 +37,22 @@ var (
 // and containing the given gRPC code. If the given error is an ingesterError,
 // the resulting ErrorWithStatus will be enriched by the details backed by
 // ingesterError.errorCause. These details are of type mimirpb.ErrorDetails.
+// Furthermore, iff the given error is a softError, the details' Soft field will be true.
 func newErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWithStatus {
 	var (
 		ingesterErr  ingesterError
+		softErr      softError
 		errorDetails *mimirpb.ErrorDetails
 	)
 	if errors.As(originalErr, &ingesterErr) {
 		errorDetails = &mimirpb.ErrorDetails{Cause: ingesterErr.errorCause()}
+		if errors.As(originalErr, &softErr) {
+			errorDetails.Soft = true
+		}
+		var counts softErrorWithRejectedSamples
+		if errors.As(originalErr, &counts) {
+			errorDetails.RejectedSamples = counts.rejectedSamples
+		}
 	}
 	return globalerror.WrapErrorWithGRPCStatus(originalErr, code, errorDetails)
 }
@@ -60,6 +69,14 @@ type softError interface {
 }
 
 type softErrorFunction func() softError
+
+type softErrorWithRejectedSamples struct {
+	err             error
+	rejectedSamples int64
+}
+
+func (e softErrorWithRejectedSamples) Error() string { return e.err.Error() }
+func (e softErrorWithRejectedSamples) Unwrap() error { return e.err }
 
 // wrapOrAnnotateWithUser prepends the given userID to the given error.
 // If the given error matches one of the errors from this package, the
@@ -321,6 +338,36 @@ var _ ingesterError = perMetricSeriesLimitReachedError{}
 // Ensure that perMetricSeriesLimitReachedError is an softError.
 var _ softError = perMetricSeriesLimitReachedError{}
 
+type labelsNotSortedError struct {
+	series string
+}
+
+// newLabelsNotSortedError creates a new labelsNotSortedError indicating that a series has out-of-order or non-unique label names.
+func newLabelsNotSortedError(labels []mimirpb.LabelAdapter) labelsNotSortedError {
+	return labelsNotSortedError{
+		series: mimirpb.FromLabelAdaptersToString(labels),
+	}
+}
+
+func (e labelsNotSortedError) Error() string {
+	return fmt.Sprintf("%s This is for series %s",
+		globalerror.SeriesLabelsNotSorted.Message("received a series with out-of-order or non-unique label names"),
+		e.series,
+	)
+}
+
+func (e labelsNotSortedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.ERROR_CAUSE_BAD_DATA
+}
+
+func (e labelsNotSortedError) soft() {}
+
+// Ensure that labelsNotSortedError is an ingesterError.
+var _ ingesterError = labelsNotSortedError{}
+
+// Ensure that labelsNotSortedError is a softError.
+var _ softError = labelsNotSortedError{}
+
 // perMetricMetadataLimitReachedError is an ingesterError indicating that a per-metric metadata limit has been reached.
 type perMetricMetadataLimitReachedError struct {
 	limit  int
@@ -365,13 +412,19 @@ type nativeHistogramValidationError struct {
 	timestamp    model.Time
 }
 
-func newNativeHistogramValidationError(id globalerror.ID, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) nativeHistogramValidationError {
-	return nativeHistogramValidationError{
+func newNativeHistogramValidationError(originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) (nativeHistogramValidationError, bool) {
+	id, ok := globalerror.MapNativeHistogramErr(originalErr)
+	if !ok {
+		return nativeHistogramValidationError{}, false
+	}
+
+	nativeError := nativeHistogramValidationError{
 		id:           id,
 		originalErr:  originalErr,
 		seriesLabels: seriesLabels,
 		timestamp:    timestamp,
 	}
+	return nativeError, true
 }
 
 func (e nativeHistogramValidationError) Error() string {
@@ -523,10 +576,12 @@ type ingesterErrSamplers struct {
 	maxSeriesPerUserLimitExceeded     *log.Sampler
 	maxMetadataPerUserLimitExceeded   *log.Sampler
 	nativeHistogramValidationError    *log.Sampler
+	labelsNotSorted                   *log.Sampler
 }
 
 func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	return ingesterErrSamplers{
+		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),

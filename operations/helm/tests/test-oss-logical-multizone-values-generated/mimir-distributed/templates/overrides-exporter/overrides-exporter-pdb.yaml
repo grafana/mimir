@@ -1,6 +1,6 @@
 ---
 # Source: mimir-distributed/templates/overrides-exporter/overrides-exporter-pdb.yaml
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: test-oss-logical-multizone-values-mimir-overrides-exporter

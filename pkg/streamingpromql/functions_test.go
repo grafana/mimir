@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -29,7 +28,9 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 
 	storage := promqltest.LoadedStorage(t, data)
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -66,6 +67,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"deriv":                        `deriv({__name__=~"float.*"}[1m])`,
 		"double_exponential_smoothing": `double_exponential_smoothing({__name__=~"float.*"}[1m], 0.01, 0.1)`,
 		"exp":                          `exp({__name__=~"float.*"})`,
+		"first_over_time":              `<skip>`, // first_over_time() doesn't drop the metric name, so this test doesn't apply.
 		"floor":                        `floor({__name__=~"float.*"})`,
 		"histogram_avg":                `histogram_avg({__name__=~"histogram.*"})`,
 		"histogram_count":              `histogram_count({__name__=~"histogram.*"})`,
@@ -77,6 +79,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"hour":                         `hour({__name__=~"float.*"})`,
 		"idelta":                       `idelta({__name__=~"float.*"}[1m])`,
 		"increase":                     `increase({__name__=~"float.*"}[1m])`,
+		"info":                         `<skip>`, // info() doesn't drop the metric name, so this test doesn't apply.
 		"irate":                        `irate({__name__=~"float.*"}[1m])`,
 		"label_join":                   `label_join({__name__=~"float.*"}, "__name__", "", "env")`,
 		"label_replace":                `label_replace({__name__=~"float.*"}, "__name__", "$1", "env", "(.*)")`,
@@ -84,6 +87,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"ln":                           `ln({__name__=~"float.*"})`,
 		"log10":                        `log10({__name__=~"float.*"})`,
 		"log2":                         `log2({__name__=~"float.*"})`,
+		"mad_over_time":                `mad_over_time({__name__=~"float.*"}[1m])`,
 		"max_over_time":                `max_over_time({__name__=~"float.*"}[1m])`,
 		"min_over_time":                `min_over_time({__name__=~"float.*"}[1m])`,
 		"minute":                       `minute({__name__=~"float.*"})`,
@@ -109,6 +113,10 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"tan":                          `tan({__name__=~"float.*"})`,
 		"tanh":                         `tanh({__name__=~"float.*"})`,
 		"timestamp":                    `timestamp({__name__=~"float.*"})`,
+		"ts_of_first_over_time":        `ts_of_first_over_time({__name__=~"float.*"}[1m])`,
+		"ts_of_last_over_time":         `ts_of_last_over_time({__name__=~"float.*"}[1m])`,
+		"ts_of_max_over_time":          `ts_of_max_over_time({__name__=~"float.*"}[1m])`,
+		"ts_of_min_over_time":          `ts_of_min_over_time({__name__=~"float.*"}[1m])`,
 		"vector":                       `<skip>`, // vector() takes a scalar, so this test doesn't apply.
 		"year":                         `year({__name__=~"float.*"})`,
 	}

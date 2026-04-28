@@ -4,6 +4,9 @@ package core
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -12,14 +15,78 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
+	if h == nil {
+		return nil
+	}
+	return &binops.Hints{
+		Include: slices.Clone(h.Include),
+	}
+}
+
+func (f *VectorMatchFillValues) ToPrometheusType() parser.VectorMatchFillValues {
+	// Why are we doing this?
+	// The prometheus VectorMatchFillValues uses *float64 fields.
+	// In the current mimir protobufs configuration, we are not able to do an optional double (which would map to a *float64)
+	// ie message VectorMatchFillValues {
+	//  	optional double rhs = 1;
+	//  	optional double lhs = 2;
+	//}
+
+	out := parser.VectorMatchFillValues{}
+
+	if f.RhsSet {
+		out.RHS = &f.Rhs
+	}
+	if f.LhsSet {
+		out.LHS = &f.Lhs
+	}
+	return out
+}
+
+func VectorMatchFillValuesFrom(in parser.VectorMatchFillValues) VectorMatchFillValues {
+	out := VectorMatchFillValues{}
+
+	if in.RHS != nil {
+		out.Rhs = *in.RHS
+		out.RhsSet = true
+	}
+	if in.LHS != nil {
+		out.Lhs = *in.LHS
+		out.LhsSet = true
+	}
+	return out
+}
+
 func (v *VectorMatching) ToPrometheusType() *parser.VectorMatching {
-	return (*parser.VectorMatching)(v)
+	if v == nil {
+		return nil
+	}
+	return &parser.VectorMatching{
+		Card:           v.Card,
+		MatchingLabels: v.MatchingLabels,
+		On:             v.On,
+		Include:        v.Include,
+		FillValues:     v.FillValues.ToPrometheusType(),
+	}
 }
 
 func VectorMatchingFrom(v *parser.VectorMatching) *VectorMatching {
-	return (*VectorMatching)(v)
+	if v == nil {
+		return nil
+	}
+	return &VectorMatching{
+		Card:           v.Card,
+		MatchingLabels: v.MatchingLabels,
+		On:             v.On,
+		Include:        v.Include,
+		FillValues:     VectorMatchFillValuesFrom(v.FillValues),
+	}
 }
 
 func PositionRangeFrom(pos posrange.PositionRange) PositionRange {
@@ -30,7 +97,7 @@ func (p PositionRange) ToPrometheusType() posrange.PositionRange {
 	return posrange.PositionRange(p)
 }
 
-func LabelMatchersFrom(matchers []*labels.Matcher) []*LabelMatcher {
+func LabelMatchersFromPrometheusType(matchers []*labels.Matcher) []*LabelMatcher {
 	if len(matchers) == 0 {
 		return nil
 	}
@@ -38,19 +105,56 @@ func LabelMatchersFrom(matchers []*labels.Matcher) []*LabelMatcher {
 	converted := make([]*LabelMatcher, 0, len(matchers))
 
 	for _, m := range matchers {
-		converted = append(converted, &LabelMatcher{
+		matcher := LabelMatcherFromPrometheusType(m)
+		converted = append(converted, &matcher)
+	}
+
+	return converted
+}
+
+func LabelMatcherFromPrometheusType(m *labels.Matcher) LabelMatcher {
+	return LabelMatcher{
+		Name:  m.Name,
+		Value: m.Value,
+		Type:  m.Type,
+	}
+}
+
+func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
+	if len(matchers) == 0 {
+		return nil
+	}
+
+	converted := make([]types.Matcher, 0, len(matchers))
+	for _, m := range matchers {
+		converted = append(converted, types.Matcher{
+			Type:  m.Type,
 			Name:  m.Name,
 			Value: m.Value,
-			Type:  m.Type,
 		})
 	}
 
 	return converted
 }
 
-// LabelMatchersToPrometheusType converts matchers to a labels.Matcher slice.
-//
-// Any regex matchers will have their patterns parsed, and this method will return an error if parsing fails.
+func SubsetsToSelectorType(subsets []SubsetMatchers) ([]selectors.Subset, error) {
+	if len(subsets) == 0 {
+		return nil, nil
+	}
+
+	converted := make([]selectors.Subset, 0, len(subsets))
+	for _, subset := range subsets {
+		m, err := LabelMatchersToPrometheusType(subset.Matchers)
+		if err != nil {
+			return nil, err
+		}
+
+		converted = append(converted, selectors.Subset{Filter: m})
+	}
+
+	return converted, nil
+}
+
 func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
 	if len(matchers) == 0 {
 		return nil, nil
@@ -59,21 +163,45 @@ func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher,
 	converted := make([]*labels.Matcher, 0, len(matchers))
 
 	for _, m := range matchers {
-		m, err := labels.NewMatcher(m.Type, m.Name, m.Value)
+		matcher, err := labels.NewMatcher(m.Type, m.Name, m.Value)
 		if err != nil {
 			return nil, err
 		}
 
-		converted = append(converted, m)
+		converted = append(converted, matcher)
 	}
 
 	return converted, nil
 }
 
+func subsetsEqual(a, b SubsetMatchers) bool {
+	return slices.EqualFunc(a.Matchers, b.Matchers, matchersEqual)
+}
+
 func matchersEqual(a, b *LabelMatcher) bool {
-	return a.Type == b.Type &&
-		a.Name == b.Name &&
-		a.Value == b.Value
+	return a.Equal(b)
+}
+
+// LabelMatchersStringer generates a human-readable version of multiple LabelMatchers
+// for use in logs or traces.
+type LabelMatchersStringer []*LabelMatcher
+
+func (l LabelMatchersStringer) String() string {
+	var builder strings.Builder
+	builder.WriteByte('{')
+
+	for i, m := range l {
+		builder.WriteString(m.Name)
+		builder.WriteString(m.Type.String())
+		builder.WriteString(strconv.Quote(m.Value))
+
+		if i < len(l)-1 {
+			builder.WriteString(", ")
+		}
+	}
+
+	builder.WriteByte('}')
+	return builder.String()
 }
 
 var itemTypeToAggregationOperation = map[parser.ItemType]AggregationOperation{
@@ -89,6 +217,8 @@ var itemTypeToAggregationOperation = map[parser.ItemType]AggregationOperation{
 	parser.BOTTOMK:      AGGREGATION_BOTTOMK,
 	parser.COUNT_VALUES: AGGREGATION_COUNT_VALUES,
 	parser.QUANTILE:     AGGREGATION_QUANTILE,
+	parser.LIMITK:       AGGREGATION_LIMITK,
+	parser.LIMIT_RATIO:  AGGREGATION_LIMIT_RATIO,
 }
 
 var aggregationOperationToItemType = invert(itemTypeToAggregationOperation)

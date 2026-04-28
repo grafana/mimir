@@ -40,8 +40,8 @@ func NewSort(
 	}
 }
 
-func (s *Sort) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	allSeries, err := s.inner.SeriesMetadata(ctx)
+func (s *Sort) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	allSeries, err := s.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -162,9 +162,11 @@ func (s *Sort) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return s.inner.Prepare(ctx, params)
 }
 
-func (s *Sort) Close() {
-	s.inner.Close()
+func (s *Sort) AfterPrepare(ctx context.Context) error {
+	return s.inner.AfterPrepare(ctx)
+}
 
+func (s *Sort) Finalize(ctx context.Context) error {
 	// Return any remaining data to the pool.
 	// Any data in allData that was previously passed to the calling operator by NextSeries does not need to be returned to the pool,
 	// as the calling operator is responsible for returning it to the pool.
@@ -174,4 +176,14 @@ func (s *Sort) Close() {
 	}
 
 	s.allData = nil
+
+	return s.inner.Finalize(ctx)
+}
+
+func (s *Sort) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return s.inner.Stats(ctx)
+}
+
+func (s *Sort) Close() {
+	s.inner.Close()
 }

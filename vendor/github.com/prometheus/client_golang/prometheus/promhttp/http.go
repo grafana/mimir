@@ -89,6 +89,10 @@ var gzipPool = sync.Pool{
 // metrics used for instrumentation will be shared between them, providing
 // global scrape counts.
 //
+// The handler supports filtering metrics by name using the `name[]` query parameter.
+// Multiple metric names can be specified by providing the parameter multiple times.
+// When no name[] parameters are provided, all metrics are returned.
+//
 // This function is meant to cover the bulk of basic use cases. If you are doing
 // anything that requires more customization (including using a non-default
 // Gatherer, different instrumentation, and non-default HandlerOpts), use the
@@ -105,6 +109,10 @@ func Handler() http.Handler {
 // Gatherers, with non-default HandlerOpts, and/or with custom (or no)
 // instrumentation. Use the InstrumentMetricHandler function to apply the same
 // kind of instrumentation as it is used by the Handler function.
+//
+// The handler supports filtering metrics by name using the `name[]` query parameter.
+// Multiple metric names can be specified by providing the parameter multiple times.
+// When no name[] parameters are provided, all metrics are returned.
 func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) http.Handler {
 	return HandlerForTransactional(prometheus.ToTransactionalGatherer(reg), opts)
 }
@@ -112,6 +120,10 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) http.Handler {
 // HandlerForTransactional is like HandlerFor, but it uses transactional gather, which
 // can safely change in-place returned *dto.MetricFamily before call to `Gather` and after
 // call to `done` of that `Gather`.
+//
+// The handler supports filtering metrics by name using the `name[]` query parameter.
+// Multiple metric names can be specified by providing the parameter multiple times.
+// When no name[] parameters are provided, all metrics are returned.
 func HandlerForTransactional(reg prometheus.TransactionalGatherer, opts HandlerOpts) http.Handler {
 	var (
 		inFlightSem chan struct{}
@@ -245,7 +257,21 @@ func HandlerForTransactional(reg prometheus.TransactionalGatherer, opts HandlerO
 			return false
 		}
 
+		// Build metric name filter set from query params (if any)
+		var metricFilter map[string]struct{}
+		if metricNames := req.URL.Query()["name[]"]; len(metricNames) > 0 {
+			metricFilter = make(map[string]struct{}, len(metricNames))
+			for _, name := range metricNames {
+				metricFilter[name] = struct{}{}
+			}
+		}
+
 		for _, mf := range mfs {
+			if metricFilter != nil {
+				if _, ok := metricFilter[mf.GetName()]; !ok {
+					continue
+				}
+			}
 			if handleError(enc.Encode(mf)) {
 				return
 			}
@@ -460,7 +486,7 @@ func httpError(rsp http.ResponseWriter, err error) {
 
 // negotiateEncodingWriter reads the Accept-Encoding header from a request and
 // selects the right compression based on an allow-list of supported
-// compressions. It returns a writer implementing the compression and an the
+// compressions. It returns a writer implementing the compression and the
 // correct value that the caller can set in the response header.
 func negotiateEncodingWriter(r *http.Request, rw io.Writer, compressions []string) (_ io.Writer, encodingHeaderValue string, closeWriter func(), _ error) {
 	if len(compressions) == 0 {

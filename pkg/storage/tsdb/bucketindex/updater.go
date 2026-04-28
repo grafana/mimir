@@ -220,6 +220,7 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark) ([]*BlockDeletionMark, map[ulid.ULID]error, error) {
 	out := make([]*BlockDeletionMark, 0, len(old))
 	partials := map[ulid.ULID]error{}
+	var partialsMx sync.Mutex
 
 	// Find all markers in the storage.
 	discovered, err := block.ListBlockDeletionMarks(ctx, w.bkt)
@@ -256,7 +257,9 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 			}
 			// If the block's deletion mark is not found and the block's directory contains some files, then it has not yet been
 			// permanently deleted. Record any partially deleted blocks so that we can check if deletion should be retried.
+			partialsMx.Lock()
 			partials[id] = err
+			partialsMx.Unlock()
 			return nil, nil
 		}
 		if errors.Is(err, ErrBlockDeletionMarkCorrupted) {

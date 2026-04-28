@@ -2,7 +2,6 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/ruler_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
-//go:build requires_docker
 
 package integration
 
@@ -727,6 +726,9 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 			// Very low limit so that ruler hits it.
 			"-querier.max-fetched-chunks-per-query": "5",
 
+			// Low series limit to trigger client errors during query evaluation
+			"-querier.max-fetched-series-per-query": "3",
+
 			// Do not involve the block storage as we don't upload blocks.
 			"-querier.query-store-after": "12h",
 
@@ -795,22 +797,64 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
 	}
 
-	// Verify that user-failures don't increase cortex_ruler_queries_failed_total.
-	for groupName, expression := range map[string]string{
-		// Syntactically correct expression (passes check in ruler), but failing because of invalid regex. This fails in PromQL engine.
-		// This selects the label "nolabel" which does not exist, thus too many chunks doesn't apply.
-		"invalid_group": `label_replace(metric{nolabel="none"}, "foo", "$1", "service", "[")`,
+	// Test cases for error classification and query metrics
+	testCases := []struct {
+		name              string
+		expression        string
+		expectedErrorType string // "user" or "operator"
+	}{
+		{
+			name:              "invalid_regex_should_be_user_error",
+			expression:        `label_replace(metric{nolabel="none"}, "foo", "$1", "service", "[")`,
+			expectedErrorType: "user",
+		},
+		{
+			name:              "too_many_chunks_should_be_user_error",
+			expression:        `sum(metric)`,
+			expectedErrorType: "user",
+		},
+		{
+			name:              "invalid_and_too_many_chunks_group",
+			expression:        `label_replace(metric, "foo", "$1", "service", "[")`,
+			expectedErrorType: "user",
+		},
+	}
 
-		// This one fails in querier code, because of limits.
-		"too_many_chunks_group": `sum(metric)`,
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			addNewRuleAndWait(t, tc.name, tc.expression, true)
 
-		// Combine the errors above to have a compound error.
-		"invalid_and_too_many_chunks_group": `label_replace(metric, "foo", "$1", "service", "[")`,
-	} {
-		t.Run(groupName, func(t *testing.T) {
-			addNewRuleAndWait(t, groupName, expression, true)
+			time.Sleep(1 * time.Second)
 
-			// Ensure that these failures are not reported in the rest of "failed queries" reasons.
+			m := ruleGroupMatcher(user, namespace, tc.name)
+
+			// Verify error classification
+			userErrorMatcher := labels.MustNewMatcher(labels.MatchEqual, "reason", "user")
+			operatorErrorMatcher := labels.MustNewMatcher(labels.MatchEqual, "reason", "operator")
+
+			userErrors, err := ruler.SumMetrics(
+				[]string{"cortex_prometheus_rule_evaluation_failures_total"},
+				e2e.SkipMissingMetrics,
+				e2e.WithLabelMatchers(m, userErrorMatcher),
+			)
+			require.NoError(t, err)
+
+			operatorErrors, err := ruler.SumMetrics(
+				[]string{"cortex_prometheus_rule_evaluation_failures_total"},
+				e2e.SkipMissingMetrics,
+				e2e.WithLabelMatchers(m, operatorErrorMatcher),
+			)
+			require.NoError(t, err)
+
+			if tc.expectedErrorType == "user" {
+				require.Greater(t, userErrors[0], float64(0), "Expected user errors for %s", tc.name)
+				require.Equal(t, float64(0), operatorErrors[0], "Expected no operator errors for %s", tc.name)
+			} else {
+				require.Greater(t, operatorErrors[0], float64(0), "Expected operator errors for %s", tc.name)
+				require.Equal(t, float64(0), userErrors[0], "Expected no user errors for %s", tc.name)
+			}
+
+			// Ensure that these failures are not reported in the "error" reason for cortex_ruler_queries_failed_total.
 			sum, err := ruler.SumMetrics(
 				[]string{"cortex_ruler_queries_failed_total"},
 				e2e.SkipMissingMetrics,
@@ -820,7 +864,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 			require.Equal(t, float64(0), sum[0])
 
 			// Delete rule before checking "cortex_ruler_queries_total", as we want to reuse value for next test.
-			deleteRuleAndWait(t, groupName)
+			deleteRuleAndWait(t, tc.name)
 
 			// Check that cortex_ruler_queries_total went up since last test.
 			newTotalQueries, err := ruler.SumMetrics([]string{"cortex_ruler_queries_total"}, e2e.WithLabelMatchers(userMatcher))
@@ -1269,6 +1313,201 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 	}
 }
 
+func TestRulerRemoteEvaluationErrorClassification(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	flags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
+		BlocksStorageFlags(),
+		map[string]string{
+			"-ruler.evaluation-interval":        "2s",
+			"-ruler.poll-interval":              "2s",
+			"-ruler.evaluation-delay-duration":  "0",
+			"-ingester.ring.replication-factor": "1",
+
+			// Limits to trigger errors
+			"-querier.max-fetched-chunks-per-query": "5",
+			"-querier.max-fetched-series-per-query": "3",
+			"-querier.query-store-after":            "12h",
+		},
+	)
+
+	// Start query-scheduler
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
+	// Start query-frontend
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.Start(queryFrontend))
+
+	// Configure ruler to use query-frontend (remote evaluation)
+	flags["-ruler.query-frontend.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
+
+	// Start services
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
+	require.NoError(t, s.StartAndWaitReady(ruler))
+
+	// Wait until both the distributor and ruler have updated the ring.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
+	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+
+	const user = "user"
+	const namespace = "test"
+
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", ruler.HTTPEndpoint(), user)
+	require.NoError(t, err)
+
+	// Push series
+	for i := 0; i < 10; i++ {
+		series, _, _ := generateAlternatingSeries(i)("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
+		res, err := c.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, 200, res.StatusCode)
+	}
+
+	testCases := []struct {
+		name        string
+		expression  string
+		expectUser  bool // true = user error, false = operator error
+		comment     string
+		isAlertRule bool
+		alertLabels map[string]string
+		queryFail   bool
+	}{
+		{
+			name:       "invalid_regex_user_error",
+			expression: `label_replace(metric, "foo", "$1", "service", "[")`,
+			expectUser: true,
+			comment:    "Invalid regex should be classified as user error",
+			queryFail:  true,
+		},
+		{
+			name:       "series_limit_user_error",
+			expression: `sum(metric)`,
+			expectUser: true,
+			comment:    "Exceeding series limit should be user error",
+			queryFail:  true,
+		},
+		{
+			name:       "chunk_limit_user_error",
+			expression: `sum(rate(metric[1h]))`,
+			expectUser: true,
+			comment:    "Exceeding chunk limit should be user error",
+			queryFail:  true,
+		},
+		{
+			name:        "duplicate_labelset_alerting_rule",
+			expression:  `vector(0) or label_replace(vector(0),"test","x","","")`,
+			expectUser:  true,
+			comment:     "Alerting rule with duplicate labelsets after applying alert labels should be user error",
+			isAlertRule: true,
+			alertLabels: map[string]string{"test": "test"},
+			queryFail:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var ruleGroup rulefmt.RuleGroup
+			if tc.isAlertRule {
+				alertRule := rulefmt.Rule{
+					Alert:  "rule",
+					Expr:   tc.expression,
+					Labels: tc.alertLabels,
+				}
+				ruleGroup = ruleGroupWithRules(tc.name, 10, alertRule)
+			} else {
+				ruleGroup = ruleGroupWithRecordingRule(tc.name, "rule", tc.expression)
+			}
+			require.NoError(t, c.SetRuleGroup(ruleGroup, namespace))
+			m := ruleGroupMatcher(user, namespace, tc.name)
+
+			// Wait for rule to load and evaluate
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m),
+				e2e.WaitMissingMetrics))
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m),
+				e2e.WaitMissingMetrics))
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m),
+				e2e.WaitMissingMetrics))
+
+			// Check error classification
+			userErrorMatcher := labels.MustNewMatcher(labels.MatchEqual, "reason", "user")
+			operatorErrorMatcher := labels.MustNewMatcher(labels.MatchEqual, "reason", "operator")
+
+			userErrors, err := ruler.SumMetrics([]string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m, userErrorMatcher),
+				e2e.SkipMissingMetrics)
+			require.NoError(t, err)
+
+			operatorErrors, err := ruler.SumMetrics([]string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m, operatorErrorMatcher),
+				e2e.SkipMissingMetrics)
+			require.NoError(t, err)
+
+			if tc.expectUser {
+				require.Greater(t, userErrors[0], float64(0), "Expected user errors for %s: %s", tc.name, tc.comment)
+				require.Equal(t, float64(0), operatorErrors[0], "Expected no operator errors for %s: %s", tc.name, tc.comment)
+			} else {
+				require.Equal(t, float64(0), userErrors[0], "Expected no user errors for %s: %s", tc.name, tc.comment)
+				require.Greater(t, operatorErrors[0], float64(0), "Expected operator errors for %s: %s", tc.name, tc.comment)
+			}
+
+			// Verify cortex_ruler_queries_failed_total based on queryFail
+			userMatcher := labels.MustNewMatcher(labels.MatchEqual, "user", user)
+			failedQueriesBefore, err := ruler.SumMetrics(
+				[]string{"cortex_ruler_queries_failed_total"},
+				e2e.WithLabelMatchers(userMatcher),
+				e2e.SkipMissingMetrics,
+			)
+			require.NoError(t, err)
+
+			if tc.queryFail {
+				expectedReason := "server_error"
+				if tc.expectUser {
+					expectedReason = "client_error"
+				}
+				reasonMatcher := labels.MustNewMatcher(labels.MatchEqual, "reason", expectedReason)
+
+				failedQueries, err := ruler.SumMetrics(
+					[]string{"cortex_ruler_queries_failed_total"},
+					e2e.WithLabelMatchers(userMatcher, reasonMatcher),
+					e2e.SkipMissingMetrics,
+				)
+				require.NoError(t, err)
+				require.Greater(t, failedQueries[0], float64(0), "Expected failed queries metric to increase for %s", tc.name)
+			} else {
+				failedQueriesAfter, err := ruler.SumMetrics(
+					[]string{"cortex_ruler_queries_failed_total"},
+					e2e.WithLabelMatchers(userMatcher),
+					e2e.SkipMissingMetrics,
+				)
+				require.NoError(t, err)
+				require.Equal(t, failedQueriesBefore[0], failedQueriesAfter[0], "Expected no new failed queries for %s (query succeeded, evaluation failed)", tc.name)
+			}
+
+			// Cleanup
+			require.NoError(t, c.DeleteRuleGroup(namespace, tc.name))
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
+		})
+	}
+}
+
 func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRulesWhenUsingTheIngestStorage(t *testing.T) {
 	const (
 		ruleGroupNamespace = "test"
@@ -1283,7 +1522,7 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 		CommonStorageBackendFlags(),
 		RulerFlags(),
 		BlocksStorageFlags(),
-		IngestStorageFlags(),
+		IngestStorageFlags(e2edb.KafkaAuthNone),
 		map[string]string{
 			"-ingester.ring.replication-factor": "1",
 

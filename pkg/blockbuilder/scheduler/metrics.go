@@ -23,7 +23,7 @@ type schedulerMetrics struct {
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
-	return schedulerMetrics{
+	scm := schedulerMetrics{
 		updateScheduleDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_blockbuilder_scheduler_schedule_update_seconds",
 			Help: "Time spent updating the schedule.",
@@ -73,6 +73,12 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		jobGapDetected: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_blockbuilder_scheduler_job_gap_detected",
 			Help: "The number of times an unexpected gap was detected between jobs.",
-		}, []string{"offset_type", "partition"}),
+		}, []string{"offset_type"}),
 	}
+
+	// Make sure the gap detection counters are pre-initialized. This avoids misleading blanks in the series on restart.
+	scm.jobGapDetected.WithLabelValues(offsetNamePlanned)
+	scm.jobGapDetected.WithLabelValues(offsetNameCommitted)
+
+	return scm
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -56,7 +57,7 @@ func NewSubquerySpinOffMapper(defaultStepFunc func(rangeMillis int64) int64, log
 // See sharding.go and embedded.go for another example of mapping into a fake metric selector.
 func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	// Immediately clone the expr to avoid mutating the original
-	expr, err = cloneExpr(expr)
+	expr, err = CloneExpr(expr)
 	if err != nil {
 		return nil, false, err
 	}
@@ -68,6 +69,7 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 		selector := &parser.VectorSelector{
 			Name: DownstreamQueryMetricName,
 			LabelMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, DownstreamQueryMetricName),
 				labels.MustNewMatcher(labels.MatchEqual, DownstreamQueryLabelName, expr.String()),
 			},
 		}
@@ -109,6 +111,7 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 			selector := &parser.VectorSelector{
 				Name: SubqueryMetricName,
 				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, SubqueryMetricName),
 					labels.MustNewMatcher(labels.MatchEqual, SubqueryQueryLabelName, sq.Expr.String()),
 					labels.MustNewMatcher(labels.MatchEqual, SubqueryRangeLabelName, sq.Range.String()),
 					labels.MustNewMatcher(labels.MatchEqual, SubqueryStepLabelName, step.String()),

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
@@ -37,12 +38,13 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -50,13 +52,14 @@ var (
 	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+	errRequestNoQuery = apierror.New(apierror.TypeBadData, "the request has no query")
 	allFormats        = []string{formatJSON, formatProtobuf}
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
-	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
-	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	codecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
+	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
+	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader}
+	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
+	codecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader}
 )
 
 const maxResolutionPoints = 11000
@@ -82,7 +85,7 @@ type Merger interface {
 	MergeResponse(...Response) (Response, error)
 }
 
-// MetricsQueryRequest represents an instant or query range request that can be process by middlewares.
+// MetricsQueryRequest represents a remote read, instant query or range query request that can be processed by middlewares.
 type MetricsQueryRequest interface {
 	// GetID returns the ID of the request used to correlate downstream requests and responses.
 	GetID() int64
@@ -99,6 +102,14 @@ type MetricsQueryRequest interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
+	// GetClonedParsedQuery returns the query, parsed into an AST. The returned query is a clone, so
+	// it's safe to manipulate the returned expression without affecting the expression stored in the
+	// request itself.
+	//
+	// This function returns an error if the query is invalid or the request has no query.
+	GetClonedParsedQuery() (parser.Expr, error)
+	// GetParsedQuery returns the query, parsed into an AST. The returned expression must not be modified.
+	GetParsedQuery() parser.Expr
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 	// as determined from the start timestamp and any range vector or offset in the query.
 	GetMinT() int64
@@ -115,6 +126,8 @@ type MetricsQueryRequest interface {
 	// GetStats returns the stats parameter for the request.
 	// See WithStats() comment for more details.
 	GetStats() string
+	// GetQueryOpts returns the query options for the request.
+	GetQueryOpts() (promql.QueryOpts, error)
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) (MetricsQueryRequest, error)
 	// WithStartEnd clone the current request with different start and end timestamp.
@@ -218,12 +231,14 @@ type Codec struct {
 	lookbackDelta                                   time.Duration
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
+	injector                                        propagation.Injector
+	logger                                          log.Logger
 }
 
 type formatter interface {
-	EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error)
-	EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]byte, error)
-	EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error)
+	EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error
+	EncodeLabelsResponseTo(w io.Writer, resp *PrometheusLabelsResponse) error
+	EncodeSeriesResponseTo(w io.Writer, resp *PrometheusSeriesResponse) error
 	DecodeQueryResponse([]byte) (*PrometheusResponse, error)
 	DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error)
 	DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error)
@@ -235,7 +250,7 @@ var jsonFormatterInstance = jsonFormatter{}
 
 var knownFormats = []formatter{
 	jsonFormatterInstance,
-	protobufFormatter{},
+	ProtobufFormatter{},
 }
 
 func NewCodec(
@@ -243,6 +258,8 @@ func NewCodec(
 	lookbackDelta time.Duration,
 	queryResultResponseFormat string,
 	propagateHeaders []string,
+	injector propagation.Injector,
+	logger log.Logger,
 ) Codec {
 	return Codec{
 		metrics:                            newCodecMetrics(registerer),
@@ -250,13 +267,15 @@ func NewCodec(
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
 		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
 		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
+		injector:                           injector,
+		logger:                             logger,
 	}
 }
 
 // MergeResponse merges responses from multiple requests into a single Response
 func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	if len(responses) == 0 {
-		return newEmptyPrometheusResponse(), nil
+		return NewEmptyPrometheusResponse(), nil
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
@@ -300,15 +319,7 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 
 	// Merge the responses.
 	slices.SortFunc(promResponses, func(a, b *PrometheusResponse) int {
-		aTime := int64(-1)
-		if len(a.Data.Result) > 0 && len(a.Data.Result[0].Samples) > 0 {
-			aTime = a.Data.Result[0].Samples[0].TimestampMs
-		}
-		bTime := int64(-1)
-		if len(b.Data.Result) > 0 && len(b.Data.Result[0].Samples) > 0 {
-			bTime = b.Data.Result[0].Samples[0].TimestampMs
-		}
-		return cmp.Compare(aTime, bTime)
+		return cmp.Compare(firstSeriesTimestamp(a), firstSeriesTimestamp(b))
 	})
 
 	return &PrometheusResponseWithFinalizer{
@@ -352,18 +363,24 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, err
 	}
 
+	lookbackDelta, err := c.decodeLookbackDelta(&reqValues)
+	if err != nil {
+		return nil, err
+	}
+
 	query := reqValues.Get("query")
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return nil, DecorateWithParamName(err, "query")
 	}
 
 	var options Options
-	decodeOptions(r, &options)
+	DecodeOptions(r, &options)
 
 	stats := reqValues.Get("stats")
+
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, c.lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -379,19 +396,24 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "time")
 	}
 
+	lookbackDelta, err := c.decodeLookbackDelta(&reqValues)
+	if err != nil {
+		return nil, err
+	}
+
 	query := reqValues.Get("query")
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return nil, DecorateWithParamName(err, "query")
 	}
 
 	var options Options
-	decodeOptions(r, &options)
+	DecodeOptions(r, &options)
 
 	stats := reqValues.Get("stats")
 
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), time, c.lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), time, lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -408,6 +430,23 @@ func httpHeadersToProm(httpH http.Header) []*PrometheusHeader {
 		return strings.Compare(a.Name, b.Name)
 	})
 	return headers
+}
+
+func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error) {
+	if !reqValues.Has(lookbackDeltaParamDecodable.paramName) {
+		return c.lookbackDelta, nil
+	}
+
+	lookbackDelta, err := lookbackDeltaParamDecodable.Decode(reqValues)
+	if err != nil {
+		return 0, err
+	}
+
+	if lookbackDelta <= 0 {
+		return 0, DecorateWithParamName(fmt.Errorf("must be greater than 0, got %s", reqValues.Get(lookbackDeltaParamDecodable.paramName)), lookbackDeltaParamDecodable.paramName)
+	}
+
+	return time.Duration(lookbackDelta) * time.Millisecond, nil
 }
 
 // DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
@@ -522,7 +561,8 @@ func (p PromTimeParamDecoder) Decode(reqValues *url.Values) (int64, error) {
 
 var rangeStartParamDecodable = PromTimeParamDecoder{"start", RFC3339OrUnixMS, false, nil}
 var rangeEndParamDecodable = PromTimeParamDecoder{"end", RFC3339OrUnixMS, false, nil}
-var rangeStepEndParamDecodable = PromTimeParamDecoder{"step", DurationMSOrFloatMS, false, nil}
+var rangeStepParamDecodable = PromTimeParamDecoder{"step", DurationMSOrFloatMS, false, nil}
+var lookbackDeltaParamDecodable = PromTimeParamDecoder{"lookback_delta", DurationMSOrFloatMS, false, nil}
 
 // DecodeRangeQueryTimeParams encapsulates Prometheus instant query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.query_range.
@@ -541,7 +581,7 @@ func DecodeRangeQueryTimeParams(reqValues *url.Values) (start, end, step int64, 
 		return 0, 0, 0, errEndBeforeStart
 	}
 
-	step, err = rangeStepEndParamDecodable.Decode(reqValues)
+	step, err = rangeStepParamDecodable.Decode(reqValues)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -652,7 +692,7 @@ func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookba
 	return minTime, maxTime
 }
 
-func decodeOptions(r *http.Request, opts *Options) {
+func DecodeOptions(r *http.Request, opts *Options) {
 	opts.CacheDisabled = decodeCacheDisabledOption(r)
 
 	for _, value := range r.Header.Values(totalShardsControlHeader) {
@@ -688,6 +728,11 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 			"step":  []string{encodeDurationMs(r.GetStep())},
 			"query": []string{r.GetQuery()},
 		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
+		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
 		}
@@ -699,6 +744,11 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		values := url.Values{
 			"time":  []string{encodeTime(r.GetTime())},
 			"query": []string{r.GetQuery()},
+		}
+		// Check if lookback delta has a non-zero value before encoding
+		// the request since it's not valid to request a lookback of "0".
+		if l := r.GetLookbackDelta(); l != 0 {
+			values["lookback_delta"] = []string{encodeDuration(l)}
 		}
 		if s := r.GetStats(); s != "" {
 			values["stats"] = []string{s}
@@ -731,8 +781,22 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		req.Header.Add(api.ReadConsistencyHeader, level)
+	if err := c.AddHeadersForMetricQueryRequest(ctx, r, propagation.HttpHeaderCarrier(req.Header)); err != nil {
+		return nil, err
+	}
+
+	// Inject auth from context.
+	// This isn't included in AddHeadersForMetricQueryRequest as it's not needed for Protobuf requests to queriers.
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
+		return nil, err
+	}
+
+	return req.WithContext(ctx), nil
+}
+
+func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQueryRequest, headers propagation.Carrier) error {
+	if err := c.injector.InjectToCarrier(ctx, headers); err != nil {
+		return nil
 	}
 
 	// Propagate allowed HTTP headers.
@@ -742,17 +806,11 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		}
 
 		for _, v := range h.Values {
-			// There should only be one value, but add all of them for completeness.
-			req.Header.Add(h.Name, v)
+			headers.Add(h.Name, v)
 		}
 	}
 
-	// Inject auth from context.
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
-		return nil, err
-	}
-
-	return req.WithContext(ctx), nil
+	return nil
 }
 
 // EncodeLabelsSeriesQueryRequest encodes a LabelsSeriesQueryRequest into an http request.
@@ -837,8 +895,8 @@ func (c Codec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req LabelsSer
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		r.Header.Add(api.ReadConsistencyHeader, level)
+	if err := c.injector.InjectToCarrier(ctx, propagation.HttpHeaderCarrier(r.Header)); err != nil {
+		return nil, err
 	}
 
 	// Propagate allowed HTTP headers.
@@ -1036,7 +1094,12 @@ func findFormatter(contentType string) formatter {
 // EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
 func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.End()
+	endTraceSpan := true
+	defer func() {
+		if endTraceSpan {
+			sp.End()
+		}
+	}()
 
 	a, ok := res.GetPrometheusResponse()
 	if !ok {
@@ -1051,30 +1114,42 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
-	start := time.Now()
-	b, err := formatter.EncodeQueryResponse(a)
-	if err != nil {
-		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-	}
-
-	encodeDuration := time.Since(start)
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.SetAttributes(attribute.Int("bytes", len(b)))
-
 	queryStats := stats.FromContext(ctx)
-	queryStats.AddEncodeTime(encodeDuration)
+	pr, pw := io.Pipe()
+	endTraceSpan = false
+	go func() {
+		var encErr error
+		defer func() {
+			_ = pw.CloseWithError(encErr)
+			res.Close()
+			sp.End()
+		}()
+		cw := &countingWriter{w: pw}
+		start := time.Now()
+		encErr = formatter.EncodeQueryResponseTo(cw, a)
+		if encErr == nil {
+			encodeDuration := time.Since(start)
+			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
+			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+			// AddEncodeTime is called here, after encoding completes, but the handler has already
+			// read the stats to build the Server-Timing header before io.Copy drained this pipe.
+			// As a result, encode_time_seconds in Server-Timing is always 0 for streaming responses;
+			// the Prometheus histogram metric (codec_duration_seconds) is unaffected.
+			queryStats.AddEncodeTime(encodeDuration)
+		} else {
+			user, _ := user.ExtractOrgID(ctx)
+			level.Warn(c.logger).Log("msg", "failed to encode metrics query response", "url", req.URL.Path, "user", user, "err", encErr)
+		}
+	}()
 
 	resp := http.Response{
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body: &prometheusReadCloser{
-			Reader:    bytes.NewBuffer(b),
-			finalizer: res.Close,
-		},
+		Body:          pr,
 		StatusCode:    http.StatusOK,
-		ContentLength: int64(len(b)),
+		ContentLength: -1, // unknown: body is streamed without buffering
 	}
 	return &resp, nil
 }
@@ -1092,21 +1167,36 @@ func (prc *prometheusReadCloser) Close() error {
 	return nil
 }
 
+// countingWriter wraps an io.Writer and counts the bytes written.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (cw *countingWriter) Write(p []byte) (int, error) {
+	n, err := cw.w.Write(p)
+	cw.n += int64(n)
+	return n, err
+}
+
 // EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
 func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.End()
+	endTraceSpan := true
+	defer func() {
+		if endTraceSpan {
+			sp.End()
+		}
+	}()
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
-	var start time.Time
-	var b []byte
+	var encodeFunc func(cw *countingWriter) error
 
-	switch isSeriesResponse {
-	case false:
+	if !isSeriesResponse {
 		a, ok := res.(*PrometheusLabelsResponse)
 		if !ok {
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -1114,14 +1204,8 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		if a.Data != nil {
 			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
-
-		start = time.Now()
-		var err error
-		b, err = formatter.EncodeLabelsResponse(a)
-		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-		}
-	case true:
+		encodeFunc = func(cw *countingWriter) error { return formatter.EncodeLabelsResponseTo(cw, a) }
+	} else {
 		a, ok := res.(*PrometheusSeriesResponse)
 		if !ok {
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -1129,26 +1213,42 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		if a.Data != nil {
 			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
-
-		start = time.Now()
-		var err error
-		b, err = formatter.EncodeSeriesResponse(a)
-		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-		}
+		encodeFunc = func(cw *countingWriter) error { return formatter.EncodeSeriesResponseTo(cw, a) }
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.SetAttributes(attribute.Int("bytes", len(b)))
+	pr, pw := io.Pipe()
+	endTraceSpan = false
+	go func() {
+		var encErr error
+		defer func() {
+			_ = pw.CloseWithError(encErr)
+			res.Close()
+			sp.End()
+		}()
+		cw := &countingWriter{w: pw}
+		start := time.Now()
+		encErr = encodeFunc(cw)
+		if encErr == nil {
+			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
+			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+		} else {
+			msg := "failed to encode labels query response"
+			if isSeriesResponse {
+				msg = "failed to encode series query response"
+			}
+			user, _ := user.ExtractOrgID(ctx)
+			level.Warn(c.logger).Log("msg", msg, "url", req.URL.Path, "user", user, "err", encErr)
+		}
+	}()
 
 	resp := http.Response{
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body:          io.NopCloser(bytes.NewBuffer(b)),
+		Body:          pr,
 		StatusCode:    http.StatusOK,
-		ContentLength: int64(len(b)),
+		ContentLength: -1, // unknown: body is streamed without buffering
 	}
 	return &resp, nil
 }
@@ -1167,6 +1267,25 @@ func (Codec) negotiateContentType(acceptHeader string) (string, formatter) {
 	}
 
 	return "", nil
+}
+
+// firstSeriesTimestamp returns the earliest timestamp across the samples and histograms
+// of the first series in the response, or -1 if there are none.
+func firstSeriesTimestamp(r *PrometheusResponse) int64 {
+	if len(r.Data.Result) == 0 {
+		return -1
+	}
+	t := int64(-1)
+	s := r.Data.Result[0]
+	if len(s.Samples) > 0 {
+		t = s.Samples[0].TimestampMs
+	}
+	if len(s.Histograms) > 0 {
+		if ht := s.Histograms[0].TimestampMs; t == -1 || ht < t {
+			t = ht
+		}
+	}
+	return t
 }
 
 func matrixMerge(resps []*PrometheusResponse) []SampleStream {
@@ -1295,6 +1414,10 @@ func encodeTime(t int64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
+func encodeDuration(d time.Duration) string {
+	return encodeDurationMs(d.Milliseconds())
+}
+
 func encodeDurationMs(d int64) string {
 	return strconv.FormatFloat(float64(d)/float64(time.Second/time.Millisecond), 'f', -1, 64)
 }
@@ -1305,4 +1428,20 @@ func DecorateWithParamName(err error, field string) error {
 		return apierror.Newf(apierror.TypeBadData, errTmpl, field, status.Message())
 	}
 	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)
+}
+
+type headersContextKeyType int
+
+const headersContextKey headersContextKeyType = iota
+
+func ContextWithHeadersToPropagate(ctx context.Context, headers map[string][]string) context.Context {
+	return context.WithValue(ctx, headersContextKey, headers)
+}
+
+func HeadersToPropagateFromContext(ctx context.Context) map[string][]string {
+	if v := ctx.Value(headersContextKey); v != nil {
+		return v.(map[string][]string)
+	}
+
+	return nil
 }

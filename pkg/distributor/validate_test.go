@@ -7,26 +7,33 @@ package distributor
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/tracing"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	grpcstatus "google.golang.org/grpc/status"
 	golangproto "google.golang.org/protobuf/proto"
 
@@ -38,47 +45,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type validateLabelsCfg struct {
-	maxLabelNamesPerSeries     int
-	maxLabelNamesPerInfoSeries int
-	maxLabelNameLength         int
-	maxLabelValueLength        int
-	validationScheme           model.ValidationScheme
-}
-
-func (v validateLabelsCfg) MaxLabelNamesPerSeries(_ string) int {
-	return v.maxLabelNamesPerSeries
-}
-
-func (v validateLabelsCfg) MaxLabelNamesPerInfoSeries(_ string) int {
-	return v.maxLabelNamesPerInfoSeries
-}
-
-func (v validateLabelsCfg) MaxLabelNameLength(_ string) int {
-	return v.maxLabelNameLength
-}
-
-func (v validateLabelsCfg) MaxLabelValueLength(_ string) int {
-	return v.maxLabelValueLength
-}
-
-func (v validateLabelsCfg) NameValidationScheme(_ string) model.ValidationScheme {
-	return v.validationScheme
-}
-
-type validateMetadataCfg struct {
-	enforceMetadataMetricName bool
-	maxMetadataLength         int
-}
-
-func (vm validateMetadataCfg) EnforceMetadataMetricName(_ string) bool {
-	return vm.enforceMetadataMetricName
-}
-
-func (vm validateMetadataCfg) MaxMetadataLength(_ string) int {
-	return vm.maxMetadataLength
-}
-
 func TestValidateLabels(t *testing.T) {
 	t.Parallel()
 
@@ -86,6 +52,8 @@ func TestValidateLabels(t *testing.T) {
 
 	const defaultUserID = "testUserDefault"
 	const utf8UserID = "testUserUTF8"
+	const truncatingUserID = "truncatingUserID"
+	const droppingUserID = "droppingUserID"
 
 	limits := prepareDefaultLimits()
 	limits.MaxLabelValueLength = 25
@@ -95,12 +63,17 @@ func TestValidateLabels(t *testing.T) {
 	limits.SeparateMetricsGroupLabel = "group"
 
 	perTenant := map[string]*validation.Limits{}
-	for _, userID := range []string{defaultUserID, utf8UserID} {
+	for _, userID := range []string{defaultUserID, utf8UserID, truncatingUserID, droppingUserID} {
 		limits := *limits
 		perTenant[userID] = &limits
 	}
-	perTenant[defaultUserID].NameValidationScheme = validation.ValidationSchemeValue(model.LegacyValidation)
-	perTenant[utf8UserID].NameValidationScheme = validation.ValidationSchemeValue(model.UTF8Validation)
+	perTenant[defaultUserID].NameValidationScheme = model.LegacyValidation
+	perTenant[utf8UserID].NameValidationScheme = model.UTF8Validation
+
+	require.NoError(t, perTenant[truncatingUserID].LabelValueLengthOverLimitStrategy.Set("truncate"))
+	perTenant[truncatingUserID].MaxLabelValueLength = 75 // must be higher than validation.LabelValueHashLen
+	require.NoError(t, perTenant[droppingUserID].LabelValueLengthOverLimitStrategy.Set("drop"))
+	perTenant[droppingUserID].MaxLabelValueLength = 75 // must be higher than validation.LabelValueHashLen
 
 	overrides := func(limits *validation.Limits) *validation.Overrides {
 		return testutils.NewMockCostAttributionOverrides(*limits, perTenant, 0,
@@ -114,7 +87,8 @@ func TestValidateLabels(t *testing.T) {
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), overrides(limits), reg, careg)
 	require.NoError(t, err)
 
-	ds, _, _, _ := prepare(t, prepConfig{
+	var logged logRecorder
+	ds, ingesters, _, _ := prepare(t, prepConfig{
 		numIngesters:       2,
 		happyIngesters:     2,
 		numDistributors:    1,
@@ -122,6 +96,7 @@ func TestValidateLabels(t *testing.T) {
 		overrides:          overrides,
 		reg:                reg,
 		costAttributionMgr: manager,
+		logger:             log.NewLogfmtLogger(&logged),
 	})
 	d := ds[0]
 
@@ -156,7 +131,10 @@ func TestValidateLabels(t *testing.T) {
 		metric                   model.Metric
 		skipLabelNameValidation  bool
 		skipLabelCountValidation bool
+		customUserID             string
 		wantErr                  func(model.ValidationScheme) error
+		wantLabels               map[model.LabelName]model.LabelValue
+		wantLog                  []string
 	}{
 		{
 			name:                     "missing metric name",
@@ -228,19 +206,52 @@ func TestValidateLabels(t *testing.T) {
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here", "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
-			wantErr: alwaysErr(fmt.Errorf(
-				labelValueTooLongMsgFormat,
-				"much_shorter_name",
-				"test_value_please_ignore_no_really_nothing_to_see_here",
-				mimirpb.FromLabelAdaptersToString(
-					[]mimirpb.LabelAdapter{
-						{Name: model.MetricNameLabel, Value: "badLabelValue"},
-						{Name: "group", Value: "custom label"},
-						{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
-						{Name: "team", Value: "biz"},
-					},
-				),
-			)),
+			wantErr: alwaysErr(labelValueTooLongError{
+				Label: labels.Label{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
+				Limit: 25,
+				Series: mimirpb.FromLabelAdaptersToString([]mimirpb.LabelAdapter{
+					{Name: model.MetricNameLabel, Value: "badLabelValue"},
+					{Name: "group", Value: "custom label"},
+					{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
+					{Name: "team", Value: "biz"},
+				}),
+			}),
+		},
+		{
+			name:                     "label value too long gets truncated",
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValueToTruncate", "much_shorter_name": model.LabelValue(strings.Repeat("x", 80)), "team": "biz"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			customUserID:             truncatingUserID,
+			wantLabels: map[model.LabelName]model.LabelValue{
+				model.MetricNameLabel: "badLabelValueToTruncate",
+				"team":                "biz",
+				"group":               "custom label",
+				"much_shorter_name":   "xxxx(hash:bd28a84572ce022f806b2cdc3942ce1aaf094d36062b83dc0f7557e0f995b359)",
+			},
+			wantLog: []string{
+				"badLabelValueToTruncate",
+				"label values were truncated and appended their hash value",
+				"insight=true",
+			},
+		},
+		{
+			name:                     "label value too long gets dropped",
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValueToDrop", "much_shorter_name": model.LabelValue(strings.Repeat("x", 80)), "team": "biz"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			customUserID:             droppingUserID,
+			wantLabels: map[model.LabelName]model.LabelValue{
+				model.MetricNameLabel: "badLabelValueToDrop",
+				"team":                "biz",
+				"group":               "custom label",
+				"much_shorter_name":   "(hash:bd28a84572ce022f806b2cdc3942ce1aaf094d36062b83dc0f7557e0f995b359)",
+			},
+			wantLog: []string{
+				"badLabelValueToDrop",
+				"label values were replaced by their hash value",
+				"insight=true",
+			},
 		},
 		{
 			name:                     "too many labels",
@@ -355,14 +366,18 @@ func TestValidateLabels(t *testing.T) {
 	// We want to check those after all subtests are done, but parent tests
 	// cannot wait for subtests. So we're going to run this in the last subtest
 	// that finishes instead.
-	finalChecks := func(t *testing.T) {
+	t.Cleanup(func() {
 		// [labelValue][userID][team] -> expected discarded samples
 		discardedSamplesValues := map[string]map[string]map[string]int{}
 		for _, c := range testCases {
 			if c.wantErr == nil {
 				continue
 			}
-			for _, scheme := range validationSchemes {
+			caseSchemes := validationSchemes
+			if c.customUserID != "" {
+				caseSchemes = []model.ValidationScheme{overrides(limits).NameValidationScheme(c.customUserID)}
+			}
+			for _, scheme := range caseSchemes {
 				if err := c.wantErr(scheme); err != nil {
 					for _, id := range []globalerror.ID{
 						globalerror.SeriesInvalidLabel,
@@ -378,14 +393,16 @@ func TestValidateLabels(t *testing.T) {
 							if discardedSamplesValues[id.LabelValue()] == nil {
 								discardedSamplesValues[id.LabelValue()] = map[string]map[string]int{}
 							}
-							var userID string
-							switch scheme {
-							case model.LegacyValidation:
-								userID = defaultUserID
-							case model.UTF8Validation:
-								userID = utf8UserID
-							default:
-								panic(fmt.Errorf("unhandled name validation scheme: %s", scheme))
+							userID := c.customUserID
+							if userID == "" {
+								switch scheme {
+								case model.LegacyValidation:
+									userID = defaultUserID
+								case model.UTF8Validation:
+									userID = utf8UserID
+								default:
+									panic(fmt.Errorf("unhandled name validation scheme: %s", scheme))
+								}
 							}
 							if discardedSamplesValues[id.LabelValue()][userID] == nil {
 								discardedSamplesValues[id.LabelValue()][userID] = map[string]int{}
@@ -444,26 +461,30 @@ func TestValidateLabels(t *testing.T) {
 
 		d.sampleValidationMetrics.deleteUserMetrics(defaultUserID)
 		d.sampleValidationMetrics.deleteUserMetrics(utf8UserID)
-	}
-
-	// Run final checks after all subtests are done.
-	t.Cleanup(func() { finalChecks(t) })
+	})
 
 	for _, c := range testCases {
+		caseSchemes := validationSchemes
+		if c.customUserID != "" {
+			caseSchemes = []model.ValidationScheme{overrides(limits).NameValidationScheme(c.customUserID)}
+		}
+
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			for _, scheme := range validationSchemes {
+			for _, scheme := range caseSchemes {
 				t.Run(scheme.String(), func(t *testing.T) {
 					t.Parallel()
 
-					var userID string
-					switch scheme {
-					case model.LegacyValidation:
-						userID = defaultUserID
-					case model.UTF8Validation:
-						userID = utf8UserID
-					default:
-						panic(fmt.Errorf("unhandled name validation scheme: %s", scheme))
+					userID := c.customUserID
+					if userID == "" {
+						switch scheme {
+						case model.LegacyValidation:
+							userID = defaultUserID
+						case model.UTF8Validation:
+							userID = utf8UserID
+						default:
+							panic(fmt.Errorf("unhandled name validation scheme: %s", scheme))
+						}
 					}
 
 					handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},
@@ -485,7 +506,7 @@ func TestValidateLabels(t *testing.T) {
 						},
 					}
 					for name, value := range c.metric {
-						ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: string(name), Value: string(value)})
+						ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: string(name), Value: strings.Clone(string(value))})
 					}
 
 					var wg sync.WaitGroup
@@ -495,6 +516,21 @@ func TestValidateLabels(t *testing.T) {
 						go func() {
 							defer wg.Done()
 
+							expectedTraceID := trace.TraceID{}
+							_, err := rand.Read(expectedTraceID[:])
+							require.NoError(t, err)
+							tracer := noop.NewTracerProvider().Tracer("test")
+							spanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+								TraceID:    expectedTraceID,
+								SpanID:     trace.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+								TraceFlags: trace.FlagsSampled,
+							})
+							ctx := trace.ContextWithSpanContext(context.Background(), spanCtx)
+							ctx, span := tracer.Start(ctx, "test")
+							defer span.End()
+
+							ctx = user.InjectOrgID(ctx, userID)
+
 							req := createRequest(t, createMimirWriteRequestProtobuf(t, c.skipLabelNameValidation, c.skipLabelCountValidation, ts))
 							if c.skipLabelNameValidation {
 								req.Header.Set(SkipLabelNameValidationHeader, "true")
@@ -503,7 +539,6 @@ func TestValidateLabels(t *testing.T) {
 								req.Header.Set(SkipLabelCountValidationHeader, "true")
 							}
 							req.Header.Set("X-Scope-OrgID", userID)
-							ctx := user.InjectOrgID(context.Background(), userID)
 							req = req.WithContext(ctx)
 
 							resp := httptest.NewRecorder()
@@ -515,11 +550,255 @@ func TestValidateLabels(t *testing.T) {
 							} else {
 								assert.Equal(t, 200, resp.Code, resp.Body.String())
 							}
+
+							if c.wantLabels != nil {
+								var gotReq *mimirpb.WriteRequest
+								ingesters[0].assertCalledFunc("Push", func(args ...any) {
+									ctx, req := args[0].(context.Context), args[1].(*mimirpb.WriteRequest)
+									traceID, ok := tracing.ExtractTraceID(ctx)
+									require.True(t, ok)
+									if traceID == expectedTraceID.String() {
+										gotReq = req
+									}
+								})
+								require.NotNil(t, gotReq, "Expected request to be forwarded to ingesters")
+								gotLabels := map[model.LabelName]model.LabelValue{}
+								for _, l := range gotReq.Timeseries[0].Labels {
+									gotLabels[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+								}
+								require.Equal(t, c.wantLabels, gotLabels)
+							}
+
+							if len(c.wantLog) > 0 {
+								found := false
+								for _, line := range logged.Writes() {
+									if stringContainsAll(line, c.wantLog) {
+										found = true
+										break
+									}
+								}
+								if !found {
+									t.Log(logged.Writes())
+									require.Fail(t, "Expected logs to contain line with parts", "parts: %q", c.wantLog)
+								}
+							}
 						}()
 					}
 
 					wg.Wait()
 				})
+			}
+		})
+	}
+}
+
+func TestLabelValueTooLongSummaries(t *testing.T) {
+	t.Parallel()
+
+	const truncatingUserID = "truncatingUserID"
+	const droppingUserID = "droppingUserID"
+
+	limits := prepareDefaultLimits()
+	limits.MaxLabelValueLength = 75 // must be higher than validation.LabelValueHashLen
+	perTenant := map[string]*validation.Limits{}
+	for _, userID := range []string{truncatingUserID, droppingUserID} {
+		limits := *limits
+		perTenant[userID] = &limits
+	}
+	require.NoError(t, perTenant[truncatingUserID].LabelValueLengthOverLimitStrategy.Set("truncate"))
+	require.NoError(t, perTenant[droppingUserID].LabelValueLengthOverLimitStrategy.Set("drop"))
+
+	overrides := func(limits *validation.Limits) *validation.Overrides {
+		return validation.NewOverrides(*limits, validation.NewMockTenantLimits(perTenant))
+	}
+	reg := prometheus.NewPedanticRegistry()
+	careg := prometheus.NewRegistry()
+	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), overrides(limits), reg, careg)
+	require.NoError(t, err)
+
+	var logged logRecorder
+	ds, _, _, _ := prepare(t, prepConfig{
+		numIngesters:       2,
+		happyIngesters:     2,
+		numDistributors:    1,
+		limits:             limits,
+		overrides:          overrides,
+		reg:                reg,
+		costAttributionMgr: manager,
+		logger:             log.NewLogfmtLogger(&logged),
+	})
+	d := ds[0]
+
+	newRequestBuffers := func() *util.RequestBuffers {
+		return util.NewRequestBuffers(d.RequestBufferPool, util.TaintBuffersOnCleanUp([]byte("The beef is dead.")))
+	}
+
+	testCases := []struct {
+		name       string
+		userID     string
+		timeseries []mimirpb.PreallocTimeseries
+		wantLog    []string
+	}{
+		{
+			name:   "multiple series with truncated label values",
+			userID: truncatingUserID,
+			timeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "truncate1"},
+							{Name: "longvalue1", Value: strings.Repeat("x", 100)},
+							{Name: "oklabel", Value: "okvalue1"},
+						},
+						Samples: []mimirpb.Sample{{Value: 1, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "truncate1"},
+							{Name: "longvalue1", Value: strings.Repeat("y", 100)},
+							{Name: "oklabel", Value: "okvalue2"},
+						},
+						Samples: []mimirpb.Sample{{Value: 1, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "truncate1"},
+							{Name: "longvalue2", Value: strings.Repeat("z", 120)},
+							{Name: "oklabel", Value: "okvalue2"},
+						},
+						Samples: []mimirpb.Sample{{Value: 2, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "truncate2"},
+							{Name: "longvalue2", Value: strings.Repeat("w", 90)},
+						},
+						Samples: []mimirpb.Sample{{Value: 3, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+			},
+			wantLog: []string{
+				"label values were truncated and appended their hash value", "insight=true",
+				"limit=75", "total_values_exceeding_limit=4",
+				"sample_1_metric_name=truncate1",
+				"sample_1_label_name=longvalue1",
+				"sample_1_values_exceeding_limit=2",
+				"sample_1_value=\"xxx",
+				"sample_1_value_length=100",
+				"sample_2_metric_name=truncate1",
+				"sample_2_label_name=longvalue2",
+				"sample_2_values_exceeding_limit=1",
+				"sample_2_value=\"zzz",
+				"sample_2_value_length=120",
+				"sample_3_metric_name=truncate2",
+				"sample_3_label_name=longvalue2",
+				"sample_3_values_exceeding_limit=1",
+				"sample_3_value=\"www",
+				"sample_3_value_length=90",
+			},
+		},
+		{
+			name:   "multiple series with dropped label values",
+			userID: droppingUserID,
+			timeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "drop1"},
+							{Name: "longvalue1", Value: strings.Repeat("x", 100)},
+							{Name: "oklabel", Value: "okvalue1"},
+						},
+						Samples: []mimirpb.Sample{{Value: 1, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "drop1"},
+							{Name: "longvalue1", Value: strings.Repeat("y", 100)},
+							{Name: "oklabel", Value: "okvalue2"},
+						},
+						Samples: []mimirpb.Sample{{Value: 1, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "drop1"},
+							{Name: "longvalue2", Value: strings.Repeat("z", 120)},
+							{Name: "oklabel", Value: "okvalue2"},
+						},
+						Samples: []mimirpb.Sample{{Value: 2, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "drop2"},
+							{Name: "longvalue2", Value: strings.Repeat("w", 90)},
+						},
+						Samples: []mimirpb.Sample{{Value: 3, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+			},
+			wantLog: []string{
+				"label values were replaced by their hash value", "insight=true",
+				"limit=75", "total_values_exceeding_limit=4",
+				"sample_1_metric_name=drop1",
+				"sample_1_label_name=longvalue1",
+				"sample_1_values_exceeding_limit=2",
+				"sample_1_value=\"xxx",
+				"sample_1_value_length=100",
+				"sample_2_metric_name=drop1",
+				"sample_2_label_name=longvalue2",
+				"sample_2_values_exceeding_limit=1",
+				"sample_2_value=\"zzz",
+				"sample_2_value_length=120",
+				"sample_3_metric_name=drop2",
+				"sample_3_label_name=longvalue2",
+				"sample_3_values_exceeding_limit=1",
+				"sample_3_value=\"www",
+				"sample_3_value_length=90",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			logged.Clear()
+
+			handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},
+				d.PushWithMiddlewares,
+				nil, log.NewLogfmtLogger(&logged),
+			)
+
+			req := createRequest(t, createMimirWriteRequestProtobuf(t, false, false, tc.timeseries...))
+			req.Header.Set("X-Scope-OrgID", tc.userID)
+			req = req.WithContext(user.InjectOrgID(context.Background(), tc.userID))
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+
+			assert.Equal(t, 200, resp.Code, resp.Body.String())
+
+			if len(tc.wantLog) > 0 {
+				found := false
+				for _, line := range logged.Writes() {
+					if stringContainsAll(line, tc.wantLog) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Log(logged.Writes())
+					require.Fail(t, "Expected logs to contain line with parts", "parts: %q", tc.wantLog)
+				}
 			}
 		})
 	}
@@ -605,7 +884,7 @@ func TestValidateMetadata(t *testing.T) {
 	m := newMetadataValidationMetrics(reg)
 
 	userID := "testUser"
-	var cfg validateMetadataCfg
+	var cfg metadataValidationConfig
 	cfg.enforceMetadataMetricName = true
 	cfg.maxMetadataLength = 22
 
@@ -690,17 +969,17 @@ func TestValidateMetadata(t *testing.T) {
 
 func TestValidateLabelDuplication(t *testing.T) {
 	ts := time.Now()
-	var cfg validateLabelsCfg
+	var cfg labelValidationConfig
 	cfg.maxLabelNameLength = 10
 	cfg.maxLabelNamesPerSeries = 10
 	cfg.maxLabelValueLength = 10
-	cfg.validationScheme = model.LegacyValidation
+	cfg.nameValidationScheme = model.LegacyValidation
 
 	userID := "testUser"
 	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
-	}, false, false, nil, ts)
+	}, false, false, nil, ts, nil)
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
@@ -717,7 +996,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
-	}, false, false, nil, ts)
+	}, false, false, nil, ts, nil)
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
@@ -730,31 +1009,84 @@ func TestValidateLabelDuplication(t *testing.T) {
 		),
 	)
 	assert.Equal(t, expected, actual)
+
+	// Test that duplicate labels are still detected even when the second duplicate
+	// has a value that exceeds maxLabelValueLength and is handled by Truncate/Drop strategy.
+	// The over-length value must be on the second occurrence to trigger the bug where
+	// entering the value-too-long branch would skip the duplicate check.
+	for _, tc := range []struct {
+		name     string
+		strategy validation.LabelValueLengthOverLimitStrategy
+	}{
+		{"Truncate", validation.LabelValueLengthOverLimitStrategyTruncate},
+		{"Drop", validation.LabelValueLengthOverLimitStrategyDrop},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := labelValidationConfig{
+				maxLabelNameLength:                100,
+				maxLabelNamesPerSeries:            10,
+				maxLabelValueLength:               75, // Must be >= validation.LabelValueHashLen (71)
+				nameValidationScheme:              model.LegacyValidation,
+				labelValueLengthOverLimitStrategy: tc.strategy,
+			}
+			actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+				{Name: model.MetricNameLabel, Value: "a"},
+				{Name: "foo", Value: "bar"},                    // First occurrence
+				{Name: "foo", Value: strings.Repeat("x", 100)}, // Duplicate with over-length value
+			}, false, false, nil, ts, nil)
+			require.NotNil(t, actual, "expected duplicate label error")
+			assert.Contains(t, actual.Error(), "duplicate label name")
+			assert.Contains(t, actual.Error(), "foo")
+		})
+	}
 }
 
-type sampleValidationCfg struct {
-	maxNativeHistogramBuckets           int
-	reduceNativeHistogramOverMaxBuckets bool
-}
+func TestValidateLabel_UseAfterRelease(t *testing.T) {
+	buf, err := (&mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: "value_longer_than_maxLabelValueLength"},
+			},
+		},
+	}).Marshal()
+	require.NoError(t, err)
 
-func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration {
-	return 0
-}
+	// Unmarshal into a reusable PreallocTimeseries.
+	var ts mimirpb.PreallocTimeseries
+	err = ts.Unmarshal(buf, nil, nil, false)
+	require.NoError(t, err)
 
-func (c sampleValidationCfg) PastGracePeriod(_ string) time.Duration {
-	return 0
-}
+	// Call validateLabels to get a LabelValueTooLongError.
+	cfg := labelValidationConfig{
+		maxLabelNameLength:   25,
+		maxLabelValueLength:  5,
+		nameValidationScheme: model.UTF8Validation,
+	}
+	const userID = "testUser"
+	limits := testutils.NewMockCostAttributionLimits(0, []string{userID, "team"})
+	reg := prometheus.NewPedanticRegistry()
+	s := newSampleValidationMetrics(reg)
+	careg := prometheus.NewRegistry()
+	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
+	require.NoError(t, err)
+	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now(), nil)
+	var lengthErr labelValueTooLongError
+	require.ErrorAs(t, err, &lengthErr)
 
-func (c sampleValidationCfg) OutOfOrderTimeWindow(_ string) time.Duration {
-	return 0
-}
+	// Reuse PreallocTimeseries by unmarshaling a different TimeSeries into
+	// the same buffer. This replaces the previous value in-place, and thus at
+	// this point no references to the buffer should be lingering.
+	_, err = (&mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "forbidden_name", Value: "forbidden_value"},
+			},
+		},
+	}).MarshalTo(buf)
+	require.NoError(t, err)
 
-func (c sampleValidationCfg) MaxNativeHistogramBuckets(_ string) int {
-	return c.maxNativeHistogramBuckets
-}
-
-func (c sampleValidationCfg) ReduceNativeHistogramOverMaxBuckets(_ string) bool {
-	return c.reduceNativeHistogramOverMaxBuckets
+	// Ensure the labelValueTooLongError isn't corrupted.
+	require.EqualError(t, lengthErr, "received a series whose label value length of 37 exceeds the limit of 5, label: '__name__', value: 'value_longer_than_maxLabelValueLength' (truncated) series: 'value_longer_than_maxLabelValueLength' (err-mimir-label-value-too-long). To adjust the related per-tenant limit, configure -validation.max-length-label-value, or contact your service administrator.")
 }
 
 func TestMaxNativeHistorgramBuckets(t *testing.T) {
@@ -871,8 +1203,9 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 	for _, limit := range []int{0, 1, 2} {
 		for name, h := range testCases {
 			t.Run(fmt.Sprintf("limit-%d-%s", limit, name), func(t *testing.T) {
-				var cfg sampleValidationCfg
-				cfg.maxNativeHistogramBuckets = limit
+				cfg := sampleValidationConfig{
+					maxNativeHistogramBuckets: limit,
+				}
 				ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 
 				_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h, nil)
@@ -920,7 +1253,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 
 	registry := prometheus.NewRegistry()
 	metrics := newSampleValidationMetrics(registry)
-	cfg := sampleValidationCfg{}
+	cfg := sampleValidationConfig{}
 	hist := &mimirpb.Histogram{}
 	labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 	for testName, testCase := range testCases {
@@ -940,7 +1273,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 
 func TestNativeHistogramDownScaling(t *testing.T) {
 	testCases := map[string]struct {
-		cfg            sampleValidationCfg
+		cfg            sampleValidationConfig
 		schema         int32
 		offset         int32
 		deltas         []int64 // We're just using consecutive positive deltas.
@@ -955,13 +1288,13 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			expectedDeltas: []int64{1, 2, 3},
 		},
 		"downscaling not allowed": {
-			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2},
+			cfg:           sampleValidationConfig{maxNativeHistogramBuckets: 2},
 			schema:        3,
 			deltas:        []int64{1, 2, 3},
 			expectedError: fmt.Errorf("received a native histogram sample with too many buckets"),
 		},
 		"downscaling allowed": {
-			cfg:            sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
+			cfg:            sampleValidationConfig{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
 			schema:         3,
 			offset:         1,
 			deltas:         []int64{1, 2, 10},
@@ -970,7 +1303,7 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			expectedUpdate: true,
 		},
 		"downscaling allowed but impossible": {
-			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
+			cfg:           sampleValidationConfig{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
 			schema:        3,
 			offset:        0, // This means we would have to join bucket around the boundary of 1.0, but that will never happen.
 			deltas:        []int64{1, 2, 10},
@@ -982,8 +1315,15 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			expectedError:  nil,
 			expectedDeltas: []int64{1, 2, 3},
 		},
+		"valid nhcb and bucket limit is set": {
+			cfg:            sampleValidationConfig{maxNativeHistogramBuckets: 100, reduceNativeHistogramOverMaxBuckets: true},
+			schema:         -53,
+			deltas:         []int64{1, 2, 3},
+			expectedError:  nil,
+			expectedDeltas: []int64{1, 2, 3},
+		},
 		"downscaling not possible for nhcb": {
-			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
+			cfg:           sampleValidationConfig{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
 			schema:        -53,
 			offset:        1,
 			deltas:        []int64{1, 2, 3},
@@ -1079,5 +1419,156 @@ func TestValidUTF8Message(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestHashLabelValueInto(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Repeat("x", 100)
+	result := hashLabelValueInto(input, input)
+	require.Equal(t, "(hash:58f49f86224fc9467549c0954fb0b9dc706e6728023bb7bd88b7958cf2115ac8)", result)
+	require.Len(t, result, validation.LabelValueHashLen)
+	// Check that input's underlying array was kept.
+	require.Equal(t, unsafe.StringData(input), unsafe.StringData(result))
+}
+
+type logRecorder struct {
+	mtx    sync.Mutex
+	writes []string
+}
+
+func (b *logRecorder) Write(buf []byte) (int, error) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	b.writes = append(b.writes, string(buf))
+	return len(buf), nil
+}
+
+func (b *logRecorder) Writes() []string {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.writes
+}
+
+func (b *logRecorder) Clear() {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	b.writes = nil
+}
+
+func stringContainsAll(s string, parts []string) bool {
+	for _, part := range parts {
+		if !strings.Contains(s, part) {
+			return false
+		}
+	}
+	return true
+}
+
+// TestNewValidationConfigFieldCompleteness ensures that we don't forget to populate a new field we may add to validationConfig.
+func TestNewValidationConfigFieldCompleteness(t *testing.T) {
+	t.Parallel()
+
+	// 1. Create limits with prepareDefaultLimits()
+	limits := prepareDefaultLimits()
+
+	// 2. Set fields that default to zero to non-zero values
+	limits.PastGracePeriod = model.Duration(5 * time.Minute)
+	limits.EnforceOOOWindowOnDistributor = true
+	limits.MaxNativeHistogramBuckets = 100
+	limits.OutOfOrderTimeWindow = model.Duration(30 * time.Minute)
+	require.NoError(t, limits.LabelValueLengthOverLimitStrategy.Set("truncate"))
+
+	// 3. Create overrides
+	overrides := validation.NewOverrides(*limits, nil)
+
+	// 4. Call newValidationConfig
+	cfg := newValidationConfig("test-user", "test-user", overrides)
+
+	// 5. Use reflection to verify all fields are non-zero
+	assertNoZeroFields(t, reflect.ValueOf(cfg), "validationConfig")
+}
+
+func assertNoZeroFields(t *testing.T, v reflect.Value, path string) {
+	t.Helper()
+
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Field(i)
+			fieldName := v.Type().Field(i).Name
+			fieldPath := path + "." + fieldName
+			assertNoZeroFields(t, field, fieldPath)
+		}
+	default:
+		require.False(t, v.IsZero(), "field %s is zero", path)
+	}
+}
+
+func TestValidateSample_EnforceOOOWindowOnDistributor(t *testing.T) {
+	t.Parallel()
+
+	now := model.Now()
+	const ooo = time.Hour
+
+	ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "m"}, {Name: "a", Value: "a"}}
+
+	cases := map[string]struct {
+		cfg       sampleValidationConfig
+		tsOffset  time.Duration
+		wantErr   bool
+		wantErrID globalerror.ID
+	}{
+		"flag off, old sample, accepted": {
+			cfg:      sampleValidationConfig{outOfOrderTimeWindow: ooo},
+			tsOffset: -2 * ooo,
+			wantErr:  false,
+		},
+		"flag on, ooo=0, accepted (no-op)": {
+			cfg:      sampleValidationConfig{enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: 0},
+			tsOffset: -2 * ooo,
+			wantErr:  false,
+		},
+		"flag on, within ooo window, accepted": {
+			cfg:      sampleValidationConfig{enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: ooo},
+			tsOffset: -ooo / 2,
+			wantErr:  false,
+		},
+		"flag on, older than ooo window, rejected as sample_too_old": {
+			cfg:       sampleValidationConfig{enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: ooo},
+			tsOffset:  -2 * ooo,
+			wantErr:   true,
+			wantErrID: globalerror.SampleTimestampTooOld,
+		},
+		"past_grace_period > 0 takes precedence over flag": {
+			cfg:       sampleValidationConfig{pastGracePeriod: 10 * time.Minute, enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: ooo},
+			tsOffset:  -2 * (ooo + 10*time.Minute),
+			wantErr:   true,
+			wantErrID: globalerror.SampleTooFarInPast,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			metrics := newSampleValidationMetrics(reg)
+			ts := now.Add(tc.tsOffset)
+
+			err := validateSample(metrics, now, tc.cfg, "u", "g", ls, mimirpb.Sample{TimestampMs: int64(ts)}, nil)
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			require.Contains(t, err.Error(), string(tc.wantErrID))
+
+			// Also verify histogram variant behaves the same.
+			hreg := prometheus.NewRegistry()
+			hmetrics := newSampleValidationMetrics(hreg)
+			_, herr := validateSampleHistogram(hmetrics, now, tc.cfg, "u", "g", ls, &mimirpb.Histogram{Timestamp: int64(ts), Schema: 0}, nil)
+			require.Error(t, herr)
+			require.Contains(t, herr.Error(), string(tc.wantErrID))
+		})
 	}
 }

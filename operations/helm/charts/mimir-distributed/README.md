@@ -4,7 +4,7 @@ Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/latest/)
 
 For the full documentation, visit [Grafana mimir-distributed Helm chart documentation](https://grafana.com/docs/helm-charts/mimir-distributed/latest/).
 
-> **Note:** The documentation version is derived from the Helm chart version which is 5.8.0-weekly.356.
+> **Note:** The documentation version is derived from the Helm chart version which is 6.1.0-weekly.391.
 
 When upgrading from Helm chart version 4.X, please see [Migrate the Helm chart from version 4.x to 5.0](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-helm-chart-4.x-to-5.0/).
 When upgrading from Helm chart version 3.x, please see [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/).
@@ -14,19 +14,19 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 5.8.0-weekly.356](https://img.shields.io/badge/Version-5.8.0--weekly.356-informational?style=flat-square) ![AppVersion: r356](https://img.shields.io/badge/AppVersion-r356-informational?style=flat-square)
+![Version: 6.1.0-weekly.391](https://img.shields.io/badge/Version-6.1.0--weekly.391-informational?style=flat-square) ![AppVersion: r391-a80aeea6](https://img.shields.io/badge/AppVersion-r391--a80aeea6-informational?style=flat-square)
 
 Grafana Mimir
 
 ## Requirements
 
-Kubernetes: `^1.20.0-0`
+Kubernetes: `^1.32.0-0`
 
 | Repository | Name | Version |
 |------------|------|---------|
 | https://charts.min.io/ | minio(minio) | 5.4.0 |
-| https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.5.1 |
-| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.30.0 |
+| https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.5.2 |
+| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.47.0 |
 
 # Contributing and releasing
 

@@ -6,7 +6,6 @@
 package indexheader
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -28,7 +27,6 @@ import (
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
 var (
@@ -126,25 +124,37 @@ type unloadRequest struct {
 // It does not try to parse the sparse index header.
 func NewLazyBinaryReader(
 	ctx context.Context,
+	cfg Config,
 	readerFactory func() (Reader, error),
 	logger log.Logger,
 	bkt objstore.InstrumentedBucketReader,
-	dir string,
+	localDir string,
 	id ulid.ULID,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
-	indexHeaderPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	sparseHeaderPath := filepath.Join(dir, id.String(), block.SparseIndexHeaderFilename)
+	localBlockDir := filepath.Join(localDir, id.String())
+	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
+
+	if df, err := os.Open(localBlockDir); err != nil && os.IsNotExist(err) {
+		if err := os.MkdirAll(localBlockDir, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("cannot create index-header dir: %w", err)
+		}
+	} else {
+		_ = df.Close()
+	}
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
+		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, logger)
 	})
 
 	g.Go(func() error {
-		tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
+		err := downloadSparseHeaderToDisk(ctx, id, bkt, localDir, logger)
+		if err != nil {
+			level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
+		}
 		return nil
 	})
 	if err := g.Wait(); err != nil {
@@ -171,38 +181,32 @@ func NewLazyBinaryReader(
 	return reader, nil
 }
 
-func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID, sparseHeaderPath string) {
-	_, err := os.Stat(sparseHeaderPath)
-	if err == nil {
-		// The header is already on disk
-		return
-	}
-	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, id)
-	if err != nil {
-		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
-		return
-	}
-	err = atomicfs.CreateFile(sparseHeaderPath, bytes.NewReader(bucketSparseHeaderBytes))
-	if err != nil {
-		level.Info(logger).Log("msg", "could not store sparse index-header on disk; will reconstruct when the block is queried", "err", err)
-	}
-}
+func ensureIndexHeaderOnDisk(
+	ctx context.Context,
+	blockID ulid.ULID,
+	bkt objstore.InstrumentedBucketReader,
+	dir string,
+	logger log.Logger,
+) error {
+	localBlockDir := filepath.Join(dir, blockID.String())
+	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
 
-func ensureIndexHeaderOnDisk(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID, indexHeaderPath string) error {
-	// If the index-header doesn't exist we should download it.
 	_, err := os.Stat(indexHeaderPath)
+	// The header is already on disk
 	if err == nil {
 		return nil
 	}
 	if !os.IsNotExist(err) {
-		return errors.Wrap(err, "read index header")
+		level.Error(logger).Log("msg", "failed to stat existing index-header on disk", "err", err)
+		return err
 	}
 
-	level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", indexHeaderPath)
+	level.Debug(logger).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
 
 	start := time.Now()
-	if err := WriteBinary(ctx, bkt, id, indexHeaderPath); err != nil {
-		return errors.Wrap(err, "write index header")
+	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath); err != nil {
+		level.Error(logger).Log("msg", "failed to create index-header", "err", err)
+		return err
 	}
 
 	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))

@@ -121,7 +121,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-frontend.*\"}[$__rate_interval]))",
@@ -206,6 +206,33 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
@@ -220,7 +247,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-frontend.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-frontend.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-frontend.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-frontend.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-frontend.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-frontend.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-frontend.*\"}\n",
@@ -268,7 +295,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-frontend.*\"})",
@@ -279,6 +306,10 @@
                   ],
                   "title": "Memory (go heap inuse)",
                   "type": "timeseries"
+               },
+               {
+                  "id": 4,
+                  "span": 3
                }
             ],
             "repeat": null,
@@ -368,7 +399,7 @@
                         }
                      ]
                   },
-                  "id": 4,
+                  "id": 5,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -379,7 +410,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-scheduler.*\"}[$__rate_interval]))",
@@ -464,10 +495,37 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
-                  "id": 5,
+                  "id": 6,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -478,7 +536,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-scheduler.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-scheduler.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-scheduler.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-scheduler.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-scheduler.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-scheduler.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-scheduler.*\"}\n",
@@ -515,7 +573,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 6,
+                  "id": 7,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -526,7 +584,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-query-scheduler.*\"})",
@@ -537,6 +595,10 @@
                   ],
                   "title": "Memory (go heap inuse)",
                   "type": "timeseries"
+               },
+               {
+                  "id": 8,
+                  "span": 3
                }
             ],
             "repeat": null,
@@ -626,7 +688,7 @@
                         }
                      ]
                   },
-                  "id": 7,
+                  "id": 9,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -637,7 +699,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-querier.*\"}[$__rate_interval]))",
@@ -722,10 +784,37 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
-                  "id": 8,
+                  "id": 10,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -736,7 +825,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-querier.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-querier.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-querier.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-querier.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-querier.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-querier.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-querier.*\"}\n",
@@ -773,7 +862,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 9,
+                  "id": 11,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -784,7 +873,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler-querier.*\"})",
@@ -795,6 +884,10 @@
                   ],
                   "title": "Memory (go heap inuse)",
                   "type": "timeseries"
+               },
+               {
+                  "id": 12,
+                  "span": 3
                }
             ],
             "repeat": null,

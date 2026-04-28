@@ -5,11 +5,13 @@ package binops
 import (
 	"context"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // AndUnlessBinaryOperation represents a logical 'and' or 'unless' between two vectors.
@@ -22,6 +24,8 @@ type AndUnlessBinaryOperation struct {
 
 	timeRange                  types.QueryTimeRange
 	expressionPosition         posrange.PositionRange
+	hints                      *Hints
+	logger                     log.Logger
 	leftSeriesGroups           []*andGroup
 	rightSeriesGroups          []*andGroup
 	nextRightSeriesIndex       int
@@ -40,6 +44,8 @@ func NewAndUnlessBinaryOperation(
 	isUnless bool,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
+	hints *Hints,
+	logger log.Logger,
 ) *AndUnlessBinaryOperation {
 	return &AndUnlessBinaryOperation{
 		Left:                     left,
@@ -49,26 +55,39 @@ func NewAndUnlessBinaryOperation(
 		IsUnless:                 isUnless,
 		timeRange:                timeRange,
 		expressionPosition:       expressionPosition,
+		hints:                    hints,
+		logger:                   logger,
 
 		lastLeftSeriesIndexToRead:  -1,
 		lastRightSeriesIndexToRead: -1,
 	}
 }
 
-func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	defer func() {
-		if a.lastLeftSeriesIndexToRead == -1 {
-			// We're not going to read anything from the left side, close it now.
-			a.Left.Close()
-		}
+func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	series, err := a.computeSeriesMetadata(ctx, matchers)
+	if err != nil {
+		return nil, err
+	}
 
-		if a.lastRightSeriesIndexToRead == -1 {
-			// We're not going to read anything from the right side, close it now.
-			a.Right.Close()
+	if a.lastLeftSeriesIndexToRead == -1 {
+		// We're not going to read anything from the left side, finalize it now.
+		if err := a.Left.Finalize(ctx); err != nil {
+			return nil, err
 		}
-	}()
+	}
 
-	leftMetadata, err := a.Left.SeriesMetadata(ctx)
+	if a.lastRightSeriesIndexToRead == -1 {
+		// We're not going to read anything from the right side, finalize it now.
+		if err := a.Right.Finalize(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	return series, nil
+}
+
+func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	leftMetadata, err := a.Left.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +98,20 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 		return nil, nil
 	}
 
-	rightMetadata, err := a.Right.SeriesMetadata(ctx)
+	// Build RHS matchers: when hints are set, build matchers from LHS metadata to narrow
+	// the RHS series fetch. When no hints are available, pass nil (do not apply parent matchers
+	// to the RHS — see SeriesMetadata for why).
+	var rhsMatchers types.Matchers
+	if a.hints != nil {
+		rhsMatchers = BuildMatchers(leftMetadata, a.hints)
+		sl := spanlogger.FromContext(ctx, a.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing additional matchers to RHS",
+			"fields", a.hints.Include,
+			"hint_matchers", len(rhsMatchers),
+		)
+	}
+	rightMetadata, err := a.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {
 		return nil, err
 	}
@@ -172,14 +204,23 @@ func (a *AndUnlessBinaryOperation) computeUnlessSeriesMetadata(leftMetadata []ty
 }
 
 func (a *AndUnlessBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	defer func() {
-		// If we're done reading the left side, close it so it can release any resources as early as possible.
-		// We do the same thing for the right side in readRightSideUntilGroupComplete.
-		if a.nextLeftSeriesIndex > a.lastLeftSeriesIndexToRead {
-			a.Left.Close()
-		}
-	}()
+	d, err := a.computeNextSeries(ctx)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
 
+	// If we're done reading the left side, finalize it so it can do any outstanding work as early as possible.
+	// We do the same thing for the right side in readRightSideUntilGroupComplete.
+	if a.nextLeftSeriesIndex > a.lastLeftSeriesIndexToRead {
+		if err := a.Left.Finalize(ctx); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+	}
+
+	return d, nil
+}
+
+func (a *AndUnlessBinaryOperation) computeNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	for {
 		if len(a.leftSeriesGroups) == 0 {
 			// No more series to return.
@@ -228,7 +269,7 @@ func (a *AndUnlessBinaryOperation) NextSeries(ctx context.Context) (types.Instan
 
 		if thisSeriesGroup.leftSeriesCount == 0 {
 			// This is the last series for this group, return it to the pool.
-			thisSeriesGroup.Close(a.MemoryConsumptionTracker)
+			thisSeriesGroup.Finalize(a.MemoryConsumptionTracker)
 		}
 
 		return filteredData, nil
@@ -256,9 +297,11 @@ func (a *AndUnlessBinaryOperation) readRightSideUntilGroupComplete(ctx context.C
 		a.nextRightSeriesIndex++
 	}
 
-	// If we're done reading the right side, close it so it can release any resources as early as possible.
+	// If we're done reading the right side, finalize it so it can release any resources as early as possible.
 	if a.nextRightSeriesIndex > a.lastRightSeriesIndexToRead {
-		a.Right.Close()
+		if err := a.Right.Finalize(ctx); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -269,29 +312,49 @@ func (a *AndUnlessBinaryOperation) ExpressionPosition() posrange.PositionRange {
 }
 
 func (a *AndUnlessBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := a.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := a.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return a.Right.Prepare(ctx, params)
 }
 
-func (a *AndUnlessBinaryOperation) Close() {
-	a.Left.Close()
-	a.Right.Close()
+func (a *AndUnlessBinaryOperation) AfterPrepare(ctx context.Context) error {
+	if err := a.Left.AfterPrepare(ctx); err != nil {
+		return err
+	}
 
+	return a.Right.AfterPrepare(ctx)
+}
+
+func (a *AndUnlessBinaryOperation) Finalize(ctx context.Context) error {
 	for _, group := range a.leftSeriesGroups {
 		if group == nil {
 			continue
 		}
 
-		group.Close(a.MemoryConsumptionTracker)
+		group.Finalize(a.MemoryConsumptionTracker)
 	}
 
 	a.leftSeriesGroups = nil
 
 	// We don't need to explicitly close any groups in rightSeriesGroups, as they would have been closed above.
 	a.rightSeriesGroups = nil
+
+	if err := a.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return a.Right.Finalize(ctx)
+}
+
+func (a *AndUnlessBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, a.Left, a.Right)
+}
+
+func (a *AndUnlessBinaryOperation) Close() {
+	a.Left.Close()
+	a.Right.Close()
 }
 
 type andGroup struct {
@@ -330,6 +393,6 @@ func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memo
 	return filterSeries(leftData, g.rightSamplePresence, !isUnless, memoryConsumptionTracker, timeRange)
 }
 
-func (g *andGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *andGroup) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(&g.rightSamplePresence, memoryConsumptionTracker)
 }

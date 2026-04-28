@@ -46,8 +46,8 @@ func NewAbsentOverTime(
 	}
 }
 
-func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := a.Inner.SeriesMetadata(ctx)
+func (a *AbsentOverTime) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := a.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 			return nil, err
 		}
 		for stepIdx := range a.TimeRange.StepCount {
-			step, err := a.Inner.NextStepSamples()
+			step, err := a.Inner.NextStepSamples(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -123,8 +123,19 @@ func (a *AbsentOverTime) Prepare(ctx context.Context, params *types.PrepareParam
 	return a.Inner.Prepare(ctx, params)
 }
 
+func (a *AbsentOverTime) AfterPrepare(ctx context.Context) error {
+	return a.Inner.AfterPrepare(ctx)
+}
+
+func (a *AbsentOverTime) Finalize(ctx context.Context) error {
+	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
+	return a.Inner.Finalize(ctx)
+}
+
+func (a *AbsentOverTime) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return a.Inner.Stats(ctx)
+}
+
 func (a *AbsentOverTime) Close() {
 	a.Inner.Close()
-
-	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -27,8 +29,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	Op                       parser.ItemType
 	ReturnBool               bool
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-
-	VectorMatching parser.VectorMatching
+	VectorMatching           parser.VectorMatching
 
 	// We need to retain these so that NextSeries() can return an error message with the series labels when
 	// multiple points match on a single side.
@@ -45,6 +46,8 @@ type OneToOneVectorVectorBinaryOperation struct {
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
+	hints              *Hints
+	logger             log.Logger
 }
 
 var _ types.InstantVectorOperator = &OneToOneVectorVectorBinaryOperation{}
@@ -104,11 +107,11 @@ func (g *oneToOneBinaryOperationRightSide) latestRightSeriesIndex() int {
 	return g.rightSeriesIndices[len(g.rightSeriesIndices)-1]
 }
 
-func (g *oneToOneBinaryOperationRightSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *oneToOneBinaryOperationRightSide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.IntSlicePool.Put(&g.leftSidePresence, memoryConsumptionTracker)
 
 	// If this right side was used for all of its corresponding output series, then mergedData will have already been returned to the pool by the evaluator's computeResult.
-	// However, if the operator is being closed early, then we need to return mergedData to the pool.
+	// However, if the operator is being finalized early, then we need to return mergedData to the pool.
 	types.PutInstantVectorSeriesData(g.mergedData, memoryConsumptionTracker)
 	g.mergedData = types.InstantVectorSeriesData{}
 }
@@ -128,6 +131,8 @@ func NewOneToOneVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	hints *Hints,
+	logger log.Logger,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -146,6 +151,8 @@ func NewOneToOneVectorVectorBinaryOperation(
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
 		timeRange:          timeRange,
+		hints:              hints,
+		logger:             logger,
 	}
 
 	return b, nil
@@ -170,11 +177,50 @@ func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.Posi
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
+func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	var err error
+	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, matchers)
+	if err != nil {
 		return nil, err
-	} else if !canProduceAnySeries {
-		b.Close()
+	} else if len(b.leftMetadata) == 0 {
+		// No series on left-hand side, we'll never have any output series.
+		if err = b.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
+		return nil, nil
+	}
+
+	// If there are labels that this binary operation selects on or aggregations being done
+	// on the LHS, we can use the series and their values for those labels to reduce the amount
+	// of data fetched on the RHS.
+	if b.hints != nil {
+		// Note we are reassigning `matchers` here before passing to the RHS and dropping any
+		// other extra matchers passed to this binary operation. Hints from the optimization
+		// pass are set specifically for each binary operation and include only fields that are
+		// valid to be passed to its RHS. We drop existing extra matchers since they may refer
+		// to labels that don't exist on the RHS of this binary operation.
+		ignored := matchers
+		matchers = BuildMatchers(b.leftMetadata, b.hints)
+
+		sl := spanlogger.FromContext(ctx, b.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing additional matchers to RHS",
+			"fields", b.hints.Include,
+			"hint_matchers", len(matchers),
+			"ignored_matchers", len(ignored),
+		)
+	}
+
+	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)
+	if err != nil {
+		return nil, err
+	} else if len(b.rightMetadata) == 0 {
+		// No series on right-hand side, we'll never have any output series.
+		if err = b.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		return nil, nil
 	}
 
@@ -187,7 +233,11 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		types.SeriesMetadataSlicePool.Put(&allMetadata, b.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&leftSeriesUsed, b.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&rightSeriesUsed, b.MemoryConsumptionTracker)
-		b.Close()
+
+		if err := b.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		return nil, nil
 	}
 
@@ -198,37 +248,6 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, lastRightSeriesUsedIndex, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
-}
-
-// loadSeriesMetadata loads series metadata from both sides of this operation.
-// It returns false if one side returned no series and that means there is no way for this operation to return any series.
-// (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
-func (b *OneToOneVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
-	// We retain the series labels for later so we can use them to generate error messages.
-	// We'll return them to the pool in Close().
-
-	var err error
-	b.leftMetadata, err = b.Left.SeriesMetadata(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	if len(b.leftMetadata) == 0 {
-		// No series on left-hand side, we'll never have any output series.
-		return false, nil
-	}
-
-	b.rightMetadata, err = b.Right.SeriesMetadata(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	if len(b.rightMetadata) == 0 {
-		// No series on right-hand side, we'll never have any output series.
-		return false, nil
-	}
-
-	return true, nil
 }
 
 // computeOutputSeries determines the possible output series from this operator.
@@ -285,9 +304,8 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 			groupKey := groupKeyFunc(s.Labels)
 
 			// Important: don't extract the string(...) call below - passing it directly allows us to avoid allocating it.
-			rightSide, exists := rightSideGroupsMap[string(groupKey)]
-
-			if !exists {
+			rightSide, rightExists := rightSideGroupsMap[string(groupKey)]
+			if !rightExists {
 				// No matching series on the right side.
 				continue
 			}
@@ -302,6 +320,14 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 			}
 
 			rightSide.outputSeriesCount++
+
+			// Account for the memory consumption from the labels now. This helps protect against
+			// queries that return many series from this operator.
+			// All series in outputSeriesMap will be returned, so this doesn't lead to over-counting
+			// of memory consumption.
+			if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+				return nil, nil, nil, -1, nil, -1, err
+			}
 
 			outputSeries = oneToOneBinaryOperationOutputSeriesWithLabels{
 				labels: outputSeriesLabels,
@@ -324,11 +350,9 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, outputSeries := range outputSeriesMap {
-		allMetadata, err = types.AppendSeriesMetadata(b.MemoryConsumptionTracker, allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
-		if err != nil {
-			return nil, nil, nil, -1, nil, -1, err
-		}
-
+		// Note that we deliberately don't use types.AppendSeriesMetadata here as we've already
+		// accounted for the memory consumption of every set of labels in outputSeriesMap above.
+		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
 		allSeries = append(allSeries, outputSeries.series)
 	}
 
@@ -467,47 +491,43 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 
 	// We don't need to return thisSeries.rightSide.mergedData here - computeResult will return it below if this is the last output series that references this right side.
 	rightSide.outputSeriesCount--
-	canMutateRightSide := rightSide.outputSeriesCount == 0
+	isLastUseOfRightSide := rightSide.outputSeriesCount == 0
 
 	allLeftSeries, err := b.leftBuffer.GetSeries(ctx, thisSeries.leftSeriesIndices)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	for i, leftSeries := range allLeftSeries {
-		isLastLeftSeries := i == len(allLeftSeries)-1
-
-		passOwnershipOfRight := canMutateRightSide && isLastLeftSeries
-		allLeftSeries[i], err = b.evaluator.computeResult(leftSeries, rightSide.mergedData, true, passOwnershipOfRight)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-
-		if passOwnershipOfRight {
-			// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool later.
-			rightSide.mergedData = types.InstantVectorSeriesData{}
-		}
-
-		// If the right side matches to many output series, check for conflicts between those left side series.
-		if rightSide.leftSidePresence != nil {
+	// If the right side matches to many output series, check for conflicts between those left side series
+	// before we apply any filtering operations (https://github.com/prometheus/prometheus/pull/17668).
+	if rightSide.leftSidePresence != nil {
+		for i, leftSeries := range allLeftSeries {
 			seriesIdx := thisSeries.leftSeriesIndices[i]
 
-			if err := b.updateLeftSidePresence(rightSide, allLeftSeries[i], seriesIdx); err != nil {
+			if err := b.updateLeftSidePresence(rightSide, leftSeries, seriesIdx); err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 		}
 	}
 
-	mergedResult, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
+	mergedLeftSide, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	if rightSide.outputSeriesCount == 0 {
-		rightSide.Close(b.MemoryConsumptionTracker)
+	finalResult, err := b.evaluator.computeResult(mergedLeftSide, rightSide.mergedData, true, isLastUseOfRightSide)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
 	}
 
-	return mergedResult, nil
+	if isLastUseOfRightSide {
+		// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool in Finalize().
+		rightSide.mergedData = types.InstantVectorSeriesData{}
+
+		rightSide.Finalize(b.MemoryConsumptionTracker)
+	}
+
+	return finalResult, nil
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) populateRightSide(ctx context.Context, rightSide *oneToOneBinaryOperationRightSide) error {
@@ -588,34 +608,53 @@ func (b *OneToOneVectorVectorBinaryOperation) mergeConflictToError(conflict *ope
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := b.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := b.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
 
 	return b.Right.Prepare(ctx, params)
 }
 
-func (b *OneToOneVectorVectorBinaryOperation) Close() {
-	b.Left.Close()
-	b.Right.Close()
+func (b *OneToOneVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) error {
+	if err := b.Left.AfterPrepare(ctx); err != nil {
+		return err
+	}
 
+	return b.Right.AfterPrepare(ctx)
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
 	types.SeriesMetadataSlicePool.Put(&b.leftMetadata, b.MemoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&b.rightMetadata, b.MemoryConsumptionTracker)
 
 	if b.leftBuffer != nil {
-		b.leftBuffer.Close()
+		b.leftBuffer.Finalize()
 		b.leftBuffer = nil
 	}
 
 	if b.rightBuffer != nil {
-		b.rightBuffer.Close()
+		b.rightBuffer.Finalize()
 		b.rightBuffer = nil
 	}
 
 	for _, s := range b.remainingSeries {
-		s.rightSide.Close(b.MemoryConsumptionTracker)
+		s.rightSide.Finalize(b.MemoryConsumptionTracker)
 	}
 
 	b.remainingSeries = nil
+
+	if err := b.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return b.Right.Finalize(ctx)
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats(ctx, b.Left, b.Right)
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) Close() {
+	b.Left.Close()
+	b.Right.Close()
 }

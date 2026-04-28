@@ -73,7 +73,7 @@ func (p *prometheusXorChunk) Add(m model.SamplePair) (EncodedChunk, error) {
 		return nil, err
 	}
 
-	app.Append(int64(m.Timestamp), float64(m.Value))
+	app.Append(0, int64(m.Timestamp), float64(m.Value))
 	return nil, nil
 }
 
@@ -128,7 +128,7 @@ func (p *prometheusHistogramChunk) AddHistogram(timestamp int64, h *histogram.Hi
 		return nil, err
 	}
 
-	c, recoded, _, err := app.AppendHistogram(nil, timestamp, h, false)
+	c, recoded, _, err := app.AppendHistogram(nil, 0, timestamp, h, false)
 	if err != nil || c == nil || recoded {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (p *prometheusFloatHistogramChunk) AddFloatHistogram(timestamp int64, h *hi
 		return nil, err
 	}
 
-	_, _, _, err = app.AppendFloatHistogram(nil, timestamp, h, true)
+	_, _, _, err = app.AppendFloatHistogram(nil, 0, timestamp, h, true)
 	return nil, err
 }
 

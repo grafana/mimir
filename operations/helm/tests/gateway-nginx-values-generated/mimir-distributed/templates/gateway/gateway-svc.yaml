@@ -14,6 +14,7 @@ metadata:
   namespace: "citestns"
 spec:
   type: ClusterIP
+  internalTrafficPolicy: Cluster
   ports:
     - port: 80
       protocol: TCP

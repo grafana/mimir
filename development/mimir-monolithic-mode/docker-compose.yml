@@ -21,8 +21,8 @@ services:
   prometheus:
     profiles:
       - prometheus
-    image: prom/prometheus:v3.5.0
-    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
+    image: prom/prometheus:v3.11.2@sha256:5550dc63da361dc30f6fe02ac0e4dfc736ededfef3c8d12a634db04a67824d78
+    command: ["--config.file=/etc/prometheus/prometheus.yaml"]
     volumes:
       - ./config:/etc/prometheus
     ports:
@@ -31,8 +31,9 @@ services:
   prometheusRW2:
     profiles:
       - prometheusRW2
-    image: prom/prometheus:v3.5.0
-    command: ["--config.file=/etc/prometheus/prometheusRW2.yaml", "--enable-feature=metadata-wal-records,native-histograms"]
+    image: prom/prometheus:v3.11.2@sha256:5550dc63da361dc30f6fe02ac0e4dfc736ededfef3c8d12a634db04a67824d78
+    command:
+      - "--config.file=/etc/prometheus/prometheusRW2.yaml"
     volumes:
       - ./config:/etc/prometheus
     ports:
@@ -42,7 +43,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:11.6.5
+    image: grafana/grafana:12.4.3@sha256:2e986801428cd689c2358605289c90ab37d2b39e24808874971f54c99bcdc412
     ports:
       - 3000:3000
     volumes:
@@ -53,7 +54,7 @@ services:
   grafana-agent:
     profiles:
       - grafana-agent-static
-    image: grafana/agent:v0.44.3
+    image: grafana/agent:v0.44.8@sha256:bba59e1229303b658e19b08b91c7d520d3d3f0fb5dc66e04e2d515456f3ab4d6
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config
@@ -63,7 +64,7 @@ services:
   grafana-alloy:
     profiles:
       - grafana-alloy
-    image: grafana/alloy:v1.9.2
+    image: grafana/alloy:v1.15.1@sha256:1f40cf52adda8fab3e058f9347a5d165624ecb9fbc1527769cb744748961940d
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
       - ./config/config.alloy:/etc/alloy/config.alloy
@@ -120,8 +121,8 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.130.1
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms"]
+    image: otel/opentelemetry-collector-contrib:0.150.1@sha256:a516c26968aa1feb5e5fc0562e3338ea13755cb4f373603226bcc4e276374ad0
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -136,8 +137,8 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.130.1
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms"]
+    image: otel/opentelemetry-collector-contrib:0.150.1@sha256:a516c26968aa1feb5e5fc0562e3338ea13755cb4f373603226bcc4e276374ad0
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
     profiles:
       - otel-collector-otlp-push
     volumes:

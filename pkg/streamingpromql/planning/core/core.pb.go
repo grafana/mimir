@@ -57,6 +57,8 @@ const (
 	AGGREGATION_BOTTOMK      AggregationOperation = 10
 	AGGREGATION_COUNT_VALUES AggregationOperation = 11
 	AGGREGATION_QUANTILE     AggregationOperation = 12
+	AGGREGATION_LIMITK       AggregationOperation = 13
+	AGGREGATION_LIMIT_RATIO  AggregationOperation = 14
 )
 
 var AggregationOperation_name = map[int32]string{
@@ -73,6 +75,8 @@ var AggregationOperation_name = map[int32]string{
 	10: "AGGREGATION_BOTTOMK",
 	11: "AGGREGATION_COUNT_VALUES",
 	12: "AGGREGATION_QUANTILE",
+	13: "AGGREGATION_LIMITK",
+	14: "AGGREGATION_LIMIT_RATIO",
 }
 
 var AggregationOperation_value = map[string]int32{
@@ -89,6 +93,8 @@ var AggregationOperation_value = map[string]int32{
 	"AGGREGATION_BOTTOMK":      10,
 	"AGGREGATION_COUNT_VALUES": 11,
 	"AGGREGATION_QUANTILE":     12,
+	"AGGREGATION_LIMITK":       13,
+	"AGGREGATION_LIMIT_RATIO":  14,
 }
 
 func (AggregationOperation) EnumDescriptor() ([]byte, []int) {
@@ -243,6 +249,53 @@ func (*PositionRange) XXX_MessageName() string {
 	return "core.PositionRange"
 }
 
+type BinaryExpressionHints struct {
+	Include []string `protobuf:"bytes,1,rep,name=include,proto3" json:"include,omitempty"`
+}
+
+func (m *BinaryExpressionHints) Reset()      { *m = BinaryExpressionHints{} }
+func (*BinaryExpressionHints) ProtoMessage() {}
+func (*BinaryExpressionHints) Descriptor() ([]byte, []int) {
+	return fileDescriptor_f7e43720d1edc0fe, []int{1}
+}
+func (m *BinaryExpressionHints) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *BinaryExpressionHints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_BinaryExpressionHints.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *BinaryExpressionHints) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BinaryExpressionHints.Merge(m, src)
+}
+func (m *BinaryExpressionHints) XXX_Size() int {
+	return m.Size()
+}
+func (m *BinaryExpressionHints) XXX_DiscardUnknown() {
+	xxx_messageInfo_BinaryExpressionHints.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_BinaryExpressionHints proto.InternalMessageInfo
+
+func (m *BinaryExpressionHints) GetInclude() []string {
+	if m != nil {
+		return m.Include
+	}
+	return nil
+}
+
+func (*BinaryExpressionHints) XXX_MessageName() string {
+	return "core.BinaryExpressionHints"
+}
+
 type AggregateExpressionDetails struct {
 	Op                 AggregationOperation `protobuf:"varint,1,opt,name=op,proto3,enum=core.AggregationOperation" json:"op,omitempty"`
 	Grouping           []string             `protobuf:"bytes,2,rep,name=grouping,proto3" json:"grouping,omitempty"`
@@ -253,7 +306,7 @@ type AggregateExpressionDetails struct {
 func (m *AggregateExpressionDetails) Reset()      { *m = AggregateExpressionDetails{} }
 func (*AggregateExpressionDetails) ProtoMessage() {}
 func (*AggregateExpressionDetails) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{1}
+	return fileDescriptor_f7e43720d1edc0fe, []int{2}
 }
 func (m *AggregateExpressionDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -315,16 +368,17 @@ func (*AggregateExpressionDetails) XXX_MessageName() string {
 }
 
 type BinaryExpressionDetails struct {
-	Op                 BinaryOperation `protobuf:"varint,1,opt,name=op,proto3,enum=core.BinaryOperation" json:"op,omitempty"`
-	VectorMatching     *VectorMatching `protobuf:"bytes,2,opt,name=vectorMatching,proto3" json:"vectorMatching,omitempty"`
-	ReturnBool         bool            `protobuf:"varint,3,opt,name=returnBool,proto3" json:"returnBool,omitempty"`
-	ExpressionPosition PositionRange   `protobuf:"bytes,4,opt,name=expressionPosition,proto3" json:"expressionPosition"`
+	Op                 BinaryOperation        `protobuf:"varint,1,opt,name=op,proto3,enum=core.BinaryOperation" json:"op,omitempty"`
+	VectorMatching     *VectorMatching        `protobuf:"bytes,2,opt,name=vectorMatching,proto3" json:"vectorMatching,omitempty"`
+	ReturnBool         bool                   `protobuf:"varint,3,opt,name=returnBool,proto3" json:"returnBool,omitempty"`
+	ExpressionPosition PositionRange          `protobuf:"bytes,4,opt,name=expressionPosition,proto3" json:"expressionPosition"`
+	Hints              *BinaryExpressionHints `protobuf:"bytes,5,opt,name=hints,proto3" json:"hints,omitempty"`
 }
 
 func (m *BinaryExpressionDetails) Reset()      { *m = BinaryExpressionDetails{} }
 func (*BinaryExpressionDetails) ProtoMessage() {}
 func (*BinaryExpressionDetails) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{2}
+	return fileDescriptor_f7e43720d1edc0fe, []int{3}
 }
 func (m *BinaryExpressionDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -381,6 +435,13 @@ func (m *BinaryExpressionDetails) GetExpressionPosition() PositionRange {
 	return PositionRange{}
 }
 
+func (m *BinaryExpressionDetails) GetHints() *BinaryExpressionHints {
+	if m != nil {
+		return m.Hints
+	}
+	return nil
+}
+
 func (*BinaryExpressionDetails) XXX_MessageName() string {
 	return "core.BinaryExpressionDetails"
 }
@@ -390,12 +451,13 @@ type VectorMatching struct {
 	MatchingLabels []string                                                              `protobuf:"bytes,2,rep,name=matchingLabels,proto3" json:"matchingLabels,omitempty"`
 	On             bool                                                                  `protobuf:"varint,3,opt,name=on,proto3" json:"on,omitempty"`
 	Include        []string                                                              `protobuf:"bytes,4,rep,name=include,proto3" json:"include,omitempty"`
+	FillValues     VectorMatchFillValues                                                 `protobuf:"bytes,5,opt,name=fillValues,proto3" json:"fillValues"`
 }
 
 func (m *VectorMatching) Reset()      { *m = VectorMatching{} }
 func (*VectorMatching) ProtoMessage() {}
 func (*VectorMatching) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{3}
+	return fileDescriptor_f7e43720d1edc0fe, []int{4}
 }
 func (m *VectorMatching) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -452,6 +514,13 @@ func (m *VectorMatching) GetInclude() []string {
 	return nil
 }
 
+func (m *VectorMatching) GetFillValues() VectorMatchFillValues {
+	if m != nil {
+		return m.FillValues
+	}
+	return VectorMatchFillValues{}
+}
+
 func (*VectorMatching) XXX_MessageName() string {
 	return "core.VectorMatching"
 }
@@ -466,7 +535,7 @@ type FunctionCallDetails struct {
 func (m *FunctionCallDetails) Reset()      { *m = FunctionCallDetails{} }
 func (*FunctionCallDetails) ProtoMessage() {}
 func (*FunctionCallDetails) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{4}
+	return fileDescriptor_f7e43720d1edc0fe, []int{5}
 }
 func (m *FunctionCallDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -521,7 +590,7 @@ type NumberLiteralDetails struct {
 func (m *NumberLiteralDetails) Reset()      { *m = NumberLiteralDetails{} }
 func (*NumberLiteralDetails) ProtoMessage() {}
 func (*NumberLiteralDetails) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{5}
+	return fileDescriptor_f7e43720d1edc0fe, []int{6}
 }
 func (m *NumberLiteralDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -576,7 +645,7 @@ type StringLiteralDetails struct {
 func (m *StringLiteralDetails) Reset()      { *m = StringLiteralDetails{} }
 func (*StringLiteralDetails) ProtoMessage() {}
 func (*StringLiteralDetails) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{6}
+	return fileDescriptor_f7e43720d1edc0fe, []int{7}
 }
 func (m *StringLiteralDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -631,7 +700,7 @@ type UnaryExpressionDetails struct {
 func (m *UnaryExpressionDetails) Reset()      { *m = UnaryExpressionDetails{} }
 func (*UnaryExpressionDetails) ProtoMessage() {}
 func (*UnaryExpressionDetails) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{7}
+	return fileDescriptor_f7e43720d1edc0fe, []int{8}
 }
 func (m *UnaryExpressionDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -679,18 +748,23 @@ func (*UnaryExpressionDetails) XXX_MessageName() string {
 }
 
 type VectorSelectorDetails struct {
-	Matchers               []*LabelMatcher `protobuf:"bytes,1,rep,name=matchers,proto3" json:"matchers,omitempty"`
-	Timestamp              *time.Time      `protobuf:"bytes,2,opt,name=timestamp,proto3,stdtime" json:"timestamp,omitempty"`
-	Offset                 time.Duration   `protobuf:"bytes,3,opt,name=offset,proto3,stdduration" json:"offset"`
-	ExpressionPosition     PositionRange   `protobuf:"bytes,4,opt,name=expressionPosition,proto3" json:"expressionPosition"`
-	ReturnSampleTimestamps bool            `protobuf:"varint,5,opt,name=returnSampleTimestamps,proto3" json:"returnSampleTimestamps,omitempty"`
-	SkipHistogramBuckets   bool            `protobuf:"varint,6,opt,name=skipHistogramBuckets,proto3" json:"skipHistogramBuckets,omitempty"`
+	Matchers                                 []*LabelMatcher  `protobuf:"bytes,1,rep,name=matchers,proto3" json:"matchers,omitempty"`
+	Timestamp                                *time.Time       `protobuf:"bytes,2,opt,name=timestamp,proto3,stdtime" json:"timestamp,omitempty"`
+	Offset                                   time.Duration    `protobuf:"bytes,3,opt,name=offset,proto3,stdduration" json:"offset"`
+	ExpressionPosition                       PositionRange    `protobuf:"bytes,4,opt,name=expressionPosition,proto3" json:"expressionPosition"`
+	ReturnSampleTimestamps                   bool             `protobuf:"varint,5,opt,name=returnSampleTimestamps,proto3" json:"returnSampleTimestamps,omitempty"`
+	SkipHistogramBuckets                     bool             `protobuf:"varint,6,opt,name=skipHistogramBuckets,proto3" json:"skipHistogramBuckets,omitempty"`
+	Smoothed                                 bool             `protobuf:"varint,7,opt,name=smoothed,proto3" json:"smoothed,omitempty"`
+	ProjectionInclude                        bool             `protobuf:"varint,8,opt,name=projectionInclude,proto3" json:"projectionInclude,omitempty"`
+	ProjectionLabels                         []string         `protobuf:"bytes,9,rep,name=projectionLabels,proto3" json:"projectionLabels,omitempty"`
+	ReturnSampleTimestampsPreserveHistograms bool             `protobuf:"varint,10,opt,name=returnSampleTimestampsPreserveHistograms,proto3" json:"returnSampleTimestampsPreserveHistograms,omitempty"`
+	Subsets                                  []SubsetMatchers `protobuf:"bytes,11,rep,name=subsets,proto3" json:"subsets"`
 }
 
 func (m *VectorSelectorDetails) Reset()      { *m = VectorSelectorDetails{} }
 func (*VectorSelectorDetails) ProtoMessage() {}
 func (*VectorSelectorDetails) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{8}
+	return fileDescriptor_f7e43720d1edc0fe, []int{9}
 }
 func (m *VectorSelectorDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -761,23 +835,64 @@ func (m *VectorSelectorDetails) GetSkipHistogramBuckets() bool {
 	return false
 }
 
+func (m *VectorSelectorDetails) GetSmoothed() bool {
+	if m != nil {
+		return m.Smoothed
+	}
+	return false
+}
+
+func (m *VectorSelectorDetails) GetProjectionInclude() bool {
+	if m != nil {
+		return m.ProjectionInclude
+	}
+	return false
+}
+
+func (m *VectorSelectorDetails) GetProjectionLabels() []string {
+	if m != nil {
+		return m.ProjectionLabels
+	}
+	return nil
+}
+
+func (m *VectorSelectorDetails) GetReturnSampleTimestampsPreserveHistograms() bool {
+	if m != nil {
+		return m.ReturnSampleTimestampsPreserveHistograms
+	}
+	return false
+}
+
+func (m *VectorSelectorDetails) GetSubsets() []SubsetMatchers {
+	if m != nil {
+		return m.Subsets
+	}
+	return nil
+}
+
 func (*VectorSelectorDetails) XXX_MessageName() string {
 	return "core.VectorSelectorDetails"
 }
 
 type MatrixSelectorDetails struct {
-	Matchers             []*LabelMatcher `protobuf:"bytes,1,rep,name=matchers,proto3" json:"matchers,omitempty"`
-	Timestamp            *time.Time      `protobuf:"bytes,2,opt,name=timestamp,proto3,stdtime" json:"timestamp,omitempty"`
-	Offset               time.Duration   `protobuf:"bytes,3,opt,name=offset,proto3,stdduration" json:"offset"`
-	Range                time.Duration   `protobuf:"bytes,4,opt,name=range,proto3,stdduration" json:"range"`
-	ExpressionPosition   PositionRange   `protobuf:"bytes,5,opt,name=expressionPosition,proto3" json:"expressionPosition"`
-	SkipHistogramBuckets bool            `protobuf:"varint,6,opt,name=skipHistogramBuckets,proto3" json:"skipHistogramBuckets,omitempty"`
+	Matchers             []*LabelMatcher  `protobuf:"bytes,1,rep,name=matchers,proto3" json:"matchers,omitempty"`
+	Timestamp            *time.Time       `protobuf:"bytes,2,opt,name=timestamp,proto3,stdtime" json:"timestamp,omitempty"`
+	Offset               time.Duration    `protobuf:"bytes,3,opt,name=offset,proto3,stdduration" json:"offset"`
+	Range                time.Duration    `protobuf:"bytes,4,opt,name=range,proto3,stdduration" json:"range"`
+	ExpressionPosition   PositionRange    `protobuf:"bytes,5,opt,name=expressionPosition,proto3" json:"expressionPosition"`
+	SkipHistogramBuckets bool             `protobuf:"varint,6,opt,name=skipHistogramBuckets,proto3" json:"skipHistogramBuckets,omitempty"`
+	Smoothed             bool             `protobuf:"varint,7,opt,name=smoothed,proto3" json:"smoothed,omitempty"`
+	Anchored             bool             `protobuf:"varint,8,opt,name=anchored,proto3" json:"anchored,omitempty"`
+	CounterAware         bool             `protobuf:"varint,9,opt,name=counterAware,proto3" json:"counterAware,omitempty"`
+	ProjectionInclude    bool             `protobuf:"varint,10,opt,name=projectionInclude,proto3" json:"projectionInclude,omitempty"`
+	ProjectionLabels     []string         `protobuf:"bytes,11,rep,name=projectionLabels,proto3" json:"projectionLabels,omitempty"`
+	Subsets              []SubsetMatchers `protobuf:"bytes,12,rep,name=subsets,proto3" json:"subsets"`
 }
 
 func (m *MatrixSelectorDetails) Reset()      { *m = MatrixSelectorDetails{} }
 func (*MatrixSelectorDetails) ProtoMessage() {}
 func (*MatrixSelectorDetails) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{9}
+	return fileDescriptor_f7e43720d1edc0fe, []int{10}
 }
 func (m *MatrixSelectorDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -848,8 +963,99 @@ func (m *MatrixSelectorDetails) GetSkipHistogramBuckets() bool {
 	return false
 }
 
+func (m *MatrixSelectorDetails) GetSmoothed() bool {
+	if m != nil {
+		return m.Smoothed
+	}
+	return false
+}
+
+func (m *MatrixSelectorDetails) GetAnchored() bool {
+	if m != nil {
+		return m.Anchored
+	}
+	return false
+}
+
+func (m *MatrixSelectorDetails) GetCounterAware() bool {
+	if m != nil {
+		return m.CounterAware
+	}
+	return false
+}
+
+func (m *MatrixSelectorDetails) GetProjectionInclude() bool {
+	if m != nil {
+		return m.ProjectionInclude
+	}
+	return false
+}
+
+func (m *MatrixSelectorDetails) GetProjectionLabels() []string {
+	if m != nil {
+		return m.ProjectionLabels
+	}
+	return nil
+}
+
+func (m *MatrixSelectorDetails) GetSubsets() []SubsetMatchers {
+	if m != nil {
+		return m.Subsets
+	}
+	return nil
+}
+
 func (*MatrixSelectorDetails) XXX_MessageName() string {
 	return "core.MatrixSelectorDetails"
+}
+
+// SubsetMatchers defines a subset for a selector to report in its statistics.
+// It does not affect the series returned by a selector.
+type SubsetMatchers struct {
+	Matchers []*LabelMatcher `protobuf:"bytes,1,rep,name=matchers,proto3" json:"matchers,omitempty"`
+}
+
+func (m *SubsetMatchers) Reset()      { *m = SubsetMatchers{} }
+func (*SubsetMatchers) ProtoMessage() {}
+func (*SubsetMatchers) Descriptor() ([]byte, []int) {
+	return fileDescriptor_f7e43720d1edc0fe, []int{11}
+}
+func (m *SubsetMatchers) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SubsetMatchers) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SubsetMatchers.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SubsetMatchers) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SubsetMatchers.Merge(m, src)
+}
+func (m *SubsetMatchers) XXX_Size() int {
+	return m.Size()
+}
+func (m *SubsetMatchers) XXX_DiscardUnknown() {
+	xxx_messageInfo_SubsetMatchers.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SubsetMatchers proto.InternalMessageInfo
+
+func (m *SubsetMatchers) GetMatchers() []*LabelMatcher {
+	if m != nil {
+		return m.Matchers
+	}
+	return nil
+}
+
+func (*SubsetMatchers) XXX_MessageName() string {
+	return "core.SubsetMatchers"
 }
 
 type SubqueryDetails struct {
@@ -863,7 +1069,7 @@ type SubqueryDetails struct {
 func (m *SubqueryDetails) Reset()      { *m = SubqueryDetails{} }
 func (*SubqueryDetails) ProtoMessage() {}
 func (*SubqueryDetails) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{10}
+	return fileDescriptor_f7e43720d1edc0fe, []int{12}
 }
 func (m *SubqueryDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -931,6 +1137,45 @@ func (*SubqueryDetails) XXX_MessageName() string {
 	return "core.SubqueryDetails"
 }
 
+type StepInvariantExpressionDetails struct {
+}
+
+func (m *StepInvariantExpressionDetails) Reset()      { *m = StepInvariantExpressionDetails{} }
+func (*StepInvariantExpressionDetails) ProtoMessage() {}
+func (*StepInvariantExpressionDetails) Descriptor() ([]byte, []int) {
+	return fileDescriptor_f7e43720d1edc0fe, []int{13}
+}
+func (m *StepInvariantExpressionDetails) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StepInvariantExpressionDetails) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StepInvariantExpressionDetails.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StepInvariantExpressionDetails) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StepInvariantExpressionDetails.Merge(m, src)
+}
+func (m *StepInvariantExpressionDetails) XXX_Size() int {
+	return m.Size()
+}
+func (m *StepInvariantExpressionDetails) XXX_DiscardUnknown() {
+	xxx_messageInfo_StepInvariantExpressionDetails.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StepInvariantExpressionDetails proto.InternalMessageInfo
+
+func (*StepInvariantExpressionDetails) XXX_MessageName() string {
+	return "core.StepInvariantExpressionDetails"
+}
+
 type LabelMatcher struct {
 	Type  github_com_prometheus_prometheus_model_labels.MatchType `protobuf:"varint,1,opt,name=type,proto3,casttype=github.com/prometheus/prometheus/model/labels.MatchType" json:"type,omitempty"`
 	Name  string                                                  `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
@@ -940,7 +1185,7 @@ type LabelMatcher struct {
 func (m *LabelMatcher) Reset()      { *m = LabelMatcher{} }
 func (*LabelMatcher) ProtoMessage() {}
 func (*LabelMatcher) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f7e43720d1edc0fe, []int{11}
+	return fileDescriptor_f7e43720d1edc0fe, []int{14}
 }
 func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -993,11 +1238,208 @@ func (m *LabelMatcher) GetValue() string {
 func (*LabelMatcher) XXX_MessageName() string {
 	return "core.LabelMatcher"
 }
+
+type DeduplicateAndMergeDetails struct {
+}
+
+func (m *DeduplicateAndMergeDetails) Reset()      { *m = DeduplicateAndMergeDetails{} }
+func (*DeduplicateAndMergeDetails) ProtoMessage() {}
+func (*DeduplicateAndMergeDetails) Descriptor() ([]byte, []int) {
+	return fileDescriptor_f7e43720d1edc0fe, []int{15}
+}
+func (m *DeduplicateAndMergeDetails) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *DeduplicateAndMergeDetails) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_DeduplicateAndMergeDetails.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *DeduplicateAndMergeDetails) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_DeduplicateAndMergeDetails.Merge(m, src)
+}
+func (m *DeduplicateAndMergeDetails) XXX_Size() int {
+	return m.Size()
+}
+func (m *DeduplicateAndMergeDetails) XXX_DiscardUnknown() {
+	xxx_messageInfo_DeduplicateAndMergeDetails.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_DeduplicateAndMergeDetails proto.InternalMessageInfo
+
+func (*DeduplicateAndMergeDetails) XXX_MessageName() string {
+	return "core.DeduplicateAndMergeDetails"
+}
+
+type DropNameDetails struct {
+}
+
+func (m *DropNameDetails) Reset()      { *m = DropNameDetails{} }
+func (*DropNameDetails) ProtoMessage() {}
+func (*DropNameDetails) Descriptor() ([]byte, []int) {
+	return fileDescriptor_f7e43720d1edc0fe, []int{16}
+}
+func (m *DropNameDetails) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *DropNameDetails) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_DropNameDetails.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *DropNameDetails) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_DropNameDetails.Merge(m, src)
+}
+func (m *DropNameDetails) XXX_Size() int {
+	return m.Size()
+}
+func (m *DropNameDetails) XXX_DiscardUnknown() {
+	xxx_messageInfo_DropNameDetails.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_DropNameDetails proto.InternalMessageInfo
+
+func (*DropNameDetails) XXX_MessageName() string {
+	return "core.DropNameDetails"
+}
+
+type NoOpDetails struct {
+	MatrixSelector bool `protobuf:"varint,1,opt,name=matrixSelector,proto3" json:"matrixSelector,omitempty"`
+}
+
+func (m *NoOpDetails) Reset()      { *m = NoOpDetails{} }
+func (*NoOpDetails) ProtoMessage() {}
+func (*NoOpDetails) Descriptor() ([]byte, []int) {
+	return fileDescriptor_f7e43720d1edc0fe, []int{17}
+}
+func (m *NoOpDetails) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NoOpDetails) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NoOpDetails.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NoOpDetails) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NoOpDetails.Merge(m, src)
+}
+func (m *NoOpDetails) XXX_Size() int {
+	return m.Size()
+}
+func (m *NoOpDetails) XXX_DiscardUnknown() {
+	xxx_messageInfo_NoOpDetails.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NoOpDetails proto.InternalMessageInfo
+
+func (m *NoOpDetails) GetMatrixSelector() bool {
+	if m != nil {
+		return m.MatrixSelector
+	}
+	return false
+}
+
+func (*NoOpDetails) XXX_MessageName() string {
+	return "core.NoOpDetails"
+}
+
+type VectorMatchFillValues struct {
+	Rhs    float64 `protobuf:"fixed64,1,opt,name=rhs,proto3" json:"rhs,omitempty"`
+	Lhs    float64 `protobuf:"fixed64,2,opt,name=lhs,proto3" json:"lhs,omitempty"`
+	RhsSet bool    `protobuf:"varint,3,opt,name=rhsSet,proto3" json:"rhsSet,omitempty"`
+	LhsSet bool    `protobuf:"varint,4,opt,name=lhsSet,proto3" json:"lhsSet,omitempty"`
+}
+
+func (m *VectorMatchFillValues) Reset()      { *m = VectorMatchFillValues{} }
+func (*VectorMatchFillValues) ProtoMessage() {}
+func (*VectorMatchFillValues) Descriptor() ([]byte, []int) {
+	return fileDescriptor_f7e43720d1edc0fe, []int{18}
+}
+func (m *VectorMatchFillValues) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *VectorMatchFillValues) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_VectorMatchFillValues.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *VectorMatchFillValues) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_VectorMatchFillValues.Merge(m, src)
+}
+func (m *VectorMatchFillValues) XXX_Size() int {
+	return m.Size()
+}
+func (m *VectorMatchFillValues) XXX_DiscardUnknown() {
+	xxx_messageInfo_VectorMatchFillValues.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_VectorMatchFillValues proto.InternalMessageInfo
+
+func (m *VectorMatchFillValues) GetRhs() float64 {
+	if m != nil {
+		return m.Rhs
+	}
+	return 0
+}
+
+func (m *VectorMatchFillValues) GetLhs() float64 {
+	if m != nil {
+		return m.Lhs
+	}
+	return 0
+}
+
+func (m *VectorMatchFillValues) GetRhsSet() bool {
+	if m != nil {
+		return m.RhsSet
+	}
+	return false
+}
+
+func (m *VectorMatchFillValues) GetLhsSet() bool {
+	if m != nil {
+		return m.LhsSet
+	}
+	return false
+}
+
+func (*VectorMatchFillValues) XXX_MessageName() string {
+	return "core.VectorMatchFillValues"
+}
 func init() {
 	proto.RegisterEnum("core.AggregationOperation", AggregationOperation_name, AggregationOperation_value)
 	proto.RegisterEnum("core.BinaryOperation", BinaryOperation_name, BinaryOperation_value)
 	proto.RegisterEnum("core.UnaryOperation", UnaryOperation_name, UnaryOperation_value)
 	proto.RegisterType((*PositionRange)(nil), "core.PositionRange")
+	proto.RegisterType((*BinaryExpressionHints)(nil), "core.BinaryExpressionHints")
 	proto.RegisterType((*AggregateExpressionDetails)(nil), "core.AggregateExpressionDetails")
 	proto.RegisterType((*BinaryExpressionDetails)(nil), "core.BinaryExpressionDetails")
 	proto.RegisterType((*VectorMatching)(nil), "core.VectorMatching")
@@ -1007,95 +1449,123 @@ func init() {
 	proto.RegisterType((*UnaryExpressionDetails)(nil), "core.UnaryExpressionDetails")
 	proto.RegisterType((*VectorSelectorDetails)(nil), "core.VectorSelectorDetails")
 	proto.RegisterType((*MatrixSelectorDetails)(nil), "core.MatrixSelectorDetails")
+	proto.RegisterType((*SubsetMatchers)(nil), "core.SubsetMatchers")
 	proto.RegisterType((*SubqueryDetails)(nil), "core.SubqueryDetails")
+	proto.RegisterType((*StepInvariantExpressionDetails)(nil), "core.StepInvariantExpressionDetails")
 	proto.RegisterType((*LabelMatcher)(nil), "core.LabelMatcher")
+	proto.RegisterType((*DeduplicateAndMergeDetails)(nil), "core.DeduplicateAndMergeDetails")
+	proto.RegisterType((*DropNameDetails)(nil), "core.DropNameDetails")
+	proto.RegisterType((*NoOpDetails)(nil), "core.NoOpDetails")
+	proto.RegisterType((*VectorMatchFillValues)(nil), "core.VectorMatchFillValues")
 }
 
 func init() { proto.RegisterFile("core.proto", fileDescriptor_f7e43720d1edc0fe) }
 
 var fileDescriptor_f7e43720d1edc0fe = []byte{
-	// 1282 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd4, 0x56, 0x3f, 0x6f, 0x1b, 0xc7,
-	0x12, 0xe7, 0x1d, 0x29, 0x59, 0x1c, 0x49, 0xd4, 0x7a, 0x45, 0xd9, 0x7c, 0xc2, 0xc3, 0x51, 0x10,
-	0xde, 0x7b, 0x10, 0x54, 0x90, 0x2f, 0x0a, 0x10, 0xc7, 0x70, 0x90, 0xe0, 0x28, 0x32, 0x0a, 0x61,
-	0xfe, 0xd3, 0x91, 0x27, 0x27, 0x45, 0x60, 0x2c, 0xc9, 0xd5, 0xe9, 0xe0, 0xe3, 0xed, 0x79, 0x6f,
-	0xcf, 0xb6, 0xba, 0x34, 0x29, 0xd2, 0xb9, 0xcc, 0x47, 0x48, 0x93, 0x0f, 0x90, 0x32, 0x9d, 0x52,
-	0x04, 0x70, 0x69, 0xa4, 0x50, 0x62, 0xaa, 0x49, 0x3a, 0xd7, 0x0e, 0x10, 0x04, 0xf7, 0x87, 0xf4,
-	0x91, 0x92, 0x1c, 0x5b, 0x56, 0x8a, 0x54, 0xb7, 0x33, 0x3b, 0xbf, 0xd9, 0x99, 0xdf, 0xec, 0xec,
-	0x1c, 0x40, 0x8f, 0x71, 0x5a, 0x70, 0x38, 0x13, 0x0c, 0xa7, 0xfc, 0xf5, 0xea, 0xff, 0x0d, 0x53,
-	0x1c, 0x78, 0xdd, 0x42, 0x8f, 0x0d, 0x8a, 0x06, 0x27, 0xfb, 0xc4, 0x26, 0xc5, 0x81, 0x39, 0x30,
-	0x79, 0xd1, 0xb9, 0x67, 0x84, 0x2b, 0xa7, 0x1b, 0x7e, 0x43, 0xdc, 0x6a, 0xeb, 0x95, 0x08, 0x57,
-	0x70, 0x4a, 0x06, 0xa6, 0x6d, 0x38, 0x9c, 0x0d, 0xee, 0x5b, 0x45, 0xe6, 0x50, 0x4e, 0x04, 0xe3,
-	0x6e, 0x71, 0xdf, 0xb3, 0x7b, 0xc2, 0x64, 0x76, 0x6c, 0x15, 0x79, 0xcc, 0x1a, 0xcc, 0x60, 0xc1,
-	0xb2, 0xe8, 0xaf, 0x22, 0xad, 0x62, 0x30, 0x66, 0x58, 0xb4, 0x18, 0x48, 0x5d, 0x6f, 0xbf, 0xd8,
-	0xf7, 0x38, 0xf1, 0x61, 0xd1, 0x7e, 0x7e, 0x7a, 0x5f, 0x98, 0x03, 0xea, 0x0a, 0x32, 0x70, 0x42,
-	0x83, 0xf5, 0xef, 0x24, 0x58, 0x6c, 0x31, 0xd7, 0xf4, 0x31, 0x1a, 0xb1, 0x0d, 0x8a, 0x75, 0x98,
-	0x71, 0x05, 0xe1, 0x22, 0x27, 0xad, 0x49, 0x1b, 0xc9, 0xd2, 0x47, 0x2f, 0x8e, 0xf3, 0xb7, 0x62,
-	0xd9, 0xf8, 0x21, 0x53, 0x71, 0x40, 0x3d, 0x77, 0x7a, 0x79, 0xdf, 0x2a, 0x3a, 0x84, 0xbb, 0x94,
-	0x17, 0x1d, 0xe6, 0x72, 0xdf, 0x57, 0xa1, 0xc5, 0x5c, 0x2d, 0xf4, 0x86, 0x77, 0x21, 0x49, 0xed,
-	0x7e, 0x4e, 0xbe, 0x1c, 0xa7, 0xbe, 0xaf, 0xf5, 0x1f, 0x24, 0x58, 0x55, 0x0d, 0x83, 0x53, 0x83,
-	0x08, 0x5a, 0x79, 0xe4, 0x70, 0xea, 0xba, 0x26, 0xb3, 0xcb, 0x54, 0x10, 0xd3, 0x72, 0xf1, 0x26,
-	0xc8, 0xcc, 0x09, 0xb2, 0xc8, 0x6c, 0xad, 0x16, 0x82, 0xa2, 0x8e, 0xac, 0x4d, 0x66, 0x37, 0x03,
-	0xce, 0xfd, 0xac, 0x65, 0xe6, 0xe0, 0x55, 0x98, 0x33, 0x38, 0xf3, 0x1c, 0xd3, 0x36, 0x72, 0xf2,
-	0x5a, 0x72, 0x23, 0xad, 0x8d, 0x65, 0x9c, 0x83, 0x2b, 0x0f, 0x4d, 0x71, 0xc0, 0x3c, 0x91, 0x4b,
-	0xae, 0x49, 0x1b, 0x73, 0xda, 0x48, 0xc4, 0x55, 0xc0, 0x74, 0x7c, 0xec, 0x88, 0xc5, 0x5c, 0x6a,
-	0x4d, 0xda, 0x98, 0xdf, 0x5a, 0x0e, 0x4f, 0x9c, 0xe0, 0xb6, 0x94, 0x3a, 0x3a, 0xce, 0x27, 0xb4,
-	0x33, 0x40, 0xeb, 0xbf, 0x49, 0x70, 0xbd, 0x64, 0xda, 0x84, 0x1f, 0x9e, 0x4e, 0xe4, 0xbf, 0xb1,
-	0x44, 0x56, 0x42, 0xb7, 0xa1, 0xe9, 0x64, 0x0e, 0x1f, 0x40, 0xe6, 0x01, 0xed, 0x09, 0xc6, 0xeb,
-	0x44, 0xf4, 0x0e, 0xc2, 0x4c, 0xfc, 0x48, 0xb2, 0x21, 0x64, 0x6f, 0x62, 0x4f, 0x9b, 0xb2, 0xc5,
-	0x0a, 0x00, 0xa7, 0xc2, 0xe3, 0x76, 0x89, 0x31, 0x2b, 0x4a, 0x34, 0xa6, 0xb9, 0xcc, 0x5c, 0xbf,
-	0x97, 0x20, 0x33, 0x19, 0x0d, 0xfe, 0x1c, 0x52, 0x3d, 0xc2, 0xfb, 0xd1, 0x9d, 0xab, 0xbe, 0x38,
-	0xce, 0x57, 0xde, 0xec, 0x7a, 0xc4, 0xd3, 0xdb, 0x26, 0xbc, 0x6f, 0xda, 0xc4, 0x32, 0xc5, 0xa1,
-	0x16, 0xb8, 0xc5, 0xff, 0x83, 0xcc, 0x20, 0x3a, 0xaa, 0x46, 0xba, 0xd4, 0x72, 0xa3, 0x22, 0x4f,
-	0x69, 0x71, 0x06, 0x64, 0x66, 0x47, 0xc9, 0xcb, 0xcc, 0xf6, 0x4b, 0x6f, 0xda, 0x3d, 0xcb, 0xeb,
-	0xd3, 0x5c, 0x2a, 0x00, 0x8c, 0xc4, 0xf5, 0x2f, 0x65, 0x58, 0xfe, 0x38, 0x6a, 0xd1, 0x6d, 0x62,
-	0x59, 0xa3, 0x5a, 0x15, 0x61, 0x6e, 0xd4, 0xb9, 0x51, 0xc5, 0x96, 0x0b, 0x2f, 0x5b, 0x79, 0x84,
-	0xd0, 0xc6, 0x46, 0x98, 0xc3, 0x02, 0xe9, 0xba, 0xd4, 0x16, 0xb1, 0xc0, 0x22, 0x46, 0x05, 0x7d,
-	0xe4, 0x74, 0x0b, 0x81, 0xbe, 0x45, 0x4c, 0x5e, 0xba, 0xe9, 0x33, 0xfa, 0xd3, 0x71, 0xfe, 0x9d,
-	0xd7, 0x79, 0x8e, 0x42, 0x9c, 0xda, 0x27, 0x8e, 0xa0, 0x5c, 0x9b, 0x38, 0xe3, 0x9c, 0x5a, 0x26,
-	0x2f, 0x52, 0xcb, 0x87, 0x90, 0x6d, 0x78, 0x83, 0x2e, 0xe5, 0x35, 0x53, 0x50, 0x4e, 0xc6, 0x3c,
-	0x64, 0x61, 0xe6, 0x01, 0xb1, 0x3c, 0x1a, 0x90, 0x20, 0x69, 0xa1, 0x70, 0xce, 0xc1, 0xf2, 0x05,
-	0x0f, 0x6e, 0x0b, 0xee, 0x97, 0xee, 0x15, 0x07, 0xa7, 0xff, 0x86, 0x83, 0xbf, 0x92, 0xe0, 0x9a,
-	0x7e, 0x76, 0xa3, 0xfe, 0x27, 0xd6, 0xa8, 0x51, 0xd7, 0xe9, 0xa7, 0xfb, 0xf4, 0x12, 0x63, 0xf9,
-	0x5d, 0x86, 0x95, 0xf0, 0xe2, 0xb7, 0xa9, 0x15, 0x7c, 0x47, 0xa1, 0x14, 0x60, 0x2e, 0xb8, 0xdb,
-	0x94, 0xbb, 0x39, 0x29, 0xb8, 0x52, 0x38, 0x74, 0x1d, 0x5c, 0x81, 0x7a, 0xb8, 0xa5, 0x8d, 0x6d,
-	0xf0, 0x87, 0x90, 0x1e, 0x8f, 0x86, 0x28, 0x96, 0xd5, 0x42, 0x38, 0x3c, 0x0a, 0xa3, 0xe1, 0x51,
-	0xe8, 0x8c, 0x2c, 0x4a, 0xa9, 0xc7, 0x3f, 0xe7, 0x25, 0xed, 0x25, 0x04, 0xdf, 0x82, 0x59, 0xb6,
-	0xbf, 0xef, 0x52, 0x11, 0x5d, 0xa3, 0x7f, 0x9d, 0x02, 0x97, 0xa3, 0xc9, 0x54, 0x9a, 0xf3, 0xd3,
-	0xf9, 0xda, 0xc7, 0x47, 0x90, 0x4b, 0x7c, 0x5b, 0xf0, 0x7b, 0x70, 0x2d, 0x7c, 0xb4, 0xda, 0x64,
-	0xe0, 0x58, 0x74, 0x1c, 0xb1, 0x9b, 0x9b, 0x09, 0xba, 0xfa, 0x9c, 0x5d, 0xbc, 0x05, 0x59, 0xf7,
-	0x9e, 0xe9, 0x7c, 0x62, 0xba, 0x82, 0x19, 0x9c, 0x0c, 0x4a, 0x5e, 0xef, 0x1e, 0x15, 0x6e, 0x6e,
-	0x36, 0x40, 0x9d, 0xb9, 0xb7, 0xfe, 0x87, 0x0c, 0x2b, 0x75, 0x22, 0xb8, 0xf9, 0xe8, 0x1f, 0xcd,
-	0xfe, 0x4d, 0x98, 0x09, 0x06, 0x6b, 0x44, 0xf8, 0x6b, 0x61, 0x43, 0xc4, 0x39, 0x85, 0x9b, 0xb9,
-	0x48, 0xe1, 0x2e, 0x52, 0x80, 0x1f, 0x65, 0x58, 0x6a, 0x7b, 0xdd, 0xfb, 0x1e, 0xe5, 0x87, 0x23,
-	0xea, 0x27, 0xa8, 0x94, 0xde, 0x86, 0x4a, 0xf9, 0x2d, 0xa8, 0x4c, 0xbe, 0x31, 0x95, 0x37, 0x20,
-	0xe5, 0x0a, 0xea, 0xbc, 0x49, 0x11, 0x02, 0xc0, 0x25, 0xd6, 0xc0, 0x7f, 0xda, 0x16, 0xe2, 0x37,
-	0x14, 0x37, 0x21, 0x25, 0x0e, 0x1d, 0x1a, 0x8d, 0xe5, 0x5b, 0x2f, 0x8e, 0xf3, 0x37, 0xfe, 0x72,
-	0x2c, 0x0f, 0x58, 0x9f, 0x5a, 0x45, 0x2b, 0x98, 0x34, 0x85, 0xc0, 0x51, 0xe7, 0xd0, 0xa1, 0x5a,
-	0xe0, 0x08, 0x63, 0x48, 0xd9, 0x64, 0x40, 0x03, 0x6e, 0xd3, 0x5a, 0xb0, 0x7e, 0xf9, 0x62, 0x27,
-	0x63, 0x2f, 0xf6, 0xe6, 0x91, 0x0c, 0xd9, 0xb3, 0x7e, 0xd7, 0xf0, 0x75, 0x58, 0x56, 0x77, 0x76,
-	0xb4, 0xca, 0x8e, 0xda, 0xa9, 0x36, 0x1b, 0x77, 0xf5, 0xc6, 0xed, 0x46, 0xf3, 0x4e, 0x03, 0x25,
-	0xf0, 0x32, 0x2c, 0xc5, 0x37, 0xda, 0x7a, 0x1d, 0x49, 0xd3, 0x4a, 0x75, 0x6f, 0x07, 0xc9, 0x78,
-	0x05, 0xae, 0xc6, 0x95, 0xdb, 0x4d, 0xbd, 0xd1, 0x41, 0xc9, 0x69, 0xdb, 0x7a, 0xb5, 0x81, 0x52,
-	0xa7, 0x94, 0xea, 0xa7, 0x68, 0x66, 0xda, 0xc1, 0x8e, 0xd6, 0xd4, 0x5b, 0x68, 0x16, 0x5f, 0x03,
-	0x3c, 0x11, 0x41, 0xa7, 0x5c, 0xae, 0xec, 0xa1, 0x2b, 0x67, 0xe8, 0xf7, 0x54, 0x0d, 0xcd, 0xe1,
-	0x2c, 0xa0, 0xb8, 0xbe, 0xd3, 0x6c, 0xdd, 0x46, 0xe9, 0xe9, 0x04, 0x4b, 0xcd, 0x4e, 0xa7, 0x59,
-	0xbf, 0x8d, 0x00, 0xff, 0x1b, 0x72, 0xa7, 0xc2, 0xbe, 0xbb, 0xa7, 0xd6, 0xf4, 0x4a, 0x1b, 0xcd,
-	0xe3, 0x1c, 0x64, 0xe3, 0xbb, 0xbb, 0xba, 0xda, 0xe8, 0x54, 0x6b, 0x15, 0xb4, 0xb0, 0xf9, 0xad,
-	0x0c, 0x4b, 0x53, 0x3f, 0x8c, 0x18, 0x43, 0xa6, 0x54, 0x6d, 0xa8, 0xda, 0x67, 0x31, 0x02, 0x97,
-	0x60, 0x3e, 0xd2, 0xd5, 0xd4, 0x46, 0x19, 0x49, 0x38, 0x03, 0x30, 0x52, 0x34, 0x35, 0x24, 0xc7,
-	0x40, 0x35, 0xbd, 0x51, 0xab, 0xb4, 0xdb, 0x28, 0x89, 0x11, 0x2c, 0x44, 0x3a, 0xb5, 0xa3, 0x36,
-	0xb6, 0x50, 0x2a, 0x86, 0x6a, 0xeb, 0x25, 0x34, 0x13, 0x93, 0xd5, 0x72, 0x19, 0xcd, 0xc6, 0xe4,
-	0xba, 0x5e, 0x43, 0x57, 0xe2, 0x72, 0xb3, 0x8c, 0xe6, 0x62, 0x72, 0xb9, 0xba, 0x87, 0xd2, 0x31,
-	0xb9, 0xd5, 0xbc, 0x83, 0x20, 0x16, 0x66, 0x65, 0xb7, 0xb6, 0x8d, 0xe6, 0x63, 0x06, 0x8d, 0xca,
-	0x2e, 0x5a, 0x88, 0x87, 0xdd, 0xa9, 0xa0, 0xc5, 0xb8, 0xdc, 0x6e, 0xa3, 0x4c, 0x4c, 0xde, 0xe9,
-	0x54, 0xd0, 0xd2, 0x84, 0xac, 0x21, 0xb4, 0xb9, 0x05, 0x99, 0xc9, 0xb1, 0x8d, 0xaf, 0xc2, 0xa2,
-	0x3e, 0x45, 0xd6, 0x22, 0xa4, 0xf5, 0x71, 0x92, 0x52, 0xe9, 0xfd, 0x27, 0xcf, 0x94, 0xc4, 0xd3,
-	0x67, 0x4a, 0xe2, 0xf9, 0x33, 0x45, 0xfa, 0x62, 0xa8, 0x48, 0xdf, 0x0c, 0x95, 0xc4, 0xd1, 0x50,
-	0x91, 0x9e, 0x0c, 0x15, 0xe9, 0x97, 0xa1, 0x22, 0xfd, 0x3a, 0x54, 0x12, 0xcf, 0x87, 0x8a, 0xf4,
-	0xf8, 0x44, 0x49, 0x1c, 0x9d, 0x28, 0xd2, 0x93, 0x13, 0x25, 0xf1, 0xf4, 0x44, 0x49, 0x74, 0x67,
-	0x83, 0x16, 0x7f, 0xf7, 0xcf, 0x00, 0x00, 0x00, 0xff, 0xff, 0x6c, 0xb2, 0xaf, 0xef, 0x77, 0x0e,
-	0x00, 0x00,
+	// 1636 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd4, 0x57, 0x4d, 0x6f, 0x23, 0x49,
+	0x19, 0x76, 0xb7, 0xed, 0xc4, 0x7e, 0x93, 0x38, 0x35, 0x95, 0x64, 0xc6, 0x64, 0x51, 0x27, 0xb2,
+	0x00, 0x45, 0x11, 0xb2, 0x99, 0xf0, 0xb1, 0x8c, 0x06, 0x01, 0xed, 0xb1, 0x37, 0x6b, 0xc6, 0x1f,
+	0x99, 0xb6, 0x9d, 0x05, 0x24, 0x34, 0x2a, 0xdb, 0x15, 0xbb, 0x99, 0x76, 0x57, 0x4f, 0x75, 0x75,
+	0x66, 0x72, 0x43, 0x02, 0x0e, 0xdc, 0xf6, 0xc8, 0x81, 0x1f, 0xc0, 0x85, 0x1f, 0xc0, 0x3f, 0x18,
+	0x0e, 0x48, 0x73, 0x5c, 0x71, 0x08, 0x4c, 0xe6, 0x82, 0x38, 0xed, 0x79, 0x24, 0x24, 0xd4, 0xd5,
+	0xdd, 0x4e, 0xbb, 0x93, 0x2c, 0xc9, 0x6c, 0x38, 0x70, 0x72, 0xbd, 0x4f, 0xbd, 0xdf, 0xf5, 0xf4,
+	0x5b, 0x65, 0x80, 0x21, 0xe3, 0xb4, 0xec, 0x70, 0x26, 0x18, 0xce, 0xf8, 0xeb, 0xcd, 0x6f, 0x8d,
+	0x4d, 0x31, 0xf1, 0x06, 0xe5, 0x21, 0x9b, 0x56, 0xc6, 0x9c, 0x1c, 0x11, 0x9b, 0x54, 0xa6, 0xe6,
+	0xd4, 0xe4, 0x15, 0xe7, 0xd9, 0x38, 0x58, 0x39, 0x83, 0xe0, 0x37, 0xb0, 0xdb, 0x3c, 0xf8, 0x42,
+	0x0b, 0x57, 0x70, 0x4a, 0xa6, 0xa6, 0x3d, 0x76, 0x38, 0x9b, 0x3e, 0xb7, 0x2a, 0xcc, 0xa1, 0x9c,
+	0x08, 0xc6, 0xdd, 0xca, 0x91, 0x67, 0x0f, 0x85, 0xc9, 0xec, 0xd8, 0x2a, 0xf4, 0xb8, 0x3e, 0x66,
+	0x63, 0x26, 0x97, 0x15, 0x7f, 0x15, 0xa2, 0xda, 0x98, 0xb1, 0xb1, 0x45, 0x2b, 0x52, 0x1a, 0x78,
+	0x47, 0x95, 0x91, 0xc7, 0x89, 0x6f, 0x16, 0xee, 0x6f, 0x25, 0xf7, 0x85, 0x39, 0xa5, 0xae, 0x20,
+	0x53, 0x27, 0x50, 0x28, 0xfd, 0x59, 0x81, 0x95, 0x03, 0xe6, 0x9a, 0xbe, 0x8d, 0x41, 0xec, 0x31,
+	0xc5, 0x7d, 0xc8, 0xba, 0x82, 0x70, 0x51, 0x54, 0xb6, 0x95, 0x9d, 0x74, 0xf5, 0x47, 0xef, 0x4e,
+	0xb7, 0x1e, 0xc6, 0xaa, 0xf1, 0x53, 0xa6, 0x62, 0x42, 0x3d, 0x37, 0xb9, 0x7c, 0x6e, 0x55, 0x1c,
+	0xc2, 0x5d, 0xca, 0x2b, 0x0e, 0x73, 0xb9, 0xef, 0xab, 0x7c, 0xc0, 0x5c, 0x23, 0xf0, 0x86, 0x9f,
+	0x40, 0x9a, 0xda, 0xa3, 0xa2, 0x7a, 0x3b, 0x4e, 0x7d, 0x5f, 0xa5, 0xfb, 0xb0, 0x51, 0x35, 0x6d,
+	0xc2, 0x4f, 0xea, 0x2f, 0x1d, 0x4e, 0x5d, 0xd7, 0x64, 0xf6, 0xc7, 0xa6, 0x2d, 0x5c, 0x5c, 0x84,
+	0x45, 0xd3, 0x1e, 0x5a, 0xde, 0x88, 0x16, 0x95, 0xed, 0xf4, 0x4e, 0xde, 0x88, 0xc4, 0xd2, 0x5f,
+	0x14, 0xd8, 0xd4, 0xc7, 0x63, 0x4e, 0xc7, 0x44, 0xd0, 0x73, 0xb3, 0x1a, 0x15, 0xc4, 0xb4, 0x5c,
+	0xbc, 0x0b, 0x2a, 0x73, 0x64, 0xe1, 0x85, 0xbd, 0xcd, 0xb2, 0xe4, 0x41, 0xa4, 0x6d, 0x32, 0xbb,
+	0x23, 0x8f, 0xc9, 0x6f, 0x94, 0xca, 0x1c, 0xbc, 0x09, 0xb9, 0x31, 0x67, 0x9e, 0x63, 0xda, 0xe3,
+	0xa2, 0x2a, 0xa3, 0xcc, 0x64, 0x3f, 0x81, 0x17, 0xa6, 0x98, 0x30, 0x4f, 0x14, 0xd3, 0xdb, 0xca,
+	0x4e, 0xce, 0x88, 0x44, 0xdc, 0x00, 0x4c, 0x67, 0x61, 0xa3, 0xc6, 0x17, 0x33, 0xdb, 0xca, 0xce,
+	0xd2, 0xde, 0x5a, 0x10, 0x71, 0xee, 0x38, 0xaa, 0x99, 0x57, 0xa7, 0x5b, 0x29, 0xe3, 0x12, 0xa3,
+	0xd2, 0x1f, 0x54, 0xb8, 0x97, 0xac, 0x3f, 0x2a, 0xe4, 0xeb, 0xb1, 0x42, 0x36, 0x02, 0xb7, 0x81,
+	0xea, 0x7c, 0x0d, 0x3f, 0x80, 0xc2, 0x31, 0x1d, 0x0a, 0xc6, 0x5b, 0x44, 0x0c, 0x27, 0x41, 0x25,
+	0x7e, 0x26, 0xeb, 0x81, 0xc9, 0xe1, 0xdc, 0x9e, 0x91, 0xd0, 0xc5, 0x1a, 0x00, 0xa7, 0xc2, 0xe3,
+	0x76, 0x95, 0x31, 0x2b, 0x2c, 0x34, 0x86, 0xdc, 0x62, 0xad, 0xf8, 0x3e, 0x64, 0x27, 0xfe, 0xd1,
+	0x16, 0xb3, 0xd2, 0xfa, 0x83, 0x78, 0x49, 0x89, 0xd3, 0x37, 0x02, 0xcd, 0xd2, 0x6f, 0x54, 0x28,
+	0xcc, 0x17, 0x80, 0x7f, 0x01, 0x99, 0x21, 0xe1, 0xa3, 0x90, 0xd9, 0x8d, 0x77, 0xa7, 0x5b, 0xf5,
+	0x9b, 0x91, 0x30, 0xde, 0x91, 0x47, 0x84, 0x8f, 0x4c, 0x9b, 0x58, 0xa6, 0x38, 0x31, 0xa4, 0x5b,
+	0xfc, 0x0d, 0x28, 0x4c, 0xc3, 0x50, 0x4d, 0x32, 0xa0, 0x96, 0x1b, 0xf2, 0x22, 0x81, 0xe2, 0x02,
+	0xa8, 0xcc, 0x0e, 0xfb, 0xa5, 0x32, 0x3b, 0x4e, 0xd7, 0xcc, 0x1c, 0x5d, 0xb1, 0x0e, 0x70, 0x64,
+	0x5a, 0xd6, 0x21, 0xb1, 0x3c, 0x9a, 0xa8, 0x3d, 0x96, 0xc9, 0x47, 0x33, 0x95, 0xb0, 0x83, 0x31,
+	0xa3, 0xd2, 0x6f, 0x55, 0x58, 0xfb, 0x28, 0x9c, 0x25, 0x8f, 0x88, 0x65, 0x45, 0x0c, 0xa9, 0x40,
+	0x2e, 0x1a, 0x31, 0x21, 0x4f, 0xd6, 0xca, 0xe7, 0x33, 0x27, 0xb2, 0x30, 0x66, 0x4a, 0x98, 0xc3,
+	0x32, 0x19, 0xb8, 0xd4, 0x16, 0xb1, 0xda, 0xc2, 0x73, 0x14, 0xf4, 0xa5, 0x33, 0x28, 0x4b, 0xfc,
+	0x80, 0x98, 0xbc, 0xfa, 0xc0, 0xcf, 0xe2, 0x6f, 0xa7, 0x5b, 0xf7, 0xaf, 0x33, 0x37, 0x03, 0x3b,
+	0x7d, 0x44, 0x1c, 0x41, 0xb9, 0x31, 0x17, 0xe3, 0x0a, 0x06, 0xa5, 0xdf, 0xe7, 0x6b, 0x79, 0x01,
+	0xeb, 0x6d, 0x6f, 0x3a, 0xa0, 0xbc, 0x69, 0x0a, 0xca, 0xc9, 0xac, 0x0f, 0xeb, 0x90, 0x3d, 0xf6,
+	0x3b, 0x25, 0x9b, 0xa0, 0x18, 0x81, 0x70, 0x45, 0x60, 0xf5, 0x3d, 0x03, 0x77, 0x05, 0xf7, 0x4f,
+	0xff, 0x0b, 0x02, 0xe7, 0xff, 0x07, 0x81, 0x7f, 0xa7, 0xc0, 0xdd, 0xfe, 0xe5, 0xe3, 0xe1, 0x6b,
+	0xb1, 0xf1, 0x10, 0x7e, 0xeb, 0xfd, 0x8b, 0xd3, 0xe1, 0x16, 0x73, 0xf9, 0x75, 0x16, 0x36, 0x02,
+	0xc6, 0x76, 0xa9, 0x25, 0x7f, 0xa3, 0x54, 0xca, 0x90, 0x93, 0x9f, 0x07, 0xe5, 0xae, 0x1c, 0xd6,
+	0x4b, 0x7b, 0x38, 0x70, 0x2d, 0x29, 0xd0, 0x0a, 0xb6, 0x8c, 0x99, 0x0e, 0xfe, 0x21, 0xe4, 0x67,
+	0x77, 0x58, 0x98, 0xcb, 0x66, 0x39, 0xb8, 0xe5, 0xca, 0xd1, 0x2d, 0x57, 0xee, 0x45, 0x1a, 0xd5,
+	0xcc, 0xa7, 0x7f, 0xdf, 0x52, 0x8c, 0x73, 0x13, 0xfc, 0x10, 0x16, 0xd8, 0xd1, 0x91, 0x4b, 0x45,
+	0x48, 0xa3, 0xaf, 0x5c, 0x30, 0xae, 0x85, 0x57, 0x68, 0x35, 0xe7, 0x97, 0xf3, 0x7b, 0xdf, 0x3e,
+	0x34, 0xb9, 0xcd, 0x89, 0xf6, 0x3d, 0xb8, 0x1b, 0x8c, 0xca, 0x2e, 0x99, 0x3a, 0x16, 0x9d, 0x65,
+	0x1c, 0x7c, 0xe6, 0x39, 0xe3, 0x8a, 0x5d, 0xbc, 0x07, 0xeb, 0xee, 0x33, 0xd3, 0xf9, 0xd8, 0x74,
+	0x05, 0x1b, 0x73, 0x32, 0xad, 0x7a, 0xc3, 0x67, 0x54, 0xb8, 0xc5, 0x05, 0x69, 0x75, 0xe9, 0x9e,
+	0x7f, 0x55, 0xb9, 0x53, 0xc6, 0xc4, 0x84, 0x8e, 0x8a, 0x8b, 0x52, 0x6f, 0x26, 0xe3, 0x6f, 0xc2,
+	0x1d, 0x87, 0xb3, 0x5f, 0x52, 0xf9, 0x91, 0x37, 0xc2, 0x31, 0x94, 0x93, 0x4a, 0x17, 0x37, 0xf0,
+	0x2e, 0xa0, 0x73, 0x30, 0x1c, 0x04, 0x79, 0x39, 0xb3, 0x2e, 0xe0, 0xf8, 0xe7, 0xb0, 0x73, 0x79,
+	0x0d, 0x07, 0x9c, 0xba, 0x94, 0x1f, 0xd3, 0x59, 0x9e, 0x6e, 0x11, 0x64, 0xc0, 0x6b, 0xeb, 0xe3,
+	0xef, 0xc0, 0xa2, 0xeb, 0x0d, 0x5c, 0xbf, 0xf0, 0x25, 0x49, 0x9a, 0x90, 0xc5, 0x5d, 0x09, 0x86,
+	0xac, 0x89, 0xc6, 0x61, 0xa4, 0x5a, 0xfa, 0x57, 0x06, 0x36, 0x5a, 0x44, 0x70, 0xf3, 0xe5, 0xff,
+	0x35, 0x0b, 0x1f, 0x40, 0x56, 0xbe, 0x84, 0x42, 0xe2, 0x5d, 0xcb, 0x36, 0xb0, 0xb8, 0x82, 0xc0,
+	0xd9, 0xf7, 0x21, 0xf0, 0x6d, 0x13, 0x71, 0x13, 0x72, 0xc4, 0x1e, 0x4e, 0x18, 0xa7, 0xa3, 0x90,
+	0x7f, 0x33, 0x19, 0x97, 0x60, 0x79, 0xc8, 0x3c, 0x5b, 0x50, 0xae, 0xbf, 0x20, 0x9c, 0x16, 0xf3,
+	0x72, 0x7f, 0x0e, 0xbb, 0x9c, 0xc8, 0x70, 0x13, 0x22, 0x2f, 0x5d, 0x41, 0xe4, 0x18, 0xd9, 0x96,
+	0xaf, 0x4f, 0xb6, 0x1f, 0x43, 0x61, 0x5e, 0xe1, 0xa6, 0x24, 0x2b, 0xfd, 0x55, 0x85, 0xd5, 0xae,
+	0x37, 0x78, 0xee, 0x51, 0x7e, 0x12, 0x11, 0x75, 0x8e, 0x78, 0xca, 0x97, 0x21, 0x9e, 0xfa, 0x25,
+	0x88, 0x97, 0xbe, 0x31, 0xf1, 0x3e, 0x84, 0x8c, 0x2b, 0xa8, 0x73, 0x13, 0xca, 0x4a, 0x83, 0x5b,
+	0x64, 0x6c, 0x69, 0x1b, 0xb4, 0xae, 0xa0, 0x4e, 0xc3, 0x3e, 0x26, 0xdc, 0x24, 0xb6, 0xb8, 0x70,
+	0x2f, 0xfa, 0x57, 0xe6, 0x72, 0xfc, 0x30, 0x70, 0x07, 0x32, 0xe2, 0xc4, 0xa1, 0xe1, 0x8b, 0xf1,
+	0xe1, 0xbb, 0xd3, 0xad, 0x0f, 0xff, 0xeb, 0x8b, 0x71, 0xca, 0x46, 0xd4, 0xaa, 0x58, 0x92, 0x3b,
+	0x65, 0xe9, 0xa8, 0x77, 0xe2, 0x50, 0x43, 0x3a, 0xc2, 0x18, 0x32, 0x36, 0x99, 0x52, 0xd9, 0xfd,
+	0xbc, 0x21, 0xd7, 0xe7, 0x2f, 0x81, 0x74, 0xec, 0x25, 0x50, 0x7a, 0x00, 0x9b, 0x35, 0x3a, 0xf2,
+	0x1c, 0xcb, 0x1c, 0x12, 0x41, 0x75, 0x7b, 0xd4, 0xa2, 0x7c, 0x4c, 0xc3, 0x4c, 0x7f, 0x92, 0xc9,
+	0x29, 0x48, 0x35, 0x36, 0xb8, 0x67, 0xd7, 0xa8, 0x45, 0x4e, 0xe8, 0xa8, 0x4d, 0xa6, 0xd4, 0xa0,
+	0x53, 0x76, 0x4c, 0xac, 0xd2, 0x1d, 0x58, 0xad, 0x71, 0xe6, 0xf8, 0x50, 0x54, 0xd9, 0x77, 0x61,
+	0xa9, 0xcd, 0x3a, 0x4e, 0x44, 0xa3, 0xe0, 0xa9, 0x1a, 0x1b, 0x84, 0xb2, 0xc2, 0x9c, 0x91, 0x40,
+	0x4b, 0xcf, 0xa2, 0x6b, 0x3b, 0xf1, 0xd0, 0xc4, 0x08, 0xd2, 0x7c, 0xe2, 0x86, 0x8f, 0x26, 0x7f,
+	0xe9, 0x23, 0xd6, 0xc4, 0x95, 0x85, 0x29, 0x86, 0xbf, 0xc4, 0x77, 0x61, 0x81, 0x4f, 0xdc, 0x2e,
+	0x8d, 0xfe, 0x04, 0x85, 0x92, 0x8f, 0x5b, 0x01, 0x9e, 0x09, 0xf0, 0x40, 0xda, 0xfd, 0xb7, 0x0a,
+	0xeb, 0x97, 0xfd, 0xdd, 0xc2, 0xf7, 0x60, 0x4d, 0xdf, 0xdf, 0x37, 0xea, 0xfb, 0x7a, 0xaf, 0xd1,
+	0x69, 0x3f, 0xed, 0xb7, 0x1f, 0xb7, 0x3b, 0x9f, 0xb4, 0x51, 0x0a, 0xaf, 0xc1, 0x6a, 0x7c, 0xa3,
+	0xdb, 0x6f, 0x21, 0x25, 0x09, 0xea, 0x87, 0xfb, 0x48, 0xc5, 0x1b, 0x70, 0x27, 0x0e, 0x3e, 0xea,
+	0xf4, 0xdb, 0x3d, 0x94, 0x4e, 0xea, 0xb6, 0x1a, 0x6d, 0x94, 0xb9, 0x00, 0xea, 0x3f, 0x45, 0xd9,
+	0xa4, 0x83, 0x7d, 0xa3, 0xd3, 0x3f, 0x40, 0x0b, 0xf8, 0x2e, 0xe0, 0xb9, 0x0c, 0x7a, 0xb5, 0x5a,
+	0xfd, 0x10, 0x2d, 0x5e, 0x82, 0x1f, 0xea, 0x06, 0xca, 0xe1, 0x75, 0x40, 0x71, 0xbc, 0xd7, 0x39,
+	0x78, 0x8c, 0xf2, 0xc9, 0x02, 0xab, 0x9d, 0x5e, 0xaf, 0xd3, 0x7a, 0x8c, 0x00, 0x7f, 0x15, 0x8a,
+	0x17, 0xd2, 0x7e, 0x7a, 0xa8, 0x37, 0xfb, 0xf5, 0x2e, 0x5a, 0xc2, 0x45, 0x58, 0x8f, 0xef, 0x3e,
+	0xe9, 0xeb, 0xed, 0x5e, 0xa3, 0x59, 0x47, 0xcb, 0xc9, 0xf0, 0xcd, 0x46, 0xab, 0xd1, 0x7b, 0x8c,
+	0x56, 0xf0, 0x07, 0x70, 0xef, 0x02, 0xfe, 0xd4, 0xf0, 0x05, 0x54, 0xd8, 0xfd, 0x93, 0x0a, 0xab,
+	0x89, 0x7f, 0x89, 0x18, 0x43, 0xa1, 0xda, 0x68, 0xeb, 0xc6, 0xcf, 0x62, 0x5d, 0x5f, 0x85, 0xa5,
+	0x10, 0x6b, 0xea, 0xed, 0x1a, 0x52, 0x70, 0x01, 0x20, 0x02, 0x3a, 0x06, 0x52, 0x63, 0x46, 0xcd,
+	0x7e, 0xbb, 0x59, 0xef, 0x76, 0x51, 0x1a, 0x23, 0x58, 0x0e, 0x31, 0xbd, 0xa7, 0xb7, 0xf7, 0x50,
+	0x26, 0x66, 0xd5, 0xed, 0x57, 0x51, 0x36, 0x26, 0xeb, 0xb5, 0x1a, 0x5a, 0x88, 0xc9, 0xad, 0x7e,
+	0x13, 0x2d, 0xc6, 0xe5, 0x4e, 0x0d, 0xe5, 0x62, 0x72, 0xad, 0x71, 0x88, 0xf2, 0x31, 0xf9, 0xa0,
+	0xf3, 0x09, 0x82, 0x58, 0x9a, 0xf5, 0x27, 0xcd, 0x47, 0x68, 0x29, 0xa6, 0xd0, 0xae, 0x3f, 0x41,
+	0xcb, 0xf1, 0xb4, 0x7b, 0x75, 0xb4, 0x12, 0x97, 0xbb, 0x5d, 0x54, 0x88, 0xc9, 0xfb, 0xbd, 0x3a,
+	0x5a, 0x9d, 0x93, 0x0d, 0x84, 0x76, 0xf7, 0xa0, 0x30, 0xff, 0x6a, 0xc6, 0x77, 0x60, 0xa5, 0x9f,
+	0x68, 0xd6, 0x0a, 0xe4, 0xfb, 0xb3, 0x22, 0x95, 0xea, 0xf7, 0x5f, 0xbf, 0xd1, 0x52, 0x9f, 0xbd,
+	0xd1, 0x52, 0x9f, 0xbf, 0xd1, 0x94, 0x5f, 0x9d, 0x69, 0xca, 0x1f, 0xcf, 0xb4, 0xd4, 0xab, 0x33,
+	0x4d, 0x79, 0x7d, 0xa6, 0x29, 0xff, 0x38, 0xd3, 0x94, 0x7f, 0x9e, 0x69, 0xa9, 0xcf, 0xcf, 0x34,
+	0xe5, 0xd3, 0xb7, 0x5a, 0xea, 0xd5, 0x5b, 0x4d, 0x79, 0xfd, 0x56, 0x4b, 0x7d, 0xf6, 0x56, 0x4b,
+	0x0d, 0x16, 0xe4, 0xac, 0xfc, 0xf6, 0x7f, 0x02, 0x00, 0x00, 0xff, 0xff, 0xc8, 0x57, 0x77, 0x70,
+	0x9f, 0x12, 0x00, 0x00,
 }
 
 func (x AggregationOperation) String() string {
@@ -1130,6 +1600,16 @@ func (this *PositionRange) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *BinaryExpressionHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&core.BinaryExpressionHints{")
+	s = append(s, "Include: "+fmt.Sprintf("%#v", this.Include)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *AggregateExpressionDetails) GoString() string {
 	if this == nil {
 		return "nil"
@@ -1147,7 +1627,7 @@ func (this *BinaryExpressionDetails) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 8)
+	s := make([]string, 0, 9)
 	s = append(s, "&core.BinaryExpressionDetails{")
 	s = append(s, "Op: "+fmt.Sprintf("%#v", this.Op)+",\n")
 	if this.VectorMatching != nil {
@@ -1155,6 +1635,9 @@ func (this *BinaryExpressionDetails) GoString() string {
 	}
 	s = append(s, "ReturnBool: "+fmt.Sprintf("%#v", this.ReturnBool)+",\n")
 	s = append(s, "ExpressionPosition: "+strings.Replace(this.ExpressionPosition.GoString(), `&`, ``, 1)+",\n")
+	if this.Hints != nil {
+		s = append(s, "Hints: "+fmt.Sprintf("%#v", this.Hints)+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1162,12 +1645,13 @@ func (this *VectorMatching) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 8)
+	s := make([]string, 0, 9)
 	s = append(s, "&core.VectorMatching{")
 	s = append(s, "Card: "+fmt.Sprintf("%#v", this.Card)+",\n")
 	s = append(s, "MatchingLabels: "+fmt.Sprintf("%#v", this.MatchingLabels)+",\n")
 	s = append(s, "On: "+fmt.Sprintf("%#v", this.On)+",\n")
 	s = append(s, "Include: "+fmt.Sprintf("%#v", this.Include)+",\n")
+	s = append(s, "FillValues: "+strings.Replace(this.FillValues.GoString(), `&`, ``, 1)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1220,7 +1704,7 @@ func (this *VectorSelectorDetails) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 15)
 	s = append(s, "&core.VectorSelectorDetails{")
 	if this.Matchers != nil {
 		s = append(s, "Matchers: "+fmt.Sprintf("%#v", this.Matchers)+",\n")
@@ -1230,6 +1714,17 @@ func (this *VectorSelectorDetails) GoString() string {
 	s = append(s, "ExpressionPosition: "+strings.Replace(this.ExpressionPosition.GoString(), `&`, ``, 1)+",\n")
 	s = append(s, "ReturnSampleTimestamps: "+fmt.Sprintf("%#v", this.ReturnSampleTimestamps)+",\n")
 	s = append(s, "SkipHistogramBuckets: "+fmt.Sprintf("%#v", this.SkipHistogramBuckets)+",\n")
+	s = append(s, "Smoothed: "+fmt.Sprintf("%#v", this.Smoothed)+",\n")
+	s = append(s, "ProjectionInclude: "+fmt.Sprintf("%#v", this.ProjectionInclude)+",\n")
+	s = append(s, "ProjectionLabels: "+fmt.Sprintf("%#v", this.ProjectionLabels)+",\n")
+	s = append(s, "ReturnSampleTimestampsPreserveHistograms: "+fmt.Sprintf("%#v", this.ReturnSampleTimestampsPreserveHistograms)+",\n")
+	if this.Subsets != nil {
+		vs := make([]SubsetMatchers, len(this.Subsets))
+		for i := range vs {
+			vs[i] = this.Subsets[i]
+		}
+		s = append(s, "Subsets: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1237,7 +1732,7 @@ func (this *MatrixSelectorDetails) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 16)
 	s = append(s, "&core.MatrixSelectorDetails{")
 	if this.Matchers != nil {
 		s = append(s, "Matchers: "+fmt.Sprintf("%#v", this.Matchers)+",\n")
@@ -1247,6 +1742,30 @@ func (this *MatrixSelectorDetails) GoString() string {
 	s = append(s, "Range: "+fmt.Sprintf("%#v", this.Range)+",\n")
 	s = append(s, "ExpressionPosition: "+strings.Replace(this.ExpressionPosition.GoString(), `&`, ``, 1)+",\n")
 	s = append(s, "SkipHistogramBuckets: "+fmt.Sprintf("%#v", this.SkipHistogramBuckets)+",\n")
+	s = append(s, "Smoothed: "+fmt.Sprintf("%#v", this.Smoothed)+",\n")
+	s = append(s, "Anchored: "+fmt.Sprintf("%#v", this.Anchored)+",\n")
+	s = append(s, "CounterAware: "+fmt.Sprintf("%#v", this.CounterAware)+",\n")
+	s = append(s, "ProjectionInclude: "+fmt.Sprintf("%#v", this.ProjectionInclude)+",\n")
+	s = append(s, "ProjectionLabels: "+fmt.Sprintf("%#v", this.ProjectionLabels)+",\n")
+	if this.Subsets != nil {
+		vs := make([]SubsetMatchers, len(this.Subsets))
+		for i := range vs {
+			vs[i] = this.Subsets[i]
+		}
+		s = append(s, "Subsets: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SubsetMatchers) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&core.SubsetMatchers{")
+	if this.Matchers != nil {
+		s = append(s, "Matchers: "+fmt.Sprintf("%#v", this.Matchers)+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1264,6 +1783,15 @@ func (this *SubqueryDetails) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *StepInvariantExpressionDetails) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&core.StepInvariantExpressionDetails{")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *LabelMatcher) GoString() string {
 	if this == nil {
 		return "nil"
@@ -1273,6 +1801,47 @@ func (this *LabelMatcher) GoString() string {
 	s = append(s, "Type: "+fmt.Sprintf("%#v", this.Type)+",\n")
 	s = append(s, "Name: "+fmt.Sprintf("%#v", this.Name)+",\n")
 	s = append(s, "Value: "+fmt.Sprintf("%#v", this.Value)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *DeduplicateAndMergeDetails) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&core.DeduplicateAndMergeDetails{")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *DropNameDetails) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&core.DropNameDetails{")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NoOpDetails) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&core.NoOpDetails{")
+	s = append(s, "MatrixSelector: "+fmt.Sprintf("%#v", this.MatrixSelector)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *VectorMatchFillValues) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&core.VectorMatchFillValues{")
+	s = append(s, "Rhs: "+fmt.Sprintf("%#v", this.Rhs)+",\n")
+	s = append(s, "Lhs: "+fmt.Sprintf("%#v", this.Lhs)+",\n")
+	s = append(s, "RhsSet: "+fmt.Sprintf("%#v", this.RhsSet)+",\n")
+	s = append(s, "LhsSet: "+fmt.Sprintf("%#v", this.LhsSet)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1313,6 +1882,38 @@ func (m *PositionRange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = encodeVarintCore(dAtA, i, uint64(m.Start))
 		i--
 		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *BinaryExpressionHints) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *BinaryExpressionHints) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *BinaryExpressionHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Include) > 0 {
+		for iNdEx := len(m.Include) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Include[iNdEx])
+			copy(dAtA[i:], m.Include[iNdEx])
+			i = encodeVarintCore(dAtA, i, uint64(len(m.Include[iNdEx])))
+			i--
+			dAtA[i] = 0xa
+		}
 	}
 	return len(dAtA) - i, nil
 }
@@ -1394,6 +1995,18 @@ func (m *BinaryExpressionDetails) MarshalToSizedBuffer(dAtA []byte) (int, error)
 	_ = i
 	var l int
 	_ = l
+	if m.Hints != nil {
+		{
+			size, err := m.Hints.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintCore(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x2a
+	}
 	{
 		size, err := m.ExpressionPosition.MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
@@ -1454,6 +2067,16 @@ func (m *VectorMatching) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	{
+		size, err := m.FillValues.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintCore(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x2a
 	if len(m.Include) > 0 {
 		for iNdEx := len(m.Include) - 1; iNdEx >= 0; iNdEx-- {
 			i -= len(m.Include[iNdEx])
@@ -1679,6 +2302,59 @@ func (m *VectorSelectorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.Subsets) > 0 {
+		for iNdEx := len(m.Subsets) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Subsets[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintCore(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x5a
+		}
+	}
+	if m.ReturnSampleTimestampsPreserveHistograms {
+		i--
+		if m.ReturnSampleTimestampsPreserveHistograms {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x50
+	}
+	if len(m.ProjectionLabels) > 0 {
+		for iNdEx := len(m.ProjectionLabels) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.ProjectionLabels[iNdEx])
+			copy(dAtA[i:], m.ProjectionLabels[iNdEx])
+			i = encodeVarintCore(dAtA, i, uint64(len(m.ProjectionLabels[iNdEx])))
+			i--
+			dAtA[i] = 0x4a
+		}
+	}
+	if m.ProjectionInclude {
+		i--
+		if m.ProjectionInclude {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x40
+	}
+	if m.Smoothed {
+		i--
+		if m.Smoothed {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x38
+	}
 	if m.SkipHistogramBuckets {
 		i--
 		if m.SkipHistogramBuckets {
@@ -1709,21 +2385,21 @@ func (m *VectorSelectorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 	i--
 	dAtA[i] = 0x22
-	n9, err9 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Offset, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Offset):])
-	if err9 != nil {
-		return 0, err9
+	n11, err11 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Offset, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Offset):])
+	if err11 != nil {
+		return 0, err11
 	}
-	i -= n9
-	i = encodeVarintCore(dAtA, i, uint64(n9))
+	i -= n11
+	i = encodeVarintCore(dAtA, i, uint64(n11))
 	i--
 	dAtA[i] = 0x1a
 	if m.Timestamp != nil {
-		n10, err10 := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.Timestamp, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdTime(*m.Timestamp):])
-		if err10 != nil {
-			return 0, err10
+		n12, err12 := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.Timestamp, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdTime(*m.Timestamp):])
+		if err12 != nil {
+			return 0, err12
 		}
-		i -= n10
-		i = encodeVarintCore(dAtA, i, uint64(n10))
+		i -= n12
+		i = encodeVarintCore(dAtA, i, uint64(n12))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -1764,6 +2440,69 @@ func (m *MatrixSelectorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.Subsets) > 0 {
+		for iNdEx := len(m.Subsets) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Subsets[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintCore(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x62
+		}
+	}
+	if len(m.ProjectionLabels) > 0 {
+		for iNdEx := len(m.ProjectionLabels) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.ProjectionLabels[iNdEx])
+			copy(dAtA[i:], m.ProjectionLabels[iNdEx])
+			i = encodeVarintCore(dAtA, i, uint64(len(m.ProjectionLabels[iNdEx])))
+			i--
+			dAtA[i] = 0x5a
+		}
+	}
+	if m.ProjectionInclude {
+		i--
+		if m.ProjectionInclude {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x50
+	}
+	if m.CounterAware {
+		i--
+		if m.CounterAware {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x48
+	}
+	if m.Anchored {
+		i--
+		if m.Anchored {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x40
+	}
+	if m.Smoothed {
+		i--
+		if m.Smoothed {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x38
+	}
 	if m.SkipHistogramBuckets {
 		i--
 		if m.SkipHistogramBuckets {
@@ -1784,32 +2523,69 @@ func (m *MatrixSelectorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 	i--
 	dAtA[i] = 0x2a
-	n12, err12 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Range, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Range):])
-	if err12 != nil {
-		return 0, err12
+	n14, err14 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Range, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Range):])
+	if err14 != nil {
+		return 0, err14
 	}
-	i -= n12
-	i = encodeVarintCore(dAtA, i, uint64(n12))
+	i -= n14
+	i = encodeVarintCore(dAtA, i, uint64(n14))
 	i--
 	dAtA[i] = 0x22
-	n13, err13 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Offset, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Offset):])
-	if err13 != nil {
-		return 0, err13
+	n15, err15 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Offset, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Offset):])
+	if err15 != nil {
+		return 0, err15
 	}
-	i -= n13
-	i = encodeVarintCore(dAtA, i, uint64(n13))
+	i -= n15
+	i = encodeVarintCore(dAtA, i, uint64(n15))
 	i--
 	dAtA[i] = 0x1a
 	if m.Timestamp != nil {
-		n14, err14 := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.Timestamp, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdTime(*m.Timestamp):])
-		if err14 != nil {
-			return 0, err14
+		n16, err16 := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.Timestamp, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdTime(*m.Timestamp):])
+		if err16 != nil {
+			return 0, err16
 		}
-		i -= n14
-		i = encodeVarintCore(dAtA, i, uint64(n14))
+		i -= n16
+		i = encodeVarintCore(dAtA, i, uint64(n16))
 		i--
 		dAtA[i] = 0x12
 	}
+	if len(m.Matchers) > 0 {
+		for iNdEx := len(m.Matchers) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Matchers[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintCore(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SubsetMatchers) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SubsetMatchers) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SubsetMatchers) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
 	if len(m.Matchers) > 0 {
 		for iNdEx := len(m.Matchers) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -1857,40 +2633,63 @@ func (m *SubqueryDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 	i--
 	dAtA[i] = 0x2a
-	n16, err16 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Step, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Step):])
-	if err16 != nil {
-		return 0, err16
-	}
-	i -= n16
-	i = encodeVarintCore(dAtA, i, uint64(n16))
-	i--
-	dAtA[i] = 0x22
-	n17, err17 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Range, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Range):])
-	if err17 != nil {
-		return 0, err17
-	}
-	i -= n17
-	i = encodeVarintCore(dAtA, i, uint64(n17))
-	i--
-	dAtA[i] = 0x1a
-	n18, err18 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Offset, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Offset):])
+	n18, err18 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Step, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Step):])
 	if err18 != nil {
 		return 0, err18
 	}
 	i -= n18
 	i = encodeVarintCore(dAtA, i, uint64(n18))
 	i--
+	dAtA[i] = 0x22
+	n19, err19 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Range, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Range):])
+	if err19 != nil {
+		return 0, err19
+	}
+	i -= n19
+	i = encodeVarintCore(dAtA, i, uint64(n19))
+	i--
+	dAtA[i] = 0x1a
+	n20, err20 := github_com_gogo_protobuf_types.StdDurationMarshalTo(m.Offset, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdDuration(m.Offset):])
+	if err20 != nil {
+		return 0, err20
+	}
+	i -= n20
+	i = encodeVarintCore(dAtA, i, uint64(n20))
+	i--
 	dAtA[i] = 0x12
 	if m.Timestamp != nil {
-		n19, err19 := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.Timestamp, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdTime(*m.Timestamp):])
-		if err19 != nil {
-			return 0, err19
+		n21, err21 := github_com_gogo_protobuf_types.StdTimeMarshalTo(*m.Timestamp, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdTime(*m.Timestamp):])
+		if err21 != nil {
+			return 0, err21
 		}
-		i -= n19
-		i = encodeVarintCore(dAtA, i, uint64(n19))
+		i -= n21
+		i = encodeVarintCore(dAtA, i, uint64(n21))
 		i--
 		dAtA[i] = 0xa
 	}
+	return len(dAtA) - i, nil
+}
+
+func (m *StepInvariantExpressionDetails) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StepInvariantExpressionDetails) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StepInvariantExpressionDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
 	return len(dAtA) - i, nil
 }
 
@@ -1936,6 +2735,140 @@ func (m *LabelMatcher) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *DeduplicateAndMergeDetails) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *DeduplicateAndMergeDetails) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *DeduplicateAndMergeDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *DropNameDetails) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *DropNameDetails) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *DropNameDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *NoOpDetails) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NoOpDetails) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NoOpDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.MatrixSelector {
+		i--
+		if m.MatrixSelector {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *VectorMatchFillValues) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *VectorMatchFillValues) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *VectorMatchFillValues) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.LhsSet {
+		i--
+		if m.LhsSet {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.RhsSet {
+		i--
+		if m.RhsSet {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Lhs != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Lhs))))
+		i--
+		dAtA[i] = 0x11
+	}
+	if m.Rhs != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Rhs))))
+		i--
+		dAtA[i] = 0x9
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintCore(dAtA []byte, offset int, v uint64) int {
 	offset -= sovCore(v)
 	base := offset
@@ -1958,6 +2891,21 @@ func (m *PositionRange) Size() (n int) {
 	}
 	if m.End != 0 {
 		n += 1 + sovCore(uint64(m.End))
+	}
+	return n
+}
+
+func (m *BinaryExpressionHints) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Include) > 0 {
+		for _, s := range m.Include {
+			l = len(s)
+			n += 1 + l + sovCore(uint64(l))
+		}
 	}
 	return n
 }
@@ -2003,6 +2951,10 @@ func (m *BinaryExpressionDetails) Size() (n int) {
 	}
 	l = m.ExpressionPosition.Size()
 	n += 1 + l + sovCore(uint64(l))
+	if m.Hints != nil {
+		l = m.Hints.Size()
+		n += 1 + l + sovCore(uint64(l))
+	}
 	return n
 }
 
@@ -2030,6 +2982,8 @@ func (m *VectorMatching) Size() (n int) {
 			n += 1 + l + sovCore(uint64(l))
 		}
 	}
+	l = m.FillValues.Size()
+	n += 1 + l + sovCore(uint64(l))
 	return n
 }
 
@@ -2122,6 +3076,27 @@ func (m *VectorSelectorDetails) Size() (n int) {
 	if m.SkipHistogramBuckets {
 		n += 2
 	}
+	if m.Smoothed {
+		n += 2
+	}
+	if m.ProjectionInclude {
+		n += 2
+	}
+	if len(m.ProjectionLabels) > 0 {
+		for _, s := range m.ProjectionLabels {
+			l = len(s)
+			n += 1 + l + sovCore(uint64(l))
+		}
+	}
+	if m.ReturnSampleTimestampsPreserveHistograms {
+		n += 2
+	}
+	if len(m.Subsets) > 0 {
+		for _, e := range m.Subsets {
+			l = e.Size()
+			n += 1 + l + sovCore(uint64(l))
+		}
+	}
 	return n
 }
 
@@ -2150,6 +3125,45 @@ func (m *MatrixSelectorDetails) Size() (n int) {
 	if m.SkipHistogramBuckets {
 		n += 2
 	}
+	if m.Smoothed {
+		n += 2
+	}
+	if m.Anchored {
+		n += 2
+	}
+	if m.CounterAware {
+		n += 2
+	}
+	if m.ProjectionInclude {
+		n += 2
+	}
+	if len(m.ProjectionLabels) > 0 {
+		for _, s := range m.ProjectionLabels {
+			l = len(s)
+			n += 1 + l + sovCore(uint64(l))
+		}
+	}
+	if len(m.Subsets) > 0 {
+		for _, e := range m.Subsets {
+			l = e.Size()
+			n += 1 + l + sovCore(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *SubsetMatchers) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Matchers) > 0 {
+		for _, e := range m.Matchers {
+			l = e.Size()
+			n += 1 + l + sovCore(uint64(l))
+		}
+	}
 	return n
 }
 
@@ -2174,6 +3188,15 @@ func (m *SubqueryDetails) Size() (n int) {
 	return n
 }
 
+func (m *StepInvariantExpressionDetails) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
 func (m *LabelMatcher) Size() (n int) {
 	if m == nil {
 		return 0
@@ -2194,6 +3217,57 @@ func (m *LabelMatcher) Size() (n int) {
 	return n
 }
 
+func (m *DeduplicateAndMergeDetails) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *DropNameDetails) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *NoOpDetails) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.MatrixSelector {
+		n += 2
+	}
+	return n
+}
+
+func (m *VectorMatchFillValues) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Rhs != 0 {
+		n += 9
+	}
+	if m.Lhs != 0 {
+		n += 9
+	}
+	if m.RhsSet {
+		n += 2
+	}
+	if m.LhsSet {
+		n += 2
+	}
+	return n
+}
+
 func sovCore(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -2207,6 +3281,16 @@ func (this *PositionRange) String() string {
 	s := strings.Join([]string{`&PositionRange{`,
 		`Start:` + fmt.Sprintf("%v", this.Start) + `,`,
 		`End:` + fmt.Sprintf("%v", this.End) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *BinaryExpressionHints) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&BinaryExpressionHints{`,
+		`Include:` + fmt.Sprintf("%v", this.Include) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2233,6 +3317,7 @@ func (this *BinaryExpressionDetails) String() string {
 		`VectorMatching:` + strings.Replace(this.VectorMatching.String(), "VectorMatching", "VectorMatching", 1) + `,`,
 		`ReturnBool:` + fmt.Sprintf("%v", this.ReturnBool) + `,`,
 		`ExpressionPosition:` + strings.Replace(strings.Replace(this.ExpressionPosition.String(), "PositionRange", "PositionRange", 1), `&`, ``, 1) + `,`,
+		`Hints:` + strings.Replace(this.Hints.String(), "BinaryExpressionHints", "BinaryExpressionHints", 1) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2246,6 +3331,7 @@ func (this *VectorMatching) String() string {
 		`MatchingLabels:` + fmt.Sprintf("%v", this.MatchingLabels) + `,`,
 		`On:` + fmt.Sprintf("%v", this.On) + `,`,
 		`Include:` + fmt.Sprintf("%v", this.Include) + `,`,
+		`FillValues:` + strings.Replace(strings.Replace(this.FillValues.String(), "VectorMatchFillValues", "VectorMatchFillValues", 1), `&`, ``, 1) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2304,6 +3390,11 @@ func (this *VectorSelectorDetails) String() string {
 		repeatedStringForMatchers += strings.Replace(f.String(), "LabelMatcher", "LabelMatcher", 1) + ","
 	}
 	repeatedStringForMatchers += "}"
+	repeatedStringForSubsets := "[]SubsetMatchers{"
+	for _, f := range this.Subsets {
+		repeatedStringForSubsets += strings.Replace(strings.Replace(f.String(), "SubsetMatchers", "SubsetMatchers", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForSubsets += "}"
 	s := strings.Join([]string{`&VectorSelectorDetails{`,
 		`Matchers:` + repeatedStringForMatchers + `,`,
 		`Timestamp:` + strings.Replace(fmt.Sprintf("%v", this.Timestamp), "Timestamp", "timestamppb.Timestamp", 1) + `,`,
@@ -2311,6 +3402,11 @@ func (this *VectorSelectorDetails) String() string {
 		`ExpressionPosition:` + strings.Replace(strings.Replace(this.ExpressionPosition.String(), "PositionRange", "PositionRange", 1), `&`, ``, 1) + `,`,
 		`ReturnSampleTimestamps:` + fmt.Sprintf("%v", this.ReturnSampleTimestamps) + `,`,
 		`SkipHistogramBuckets:` + fmt.Sprintf("%v", this.SkipHistogramBuckets) + `,`,
+		`Smoothed:` + fmt.Sprintf("%v", this.Smoothed) + `,`,
+		`ProjectionInclude:` + fmt.Sprintf("%v", this.ProjectionInclude) + `,`,
+		`ProjectionLabels:` + fmt.Sprintf("%v", this.ProjectionLabels) + `,`,
+		`ReturnSampleTimestampsPreserveHistograms:` + fmt.Sprintf("%v", this.ReturnSampleTimestampsPreserveHistograms) + `,`,
+		`Subsets:` + repeatedStringForSubsets + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2324,6 +3420,11 @@ func (this *MatrixSelectorDetails) String() string {
 		repeatedStringForMatchers += strings.Replace(f.String(), "LabelMatcher", "LabelMatcher", 1) + ","
 	}
 	repeatedStringForMatchers += "}"
+	repeatedStringForSubsets := "[]SubsetMatchers{"
+	for _, f := range this.Subsets {
+		repeatedStringForSubsets += strings.Replace(strings.Replace(f.String(), "SubsetMatchers", "SubsetMatchers", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForSubsets += "}"
 	s := strings.Join([]string{`&MatrixSelectorDetails{`,
 		`Matchers:` + repeatedStringForMatchers + `,`,
 		`Timestamp:` + strings.Replace(fmt.Sprintf("%v", this.Timestamp), "Timestamp", "timestamppb.Timestamp", 1) + `,`,
@@ -2331,6 +3432,27 @@ func (this *MatrixSelectorDetails) String() string {
 		`Range:` + strings.Replace(strings.Replace(fmt.Sprintf("%v", this.Range), "Duration", "durationpb.Duration", 1), `&`, ``, 1) + `,`,
 		`ExpressionPosition:` + strings.Replace(strings.Replace(this.ExpressionPosition.String(), "PositionRange", "PositionRange", 1), `&`, ``, 1) + `,`,
 		`SkipHistogramBuckets:` + fmt.Sprintf("%v", this.SkipHistogramBuckets) + `,`,
+		`Smoothed:` + fmt.Sprintf("%v", this.Smoothed) + `,`,
+		`Anchored:` + fmt.Sprintf("%v", this.Anchored) + `,`,
+		`CounterAware:` + fmt.Sprintf("%v", this.CounterAware) + `,`,
+		`ProjectionInclude:` + fmt.Sprintf("%v", this.ProjectionInclude) + `,`,
+		`ProjectionLabels:` + fmt.Sprintf("%v", this.ProjectionLabels) + `,`,
+		`Subsets:` + repeatedStringForSubsets + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SubsetMatchers) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForMatchers := "[]*LabelMatcher{"
+	for _, f := range this.Matchers {
+		repeatedStringForMatchers += strings.Replace(f.String(), "LabelMatcher", "LabelMatcher", 1) + ","
+	}
+	repeatedStringForMatchers += "}"
+	s := strings.Join([]string{`&SubsetMatchers{`,
+		`Matchers:` + repeatedStringForMatchers + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2349,6 +3471,15 @@ func (this *SubqueryDetails) String() string {
 	}, "")
 	return s
 }
+func (this *StepInvariantExpressionDetails) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&StepInvariantExpressionDetails{`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *LabelMatcher) String() string {
 	if this == nil {
 		return "nil"
@@ -2357,6 +3488,47 @@ func (this *LabelMatcher) String() string {
 		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
 		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
 		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *DeduplicateAndMergeDetails) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&DeduplicateAndMergeDetails{`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *DropNameDetails) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&DropNameDetails{`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NoOpDetails) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&NoOpDetails{`,
+		`MatrixSelector:` + fmt.Sprintf("%v", this.MatrixSelector) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *VectorMatchFillValues) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&VectorMatchFillValues{`,
+		`Rhs:` + fmt.Sprintf("%v", this.Rhs) + `,`,
+		`Lhs:` + fmt.Sprintf("%v", this.Lhs) + `,`,
+		`RhsSet:` + fmt.Sprintf("%v", this.RhsSet) + `,`,
+		`LhsSet:` + fmt.Sprintf("%v", this.LhsSet) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2436,6 +3608,88 @@ func (m *PositionRange) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCore(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCore
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *BinaryExpressionHints) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCore
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: BinaryExpressionHints: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: BinaryExpressionHints: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Include", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthCore
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCore
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Include = append(m.Include, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipCore(dAtA[iNdEx:])
@@ -2748,6 +4002,42 @@ func (m *BinaryExpressionDetails) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Hints", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCore
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCore
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Hints == nil {
+				m.Hints = &BinaryExpressionHints{}
+			}
+			if err := m.Hints.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipCore(dAtA[iNdEx:])
@@ -2900,6 +4190,39 @@ func (m *VectorMatching) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Include = append(m.Include, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FillValues", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCore
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCore
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.FillValues.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -3574,6 +4897,132 @@ func (m *VectorSelectorDetails) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.SkipHistogramBuckets = bool(v != 0)
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Smoothed", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Smoothed = bool(v != 0)
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProjectionInclude", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ProjectionInclude = bool(v != 0)
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProjectionLabels", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthCore
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCore
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ProjectionLabels = append(m.ProjectionLabels, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 10:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ReturnSampleTimestampsPreserveHistograms", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ReturnSampleTimestampsPreserveHistograms = bool(v != 0)
+		case 11:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Subsets", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCore
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCore
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Subsets = append(m.Subsets, SubsetMatchers{})
+			if err := m.Subsets[len(m.Subsets)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipCore(dAtA[iNdEx:])
@@ -3813,6 +5262,236 @@ func (m *MatrixSelectorDetails) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.SkipHistogramBuckets = bool(v != 0)
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Smoothed", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Smoothed = bool(v != 0)
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Anchored", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Anchored = bool(v != 0)
+		case 9:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CounterAware", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.CounterAware = bool(v != 0)
+		case 10:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProjectionInclude", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ProjectionInclude = bool(v != 0)
+		case 11:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProjectionLabels", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthCore
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCore
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ProjectionLabels = append(m.ProjectionLabels, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 12:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Subsets", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCore
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCore
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Subsets = append(m.Subsets, SubsetMatchers{})
+			if err := m.Subsets[len(m.Subsets)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCore(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCore
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SubsetMatchers) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCore
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SubsetMatchers: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SubsetMatchers: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Matchers", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCore
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCore
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Matchers = append(m.Matchers, &LabelMatcher{})
+			if err := m.Matchers[len(m.Matchers)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipCore(dAtA[iNdEx:])
@@ -4052,6 +5731,56 @@ func (m *SubqueryDetails) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *StepInvariantExpressionDetails) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCore
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: StepInvariantExpressionDetails: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: StepInvariantExpressionDetails: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCore(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCore
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func (m *LabelMatcher) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -4164,6 +5893,288 @@ func (m *LabelMatcher) Unmarshal(dAtA []byte) error {
 			}
 			m.Value = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCore(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCore
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *DeduplicateAndMergeDetails) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCore
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: DeduplicateAndMergeDetails: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: DeduplicateAndMergeDetails: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCore(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCore
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *DropNameDetails) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCore
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: DropNameDetails: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: DropNameDetails: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCore(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCore
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NoOpDetails) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCore
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NoOpDetails: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NoOpDetails: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MatrixSelector", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.MatrixSelector = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCore(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCore
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *VectorMatchFillValues) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCore
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: VectorMatchFillValues: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: VectorMatchFillValues: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Rhs", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.Rhs = float64(math.Float64frombits(v))
+		case 2:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Lhs", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.Lhs = float64(math.Float64frombits(v))
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RhsSet", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.RhsSet = bool(v != 0)
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LhsSet", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCore
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.LhsSet = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipCore(dAtA[iNdEx:])

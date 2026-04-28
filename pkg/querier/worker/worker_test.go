@@ -239,7 +239,7 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 				MaxConcurrentRequests: testData.maxConcurrent,
 			}
 
-			w, err := newQuerierWorkerWithProcessor(cfg.QueryFrontendGRPCClientConfig, cfg.MaxConcurrentRequests, log.NewNopLogger(), &mockProcessor{}, nil, nil, nil)
+			w, err := newQuerierWorkerWithProcessor(cfg.QueryFrontendGRPCClientConfig.Config, cfg.MaxConcurrentRequests, log.NewNopLogger(), &mockProcessor{}, nil, nil, nil)
 			require.NoError(t, err)
 
 			for _, instance := range testData.instances {

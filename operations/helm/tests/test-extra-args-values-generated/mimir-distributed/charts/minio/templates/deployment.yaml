@@ -28,7 +28,7 @@ spec:
         release: test-extra-args-values
       annotations:
         checksum/secrets: d712a0198d9890e6f5e497568946764f0b840bf079a245b90e9a40eb239eb6ab
-        checksum/config: 0ca1435a4be55c1fdb94d268a7bef7192797d00cabcba7ac0288229835483a42
+        checksum/config: 2c6afe0a887d8ac91758b79f579977cd492e16628735ce89f38a4bcc366e53d8
     spec:
       securityContext:
         

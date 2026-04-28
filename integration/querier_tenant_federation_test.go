@@ -2,12 +2,12 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/querier_tenant_federation_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
-//go:build requires_docker
 
 package integration
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +26,7 @@ import (
 
 type querierTenantFederationConfig struct {
 	shuffleShardingEnabled bool
+	remoteExecutionEnabled bool
 }
 
 func TestQuerierTenantFederation(t *testing.T) {
@@ -35,6 +36,12 @@ func TestQuerierTenantFederation(t *testing.T) {
 func TestQuerierTenantFederationWithShuffleSharding(t *testing.T) {
 	runQuerierTenantFederationTest(t, querierTenantFederationConfig{
 		shuffleShardingEnabled: true,
+	})
+}
+
+func TestQuerierTenantFederationWithRemoteExecution(t *testing.T) {
+	runQuerierTenantFederationTest(t, querierTenantFederationConfig{
+		remoteExecutionEnabled: true,
 	})
 }
 
@@ -53,6 +60,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		"-query-frontend.cache-results":                     "true",
 		"-query-frontend.results-cache.backend":             "memcached",
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.enable-remote-execution":           strconv.FormatBool(cfg.remoteExecutionEnabled),
 		"-tenant-federation.enabled":                        "true",
 		"-ingester.max-global-exemplars-per-user":           "10000",
 	})
@@ -78,9 +86,11 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 
+	querierCount := 1
 	var querier2 *e2emimir.MimirService
 	if cfg.shuffleShardingEnabled {
 		querier2 = e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags)
+		querierCount = 2
 	}
 
 	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
@@ -93,6 +103,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(float64(querierCount)), "cortex_ring_tokens_total"), "query-frontend should have 1 token per querier for the querier ring")
 	if cfg.shuffleShardingEnabled {
 		require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	}

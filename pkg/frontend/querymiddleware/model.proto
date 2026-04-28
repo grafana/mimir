@@ -48,11 +48,11 @@ message SampleStream {
   ];
   repeated cortexpb.Sample samples = 2 [
     (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "values"
+    (gogoproto.jsontag) = "values,omitempty"
   ];
   repeated cortexpb.FloatHistogramPair histograms = 3 [
     (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "histograms"
+    (gogoproto.jsontag) = "histograms,omitempty"
   ];
 }
 
@@ -83,8 +83,7 @@ message Extent {
   // If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
   // When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
   int64 query_timestamp_ms = 6;
-  // Number of samples processed per step to create this Extent. Should be sorted by timestamp in ascending order.
-  repeated stats.StepStat samples_processed_per_step = 7 [(gogoproto.nullable) = false];
+  reserved 7; // Formerly: samples_processed_per_step.
 }
 
 message Options {

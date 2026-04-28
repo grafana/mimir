@@ -1,0 +1,147 @@
+{{- if .Values.kafka.enabled -}}
+{{- with .Values.kafka -}}
+{{- $replicas := .replicas | default 1 -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "kafka") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $ "component" "kafka") | nindent 4 }}
+  annotations:
+    {{- toYaml .podAnnotations | nindent 4 }}
+  namespace: {{ $.Release.Namespace | quote }}
+spec:
+  podManagementPolicy: Parallel
+  replicas: {{ $replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "kafka") | nindent 6 }}
+  serviceName: {{ include "mimir.resourceName" (dict "ctx" $ "component" "kafka") }}-headless
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" $ "component" "kafka") | nindent 8 }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" $ "component" "kafka") | nindent 8 }}
+      namespace: {{ $.Release.Namespace | quote }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" $ }}
+      {{- if .priorityClassName }}
+      priorityClassName: {{ .priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .securityContext | nindent 8 }}
+      {{- if .image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      {{- with .nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .terminationGracePeriodSeconds }}
+      {{- with .dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: kafka
+          image: {{ .image.registry }}/{{ .image.repository }}:{{ .image.tag }}
+          imagePullPolicy: {{ .image.pullPolicy }}
+          ports:
+            - containerPort: 9092
+              name: kafka
+              protocol: TCP
+            - containerPort: 9093
+              name: controller
+              protocol: TCP
+          {{- $kafkaName     := include "mimir.resourceName" (dict "ctx" $ "component" "kafka") -}}
+          {{- $clusterDomain := $.Values.global.clusterDomain -}}
+          {{- $namespace     := $.Release.Namespace -}}
+          {{- $quorumVoters  := list -}}
+          {{- range $i := until (int $replicas) -}}
+            {{- $quorumVoters = append $quorumVoters (printf "%d@%s-%d.%s-headless.%s.svc.%s:9093" $i $kafkaName $i $kafkaName $namespace (trimSuffix "." $clusterDomain)) -}}
+          {{- end -}}
+          {{- $defaultEnv := list
+              (dict "name" "_POD_NAME" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.name")))
+              (dict "name" "KAFKA_CLUSTER_ID" "value" (.clusterId | default ""))
+              (dict "name" "KAFKA_NODE_ID" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.labels['apps.kubernetes.io/pod-index']")))
+              (dict "name" "KAFKA_PROCESS_ROLES" "value" "broker,controller")
+              (dict "name" "KAFKA_LISTENERS" "value" "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093")
+              (dict "name" "KAFKA_ADVERTISED_LISTENERS" "value" (printf "PLAINTEXT://$(_POD_NAME).%s-headless.%s.svc.%s:9092" $kafkaName $namespace $clusterDomain))
+              (dict "name" "KAFKA_CONTROLLER_QUORUM_VOTERS" "value" (join "," $quorumVoters))
+              (dict "name" "KAFKA_CONTROLLER_LISTENER_NAMES" "value" "CONTROLLER")
+              (dict "name" "KAFKA_INTER_BROKER_LISTENER_NAME" "value" "PLAINTEXT")
+              (dict "name" "KAFKA_LOG_DIRS" "value" "/var/lib/kafka/data")
+              (dict "name" "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR" "value" (min 3 $replicas | toString))
+              (dict "name" "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR" "value" (min 3 $replicas | toString))
+              (dict "name" "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR" "value" (min 2 $replicas | toString))
+              (dict "name" "KAFKA_LOG_RETENTION_HOURS" "value" (.logRetentionHours | default 24 | toString))
+          -}}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" $ "component" "kafka" "env" $defaultEnv) | nindent 10 }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka
+            - name: kafka-config
+              mountPath: /opt/kafka/config
+            - name: tmp
+              mountPath: /tmp
+            {{- with .extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: kafka
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: kafka-config
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- if not .persistence.enabled }}
+        - name: kafka-data
+          emptyDir:
+            {{- toYaml .persistence.emptyDir | nindent 12 }}
+        {{- end }}
+        {{- with .extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+  {{- if .persistence.enabled }}
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: kafka-data
+      spec:
+        {{- if .persistence.storageClassName }}
+        {{- if (eq "-" .persistence.storageClassName) }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: "{{ .persistence.storageClassName }}"
+        {{- end }}
+        {{- end }}
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "{{ .persistence.size }}"
+  {{- end }}
+{{- end }}
+{{- end }}

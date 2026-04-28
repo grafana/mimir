@@ -75,18 +75,9 @@ type Execution[R any] interface {
 	Canceled() <-chan struct{}
 }
 
-// A closed channel that can be used as a canceled channel where the canceled channel would have been closed before it
-// was accessed.
-var closedChan chan any
-
-func init() {
-	closedChan = make(chan any, 1)
-	close(closedChan)
-}
-
 type execution[R any] struct {
 	// Shared state across instances
-	mtx        *sync.Mutex
+	mu         *sync.Mutex
 	startTime  time.Time
 	attempts   *atomic.Uint32
 	retries    *atomic.Uint32
@@ -96,6 +87,7 @@ type execution[R any] struct {
 	// Partly shared cancellation state
 	ctx            context.Context
 	cancelFunc     context.CancelFunc
+	deferCancel    *atomic.Bool
 	canceledResult **common.PolicyResult[R]
 
 	// Per execution state
@@ -177,8 +169,8 @@ func (e *execution[_]) Canceled() <-chan struct{} {
 
 func (e *execution[R]) RecordResult(result *common.PolicyResult[R]) *common.PolicyResult[R] {
 	// Lock to guard against a race with a Timeout canceling the execution
-	e.mtx.Lock()
-	defer e.mtx.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if canceled, cancelResult := e.isCanceledWithResult(); canceled {
 		return cancelResult
 	}
@@ -191,8 +183,8 @@ func (e *execution[R]) RecordResult(result *common.PolicyResult[R]) *common.Poli
 
 func (e *execution[R]) InitializeRetry() *common.PolicyResult[R] {
 	// Lock to guard against a race with a Timeout canceling the execution
-	e.mtx.Lock()
-	defer e.mtx.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if canceled, cancelResult := e.isCanceledWithResult(); canceled {
 		return cancelResult
 	}
@@ -206,25 +198,35 @@ func (e *execution[R]) InitializeRetry() *common.PolicyResult[R] {
 }
 
 func (e *execution[R]) Cancel(result *common.PolicyResult[R]) {
-	e.mtx.Lock()
-	defer e.mtx.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if canceled, _ := e.isCanceledWithResult(); canceled {
 		return
 	}
 
-	*e.canceledResult = result
 	if result != nil {
+		*e.canceledResult = result
 		e.lastResult = result.Result
 		e.lastError = result.Error
 	}
-	if e.cancelFunc != nil {
+
+	if e.cancelFunc != nil && !(result == nil && e.deferCancel.Load()) {
 		e.cancelFunc()
 	}
 }
 
+func (e *execution[R]) DeferCancel() func() {
+	e.deferCancel.Store(true)
+	return func() {
+		if e.deferCancel.CompareAndSwap(true, false) {
+			e.Cancel(nil)
+		}
+	}
+}
+
 func (e *execution[R]) IsCanceledWithResult() (bool, *common.PolicyResult[R]) {
-	e.mtx.Lock()
-	defer e.mtx.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.isCanceledWithResult()
 }
 
@@ -267,9 +269,9 @@ func (e *execution[R]) CopyForHedge() Execution[R] {
 }
 
 func (e *execution[R]) copy() *execution[R] {
-	e.mtx.Lock()
+	e.mu.Lock()
 	c := *e
-	e.mtx.Unlock()
+	e.mu.Unlock()
 	return &c
 }
 
@@ -279,21 +281,96 @@ func (e *execution[R]) record() {
 
 func newExecution[R any](ctx context.Context) *execution[R] {
 	attempts := atomic.Uint32{}
-	retries := atomic.Uint32{}
-	hedges := atomic.Uint32{}
-	executions := atomic.Uint32{}
 	attempts.Add(1)
 	var canceledResult *common.PolicyResult[R]
 	now := time.Now()
 	return &execution[R]{
 		ctx:              ctx,
-		mtx:              &sync.Mutex{},
+		mu:               &sync.Mutex{},
 		attempts:         &attempts,
-		retries:          &retries,
-		hedges:           &hedges,
-		executions:       &executions,
+		retries:          &atomic.Uint32{},
+		hedges:           &atomic.Uint32{},
+		executions:       &atomic.Uint32{},
+		deferCancel:      &atomic.Bool{},
 		canceledResult:   &canceledResult,
 		attemptStartTime: now,
 		startTime:        now,
+	}
+}
+
+// executionAnyWrapper adapts execution[R] to execution[any], allowing Policy[any] to be used in compositions with Policy[R].
+type executionAnyWrapper[R any] struct {
+	*execution[R]
+}
+
+func (w *executionAnyWrapper[R]) LastResult() any {
+	return w.execution.LastResult()
+}
+
+func (w *executionAnyWrapper[R]) RecordResult(anyResult *common.PolicyResult[any]) *common.PolicyResult[any] {
+	rResult := w.execution.RecordResult(resultFromAny[R](anyResult))
+	return resultToAny(rResult)
+}
+
+func (w *executionAnyWrapper[R]) InitializeRetry() *common.PolicyResult[any] {
+	rResult := w.execution.InitializeRetry()
+	return resultToAny(rResult)
+}
+
+func (w *executionAnyWrapper[R]) Cancel(anyResult *common.PolicyResult[any]) {
+	w.execution.Cancel(resultFromAny[R](anyResult))
+}
+
+func (w *executionAnyWrapper[R]) IsCanceledWithResult() (bool, *common.PolicyResult[any]) {
+	canceled, rResult := w.execution.IsCanceledWithResult()
+	return canceled, resultToAny(rResult)
+}
+
+func (w *executionAnyWrapper[R]) CopyWithResult(anyResult *common.PolicyResult[any]) Execution[any] {
+	copied := w.execution.CopyWithResult(resultFromAny[R](anyResult))
+	return &executionAnyWrapper[R]{execution: copied.(*execution[R])}
+}
+
+func (w *executionAnyWrapper[R]) CopyForCancellable() Execution[any] {
+	copied := w.execution.CopyForCancellable()
+	return &executionAnyWrapper[R]{execution: copied.(*execution[R])}
+}
+
+func (w *executionAnyWrapper[R]) CopyForHedge() Execution[any] {
+	copied := w.execution.CopyForHedge()
+	return &executionAnyWrapper[R]{execution: copied.(*execution[R])}
+}
+
+func (w *executionAnyWrapper[R]) DeferCancel() func() {
+	return w.execution.DeferCancel()
+}
+
+func resultToAny[R any](result *common.PolicyResult[R]) *common.PolicyResult[any] {
+	if result == nil {
+		return nil
+	}
+	return &common.PolicyResult[any]{
+		Result:     result.Result,
+		Error:      result.Error,
+		Done:       result.Done,
+		Success:    result.Success,
+		SuccessAll: result.SuccessAll,
+	}
+}
+
+func resultFromAny[R any](anyResult *common.PolicyResult[any]) *common.PolicyResult[R] {
+	if anyResult == nil {
+		return nil
+	}
+	var result R
+	if anyResult.Result != nil {
+		result = anyResult.Result.(R)
+	}
+	return &common.PolicyResult[R]{
+		Result:     result,
+		Error:      anyResult.Error,
+		Done:       anyResult.Done,
+		Success:    anyResult.Success,
+		SuccessAll: anyResult.SuccessAll,
 	}
 }

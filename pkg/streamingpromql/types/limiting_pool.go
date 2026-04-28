@@ -30,6 +30,7 @@ const (
 	VectorSampleSize     = uint64(unsafe.Sizeof(promql.Sample{})) // This assumes each sample is a float sample, not a histogram.
 	Float64Size          = uint64(unsafe.Sizeof(float64(0)))
 	IntSize              = uint64(unsafe.Sizeof(int(0)))
+	CounterResetHintSize = uint64(unsafe.Sizeof(histogram.CounterResetHint(0)))
 	Int64Size            = uint64(unsafe.Sizeof(int64(0)))
 	BoolSize             = uint64(unsafe.Sizeof(false))
 	HistogramPointerSize = uint64(unsafe.Sizeof((*histogram.FloatHistogram)(nil)))
@@ -94,6 +95,17 @@ var (
 		}),
 		limiter.IntSlices,
 		IntSize,
+		true,
+		nil,
+		nil,
+	)
+
+	CounterResetHintSlicePool = NewLimitingBucketedPool(
+		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []histogram.CounterResetHint {
+			return make([]histogram.CounterResetHint, 0, size)
+		}),
+		limiter.CounterResetHintSlices,
+		CounterResetHintSize,
 		true,
 		nil,
 		nil,
@@ -245,6 +257,34 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptio
 	p.inner.Put(*s)
 
 	*s = nil
+}
+
+// AppendToSlice appends items to a slice retrieved from the pool and tracks any slice capacity growth.
+// If the capacity is insufficient, it gets a new slice from the pool and returns the old one.
+// On error, the input slice s is returned to the pool and should not continue to be used.
+func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker *limiter.MemoryConsumptionTracker, items ...E) (S, error) {
+	requiredLen := len(s) + len(items)
+
+	if cap(s) >= requiredLen {
+		return append(s, items...), nil
+	}
+
+	newSlice, err := p.Get(requiredLen, tracker)
+	if err != nil {
+		p.Put(&s, tracker)
+		return nil, err
+	}
+
+	newSlice = newSlice[:len(s)]
+	copy(newSlice, s)
+
+	// The elements have been copied to the new slice but are still present in the old slice and could be inadvertently
+	// mutated (e.g. places that use slices of FloatHistogram instances reuse those instances if they're in the slice).
+	// Therefore the old slice needs to be cleared.
+	clear(s)
+	p.Put(&s, tracker)
+
+	return append(newSlice, items...), nil
 }
 
 // PutInstantVectorSeriesData is equivalent to calling FPointSlicePool.Put(d.Floats) and HPointSlicePool.Put(d.Histograms).

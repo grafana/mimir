@@ -1,4 +1,4 @@
-{{- if and .Values.ingester.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.ingester.enabled }}
 {{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
@@ -24,6 +24,9 @@ spec:
   type: {{ .Values.ingester.service.type }}
   {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
   internalTrafficPolicy: {{ .Values.ingester.service.internalTrafficPolicy }}
+  {{- end }}
+  {{- if .Values.ingester.service.trafficDistribution }}
+  trafficDistribution: {{ .Values.ingester.service.trafficDistribution }}
   {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}

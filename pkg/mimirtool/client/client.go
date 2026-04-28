@@ -14,10 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -61,30 +62,24 @@ type MimirClient struct {
 	apiPath      string
 	authToken    string
 	extraHeaders map[string]string
+	logger       log.Logger
 }
 
 // New returns a new MimirClient.
-func New(cfg Config) (*MimirClient, error) {
+func New(cfg Config, logger log.Logger) (*MimirClient, error) {
 	endpoint, err := url.Parse(cfg.Address)
 	if err != nil {
 		return nil, err
 	}
 
-	log.WithFields(log.Fields{
-		"address": cfg.Address,
-		"id":      cfg.ID,
-	}).Debugln("New Mimir client created")
+	level.Debug(logger).Log("msg", "New Mimir client created", "address", cfg.Address, "id", cfg.ID)
 
 	client := http.Client{}
 
 	// Setup TLS client
 	tlsConfig, err := cfg.TLS.GetTLSConfig()
 	if err != nil {
-		log.WithError(err).WithFields(log.Fields{
-			"tls-ca":   cfg.TLS.CAPath,
-			"tls-cert": cfg.TLS.CertPath,
-			"tls-key":  cfg.TLS.KeyPath,
-		}).Errorf("error loading TLS files")
+		level.Error(logger).Log("msg", "error loading TLS files", "tls-ca", cfg.TLS.CAPath, "tls-cert", cfg.TLS.CertPath, "tls-key", cfg.TLS.KeyPath, "err", err)
 		//nolint:staticcheck
 		return nil, fmt.Errorf("Mimir client initialization unsuccessful")
 	}
@@ -114,6 +109,7 @@ func New(cfg Config) (*MimirClient, error) {
 		apiPath:      path,
 		authToken:    cfg.AuthToken,
 		extraHeaders: cfg.ExtraHeaders,
+		logger:       logger,
 	}, nil
 }
 
@@ -138,11 +134,7 @@ func (c *MimirClient) doRequest(ctx context.Context, path, method string, payloa
 	switch {
 	case (c.user != "" || c.key != "") && c.authToken != "":
 		err := errors.New("at most one of basic auth or auth token should be configured")
-		log.WithFields(log.Fields{
-			"url":    req.URL.String(),
-			"method": req.Method,
-			"error":  err,
-		}).Errorln("error during setting up request to mimir api")
+		level.Error(c.logger).Log("msg", "error during setting up request to mimir api", "url", req.URL.String(), "method", req.Method, "err", err)
 		return nil, err
 
 	case c.user != "":
@@ -161,22 +153,15 @@ func (c *MimirClient) doRequest(ctx context.Context, path, method string, payloa
 
 	req.Header.Add(user.OrgIDHeaderName, c.id)
 
-	log.WithFields(log.Fields{
-		"url":    req.URL.String(),
-		"method": req.Method,
-	}).Debugln("sending request to Grafana Mimir API")
+	level.Debug(c.logger).Log("msg", "sending request to Grafana Mimir API", "url", req.URL.String(), "method", req.Method)
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		log.WithFields(log.Fields{
-			"url":    req.URL.String(),
-			"method": req.Method,
-			"error":  err.Error(),
-		}).Errorln("error during request to Grafana Mimir API")
+		level.Error(c.logger).Log("msg", "error during request to Grafana Mimir API", "url", req.URL.String(), "method", req.Method, "err", err.Error())
 		return nil, err
 	}
 
-	if err := checkResponse(resp); err != nil {
+	if err := c.checkResponse(resp); err != nil {
 		_ = resp.Body.Close()
 		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
 	}
@@ -185,10 +170,8 @@ func (c *MimirClient) doRequest(ctx context.Context, path, method string, payloa
 }
 
 // checkResponse checks an API response for errors.
-func checkResponse(r *http.Response) error {
-	log.WithFields(log.Fields{
-		"status": r.Status,
-	}).Debugln("checking response")
+func (c *MimirClient) checkResponse(r *http.Response) error {
+	level.Debug(c.logger).Log("msg", "checking response", "status", r.Status)
 	if 200 <= r.StatusCode && r.StatusCode <= 299 {
 		return nil
 	}
@@ -200,31 +183,19 @@ func checkResponse(r *http.Response) error {
 	bodyStr := string(bodyHead)
 	const msg = "response"
 	if r.StatusCode == http.StatusNotFound {
-		log.WithFields(log.Fields{
-			"status": r.Status,
-			"body":   bodyStr,
-		}).Debugln(msg)
+		level.Debug(c.logger).Log("msg", msg, "status", r.Status, "body", bodyStr)
 		return ErrResourceNotFound
 	}
 	if r.StatusCode == http.StatusConflict {
-		log.WithFields(log.Fields{
-			"status": r.Status,
-			"body":   bodyStr,
-		}).Debugln(msg)
+		level.Debug(c.logger).Log("msg", msg, "status", r.Status, "body", bodyStr)
 		return errConflict
 	}
 	if r.StatusCode == http.StatusTooManyRequests {
-		log.WithFields(log.Fields{
-			"status": r.Status,
-			"body":   bodyStr,
-		}).Debugln(msg)
+		level.Debug(c.logger).Log("msg", msg, "status", r.Status, "body", bodyStr)
 		return errTooManyRequests
 	}
 
-	log.WithFields(log.Fields{
-		"status": r.Status,
-		"body":   bodyStr,
-	}).Errorln(msg)
+	level.Error(c.logger).Log("msg", msg, "status", r.Status, "body", bodyStr)
 
 	var errMsg string
 	if bodyStr == "" {

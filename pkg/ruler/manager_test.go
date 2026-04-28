@@ -25,10 +25,11 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	rulernotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -49,7 +50,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil))
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), afero.NewMemMapFs())
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
@@ -135,7 +136,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil))
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), afero.NewMemMapFs())
 	require.NoError(t, err)
 	t.Cleanup(m.Stop)
 
@@ -325,7 +326,7 @@ func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 	})
 
 	// Start a manager.
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides)
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides, afero.NewMemMapFs())
 	require.NoError(t, err)
 	defer m.Stop()
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
@@ -395,6 +396,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 
 		b, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
+		defer func() { _ = r.Body.Close() }()
 
 		err = json.Unmarshal(b, &alerts)
 		require.NoError(t, err)
@@ -425,7 +427,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 		defaults.RulerAlertmanagerClientConfig.AlertmanagerURL = server.URL
 	})
 
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits)
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits, afero.NewMemMapFs())
 	require.NoError(t, err)
 
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
@@ -446,7 +448,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 		require.FailNow(t, "gave up waiting for first notification request to be sent")
 	}
 
-	// Stop the manager, and queue a second notification once the manager is stopped.
+	// Queue a second notification immediately before the manager is stopped.
 	// This second notification will remain in the queue until we release the first notification's request by closing releaseReceiver below.
 	userManager.onStop = func() {
 		userManager.notifier.Send(&notifier.Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
@@ -594,13 +596,13 @@ func (m *managerMock) Run() {
 	defer m.running.Store(false)
 	m.running.Store(true)
 	<-m.done
-
-	if m.onStop != nil {
-		m.onStop()
-	}
 }
 
 func (m *managerMock) Stop() {
+	if m.onStop != nil {
+		m.onStop()
+	}
+
 	close(m.done)
 }
 

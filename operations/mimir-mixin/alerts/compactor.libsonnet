@@ -5,7 +5,7 @@
       rules: [
         {
           // Alert if the compactor has not successfully cleaned up blocks in the last 6h.
-          alert: $.alertName('CompactorHasNotSuccessfullyCleanedUpBlocks'),
+          alert: $.alertName('CompactorNotCleaningUpBlocks'),
           'for': '1h',
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
@@ -19,48 +19,59 @@
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully cleaned up blocks in the last 6 hours.' % $._config,
           },
         },
+      ] + [
+        // Alert if the compactor has not successfully run compaction in the last X hours.
         {
-          // Alert if the compactor has not successfully run compaction in the last 24h.
-          alert: $.alertName('CompactorHasNotSuccessfullyRunCompaction'),
-          'for': '1h',
+          alert: $.alertName('CompactorNotRunningCompaction'),
+          'for': '15m',
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            (time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 24)
+            (time() - max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * %(threshold_hours)d)
             and
-            (cortex_compactor_last_successful_run_timestamp_seconds > 0)
-          |||,
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
+          ||| % $._config { threshold_hours: alert.threshold_hours },
           labels: {
-            severity: 'critical',
-            reason: 'in-last-24h',
+            severity: alert.severity,
+            reason: 'in-last-%dh' % alert.threshold_hours,
           },
           annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last 24 hours.' % $._config,
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last %(threshold_hours)d hours.' % $._config { threshold_hours: alert.threshold_hours },
           },
-        },
+        }
+        for alert in [
+          { severity: 'warning', threshold_hours: 6 },
+          { severity: 'critical', threshold_hours: 24 },
+        ]
+      ] + [
+        // Alert if the compactor has not successfully run compaction since startup.
         {
-          // Alert if the compactor has not successfully run compaction in the last 24h since startup.
-          alert: $.alertName('CompactorHasNotSuccessfullyRunCompaction'),
-          'for': '24h',
+          alert: $.alertName('CompactorNotRunningCompaction'),
+          'for': alert.for_duration,
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            cortex_compactor_last_successful_run_timestamp_seconds == 0
-          |||,
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) == 0
+          ||| % $._config,
           labels: {
-            severity: 'critical',
+            severity: alert.severity,
             reason: 'since-startup',
           },
           annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last 24 hours.' % $._config,
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction since startup.' % $._config,
           },
-        },
+        }
+        for alert in [
+          { severity: 'warning', for_duration: '6h' },
+          { severity: 'critical', for_duration: '12h' },
+        ]
+      ] + [
         {
           // Alert if compactor failed to run 2 consecutive compactions excluding shutdowns.
-          alert: $.alertName('CompactorHasNotSuccessfullyRunCompaction'),
+          alert: $.alertName('CompactorNotRunningCompaction'),
           expr: |||
-            increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h]) >= 2
-          |||,
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2
+          ||| % $._config,
           labels: {
             severity: 'critical',
             reason: 'consecutive-failures',
@@ -123,42 +134,29 @@
           },
         },
         {
-          // Alert if compactor has tried to compact unhealthy blocks.
-          alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
-          'for': '1m',
+          // Alert if compactor has marked blocks for no-compaction in the last 24 hours.
+          alert: $.alertName('CompactorSkippedBlocks'),
+          'for': '5m',
           expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[%s]) > 0
-          ||| % $.alertRangeInterval(5),
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
-          },
-        },
-        {
-          // Alert if compactor has tried to compact unhealthy blocks.
-          // Any number greater than 1 over the last 30 minutes should be investigated quickly as it could start to impact the read path.
-          alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
-          'for': '30m',
-          expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[%s]) > 1
-          ||| % $.alertRangeInterval(5),
+            sum by (%(alert_aggregation_labels)s, reason) (
+              increase(cortex_compactor_blocks_marked_for_no_compaction_total[24h]) > 0
+            )
+          ||| % $._config,
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
+            message: '%(product)s Compactor in %(alert_aggregation_variables)s has marked {{ $value }} blocks for no-compaction (reason: {{ $labels.reason }}).' % $._config,
           },
         },
         // Alert if compactor has failed to build sparse-index headers.
         {
-          alert: $.alertName('CompactorFailingToBuildSparseIndexHeaders'),
+          alert: $.alertName('CompactorBuildingSparseIndexFailed'),
           'for': '30m',
           expr: |||
-            (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_build_sparse_headers_failures_total[%(range_interval)s])) > 0)
+            (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_build_sparse_headers_failures_total[%(rate_interval)s])) > 0)
           ||| % $._config {
-            range_interval: $.alertRangeInterval(5),
+            rate_interval: $.rateInterval('5m'),
           },
           labels: {
             severity: 'warning',
@@ -167,9 +165,44 @@
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to build sparse index headers' % $._config,
           },
         },
+      ] + [
+        // Alert if compactor pods are being OOMKilled.
+        {
+          alert: $.alertName('CompactorOOMKilled'),
+          'for': '15m',
+          expr: |||
+            (
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                increase(kube_pod_container_status_restarts_total{container=~"%(compactor)s"}[%(time_window)s])
+              )
+              > %(threshold)s
+            )
+            and on (%(alert_aggregation_labels)s, %(per_instance_label)s)
+            (
+              kube_pod_container_status_last_terminated_reason{container=~"%(compactor)s", reason="OOMKilled"} > 0
+            )
+          ||| % ($._config { compactor: $._config.container_names.compactor } + settings),
+          labels: {
+            severity: settings.severity,
+          },
+          annotations: {
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has been OOMKilled {{ printf "%%.2f" $value }} times in the last %(time_window)s.' % ($._config + settings),
+          } + $.dashboardURLAnnotation('mimir-compactor-resources.json'),
+        }
+        for settings in [
+          { severity: 'warning', threshold: 2, time_window: '4h' },
+          { severity: 'critical', threshold: 5, time_window: '2h' },
+        ]
       ],
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
+  groups+:
+    $.withRunbookURL(
+      'https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s',
+      $.withDashboardURL(
+        'mimir-compactor.json',
+        $.withExtraLabelsAnnotations(alertGroups)
+      )
+    ),
 }

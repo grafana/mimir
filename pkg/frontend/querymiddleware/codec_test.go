@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -35,8 +34,10 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -45,7 +46,7 @@ var (
 )
 
 func parseQuery(t require.TestingT, query string) parser.Expr {
-	queryExpr, err := parser.ParseExpr(query)
+	queryExpr, err := promqlext.NewPromQLParser().ParseExpr(query)
 	require.NoError(t, err)
 	return queryExpr
 }
@@ -64,30 +65,37 @@ func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQuery
 	require.Equal(t, expected.GetStart(), actual.GetStart())
 	require.Equal(t, expected.GetEnd(), actual.GetEnd())
 	require.Equal(t, expected.GetStep(), actual.GetStep())
+	require.Equal(t, expected.GetLookbackDelta(), actual.GetLookbackDelta())
 	require.Equal(t, expected.GetQuery(), actual.GetQuery())
 	require.Equal(t, expected.GetMinT(), actual.GetMinT())
 	require.Equal(t, expected.GetMaxT(), actual.GetMaxT())
 	require.Equal(t, expected.GetOptions(), actual.GetOptions())
 	require.Equal(t, expected.GetHints(), actual.GetHints())
+	require.Equal(t, expected.GetStats(), actual.GetStats())
 }
 
-func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
+func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
+	// Note that this test decodes a request URL and then encodes the request again
+	// to compare the results.
 	codec := newTestCodec()
+	codec.lookbackDelta = 6 * time.Minute
 
-	for i, tc := range []struct {
-		url         string
-		expected    MetricsQueryRequest
-		expectedErr error
+	for _, tc := range []struct {
+		url                string
+		expectedEncodedUrl string
+		expected           MetricsQueryRequest
+		expectedErr        error
 	}{
 		{
-			url: "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
+			url:                "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
+			expectedEncodedUrl: "/api/v1/query_range?end=1536716880&lookback_delta=360&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
 			expected: NewPrometheusRangeQueryRequest(
 				"/api/v1/query_range",
 				nil,
 				1536673680*1e3,
 				1536716880*1e3,
 				(2 * time.Minute).Milliseconds(),
-				0,
+				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
 				Options{},
 				nil,
@@ -96,27 +104,58 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 		},
 		// Same as above, but with stats=all.
 		{
-			url: "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&stats=all&step=120",
+			url:                "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&stats=all&step=120",
+			expectedEncodedUrl: "/api/v1/query_range?end=1536716880&lookback_delta=360&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&stats=all&step=120",
 			expected: NewPrometheusRangeQueryRequest(
 				"/api/v1/query_range",
 				nil,
 				1536673680*1e3,
 				1536716880*1e3,
 				(2 * time.Minute).Milliseconds(),
-				0,
+				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
 				Options{},
 				nil,
 				"all",
 			),
 		},
+		// Same as above, but with an explicit lookback delta.
 		{
-			url: "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
+			url: "/api/v1/query_range?end=1536716880&lookback_delta=182&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
+			expected: NewPrometheusRangeQueryRequest(
+				"/api/v1/query_range",
+				nil,
+				1536673680*1e3,
+				1536716880*1e3,
+				(2 * time.Minute).Milliseconds(),
+				3*time.Minute+2*time.Second,
+				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
+				Options{},
+				nil,
+				"",
+			),
+		},
+		{
+			url:                "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
+			expectedEncodedUrl: "/api/v1/query?lookback_delta=360&query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
 			expected: NewPrometheusInstantQueryRequest(
 				"/api/v1/query",
 				nil,
 				1536716880*1e3,
-				0*time.Minute,
+				codec.lookbackDelta,
+				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
+				Options{},
+				nil,
+				"",
+			),
+		},
+		{
+			url: "/api/v1/query?lookback_delta=182&query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
+			expected: NewPrometheusInstantQueryRequest(
+				"/api/v1/query",
+				nil,
+				1536716880*1e3,
+				3*time.Minute+2*time.Second,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
 				Options{},
 				nil,
@@ -125,11 +164,11 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 		},
 		{
 			url:         "/api/v1/query_range?start=foo",
-			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"start\": cannot parse \"foo\" to a valid timestamp"),
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "start": cannot parse "foo" to a valid timestamp`),
 		},
 		{
 			url:         "/api/v1/query_range?start=123&end=bar",
-			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"end\": cannot parse \"bar\" to a valid timestamp"),
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "end": cannot parse "bar" to a valid timestamp`),
 		},
 		{
 			url:         "/api/v1/query_range?start=123&end=0",
@@ -137,7 +176,15 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 		},
 		{
 			url:         "/api/v1/query_range?start=123&end=456&step=baz",
-			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"step\": cannot parse \"baz\" to a valid duration"),
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "step": cannot parse "baz" to a valid duration`),
+		},
+		{
+			url:         "/api/v1/query_range?start=123&end=456&step=2m&lookback_delta=baz",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": cannot parse "baz" to a valid duration`),
+		},
+		{
+			url:         "/api/v1/query_range?start=123&end=456&step=2m&lookback_delta=-1",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": must be greater than 0, got -1`),
 		},
 		{
 			url:         "/api/v1/query_range?start=123&end=456&step=-1",
@@ -147,8 +194,20 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 			url:         "/api/v1/query_range?start=0&end=11001&step=1",
 			expectedErr: errStepTooSmall,
 		},
+		{
+			url:         "/api/v1/query?time=123&lookback_delta=baz",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": cannot parse "baz" to a valid duration`),
+		},
+		{
+			url:         "/api/v1/query?time=123&lookback_delta=-1",
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": must be greater than 0, got -1`),
+		},
 	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+		t.Run(tc.url, func(t *testing.T) {
+			if tc.expectedEncodedUrl == "" {
+				tc.expectedEncodedUrl = tc.url
+			}
+
 			const userID = "user-1"
 
 			r, err := http.NewRequest("GET", tc.url, nil)
@@ -166,7 +225,56 @@ func TestCodec_EncodeMetricsQueryRequest(t *testing.T) {
 
 			encodedReq, err := codec.EncodeMetricsQueryRequest(ctx, req)
 			require.NoError(t, err)
-			require.Equal(t, tc.url, encodedReq.RequestURI)
+			require.Equal(t, tc.expectedEncodedUrl, encodedReq.RequestURI)
+
+			actualUserID, _, err := user.ExtractOrgIDFromHTTPRequest(encodedReq)
+			require.NoError(t, err)
+			require.Equal(t, userID, actualUserID)
+		})
+	}
+}
+
+func TestCodec_EncodeMetricsQueryRequest_Oneway(t *testing.T) {
+	codec := newTestCodec()
+
+	for name, tc := range map[string]struct {
+		request     MetricsQueryRequest
+		expectedUrl string
+	}{
+		"no lookback_delta set": {
+			request: NewPrometheusInstantQueryRequest(
+				"/api/v1/query",
+				nil,
+				1234567890000,
+				time.Duration(0),
+				parseQuery(t, "up"),
+				Options{},
+				nil,
+				"",
+			),
+			expectedUrl: "/api/v1/query?query=up&time=1234567890",
+		},
+		"with lookback_delta set": {
+			request: NewPrometheusInstantQueryRequest(
+				"/api/v1/query",
+				nil,
+				1234567890000,
+				time.Duration(50*time.Second),
+				parseQuery(t, "up"),
+				Options{},
+				nil,
+				"",
+			),
+			expectedUrl: "/api/v1/query?lookback_delta=50&query=up&time=1234567890",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			const userID = "user-1"
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			encodedReq, err := codec.EncodeMetricsQueryRequest(ctx, tc.request)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedUrl, encodedReq.RequestURI)
 
 			actualUserID, _, err := user.ExtractOrgIDFromHTTPRequest(encodedReq)
 			require.NoError(t, err)
@@ -492,7 +600,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 			}
 
 			// test WithExpr on the same query as WithQuery
-			queryExpr, err := parser.ParseExpr(testCase.updatedQuery)
+			queryExpr, err := promqlext.NewPromQLParser().ParseExpr(testCase.updatedQuery)
 			updatedMetricsQuery = mustSucceed(testCase.initialMetricsQuery.WithExpr(queryExpr))
 
 			if err != nil || testCase.expectedErr != nil {
@@ -794,7 +902,7 @@ func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 func TestCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
-			codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat, nil)
+			codec := newTestCodecWithFormat(queryResultPayloadFormat)
 			req := PrometheusInstantQueryRequest{}
 			ctx := user.InjectOrgID(context.Background(), "user-1")
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &req)
@@ -814,20 +922,32 @@ func TestCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 
 func TestCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
-		t.Run(consistencyLevel, func(t *testing.T) {
-			codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
-			ctx := api.ContextWithReadConsistencyLevel(user.InjectOrgID(context.Background(), "user-1"), consistencyLevel)
-			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
-			require.NoError(t, err)
-			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
-		})
+		for _, maxDelay := range []time.Duration{0, time.Minute} {
+			t.Run(fmt.Sprintf("level: %s max delay: %s", consistencyLevel, maxDelay.String()), func(t *testing.T) {
+				codec := newTestCodecWithFormat(formatProtobuf)
+				ctx := api.ContextWithReadConsistencyLevel(user.InjectOrgID(context.Background(), "user-1"), consistencyLevel)
+				if maxDelay > 0 {
+					ctx = api.ContextWithReadConsistencyMaxDelay(ctx, maxDelay)
+				}
+
+				encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
+				require.NoError(t, err)
+				require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
+
+				if maxDelay > 0 {
+					require.Equal(t, maxDelay.String(), encodedRequest.Header.Get(api.ReadConsistencyMaxDelayHeader))
+				} else {
+					require.Empty(t, encodedRequest.Header.Get(api.ReadConsistencyMaxDelayHeader))
+				}
+			})
+		}
 	}
 }
 
 func TestCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *testing.T) {
 	const notAllowedHeader = "X-Some-Name"
 
-	codec := NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
+	codec := newTestCodecWithFormat(formatProtobuf)
 	expectedOffsets := map[int32]int64{0: 1, 1: 2}
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
@@ -865,10 +985,10 @@ func TestCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 		Error:     "something went wrong",
 	}
 
-	jsonBody, err := jsonFormatter{}.EncodeQueryResponse(testResponse)
+	jsonBody, err := encodeQueryResponse(jsonFormatterInstance, testResponse)
 	require.NoError(t, err)
 
-	protobufBody, err := protobufFormatter{}.EncodeQueryResponse(testResponse)
+	protobufBody, err := encodeQueryResponse(ProtobufFormatter{}, testResponse)
 	require.NoError(t, err)
 
 	scenarios := map[string]struct {
@@ -1051,8 +1171,7 @@ func TestCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := newTestCodecWithFormat(formatJSON)
 
 			resp := prometheusAPIResponse{}
 			body, err := json.Marshal(resp)
@@ -1544,7 +1663,7 @@ func BenchmarkCodec_DecodeResponse(b *testing.B) {
 	codec := newTestCodec()
 
 	// Generate a mocked response and marshal it.
-	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
+	res := mockPrometheusResponse(numSeries, numSamplesPerSeries, "matrix")
 	encodedRes, err := json.Marshal(res)
 	require.NoError(b, err)
 	b.Log("test prometheus response size:", len(encodedRes))
@@ -1576,18 +1695,27 @@ func BenchmarkCodec_EncodeResponse(b *testing.B) {
 	require.NoError(b, err)
 
 	// Generate a mocked response and marshal it.
-	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
 
-	b.ResetTimer()
-	b.ReportAllocs()
+	b.Run("matrix", func(b *testing.B) {
+		res := mockPrometheusResponse(numSeries, numSamplesPerSeries, "matrix")
+		b.ReportAllocs()
+		for b.Loop() {
+			_, err := codec.EncodeMetricsQueryResponse(context.Background(), req, res)
+			require.NoError(b, err)
+		}
+	})
 
-	for n := 0; n < b.N; n++ {
-		_, err := codec.EncodeMetricsQueryResponse(context.Background(), req, res)
-		require.NoError(b, err)
-	}
+	b.Run("vector", func(b *testing.B) {
+		res := mockPrometheusResponse(numSeries, 1, "vector")
+		b.ReportAllocs()
+		for b.Loop() {
+			_, err := codec.EncodeMetricsQueryResponse(context.Background(), req, res)
+			require.NoError(b, err)
+		}
+	})
 }
 
-func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusResponse {
+func mockPrometheusResponse(numSeries, numSamplesPerSeries int, ty string) *PrometheusResponse {
 	stream := make([]SampleStream, numSeries)
 	for s := 0; s < numSeries; s++ {
 		// Generate random samples.
@@ -1615,7 +1743,7 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusRespo
 	return &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
-			ResultType: "matrix",
+			ResultType: ty,
 			Result:     stream,
 		},
 	}
@@ -1767,7 +1895,7 @@ func Test_DecodeOptions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			actual := &Options{}
-			decodeOptions(tt.input, actual)
+			DecodeOptions(tt.input, actual)
 			require.Equal(t, tt.expected, actual)
 		})
 	}
@@ -1802,7 +1930,7 @@ func TestCodec_DecodeEncode_Metrics(t *testing.T) {
 
 			const userID = "user-1"
 
-			queryURL := "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1704270202.066"
+			queryURL := "/api/v1/query?lookback_delta=123&query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1704270202.066"
 			expected, err := http.NewRequest("GET", queryURL, nil)
 			require.NoError(t, err)
 			expected.Body = http.NoBody
@@ -2102,8 +2230,16 @@ func newTestCodec() Codec {
 	return newTestCodecWithHeaders(nil)
 }
 
+func newTestCodecWithFormat(format string) Codec {
+	return newTestCodecWithFormatAndHeaders(format, nil)
+}
+
 func newTestCodecWithHeaders(propagateHeaders []string) Codec {
-	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, propagateHeaders)
+	return newTestCodecWithFormatAndHeaders(formatJSON, propagateHeaders)
+}
+
+func newTestCodecWithFormatAndHeaders(format string, propagateHeaders []string) Codec {
+	return NewCodec(prometheus.NewPedanticRegistry(), streamingpromql.DefaultLookbackDelta, format, propagateHeaders, &api.ConsistencyInjector{}, log.NewNopLogger())
 }
 
 func mustSucceed[T any](value T, err error) T {
@@ -2112,4 +2248,21 @@ func mustSucceed[T any](value T, err error) T {
 	}
 
 	return value
+}
+
+func TestContextHeaderPropagation(t *testing.T) {
+	headers := HeadersToPropagateFromContext(context.Background())
+	require.Empty(t, headers)
+
+	ctx := ContextWithHeadersToPropagate(context.Background(), map[string][]string{"Some-Header": {"Some-Value"}})
+	headers = HeadersToPropagateFromContext(ctx)
+	require.Equal(t, map[string][]string{"Some-Header": {"Some-Value"}}, headers)
+}
+
+func encodeQueryResponse(f formatter, resp *PrometheusResponse) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := f.EncodeQueryResponseTo(&buf, resp); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

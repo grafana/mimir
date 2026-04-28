@@ -18,6 +18,15 @@
         }
       },
       "version": "master"
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/rollout-operator.git",
+          "subdir": "operations/rollout-operator-mixin"
+        }
+      },
+      "version": "v0.33.0"
     }
   ],
   "legacyImports": true

@@ -8,8 +8,6 @@ title: About Grafana Mimir exemplars
 weight: 10
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # About Grafana Mimir exemplars
 
 An exemplar is a specific trace representative of a repeated pattern of data in a given time interval. It helps you identify higher cardinality metadata from specific events within time series data. To learn more about exemplars and how they can help you isolate and troubleshoot problems with your systems, see [Introduction to exemplars](/docs/grafana/latest/basics/exemplars/).

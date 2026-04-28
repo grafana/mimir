@@ -151,6 +151,12 @@ func parseStructure(structure interface{}, fields map[uintptr]reflect.StructFiel
 		// Take address of field value and map it to field
 		fields[fieldValue.Addr().Pointer()] = field
 
+		// For pointer fields (e.g. *bool), the flag is registered with the
+		// pointed-to address, not the address of the pointer field itself.
+		if fieldValue.Kind() == reflect.Ptr && !fieldValue.IsNil() {
+			fields[fieldValue.Pointer()] = field
+		}
+
 		// Recurse if a struct
 		if field.Type.Kind() != reflect.Struct || isFieldHidden(field, "") || ignoreStructType(field.Type) || !field.IsExported() {
 			continue
@@ -181,6 +187,10 @@ func ignoreStructType(fieldType reflect.Type) bool {
 	return false
 }
 
+type FlagTyper interface {
+	FlagType() string
+}
+
 func getFlagName(fl *flag.Flag) string {
 	if getter, ok := fl.Value.(flag.Getter); ok {
 		if v := reflect.ValueOf(getter.Get()); v.IsValid() {
@@ -198,12 +208,17 @@ func getFlagName(fl *flag.Flag) string {
 				return "string"
 			case "uint", "uint64":
 				return "uint"
-			case "Secret":
-				return "string"
 			default:
+				if typer, ok := v.Interface().(FlagTyper); ok {
+					return typer.FlagType()
+				}
 				return "value"
 			}
 		}
+	}
+
+	if typer, ok := fl.Value.(FlagTyper); ok {
+		return typer.FlagType()
 	}
 
 	// Check custom types.

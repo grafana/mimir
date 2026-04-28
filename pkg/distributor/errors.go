@@ -22,14 +22,15 @@ import (
 )
 
 const (
-	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	StatusServiceOverloaded         = 529
 	deadlineExceededWrapMessage     = "exceeded configured distributor remote timeout"
 	failedPushingToIngesterMessage  = "failed pushing to ingester"
-	failedPushingToPartitionMessage = "failed pushing to partition"
+	failedPushingToPartitionMessage = "failed pushing to partitions"
 )
 
 var (
+	errMissingRequestState                  = fmt.Errorf("context does not contain a request state")
+	errReactiveLimiterPermitAlreadyAcquired = fmt.Errorf("reactive limiter permit already acquired")
+
 	tooManyClustersMsgFormat = globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
 		"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
 		validation.HATrackerMaxClustersFlag,
@@ -51,12 +52,25 @@ var (
 		validation.RequestRateFlag,
 		validation.RequestBurstSizeFlag,
 	)
+
+	activeSeriesLimitedMsgFormat = globalerror.MaxActiveSeries.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the active series limit, set to %d. %d series were rejected from this request of a total of %d",
+		validation.MaxActiveSeriesPerUserFlag,
+	)
 )
 
 // Error is a marker interface for the errors returned by distributor.
 type Error interface {
 	// Cause returns the cause of the error.
 	Cause() mimirpb.ErrorCause
+	// IsSoft returns whether it's a soft type of error (didn't halt ingestion).
+	IsSoft() bool
+}
+
+// ErrorWithHTTPStatusCode is an optional interface that errors can implement
+// to override the default HTTP status code derived from the error cause.
+type ErrorWithHTTPStatusCode interface {
+	HTTPStatusCode() int
 }
 
 // replicasDidNotMatchError is an error stating that replicas do not match.
@@ -78,6 +92,10 @@ func (e replicasDidNotMatchError) Error() string {
 
 func (e replicasDidNotMatchError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH
+}
+
+func (e replicasDidNotMatchError) IsSoft() bool {
+	return false
 }
 
 // Ensure that replicasDidNotMatchError implements Error.
@@ -103,6 +121,10 @@ func (e tooManyClustersError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS
 }
 
+func (e tooManyClustersError) IsSoft() bool {
+	return false
+}
+
 // Ensure that tooManyClustersError implements Error.
 var _ Error = tooManyClustersError{}
 
@@ -120,8 +142,72 @@ func (e validationError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_BAD_DATA
 }
 
+func (e validationError) Unwrap() error {
+	return e.error
+}
+
+func (e validationError) IsSoft() bool {
+	return false
+}
+
 // Ensure that validationError implements Error.
 var _ Error = validationError{}
+
+type reactiveLimiterExceededError struct {
+	error
+}
+
+func newReactiveLimiterExceededError(err error) reactiveLimiterExceededError {
+	return reactiveLimiterExceededError{err}
+}
+
+func (e reactiveLimiterExceededError) Cause() mimirpb.ErrorCause {
+	return mimirpb.ERROR_CAUSE_INSTANCE_LIMIT
+}
+
+func (e reactiveLimiterExceededError) IsSoft() bool {
+	return false
+}
+
+var _ Error = reactiveLimiterExceededError{}
+
+func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit, httpStatusCode int, rejectedSamples int64) activeSeriesLimitedError {
+	return activeSeriesLimitedError{
+		totalSeriesInThisRequest:      totalSeriesInThisRequest,
+		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
+		limit:                         limit,
+		httpStatusCode:                httpStatusCode,
+		rejectedSamples:               rejectedSamples,
+	}
+}
+
+type activeSeriesLimitedError struct {
+	totalSeriesInThisRequest      int
+	rejectedSeriesFromThisRequest int
+	limit                         int
+	httpStatusCode                int
+	rejectedSamples               int64
+}
+
+func (e activeSeriesLimitedError) Error() string {
+	return fmt.Sprintf(activeSeriesLimitedMsgFormat, e.limit, e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
+}
+
+func (e activeSeriesLimitedError) Cause() mimirpb.ErrorCause {
+	return mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED
+}
+
+func (e activeSeriesLimitedError) IsSoft() bool {
+	return e.rejectedSeriesFromThisRequest > 0 && e.rejectedSeriesFromThisRequest < e.totalSeriesInThisRequest
+}
+
+func (e activeSeriesLimitedError) HTTPStatusCode() int {
+	return e.httpStatusCode
+}
+
+// Ensure that activeSeriesLimitedError implements Error and ErrorWithHTTPStatusCode.
+var _ Error = activeSeriesLimitedError{}
+var _ ErrorWithHTTPStatusCode = activeSeriesLimitedError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {
@@ -143,6 +229,10 @@ func (e ingestionRateLimitedError) Error() string {
 
 func (e ingestionRateLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED
+}
+
+func (e ingestionRateLimitedError) IsSoft() bool {
+	return false
 }
 
 // Ensure that ingestionRateLimitedError implements Error.
@@ -170,6 +260,10 @@ func (e ingestionBurstSizeLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED
 }
 
+func (e ingestionBurstSizeLimitedError) IsSoft() bool {
+	return false
+}
+
 // Ensure that ingestionBurstSizeLimitedError implements Error.
 var _ Error = ingestionBurstSizeLimitedError{}
 
@@ -195,28 +289,40 @@ func (e requestRateLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED
 }
 
+func (e requestRateLimitedError) IsSoft() bool {
+	return false
+}
+
 // Ensure that requestRateLimitedError implements Error.
 var _ Error = requestRateLimitedError{}
 
 // ingesterPushError is an error used to represent a failed attempt to push to the ingester.
 type ingesterPushError struct {
-	message string
-	cause   mimirpb.ErrorCause
+	message         string
+	cause           mimirpb.ErrorCause
+	soft            bool
+	rejectedSamples int64
 }
 
 // newIngesterPushError creates an ingesterPushError error representing the given status object.
 func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushError {
 	errorCause := mimirpb.ERROR_CAUSE_UNKNOWN
+	softErr := false
+	var rejectedSamples int64
 	details := stat.Details()
 	if len(details) == 1 {
 		if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 			errorCause = errorDetails.GetCause()
+			softErr = errorDetails.GetSoft()
+			rejectedSamples = errorDetails.GetRejectedSamples()
 		}
 	}
 	message := fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())
 	return ingesterPushError{
-		message: message,
-		cause:   errorCause,
+		message:         message,
+		cause:           errorCause,
+		soft:            softErr,
+		rejectedSamples: rejectedSamples,
 	}
 }
 
@@ -226,6 +332,10 @@ func (e ingesterPushError) Error() string {
 
 func (e ingesterPushError) Cause() mimirpb.ErrorCause {
 	return e.cause
+}
+
+func (e ingesterPushError) IsSoft() bool {
+	return e.soft
 }
 
 // Ensure that ingesterPushError implements Error.
@@ -252,6 +362,10 @@ func (e partitionPushError) Cause() mimirpb.ErrorCause {
 	return e.cause
 }
 
+func (e partitionPushError) IsSoft() bool {
+	return false
+}
+
 func (e partitionPushError) Unwrap() error {
 	return e.err
 }
@@ -260,7 +374,7 @@ func (e partitionPushError) Unwrap() error {
 var _ Error = partitionPushError{}
 
 // toErrorWithGRPCStatus converts the given error into an appropriate gRPC error.
-func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) error {
+func toErrorWithGRPCStatus(pushErr error) error {
 	var (
 		distributorErr Error
 		errDetails     *mimirpb.ErrorDetails
@@ -268,27 +382,24 @@ func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) erro
 	)
 	if errors.As(pushErr, &distributorErr) {
 		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.Cause()}
-		errCode = errorCauseToGRPCStatusCode(distributorErr.Cause(), serviceOverloadErrorEnabled)
+		errCode = errorCauseToGRPCStatusCode(distributorErr.Cause())
 	}
 	return globalerror.WrapErrorWithGRPCStatus(pushErr, errCode, errDetails).Err()
 }
 
-func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) codes.Code {
+func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause) codes.Code {
 	switch errCause {
 	case mimirpb.ERROR_CAUSE_BAD_DATA:
 		return codes.InvalidArgument
 	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return codes.FailedPrecondition
-	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED:
-		if serviceOverloadErrorEnabled {
-			return codes.Unavailable
-		}
+	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED:
 		return codes.ResourceExhausted
 	case mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH:
 		return codes.AlreadyExists
 	case mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS:
 		return codes.FailedPrecondition
-	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
+	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 		return codes.Unavailable
 	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		return codes.Unimplemented
@@ -296,19 +407,16 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 	return codes.Internal
 }
 
-func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) int {
+func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause) int {
 	switch errCause {
 	case mimirpb.ERROR_CAUSE_BAD_DATA:
 		return http.StatusBadRequest
 	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return http.StatusBadRequest
-	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED:
-		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED:
+		// Return a 429 to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		if serviceOverloadErrorEnabled {
-			return StatusServiceOverloaded
-		}
 		return http.StatusTooManyRequests
 	case mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH:
 		return http.StatusAccepted
@@ -316,13 +424,15 @@ func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 		return http.StatusBadRequest
 	case mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE:
 		return http.StatusServiceUnavailable
-	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
+	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 		return http.StatusServiceUnavailable
 	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
 		return http.StatusNotImplemented
+
+	default:
+		return http.StatusInternalServerError
 	}
-	return http.StatusInternalServerError
 }
 
 func wrapIngesterPushError(err error, ingesterID string) error {
@@ -345,15 +455,13 @@ func wrapIngesterPushError(err error, ingesterID string) error {
 	return newIngesterPushError(stat, ingesterID)
 }
 
-func wrapPartitionPushError(err error, partitionID int32) error {
+func wrapPartitionsPushError(err error) error {
 	if err == nil {
 		return nil
 	}
 
-	// Add the partition ID to the error message.
-	err = errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+	err = errors.Wrap(err, failedPushingToPartitionMessage)
 
-	// Detect the cause.
 	cause := mimirpb.ERROR_CAUSE_UNKNOWN
 	if errors.Is(err, ingest.ErrWriteRequestDataItemTooLarge) {
 		cause = mimirpb.ERROR_CAUSE_BAD_DATA
@@ -406,4 +514,8 @@ func (e unavailableError) Error() string {
 
 func (e unavailableError) Cause() mimirpb.ErrorCause {
 	return mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE
+}
+
+func (e unavailableError) IsSoft() bool {
+	return false
 }

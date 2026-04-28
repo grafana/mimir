@@ -7,6 +7,7 @@ package alertmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -14,7 +15,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,7 +26,6 @@ import (
 
 const (
 	defaultSettleReadTimeout = 15 * time.Second
-	defaultStoreReadTimeout  = 15 * time.Second
 
 	// Initial sync outcome label values.
 	syncFromReplica  = "from-replica"
@@ -63,11 +62,12 @@ type state struct {
 	initialSyncCompleted     *prometheus.CounterVec
 	initialSyncDuration      prometheus.Histogram
 
-	msgc chan *clusterpb.Part
+	msgc  chan *clusterpb.Part
+	stopc chan struct{}
 }
 
 // newReplicatedStates creates a new state struct, which manages state to be replicated between alertmanagers.
-func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.AlertStore, l log.Logger, r prometheus.Registerer) *state {
+func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.AlertStore, readTimeout time.Duration, l log.Logger, r prometheus.Registerer) *state {
 
 	s := &state{
 		logger:            log.With(l, "user", userID),
@@ -77,9 +77,10 @@ func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.Ale
 		store:             st,
 		states:            make(map[string]cluster.State, 2), // we use two, one for the notifications and one for silences.
 		msgc:              make(chan *clusterpb.Part),
+		stopc:             make(chan struct{}),
 		reg:               r,
 		settleReadTimeout: defaultSettleReadTimeout,
-		storeReadTimeout:  defaultStoreReadTimeout,
+		storeReadTimeout:  readTimeout,
 		partialStateMergesTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "alertmanager_partial_state_merges_total",
 			Help: "Number of times we have received a partial state to merge for a key.",
@@ -183,7 +184,7 @@ func (s *state) GetFullState() (*clusterpb.FullState, error) {
 	for key, s := range s.states {
 		b, err := s.MarshalBinary()
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to encode state for key: %v", key)
+			return nil, fmt.Errorf("failed to encode state for key: %v: %w", key, err)
 		}
 		all.Parts = append(all.Parts, clusterpb.Part{Key: key, Data: b})
 	}
@@ -230,10 +231,13 @@ func (s *state) starting(ctx context.Context) error {
 
 	level.Info(s.logger).Log("msg", "reading state from storage")
 	// Attempt to read the state from persistent storage instead.
-	storeReadCtx, cancel := context.WithTimeout(ctx, s.storeReadTimeout)
-	defer cancel()
+	if s.storeReadTimeout != 0 {
+		storeReadCtx, cancel := context.WithTimeout(ctx, s.storeReadTimeout)
+		defer cancel()
+		ctx = storeReadCtx
+	}
 
-	fullState, err := s.store.GetFullState(storeReadCtx, s.userID)
+	fullState, err := s.store.GetFullState(ctx, s.userID)
 	if errors.Is(err, alertspb.ErrNotFound) {
 		level.Info(s.logger).Log("msg", "no state for user in storage; proceeding")
 		s.initialSyncCompleted.WithLabelValues(syncUserNotFound).Inc()
@@ -262,23 +266,6 @@ func (s *state) Ready() bool {
 	return s.State() == services.Running
 }
 
-func (s *state) MergeGrafanaState(fs []*clusterpb.FullState) error {
-	if err := s.MergeFullStates(fs); err != nil {
-		return err
-	}
-
-	for _, fs := range fs {
-		for _, p := range fs.Parts {
-			if cluster.OversizedMessage(p.Data) {
-				// When merging state, upstream Alertmanager code drops oversized messages.
-				// Manually broadcast oversized Grafana states to avoid missing silences/nflog entries.
-				s.broadcast(p.Key, p.Data)
-			}
-		}
-	}
-	return nil
-}
-
 // MergeFullStates attempts to merge all full states received from peers during settling.
 func (s *state) MergeFullStates(fs []*clusterpb.FullState) error {
 	s.mtx.Lock()
@@ -295,7 +282,7 @@ func (s *state) MergeFullStates(fs []*clusterpb.FullState) error {
 			}
 
 			if err := st.Merge(p.Data); err != nil {
-				return errors.Wrapf(err, "failed to merge part of full state for key: %v", p.Key)
+				return fmt.Errorf("failed to merge part of full state for key: %v: %w", p.Key, err)
 			}
 		}
 	}
@@ -304,12 +291,14 @@ func (s *state) MergeFullStates(fs []*clusterpb.FullState) error {
 }
 
 func (s *state) running(ctx context.Context) error {
+	defer close(s.stopc)
+
 	for {
 		select {
 		case p := <-s.msgc:
 			// If the replication factor is <= 1, we don't need to replicate any state anywhere else.
 			if s.replicationFactor <= 1 {
-				return nil
+				continue
 			}
 
 			s.stateReplicationTotal.WithLabelValues(p.Key).Inc()
@@ -318,6 +307,7 @@ func (s *state) running(ctx context.Context) error {
 				level.Error(s.logger).Log("msg", "failed to replicate state to other alertmanagers", "key", p.Key, "err", err)
 			}
 		case <-ctx.Done():
+			level.Debug(s.logger).Log("msg", "state replication loop terminated, context done")
 			return nil
 		}
 	}
@@ -325,8 +315,14 @@ func (s *state) running(ctx context.Context) error {
 
 func (s *state) broadcast(key string, b []byte) {
 	// We should ignore the Merges into the initial state during settling.
-	if s.Ready() {
-		s.msgc <- &clusterpb.Part{Key: key, Data: b}
+	if !s.Ready() || s.replicationFactor <= 1 {
+		return
+	}
+
+	select {
+	case s.msgc <- &clusterpb.Part{Key: key, Data: b}:
+	case <-s.stopc:
+		level.Warn(s.logger).Log("msg", "broadcast dropped, state replication loop already terminated", "key", key)
 	}
 }
 

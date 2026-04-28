@@ -36,8 +36,12 @@ func (s *StringLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STRING_LITERAL
 }
 
-func (s *StringLiteral) Children() []planning.Node {
-	return nil
+func (s *StringLiteral) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type StringLiteral has no children, but attempted to get child at index %d", idx))
+}
+
+func (s *StringLiteral) ChildCount() int {
+	return 0
 }
 
 func (s *StringLiteral) SetChildren(children []planning.Node) error {
@@ -48,18 +52,27 @@ func (s *StringLiteral) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *StringLiteral) EquivalentTo(other planning.Node) bool {
+func (s *StringLiteral) ReplaceChild(idx int, node planning.Node) error {
+	return fmt.Errorf("node of type StringLiteral supports no children, but attempted to replace child at index %d", idx)
+}
+
+func (s *StringLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherLiteral, ok := other.(*StringLiteral)
 
 	return ok && s.Value == otherLiteral.Value
+}
+
+func (s *StringLiteral) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (s *StringLiteral) ChildrenLabels() []string {
 	return nil
 }
 
-func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	o := operators.NewStringLiteral(s.Value, s.ExpressionPosition())
+func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	o := operators.NewStringLiteral(s.Value, timeRange, params.MemoryConsumptionTracker, s.GetExpressionPosition().ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
@@ -68,10 +81,14 @@ func (s *StringLiteral) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeString, nil
 }
 
-func (s *StringLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	return planning.NoDataQueried()
+func (s *StringLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return planning.NoDataQueried(), nil
 }
 
-func (s *StringLiteral) ExpressionPosition() posrange.PositionRange {
-	return s.GetExpressionPosition().ToPrometheusType()
+func (s *StringLiteral) ExpressionPosition() (posrange.PositionRange, error) {
+	return s.GetExpressionPosition().ToPrometheusType(), nil
+}
+
+func (s *StringLiteral) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }

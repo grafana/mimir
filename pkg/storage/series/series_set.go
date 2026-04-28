@@ -224,6 +224,11 @@ func (c *concreteSeriesIterator) AtT() int64 {
 	return int64(c.series.samples[c.curFloat].Timestamp)
 }
 
+// TODO(krajorama): implement AtST if underlying data implements it.
+func (*concreteSeriesIterator) AtST() int64 {
+	return 0
+}
+
 func (c *concreteSeriesIterator) Err() error {
 	return nil
 }
@@ -259,6 +264,10 @@ func (errIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogra
 }
 
 func (errIterator) AtT() int64 {
+	return 0
+}
+
+func (errIterator) AtST() int64 {
 	return 0
 }
 

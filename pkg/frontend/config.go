@@ -55,6 +55,23 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 	if err := cfg.QueryMiddleware.Validate(); err != nil {
 		return err
 	}
+
+	if cfg.QueryMiddleware.EnableRemoteExecution && cfg.QueryEngine != querier.MimirEngine {
+		return errors.New("remote execution is only supported when the Mimir query engine is in use")
+	}
+
+	if cfg.QueryMiddleware.ShardedQueries && cfg.QueryMiddleware.UseMQEForSharding {
+		// We don't need to explicitly check that MQE is enabled here: remote execution is only supported when MQE is enabled, and we
+		// enforce that above.
+		if !cfg.QueryMiddleware.EnableRemoteExecution {
+			return errors.New("using MQE for sharding is only supported when the Mimir query engine is in use and remote execution is enabled")
+		}
+	}
+
+	if cfg.QueryMiddleware.EnableMultipleNodeRemoteExecutionRequests && !cfg.QueryMiddleware.EnableRemoteExecution {
+		return errors.New("multiple node remote execution requests are only supported when remote execution is enabled")
+	}
+
 	return nil
 }
 

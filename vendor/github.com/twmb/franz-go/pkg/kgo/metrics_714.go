@@ -9,11 +9,11 @@ import (
 	"math"
 	"math/rand"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo/internal/xsync"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -52,7 +52,7 @@ func (cl *Client) pushMetrics() {
 			err = kerr.ErrorForCode(gresp.ErrorCode)
 		}
 		if err != nil {
-			cl.cfg.logger.Log(LogLevelInfo, "unable to get telemetry subscriptions, retrying in 30s", "err", err)
+			cl.cfg.logger.Log(LogLevelDebug, "unable to get telemetry subscriptions, retrying in 30s", "err", err)
 			after := time.NewTimer(30 * time.Second)
 			select {
 			case <-cl.ctx.Done():
@@ -69,7 +69,7 @@ func (cl *Client) pushMetrics() {
 		// and re-get.
 		if len(gresp.RequestedMetrics) == 0 {
 			wait := time.Duration(gresp.PushIntervalMillis) * time.Millisecond
-			cl.cfg.logger.Log(LogLevelInfo, "no metrics requested, sleeping and asking again later", "sleep", wait)
+			cl.cfg.logger.Log(LogLevelDebug, "no metrics requested, sleeping and asking again later", "sleep", wait)
 			after := time.NewTimer(wait)
 			select {
 			case <-cl.ctx.Done():
@@ -81,7 +81,7 @@ func (cl *Client) pushMetrics() {
 		cl.cfg.logger.Log(LogLevelInfo, "received client metrics subscription, beginning periodic send loop",
 			"client_instance_id", fmt.Sprintf("%x", gresp.ClientInstanceID),
 			"subscription_id", gresp.SubscriptionID,
-			"accepteded_compression_types", gresp.AcceptedCompressionTypes,
+			"accepted_compression_types", gresp.AcceptedCompressionTypes,
 			"telemetry_max_bytes", gresp.TelemetryMaxBytes,
 			"push_interval", time.Duration(gresp.PushIntervalMillis)*time.Millisecond,
 			"requested_metrics", gresp.RequestedMetrics,
@@ -112,10 +112,7 @@ func (cl *Client) pushMetrics() {
 
 	push:
 		for i := 0; !terminating; i++ {
-			wait := time.Duration(gresp.PushIntervalMillis) * time.Millisecond
-			if wait < time.Second {
-				wait = time.Second
-			}
+			wait := max(time.Duration(gresp.PushIntervalMillis)*time.Millisecond, time.Second)
 			if i == 0 { // for the first request, jitter 0.5 <= wait <= 1.5
 				cl.rng(func(r *rand.Rand) {
 					wait = time.Duration(float64(wait) * (0.5 + r.Float64()))
@@ -168,7 +165,7 @@ func (cl *Client) pushMetrics() {
 				}
 			}
 			if err != nil {
-				cl.cfg.logger.Log(LogLevelWarn, "unable to send client metrics, resetting subscription", "err", err)
+				cl.cfg.logger.Log(LogLevelDebug, "unable to send client metrics, resetting subscription", "err", err)
 				break
 			}
 
@@ -193,10 +190,10 @@ func (cl *Client) pushMetrics() {
 				cl.cfg.logger.Log(LogLevelInfo, "client metrics compression is not supported by the broker even though we only used previously supported compressors, re-getting our subscription information", "err", err)
 			default:
 				if !kerr.IsRetriable(err) {
-					cl.cfg.logger.Log(LogLevelError, "client metrics received an unknown error we do not know how to handle, exiting metrics loop", "err", err)
+					cl.cfg.logger.Log(LogLevelWarn, "client metrics received an unknown error we do not know how to handle, exiting metrics loop", "err", err)
 					return
 				}
-				cl.cfg.logger.Log(LogLevelWarn, "client metrics received an unknown error that is retryably, continuing to next push cycle", "err", err)
+				cl.cfg.logger.Log(LogLevelWarn, "client metrics received an unknown error that is retriable, continuing to next push cycle", "err", err)
 			}
 		}
 	}
@@ -316,7 +313,7 @@ type (
 		closedFirstObserve atomic.Bool
 
 		// mu is grabbed when accessing the map fields.
-		mu          sync.Mutex
+		mu          xsync.Mutex
 		unsupported atomic.Bool // set to true if the broker does not support client metrics; guards nil-ing the maps
 
 		pConnCreation metricRate
@@ -735,7 +732,6 @@ const (
 	protoTypeVarint = 0
 	protoType64bit  = 1
 	protoTypeLength = 2
-	protoType32bit  = 5
 )
 
 // appendProtoTag adds a Protocol Buffer tag (field number + proto type)

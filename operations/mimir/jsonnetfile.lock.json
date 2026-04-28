@@ -15,16 +15,6 @@
       "source": {
         "git": {
           "remote": "https://github.com/grafana/jsonnet-libs.git",
-          "subdir": "etcd-operator"
-        }
-      },
-      "version": "815b0364886cc7bdf6bde2cdcd424bb8cef842b8",
-      "sum": "dnKsZ5FkKBtCycNVVSYa1AMNjCLofO4VGFrmzoz4344="
-    },
-    {
-      "source": {
-        "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs.git",
           "subdir": "ksonnet-util"
         }
       },
@@ -38,8 +28,28 @@
           "subdir": "memcached"
         }
       },
-      "version": "cd4dd9a04aa740b2644e12810e48382188c25adc",
-      "sum": "f+DYmgxR3spwx8DbIyY4+qSaFsshg/SE+MDG6jUQhJg="
+      "version": "dfc90cc58ffd46be49aeafe57014ef55ea4e3cd8",
+      "sum": "zNTCDRaCqJUHjQSQRsxGR3jLrMP9tU7YNQb13dbm1bU="
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/rollout-operator.git",
+          "subdir": "operations/rollout-operator"
+        }
+      },
+      "version": "8da1b220cf28cb0cde805f30aae113ed57459949",
+      "sum": "t3nMMxw7cEOOmpdtKfadQRhvu2XQVvPigDq4CipmPIg="
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/jsonnet-libs/xtd.git",
+          "subdir": ""
+        }
+      },
+      "version": "4d7f8cb24d613430799f9d56809cc6964f35cea9",
+      "sum": "hOrwkOx34tOXqoDVnwuI/Uf/dr9HFFSPWpDPOvnEGrk="
     }
   ],
   "legacyImports": false

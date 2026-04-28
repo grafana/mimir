@@ -78,6 +78,15 @@ func (r *release) addkeyver(key, vmax int16) {
 	r.reqs[key] = req{key: key, vmax: vmax}
 }
 
+func (r *release) setmin(key, vmin int16) {
+	req, ok := r.reqs[key]
+	if !ok {
+		panic(fmt.Sprintf("setmin on non-existent key %d", key))
+	}
+	req.vmin = vmin
+	r.reqs[key] = req
+}
+
 func reqsFromApiVersions(r *kmsg.ApiVersionsResponse) map[int16]req {
 	m := make(map[int16]req, len(r.ApiKeys))
 	for _, k := range r.ApiKeys {
@@ -1002,33 +1011,25 @@ func b40() *release {
 	now := b39().clone(4, 0)
 
 	// KIP-896
-	setmin := func(key, vmin int16) {
-		req, ok := now.reqs[key]
-		if !ok {
-			panic(fmt.Sprintf("setmin on non-existent key %d", key))
-		}
-		req.vmin = vmin
-		now.reqs[key] = req
-	}
-	setmin(1, 4)
-	setmin(2, 1)
-	setmin(8, 2)
-	setmin(9, 1)
-	setmin(11, 2)
-	setmin(19, 2)
-	setmin(20, 1)
-	setmin(23, 2)
-	setmin(27, 1)
-	setmin(29, 1)
-	setmin(30, 1)
-	setmin(31, 1)
-	setmin(32, 1)
-	setmin(34, 1)
-	setmin(35, 1)
-	setmin(38, 1)
-	setmin(39, 1)
-	setmin(40, 1)
-	setmin(41, 1)
+	now.setmin(1, 4)
+	now.setmin(2, 1)
+	now.setmin(8, 2)
+	now.setmin(9, 1)
+	now.setmin(11, 2)
+	now.setmin(19, 2)
+	now.setmin(20, 1)
+	now.setmin(23, 2)
+	now.setmin(27, 1)
+	now.setmin(29, 1)
+	now.setmin(30, 1)
+	now.setmin(31, 1)
+	now.setmin(32, 1)
+	now.setmin(34, 1)
+	now.setmin(35, 1)
+	now.setmin(38, 1)
+	now.setmin(39, 1)
+	now.setmin(40, 1)
+	now.setmin(41, 1)
 
 	now.incmax(0, 12) // 12 produce KAFKA-14563 755adf8a566 KIP-890
 	now.incmax(2, 10) // 10 list offsets KAFKA-15859 560076ba9e8 KIP-1075
@@ -1044,8 +1045,59 @@ func b40() *release {
 	return now
 }
 
+func b41() *release {
+	now := b40().clone(4, 1)
+
+	now.setmin(11, 0) // KAFKA-19444 487af011ca5 -- re-add JoinGroup v0 & v1
+
+	now.incmax(0, 13) // 13 produce KAFKA-10551 6f783f85362 KIP-516
+	now.incmax(1, 18) // 18 fetch KAFKA-14145 742b327025f KIP-1166
+	now.incmax(45, 1) // 1 alter partition assignments KAFKA-14121 cbd72cc216e KIP-860
+	now.incmax(66, 2) // 2 list transactions KAFKA-19073 0c1fbf3aebb KIP-1152
+	now.incmax(74, 1) // 1 list config resources (rename & extend) KAFKA-18904 c26b09c6092 KIP-1142
+
+	// 8f82f14a483 for v0, KAFKA-16713 66147d5de7c KIP-932 for v1
+	now.addkeyver(76, 1) // 1 share group heartbeat
+	now.addkeyver(77, 1) // 1 share group describe
+	now.addkeyver(78, 1) // 1 share fetch
+	now.addkeyver(79, 1) // 1 share acknowledge
+
+	// KAFKA-16950 fecbfb81332 KIP-932
+	now.addkey(83) // 0 initialize share group state
+	now.addkey(84) // 0 read share group state
+	now.addkey(85) // 0 write share group state
+	now.addkey(86) // 0 delete share group state
+	now.addkey(87) // 0 read share group state summary
+
+	now.addkey(90) // 0 describe share group offsets e3e4c179592, then KAFKA-16720 952113e8e0e KIP-932
+	now.addkey(91) // 0 alter share group offsets KAFKA-16717 6a6b80215d8 KIP-932
+	now.addkey(92) // 0 delete share group offsets KAFKA-16718 63229a768ce KIP-932
+
+	return now
+}
+
+func b42() *release {
+	now := b41().clone(4, 2)
+
+	now.incmax(2, 11) // 11 list offsets KAFKA-17108 8d93d1096c2 KIP-1023
+	now.incmax(8, 10) // 10 offset commit KAFKA-19186 9599143bfd9 KIP-848
+	now.incmax(9, 10) // 10 offset fetch KAFKA-19186 9599143bfd9 KIP-848
+	now.incmax(27, 2) // 2 write txn markers KAFKA-19446 faad21fcb9a KIP-1228
+	now.incmax(78, 2) // 2 share fetch KAFKA-19814 05c9322ba9c KIP-1206, KIP-1222
+	now.incmax(79, 2) // 2 share acknowledge KAFKA-19814 05c9322ba9c KIP-1222
+	now.incmax(80, 1) // 1 add raft voter KAFKA-19400 93447d5b883 KIP-1186
+	now.incmax(85, 1) // 1 write share group state KAFKA-19797 b900f2fe5a0 KIP-1226
+	now.incmax(87, 1) // 1 read share group state summary KAFKA-19799 5571821240 KIP-1226
+	now.incmax(90, 1) // 1 describe share group offsets KAFKA-19800 1146f97770c KIP-1226
+
+	now.addkey(88) // 0 streams group heartbeat KAFKA-19869 497072a5644 KIP-1071
+	now.addkey(89) // 0 streams group describe KAFKA-19869 497072a5644 KIP-1071
+
+	return now
+}
+
 func btip() *release {
-	return b40()
+	return b42()
 }
 
 ///////////////////////////////
@@ -1056,7 +1108,7 @@ func c28() *release {
 	return &release{
 		major: 2,
 		minor: 8,
-		kind:  kindBroker,
+		kind:  kindController,
 		reqs: map[int16]req{
 			1:  {key: 1, vmax: 12}, // fetch
 			3:  {key: 3, vmax: 11}, // metadata
@@ -1214,26 +1266,18 @@ func c40() *release {
 	now := c39().clone(4, 0)
 
 	// KIP-896
-	setmin := func(key, vmin int16) {
-		req, ok := now.reqs[key]
-		if !ok {
-			panic(fmt.Sprintf("setmin on non-existent key %d", key))
-		}
-		req.vmin = vmin
-		now.reqs[key] = req
-	}
-	setmin(1, 4)
-	setmin(19, 2)
-	setmin(20, 1)
-	setmin(29, 1)
-	setmin(30, 1)
-	setmin(31, 1)
-	setmin(32, 1)
-	setmin(38, 1)
-	setmin(39, 1)
-	setmin(40, 1)
-	setmin(41, 1)
-	setmin(56, 2)
+	now.setmin(1, 4)
+	now.setmin(19, 2)
+	now.setmin(20, 1)
+	now.setmin(29, 1)
+	now.setmin(30, 1)
+	now.setmin(31, 1)
+	now.setmin(32, 1)
+	now.setmin(38, 1)
+	now.setmin(39, 1)
+	now.setmin(40, 1)
+	now.setmin(41, 1)
+	now.setmin(56, 2)
 	delete(now.reqs, 7)
 
 	now.incmax(52, 2) // KAFKA-17641 b73e31eb159 KIP-996 adds PreVote to Vote
@@ -1243,6 +1287,23 @@ func c40() *release {
 	return now
 }
 
+func c41() *release {
+	now := c40().clone(4, 1)
+
+	now.incmax(1, 18)
+	now.incmax(45, 1)
+
+	return now
+}
+
+func c42() *release {
+	now := c41().clone(4, 2)
+
+	now.incmax(80, 1) // 1 add raft voter KAFKA-19400 93447d5b883 KIP-1186
+
+	return now
+}
+
 func ctip() *release {
-	return c40()
+	return c42()
 }

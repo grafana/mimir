@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestCanParallel(t *testing.T) {
@@ -30,7 +32,7 @@ func TestCanParallel(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 				},
 				Grouping: []string{"foo"},
@@ -45,7 +47,7 @@ func TestCanParallel(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 				},
 				Grouping: []string{"foo"},
@@ -70,7 +72,7 @@ func TestCanParallel(t *testing.T) {
 						Expr: &parser.VectorSelector{
 							Name: "idk",
 							LabelMatchers: []*labels.Matcher{
-								mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
+								labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
 							},
 						},
 					},
@@ -80,7 +82,7 @@ func TestCanParallel(t *testing.T) {
 						Expr: &parser.VectorSelector{
 							Name: "idk",
 							LabelMatchers: []*labels.Matcher{
-								mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar2"),
+								labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar2"),
 							},
 						},
 					},
@@ -96,7 +98,7 @@ func TestCanParallel(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "idk",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
+						labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
 					},
 				},
 			},
@@ -205,7 +207,7 @@ func TestCanParallel_String(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			expr, err := parser.ParseExpr(c.input)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(c.input)
 			require.Nil(t, err)
 			res := CanParallelize(expr, log.NewNopLogger())
 			require.Equal(t, c.expected, res)
@@ -234,6 +236,11 @@ func TestFunctionsWithDefaultsIsUpToDate(t *testing.T) {
 
 			if f.Name == "info" {
 				// the info function is variadic but no parameter is a timestamp, so it's not relevant for sharding purposes.
+				return
+			}
+
+			if f.Name == "histogram_quantiles" {
+				// histogram_quantiles is variadic with extra quantile scalar arguments, not a timestamp.
 				return
 			}
 
@@ -268,9 +275,44 @@ func TestCountVectorSelectors(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			expr, err := parser.ParseExpr(testData.expr)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(testData.expr)
 			require.Nil(t, err)
 			assert.Equal(t, testData.expected, countVectorSelectors(expr))
+		})
+	}
+}
+
+func TestEvalPredicate(t *testing.T) {
+	for testName, tc := range map[string]struct {
+		input       string
+		fn          Predicate
+		expectedRes bool
+	}{
+		"should return false if the predicate returns false for all nodes in the subtree": {
+			input: "selector1{} or selector2{}",
+			fn: func(parser.Node) bool {
+				return false
+			},
+			expectedRes: false,
+		},
+		"should return true if the predicate returns true for at least 1 node in the subtree": {
+			input: "selector1{} or selector2{}",
+			fn: func(node parser.Node) bool {
+				// Return true only for 1 node in the subtree.
+				if node.String() == "selector1" {
+					return true
+				}
+				return false
+			},
+			expectedRes: true,
+		},
+	} {
+		t.Run(testName, func(t *testing.T) {
+			expr, err := promqlext.NewPromQLParser().ParseExpr(tc.input)
+			require.Nil(t, err)
+
+			res := AnyNode(expr.(parser.Node), tc.fn)
+			require.Equal(t, tc.expectedRes, res)
 		})
 	}
 }

@@ -37,7 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -102,8 +102,10 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 		meta.Thanos.Labels = map[string]string{"ext2": "value2"}
 		assert.NoError(t, meta.WriteToDir(logger, dir2))
 
-		assert.NoError(t, block.Upload(ctx, logger, bkt, dir1, nil))
-		assert.NoError(t, block.Upload(ctx, logger, bkt, dir2, nil))
+		_, err = block.Upload(ctx, logger, bkt, dir1, nil)
+		assert.NoError(t, err)
+		_, err = block.Upload(ctx, logger, bkt, dir2, nil)
+		assert.NoError(t, err)
 
 		assert.NoError(t, os.RemoveAll(dir1))
 		assert.NoError(t, os.RemoveAll(dir2))
@@ -152,7 +154,6 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 			BlockSyncConcurrency:        20,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled:  true,
 				EagerLoadingPersistInterval: time.Minute,
 				LazyLoadingEnabled:          true,
 				LazyLoadingIdleTimeout:      time.Minute,
@@ -195,22 +196,26 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		maxTime:         maxTime,
 	}
 
-	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), cfg.tempDir, nil, []block.MetadataFilter{}, nil, 0)
+	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), cfg.tempDir, nil, []block.MetadataFilter{}, 0)
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to
 	storeOpts := []BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache)}
 
+	const userID = "tenant"
+
+	const maxGapBytes = mimir_tsdb.DefaultPartitionerMaxGapSize
 	store, err := NewBucketStore(
-		"tenant",
+		userID,
 		objstore.WithNoopInstr(bkt),
+		newTestBucketIndexMetadataReader(t, bkt, userID),
 		metaFetcher,
 		cfg.tempDir,
 		cfg.bucketStoreConfig,
 		cfg.postingsStrategy,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
-		newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitioners(maxGapBytes, maxGapBytes, maxGapBytes, nil),
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(s.metricsRegistry),
 		storeOpts...,
@@ -436,8 +441,8 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 		},
 	}
 	for i, tcase := range append(testCases, additionalCases...) {
-		for _, streamingBatchSize := range []int{0, 1, 5, 256} {
-			if ok := t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
+		for _, streamingBatchSize := range []int{1, 5, 256} {
+			t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
 				tcase.req.StreamingChunksBatchSize = uint64(streamingBatchSize)
 				seriesSet, _, _, _, err := srv.Series(context.Background(), tcase.req)
 				require.NoError(t, err)
@@ -449,9 +454,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 					assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 				}
 				assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
-			}); !ok {
-				return
-			}
+			})
 		}
 	}
 }
@@ -468,6 +471,8 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
+
+		assertSeriesTouchedProcessedGreaterOrEqualReturned(t, metrics)
 
 		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_blocks_queried", metrics, "source", "test", "level", "1"))
@@ -494,10 +499,10 @@ func TestBucketStore_e2e(t *testing.T) {
 		}
 
 		if ok := t.Run("with large, sufficient index cache", func(t *testing.T) {
-			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
-				MaxItemSize: 1e5,
-				MaxSize:     2e5,
-			})
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
+				MaxItemSizeBytes:  1e5,
+				MaxCacheSizeBytes: 2e5,
+			}, nil, s.logger)
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
@@ -506,12 +511,12 @@ func TestBucketStore_e2e(t *testing.T) {
 		}
 
 		t.Run("with small index cache", func(t *testing.T) {
-			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
-				MaxItemSize: 50,
-				MaxSize:     100,
-			})
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
+				MaxItemSizeBytes:  50,
+				MaxCacheSizeBytes: 100,
+			}, nil, s.logger)
 			assert.NoError(t, err)
-			s.cache.SwapIndexCacheWith(indexCache2)
+			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
 		})
 	})
@@ -557,10 +562,10 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 		}
 
 		if ok := t.Run("with large, sufficient index cache", func(t *testing.T) {
-			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
-				MaxItemSize: 1e5,
-				MaxSize:     2e5,
-			})
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
+				MaxItemSizeBytes:  1e5,
+				MaxCacheSizeBytes: 2e5,
+			}, nil, s.logger)
 			assert.NoError(t, err)
 			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s, additionalCases...)
@@ -569,12 +574,12 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 		}
 
 		t.Run("with small index cache", func(t *testing.T) {
-			indexCache2, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
-				MaxItemSize: 50,
-				MaxSize:     100,
-			})
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
+				MaxItemSizeBytes:  50,
+				MaxCacheSizeBytes: 100,
+			}, nil, s.logger)
 			assert.NoError(t, err)
-			s.cache.SwapIndexCacheWith(indexCache2)
+			s.cache.SwapIndexCacheWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
 		})
 	})
@@ -603,10 +608,10 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 
 		s := newSuite(withManyParts())
 
-		indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
-			MaxItemSize: 1e5,
-			MaxSize:     2e5,
-		})
+		indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
+			MaxItemSizeBytes:  1e5,
+			MaxCacheSizeBytes: 2e5,
+		}, nil, s.logger)
 		assert.NoError(t, err)
 		s.cache.SwapIndexCacheWith(indexCache)
 
@@ -617,6 +622,12 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	// The query will fetch 4 series from 3 blocks each, so we do expect to hit a total of 12 chunks.
 	expectedChunks := uint64(4 * 3)
+
+	// Create blocks once into a shared bucket to avoid repeating expensive block creation I/O.
+	bkt := objstore.NewInMemBucket()
+	sharedCfg := defaultPrepareStoreConfig(t)
+	prepareTestBlocks(t, time.Now(), sharedCfg.numBlocks/2, sharedCfg.tempDir, bkt,
+		sharedCfg.series, labels.FromStrings("ext1", "value1"), sharedCfg.nonOverlappingBlocks)
 
 	cases := map[string]struct {
 		maxChunksLimit uint64
@@ -646,16 +657,17 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 
 	for testName, testData := range cases {
 		t.Run(testName, func(t *testing.T) {
+			// Create one store per case (different limiters), reuse across streaming batch sizes.
+			prepConfig := defaultPrepareStoreConfig(t)
+			prepConfig.numBlocks = 0 // blocks already in shared bucket
+			prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
+			prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
+
+			s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
+			srv := newStoreGatewayTestServer(t, s.store)
+
 			for _, streamingBatchSize := range []int{0, 1, 5} {
 				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
-					bkt := objstore.NewInMemBucket()
-
-					prepConfig := defaultPrepareStoreConfig(t)
-					prepConfig.chunksLimiterFactory = newStaticChunksLimiterFactory(testData.maxChunksLimit)
-					prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
-
-					s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
-
 					req := &storepb.SeriesRequest{
 						Matchers: []storepb.LabelMatcher{
 							{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
@@ -665,7 +677,6 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 						StreamingChunksBatchSize: uint64(streamingBatchSize),
 					}
 
-					srv := newStoreGatewayTestServer(t, s.store)
 					_, _, _, _, err := srv.Series(context.Background(), req)
 
 					if testData.expectedErr == "" {
@@ -683,36 +694,29 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	}
 }
 
-func TestBucketStore_EagerLoading(t *testing.T) {
+func TestBucketStore_LazyLoadingAlwaysEagerLoading(t *testing.T) {
 	testCases := map[string]struct {
-		eagerLoadReaderEnabled       bool
+		lazyLoadingEnabled           bool
 		expectedEagerLoadedBlocks    int
 		createLoadedBlocksSnapshotFn func([]ulid.ULID) []ulid.ULID
 	}{
-		"block is present in pre-shutdown loaded blocks and eager-loading is disabled": {
-			eagerLoadReaderEnabled:    false,
-			expectedEagerLoadedBlocks: 0,
+		"block is present in pre-shutdown loaded blocks and lazy-loading is disabled": {
+			lazyLoadingEnabled:        false,
+			expectedEagerLoadedBlocks: 0, // When lazy loading is disabled, no block is eagerly loaded at startup, so the snapshot is not used
 			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
 				return blockIDs
 			},
 		},
-		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header during initial sync": {
-			eagerLoadReaderEnabled:    true,
+		"block is present in pre-shutdown loaded blocks and lazy-loading is enabled, loading index header during initial sync": {
+			lazyLoadingEnabled:        true,
 			expectedEagerLoadedBlocks: 6,
 			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
 				return blockIDs
 			},
 		},
-		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header after initial sync": {
-			eagerLoadReaderEnabled:    true,
-			expectedEagerLoadedBlocks: 6,
-			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
-				return blockIDs
-			},
-		},
-		"block is not present in pre-shutdown loaded blocks snapshot and eager-loading is enabled": {
-			eagerLoadReaderEnabled:    true,
-			expectedEagerLoadedBlocks: 0, // although eager loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
+		"block is not present in pre-shutdown loaded blocks snapshot and lazy-loading is enabled": {
+			lazyLoadingEnabled:        true,
+			expectedEagerLoadedBlocks: 0, // although lazy loading is enabled, this test will not do eager loading in startup because the block ID is not in the lazy loaded file.
 			createLoadedBlocksSnapshotFn: func(_ []ulid.ULID) []ulid.ULID {
 				// let's create a random fake blockID to be stored in lazy loaded headers file
 				fakeBlockID := ulid.MustNew(ulid.Now(), nil)
@@ -720,8 +724,8 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 				return []ulid.ULID{fakeBlockID}
 			},
 		},
-		"pre-shutdown loaded blocks snapshot doesn't exist and eager-loading is enabled": {
-			eagerLoadReaderEnabled:    true,
+		"pre-shutdown loaded blocks snapshot doesn't exist and lazy-loading is enabled": {
+			lazyLoadingEnabled:        true,
 			expectedEagerLoadedBlocks: 0,
 		},
 	}
@@ -742,7 +746,8 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 			cfg := defaultPrepareStoreConfig(t)
 			cfg.logger = test.NewTestingLogger(t)
-			cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = testData.eagerLoadReaderEnabled
+			// Override lazy loading from test scenario
+			cfg.bucketStoreConfig.IndexHeader.LazyLoadingEnabled = testData.lazyLoadingEnabled
 			ctx := context.Background()
 
 			// Start the store so we generate some blocks and can use them in the mock snapshot.
@@ -780,7 +785,6 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	cfg := defaultPrepareStoreConfig(t)
 	cfg.logger = test.NewTestingLogger(t)
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval = persistInterval
-	cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = true
 	cfg.bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout = persistInterval * 3
 	ctx := context.Background()
 	readBlocksInSnapshot := func() map[ulid.ULID]struct{} {
@@ -832,6 +836,8 @@ func assertQueryStatsLabelNamesMetricsRecorded(t *testing.T, numLabelNames int, 
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
 
+		assertSeriesTouchedProcessedGreaterOrEqualReturned(t, metrics)
+
 		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
 	}
 }
@@ -846,6 +852,8 @@ func assertQueryStatsLabelValuesMetricsRecorded(t *testing.T, registry *promethe
 	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series"))
 	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "postings"))
 	assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
+
+	assertSeriesTouchedProcessedGreaterOrEqualReturned(t, metrics)
 }
 
 func TestBucketStore_LabelNames_e2e(t *testing.T) {
@@ -1139,6 +1147,27 @@ func numObservationsForSummaries(t *testing.T, summaryName string, metrics dskit
 	m := &dto.Metric{}
 	require.NoError(t, summaryData.Metric(prometheus.NewDesc("test", "", nil, nil)).Write(m))
 	return m.GetSummary().GetSampleCount()
+}
+
+func sumOfSummaryValues(t *testing.T, summaryName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) float64 {
+	t.Helper()
+
+	var sum float64
+	for _, m := range dskit_metrics.FindMetricsInFamilyMatchingLabels(metrics[summaryName], labelValuePairs...) {
+		sum += m.GetSummary().GetSampleSum()
+	}
+	return sum
+}
+
+func assertSeriesTouchedProcessedGreaterOrEqualReturned(t *testing.T, metrics dskit_metrics.MetricFamilyMap) {
+	t.Helper()
+
+	processedSum := sumOfSummaryValues(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series", "stage", "processed")
+	returnedSum := sumOfSummaryValues(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "series", "stage", "returned")
+	assert.GreaterOrEqual(t, returnedSum, float64(0),
+		"cortex_bucket_store_series_data_touched{data_type=series, stage=returned} sum must be non-negative")
+	assert.GreaterOrEqual(t, processedSum, returnedSum,
+		"cortex_bucket_store_series_data_touched{data_type=series, stage=processed} sum must be >= returned sum")
 }
 
 func numObservationsForHistogram(t *testing.T, histogramName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) uint64 {

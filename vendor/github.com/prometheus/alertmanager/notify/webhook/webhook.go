@@ -17,47 +17,36 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	commoncfg "github.com/prometheus/common/config"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
-	"github.com/prometheus/alertmanager/tracing"
 	"github.com/prometheus/alertmanager/types"
 )
-
-var tracer = otel.Tracer("github.com/prometheus/alertmanager/notify/webhook")
 
 // Notifier implements a Notifier for generic webhooks.
 type Notifier struct {
 	conf    *config.WebhookConfig
 	tmpl    *template.Template
-	logger  log.Logger
+	logger  *slog.Logger
 	client  *http.Client
 	retrier *notify.Retrier
 }
 
 // New returns a new Webhook.
-func New(conf *config.WebhookConfig, t *template.Template, l log.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
-	client, err := commoncfg.NewClientFromConfig(*conf.HTTPConfig, "webhook", httpOpts...)
+func New(conf *config.WebhookConfig, t *template.Template, l *slog.Logger, httpOpts ...commoncfg.HTTPClientOption) (*Notifier, error) {
+	client, err := notify.NewClientWithTracing(*conf.HTTPConfig, "webhook", httpOpts...)
 	if err != nil {
 		return nil, err
 	}
-
-	// instrument for tracing
-	client.Transport = tracing.Transport(client.Transport, "webhook")
-
 	return &Notifier{
 		conf:   conf,
 		tmpl:   t,
@@ -89,18 +78,16 @@ func truncateAlerts(maxAlerts uint64, alerts []*types.Alert) ([]*types.Alert, ui
 
 // Notify implements the Notifier interface.
 func (n *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
-	ctx, span := tracer.Start(ctx, "webhook.Notifier.Notify", trace.WithAttributes(
-		attribute.Int("alerts", len(alerts)),
-	))
-	defer span.End()
-
 	alerts, numTruncated := truncateAlerts(n.conf.MaxAlerts, alerts)
 	data := notify.GetTemplateData(ctx, n.tmpl, alerts, n.logger)
 
 	groupKey, err := notify.ExtractGroupKey(ctx)
 	if err != nil {
-		level.Error(n.logger).Log("err", err)
+		return false, err
 	}
+
+	logger := n.logger.With("group_key", groupKey)
+	logger.Debug("extracted group key")
 
 	msg := &Message{
 		Version:         "4",
@@ -115,18 +102,29 @@ func (n *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, er
 	}
 
 	var url string
-	if n.conf.URL != nil {
-		url = n.conf.URL.String()
+	var tmplErr error
+	tmpl := notify.TmplText(n.tmpl, data, &tmplErr)
+
+	if n.conf.URL != "" {
+		url = tmpl(string(n.conf.URL))
 	} else {
 		content, err := os.ReadFile(n.conf.URLFile)
 		if err != nil {
 			return false, fmt.Errorf("read url_file: %w", err)
 		}
-		url = strings.TrimSpace(string(content))
+		url = tmpl(strings.TrimSpace(string(content)))
+	}
+
+	if tmplErr != nil {
+		return false, fmt.Errorf("failed to template webhook URL: %w", tmplErr)
+	}
+
+	if url == "" {
+		return false, errors.New("webhook URL is empty after templating")
 	}
 
 	if n.conf.Timeout > 0 {
-		postCtx, cancel := context.WithTimeoutCause(ctx, time.Duration(n.conf.Timeout), fmt.Errorf("configured webhook timeout reached (%s)", n.conf.Timeout))
+		postCtx, cancel := context.WithTimeoutCause(ctx, n.conf.Timeout, fmt.Errorf("configured webhook timeout reached (%s)", n.conf.Timeout))
 		defer cancel()
 		ctx = postCtx
 	}

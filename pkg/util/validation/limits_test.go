@@ -7,6 +7,7 @@ package validation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -17,15 +18,16 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/time/rate"
-	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 )
 
@@ -73,7 +75,9 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 			input: `{}`,
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, 1024, l.MaxLabelNameLength)
-				assert.Equal(t, ValidationSchemeValue(model.LegacyValidation), l.NameValidationScheme)
+				assert.Equal(t, model.UnsetValidation, l.NameValidationScheme)
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 		{
@@ -87,14 +91,28 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 			name:  "name_validation_scheme: legacy",
 			input: `name_validation_scheme: "legacy"`,
 			testFunc: func(t *testing.T, l Limits) {
-				assert.Equal(t, ValidationSchemeValue(model.LegacyValidation), l.NameValidationScheme)
+				assert.Equal(t, model.LegacyValidation, l.NameValidationScheme)
 			},
 		},
 		{
 			name:  "name_validation_scheme: utf8",
 			input: `name_validation_scheme: "utf8"`,
 			testFunc: func(t *testing.T, l Limits) {
-				assert.Equal(t, ValidationSchemeValue(model.UTF8Validation), l.NameValidationScheme)
+				assert.Equal(t, model.UTF8Validation, l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "otel_label_name_underscore_sanitization: true",
+			input: `otel_label_name_underscore_sanitization: true`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+			},
+		},
+		{
+			name:  "otel_label_name_preserve_multiple_underscores: true",
+			input: `otel_label_name_preserve_multiple_underscores: true`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 	}
@@ -120,7 +138,9 @@ func TestLimitsLoadingFromJson(t *testing.T) {
 			input: `{}`,
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, 1024, l.MaxLabelNameLength)
-				assert.Equal(t, ValidationSchemeValue(model.LegacyValidation), l.NameValidationScheme)
+				assert.Equal(t, model.UnsetValidation, l.NameValidationScheme)
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 		{
@@ -134,7 +154,21 @@ func TestLimitsLoadingFromJson(t *testing.T) {
 			name:  "name_validation_scheme: utf8",
 			input: `{"name_validation_scheme": "utf8"}`,
 			testFunc: func(t *testing.T, l Limits) {
-				assert.Equal(t, ValidationSchemeValue(model.UTF8Validation), l.NameValidationScheme)
+				assert.Equal(t, model.UTF8Validation, l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "otel_label_name_underscore_sanitization: true",
+			input: `{"otel_label_name_underscore_sanitization": true}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+			},
+		},
+		{
+			name:  "otel_label_name_preserve_multiple_underscores: true",
+			input: `{"otel_label_name_preserve_multiple_underscores": true}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 	}
@@ -226,7 +260,7 @@ metric_relabel_configs:
 	require.NoError(t, err)
 	exp.Regex = regex
 	exp.SourceLabels = model.LabelNames([]model.LabelName{"le"})
-	exp.MetricNameValidationScheme = model.LegacyValidation
+	exp.NameValidationScheme = model.LegacyValidation
 
 	l := Limits{}
 	dec := yaml.NewDecoder(strings.NewReader(inp))
@@ -482,62 +516,6 @@ func TestDistributorIngestionArtificialDelay(t *testing.T) {
 				l.IngestionArtificialDelay = model.Duration(time.Second)
 			},
 			expectedDelay: time.Second,
-		},
-		"should apply delay based on 'max series less than' condition if tenant max series is < the threshold": {
-			tenantID: "tenant-a",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
-				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(time.Second)
-				l.MaxGlobalSeriesPerUser = 15000
-			},
-			expectedDelay: time.Second,
-		},
-		"should not apply delay based on 'max series less than' condition if tenant max series is >= the threshold": {
-			tenantID: "tenant-a",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
-				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(time.Second)
-				l.MaxGlobalSeriesPerUser = 15001
-			},
-			expectedDelay: 0,
-		},
-		"should apply delay based on 'tenant ID greater than' condition if tenant ID is numeric and > the condition": {
-			tenantID: "12346",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
-				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
-			},
-			expectedDelay: time.Second,
-		},
-		"should not apply delay based on 'tenant ID greater than' condition if tenant ID is numeric and <= the condition": {
-			tenantID: "12345",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
-				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
-			},
-			expectedDelay: 0,
-		},
-		"should not apply delay based on 'tenant ID greater than' condition if tenant ID is not numeric": {
-			tenantID: "tenant-123456",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
-				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
-			},
-			expectedDelay: 0,
-		},
-		"should apply the highest delay among matching conditions": {
-			tenantID: "12346",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelay = model.Duration(300 * time.Millisecond)
-
-				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
-				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(200 * time.Millisecond)
-				l.MaxGlobalSeriesPerUser = 15000
-
-				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
-				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(100 * time.Millisecond)
-			},
-			expectedDelay: 300 * time.Millisecond,
 		},
 	}
 
@@ -1248,6 +1226,66 @@ user1:
 	}
 }
 
+func TestRulerMaxRuleEvaluationResults(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML     string
+		overrides     string
+		expectedLimit int
+	}{
+		"default limit": {
+			inputYAML: `
+ruler_max_rule_evaluation_results: 100
+`,
+			expectedLimit: 100,
+		},
+		"zero disables limit": {
+			inputYAML: `
+ruler_max_rule_evaluation_results: 0
+`,
+			expectedLimit: 0,
+		},
+		"user specific limit overrides default": {
+			inputYAML: `
+ruler_max_rule_evaluation_results: 100
+`,
+			overrides: `
+user1:
+  ruler_max_rule_evaluation_results: 500
+`,
+			expectedLimit: 500,
+		},
+		"zero user limit overrides default": {
+			inputYAML: `
+ruler_max_rule_evaluation_results: 100
+`,
+			overrides: `
+user1:
+  ruler_max_rule_evaluation_results: 0
+`,
+			expectedLimit: 0,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			LimitsYAML := Limits{}
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			require.NoError(t, err)
+
+			var overrides map[string]*Limits
+			if tt.overrides != "" {
+				err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+				require.NoError(t, err)
+			}
+
+			tl := NewMockTenantLimits(overrides)
+			ov := NewOverrides(LimitsYAML, tl)
+
+			require.Equal(t, tt.expectedLimit, ov.RulerMaxRuleEvaluationResults("user1"))
+		})
+	}
+}
+
 func TestRulerAlertmanagerClientConfig(t *testing.T) {
 	tc := map[string]struct {
 		baseYAML       string
@@ -1589,8 +1627,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
@@ -1600,8 +1638,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1611,8 +1649,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.NameValidationScheme = model.UTF8Validation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1622,8 +1660,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.NameValidationScheme = model.UTF8Validation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
 				return cfg
 			}(),
@@ -1633,8 +1671,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1648,8 +1686,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1663,8 +1701,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.NameValidationScheme = model.UTF8Validation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1678,8 +1716,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.NameValidationScheme = model.UTF8Validation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue("")
 				return cfg
 			}(),
@@ -1693,8 +1731,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.NameValidationScheme = model.UTF8Validation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
@@ -1704,8 +1742,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)
 				return cfg
 			}(),
@@ -1715,8 +1753,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.NameValidationScheme = model.UTF8Validation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1726,8 +1764,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1737,8 +1775,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1748,8 +1786,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.NameValidationScheme = model.UTF8Validation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes)
 				return cfg
 			}(),
@@ -1759,8 +1797,8 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.LegacyValidation)
-				cfg.OTelMetricSuffixesEnabled = false
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(false)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
 				return cfg
 			}(),
@@ -1770,12 +1808,88 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.NameValidationScheme = ValidationSchemeValue(model.UTF8Validation)
-				cfg.OTelMetricSuffixesEnabled = true
+				cfg.NameValidationScheme = model.UTF8Validation
+				cfg.OTelMetricSuffixesEnabled = boolPtr(true)
 				cfg.OTelTranslationStrategy = OTelTranslationStrategyValue(otlptranslator.NoTranslation)
 				return cfg
 			}(),
 			expectedErr: fmt.Errorf("OTLP translation strategy NoTranslation is not allowed unless metric suffixes are disabled"),
+		},
+		"should fail if label_value_length_over_limit_strategy=truncate and hash suffix would be longer than max label value limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyTruncate
+				cfg.MaxLabelValueLength = LabelValueHashLen - 1
+				return cfg
+			}(),
+			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "truncate": label value hash suffix would exceed max label value length of 70`),
+		},
+		"should fail if label_value_length_over_limit_strategy=drop and hash suffix would be longer than max label value limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyDrop
+				cfg.MaxLabelValueLength = LabelValueHashLen - 1
+				return cfg
+			}(),
+			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "drop": label value hash suffix would exceed max label value length of 70`),
+		},
+		"should pass if label_value_length_over_limit_strategy=truncate and hash suffix would be shorter than or equal to max label value limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyTruncate
+				cfg.MaxLabelValueLength = LabelValueHashLen
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if label_value_length_over_limit_strategy=drop and hash suffix would be shorter than or equal to max label value limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyDrop
+				cfg.MaxLabelValueLength = LabelValueHashLen + 1
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if cost_attribution_labels_struct is correct": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{
+					{Input: "team", Output: "my_team"},
+					{Input: "service", Output: "my_service"},
+				}
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if the first cost attribution label is invalid": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{
+					{Input: "__team__", Output: "my_team"},
+					{Input: "service", Output: "my_service"},
+				}
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should fail if the second cost attribution label is invalid": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{
+					{Input: "team", Output: "my_team"},
+					{Input: "service", Output: "__my_service__"},
+				}
+				return cfg
+			}(),
+			expectedErr: errors.New(`invalid cost attribution output label: "service:__my_service__"`),
 		},
 	}
 
@@ -1791,6 +1905,135 @@ func TestLimits_Validate(t *testing.T) {
 
 			if testData.verify != nil {
 				testData.verify(t, testData.cfg)
+			}
+		})
+	}
+}
+
+func TestLimits_ValidateMaxActiveSeriesAdditionalCustomTrackers(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cfg         Limits
+		expectedErr string
+	}{
+		"additional config within limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 5
+				additionalConfig := map[string]string{
+					"tracker1": `{foo="bar"}`,
+					"tracker2": `{baz="qux"}`,
+				}
+				var err error
+				cfg.ActiveSeriesAdditionalCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(additionalConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+		},
+		"additional config exceeds limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 2
+				additionalConfig := map[string]string{
+					"tracker1": `{foo="bar"}`,
+					"tracker2": `{baz="qux"}`,
+					"tracker3": `{hello="world"}`,
+				}
+				var err error
+				cfg.ActiveSeriesAdditionalCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(additionalConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+			expectedErr: "active_series_additional_custom_trackers validation failed: the number of custom trackers [3] exceeds the configured limit [2]",
+		},
+		"base config not affected by limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 2
+				baseConfig := map[string]string{
+					"tracker1": `{foo="bar"}`,
+					"tracker2": `{baz="qux"}`,
+					"tracker3": `{hello="world"}`,
+					"tracker4": `{ping="pong"}`,
+					"tracker5": `{alpha="beta"}`,
+				}
+				var err error
+				cfg.ActiveSeriesBaseCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(baseConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+		},
+		"limit only applies to additional config not merged": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 2
+				baseConfig := map[string]string{
+					"tracker1": `{foo="bar"}`,
+					"tracker2": `{baz="qux"}`,
+					"tracker3": `{hello="world"}`,
+				}
+				additionalConfig := map[string]string{
+					"tracker4": `{ping="pong"}`,
+					"tracker5": `{alpha="beta"}`,
+				}
+				var err error
+				cfg.ActiveSeriesBaseCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(baseConfig)
+				if err != nil {
+					panic(err)
+				}
+				cfg.ActiveSeriesAdditionalCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(additionalConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+		},
+		"limit 0 means unlimited for additional config": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 0
+				additionalConfig := map[string]string{
+					"tracker1":  `{foo="bar"}`,
+					"tracker2":  `{baz="qux"}`,
+					"tracker3":  `{hello="world"}`,
+					"tracker4":  `{ping="pong"}`,
+					"tracker5":  `{alpha="beta"}`,
+					"tracker6":  `{gamma="delta"}`,
+					"tracker7":  `{epsilon="zeta"}`,
+					"tracker8":  `{eta="theta"}`,
+					"tracker9":  `{iota="kappa"}`,
+					"tracker10": `{lambda="mu"}`,
+				}
+				var err error
+				cfg.ActiveSeriesAdditionalCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(additionalConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+			err := testData.cfg.Validate()
+			if testData.expectedErr != "" {
+				require.EqualError(t, err, testData.expectedErr)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}
@@ -1953,17 +2196,18 @@ func TestExtensionMarshalling(t *testing.T) {
 
 		val, err := yaml.Marshal(overrides)
 		require.NoError(t, err)
-		fmt.Println(string(val))
 		require.Contains(t, string(val),
 			`test:
     test_extension_struct:
         foo: 0
     test_extension_string: ""
+    max_active_series_per_user: 0
+    active_series_limit_response_code: 0
     request_rate: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","request_rate":0,`)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":0},"test_extension_string":"","max_active_series_per_user":0,"active_series_limit_response_code":0,`)
 	})
 
 	t.Run("marshal limits with partial extension values", func(t *testing.T) {
@@ -1982,12 +2226,14 @@ func TestExtensionMarshalling(t *testing.T) {
     test_extension_struct:
         foo: 421237
     test_extension_string: ""
+    max_active_series_per_user: 0
+    active_series_limit_response_code: 0
     request_rate: 0
     request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","request_rate":0,"request_burst_size":0,`)
+		require.Contains(t, string(val), `{"test":{"test_extension_struct":{"foo":421237},"test_extension_string":"","max_active_series_per_user":0,"active_series_limit_response_code":0,"request_rate":0,`)
 	})
 
 	t.Run("marshal limits with default extension values", func(t *testing.T) {
@@ -2001,12 +2247,14 @@ func TestExtensionMarshalling(t *testing.T) {
     test_extension_struct:
         foo: 42
     test_extension_string: default string extension value
+    max_active_series_per_user: 0
+    active_series_limit_response_code: 429
     request_rate: 0
     request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
-		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","request_rate":0,"request_burst_size":0,`)
+		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","max_active_series_per_user":0,"active_series_limit_response_code":429,"request_rate":0,`)
 	})
 }
 
@@ -2025,54 +2273,13 @@ func TestIsLimitError(t *testing.T) {
 			expectedOutcome: true,
 		},
 		"wrapped LimitErrors are LimitErrors": {
-			err:             errors.Wrap(NewLimitError(msg), "wrapped"),
+			err:             fmt.Errorf("wrapped: %w", NewLimitError(msg)),
 			expectedOutcome: true,
 		},
 	}
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			require.Equal(t, testData.expectedOutcome, IsLimitError(testData.err))
-		})
-	}
-}
-
-func TestAlertmanagerSizeLimitsUnmarshal(t *testing.T) {
-	for name, tc := range map[string]struct {
-		inputYAML          string
-		expectedConfigSize int
-		expectedStateSize  int
-	}{
-		"when using strings": {
-			inputYAML: `
-alertmanager_max_grafana_config_size_bytes: "4MiB"
-alertmanager_max_grafana_state_size_bytes: "2MiB"
-`,
-			expectedConfigSize: 1024 * 1024 * 4,
-			expectedStateSize:  1024 * 1024 * 2,
-		},
-		"when using 0B, returns 0": {
-			inputYAML: `
-alertmanager_max_grafana_config_size_bytes: "0"
-alertmanager_max_grafana_state_size_bytes: "0"
-`,
-			expectedConfigSize: 0,
-			expectedStateSize:  0,
-		},
-		"when nothing is given, defaults to 0": {
-			inputYAML:          "",
-			expectedConfigSize: 0,
-			expectedStateSize:  0,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			limitsYAML := Limits{}
-			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
-			require.NoError(t, err, "expected to be able to unmarshal from YAML")
-
-			ov := NewOverrides(limitsYAML, nil)
-
-			require.Equal(t, tc.expectedConfigSize, ov.AlertmanagerMaxGrafanaConfigSize("user"))
-			require.Equal(t, tc.expectedStateSize, ov.AlertmanagerMaxGrafanaStateSize("user"))
 		})
 	}
 }
@@ -2178,8 +2385,8 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 			limits: map[string]*Limits{
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes),
-					NameValidationScheme:      ValidationSchemeValue(model.UTF8Validation),
-					OTelMetricSuffixesEnabled: false,
+					NameValidationScheme:      model.UTF8Validation,
+					OTelMetricSuffixesEnabled: boolPtr(false),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2190,8 +2397,8 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 			limits: map[string]*Limits{
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
-					NameValidationScheme:      ValidationSchemeValue(model.LegacyValidation),
-					OTelMetricSuffixesEnabled: true,
+					NameValidationScheme:      model.LegacyValidation,
+					OTelMetricSuffixesEnabled: boolPtr(true),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2202,8 +2409,8 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 			limits: map[string]*Limits{
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
-					NameValidationScheme:      ValidationSchemeValue(model.LegacyValidation),
-					OTelMetricSuffixesEnabled: false,
+					NameValidationScheme:      model.LegacyValidation,
+					OTelMetricSuffixesEnabled: boolPtr(false),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2214,8 +2421,8 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 			limits: map[string]*Limits{
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
-					NameValidationScheme:      ValidationSchemeValue(model.UTF8Validation),
-					OTelMetricSuffixesEnabled: true,
+					NameValidationScheme:      model.UTF8Validation,
+					OTelMetricSuffixesEnabled: boolPtr(true),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2226,8 +2433,8 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 			limits: map[string]*Limits{
 				"tenant1": {
 					OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
-					NameValidationScheme:      ValidationSchemeValue(model.UTF8Validation),
-					OTelMetricSuffixesEnabled: false,
+					NameValidationScheme:      model.UTF8Validation,
+					OTelMetricSuffixesEnabled: boolPtr(false),
 				},
 			},
 			tenantID:                    "tenant1",
@@ -2255,8 +2462,8 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 		limits := map[string]*Limits{
 			"tenant1": {
 				OTelTranslationStrategy:   OTelTranslationStrategyValue(""),
-				NameValidationScheme:      ValidationSchemeValue(999), // Invalid scheme
-				OTelMetricSuffixesEnabled: true,
+				NameValidationScheme:      model.ValidationScheme(999), // Invalid scheme
+				OTelMetricSuffixesEnabled: boolPtr(true),
 			},
 		}
 
@@ -2267,6 +2474,423 @@ func TestOverrides_OTelTranslationStrategy(t *testing.T) {
 			overrides.OTelTranslationStrategy("tenant1")
 		})
 	})
+}
+
+func TestEffectiveIngestionPartitionsTenantWriteShardSize(t *testing.T) {
+	tests := map[string]struct {
+		readShardSize  int
+		writeShardSize int
+		expected       int
+	}{
+		"both zero (default)": {
+			readShardSize:  0,
+			writeShardSize: 0,
+			expected:       0,
+		},
+		"write shard size not set, falls back to read shard size": {
+			readShardSize:  4,
+			writeShardSize: 0,
+			expected:       4,
+		},
+		"write shard size smaller than read shard size": {
+			readShardSize:  4,
+			writeShardSize: 2,
+			expected:       2,
+		},
+		"write shard size equal to read shard size": {
+			readShardSize:  4,
+			writeShardSize: 4,
+			expected:       4,
+		},
+		"write shard size larger than read shard size, clamped": {
+			readShardSize:  4,
+			writeShardSize: 6,
+			expected:       4,
+		},
+		"write shard size set, read shard size zero (no read limit)": {
+			readShardSize:  0,
+			writeShardSize: 2,
+			expected:       2,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := getDefaultLimits()
+			limits.IngestionPartitionsTenantShardSize = tc.readShardSize
+			limits.IngestionPartitionsTenantWriteShardSize = tc.writeShardSize
+
+			overrides := NewOverrides(limits, nil)
+
+			assert.Equal(t, tc.expected, overrides.EffectiveIngestionPartitionsTenantWriteShardSize("test"))
+		})
+	}
+}
+
+func TestOverridesWithMetadata(t *testing.T) {
+	defaults := getDefaultLimits()
+	defaults.IngestionRate = 1000
+	defaults.MaxActiveSeriesPerUser = 10000
+	defaults.IngestionBurstSize = 100000
+	defaults.IngestionBurstFactor = 1.5
+
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			IngestionRate:          100,
+			MaxActiveSeriesPerUser: 1000,
+			IngestionBurstSize:     10000,
+			IngestionBurstFactor:   2.0,
+		},
+		"tenant-a:source=test-run": {
+			IngestionRate:             5000,
+			MaxActiveSeriesPerUser:    50000,
+			IngestionBurstSize:        50000,
+			IngestionBurstFactor:      5.0,
+			OTelMetricSuffixesEnabled: boolPtr(true),
+		},
+		"tenant-a:run-id=specific:source=test-run": {
+			IngestionRate:          9999,
+			MaxActiveSeriesPerUser: 99999,
+			IngestionBurstSize:     99999,
+			IngestionBurstFactor:   9.0,
+		},
+	}
+
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+
+	t.Run("IngestionRate", func(t *testing.T) {
+		assert.Equal(t, float64(100), ov.IngestionRate("tenant-a"))
+		assert.Equal(t, float64(5000), ov.IngestionRate("tenant-a:source=test-run"))
+		assert.Equal(t, float64(5000), ov.IngestionRate("tenant-a:run-id=unknown:source=test-run"))
+		assert.Equal(t, float64(9999), ov.IngestionRate("tenant-a:run-id=specific:source=test-run"))
+		assert.Equal(t, float64(1000), ov.IngestionRate("unknown-tenant"))
+	})
+
+	t.Run("MaxActiveOrGlobalSeriesPerUser", func(t *testing.T) {
+		assert.Equal(t, 1000, ov.MaxActiveOrGlobalSeriesPerUser("tenant-a"))
+		assert.Equal(t, 50000, ov.MaxActiveOrGlobalSeriesPerUser("tenant-a:source=test-run"))
+		assert.Equal(t, 50000, ov.MaxActiveOrGlobalSeriesPerUser("tenant-a:run-id=unknown:source=test-run"))
+		assert.Equal(t, 99999, ov.MaxActiveOrGlobalSeriesPerUser("tenant-a:run-id=specific:source=test-run"))
+		assert.Equal(t, 10000, ov.MaxActiveOrGlobalSeriesPerUser("unknown-tenant"))
+	})
+
+	t.Run("IngestionBurstSize", func(t *testing.T) {
+		assert.Equal(t, 10000, ov.IngestionBurstSize("tenant-a"))
+		assert.Equal(t, 50000, ov.IngestionBurstSize("tenant-a:source=test-run"))
+		assert.Equal(t, 50000, ov.IngestionBurstSize("tenant-a:run-id=unknown:source=test-run"))
+		assert.Equal(t, 99999, ov.IngestionBurstSize("tenant-a:run-id=specific:source=test-run"))
+		assert.Equal(t, 100000, ov.IngestionBurstSize("unknown-tenant"))
+	})
+
+	t.Run("IngestionBurstFactor", func(t *testing.T) {
+		assert.Equal(t, 2.0, ov.IngestionBurstFactor("tenant-a"))
+		assert.Equal(t, 5.0, ov.IngestionBurstFactor("tenant-a:source=test-run"))
+		assert.Equal(t, 5.0, ov.IngestionBurstFactor("tenant-a:run-id=unknown:source=test-run"))
+		assert.Equal(t, 9.0, ov.IngestionBurstFactor("tenant-a:run-id=specific:source=test-run"))
+		assert.Equal(t, 1.5, ov.IngestionBurstFactor("unknown-tenant"))
+	})
+
+	t.Run("OTelMetricSuffixesEnabled", func(t *testing.T) {
+		assert.False(t, ov.OTelMetricSuffixesEnabled("tenant-a"))
+		assert.True(t, ov.OTelMetricSuffixesEnabled("tenant-a:source=test-run"))
+		assert.True(t, ov.OTelMetricSuffixesEnabled("tenant-a:run-id=unknown:source=test-run"))
+		assert.True(t, ov.OTelMetricSuffixesEnabled("tenant-a:run-id=specific:source=test-run"))
+		assert.False(t, ov.OTelMetricSuffixesEnabled("unknown-tenant"))
+	})
+}
+
+func TestGetOverridesForUserWithMetadata(t *testing.T) {
+	tests := map[string]struct {
+		tenantLimits        map[string]*Limits
+		userID              string
+		expectedRate        float64
+		expectedSeries      int
+		expectedBurstSize   int
+		expectedBurstFactor float64
+		expectedOTelSuffix  *bool
+	}{
+		"nil tenantLimits returns defaults": {
+			userID:              "tenant-a:source=test-run",
+			expectedRate:        500,
+			expectedSeries:      5000,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
+		"parse error falls back to raw userID lookup": {
+			tenantLimits:   map[string]*Limits{"": {IngestionRate: 999}},
+			userID:         "",
+			expectedRate:   999,
+			expectedSeries: 0,
+		},
+		"plain tenant ID without metadata": {
+			tenantLimits:   map[string]*Limits{"tenant-a": {IngestionRate: 100}},
+			userID:         "tenant-a",
+			expectedRate:   100,
+			expectedSeries: 0,
+		},
+		"unknown tenant falls back to defaults": {
+			tenantLimits:        map[string]*Limits{},
+			userID:              "tenant-a",
+			expectedRate:        500,
+			expectedSeries:      5000,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
+		"single metadata key overrides matched fields, inherits unmatched": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":                 {IngestionRate: 100, MaxActiveSeriesPerUser: 1000, IngestionBurstSize: 10000},
+				"tenant-a:source=test-run": {IngestionRate: 200, OTelMetricSuffixesEnabled: boolPtr(true)},
+			},
+			userID:             "tenant-a:source=test-run",
+			expectedRate:       200,
+			expectedSeries:     1000,
+			expectedBurstSize:  10000,
+			expectedOTelSuffix: boolPtr(true),
+		},
+		"global metadata override (empty tenant prefix) applies to any tenant": {
+			tenantLimits:        map[string]*Limits{":source=test-run": {IngestionRate: 9000}},
+			userID:              "any-tenant:source=test-run",
+			expectedRate:        9000,
+			expectedSeries:      5000,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
+		"tenant-specific metadata takes precedence over global metadata": {
+			tenantLimits: map[string]*Limits{
+				":source=test-run":         {IngestionRate: 9000},
+				"tenant-a:source=test-run": {IngestionRate: 200},
+			},
+			userID:              "tenant-a:source=test-run",
+			expectedRate:        200,
+			expectedSeries:      5000,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
+		"multiple metadata keys merged individually in sorted key order": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":                 {IngestionRate: 100, MaxActiveSeriesPerUser: 1000},
+				"tenant-a:env=prod":        {MaxActiveSeriesPerUser: 2000},
+				":source=test-run":         {IngestionRate: 9000},
+				"tenant-a:source=test-run": {IngestionRate: 300},
+			},
+			userID:         "tenant-a:env=prod:source=test-run",
+			expectedRate:   300,
+			expectedSeries: 2000,
+		},
+		"full metadata match overrides individual key matches": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":                          {IngestionRate: 100},
+				"tenant-a:source=test-run":          {IngestionRate: 300},
+				"tenant-a:env=prod:source=test-run": {IngestionRate: 777},
+			},
+			userID:       "tenant-a:env=prod:source=test-run",
+			expectedRate: 777,
+		},
+		"unmatched metadata keys are skipped": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":                 {IngestionRate: 100},
+				"tenant-a:source=test-run": {IngestionRate: 300},
+			},
+			userID:       "tenant-a:run-id=unknown:source=test-run",
+			expectedRate: 300,
+		},
+		"metadata on unknown tenant returns defaults": {
+			tenantLimits:        map[string]*Limits{"tenant-a": {IngestionRate: 100}},
+			userID:              "unknown:source=test-run",
+			expectedRate:        500,
+			expectedSeries:      5000,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
+		"burst size inherited from base when overlay omits it": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":                 {IngestionRate: 100, IngestionBurstSize: 10000},
+				"tenant-a:source=test-run": {IngestionRate: 200},
+			},
+			userID:            "tenant-a:source=test-run",
+			expectedRate:      200,
+			expectedBurstSize: 10000,
+		},
+		"burst factor overridden by metadata": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":                 {IngestionBurstFactor: 2.0},
+				"tenant-a:source=test-run": {IngestionBurstFactor: 5.0},
+			},
+			userID:              "tenant-a:source=test-run",
+			expectedBurstFactor: 5.0,
+		},
+		"OTelMetricSuffixesEnabled inherited from parent overlay when child omits it": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":                 {IngestionRate: 100},
+				"tenant-a:source=test-run": {OTelMetricSuffixesEnabled: boolPtr(true)},
+				"tenant-a:run-id=specific:source=test-run": {IngestionRate: 200},
+			},
+			userID:             "tenant-a:run-id=specific:source=test-run",
+			expectedRate:       200,
+			expectedOTelSuffix: boolPtr(true),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			defaults := getDefaultLimits()
+			defaults.IngestionRate = 500
+			defaults.MaxActiveSeriesPerUser = 5000
+			defaults.IngestionBurstSize = 50000
+			defaults.IngestionBurstFactor = 2.0
+
+			var tl TenantLimits
+			if tc.tenantLimits != nil {
+				tl = NewMockTenantLimits(tc.tenantLimits)
+			}
+			ov := NewOverrides(defaults, tl)
+
+			got := ov.getOverridesForLimitsKey(tc.userID)
+			assert.Equal(t, tc.expectedRate, got.IngestionRate)
+			assert.Equal(t, tc.expectedSeries, got.MaxActiveSeriesPerUser)
+			assert.Equal(t, tc.expectedBurstSize, got.IngestionBurstSize)
+			assert.Equal(t, tc.expectedBurstFactor, got.IngestionBurstFactor)
+			if tc.expectedOTelSuffix != nil {
+				assert.Equal(t, tc.expectedOTelSuffix, got.OTelMetricSuffixesEnabled)
+			}
+		})
+	}
+}
+
+func TestMergeLimits(t *testing.T) {
+	tests := map[string]struct {
+		dst     *Limits
+		overlay *Limits
+		wantNil bool
+		want    Limits
+	}{
+		"nil dst copies overlay": {
+			overlay: &Limits{IngestionRate: 42},
+			want:    Limits{IngestionRate: 42},
+		},
+		"nil overlay returns dst": {
+			dst:  &Limits{IngestionRate: 42},
+			want: Limits{IngestionRate: 42},
+		},
+		"both nil returns nil": {
+			wantNil: true,
+		},
+		"overlay overrides non-zero fields only": {
+			dst:     &Limits{IngestionRate: 10, MaxActiveSeriesPerUser: 100},
+			overlay: &Limits{IngestionRate: 20},
+			want:    Limits{IngestionRate: 20, MaxActiveSeriesPerUser: 100},
+		},
+		"mutates dst in place": {
+			dst:     &Limits{IngestionRate: 10, MaxActiveSeriesPerUser: 100},
+			overlay: &Limits{IngestionRate: 20},
+			want:    Limits{IngestionRate: 20, MaxActiveSeriesPerUser: 100},
+		},
+		"nil dst copies overlay without mutating overlay": {
+			overlay: &Limits{IngestionRate: 50, MaxActiveSeriesPerUser: 500},
+			want:    Limits{IngestionRate: 50, MaxActiveSeriesPerUser: 500},
+		},
+		"merges IngestionBurstSize": {
+			dst:     &Limits{IngestionRate: 10, IngestionBurstSize: 100},
+			overlay: &Limits{IngestionBurstSize: 200},
+			want:    Limits{IngestionRate: 10, IngestionBurstSize: 200},
+		},
+		"merges IngestionBurstFactor": {
+			dst:     &Limits{IngestionRate: 10, IngestionBurstFactor: 1.5},
+			overlay: &Limits{IngestionBurstFactor: 2.0},
+			want:    Limits{IngestionRate: 10, IngestionBurstFactor: 2.0},
+		},
+		"merges OTelMetricSuffixesEnabled true overlay": {
+			dst:     &Limits{IngestionRate: 10},
+			overlay: &Limits{OTelMetricSuffixesEnabled: boolPtr(true)},
+			want:    Limits{IngestionRate: 10, OTelMetricSuffixesEnabled: boolPtr(true)},
+		},
+		"OTelMetricSuffixesEnabled false overlay overrides true dst": {
+			dst:     &Limits{OTelMetricSuffixesEnabled: boolPtr(true)},
+			overlay: &Limits{OTelMetricSuffixesEnabled: boolPtr(false)},
+			want:    Limits{OTelMetricSuffixesEnabled: boolPtr(false)},
+		},
+		"OTelMetricSuffixesEnabled nil overlay does not override dst": {
+			dst:     &Limits{OTelMetricSuffixesEnabled: boolPtr(true)},
+			overlay: &Limits{},
+			want:    Limits{OTelMetricSuffixesEnabled: boolPtr(true)},
+		},
+		"merges NameValidationScheme when overlay is set": {
+			dst:     &Limits{IngestionRate: 10, NameValidationScheme: model.LegacyValidation},
+			overlay: &Limits{NameValidationScheme: model.UTF8Validation},
+			want:    Limits{IngestionRate: 10, NameValidationScheme: model.UTF8Validation},
+		},
+		"NameValidationScheme unset overlay does not override dst": {
+			dst:     &Limits{NameValidationScheme: model.UTF8Validation},
+			overlay: &Limits{NameValidationScheme: model.UnsetValidation},
+			want:    Limits{NameValidationScheme: model.UTF8Validation},
+		},
+		"merges OTelTranslationStrategy when overlay is set": {
+			dst:     &Limits{IngestionRate: 10},
+			overlay: &Limits{OTelTranslationStrategy: OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)},
+			want:    Limits{IngestionRate: 10, OTelTranslationStrategy: OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes)},
+		},
+		"OTelTranslationStrategy empty overlay does not override dst": {
+			dst:     &Limits{OTelTranslationStrategy: OTelTranslationStrategyValue(otlptranslator.NoTranslation)},
+			overlay: &Limits{},
+			want:    Limits{OTelTranslationStrategy: OTelTranslationStrategyValue(otlptranslator.NoTranslation)},
+		},
+		"all mergeable fields": {
+			dst: &Limits{
+				IngestionRate:          10,
+				MaxActiveSeriesPerUser: 100,
+				IngestionBurstSize:     1000,
+				IngestionBurstFactor:   1.5,
+			},
+			overlay: &Limits{
+				IngestionRate:             20,
+				MaxActiveSeriesPerUser:    200,
+				IngestionBurstSize:        2000,
+				IngestionBurstFactor:      3.0,
+				OTelMetricSuffixesEnabled: boolPtr(true),
+				NameValidationScheme:      model.UTF8Validation,
+				OTelTranslationStrategy:   OTelTranslationStrategyValue(otlptranslator.NoTranslation),
+			},
+			want: Limits{
+				IngestionRate:             20,
+				MaxActiveSeriesPerUser:    200,
+				IngestionBurstSize:        2000,
+				IngestionBurstFactor:      3.0,
+				OTelMetricSuffixesEnabled: boolPtr(true),
+				NameValidationScheme:      model.UTF8Validation,
+				OTelTranslationStrategy:   OTelTranslationStrategyValue(otlptranslator.NoTranslation),
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := mergeLimits(tc.dst, tc.overlay)
+
+			if tc.wantNil {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.Equal(t, tc.want.IngestionRate, got.IngestionRate)
+			assert.Equal(t, tc.want.MaxActiveSeriesPerUser, got.MaxActiveSeriesPerUser)
+			assert.Equal(t, tc.want.IngestionBurstSize, got.IngestionBurstSize)
+			assert.Equal(t, tc.want.IngestionBurstFactor, got.IngestionBurstFactor)
+			assert.Equal(t, tc.want.OTelMetricSuffixesEnabled, got.OTelMetricSuffixesEnabled)
+			assert.Equal(t, tc.want.NameValidationScheme, got.NameValidationScheme)
+			assert.Equal(t, tc.want.OTelTranslationStrategy, got.OTelTranslationStrategy)
+
+			if tc.dst != nil && tc.overlay != nil {
+				assert.Same(t, tc.dst, got, "mergeLimits must return dst when both are non-nil")
+			}
+			if tc.dst == nil && tc.overlay != nil {
+				assert.NotSame(t, tc.overlay, got, "mergeLimits must copy overlay when dst is nil")
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool {
+	return &b
 }
 
 func getDefaultLimits() Limits {

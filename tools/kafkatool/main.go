@@ -62,6 +62,12 @@ func main() {
 	createPartitionsCommand := &CreatePartitionsCommand{}
 	createPartitionsCommand.Register(app, getKafkaClient, printer)
 
+	createTopicCommand := &CreateTopicCommand{}
+	createTopicCommand.Register(app, getKafkaClient, printer)
+
+	listTopicsCommand := &ListTopicsCommand{}
+	listTopicsCommand.Register(app, getKafkaClient, printer)
+
 	consumerGroupCommand := &ConsumerGroupCommand{}
 	consumerGroupCommand.Register(app, getKafkaClient, printer)
 

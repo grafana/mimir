@@ -8,8 +8,6 @@ title: Grafana Mimir production tips
 weight: 40
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir production tips
 
 This topic provides tips and techniques for you to consider when setting up a production Grafana Mimir cluster.
@@ -200,6 +198,10 @@ To configure gRPC compression, use the following CLI flags or their YAML equival
 | `-alertmanager.alertmanager-client.grpc-compression`        | `query_scheduler.grpc_client_config.grpc_compression`      |
 | `-ingester.client.grpc-compression`                         | `ruler.query_frontend.grpc_client_config.grpc_compression` |
 
+{{< admonition type="note" >}}
+`-ruler.query-frontend.grpc-client-config.grpc-compression` is only applicable when the ruler uses gRPC to communicate with the query-frontend. Refer to [Remote ruler mode](../../../references/architecture/components/ruler/#remote-over-http-https).
+{{< /admonition >}}
+
 ## Heavy multi-tenancy
 
 For each tenant, Mimir opens and maintains a TSDB in memory. If you have a significant number of tenants, the memory overhead might become prohibitive.
@@ -215,4 +217,3 @@ Depending on the workload, you might witness latency spikes when Mimir cuts bloc
 To reduce the impact of this behavior, consider the following:
 
 - Upgrade to `2.15+`. Refer to <https://github.com/grafana/mimir/commit/03f2f06e1247e997a0246d72f5c2c1fd9bd386df>.
-- Reduce `-blocks-storage.tsdb.block-ranges-period`, default `2h`. For example. try `1h`.

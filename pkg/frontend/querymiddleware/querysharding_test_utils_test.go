@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -29,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -107,7 +107,7 @@ func (q *mockShardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
-func (q *mockShardedQueryable) Select(_ context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *mockShardedQueryable) Select(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	tStart := time.Now()
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -160,7 +160,10 @@ func (q *mockShardedQueryable) Select(_ context.Context, _ bool, _ *storage.Sele
 
 	remaining := time.Until(tStart.Add(duration))
 	if remaining > 0 {
-		time.Sleep(remaining)
+		select {
+		case <-ctx.Done():
+		case <-time.After(remaining):
+		}
 	}
 
 	// sorted
@@ -307,6 +310,12 @@ func TestNewMockShardedQueryable(t *testing.T) {
 
 type engineOpt func(o *streamingpromql.EngineOpts)
 
+func withMemoryConsumptionTrackerFactory(factory *limiter.InflightMemoryConsumptionTracker) engineOpt {
+	return func(o *streamingpromql.EngineOpts) {
+		o.MemoryConsumptionTrackerFactory = factory
+	}
+}
+
 func withTimeout(timeout time.Duration) engineOpt {
 	return func(o *streamingpromql.EngineOpts) {
 		o.CommonOpts.Timeout = timeout
@@ -333,11 +342,10 @@ func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql
 	case querier.PrometheusEngine:
 		return promOpts, promql.NewEngine(promOpts)
 	case querier.MimirEngine:
-		limits := streamingpromql.NewStaticQueryLimitsProvider(0)
 		metrics := stats.NewQueryMetrics(promOpts.Reg)
-		planner := streamingpromql.NewQueryPlanner(mqeOpts)
-		logger := log.NewNopLogger()
-		eng, err := streamingpromql.NewEngine(mqeOpts, limits, metrics, planner, logger)
+		planner, err := streamingpromql.NewQueryPlanner(mqeOpts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		eng, err := streamingpromql.NewEngine(mqeOpts, metrics, planner)
 		if err != nil {
 			t.Fatalf("error creating MQE engine for testing: %s", err)
 		}

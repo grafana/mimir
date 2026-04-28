@@ -7,15 +7,18 @@ package mimir
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -42,9 +45,12 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -54,6 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -81,8 +88,11 @@ func TestMimir(t *testing.T) {
 				KVStore: kv.Config{
 					Store: "inmemory",
 				},
+				NumTokens:              512,
 				ReplicationFactor:      3,
-				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+				InstanceInterfaceNames: []string{"en0", "eth0", "wlan0", "lo0", "lo"},
+				HeartbeatPeriod:        5 * time.Second,
+				HeartbeatTimeout:       time.Minute,
 			},
 		},
 		BlocksStorage: tsdb.BlocksStorageConfig{
@@ -95,9 +105,9 @@ func TestMimir(t *testing.T) {
 				},
 			},
 			BucketStore: tsdb.BucketStoreConfig{
-				IndexCache: tsdb.IndexCacheConfig{
+				IndexCache: indexcache.IndexCacheConfig{
 					BackendConfig: cache.BackendConfig{
-						Backend: tsdb.IndexCacheBackendInMemory,
+						Backend: indexcache.BackendInMemory,
 					},
 				},
 			},
@@ -133,7 +143,7 @@ func TestMimir(t *testing.T) {
 			ShardingRing: alertmanager.RingConfig{
 				Common: util.CommonRingConfig{
 					KVStore:                kv.Config{Store: "memberlist"},
-					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "wlan0", "lo0", "lo"},
 				},
 				ReplicationFactor: 1,
 			},
@@ -154,23 +164,40 @@ func TestMimir(t *testing.T) {
 					KVStore: kv.Config{
 						Store: "inmemory",
 					},
-					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "wlan0", "lo0", "lo"},
 				},
 			},
 		},
 		StoreGateway: storegateway.Config{ShardingRing: storegateway.RingConfig{
 			KVStore:                kv.Config{Store: "memberlist"},
 			ReplicationFactor:      1,
-			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+			InstanceInterfaceNames: []string{"en0", "eth0", "wlan0", "lo0", "lo"},
 		}},
 		Querier: querier.Config{
-			QueryEngine: "prometheus",
+			QueryEngine: "mimir",
+			Ring: querier.RingConfig{
+				Common: util.CommonRingConfig{
+					KVStore: kv.Config{
+						Store: "memberlist",
+					},
+					InstanceAddr: "test:8080",
+				},
+			},
 		},
 		Frontend: frontend.CombinedFrontendConfig{
-			QueryEngine: "prometheus",
+			QueryEngine: "mimir",
+			FrontendV2: v2.Config{
+				SchedulerAddress: "localhost",
+			},
+			QueryMiddleware: querymiddleware.Config{
+				InternalFunctionNames: querymiddleware.FunctionNamesSet{},
+			},
 		},
 		MemberlistKV: memberlist.KVConfig{
 			WatchPrefixBufferSize: 128,
+		},
+		API: api.Config{
+			GzipCompressionLevel: gzip.DefaultCompression,
 		},
 	}
 	require.NoError(t, cfg.Server.LogLevel.Set("info"))
@@ -189,21 +216,6 @@ func TestMimir(t *testing.T) {
 				// Check that Alertmanager is configured which is not part of Target=All.
 				AlertManager,
 			},
-		},
-		"-target=write": {
-			target:                  []string{Write},
-			expectedEnabledModules:  []string{DistributorService, IngesterService},
-			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager},
-		},
-		"-target=read": {
-			target:                  []string{Read},
-			expectedEnabledModules:  []string{QueryFrontend, Querier},
-			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager},
-		},
-		"-target=backend": {
-			target:                  []string{Backend},
-			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager},
-			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
 		},
 	}
 
@@ -277,6 +289,66 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 		require.Fail(t, "Mimir didn't stop in time")
 	case err := <-errCh:
 		require.NoError(t, err)
+	}
+}
+
+func TestMetricsEndpointSupportsMetricFiltering(t *testing.T) {
+	// This test checks that our /metrics endpoint handler supports metric filtering through the usage of name[] query param.
+	// This is added to prometheus/client_golang in https://github.com/prometheus/client_golang/pull/1925,
+	// but not merged yet so we use a replace directive on the module to bring this functionality.
+	// This test check that we haven't lost that replace directive (and functionality).
+	//
+	// We target OverridesExporter because it's the target with least dependencies and easier to set up.
+	args := []string{
+		"-target=" + OverridesExporter,
+		"-server.http-listen-port=0",
+		"-server.grpc-listen-port=0",
+	}
+	var cfg Config
+	fs := flag.NewFlagSet("test", flag.PanicOnError)
+	cfg.RegisterFlags(fs, log.NewNopLogger())
+	require.NoError(t, fs.Parse(args))
+	require.NoError(t, cfg.Validate(log.NewNopLogger()))
+
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+	require.NoError(t, err)
+	require.NotNil(t, serviceMap)
+
+	servs := slices.Collect(maps.Values(serviceMap))
+	sm, err := services.NewManager(servs...)
+	require.NoError(t, err)
+
+	assert.NoError(t, sm.StartAsync(t.Context()))
+	t.Cleanup(sm.StopAsync)
+
+	{
+		// One metric
+		res, err := http.Get(fmt.Sprintf("http://%s/metrics?name[]=go_info", c.Server.HTTPListenAddr()))
+		require.NoError(t, err)
+		defer res.Body.Close()
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), "go_info")
+		assert.NotContains(t, string(body), "deprecated_flags_inuse_total")
+		require.Equal(t, 1, strings.Count(string(body), "HELP"))
+	}
+
+	{
+		// Two metrics
+		res, err := http.Get(fmt.Sprintf("http://%s/metrics?name[]=go_info&name[]=deprecated_flags_inuse_total", c.Server.HTTPListenAddr()))
+		require.NoError(t, err)
+		defer res.Body.Close()
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), "go_info")
+		assert.Contains(t, string(body), "deprecated_flags_inuse_total")
+		assert.NotContains(t, string(body), "go_gc_duration_seconds")
+		require.Equal(t, 2, strings.Count(string(body), "HELP"))
 	}
 }
 
@@ -534,14 +606,6 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 		"should succeed with the default configuration": {
 			setup: func(*Config) {},
 		},
-		"should fail if alertmanager data directory contains bucket store sync directory when running mimir-backend": {
-			setup: func(cfg *Config) {
-				cfg.Target = flagext.StringSliceCSV{Backend}
-				cfg.Alertmanager.DataDir = "/data"
-				cfg.BlocksStorage.BucketStore.SyncDir = "/data/tsdb"
-			},
-			expectedErr: `the configured bucket store sync directory "/data/tsdb" cannot overlap with the configured alertmanager data directory "/data"`,
-		},
 		"should fail if alertmanager filesystem backend directory is equal to alertmanager data directory": {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{AlertManager}
@@ -724,6 +788,16 @@ func TestIsAbsPathOverlapping(t *testing.T) {
 			expected: true,
 		},
 		{
+			first:    "/",
+			second:   "/data/tsdb",
+			expected: true,
+		},
+		{
+			first:    "/data/tsdb",
+			second:   "/",
+			expected: true,
+		},
+		{
 			first:    "/data",
 			second:   "/data-more",
 			expected: false,
@@ -747,6 +821,23 @@ func TestIsAbsPathOverlapping(t *testing.T) {
 			first:    "/path/to/data",
 			second:   "/path/to/more/data",
 			expected: false,
+		},
+		// Paths at different depths where one is a string prefix of the other
+		// but NOT a path ancestor (regression test for path boundary check).
+		{
+			first:    "/data/tsdb",
+			second:   "/data/tsdb-compactor/cache",
+			expected: false,
+		},
+		{
+			first:    "/data/tsdb-compactor/cache",
+			second:   "/data/tsdb",
+			expected: false,
+		},
+		{
+			first:    "/data/tsdb",
+			second:   "/data/tsdb/wal",
+			expected: true,
 		},
 	}
 
@@ -994,6 +1085,20 @@ func getHostnameAndRandomPort(t *testing.T) (string, int) {
 	portNum, err := strconv.Atoi(port)
 	require.NoError(t, err)
 	return host, portNum
+}
+
+func TestNewReturnsErrorOnEmptyTarget(t *testing.T) {
+	args := []string{
+		"-target=",
+	}
+	var cfg Config
+	fs := flag.NewFlagSet("test", flag.PanicOnError)
+	cfg.RegisterFlags(fs, log.NewNopLogger())
+	require.NoError(t, fs.Parse(args))
+
+	_, err := New(cfg, prometheus.NewPedanticRegistry())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no target module specified")
 }
 
 type mockGrpcServiceHandler struct {

@@ -12,20 +12,28 @@ import (
 	"sort"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/client"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 type RulerAnalyzeCommand struct {
-	ClientConfig client.Config
-	outputFile   string
+	ClientConfig                client.Config
+	outputFile                  string
+	enableExperimentalFunctions bool
+
+	logger log.Logger
 }
 
 func (cmd *RulerAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	output, err := AnalyzeRuler(cmd.ClientConfig)
+	promqlParser := util.CreatePromQLParser(cmd.enableExperimentalFunctions)
+
+	output, err := AnalyzeRuler(cmd.ClientConfig, promqlParser, cmd.logger)
 	if err != nil {
 		return err
 	}
@@ -39,11 +47,11 @@ func (cmd *RulerAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeRuler analyze Mimir's ruler and return the list metrics used in them.
-func AnalyzeRuler(c client.Config) (*analyze.MetricsInRuler, error) {
+func AnalyzeRuler(c client.Config, promqlParser parser.Parser, logger log.Logger) (*analyze.MetricsInRuler, error) {
 	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
-	cli, err := client.New(c)
+	cli, err := client.New(c, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +64,7 @@ func AnalyzeRuler(c client.Config) (*analyze.MetricsInRuler, error) {
 
 	for ns := range rules {
 		for _, rg := range rules[ns] {
-			err := analyze.ParseMetricsInRuleGroup(output, rg, ns)
+			err := analyze.ParseMetricsInRuleGroup(output, rg, ns, promqlParser, logger)
 			if err != nil {
 				return nil, errors.Wrap(err, "metrics parse error")
 

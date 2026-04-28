@@ -9,6 +9,12 @@ import (
 	"github.com/failsafe-go/failsafe-go/internal/util"
 )
 
+type key int
+
+// CheckOnlyKey is a key to use with a Context that indicates a policy should check if capacity is available without
+// actually reserving it.
+const CheckOnlyKey key = 0
+
 // BaseFailurePolicy provides a base for implementing FailurePolicyBuilder.
 type BaseFailurePolicy[R any] struct {
 	// Indicates whether errors are checked by a configured failure condition

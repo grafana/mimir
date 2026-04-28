@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"math/rand/v2"
 	"sync"
 	"time"
@@ -17,14 +18,44 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/user"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+type recordTimestampKeyType struct{}
+
+var recordTimestampKey = recordTimestampKeyType{}
+
+func ContextWithRecordTimestamp(ctx context.Context, ts time.Time) context.Context {
+	return context.WithValue(ctx, recordTimestampKey, ts)
+}
+
+func RecordTimestampFromContext(ctx context.Context) (time.Time, bool) {
+	ts, ok := ctx.Value(recordTimestampKey).(time.Time)
+	return ts, ok
+}
+
 type Pusher interface {
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
+	PreCommitNotifier
+}
+
+type PreCommitNotifier interface {
+	// NotifyPreCommit is called before committing a Kafka offset to allow for
+	// synchronization or cleanup operations. The offset to commit is determined before this call.
+	// The committer waits for this method to complete before proceeding with the actual
+	// commit to Kafka.
+	NotifyPreCommit(ctx context.Context) error
+}
+
+type NoOpPreCommitNotifier struct {
+}
+
+func (n *NoOpPreCommitNotifier) NotifyPreCommit(_ context.Context) error {
+	return nil
 }
 
 type PusherCloser interface {
@@ -34,10 +65,10 @@ type PusherCloser interface {
 	Close() []error
 }
 
-// pusherConsumer receives records from Kafka and pushes them to the storage.
-// Each time a batch of records is received from Kafka, we instantiate a new pusherConsumer, this is to ensure we can retry if necessary and know whether we have completed that batch or not.
-type pusherConsumer struct {
-	metrics *pusherConsumerMetrics
+// PusherConsumer receives records from Kafka and pushes them to the storage.
+// Each time a batch of records is received from Kafka, we instantiate a new PusherConsumer, this is to ensure we can retry if necessary and know whether we have completed that batch or not.
+type PusherConsumer struct {
+	metrics *PusherConsumerMetrics
 	logger  log.Logger
 
 	kafkaConfig KafkaConfig
@@ -45,12 +76,12 @@ type pusherConsumer struct {
 	pusher Pusher
 }
 
-// newPusherConsumer creates a new pusherConsumer instance.
-func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsumerMetrics, logger log.Logger) *pusherConsumer {
+// NewPusherConsumer creates a new PusherConsumer instance.
+func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
 	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
-	return &pusherConsumer{
+	return &PusherConsumer{
 		pusher:      pusher,
 		kafkaConfig: kafkaCfg,
 		metrics:     metrics,
@@ -58,9 +89,9 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 	}
 }
 
-// Consume implements the recordConsumer interface.
+// Consume implements the RecordConsumer interface.
 // It'll use a separate goroutine to unmarshal the next record while we push the current record to storage.
-func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnErr error) {
+func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Record]) (returnErr error) {
 	defer func(processingStart time.Time) {
 		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 	}(time.Now())
@@ -71,19 +102,27 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 		ctx      context.Context
 		tenantID string
 		err      error
-		index    int
+		offset   int64
 	}
 
-	recordsChannel := make(chan parsedRecord)
+	// Buffer the channel to allow the unmarshal goroutine to work ahead while the main loop
+	// is busy pushing to storage. Without buffering, the goroutine blocks on send after each
+	// record, preventing any real pipelining. With a buffer, unmarshalling can overlap with
+	// storage operations, hiding deserialization latency.
+	//
+	// On cancellation (e.g., pushToStorage error), any records remaining in the buffer won't
+	// be processed. This is acceptable because errors trigger a retry of the entire batch,
+	// and the memory will be freed by GC.
+	recordsChannel := make(chan parsedRecord, 128)
 
 	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
 	ctx, cancel := context.WithCancelCause(ctx)
 
-	// Now, unmarshal the records into the channel.
-	go func(unmarshalCtx context.Context, records []record, ch chan<- parsedRecord) {
+	// Unmarshal records in a separate goroutine, sending to the buffered channel.
+	go func(unmarshalCtx context.Context, records iter.Seq[*kgo.Record], ch chan<- parsedRecord) {
 		defer close(ch)
 
-		for index, r := range records {
+		for rec := range records {
 			// Before we being unmarshalling the write request check if the context was cancelled.
 			select {
 			case <-unmarshalCtx.Done():
@@ -93,18 +132,18 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			}
 
 			parsed := parsedRecord{
-				ctx:                  r.ctx,
-				tenantID:             r.tenantID,
 				PreallocWriteRequest: &mimirpb.PreallocWriteRequest{},
-				index:                index,
+				// This context carries the tracing data for this individual record;
+				// kotel populates this data when it fetches the messages.
+				ctx:      rec.Context,
+				tenantID: string(rec.Key),
+				offset:   rec.Offset,
 			}
 
-			if r.version > LatestRecordVersion {
-				parsed.err = fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", r.version, LatestRecordVersion)
-			}
+			recVersion := ParseRecordVersion(rec)
 
 			// We don't free the WriteRequest slices because they are being freed by a level below.
-			err := DeserializeRecordContent(r.content, parsed.PreallocWriteRequest, r.version)
+			err := DeserializeRecordContent(rec.Value, parsed.PreallocWriteRequest, recVersion)
 			if err != nil {
 				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
 			}
@@ -121,8 +160,8 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	// We accumulate the total bytes across all records per tenant to determine the number of timeseries we expected to receive.
 	// Then, we'll use that to determine the number of shards we need to parallelize the writes.
 	var bytesPerTenant = make(map[string]int)
-	for _, r := range records {
-		bytesPerTenant[r.tenantID] += len(r.content)
+	for rec := range records {
+		bytesPerTenant[string(rec.Key)] += len(rec.Value)
 	}
 
 	// Create and start the storage writer.
@@ -149,7 +188,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 		err := c.pushToStorage(r.ctx, r.tenantID, &r.WriteRequest, writer)
 		if err != nil {
 			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
-			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
+			return fmt.Errorf("consuming record at offset %d for tenant %s: %w", r.offset, r.tenantID, err)
 		}
 	}
 
@@ -157,7 +196,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	return nil
 }
 
-func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
+func (c PusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
 	if c.kafkaConfig.IngestionConcurrencyMax == 0 {
 		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.FallbackClientErrorSampleRate, c.logger)
 	}
@@ -176,8 +215,8 @@ func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCl
 	)
 }
 
-func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
-	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "pusherConsumer.pushToStorage")
+func (c PusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
+	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "PusherConsumer.pushToStorage")
 	defer spanLog.Finish()
 
 	// Note that the implementation of the Pusher expects the tenantID to be in the context.
@@ -202,14 +241,6 @@ func newSequentialStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sa
 		metrics:      metrics,
 		pusher:       pusher,
 		errorHandler: newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
-	}
-}
-
-func newSequentialStoragePusherWithErrorHandler(metrics *storagePusherMetrics, pusher Pusher, errorHandler *pushErrorHandler) sequentialStoragePusher {
-	return sequentialStoragePusher{
-		metrics:      metrics,
-		pusher:       pusher,
-		errorHandler: errorHandler,
 	}
 }
 
@@ -303,17 +334,8 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	}
 
 	idealShards := c.idealShardsFor(userID)
-	var p PusherCloser
-	if idealShards <= 1 {
-		// If we're going to push only one shard, then we can use the sequential pusher.
-		// This means that pushes will now be synchronous.
-		// The idea is that if we don't see a reason to parallelize,
-		// then the pushes to this pusher are likely small in absolute terms and speeding them up will have marginal gains.
-		// So we choose the lower overhead and simpler sequential pusher.
-		p = newSequentialStoragePusherWithErrorHandler(c.metrics, c.upstreamPusher, c.errorHandler)
-	} else {
-		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
-	}
+	p := newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
+
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
 }
@@ -377,10 +399,10 @@ func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushE
 	return p
 }
 
-// Compute a hash from LabelAdapters, avoiding the cost of conversion to Labels.
+// LabelAdaptersHash computes a hash from LabelAdapters, avoiding the cost of conversion to Labels.
 // There is no particular benefit to match the hash function used by TSDB;
 // its main stripes are split by unique ID which we don't yet know.
-func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
+func LabelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 	const sep = '\xff'
 	b = b[:0]
 	for _, v := range ls {
@@ -395,14 +417,29 @@ func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 // PushToStorageAndReleaseRequest hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
 // PushToStorageAndReleaseRequest ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
 // PushToStorageAndReleaseRequest aborts the request if it encounters an error.
+//
+// Even though it's called "...AndReleaseRequest", while it does release the WriteRequest itself, the underlying buffer's
+// ownership is transferred to one or more shards's currentBatch. This is required since those currentBatches will still
+// reference the underlying buffer. As a result, the WriteRequest:buffer ownership changes from 1:1 to M:N, as one buffer
+// will possibly be referenced from multiple shards, end each shard will possibly reference multiple buffers. The buffer's
+// ownership is tracked via mem.Buffer's reference counting, and finally freed once all shards's currentBatches are pushed.
 func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
-	hashBuf := make([]byte, 0, 1024)
-	for i := range request.Timeseries {
-		var shard uint64
-		hashBuf, shard = labelAdaptersHash(hashBuf, request.Timeseries[i].Labels)
-		shard = shard % uint64(p.numShards)
+	defer request.FreeBuffer()
 
-		if err := p.shards[shard].AddToBatch(ctx, request.Source, request.Timeseries[i]); err != nil {
+	// Shard series by the hash of their labels. Skip sharding and always append series to
+	// the first shard when there's only one shard.
+	var hashBuf []byte
+	if p.numShards > 1 {
+		hashBuf = make([]byte, 0, 1024)
+	}
+	for i := range request.Timeseries {
+		shard := uint64(0)
+		if p.numShards > 1 {
+			hashBuf, shard = LabelAdaptersHash(hashBuf, request.Timeseries[i].Labels)
+			shard = shard % uint64(p.numShards)
+		}
+
+		if err := p.shards[shard].AddToBatch(ctx, request.Source, request.Timeseries[i], &request.BufferHolder); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
 		// We're transferring ownership of the timeseries to the batch, clear the slice as we go so we can reuse it.
@@ -413,15 +450,20 @@ func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Conte
 	mimirpb.ReuseSliceOnly(request.Timeseries)
 	request.Timeseries = nil
 
-	// Push metadata to every shard in a round-robin fashion.
-	// Start from a random shard to avoid hotspots in the first few shards when there are not many metadata pieces in each request.
-	shard := rand.IntN(p.numShards)
+	// Push metadata to every shard in a round-robin fashion. Start from a random shard to avoid hotspots in the first
+	// few shards when there are not many metadata pieces in each request. Skip the sharding if there's only one shard.'
+	shard := 0
+	if p.numShards > 1 {
+		shard = rand.IntN(p.numShards)
+	}
 	for mdIdx := range request.Metadata {
-		if err := p.shards[shard].AddMetadataToBatch(ctx, request.Source, request.Metadata[mdIdx]); err != nil {
+		if err := p.shards[shard].AddMetadataToBatch(ctx, request.Source, request.Metadata[mdIdx], &request.BufferHolder); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
-		shard++
-		shard %= p.numShards
+		if p.numShards > 1 {
+			shard++
+			shard %= p.numShards
+		}
 	}
 
 	// We might have some data left in some of the queues in the shards, but they will be flushed eventually once Stop is called, and we're certain that no more data is coming.
@@ -597,25 +639,33 @@ func newBatchingQueue(capacity int, batchSize int, metrics *batchingQueueMetrics
 
 // AddToBatch adds a time series to the current batch. If the batch size is reached, the batch is pushed to the Channel().
 // If an error occurs while pushing the batch, it returns the error and ensures the batch is pushed.
-func (q *batchingQueue) AddToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, ts mimirpb.PreallocTimeseries) error {
+func (q *batchingQueue) AddToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, ts mimirpb.PreallocTimeseries, bufh *mimirpb.BufferHolder) error {
 	if q.currentBatch.startedAt.IsZero() {
 		q.currentBatch.startedAt = time.Now()
 	}
 	q.currentBatch.Timeseries = append(q.currentBatch.Timeseries, ts)
 	q.currentBatch.Context = ctx
 	q.currentBatch.Source = source
+	// Because currentBatch now contains references to the original buffer, we
+	// need to add it as a source buffer (which adds a strong reference) to
+	// avoid use-after-free.
+	q.currentBatch.AddSourceBufferHolder(bufh)
 
 	return q.pushIfFull()
 }
 
 // AddMetadataToBatch adds metadata to the current batch.
-func (q *batchingQueue) AddMetadataToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, metadata *mimirpb.MetricMetadata) error {
+func (q *batchingQueue) AddMetadataToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, metadata *mimirpb.MetricMetadata, bufh *mimirpb.BufferHolder) error {
 	if q.currentBatch.startedAt.IsZero() {
 		q.currentBatch.startedAt = time.Now()
 	}
 	q.currentBatch.Metadata = append(q.currentBatch.Metadata, metadata)
 	q.currentBatch.Context = ctx
 	q.currentBatch.Source = source
+	// Because currentBatch now contains references to the original buffer, we
+	// need to add it as a source buffer (which adds a strong reference) to
+	// avoid use-after-free.
+	q.currentBatch.AddSourceBufferHolder(bufh)
 
 	return q.pushIfFull()
 }

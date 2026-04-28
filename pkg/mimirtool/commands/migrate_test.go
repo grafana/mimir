@@ -34,18 +34,18 @@ route:
   receiver: default
   continue: false
   routes:
-  - matchers:
-    - bar="baz"
-    - foo=""
-    continue: false
-  - continue: false
-    routes:
     - matchers:
-      - baz="qux"
-      - qux="corge"
+        - bar="baz"
+        - foo=""
       continue: false
+    - continue: false
+      routes:
+        - matchers:
+            - baz="qux"
+            - qux="corge"
+          continue: false
 receivers:
-- name: default
+  - name: default
 templates: []
 `,
 	}, {
@@ -147,61 +147,61 @@ time_intervals:
 route:
   receiver: default
   group_by:
-  - foo
+    - foo
   continue: false
   routes:
-  - matchers:
-    - bar="!baz"
-    - foo=""
-    active_time_intervals:
-    - weekdays
-    continue: false
-    routes:
     - matchers:
-      - baz="[\\w+]"
-      - qux="[corge]"
-      mute_time_intervals:
-      - weekends
-      continue: true
+        - bar="!baz"
+        - foo=""
+      active_time_intervals:
+        - weekdays
+      continue: false
+      routes:
+        - matchers:
+            - baz="[\\w+]"
+            - qux="[corge]"
+          mute_time_intervals:
+            - weekends
+          continue: true
   group_wait: 1m
   group_interval: 5m
   repeat_interval: 4h
 inhibit_rules:
-- source_matchers:
-  - bar="!baz"
-  target_matchers:
-  - foo=""
-- source_matchers:
-  - qux="[corge]"
-  target_matchers:
-  - baz="[\\w+]"
+  - source_matchers:
+      - bar="!baz"
+    target_matchers:
+      - foo=""
+  - source_matchers:
+      - qux="[corge]"
+    target_matchers:
+      - baz="[\\w+]"
 receivers:
-- name: default
-  email_configs:
-  - to: test@example.com
-- name: webhook
-  webhook_configs:
-  - url: https://example.com/
-    http_config:
-      authorization:
-        type: Bearer
-        credentials: token
+  - name: default
+    email_configs:
+      - to: test@example.com
+  - name: webhook
+    webhook_configs:
+      - url: https://example.com/
+        http_config:
+          authorization:
+            type: Bearer
+            credentials: token
 templates:
-- tmpl1.tmpl
-- tmpl2.tmpl
+  - tmpl1.tmpl
+  - tmpl2.tmpl
 time_intervals:
-- name: weekdays
-  time_intervals:
-  - times:
-    - start_time: "09:00"
-      end_time: "17:00"
-    weekdays:
-    - monday:friday
-- name: weekends
-  time_intervals:
-  - weekdays:
-    - saturday
-    - sunday
+  - name: weekdays
+    time_intervals:
+      - times:
+          - start_time: 09:00
+            end_time: 17:00
+        weekdays:
+          - monday:friday
+  - name: weekends
+    time_intervals:
+      - weekdays:
+          - saturday
+          - sunday
 `,
 	}}
 

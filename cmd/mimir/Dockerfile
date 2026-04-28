@@ -2,7 +2,7 @@
 # We use different base images for mimir and mimir race images since race-detector needs glibc packages.
 # See difference between distroless static and base-nossl at https://github.com/GoogleContainerTools/distroless/blob/main/base/README.md.
 
-ARG        BASEIMG=gcr.io/distroless/static-debian12
+ARG        BASEIMG=gcr.io/distroless/static-debian12@sha256:20bc6c0bc4d625a22a8fde3e55f6515709b32055ef8fb9cfbddaa06d1760f838
 # TODO(rwwiv): Remove once CA bundle is updated upstream.
 FROM debian:testing AS updated-ca-bundle
 RUN apt update && apt install -y ca-certificates && update-ca-certificates && apt clean

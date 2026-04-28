@@ -11,11 +11,9 @@ import (
 	"io"
 	"slices"
 	"strings"
-	"sync"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 const (
@@ -29,33 +27,25 @@ const (
 	maxPreallocatedExemplarsPerSeries  = 10
 )
 
-var (
-	preallocTimeseriesSlicePool = zeropool.New(func() []PreallocTimeseries {
-		return make([]PreallocTimeseries, 0, minPreallocatedTimeseries)
-	})
+func newPreallocTimeseriesSlice() []PreallocTimeseries {
+	return make([]PreallocTimeseries, 0, minPreallocatedTimeseries)
+}
 
-	timeSeriesPool = sync.Pool{
-		New: func() interface{} {
-			return &TimeSeries{
-				Labels:     make([]LabelAdapter, 0, minPreallocatedLabels),
-				Samples:    make([]Sample, 0, minPreallocatedSamplesPerSeries),
-				Exemplars:  make([]Exemplar, 0, minPreallocatedExemplarsPerSeries),
-				Histograms: nil,
-			}
-		},
+func newTimeSeries() *TimeSeries {
+	return &TimeSeries{
+		Labels:     make([]LabelAdapter, 0, minPreallocatedLabels),
+		Samples:    make([]Sample, 0, minPreallocatedSamplesPerSeries),
+		Exemplars:  make([]Exemplar, 0, minPreallocatedExemplarsPerSeries),
+		Histograms: nil,
 	}
+}
 
-	// yoloSlicePool is a pool of byte slices which are used to back the yoloStrings of this package.
-	yoloSlicePool = sync.Pool{
-		New: func() interface{} {
-			// The initial cap of 200 is an arbitrary number which has been chosen because the default
-			// of 0 is guaranteed to be insufficient, so any number greater than 0 would be better.
-			// 200 should be enough to back all the strings of one TimeSeries in many cases.
-			val := make([]byte, 0, 200)
-			return &val
-		},
-	}
-)
+func newYoloSlice() []byte {
+	// The initial cap of 200 is an arbitrary number which has been chosen because the default
+	// of 0 is guaranteed to be insufficient, so any number greater than 0 would be better.
+	// 200 should be enough to back all the strings of one TimeSeries in many cases.
+	return make([]byte, 0, 200)
+}
 
 // PreallocWriteRequest is a WriteRequest which preallocs slices on Unmarshal.
 type PreallocWriteRequest struct {
@@ -73,6 +63,14 @@ type PreallocWriteRequest struct {
 	// RW2CommonSymbols optionally allows the sender and receiver to understand a common set of reserved symbols.
 	// These symbols are never sent in the request to begin with.
 	RW2CommonSymbols []string
+	// SkipNormalizeMetadataMetricName skips normalization of metric name in metadata on unmarshal. E.g., don't remove `_count` suffixes from histograms.
+	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
+	SkipNormalizeMetadataMetricName bool
+	// SkipDeduplicateMetadata skips deduplication of RW2 metadata by metric family name.
+	// Normally this is done because RW2 requests to repeat metadata as it's embedded in timeseries.
+	// Some applications, like RW1->RW2 translation, might choose to disable it.
+	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
+	SkipDeduplicateMetadata bool
 }
 
 // Unmarshal implements proto.Message.
@@ -81,16 +79,18 @@ type PreallocWriteRequest struct {
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
+	p.skipNormalizeMetadataMetricName = p.SkipNormalizeMetadataMetricName
+	p.skipDeduplicateMetadata = p.SkipDeduplicateMetadata
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
 	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
-// getMetricName cuts the mandatory OpenMetrics suffix from the
+// normalizeMetricName cuts the mandatory OpenMetrics suffix from the
 // seriesName and returns the metric name and whether it cut the suffix.
 // Based on https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#suffixes
-func getMetricName(seriesName string, metricType MetadataRW2_MetricType) (string, bool) {
+func normalizeMetricName(seriesName string, metricType MetadataRW2_MetricType) (string, bool) {
 	switch metricType {
 	case METRIC_TYPE_SUMMARY:
 		retval, ok := strings.CutSuffix(seriesName, "_count")
@@ -271,7 +271,7 @@ var TimeseriesUnmarshalCachingEnabled = true
 //   - in case 3 the exemplars don't get unmarshaled if
 //     p.skipUnmarshalingExemplars is false,
 //   - is symbols is not nil, we unmarshal from Remote Write 2.0 format.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata) error {
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 	if TimeseriesUnmarshalCachingEnabled && symbols == nil {
 		// TODO(krajorama): check if it makes sense for RW2 as well.
 		p.marshalledData = dAtA
@@ -279,7 +279,7 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, me
 	p.TimeSeries = TimeseriesFromPool()
 	p.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
 	if symbols != nil {
-		return p.UnmarshalRW2(dAtA, symbols, metadata)
+		return p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName)
 	}
 	return p.TimeSeries.Unmarshal(dAtA)
 }
@@ -316,7 +316,7 @@ func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
 
 // LabelAdapter is a labels.Label that can be marshalled to/from protos.
 type LabelAdapter struct {
-	Name, Value unsafeMutableString
+	Name, Value UnsafeMutableString
 }
 
 // Marshal implements proto.Marshaller.
@@ -519,8 +519,8 @@ func (bs *LabelAdapter) Compare(other LabelAdapter) int {
 // references may change once the timeseries is returned to the shared pool.
 type UnsafeMutableLabel = LabelAdapter
 
-// A unsafeMutableString is a string that may violate the invariant that it's
-// immutable. Contrary to string, holding a value of unsafeMutableString may
+// An UnsafeMutableString is a string that may violate the invariant that it's
+// immutable. Contrary to string, holding a value of UnsafeMutableString may
 // later refer to different data than it originally did: it's effectively
 // a []byte with a string-like (and thus read-only) API and implicit capacity.
 //
@@ -528,13 +528,7 @@ type UnsafeMutableLabel = LabelAdapter
 //
 // When a LabelAdapter is referenced from a PreallocTimeseries, the data it
 // references may change once the timeseries is returned to the shared pool.
-type unsafeMutableString = string
-
-// PreallocTimeseriesSliceFromPool retrieves a slice of PreallocTimeseries from a sync.Pool.
-// ReuseSlice should be called once done.
-func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
-	return preallocTimeseriesSlicePool.Get()
-}
+type UnsafeMutableString = string
 
 // ReuseSlice puts the slice back into a sync.Pool for reuse.
 func ReuseSlice(ts []PreallocTimeseries) {
@@ -547,53 +541,6 @@ func ReuseSlice(ts []PreallocTimeseries) {
 	}
 
 	ReuseSliceOnly(ts)
-}
-
-// ReuseSliceOnly reuses the slice of timeseries, but not its contents.
-// Only use this if you have another means of reusing the individual timeseries contained within.
-// Most times, you want to use ReuseSlice instead.
-func ReuseSliceOnly(ts []PreallocTimeseries) {
-	preallocTimeseriesSlicePool.Put(ts[:0])
-}
-
-// TimeseriesFromPool retrieves a pointer to a TimeSeries from a sync.Pool.
-// ReuseTimeseries should be called once done, unless ReuseSlice was called on the slice that contains this TimeSeries.
-func TimeseriesFromPool() *TimeSeries {
-	return timeSeriesPool.Get().(*TimeSeries)
-}
-
-// ReuseTimeseries puts the timeseries back into a sync.Pool for reuse.
-func ReuseTimeseries(ts *TimeSeries) {
-	// Name and Value may point into a large gRPC buffer, so clear the reference to allow GC
-	for i := 0; i < len(ts.Labels); i++ {
-		ts.Labels[i].Name = ""
-		ts.Labels[i].Value = ""
-	}
-
-	// Retain the slices only if their capacity is not bigger than the desired max pre-allocated size.
-	// This allows us to ensure we don't put very large slices back to the pool (e.g. a few requests with
-	// a huge number of samples may cause in-use heap memory to significantly increase, because the slices
-	// allocated by such poison requests would be reused by other requests with a normal number of samples).
-	if cap(ts.Labels) > maxPreallocatedLabels {
-		ts.Labels = nil
-	} else {
-		ts.Labels = ts.Labels[:0]
-	}
-
-	if cap(ts.Samples) > maxPreallocatedSamplesPerSeries {
-		ts.Samples = nil
-	} else {
-		ts.Samples = ts.Samples[:0]
-	}
-
-	if cap(ts.Histograms) > maxPreallocatedHistogramsPerSeries {
-		ts.Histograms = nil
-	} else {
-		ts.Histograms = ts.Histograms[:0]
-	}
-
-	ClearExemplars(ts)
-	timeSeriesPool.Put(ts)
 }
 
 // ClearExemplars safely removes exemplars from TimeSeries.
@@ -632,15 +579,6 @@ func ReusePreallocTimeseries(ts *PreallocTimeseries) {
 	ts.marshalledData = nil
 }
 
-func yoloSliceFromPool() *[]byte {
-	return yoloSlicePool.Get().(*[]byte)
-}
-
-func reuseYoloSlice(val *[]byte) {
-	*val = (*val)[:0]
-	yoloSlicePool.Put(val)
-}
-
 // DeepCopyTimeseries copies the timeseries of one PreallocTimeseries into another one.
 // It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
 // anything after the deep copying.
@@ -660,6 +598,10 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 
 	// Copy the time series labels by using the prepared buffer.
 	dstTs.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
+
+	// Copy scalar properties.
+	dstTs.CreatedTimestamp = srcTs.CreatedTimestamp
+	dstTs.SkipUnmarshalingExemplars = srcTs.SkipUnmarshalingExemplars
 
 	// Copy the samples.
 	if cap(dstTs.Samples) < len(srcTs.Samples) {
@@ -700,7 +642,11 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 			dstTs.Exemplars[exemplarIdx].TimestampMs = srcTs.Exemplars[exemplarIdx].TimestampMs
 		}
 	} else {
-		dstTs.Exemplars = dstTs.Exemplars[:0]
+		if dstTs.Exemplars == nil {
+			dstTs.Exemplars = []Exemplar{}
+		} else {
+			dstTs.Exemplars = dstTs.Exemplars[:0]
+		}
 	}
 
 	return dst
@@ -786,6 +732,7 @@ func copyHistogram(src Histogram) Histogram {
 		dstZeroCount = &Histogram_ZeroCountFloat{ZeroCountFloat: src.GetZeroCountFloat()}
 	}
 
+	//exhaustruct:enforce
 	return Histogram{
 		Count:          dstCount,
 		Sum:            src.Sum,
@@ -800,6 +747,7 @@ func copyHistogram(src Histogram) Histogram {
 		PositiveCounts: slices.Clone(src.PositiveCounts),
 		ResetHint:      src.ResetHint,
 		Timestamp:      src.Timestamp,
+		CustomValues:   slices.Clone(src.CustomValues),
 	}
 }
 

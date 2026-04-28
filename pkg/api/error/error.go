@@ -6,12 +6,16 @@
 package error
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/promql"
+	"google.golang.org/grpc/codes"
 )
 
 type Type string
@@ -30,6 +34,64 @@ const (
 	TypeTooLargeEntry   Type = "too_large_entry"
 	TypeNotAcceptable   Type = "not_acceptable"
 )
+
+// TypeForError returns the appropriate Type for err, or fallback if no appropriate Type
+// can be inferred.
+func TypeForError(err error, fallback Type) Type {
+	// This method mirrors the behaviour of Prometheus' returnAPIError (https://github.com/prometheus/prometheus/blob/1ada3ced5a91fb4a6e5df473ac360ad99e62209e/web/api/v1/api.go#L682).
+	var apiError *APIError
+	if errors.As(err, &apiError) {
+		return apiError.Type
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return TypeCanceled
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return TypeTimeout
+	}
+
+	var queryCanceledErr promql.ErrQueryCanceled
+	if errors.As(err, &queryCanceledErr) {
+		return TypeCanceled
+	}
+
+	var queryTimeoutErr promql.ErrQueryTimeout
+	if errors.As(err, &queryTimeoutErr) {
+		return TypeTimeout
+	}
+
+	var storageError promql.ErrStorage
+	if errors.As(err, &storageError) {
+		return TypeInternal
+	}
+
+	if s, ok := grpcutil.ErrorToStatus(err); ok {
+		return typeForCode(s.Code(), fallback)
+	}
+
+	return fallback
+}
+
+func typeForCode(code codes.Code, fallback Type) Type {
+	switch code {
+	case codes.Canceled:
+		return TypeCanceled
+	case codes.Internal:
+		return TypeInternal
+	case codes.DeadlineExceeded:
+		return TypeTimeout
+	case codes.Unavailable:
+		return TypeUnavailable
+	case codes.NotFound:
+		return TypeNotFound
+	case codes.InvalidArgument:
+		return TypeBadData
+	default:
+		return fallback
+	}
+}
 
 type APIError struct {
 	Type    Type
@@ -127,7 +189,7 @@ func IsAPIError(err error) bool {
 func AddDetails(err error, details string) error {
 	apiErr := &APIError{}
 	if !errors.As(err, &apiErr) {
-		return errors.Wrap(err, details)
+		return fmt.Errorf("%s: %w", details, err)
 	}
 	apiErr.Message = fmt.Sprintf("%s: %s", details, apiErr.Message)
 	return apiErr

@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -98,7 +99,8 @@ func TestDelete(t *testing.T) {
 		b1, err := CreateBlock(ctx, tmpDir, fiveLabels,
 			100, 0, 1000, labels.FromStrings("ext1", "val1"))
 		require.NoError(t, err)
-		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), nil))
+		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), nil)
+		require.NoError(t, err)
 		require.Equal(t, 3, len(bkt.Objects()))
 
 		markedForDeletion := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test"})
@@ -112,7 +114,8 @@ func TestDelete(t *testing.T) {
 		b2, err := CreateBlock(ctx, tmpDir, fiveLabels,
 			100, 0, 1000, labels.FromStrings("ext1", "val1"))
 		require.NoError(t, err)
-		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil))
+		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil)
+		require.NoError(t, err)
 		require.Equal(t, 3, len(bkt.Objects()))
 
 		// Remove meta.json and check if delete can delete it.
@@ -140,18 +143,18 @@ func TestUpload(t *testing.T) {
 
 	t.Run("wrong dir", func(t *testing.T) {
 		// Wrong dir.
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "not-existing"), nil)
+		_, err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "not-existing"), nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "/not-existing: no such file or directory")
 	})
 
 	t.Run("wrong existing dir (not a block)", func(t *testing.T) {
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test"), nil)
+		_, err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test"), nil)
 		require.EqualError(t, err, "not a block dir: ulid: bad data size when unmarshaling")
 	})
 
 	t.Run("empty block dir", func(t *testing.T) {
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		_, err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "/meta.json: no such file or directory")
 	})
@@ -159,7 +162,7 @@ func TestUpload(t *testing.T) {
 	t.Run("missing chunks", func(t *testing.T) {
 		testutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
 
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		_, err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "/chunks: no such file or directory")
 	})
@@ -168,7 +171,7 @@ func TestUpload(t *testing.T) {
 		require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String(), ChunksDirname), 0777))
 		testutil.Copy(t, path.Join(tmpDir, b1.String(), ChunksDirname, "000001"), path.Join(tmpDir, "test", b1.String(), ChunksDirname, "000001"))
 
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		_, err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "/index: no such file or directory")
 	})
@@ -178,7 +181,7 @@ func TestUpload(t *testing.T) {
 		require.NoError(t, os.Remove(path.Join(tmpDir, "test", b1.String(), MetaFilename)))
 
 		// Missing meta.json file.
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		_, err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "/meta.json: no such file or directory")
 	})
@@ -192,7 +195,7 @@ func TestUpload(t *testing.T) {
 		require.NoError(t, os.RemoveAll(path.Join(tmpDir, "test", b1.String(), MetaFilename)))
 
 		// Missing meta.json file.
-		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), meta)
+		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), meta)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "/meta.json: no such file or directory")
 	})
@@ -201,7 +204,8 @@ func TestUpload(t *testing.T) {
 
 	t.Run("full block", func(t *testing.T) {
 		// Full
-		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil))
+		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		require.NoError(t, err)
 		require.Equal(t, 3, len(bkt.Objects()))
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
@@ -229,7 +233,8 @@ func TestUpload(t *testing.T) {
 
 	t.Run("upload is idempotent", func(t *testing.T) {
 		// Test Upload is idempotent.
-		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil))
+		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		require.NoError(t, err)
 		require.Equal(t, 3, len(bkt.Objects()))
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
@@ -249,7 +254,7 @@ func TestUpload(t *testing.T) {
 		}, 100, 0, 1000, labels.EmptyLabels())
 		require.NoError(t, err)
 
-		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil)
+		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil)
 		require.NoError(t, err)
 
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b2.String(), ChunksDirname, "000001"))
@@ -290,7 +295,7 @@ func TestUpload(t *testing.T) {
 		updatedMeta.Thanos.Source = "hello world"
 
 		// Upload block with new metadata.
-		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b3.String()), updatedMeta)
+		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b3.String()), updatedMeta)
 		require.NoError(t, err)
 
 		// Verify that original (on-disk) meta.json is not changed
@@ -354,7 +359,8 @@ func TestMarkForDeletion(t *testing.T) {
 
 			tcase.preUpload(t, id, bkt)
 
-			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil))
+			_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil)
+			require.NoError(t, err)
 
 			c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			err = MarkForDeletion(ctx, log.NewNopLogger(), bkt, id, "", c)
@@ -403,7 +409,8 @@ func TestMarkForNoCompact(t *testing.T) {
 
 			tcase.preUpload(t, id, bkt)
 
-			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil))
+			_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil)
+			require.NoError(t, err)
 
 			c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			err = MarkForNoCompact(ctx, log.NewNopLogger(), bkt, id, ManualNoCompactReason, "", c)
@@ -424,7 +431,7 @@ func TestUnMarkForNoCompact(t *testing.T) {
 		"unmark existing block should succeed": {
 			setupTest: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
 				// upload blocks and no-compact marker
-				err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil)
+				_, err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil)
 				require.NoError(t, err)
 				m, err := json.Marshal(NoCompactMark{
 					ID:            id,
@@ -479,7 +486,7 @@ func TestUploadCleanup(t *testing.T) {
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/index"}
 		uerr := &UploadError{}
 
-		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
+		_, uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
 		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of index fails, block is deleted.
@@ -491,7 +498,7 @@ func TestUploadCleanup(t *testing.T) {
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/meta.json"}
 		uerr := &UploadError{}
 
-		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
+		_, uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
 		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of meta.json fails, nothing is cleaned up.
@@ -501,6 +508,32 @@ func TestUploadCleanup(t *testing.T) {
 		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]), 0)
 		require.Equal(t, 0, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]))
 	}
+}
+
+func TestUploadError(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// Create a simple block
+	blockID, err := CreateBlock(ctx, tmpDir, fiveLabels, 100, 0, 1000, labels.EmptyLabels())
+	require.NoError(t, err)
+
+	// Attempt upload to in-mem bucket wrapped with always fail logic
+	anyObjStoreErr := errors.New("failed")
+	target := fmt.Sprintf("%s/%s", blockID, MetaFilename)
+
+	injectedBkt := &bucket.ErrorInjectedBucketClient{
+		Bucket:   objstore.NewInMemBucket(),
+		Injector: bucket.InjectErrorOn(bucket.OpUpload, target, anyObjStoreErr),
+	}
+
+	_, err = Upload(context.Background(), log.NewNopLogger(), injectedBkt, filepath.Join(tmpDir, blockID.String()), nil)
+	// Verify that Upload returns error
+	require.Error(t, err)
+
+	var uploadErr *UploadError
+	// Verify that the error is wrapped as an UploadError type
+	require.True(t, errors.As(err, &uploadErr))
 }
 
 type errBucket struct {

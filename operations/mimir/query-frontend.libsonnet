@@ -12,6 +12,7 @@
     $._config.grpcConfig +
     $._config.querySchedulerRingClientConfig +
     $.query_frontend_caching_config +
+    $.range_vector_splitting_caching_config +
     $.queryFrontendUseQuerySchedulerArgs('query-scheduler') +
     {
       target: 'query-frontend',
@@ -34,6 +35,30 @@
   // Values take precedence over query_frontend_args.
   query_frontend_only_args:: {},
 
+  // Timeout validation for query-frontend
+  local validateQueryFrontendTimeouts() =
+    local qf_timeout = if 'querier.timeout' in $.query_frontend_args then
+      $.util.parseDuration($.query_frontend_args['querier.timeout'])
+    else
+      $.util.getFlagDefaultSeconds('querier.timeout');
+
+    local qf_write_timeout = if 'server.http-write-timeout' in $.query_frontend_args then
+      $.util.parseDuration($.query_frontend_args['server.http-write-timeout'])
+    else
+      $.util.getFlagDefaultSeconds('server.http-write-timeout');
+
+    assert qf_timeout == null || qf_write_timeout == null || qf_timeout <= qf_write_timeout :
+           'query-frontend: querier.timeout (%s) must be less than or equal to server.http-write-timeout (%s)' %
+           [
+      if 'querier.timeout' in $.query_frontend_args then $.query_frontend_args['querier.timeout'] else ('default: %ss' % $.util.getFlagDefaultSeconds('querier.timeout')),
+      if 'server.http-write-timeout' in $.query_frontend_args then $.query_frontend_args['server.http-write-timeout'] else ('default: %ss' % $.util.getFlagDefaultSeconds('server.http-write-timeout')),
+    ];
+
+    true,
+
+  // Execute validation
+  query_frontend_timeout_validation:: validateQueryFrontendTimeouts(),
+
   query_frontend_ports:: $.util.defaultPorts,
 
   newQueryFrontendContainer(name, args, envmap={})::
@@ -55,6 +80,9 @@
 
   local deployment = $.apps.v1.deployment,
 
+  // Leave enough time to finish serving a 5m query after the shutdown delay expired.
+  query_frontend_termination_grace_period_seconds:: shutdown_delay_seconds + 300,
+
   newQueryFrontendDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, 2, [container]) +
     $.mimirVolumeMounts +
@@ -63,9 +91,7 @@
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
-
-    // Leave enough time to finish serving a 5m query after the shutdown delay expired.
-    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(shutdown_delay_seconds + 300),
+    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.query_frontend_termination_grace_period_seconds),
 
   query_frontend_deployment:
     self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, $.query_frontend_node_affinity_matchers),

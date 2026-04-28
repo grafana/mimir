@@ -34,8 +34,8 @@ func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumption
 	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
-func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := d.Inner.SeriesMetadata(ctx)
+func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := d.Inner.SeriesMetadata(ctx, matchers)
 
 	if err != nil {
 		return nil, err
@@ -147,11 +147,23 @@ func (d *DeduplicateAndMerge) Prepare(ctx context.Context, params *types.Prepare
 	return d.Inner.Prepare(ctx, params)
 }
 
-func (d *DeduplicateAndMerge) Close() {
-	d.Inner.Close()
+func (d *DeduplicateAndMerge) AfterPrepare(ctx context.Context) error {
+	return d.Inner.AfterPrepare(ctx)
+}
 
+func (d *DeduplicateAndMerge) Finalize(ctx context.Context) error {
 	if d.buffer != nil {
-		d.buffer.Close()
+		d.buffer.Finalize()
 		d.buffer = nil
 	}
+
+	return d.Inner.Finalize(ctx)
+}
+
+func (d *DeduplicateAndMerge) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return d.Inner.Stats(ctx)
+}
+
+func (d *DeduplicateAndMerge) Close() {
+	d.Inner.Close()
 }

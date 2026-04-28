@@ -1,9 +1,10 @@
 groups:
   - name: self_and_same_name_reference
     rules:
-      # Because of these two rules, this rule group cannot be evaluated concurrently.
-      # While they are independent they have the same name, and they both self-reference.
-      # The expressions' labels are not parsed to determine dependencies, only the names.
+      # The two following rules are independent, but they have the same name and they also self reference
+      # themselves. The dependency graph is built taking in account the ordering and assuming that a rule
+      # can't depend on following rules, but just on previous ones. The concurrent evaluation groups are
+      # built accordingly.
       - record: job:http_requests:rate1m
         expr: sum by (job)(rate(http_requests_total{job="job1"}[1m])) or last_over_time(job:http_requests:rate1m{job="job1"}[1m])
       - record: job:http_requests:rate1m

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -161,22 +162,20 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				require.Len(t, points, 4)
 			},
 		},
-		// FIXME: this test currently fails due to https://github.com/prometheus/prometheus/issues/14172
-		//
-		//"point has same value as a previous point, but there is a float value in between": {
-		//	data: `
-		//        load 1m
-		//            my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} 2 {{schema:0 sum:3 count:2 buckets:[1 0 1]}}
-		//    `,
-		//	stepCount: 3,
-		//	check: func(t *testing.T, hPoints []promql.HPoint, fPoints []promql.FPoint) {
-		//		require.Len(t, hPoints, 2)
-		//		require.Equal(t, 3.0, hPoints[0].H.Sum)
-		//		require.Equal(t, 3.0, hPoints[1].H.Sum)
-		//
-		//		require.Equal(t, []promql.FPoint{{T: 60000, F: 2}}, fPoints)
-		//	},
-		//},
+		"point has same value as a previous point, but there is a float value in between": {
+			data: `
+		       load 1m
+		           my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} 2 {{schema:0 sum:3 count:2 buckets:[1 0 1]}}
+		   `,
+			stepCount: 3,
+			check: func(t *testing.T, hPoints []promql.HPoint, fPoints []promql.FPoint) {
+				require.Len(t, hPoints, 2)
+				require.Equal(t, 3.0, hPoints[0].H.Sum)
+				require.Equal(t, 3.0, hPoints[1].H.Sum)
+
+				require.Equal(t, []promql.FPoint{{T: 60000, F: 2}}, fPoints)
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -187,22 +186,25 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			endTime := startTime.Add(time.Duration(testCase.stepCount-1) * time.Minute)
 
 			ctx := context.Background()
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
 					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
-					Matchers: []*labels.Matcher{
-						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_metric"),
-					},
+					Matchers: []types.Matcher{{
+						Type:  labels.MatchEqual,
+						Name:  model.MetricNameLabel,
+						Value: "my_metric",
+					}},
 					LookbackDelta:            5 * time.Minute,
 					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
 				MemoryConsumptionTracker: memoryConsumptionTracker,
-				Stats:                    &types.QueryStats{},
+				QueryStats:               &types.QueryStats{},
 			}
 
-			_, err := selector.SeriesMetadata(ctx)
+			require.NoError(t, selector.Prepare(ctx, &types.PrepareParams{}))
+			_, err := selector.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			series, err := selector.NextSeries(ctx)
@@ -233,27 +235,30 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 			endTime := timeZero.Add(7 * time.Minute)
 
 			ctx := context.Background()
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
 					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
-					Matchers: []*labels.Matcher{
-						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-					},
+					Matchers: []types.Matcher{{
+						Type:  labels.MatchEqual,
+						Name:  model.MetricNameLabel,
+						Value: "metric",
+					}},
 					LookbackDelta:            5 * time.Minute,
 					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
 				MemoryConsumptionTracker: memoryConsumptionTracker,
-				Stats:                    &types.QueryStats{},
+				QueryStats:               &types.QueryStats{},
 			}
 
-			series, err := selector.SeriesMetadata(ctx)
+			require.NoError(t, selector.Prepare(ctx, &types.PrepareParams{}))
+			series, err := selector.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			expectedSeries := []types.SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "float")},
-				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "histogram")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "type", "float")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "type", "histogram")},
 			}
 
 			require.Equal(t, expectedSeries, series)

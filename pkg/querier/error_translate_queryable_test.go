@@ -147,6 +147,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		q,
 		nil,
 		nil,
+		nil,
 		func(context.Context) v1.ScrapePoolsRetriever { return &DummyTargetRetriever{} },
 		func(context.Context) v1.TargetRetriever { return &DummyTargetRetriever{} },
 		func(context.Context) v1.AlertmanagerRetriever { return &DummyAlertmanagerRetriever{} },
@@ -175,9 +176,13 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		false,
 		false,
 		false,
-		0,
 		5*time.Minute,
 		false,
+		false,
+		nil,
+		nil,
+		v1.OpenAPIOptions{},
+		nil,
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")

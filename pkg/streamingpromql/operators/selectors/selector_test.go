@@ -21,7 +21,7 @@ import (
 )
 
 func TestSeriesList_BasicListOperations(t *testing.T) {
-	list := newSeriesList(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+	list := newSeriesList(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))
 	require.Equal(t, 0, list.Len())
 
 	series1 := mockSeries{labels.FromStrings("series", "1")}
@@ -59,7 +59,7 @@ func TestSeriesList_OperationsNearBatchBoundaries(t *testing.T) {
 
 	for _, seriesCount := range cases {
 		t.Run(fmt.Sprintf("N=%v", seriesCount), func(t *testing.T) {
-			list := newSeriesList(limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""))
+			list := newSeriesList(limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 
 			seriesAdded := make([]storage.Series, 0, seriesCount)
 
@@ -117,49 +117,134 @@ func TestSelector_QueryRanges(t *testing.T) {
 	t.Run("instant vector selector", func(t *testing.T) {
 		queryable := &mockQueryable{}
 		lookbackDelta := 5 * time.Minute
+		matchers := types.Matchers{{Type: labels.MatchRegexp, Name: "env", Value: "prod"}}
 		s := &Selector{
 			Queryable:                queryable,
 			TimeRange:                timeRange,
 			LookbackDelta:            lookbackDelta,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+			Matchers:                 matchers,
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
 		}
 
-		_, err := s.SeriesMetadata(ctx)
+		_, err := s.SeriesMetadata(ctx, nil)
 		require.NoError(t, err)
 
 		expectedMinT := timestamp.FromTime(start.Add(-lookbackDelta).Add(time.Millisecond)) // Add a millisecond to exclude the beginning of the range.
 		expectedMaxT := timestamp.FromTime(end)
-		require.Equal(t, expectedMinT, queryable.mint)
-		require.Equal(t, expectedMaxT, queryable.maxt)
-		require.Equal(t, expectedMinT, queryable.hints.Start)
-		require.Equal(t, expectedMaxT, queryable.hints.End)
+		requireMinAndMaxTimes(t, queryable, expectedMinT, expectedMaxT)
+		requireMatchers(t, queryable, matchers)
+	})
+
+	t.Run("instant vector selector with runtime matchers", func(t *testing.T) {
+		queryable := &mockQueryable{}
+		lookbackDelta := 5 * time.Minute
+		matchers := types.Matchers{
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchRegexp, Name: "region", Value: "us-east-1"},
+		}
+		s := &Selector{
+			Queryable:                queryable,
+			TimeRange:                timeRange,
+			LookbackDelta:            lookbackDelta,
+			Matchers:                 matchers,
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
+		}
+
+		runtimeMatchers := types.Matchers{
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchRegexp, Name: "container", Value: "querier"},
+		}
+		_, err := s.SeriesMetadata(ctx, runtimeMatchers)
+		require.NoError(t, err)
+
+		expectedMinT := timestamp.FromTime(start.Add(-lookbackDelta).Add(time.Millisecond)) // Add a millisecond to exclude the beginning of the range.
+		expectedMaxT := timestamp.FromTime(end)
+		requireMinAndMaxTimes(t, queryable, expectedMinT, expectedMaxT)
+		requireMatchers(t, queryable, types.Matchers{
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchRegexp, Name: "region", Value: "us-east-1"},
+			{Type: labels.MatchRegexp, Name: "container", Value: "querier"},
+		})
 	})
 
 	t.Run("range vector selector", func(t *testing.T) {
 		queryable := &mockQueryable{}
 		selectorRange := 15 * time.Minute
+		matchers := types.Matchers{{Type: labels.MatchRegexp, Name: "env", Value: "prod"}}
 		s := &Selector{
 			Queryable:                queryable,
 			TimeRange:                timeRange,
 			Range:                    selectorRange,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+			Matchers:                 matchers,
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
 		}
 
-		_, err := s.SeriesMetadata(ctx)
+		_, err := s.SeriesMetadata(ctx, nil)
 		require.NoError(t, err)
 
 		expectedMinT := timestamp.FromTime(start.Add(-selectorRange).Add(time.Millisecond)) // Add a millisecond to exclude the beginning of the range.
 		expectedMaxT := timestamp.FromTime(end)
-		require.Equal(t, expectedMinT, queryable.mint)
-		require.Equal(t, expectedMaxT, queryable.maxt)
-		require.Equal(t, expectedMinT, queryable.hints.Start)
-		require.Equal(t, expectedMaxT, queryable.hints.End)
+		requireMinAndMaxTimes(t, queryable, expectedMinT, expectedMaxT)
+		requireMatchers(t, queryable, matchers)
 	})
+
+	t.Run("range vector selector with runtime matchers", func(t *testing.T) {
+		queryable := &mockQueryable{}
+		selectorRange := 15 * time.Minute
+		matchers := types.Matchers{
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchRegexp, Name: "region", Value: "us-east-1"},
+		}
+		s := &Selector{
+			Queryable:                queryable,
+			TimeRange:                timeRange,
+			Range:                    selectorRange,
+			Matchers:                 matchers,
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
+		}
+
+		runtimeMatchers := types.Matchers{
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchRegexp, Name: "container", Value: "querier"},
+		}
+		_, err := s.SeriesMetadata(ctx, runtimeMatchers)
+		require.NoError(t, err)
+
+		expectedMinT := timestamp.FromTime(start.Add(-selectorRange).Add(time.Millisecond)) // Add a millisecond to exclude the beginning of the range.
+		expectedMaxT := timestamp.FromTime(end)
+		requireMinAndMaxTimes(t, queryable, expectedMinT, expectedMaxT)
+		requireMatchers(t, queryable, types.Matchers{
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchRegexp, Name: "region", Value: "us-east-1"},
+			{Type: labels.MatchRegexp, Name: "container", Value: "querier"},
+		})
+	})
+}
+
+func requireMinAndMaxTimes(t *testing.T, queryable *mockQueryable, expectedMinT, expectedMaxT int64) {
+	require.Equal(t, expectedMinT, queryable.mint)
+	require.Equal(t, expectedMaxT, queryable.maxt)
+	require.Equal(t, expectedMinT, queryable.hints.Start)
+	require.Equal(t, expectedMaxT, queryable.hints.End)
+}
+
+func requireMatchers(t *testing.T, queryable *mockQueryable, expected types.Matchers) {
+	observed := make([]types.Matcher, 0, len(queryable.matchers))
+	for _, m := range queryable.matchers {
+		observed = append(observed, types.Matcher{
+			Type:  m.Type,
+			Name:  m.Name,
+			Value: m.Value,
+		})
+	}
+
+	require.ElementsMatch(t, expected, observed)
 }
 
 type mockQueryable struct {
 	mint, maxt int64
 	hints      *storage.SelectHints
+	matchers   []*labels.Matcher
 }
 
 func (m *mockQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
@@ -173,8 +258,9 @@ type mockQuerier struct {
 	q *mockQueryable
 }
 
-func (m *mockQuerier) Select(_ context.Context, _ bool, hints *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+func (m *mockQuerier) Select(_ context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	m.q.hints = hints
+	m.q.matchers = matchers
 
 	return storage.EmptySeriesSet()
 }

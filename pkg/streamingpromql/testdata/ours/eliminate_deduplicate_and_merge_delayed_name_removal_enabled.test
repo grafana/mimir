@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# This tests for a bug introduced https://github.com/grafana/mimir/pull/14228
+# Note that there is no increase for {op="get"} for one step. This causes the
+# `or` operation from the query to use the leg that doesn't have the `> 0`
+# conditional. Without a `DeduplicateAndMerge` node wrapping the binary `or`,
+# we end up with duplicate series with values in the final `DeduplicateAndMerge`
+# node at the root of query.
+
+load 1m
+  metric_total{op="get", pod="sg-1"} 1 2 3 4  4  6  7  8  9  10
+  metric_total{op="get", pod="sg-2"} 1 2 3 4  4  6  7  8  9  10
+  metric_total{op="set", pod="sg-1"} 2 4 6 8  10 12 14 16 18 20
+  metric_total{op="set", pod="sg-2"} 2 4 6 8  10 12 14 16 18 20
+  metric_total{op="del", pod="sg-1"} 3 6 9 12 15 18 18 24 27 30
+  metric_total{op="del", pod="sg-2"} 3 6 9 12 15 18 18 24 27 30
+
+eval instant at 3m avg_over_time(((sum by(op) (rate(metric_total{pod=~"sg.+"}[2m])) > 0) or (sum by(op) (rate(metric_total{pod=~"sg.+"}[2m]))))[5m:1m])
+  {op="del"} 0.1
+  {op="get"} 0.03333333333333333
+  {op="set"} 0.06666666666666667

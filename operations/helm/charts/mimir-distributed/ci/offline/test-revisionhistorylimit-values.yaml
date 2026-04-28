@@ -1,0 +1,26 @@
+distributor:
+  revisionHistoryLimit: 3
+
+overrides_exporter:
+  revisionHistoryLimit: 3
+
+querier:
+  revisionHistoryLimit: 3
+
+query_frontend:
+  revisionHistoryLimit: 3
+
+query_scheduler:
+  revisionHistoryLimit: 3
+
+ruler_querier:
+  revisionHistoryLimit: 3
+
+ruler_query_frontend:
+  revisionHistoryLimit: 3
+
+ruler_query_scheduler:
+  revisionHistoryLimit: 3
+
+ruler:
+  revisionHistoryLimit: 3

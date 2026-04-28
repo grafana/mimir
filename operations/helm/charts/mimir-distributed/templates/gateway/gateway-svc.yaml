@@ -22,6 +22,9 @@ spec:
   {{- if and (eq "LoadBalancer" .Values.gateway.service.type) .Values.gateway.service.loadBalancerIP }}
   loadBalancerIP: {{ .Values.gateway.service.loadBalancerIP }}
   {{- end }}
+  {{- if .Values.gateway.service.trafficDistribution }}
+  trafficDistribution: {{ .Values.gateway.service.trafficDistribution }}
+  {{- end }}
   ports:
     - port: {{ .Values.gateway.service.port }}
       protocol: TCP

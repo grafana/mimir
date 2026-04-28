@@ -61,11 +61,6 @@ local overrides = {
       Grafana Metaconvert converts Cortex meta.json files to be on the Grafana Mimir format.
     |||,
   },
-  'mimir-continuous-test': {
-    description: |||
-      As a developer, you can use the standalone mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters. This tool identifies a class of bugs that could be difficult to spot during development.
-    |||,
-  },
   mimirtool: {
     description: |||
       Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics.

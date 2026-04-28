@@ -10,12 +10,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 )
@@ -36,6 +36,10 @@ var (
 		"$__range", "1d",
 		"${__range_s:glob}", "30",
 		"${__range_s}", "30",
+		// $latency_metrics is commonly used by Grafana dashboards to switch
+		// between classic and native histograms. See:
+		// https://grafana.com/docs/mimir/latest/send/native-histograms/_exponential_buckets/#migrate-from-classic-histograms
+		"$latency_metrics", "0",
 	)
 )
 
@@ -53,16 +57,16 @@ type DashboardMetrics struct {
 	ParseErrors []string `json:"parse_errors"`
 }
 
-func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
+func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board, promqlParser parser.Parser, logger log.Logger) {
 	var parseErrors []error
 	metrics := make(map[string]struct{})
 
 	// Iterate through all the panels and collect metrics
 	for _, panel := range board.Panels {
-		parseErrors = append(parseErrors, metricsFromPanel(*panel, metrics)...)
+		parseErrors = append(parseErrors, metricsFromPanel(*panel, metrics, promqlParser, logger)...)
 		if panel.SubPanels != nil {
 			for _, subPanel := range panel.SubPanels {
-				parseErrors = append(parseErrors, metricsFromPanel(subPanel, metrics)...)
+				parseErrors = append(parseErrors, metricsFromPanel(subPanel, metrics, promqlParser, logger)...)
 			}
 		}
 	}
@@ -70,12 +74,12 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	// Iterate through all the rows and collect metrics
 	for _, row := range board.Rows {
 		for _, panel := range row.Panels {
-			parseErrors = append(parseErrors, metricsFromPanel(panel, metrics)...)
+			parseErrors = append(parseErrors, metricsFromPanel(panel, metrics, promqlParser, logger)...)
 		}
 	}
 
 	// Process metrics in templating
-	parseErrors = append(parseErrors, metricsFromTemplating(board.Templating, metrics)...)
+	parseErrors = append(parseErrors, metricsFromTemplating(board.Templating, metrics, promqlParser, logger)...)
 
 	parseErrs := make([]string, 0, len(parseErrors))
 	for _, err := range parseErrors {
@@ -116,7 +120,7 @@ func getQueryFromTemplating(name string, q interface{}) (string, error) {
 	return "", fmt.Errorf("templating type error: name=%v", name)
 }
 
-func metricsFromTemplating(templating minisdk.Templating, metrics map[string]struct{}) []error {
+func metricsFromTemplating(templating minisdk.Templating, metrics map[string]struct{}, promqlParser parser.Parser, logger log.Logger) []error {
 	parseErrors := []error{}
 	for _, templateVar := range templating.List {
 		if templateVar.Type != "query" {
@@ -126,7 +130,7 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 		query, err := getQueryFromTemplating(templateVar.Name, templateVar.Query)
 		if err != nil {
 			parseErrors = append(parseErrors, err)
-			log.Debugln("msg", "templating parse error", "err", err)
+			level.Debug(logger).Log("msg", "templating parse error", "err", err)
 			continue
 		}
 
@@ -146,17 +150,17 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 			// query_result(query)
 			query = qrRegexp.FindStringSubmatch(query)[1]
 		}
-		err = parseQuery(query, metrics)
+		err = parseQuery(query, metrics, promqlParser)
 		if err != nil {
 			parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))
-			log.Debugln("msg", "promql parse error", "err", err, "query", query)
+			level.Debug(logger).Log("msg", "promql parse error", "err", err, "query", query)
 			continue
 		}
 	}
 	return parseErrors
 }
 
-func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error {
+func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}, promqlParser parser.Parser, logger log.Logger) []error {
 	if !panel.SupportsTargets() {
 		return []error{fmt.Errorf("unsupported panel type: %q", panel.Type)}
 	}
@@ -170,10 +174,10 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error 
 			continue
 		}
 		query := target.Expr
-		err := parseQuery(query, metrics)
+		err := parseQuery(query, metrics, promqlParser)
 		if err != nil {
 			parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))
-			log.Debugln("msg", "promql parse error", "err", err, "query", query)
+			level.Debug(logger).Log("msg", "promql parse error", "err", err, "query", query)
 			continue
 		}
 	}
@@ -188,8 +192,8 @@ func replaceVariables(query string) string {
 	return query
 }
 
-func parseQuery(query string, metrics map[string]struct{}) error {
-	expr, err := parser.ParseExpr(replaceVariables(query))
+func parseQuery(query string, metrics map[string]struct{}, promqlParser parser.Parser) error {
+	expr, err := promqlParser.ParseExpr(replaceVariables(query))
 	if err != nil {
 		return err
 	}
@@ -203,7 +207,7 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 				return nil
 			}
 			for _, m := range n.LabelMatchers {
-				if m.Name == labels.MetricName && validMetricName.MatchString(m.Value) {
+				if m.Name == model.MetricNameLabel && validMetricName.MatchString(m.Value) {
 					metrics[m.Value] = struct{}{}
 					return nil
 				}

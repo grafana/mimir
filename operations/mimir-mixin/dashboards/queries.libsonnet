@@ -2,11 +2,60 @@ local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-queries.json';
 
 (import 'dashboard-utils.libsonnet') {
+  local queryMemoryConsumptionPanel(display_name, job_name) =
+    $.heatmapPanel('Estimated per-query memory consumption') +
+    $.queryPanel('sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher, %s}[$__rate_interval]))' % $.jobMatcher(job_name), 'Estimated memory consumption') +
+    {
+      options+: {
+        legend+: {
+          show: false,
+        },
+        tooltip+: {
+          yHistogram: true,
+        },
+        cellValues+: {
+          unit: 'reqps',
+        },
+        yAxis+: {
+          min: 0,
+          unit: 'bytes',
+        },
+        cellGap: 0,
+        calculation+: {
+          xBuckets: {
+            mode: 'count',
+            value: 60,
+          },
+          yBuckets: {
+            mode: 'count',
+            value: 40,
+          },
+        },
+      },
+    } +
+    $.panelDescription(
+      'Estimated per-query memory consumption',
+      |||
+        The esimated memory consumption of all queries evaluated by %ss. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.
+      ||| % display_name
+    ),
+
+  local mqeFallbackPanel(display_name, job_name) =
+    $.timeseriesPanel("Fallback to Prometheus' query engine") +
+    $.queryPanel('sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher, %s}[$__rate_interval])) or vector(0)' % $.jobMatcher(job_name), 'Queries') +
+    { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+    $.panelDescription(
+      "Fallback to Prometheus' query engine",
+      |||
+        The rate of queries that fell back to Prometheus' query engine in %ss. Only applicable if the Mimir query engine (MQE) is enabled.
+      ||| % display_name
+    ),
+
   [filename]:
     assert std.md5(filename) == 'b3abe8d5c040395cc36615cb4334c92d' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Queries') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addShowNativeLatencyVariable()
+    .addShowNativeLatencyVariable($.latencyVariableDefault())
     // This selector allows to switch the read path components queried in this dashboard.
     // Since the labels matcher used by this selector is very wide (includes multiple components)
     // whenever you want to show panels for a specific component (e.g. query-frontend) you can safely
@@ -29,9 +78,17 @@ local filename = 'mimir-queries.json';
             Queries coming from Grafana Managed Alerting to the gateway will be routed to the remote ruler query path.
           |||
         ) +
+        local selector = $.jobMatcher($._config.job_names.gateway);
+        local query = utils.ncHistogramApplyTemplate(
+          template='label_replace(label_replace(%s, "proxy", "Remote ruler read path", "proxy", "^alternate_query_proxy$"),"proxy", "Main read path", "proxy", "^query_proxy$")',
+          query=utils.ncHistogramSumBy(
+            query=utils.ncHistogramCountRate('cortex_conditional_handler_request_duration_seconds', selector),
+            sum_by=['proxy'],
+          )
+        );
         $.queryPanel(
-          'label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{%s}[$__rate_interval]))), "proxy", "Remote ruler read path", "proxy", "^alternate_query_proxy$"),"proxy", "Main read path", "proxy", "^query_proxy$")' % $.jobMatcher($._config.job_names.gateway),
-          '{{proxy}}'
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{proxy}}', '{{proxy}}'],
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }
       )
@@ -41,11 +98,11 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Queue duration') +
         $.onlyRelevantIfQuerySchedulerDisabled('Queue duration') +
-        $.latencyPanel('cortex_query_frontend_queue_duration_seconds', '{$read_path_matcher}'),
+        $.ncLatencyPanel('cortex_query_frontend_queue_duration_seconds', '$read_path_matcher'),
       )
       .addPanel(
         $.timeseriesPanel('Retries') +
-        $.latencyPanel('cortex_query_frontend_retries', '{$read_path_matcher}', multiplier=1) +
+        $.ncLatencyPanel('cortex_query_frontend_retries', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
@@ -54,7 +111,8 @@ local filename = 'mimir-queries.json';
         $.queryPanel(
           'sum by(%s) (cortex_query_frontend_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
           '{{%s}}' % $._config.per_instance_label
-        ),
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per user)') +
@@ -63,6 +121,7 @@ local filename = 'mimir-queries.json';
           'sum by(user) (cortex_query_frontend_queue_length{$read_path_matcher}) > 0',
           '{{user}}'
         ) +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { noValue: '0' } } }
       )
     )
@@ -71,7 +130,7 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Queue duration') +
         $.onlyRelevantIfQuerySchedulerEnabled('Queue duration') +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{$read_path_matcher}'),
+        $.ncLatencyPanel('cortex_query_scheduler_queue_duration_seconds', '$read_path_matcher'),
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +
@@ -79,7 +138,8 @@ local filename = 'mimir-queries.json';
         $.queryPanel(
           'sum by(%s) (cortex_query_scheduler_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
           '{{%s}}' % $._config.per_instance_label
-        ),
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per user)') +
@@ -88,14 +148,24 @@ local filename = 'mimir-queries.json';
           'sum by(user) (cortex_query_scheduler_queue_length{$read_path_matcher}) > 0',
           '{{user}}'
         ) +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { noValue: '0' } } }
       )
     )
     .addRow(
       $.row('Query-frontend – query splitting and results cache')
       .addPanel(
+        local query = utils.ncHistogramApplyTemplate(
+          template='sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / %s',
+          query=utils.ncHistogramSumBy(
+            query=utils.ncHistogramCountRate('cortex_frontend_query_range_duration_seconds', '$read_path_matcher, method="split_by_interval_and_results_cache"'),
+          )
+        );
         $.timeseriesPanel('Intervals per query') +
-        $.queryPanel('sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{$read_path_matcher, method="split_by_interval_and_results_cache"}[$__rate_interval]))', 'splitting rate') +
+        $.queryPanel(
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['splitting rate', 'splitting rate'],
+        ) +
         $.panelDescription(
           'Intervals per query',
           |||
@@ -167,7 +237,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Number of sharded queries per query') +
-        $.latencyPanel('cortex_frontend_sharded_queries_per_query', '{$read_path_matcher}', multiplier=1) +
+        $.ncLatencyPanel('cortex_frontend_sharded_queries_per_query', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } } +
         $.panelDescription(
           'Number of sharded queries per query',
@@ -176,6 +246,33 @@ local filename = 'mimir-queries.json';
             have been successfully rewritten in a shardable way.
           |||
         ),
+      )
+    )
+    .addRow(
+      $.row('Query-frontend - Query Lengths')
+      .addPanel(
+        $.heatmapPanel('Query Expression Length') +
+        $.queryPanel(
+          'sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval]))',
+          'Bytes'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Query Expression Percentiles') +
+        $.queryPanel(
+          'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
+          '99th Percentile'
+        ) +
+        $.queryPanel(
+          'histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
+          '90th Percentile'
+        ) +
+        $.queryPanel(
+          'histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
+          'Average'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } }
       )
     )
     .addRowIf(
@@ -220,20 +317,25 @@ local filename = 'mimir-queries.json';
       )
     )
     .addRow(
+      $.row('Query-frontend - query engine')
+      .addPanel(queryMemoryConsumptionPanel('query-frontend', $._config.job_names.query_frontend))
+      .addPanel(mqeFallbackPanel('query-frontend', $._config.job_names.query_frontend))
+    )
+    .addRow(
       $.row('Ingester')
       .addPanel(
         $.timeseriesPanel('Series per query') +
-        $.latencyRecordingRulePanel('cortex_ingester_queried_series', $.jobSelector($._config.job_names.ingester), multiplier=1) +
+        $.latencyRecordingRulePanelNativeHistogram('cortex_ingester_queried_series', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('stage', 'merged_blocks')], multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
         $.timeseriesPanel('Samples per query') +
-        $.latencyRecordingRulePanel('cortex_ingester_queried_samples', $.jobSelector($._config.job_names.ingester), multiplier=1) +
+        $.latencyRecordingRulePanelNativeHistogram('cortex_ingester_queried_samples', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
         $.timeseriesPanel('Exemplars per query') +
-        $.latencyRecordingRulePanel('cortex_ingester_queried_exemplars', $.jobSelector($._config.job_names.ingester), multiplier=1) +
+        $.latencyRecordingRulePanelNativeHistogram('cortex_ingester_queried_exemplars', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
     )
@@ -299,12 +401,12 @@ local filename = 'mimir-queries.json';
       $.row('Querier')
       .addPanel(
         $.timeseriesPanel('Number of store-gateways hit per query') +
-        $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{$read_path_matcher}', multiplier=1) +
+        $.ncLatencyPanel('cortex_querier_storegateway_instances_hit_per_query', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
         $.timeseriesPanel('Refetches of missing blocks per query') +
-        $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{$read_path_matcher}', multiplier=1) +
+        $.ncLatencyPanel('cortex_querier_storegateway_refetches_per_query', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
@@ -322,8 +424,16 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
+        local selector = '$read_path_matcher, route=~"%s"' % $.queries.query_http_routes_regex;
+        local query = utils.ncHistogramApplyTemplate(
+          template='sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left %s',
+          query=utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_querier_request_duration_seconds', selector)),
+        );
         $.timeseriesPanel('Rejected queries') +
-        $.queryPanel('sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{$read_path_matcher, route=~"%(routes_regex)s"}[$__rate_interval]))' % { routes_regex: $.queries.query_http_routes_regex }, '{{reason}}') +
+        $.queryPanel(
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{reason}}', '{{reason}}'],
+        ) +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
         $.panelDescription(
           'Rejected queries',
@@ -332,55 +442,8 @@ local filename = 'mimir-queries.json';
           |||
         ),
       )
-      .addPanel(
-        $.heatmapPanel('Estimated per-query memory consumption') +
-        $.queryPanel('sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))', 'Estimated memory consumption') +
-        {
-          options+: {
-            legend+: {
-              show: false,
-            },
-            tooltip+: {
-              yHistogram: true,
-            },
-            cellValues+: {
-              unit: 'reqps',
-            },
-            yAxis+: {
-              min: 0,
-              unit: 'bytes',
-            },
-            cellGap: 0,
-            calculation+: {
-              xBuckets: {
-                mode: 'count',
-                value: 60,
-              },
-              yBuckets: {
-                mode: 'count',
-                value: 40,
-              },
-            },
-          },
-        } +
-        $.panelDescription(
-          'Estimated per-query memory consumption',
-          |||
-            The esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.
-          |||
-        ),
-      )
-      .addPanel(
-        $.timeseriesPanel("Fallback to Prometheus' query engine") +
-        $.queryPanel('sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)', 'Queries') +
-        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
-        $.panelDescription(
-          "Fallback to Prometheus' query engine",
-          |||
-            The rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if the Mimir query engine (MQE) is enabled.
-          |||
-        ),
-      )
+      .addPanel(queryMemoryConsumptionPanel('querier', $._config.job_names.querier))
+      .addPanel(mqeFallbackPanel('querier', $._config.job_names.querier))
     )
     .addRow(
       $.row('')
@@ -403,7 +466,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Bucket indexes load latency') +
-        $.latencyPanel('cortex_bucket_index_load_duration_seconds', '{$read_path_matcher}'),
+        $.ncLatencyPanel('cortex_bucket_index_load_duration_seconds', '$read_path_matcher'),
       )
     )
     .addRow(
@@ -453,44 +516,57 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
+        local selector = $.jobMatcher($._config.job_names.store_gateway);
+        local query = utils.ncHistogramAverageRate('cortex_bucket_store_series_request_stage_duration_seconds', selector, sum_by=['stage']);
         $.timeseriesPanel('Series request average latency') +
         $.queryPanel(
-          |||
-            sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{%s}[$__rate_interval]))
-            /
-            sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          '{{stage}}'
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{stage}}', '{{stage}}'],
         ) +
         $.stack +
         $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(
+        local selector = $.jobMatcher($._config.job_names.store_gateway);
+        local query = utils.ncHistogramQuantile('0.99', 'cortex_bucket_store_series_request_stage_duration_seconds', selector, sum_by=['stage']);
         $.timeseriesPanel('Series request 99th percentile latency') +
         $.queryPanel(
-          |||
-            histogram_quantile(0.99, sum by(stage, le) (rate(cortex_bucket_store_series_request_stage_duration_seconds_bucket{%s}[$__rate_interval])))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway)],
-          '{{stage}}'
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{stage}}', '{{stage}}'],
         ) +
         $.stack +
         $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(
+        local selector = $.jobMatcher($._config.job_names.store_gateway);
+        local query = {
+          classic:
+            |||
+              # Clamping min to 0 because if preloading not useful at all, then the actual value we get is
+              # slightly negative because of the small overhead introduced by preloading.
+              clamp_min(1 - (
+                  sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{%(selector)s}[$__rate_interval]))
+                  /
+                  sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{%(selector)s}[$__rate_interval]))
+              ), 0)
+            ||| % { selector: selector },
+          native:
+            |||
+              # Clamping min to 0 because if preloading not useful at all, then the actual value we get is
+              # slightly negative because of the small overhead introduced by preloading.
+              clamp_min(1 - (
+                  sum(histogram_sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds{%(selector)s}[$__rate_interval])))
+                  /
+                  sum(histogram_sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds{%(selector)s}[$__rate_interval])))
+              ), 0)
+            ||| % { selector: selector },
+        };
         $.timeseriesPanel('Series batch preloading efficiency') +
         $.queryPanel(
-          |||
-            # Clamping min to 0 because if preloading not useful at all, then the actual value we get is
-            # slightly negative because of the small overhead introduced by preloading.
-            clamp_min(1 - (
-                sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{%s}[$__rate_interval]))
-                /
-                sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{%s}[$__rate_interval]))
-            ), 0)
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          '% of time reduced by preloading'
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['% of time reduced by preloading', '% of time reduced by preloading'],
         ) +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
         $.panelDescription(
@@ -517,7 +593,8 @@ local filename = 'mimir-queries.json';
             eventually loaded in memory (if index-header lazy loading is disabled, or lazy loading
             is enabled and the index-header was loaded).
           |||
-        ),
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('Blocks loaded / sec') +
@@ -541,15 +618,16 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Lazy loaded index-headers') +
         $.queryPanel('cortex_bucket_store_indexheader_lazy_load_total{%s} - cortex_bucket_store_indexheader_lazy_unload_total{%s}' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { custom+: { fillOpacity: 0 } } } }
       )
       .addPanel(
         $.timeseriesPanel('Index-header lazy load duration') +
-        $.latencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)),
+        $.ncLatencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', $.jobMatcher($._config.job_names.store_gateway)),
       )
       .addPanel(
         $.timeseriesPanel('Index-header lazy load gate latency') +
-        $.latencyPanel('cortex_bucket_stores_gate_duration_seconds', '{%s,gate="index_header"}' % $.jobMatcher($._config.job_names.store_gateway)) +
+        $.ncLatencyPanel('cortex_bucket_stores_gate_duration_seconds', '%s,gate="index_header"' % $.jobMatcher($._config.job_names.store_gateway)) +
         $.panelDescription(
           'Index-header lazy load gate latency',
           |||

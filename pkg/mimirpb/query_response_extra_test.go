@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -37,30 +38,34 @@ func TestAllPrometheusErrorTypeValues(t *testing.T) {
 		actualErrorTypeString, err := errorType.ToPrometheusString()
 		require.NoError(t, err)
 		require.Equal(t, prometheusErrorTypeString, actualErrorTypeString)
+
+		_, err = ErrorTypeFromAPIErrorType(apierror.Type(prometheusErrorTypeString))
+		require.NoError(t, err, "should be able to convert all error types to Protobuf error constants")
 	}
 }
 
 // HACK: this is a very fragile way of checking if there have been any additional status values added to Prometheus
 // It won't catch any values that are created that aren't defined as constants, and will break if the values are moved to a new file, defined in a different way etc.
 func extractPrometheusStatusStrings(t *testing.T) []string {
-	return extractPrometheusStrings(t, "status")
+	// This regexp is intended to match lines like: statusSuccess status = "success", capturing the value between the quotes
+	return extractPrometheusStrings(t, `(?m)^\s*[^ ]+\s+status\s+=\s+"([^"]*)"`)
 }
 
 // HACK: this is a very fragile way of checking if there have been any additional error type values added to Prometheus
 // It won't catch any values that are created that aren't defined as constants, and will break if the values are moved to a new file, defined in a different way etc.
 func extractPrometheusErrorTypeStrings(t *testing.T) []string {
-	return extractPrometheusStrings(t, "errorType")
+	// This regexp is intended to match lines like: errorTimeout = errorType{ErrorTimeout, "timeout"}, capturing the value between the quotes
+	return extractPrometheusStrings(t, `(?m)^\s*[^ ]+\s+=\s+errorType\{[^,]+,\s+"([^"]*)"\}`)
 }
 
-func extractPrometheusStrings(t *testing.T, constantType string) []string {
+func extractPrometheusStrings(t *testing.T, rgx string) []string {
 	sourceFile, err := filepath.Abs(filepath.Join("..", "..", "vendor", "github.com", "prometheus", "prometheus", "web", "api", "v1", "api.go"))
 	require.NoError(t, err)
 
 	sourceFileContents, err := os.ReadFile(sourceFile)
 	require.NoError(t, err)
 
-	// This regexp is intended to match lines like: errorTimeout  errorType = "timeout"
-	matchRegex := regexp.MustCompile(`(?m)^\s*[^ ]+\s+` + regexp.QuoteMeta(constantType) + `\s+=\s+"(.*)"$`)
+	matchRegex := regexp.MustCompile(rgx)
 	matches := matchRegex.FindAllSubmatch(sourceFileContents, -1)
 	strings := make([]string, 0, len(matches))
 

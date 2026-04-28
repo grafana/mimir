@@ -92,3 +92,20 @@ func TestUnregisterOnShutdownFlag(t *testing.T) {
 		assert.True(t, lcCfg.KeepInstanceInTheRingOnShutdown)
 	}
 }
+
+func TestRingConfig_ToRingConfig(t *testing.T) {
+	cfg := RingConfig{
+		HeartbeatTimeout:     time.Minute,
+		ReplicationFactor:    3,
+		ZoneAwarenessEnabled: true,
+		ExcludedZones:        []string{"zone-a", "zone-b"},
+	}
+
+	rc := cfg.ToRingConfig()
+
+	assert.Equal(t, cfg.HeartbeatTimeout, rc.HeartbeatTimeout)
+	assert.Equal(t, cfg.ReplicationFactor, rc.ReplicationFactor)
+	assert.Equal(t, cfg.ZoneAwarenessEnabled, rc.ZoneAwarenessEnabled)
+	assert.Equal(t, cfg.ExcludedZones, rc.ExcludedZones)
+	assert.True(t, rc.SubringCacheDisabled)
+}

@@ -129,7 +129,7 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 			attributesCache = metadataCache
 		}
 		if chunksConfig.AttributesInMemoryMaxItems > 0 {
-			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", prometheus.WrapRegistererWithPrefix("cortex_", reg), chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
+			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", prometheus.WrapRegistererWithPrefix("cortex_", reg), chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL, logger)
 			if err != nil {
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}

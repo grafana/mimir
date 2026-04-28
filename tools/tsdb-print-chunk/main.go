@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb"
@@ -18,7 +17,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-var logger = log.NewLogfmtLogger(os.Stderr)
+var logger = util_log.MakeLeveledLogger(os.Stderr, "info")
 
 func main() {
 	args := os.Args
@@ -70,16 +69,17 @@ func printChunks(blockDir string, chunkRefs []string) {
 			ts int64                     // we declare ts here to prevent shadowing of h and fh within the loop
 		)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			st := it.AtST()
 			switch valType {
 			case chunkenc.ValFloat:
 				ts, v := it.At()
-				fmt.Printf("%g\t%d (%s)\n", v, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+				fmt.Printf("%g\tST: %d (%s)\tT: %d (%s)\n", v, st, timestamp.Time(st).UTC().Format(time.RFC3339Nano), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 			case chunkenc.ValHistogram:
 				ts, h = it.AtHistogram(h)
-				fmt.Printf("%s\t%d (%s) H %s\n", h.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano), counterResetHintString(h.CounterResetHint))
+				fmt.Printf("%s\tST: %d (%s)\tT: %d (%s) H %s\n", h.String(), st, timestamp.Time(st).UTC().Format(time.RFC3339Nano), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano), counterResetHintString(h.CounterResetHint))
 			case chunkenc.ValFloatHistogram:
 				ts, fh = it.AtFloatHistogram(fh)
-				fmt.Printf("%s\t%d (%s) FH %s\n", fh.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano), counterResetHintString(fh.CounterResetHint))
+				fmt.Printf("%s\tST: %d (%s)\tT: %d (%s) FH %s\n", fh.String(), st, timestamp.Time(st).UTC().Format(time.RFC3339Nano), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano), counterResetHintString(fh.CounterResetHint))
 			default:
 				fmt.Printf("skipping unsupported value type %v\n", valType)
 			}

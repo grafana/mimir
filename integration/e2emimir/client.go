@@ -21,8 +21,6 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	alertingmodels "github.com/grafana/alerting/models"
-	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/klauspost/compress/s2"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
@@ -34,9 +32,9 @@ import (
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage/remote"
-	yaml "gopkg.in/yaml.v3"
+	yaml "go.yaml.in/yaml/v3"
 
-	"github.com/grafana/mimir/pkg/alertmanager"
+	"github.com/grafana/mimir/integration/e2emimir/rw2/rc3"
 	mimirapi "github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -240,9 +238,24 @@ func (c *Client) PushRW2(writeRequest *promRW2.Request) (*http.Response, error) 
 		return nil, err
 	}
 
-	// Create HTTP request
-	compressed := snappy.Encode(nil, data)
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(compressed))
+	return c.pushRW2Variant(snappy.Encode(nil, data))
+}
+
+// PushRW2rc3 sends a push request compatible with RW2.0-rc3.
+// To be used for rc3-specific constructs such as CreatedTimestamp.
+func (c *Client) PushRW2rc3(writeRequest *rc3.Request) (*http.Response, error) {
+	// Create write request
+	data, err := proto.Marshal(writeRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.pushRW2Variant(snappy.Encode(nil, data))
+}
+
+// pushRW2Variant pushes arbitrary data to the Push endpoint, tagged appropriately for RW2.0.
+func (c *Client) pushRW2Variant(data []byte) (*http.Response, error) {
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -265,24 +278,24 @@ func (c *Client) PushRW2(writeRequest *promRW2.Request) (*http.Response, error) 
 	return res, nil
 }
 
-// PushOTLP the input timeseries to the remote endpoint in OTLP format
-func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) (*http.Response, error) {
+// PushOTLP writes the input timeseries to the remote OTLP endpoint.
+func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) (*http.Response, []byte, error) {
 	// Create write request
 	otlpRequest := distributor.TimeseriesToOTLPRequest(timeseries, metadata)
 
 	data, err := otlpRequest.MarshalProto()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	return c.PushOTLPPayload(data, "application/x-protobuf")
 }
 
-func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Response, error) {
+func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Response, []byte, error) {
 	// Create HTTP request
 	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-Scope-OrgID", c.orgID)
@@ -293,24 +306,29 @@ func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Resp
 	// Execute HTTP request
 	res, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer res.Body.Close()
-	return res, nil
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read response body: %w", err)
+	}
+
+	return res, body, nil
 }
 
 // Query runs an instant query.
-func (c *Client) Query(query string, ts time.Time) (model.Value, error) {
+func (c *Client) Query(query string, ts time.Time, opts ...promv1.Option) (model.Value, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	value, _, err := c.querierClient.Query(ctx, query, ts)
+	value, _, err := c.querierClient.Query(ctx, query, ts, opts...)
 	return value, err
 }
 
-// Query runs a query range.
-func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration) (model.Value, error) {
+// QueryRange runs a range query.
+func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration, opts ...promv1.Option) (model.Value, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
@@ -318,7 +336,7 @@ func (c *Client) QueryRange(query string, start, end time.Time, step time.Durati
 		Start: start,
 		End:   end,
 		Step:  step,
-	})
+	}, opts...)
 	return value, err
 }
 
@@ -501,7 +519,16 @@ func (c *Client) LabelNames(start, end time.Time, matches []string, opts ...prom
 	defer cancel()
 
 	result, _, err := c.querierClient.LabelNames(ctx, matches, start, end, opts...)
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert model.LabelNames to []string
+	names := make([]string, len(result))
+	for i, name := range result {
+		names[i] = string(name)
+	}
+	return names, nil
 }
 
 // LabelNamesAndValues returns distinct label values per label name.
@@ -753,11 +780,6 @@ type ServerStatus struct {
 	Config struct {
 		Original string `json:"original"`
 	} `json:"config"`
-}
-
-type successResult struct {
-	Status string          `json:"status"`
-	Data   json.RawMessage `json:"data,omitempty"`
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
@@ -1122,243 +1144,6 @@ func (c *Client) DeleteAlertmanagerConfig(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) GetGrafanaAlertmanagerConfig(ctx context.Context) (*alertmanager.UserGrafanaConfig, error) {
-	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrNotFound
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("getting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	var sr *successResult
-	err = json.Unmarshal(body, &sr)
-	if err != nil {
-		return nil, err
-	}
-
-	var ugc *alertmanager.UserGrafanaConfig
-	err = json.Unmarshal(sr.Data, &ugc)
-	if err != nil {
-		return nil, err
-	}
-
-	return ugc, err
-}
-
-func (c *Client) GetGrafanaAlertmanagerConfigStatus(ctx context.Context) (*alertmanager.UserGrafanaConfigStatus, error) {
-	u := c.alertmanagerClient.URL("/api/v1/grafana/config/status", nil)
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrNotFound
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("getting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	var sr *successResult
-	err = json.Unmarshal(body, &sr)
-	if err != nil {
-		return nil, err
-	}
-
-	var ugc *alertmanager.UserGrafanaConfigStatus
-	err = json.Unmarshal(sr.Data, &ugc)
-	if err != nil {
-		return nil, err
-	}
-
-	return ugc, err
-}
-
-func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash, externalURL string, isDefault, isPromoted bool, staticHeaders map[string]string, smtpConfig *alertmanager.SmtpConfig) error {
-	var grafanaConfig alertmanager.GrafanaAlertmanagerConfig
-	if err := json.Unmarshal([]byte(cfg), &grafanaConfig); err != nil {
-		return err
-	}
-
-	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
-	data, err := json.Marshal(&alertmanager.UserGrafanaConfig{
-		GrafanaAlertmanagerConfig: grafanaConfig,
-		Hash:                      hash,
-		CreatedAt:                 createdAtTimestamp,
-		Default:                   isDefault,
-		Promoted:                  isPromoted,
-		ExternalURL:               externalURL,
-		SmtpConfig:                smtpConfig,
-
-		// TODO: Remove once it's sent in SmtpConfig.
-		StaticHeaders: staticHeaders,
-	})
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrNotFound
-	}
-
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("setting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
-func (c *Client) DeleteGrafanaAlertmanagerConfig(ctx context.Context) error {
-	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
-	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
-	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrNotFound
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("deleting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
-func (c *Client) GetFullState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
-	return c.getState(ctx, "/api/v1/grafana/full_state")
-}
-
-func (c *Client) GetGrafanaAlertmanagerState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
-	return c.getState(ctx, "/api/v1/grafana/state")
-}
-
-func (c *Client) getState(ctx context.Context, path string) (*alertmanager.UserGrafanaState, error) {
-	u := c.alertmanagerClient.URL(path, nil)
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrNotFound
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("getting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	var sr *successResult
-	err = json.Unmarshal(body, &sr)
-	if err != nil {
-		return nil, err
-	}
-
-	var ugs *alertmanager.UserGrafanaState
-	err = json.Unmarshal(sr.Data, &ugs)
-	if err != nil {
-		return nil, err
-	}
-
-	return ugs, err
-}
-
-func (c *Client) SetGrafanaAlertmanagerState(ctx context.Context, state string) error {
-	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
-
-	data, err := json.Marshal(&alertmanager.UserGrafanaState{
-		State: state,
-	})
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrNotFound
-	}
-
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("setting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
-func (c *Client) DeleteGrafanaAlertmanagerState(ctx context.Context) error {
-	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
-	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
-	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrNotFound
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("deleting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
 // SendAlertToAlermanager sends alerts to the Alertmanager API
 func (c *Client) SendAlertToAlermanager(ctx context.Context, alert *model.Alert) error {
 	u := c.alertmanagerClient.URL("/alertmanager/api/v2/alerts", nil)
@@ -1601,105 +1386,6 @@ func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
 		receivers = append(receivers, v.Name)
 	}
 	return receivers, nil
-}
-
-func (c *Client) GetReceiversExperimental(ctx context.Context) ([]alertingmodels.Receiver, error) {
-	u := c.alertmanagerClient.URL("api/v1/grafana/receivers", nil)
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
-	}
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrNotFound
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("getting receivers failed with status %d and error %v", resp.StatusCode, string(body))
-	}
-
-	decoded := []alertingmodels.Receiver{}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, err
-	}
-
-	return decoded, nil
-}
-
-func (c *Client) TestTemplatesExperimental(ctx context.Context, ttConf alertingNotify.TestTemplatesConfigBodyParams) (*alertingNotify.TestTemplatesResults, error) {
-	u := c.alertmanagerClient.URL("api/v1/grafana/templates/test", nil)
-
-	data, err := json.Marshal(ttConf)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling test templates config: %s", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %s", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrNotFound
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("testing templates failed with status %d and error %s", resp.StatusCode, string(body))
-	}
-
-	decoded := alertingNotify.TestTemplatesResults{}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, err
-	}
-
-	return &decoded, nil
-}
-
-func (c *Client) TestReceiversExperimental(ctx context.Context, trConf alertingNotify.TestReceiversConfigBodyParams) (*alertingNotify.TestReceiversResult, error) {
-	u := c.alertmanagerClient.URL("api/v1/grafana/receivers/test", nil)
-
-	data, err := json.Marshal(trConf)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling test receivers config: %s", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %s", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, body, err := c.alertmanagerClient.Do(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrNotFound
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("testing receivers failed with status %d and error %s", resp.StatusCode, string(body))
-	}
-
-	decoded := alertingNotify.TestReceiversResult{}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, err
-	}
-
-	return &decoded, nil
 }
 
 // DoGet performs a HTTP GET request towards the supplied URL. The request

@@ -18,6 +18,8 @@ import (
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 )
 
+const trackedSeriesFactor = 2
+
 type counters struct {
 	activeSeries           atomic.Int64
 	nativeHistograms       atomic.Int64
@@ -26,14 +28,17 @@ type counters struct {
 
 type ActiveSeriesTracker struct {
 	userID                                         string
-	activeSeriesPerUserAttribution                 *prometheus.Desc
-	activeNativeHistogramSeriesPerUserAttribution  *prometheus.Desc
-	activeNativeHistogramBucketsPerUserAttribution *prometheus.Desc
+	activeSeriesPerUserAttribution                 *descriptor
+	attributedOverflowLabels                       *descriptor
+	activeNativeHistogramSeriesPerUserAttribution  *descriptor
+	activeNativeHistogramBucketsPerUserAttribution *descriptor
 	logger                                         log.Logger
 
-	labels         []costattributionmodel.Label
+	labels         costattributionmodel.Labels
 	overflowLabels []string
 
+	// maxCardinality is the cardinality at which tracker enters the overflow state.
+	// There are up to trackedSeriesFactor*maxCardinality series in observed map.
 	maxCardinality   int
 	cooldownDuration time.Duration
 
@@ -44,15 +49,14 @@ type ActiveSeriesTracker struct {
 	overflowCounter counters
 }
 
-func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
+func NewActiveSeriesTracker(userID string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
-	overflowLabels := make([]string, len(trackedLabels)+2)
+	overflowLabels := make([]string, len(trackedLabels)+1)
 	for i := range trackedLabels {
 		overflowLabels[i] = overflowValue
 	}
 
 	overflowLabels[len(trackedLabels)] = userID
-	overflowLabels[len(trackedLabels)+1] = overflowValue
 
 	ast := &ActiveSeriesTracker{
 		userID:           userID,
@@ -64,25 +68,42 @@ func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.
 		cooldownDuration: cooldownDuration,
 	}
 
-	variableLabels := make([]string, 0, len(trackedLabels)+2)
-	for _, label := range trackedLabels {
-		variableLabels = append(variableLabels, label.OutputLabel())
+	if err := ast.createAndValidateDescriptors(trackedLabels); err != nil {
+		return nil, fmt.Errorf("failed to create an active series tracker for tenant %s: %w", userID, err)
 	}
-	variableLabels = append(variableLabels, tenantLabel, "reason")
-
-	ast.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
-		"The total number of active series per user and attribution.", variableLabels[:len(variableLabels)-1],
-		prometheus.Labels{trackerLabel: defaultTrackerName})
-	ast.activeNativeHistogramSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_native_histogram_series",
-		"The total number of active native histogram series per user and attribution.", variableLabels[:len(variableLabels)-1],
-		prometheus.Labels{trackerLabel: defaultTrackerName})
-	ast.activeNativeHistogramBucketsPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_native_histogram_buckets",
-		"The total number of active native histogram buckets per user and attribution.", variableLabels[:len(variableLabels)-1],
-		prometheus.Labels{trackerLabel: defaultTrackerName})
-	return ast
+	return ast, nil
 }
 
-func (at *ActiveSeriesTracker) hasSameLabels(labels []costattributionmodel.Label) bool {
+func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
+	variableLabels := make([]string, 0, len(trackedLabels)+1)
+	variableLabels = append(variableLabels, trackedLabels.OutputLabels()...)
+	variableLabels = append(variableLabels, tenantLabel)
+
+	var err error
+	if at.activeSeriesPerUserAttribution, err = newDescriptor("cortex_ingester_attributed_active_series",
+		"The total number of active series per user and attribution.", variableLabels,
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+	if at.attributedOverflowLabels, err = newDescriptor("cortex_attributed_series_overflow_labels",
+		"The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.", variableLabels,
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+	if at.activeNativeHistogramSeriesPerUserAttribution, err = newDescriptor("cortex_ingester_attributed_active_native_histogram_series",
+		"The total number of active native histogram series per user and attribution.", variableLabels,
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+	if at.activeNativeHistogramBucketsPerUserAttribution, err = newDescriptor("cortex_ingester_attributed_active_native_histogram_buckets",
+		"The total number of active native histogram buckets per user and attribution.", variableLabels,
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (at *ActiveSeriesTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
 	return slices.Equal(at.labels, labels)
 }
 
@@ -98,9 +119,12 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 	defer bufferPool.Put(buf)
 	at.fillKeyFromLabels(lbls, buf)
 
+	// Happy path, maybe we're already tracking this cost-attribution labels combination.
+	// First try just with a read lock.
 	at.observedMtx.RLock()
 	c, ok := at.observed[string(buf.Bytes())]
 	if ok {
+		// We have this combination already tracked, just increase the counter for it.
 		c.activeSeries.Inc()
 		if nativeHistogramBucketNum >= 0 {
 			c.nativeHistograms.Inc()
@@ -110,34 +134,15 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		return
 	}
 
-	if !at.overflowSince.IsZero() {
-		at.observedMtx.RUnlock()
+	// We don't have this combination tracked.
+	// If we are at capacity, there's no need to grab the write lock to try to add a new series.
+	if len(at.observed) >= trackedSeriesFactor*at.maxCardinality {
 		at.overflowCounter.activeSeries.Inc()
 		if nativeHistogramBucketNum >= 0 {
 			at.overflowCounter.nativeHistograms.Inc()
 			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
 		}
-		return
-	}
-
-	c, ok = at.observed[string(buf.Bytes())]
-	if ok {
-		c.activeSeries.Inc()
-		if nativeHistogramBucketNum >= 0 {
-			c.nativeHistograms.Inc()
-			c.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
-		}
 		at.observedMtx.RUnlock()
-		return
-	}
-
-	if !at.overflowSince.IsZero() {
-		at.observedMtx.RUnlock()
-		at.overflowCounter.activeSeries.Inc()
-		if nativeHistogramBucketNum >= 0 {
-			at.overflowCounter.nativeHistograms.Inc()
-			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
-		}
 		return
 	}
 	at.observedMtx.RUnlock()
@@ -145,6 +150,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 	at.observedMtx.Lock()
 	defer at.observedMtx.Unlock()
 
+	// Are we alredy tracking this series?
 	c, ok = at.observed[string(buf.Bytes())]
 	if ok {
 		c.activeSeries.Inc()
@@ -155,7 +161,8 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		return
 	}
 
-	if !at.overflowSince.IsZero() {
+	// If we can't store more series, we count this series in the overflow counter.
+	if len(at.observed) >= trackedSeriesFactor*at.maxCardinality {
 		at.overflowCounter.activeSeries.Inc()
 		if nativeHistogramBucketNum >= 0 {
 			at.overflowCounter.nativeHistograms.Inc()
@@ -164,16 +171,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		return
 	}
 
-	if len(at.observed) >= at.maxCardinality {
-		at.overflowSince = now
-		at.overflowCounter.activeSeries.Inc()
-		if nativeHistogramBucketNum >= 0 {
-			at.overflowCounter.nativeHistograms.Inc()
-			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
-		}
-		return
-	}
-
+	// We still can store more series, add it to the map.
 	counter := &counters{}
 	counter.activeSeries.Inc()
 	if nativeHistogramBucketNum >= 0 {
@@ -181,6 +179,11 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		counter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
 	}
 	at.observed[string(buf.Bytes())] = counter
+
+	// Check whether we entered the overflow state.
+	if len(at.observed) > at.maxCardinality && at.overflowSince.IsZero() {
+		at.overflowSince = now
+	}
 }
 
 func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucketNum int) {
@@ -213,9 +216,6 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 		at.observedMtx.Unlock()
 		return
 	}
-	at.observedMtx.RUnlock()
-
-	at.observedMtx.RLock()
 	defer at.observedMtx.RUnlock()
 
 	if !at.overflowSince.IsZero() {
@@ -230,6 +230,8 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 }
 
 func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
+	out <- at.attributedOverflowLabels.gauge(1, at.overflowLabels...)
+
 	at.observedMtx.RLock()
 	if !at.overflowSince.IsZero() {
 		var activeSeries int64
@@ -241,13 +243,13 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 			nhBucketNum += c.nativeHistogramBuckets.Load()
 		}
 		at.observedMtx.RUnlock()
-		out <- prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+at.overflowCounter.activeSeries.Load()), at.overflowLabels[:len(at.overflowLabels)-1]...)
+		out <- at.activeSeriesPerUserAttribution.gauge(float64(activeSeries+at.overflowCounter.activeSeries.Load()), at.overflowLabels...)
 
 		if nhcounter := float64(nativeHistogram + at.overflowCounter.nativeHistograms.Load()); nhcounter > 0 {
-			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, nhcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
+			out <- at.activeNativeHistogramSeriesPerUserAttribution.gauge(nhcounter, at.overflowLabels...)
 		}
 		if bcounter := float64(nhBucketNum + at.overflowCounter.nativeHistogramBuckets.Load()); bcounter > 0 {
-			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, bcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
+			out <- at.activeNativeHistogramBucketsPerUserAttribution.gauge(bcounter, at.overflowLabels...)
 		}
 		return
 	}
@@ -256,18 +258,12 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 	for key, c := range at.observed {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, at.userID)
-		prometheusMetrics = append(prometheusMetrics,
-			prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.activeSeries.Load()), keys...),
-		)
+		prometheusMetrics = append(prometheusMetrics, at.activeSeriesPerUserAttribution.gauge(float64(c.activeSeries.Load()), keys...))
 		if nhcounter := c.nativeHistograms.Load(); nhcounter > 0 {
-			prometheusMetrics = append(prometheusMetrics,
-				prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(nhcounter), keys...),
-			)
+			prometheusMetrics = append(prometheusMetrics, at.activeNativeHistogramSeriesPerUserAttribution.gauge(float64(nhcounter), keys...))
 		}
 		if nbcounter := c.nativeHistogramBuckets.Load(); nbcounter > 0 {
-			prometheusMetrics = append(prometheusMetrics,
-				prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(nbcounter), keys...),
-			)
+			prometheusMetrics = append(prometheusMetrics, at.activeNativeHistogramBucketsPerUserAttribution.gauge(float64(nbcounter), keys...))
 		}
 	}
 	at.observedMtx.RUnlock()

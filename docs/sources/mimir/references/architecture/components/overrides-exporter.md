@@ -7,8 +7,6 @@ title: (Optional) Grafana Mimir overrides-exporter
 weight: 110
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # (Optional) Grafana Mimir overrides-exporter
 
 Grafana Mimir supports applying overrides on a per-tenant basis.

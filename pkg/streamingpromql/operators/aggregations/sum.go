@@ -17,15 +17,16 @@ import (
 
 type SumAggregationGroup struct {
 	// Sum, presence, and histograms for each step.
-	floatSums               []float64
-	floatCompensatingValues []float64 // Compensation value for Kahan summation.
-	floatPresent            []bool
-	histogramSums           []*histogram.FloatHistogram
-	histogramPointCount     int
+	floatSums                    []float64
+	floatCompensatingValues      []float64 // Compensation value for Kahan summation.
+	floatPresent                 []bool
+	histogramSums                []*histogram.FloatHistogram
+	histogramCompensatingValues  []*histogram.FloatHistogram // Compensation histograms for Kahan summation.
+	histogramPointCount          int
+	histogramCounterResetTracker *histogramCounterResetTracker
 }
 
-func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
-	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint, mutatingDataAllowed bool) error {
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
 		return nil
@@ -35,7 +36,7 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	if err != nil {
 		return err
 	}
-	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation)
+	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation, mutatingDataAllowed)
 	if err != nil {
 		return err
 	}
@@ -76,7 +77,7 @@ func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
+func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, mutatingDataAllowed bool) error {
 	var err error
 
 	if len(data.Histograms) > 0 && g.histogramSums == nil {
@@ -86,6 +87,15 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			return err
 		}
 		g.histogramSums = g.histogramSums[:timeRange.StepCount]
+		g.histogramCompensatingValues, err = types.HistogramSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.histogramCompensatingValues = g.histogramCompensatingValues[:timeRange.StepCount]
+		g.histogramCounterResetTracker, err = newHistogramCounterResetTracker(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
 	}
 
 	for inputIdx, p := range data.Histograms {
@@ -97,17 +107,28 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		}
 
 		if g.histogramSums[outputIdx] == nil {
-			// First sample for this output point, retain the histogram as-is.
-			g.histogramSums[outputIdx] = p.H
-			g.histogramPointCount++
+			// First sample for this output point, retain the histogram as-is if we can.
+			if mutatingDataAllowed {
+				g.histogramSums[outputIdx] = p.H
 
-			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
-			data.Histograms[inputIdx].H = nil
+				// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
+				data.Histograms[inputIdx].H = nil
+			} else {
+				g.histogramSums[outputIdx] = p.H.Copy()
+			}
+
+			g.histogramPointCount++
+			g.histogramCounterResetTracker.init(outputIdx, p.H.CounterResetHint)
 
 			continue
 		}
 
-		g.histogramSums[outputIdx], err = g.histogramSums[outputIdx].Add(p.H)
+		if g.histogramCounterResetTracker.checkCounterResetConflicts(outputIdx, p.H.CounterResetHint) {
+			emitAnnotation(newAggregationCounterResetCollisionWarning)
+		}
+
+		var nhcbBoundsReconciled bool
+		g.histogramCompensatingValues[outputIdx], _, nhcbBoundsReconciled, err = g.histogramSums[outputIdx].KahanAdd(p.H, g.histogramCompensatingValues[outputIdx])
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histogramSums[outputIdx] = invalidCombinationOfHistograms
@@ -117,6 +138,10 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 				// Unknown error: we couldn't convert the error to an annotation. Give up.
 				return err
 			}
+		}
+
+		if nhcbBoundsReconciled {
+			emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
 		}
 	}
 
@@ -193,6 +218,16 @@ func (g *SumAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 		for i, h := range g.histogramSums {
 			if h != nil && h != invalidCombinationOfHistograms {
 				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
+
+				// Apply Kahan compensation to get the final accurate result
+				if g.histogramCompensatingValues[i] != nil {
+					// Use regular Add (not KahanAdd) to apply the final compensation
+					h, _, _, err = h.Add(g.histogramCompensatingValues[i])
+					if err != nil {
+						return types.InstantVectorSeriesData{}, hasMixedData, err
+					}
+				}
+
 				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: h.Compact(0)})
 
 				// Remove histogram from slice to ensure it's not mutated when the slice is reused.
@@ -209,4 +244,9 @@ func (g *SumAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryCons
 	types.Float64SlicePool.Put(&g.floatCompensatingValues, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(&g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(&g.histogramSums, memoryConsumptionTracker)
+	types.HistogramSlicePool.Put(&g.histogramCompensatingValues, memoryConsumptionTracker)
+	if g.histogramCounterResetTracker != nil {
+		g.histogramCounterResetTracker.close()
+		g.histogramCounterResetTracker = nil
+	}
 }

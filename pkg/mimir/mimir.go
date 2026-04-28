@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	goregexp "regexp" //lint:ignore faillint the Prometheus client library requires us to pass a regexp from this package
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,8 +39,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -49,10 +50,10 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
+	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
-	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -72,11 +73,13 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/usagestats"
+	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -112,25 +115,26 @@ type Config struct {
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
-	API                   api.Config                      `yaml:"api"`
-	Server                server.Config                   `yaml:"server"`
-	Distributor           distributor.Config              `yaml:"distributor"`
-	Querier               querier.Config                  `yaml:"querier"`
-	IngesterClient        client.Config                   `yaml:"ingester_client"`
-	Ingester              ingester.Config                 `yaml:"ingester"`
-	Flusher               flusher.Config                  `yaml:"flusher"`
-	LimitsConfig          validation.Limits               `yaml:"limits"`
-	Worker                querier_worker.Config           `yaml:"frontend_worker"`
-	Frontend              frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage         ingest.Config                   `yaml:"ingest_storage"`
-	BlockBuilder          blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
-	BlockBuilderScheduler blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
-	BlocksStorage         tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
-	Compactor             compactor.Config                `yaml:"compactor"`
-	StoreGateway          storegateway.Config             `yaml:"store_gateway"`
-	TenantFederation      tenantfederation.Config         `yaml:"tenant_federation"`
-	ActivityTracker       activitytracker.Config          `yaml:"activity_tracker"`
-	Vault                 vault.Config                    `yaml:"vault"`
+	API                            api.Config                      `yaml:"api"`
+	Server                         server.Config                   `yaml:"server"`
+	Distributor                    distributor.Config              `yaml:"distributor"`
+	Querier                        querier.Config                  `yaml:"querier"`
+	IngesterClient                 client.Config                   `yaml:"ingester_client"`
+	Ingester                       ingester.Config                 `yaml:"ingester"`
+	LimitsConfig                   validation.Limits               `yaml:"limits"`
+	Worker                         querier_worker.Config           `yaml:"frontend_worker"`
+	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage                  ingest.Config                   `yaml:"ingest_storage"`
+	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
+	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
+	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
+	Compactor                      compactor.Config                `yaml:"compactor"`
+	CompactorScheduler             compactorscheduler.Config       `yaml:"compactor_scheduler" doc:"hidden"`
+	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
+	TenantFederation               tenantfederation.Config         `yaml:"tenant_federation"`
+	ActivityTracker                activitytracker.Config          `yaml:"activity_tracker"`
+	IncludeTenantIDInProfileLabels bool                            `yaml:"include_tenant_id_in_profile_labels" category:"experimental"`
+	Vault                          vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -140,6 +144,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
+	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker" doc:"hidden"`
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
@@ -178,15 +183,15 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.CostAttributionRegistryPath, "cost-attribution.registry-path", "", "Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.")
 	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution.eviction-interval", 20*time.Minute, "Specifies how often inactive cost attributions for received and discarded sample trackers are evicted from the counter, ensuring they do not contribute to the cost attribution cardinality per user limit. This setting does not apply to active series, which are managed separately.")
 	f.DurationVar(&c.CostAttributionCleanupInterval, "cost-attribution.cleanup-interval", 3*time.Minute, "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.")
+	f.BoolVar(&c.IncludeTenantIDInProfileLabels, "include-tenant-id-in-profile-labels", true, "Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
 	c.registerMemberlistKVFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
-	c.Querier.RegisterFlags(f)
+	c.Querier.RegisterFlags(f, logger)
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f, logger)
-	c.Flusher.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
@@ -195,6 +200,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
+	c.CompactorScheduler.RegisterFlags(f)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
 	c.Ruler.RegisterFlags(f, logger)
@@ -206,6 +212,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+	c.UsageTracker.RegisterFlags(f, logger)
 	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
@@ -215,14 +222,16 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 	return CommonConfigInheritance{
 		Storage: map[string]*bucket.StorageBackendConfig{
-			"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
-			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
-			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+			"blocks_storage":                  &c.BlocksStorage.Bucket.StorageBackendConfig,
+			"ruler_storage":                   &c.RulerStorage.StorageBackendConfig,
+			"alertmanager_storage":            &c.AlertmanagerStorage.StorageBackendConfig,
+			"usage_tracker_snapshots_storage": &c.UsageTracker.SnapshotsStorage.StorageBackendConfig,
 		},
 		ClientClusterValidation: map[string]*clusterutil.ClusterValidationConfig{
 			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
 			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig.ClusterValidation,
 			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation,
+			"compactor_scheduler_client":       &c.Compactor.SchedulerClientConfig.GRPCClientConfig.ClusterValidation,
 			"block_builder_scheduler_client":   &c.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation,
 			"frontend_query_scheduler_client":  &c.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation,
 			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
@@ -231,6 +240,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
+			"usage_tracker_client":             &c.Distributor.UsageTrackerClient.GRPCClientConfig.ClusterValidation,
 		},
 	}
 }
@@ -268,10 +278,13 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
-	if c.isAnyModuleEnabled(Ingester, Write, All) {
+	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
+	}
+	if err := c.MemberlistKV.Validate(); err != nil {
+		return errors.Wrap(err, "invalid memberlist config")
 	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
@@ -294,7 +307,7 @@ func (c *Config) Validate(log log.Logger) error {
 		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
 		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
 		// grafana/mimir#7822). Otherwise, log the fact and move on.
-		if c.isAnyModuleEnabled(Ingester, Write, All) || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
+		if c.isIngesterEnabled() || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
 			return errors.Wrap(err, "invalid ingester config")
 		}
 		level.Debug(log).Log("msg", "ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
@@ -311,6 +324,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Compactor.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid compactor config")
 	}
+	if err := c.CompactorScheduler.Validate(); err != nil {
+		return errors.Wrap(err, "invalid compactor-scheduler config")
+	}
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
 	}
@@ -320,16 +336,32 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.UsageStats.Validate(); err != nil {
 		return errors.Wrap(err, "invalid usage stats config")
 	}
+	if c.isDistributorEnabled() {
+		if err := c.UsageTracker.ValidateForClient(); err != nil {
+			return errors.Wrap(err, "invalid usage-tracker config")
+		}
+	}
+	if c.isUsageTrackerEnabled() {
+		if err := c.UsageTracker.ValidateForUsageTracker(); err != nil {
+			return errors.Wrap(err, "invalid usage-tracker config")
+		}
+	}
 	if err := c.Vault.Validate(); err != nil {
 		return errors.Wrap(err, "invalid vault config")
 	}
-	if c.isAnyModuleEnabled(AlertManager, Backend) {
+	if c.isAlertManagerEnabled() {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")
 		}
 	}
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
+	if err := c.Common.InstrumentRefLeaks.Validate(); err != nil {
+		return errors.Wrap(err, "invalid instrument-ref-leaks config")
+	}
+	if err := c.API.Validate(); err != nil {
+		return errors.Wrap(err, "invalid API config")
 	}
 
 	// validate the default limits
@@ -342,19 +374,22 @@ func (c *Config) Validate(log log.Logger) error {
 
 // ValidateLimits validates the runtime limits.
 func (c *Config) ValidateLimits(limits *validation.Limits) error {
+	if err := limits.BlockedQueries.Validate(); err != nil {
+		return err
+	}
 	if err := c.Querier.ValidateLimits(*limits); err != nil {
 		return errors.Wrap(err, "invalid limits config for querier")
 	}
 	return limits.Validate()
 }
 
-func (c *Config) isModuleEnabled(m string) bool {
-	return util.StringsContain(c.Target, m)
+func (c *Config) isModuleExplicitlyTargeted(m string) bool {
+	return slices.Contains(c.Target, m)
 }
 
-func (c *Config) isAnyModuleEnabled(modules ...string) bool {
+func (c *Config) isAnyModuleExplicitlyTargeted(modules ...string) bool {
 	for _, m := range modules {
-		if c.isModuleEnabled(m) {
+		if c.isModuleExplicitlyTargeted(m) {
 			return true
 		}
 	}
@@ -362,17 +397,62 @@ func (c *Config) isAnyModuleEnabled(modules ...string) bool {
 	return false
 }
 
+func (c *Config) isIngesterEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Ingester)
+}
+
+func (c *Config) isAlertManagerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(AlertManager)
+}
+
+func (c *Config) isRulerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Ruler)
+}
+
+func (c *Config) isStoreGatewayEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, StoreGateway)
+}
+
+func (c *Config) isCompactorEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Compactor)
+}
+
+func (c *Config) isQueryFrontendEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, QueryFrontend)
+}
+
+func (c *Config) isQuerySchedulerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, QueryScheduler)
+}
+
+func (c *Config) isQuerierEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Querier)
+}
+
+func (c *Config) isDistributorEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(All, Distributor)
+}
+
+func (c *Config) isUsageTrackerEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(UsageTracker)
+}
+
 func (c *Config) validateBucketConfigs() error {
 	errs := multierror.New()
 
 	// Validate alertmanager bucket config.
-	if c.isAnyModuleEnabled(AlertManager, Backend) && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
+	if c.isAlertManagerEnabled() && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
 		errs.Add(errors.Wrap(validateBucketConfig(c.AlertmanagerStorage.Config, c.BlocksStorage.Bucket), "alertmanager storage"))
 	}
 
 	// Validate ruler bucket config.
-	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestore.BackendLocal {
+	if c.isRulerEnabled() && c.RulerStorage.Backend != rulestore.BackendLocal {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
+	}
+
+	// Validate usage tracker snapshots bucket config.
+	if c.isUsageTrackerEnabled() && c.UsageTracker.SnapshotsStorage.Backend != bucket.Filesystem {
+		errs.Add(errors.Wrap(validateBucketConfig(c.UsageTracker.SnapshotsStorage, c.BlocksStorage.Bucket), "usage-tracker snapshots storage"))
 	}
 
 	return errs.Err()
@@ -427,7 +507,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	var paths []pathConfig
 
 	// Blocks storage (check only for components using it).
-	if c.isAnyModuleEnabled(All, Write, Read, Backend, Ingester, Querier, StoreGateway, Compactor, Ruler) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+	if (c.isIngesterEnabled() || c.isQuerierEnabled() || c.isStoreGatewayEnabled() || c.isCompactorEnabled() || c.isRulerEnabled()) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
 		// Add the optional prefix to the path, because that's the actual location where blocks will be stored.
 		paths = append(paths, pathConfig{
 			name:       "blocks storage filesystem directory",
@@ -437,7 +517,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Ingester.
-	if c.isAnyModuleEnabled(All, Ingester, Write) {
+	if c.isIngesterEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "tsdb directory",
 			cfgValue:   c.BlocksStorage.TSDB.Dir,
@@ -446,7 +526,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Store-gateway.
-	if c.isAnyModuleEnabled(All, StoreGateway, Backend) {
+	if c.isStoreGatewayEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "bucket store sync directory",
 			cfgValue:   c.BlocksStorage.BucketStore.SyncDir,
@@ -455,7 +535,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Compactor.
-	if c.isAnyModuleEnabled(All, Compactor, Backend) {
+	if c.isCompactorEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "compactor data directory",
 			cfgValue:   c.Compactor.DataDir,
@@ -464,7 +544,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Ruler.
-	if c.isAnyModuleEnabled(All, Ruler, Backend) {
+	if c.isRulerEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "ruler data directory",
 			cfgValue:   c.Ruler.RulePath,
@@ -489,7 +569,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Alertmanager.
-	if c.isAnyModuleEnabled(AlertManager, Backend) {
+	if c.isAlertManagerEnabled() {
 		paths = append(paths, pathConfig{
 			name:       "alertmanager data directory",
 			cfgValue:   c.Alertmanager.DataDir,
@@ -512,6 +592,17 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 				name:       "alertmanager storage local directory",
 				cfgValue:   c.AlertmanagerStorage.Local.Path,
 				checkValue: c.AlertmanagerStorage.Local.Path,
+			})
+		}
+	}
+
+	// Usage-tracker.
+	if c.isUsageTrackerEnabled() {
+		if c.UsageTracker.SnapshotsStorage.Backend == bucket.Filesystem {
+			paths = append(paths, pathConfig{
+				name:       "usage tracker snapshot storage filesystem directory",
+				cfgValue:   c.UsageTracker.SnapshotsStorage.Filesystem.Directory,
+				checkValue: filepath.Join(c.UsageTracker.SnapshotsStorage.Filesystem.Directory, usagetracker.SnapshotsStoragePrefix),
 			})
 		}
 	}
@@ -554,6 +645,11 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 
 // isAbsPathOverlapping returns whether the two input absolute paths overlap.
 func isAbsPathOverlapping(firstAbsPath, secondAbsPath string) bool {
+	// The root "/" overlaps with every absolute path.
+	if firstAbsPath == "/" || secondAbsPath == "/" {
+		return true
+	}
+
 	firstBase, firstName := filepath.Split(firstAbsPath)
 	secondBase, secondName := filepath.Split(secondAbsPath)
 
@@ -564,7 +660,9 @@ func isAbsPathOverlapping(firstAbsPath, secondAbsPath string) bool {
 	}
 
 	// The base directories are different, but they could still overlap if one is the child of the other one.
-	return strings.HasPrefix(firstAbsPath, secondAbsPath) || strings.HasPrefix(secondAbsPath, firstAbsPath)
+	// We append "/" to ensure we match on path segment boundaries and avoid false positives
+	// like "/data/tsdb" matching "/data/tsdb-compactor/cache".
+	return strings.HasPrefix(firstAbsPath, secondAbsPath+"/") || strings.HasPrefix(secondAbsPath, firstAbsPath+"/")
 }
 
 func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
@@ -635,11 +733,16 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.ClientClusterValidation {
 			specificClusterValidationLocations[name] = loc
 		}
+		specificInstrumentRefLeaksLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.InstrumentRefLeaksConfig {
+			specificInstrumentRefLeaksLocations[name] = loc
+		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
 				Storage:                 &specificStorageLocations,
 				ClientClusterValidation: &specificClusterValidationLocations,
+				InstrumentRefLeaks:      &specificInstrumentRefLeaksLocations,
 			},
 		}
 
@@ -709,17 +812,20 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 type CommonConfig struct {
 	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
 	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	InstrumentRefLeaks      mimirpb.InstrumentRefLeaksConfig    `yaml:"instrument_ref_leaks" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage                 map[string]*bucket.StorageBackendConfig
-	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
+	Storage                  map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation  map[string]*clusterutil.ClusterValidationConfig
+	InstrumentRefLeaksConfig map[string]*mimirpb.InstrumentRefLeaksConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
+	c.InstrumentRefLeaks.RegisterFlagsWithPrefix("common.instrument-reference-leaks.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -736,6 +842,7 @@ type configWithCustomCommonUnmarshaler struct {
 type commonConfigUnmarshaler struct {
 	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
 	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
+	InstrumentRefLeaks      *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
@@ -763,23 +870,26 @@ type Mimir struct {
 
 	API                              *api.API
 	Server                           *server.Server
+	ServerMetrics                    *server.Metrics
 	IngesterRing                     *ring.Ring
 	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
 	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
 	TenantLimits                     validation.TenantLimits
 	Overrides                        *validation.Overrides
+	QueryLimitsProvider              streamingpromql.QueryLimitsProvider
 	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
 	Distributor                      *distributor.Distributor
 	Ingester                         *ingester.Ingester
-	Flusher                          *flusher.Flusher
 	RuntimeConfig                    *runtimeconfig.Manager
 	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable                prom_storage.ExemplarQueryable
-	AdditionalStorageQueryables      []querier.TimeRangeQueryable
+	StoreQueryable                   prom_storage.Queryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QuerierLifecycler                *ring.BasicLifecycler
+	QuerierRing                      *ring.Ring
 	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
-	QueryPlanner                     *streamingpromql.QueryPlanner
+	QueryFrontendStreamingEngine     *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec
@@ -787,20 +897,43 @@ type Mimir struct {
 	RulerStorage                     rulestore.RuleStore
 	Alertmanager                     *alertmanager.MultitenantAlertmanager
 	Compactor                        *compactor.MultitenantCompactor
+	CompactorScheduler               *compactorscheduler.Scheduler
 	StoreGateway                     *storegateway.StoreGateway
 	MemberlistKV                     *memberlist.KVInitService
 	ActivityTracker                  *activitytracker.ActivityTracker
 	Vault                            *vault.Vault
 	UsageStatsReporter               *usagestats.Reporter
+	UsageTracker                     *usagetracker.UsageTracker
+	UsageTrackerPartitionRing        *ring.MultiPartitionInstanceRing
+	UsageTrackerInstanceRing         *ring.Ring
 	BlockBuilder                     *blockbuilder.BlockBuilder
 	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
 	ContinuousTestManager            *continuoustest.Manager
 	BuildInfoHandler                 http.Handler
 	CostAttributionManager           *costattribution.Manager
+
+	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
+	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
+	Extractors []propagation.Extractor
+
+	// Injectors are used by query-frontends to inject HTTP headers / metadata into outgoing requests to queriers.
+	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
+	Injectors []propagation.Injector
+
+	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
+	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends,
+	// and support for sending queries directly to queriers via the Prometheus HTTP API endpoints is removed.
+	// Until then, we need separate instances as the remote execution optimisation pass must only be applied in query-frontends,
+	// including when running in monolithic and read/write modes.
+	QuerierQueryPlanner *streamingpromql.QueryPlanner
 }
 
 // New makes a new Mimir.
 func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
+	if len(cfg.Target) == 0 {
+		return nil, fmt.Errorf("no target module specified, the -target flag must be set to a valid module (e.g. \"all\")")
+	}
+
 	if cfg.PrintConfig {
 		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)
@@ -810,11 +943,26 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	setUpGoRuntimeMetrics(cfg, reg)
 
+	mimirpb.CustomCodecConfig{
+		InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{
+			Percentage:                   cfg.Common.InstrumentRefLeaks.Percentage,
+			BeforeReusePeriod:            cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
+			MaxInflightInstrumentedBytes: cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
+		},
+	}.RegisterGlobally(reg)
+
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")
 	}
 	cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, querierapi.ReadConsistencyServerUnaryInterceptor)
 	cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, querierapi.ReadConsistencyServerStreamInterceptor)
+
+	if cfg.isIngesterEnabled() {
+		// Propagate only-replica markers for ingester queries
+		cfg.Server.GRPCTapHandles = append(cfg.Server.GRPCTapHandles, client.OnlyReplicaTapHandle)
+		cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, client.OnlyReplicaServerUnaryInterceptor)
+		cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, client.OnlyReplicaServerStreamInterceptor)
+	}
 
 	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(
 		&cfg.Server,
@@ -829,6 +977,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
+			"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit",
+			"/usagetrackerpb.UsageTracker/TrackSeriesBatch",
 		})
 
 	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
@@ -916,6 +1066,14 @@ func (t *Mimir) Run() error {
 		t.API.RegisterIngesterRing(t.IngesterRing)
 	} else if t.Ingester != nil {
 		t.API.RegisterIngesterRing(t.Ingester.RingHandler())
+	}
+
+	// Register the querier ring handler if it exists,
+	// preferring the one exposed by the ring instance over the BasicLifecycler.
+	if t.QuerierRing != nil {
+		t.API.RegisterQuerierRing(t.QuerierRing)
+	} else if t.QuerierLifecycler != nil {
+		t.API.RegisterQuerierRing(t.QuerierLifecycler)
 	}
 
 	// get all services, create service manager and tell it to start
@@ -1037,6 +1195,13 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 		if t.Ingester != nil {
 			if err := t.Ingester.CheckReady(r.Context()); err != nil {
 				http.Error(w, "Ingester not ready: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
+
+		if t.UsageTracker != nil {
+			if err := t.UsageTracker.CheckReady(r.Context()); err != nil {
+				http.Error(w, "Usage Tracker not ready: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}
 		}

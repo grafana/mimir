@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -33,11 +33,12 @@ func TestPlanCompaction(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		ranges      []int64
-		shardCount  uint32
-		splitGroups uint32
-		blocks      []*block.Meta
-		expected    []*job
+		ranges        []int64
+		shardCount    uint32
+		oooShardCount uint32
+		splitGroups   uint32
+		blocks        []*block.Meta
+		expected      []*job
 	}{
 		"no input blocks": {
 			ranges:   []int64{20},
@@ -241,37 +242,37 @@ func TestPlanCompaction(t *testing.T) {
 			shardCount: 2,
 			blocks: []*block.Meta{
 				// 2nd level range [0, 20]
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"}}},
 				// 2nd level range [20, 40]
-				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
 					},
 				}},
 				{userID: userID, stage: stageMerge, shardID: "2_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"}}},
 					},
 				}},
 				{userID: userID, stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 20,
 					rangeEnd:   40,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
 					},
 				}},
 			},
@@ -281,29 +282,29 @@ func TestPlanCompaction(t *testing.T) {
 			shardCount: 2,
 			blocks: []*block.Meta{
 				// 2nd level range [0, 20]
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"}}},
 				// 2nd level range [20, 40]
 				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 20, MaxTime: 40}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 20, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 20, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
 					},
 				}},
 				{userID: userID, stage: stageMerge, shardID: "2_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"}}},
 					},
 				}},
 			},
@@ -317,19 +318,19 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 7, MaxTime: 10}},
 				// Not compacted because on 2nd level because the range [0, 20]
 				// has other 1st level range groups to be split first
-				{BlockMeta: tsdb.BlockMeta{ULID: block10, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block10, MinTime: 0, MaxTime: 10}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 				// To be compacted on 2nd level range [20, 40]
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 				// Already compacted on 2nd level range [40, 60]
-				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 40, MaxTime: 60}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 40, MaxTime: 60}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 				// Not compacted on 2nd level because the range [60, 80]
 				// has other 1st level range groups to be compacted first
-				{BlockMeta: tsdb.BlockMeta{ULID: block7, MinTime: 60, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block7, MinTime: 60, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 				// To be compacted on 1st level range [70, 80]
-				{BlockMeta: tsdb.BlockMeta{ULID: block8, MinTime: 70, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block8, MinTime: 70, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
@@ -344,16 +345,16 @@ func TestPlanCompaction(t *testing.T) {
 					rangeStart: 70,
 					rangeEnd:   80,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block8, MinTime: 70, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block8, MinTime: 70, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 20,
 					rangeEnd:   40,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 30, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 			},
@@ -362,9 +363,9 @@ func TestPlanCompaction(t *testing.T) {
 			ranges:     []int64{10, 20, 40},
 			shardCount: 1,
 			blocks: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 40, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 40, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: nil,
 		},
@@ -372,18 +373,18 @@ func TestPlanCompaction(t *testing.T) {
 			ranges:     []int64{10, 20, 40},
 			shardCount: 1,
 			blocks: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 40, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 40, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 80,
 					rangeEnd:   120,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 			},
@@ -419,18 +420,18 @@ func TestPlanCompaction(t *testing.T) {
 			ranges:     []int64{20, 40},
 			shardCount: 1,
 			blocks: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}}, // This block spans across two 1st level ranges.
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}}, // This block spans across two 1st level ranges.
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   40,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 30}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 			},
@@ -439,19 +440,19 @@ func TestPlanCompaction(t *testing.T) {
 			ranges:     []int64{10, 20, 40},
 			shardCount: 1,
 			blocks: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 30, MaxTime: 150}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}}, // This block is larger then the largest compaction range.
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 40, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 40}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 30, MaxTime: 150}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}}, // This block is larger then the largest compaction range.
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 40, MaxTime: 70}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageMerge, shardID: "1_of_1", blocksGroup: blocksGroup{
 					rangeStart: 80,
 					rangeEnd:   120,
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 80, MaxTime: 120}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_1"}}},
 					},
 				}},
 			},
@@ -552,7 +553,11 @@ func TestPlanCompaction(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			actual := planCompaction(userID, testData.blocks, testData.ranges, testData.shardCount, testData.splitGroups)
+			cfg := newMockConfigProvider()
+			cfg.splitAndMergeShards[userID] = int(testData.shardCount)
+			cfg.oooSplitAndMergeShards[userID] = int(testData.oooShardCount)
+			cfg.splitGroups[userID] = int(testData.splitGroups)
+			actual := planCompaction(userID, testData.blocks, testData.ranges, cfg)
 
 			// Print the actual jobs (useful for debugging if tests fail).
 			t.Logf("got %d jobs:", len(actual))
@@ -589,8 +594,8 @@ func TestPlanSplitting(t *testing.T) {
 				rangeStart: 10,
 				rangeEnd:   20,
 				blocks: []*block.Meta{
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
-					{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2_of_2"}}},
 				},
 			},
 			splitGroups: 2,
@@ -601,7 +606,7 @@ func TestPlanSplitting(t *testing.T) {
 				rangeStart: 10,
 				rangeEnd:   20,
 				blocks: []*block.Meta{
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
 					{BlockMeta: tsdb.BlockMeta{ULID: block2}},
 				},
 			},
@@ -626,11 +631,11 @@ func TestPlanSplitting(t *testing.T) {
 				rangeStart: 10,
 				rangeEnd:   20,
 				blocks: []*block.Meta{
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
 					{BlockMeta: tsdb.BlockMeta{ULID: block2}},
 					{BlockMeta: tsdb.BlockMeta{ULID: block3}},
 					{BlockMeta: tsdb.BlockMeta{ULID: block4}},
-					{BlockMeta: tsdb.BlockMeta{ULID: block5}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block5}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_2"}}},
 				},
 			},
 			splitGroups: 2,
@@ -686,11 +691,11 @@ func TestGroupBlocksByShardID(t *testing.T) {
 		},
 		"only 1 block in input with shard ID": {
 			blocks: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1"}}},
 			},
 			expected: map[string][]*block.Meta{
 				"1": {
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1"}}},
 				},
 			},
 		},
@@ -706,9 +711,9 @@ func TestGroupBlocksByShardID(t *testing.T) {
 		},
 		"multiple blocks per shard ID": {
 			blocks: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1"}}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block4}},
 			},
 			expected: map[string][]*block.Meta{
@@ -716,11 +721,11 @@ func TestGroupBlocksByShardID(t *testing.T) {
 					{BlockMeta: tsdb.BlockMeta{ULID: block4}},
 				},
 				"1": {
-					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
-					{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1"}}},
 				},
 				"2": {
-					{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2"}}},
+					{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "2"}}},
 				},
 			},
 		},
@@ -831,4 +836,139 @@ func TestGroupBlocksByRange(t *testing.T) {
 			assert.Equal(t, testData.expected, groupBlocksByRange(testData.blocks, testData.timeRange))
 		})
 	}
+}
+
+func TestEffectiveShardCount(t *testing.T) {
+	const userID = "user-1"
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+
+	tests := map[string]struct {
+		shardCount    int
+		oooShardCount int
+		blocks        []*block.Meta
+		expected      uint32
+	}{
+		"empty blocks returns shardCount": {
+			shardCount:    4,
+			oooShardCount: 2,
+			blocks:        []*block.Meta{},
+			expected:      4,
+		},
+		"in-order blocks return shardCount": {
+			shardCount:    4,
+			oooShardCount: 2,
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}},
+			},
+			expected: 4,
+		},
+		"OOO blocks with oooShardCount>0 return oooShardCount": {
+			shardCount:    4,
+			oooShardCount: 2,
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
+			},
+			expected: 2,
+		},
+		"OOO blocks with oooShardCount=0 fall back to shardCount": {
+			shardCount:    4,
+			oooShardCount: 0,
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
+			},
+			expected: 4,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := newMockConfigProvider()
+			cfg.splitAndMergeShards[userID] = testData.shardCount
+			cfg.oooSplitAndMergeShards[userID] = testData.oooShardCount
+			assert.Equal(t, testData.expected, effectiveShardCount(testData.blocks, userID, cfg))
+		})
+	}
+}
+
+func TestSplitAndMergeGrouper_Groups_OOOShardCount(t *testing.T) {
+	const userID = "user-1"
+
+	t.Run("no splitting when shardCount is 0", func(t *testing.T) {
+		block1 := ulid.MustNew(1, nil)
+		block2 := ulid.MustNew(2, nil)
+
+		cfg := newMockConfigProvider()
+		cfg.splitGroups[userID] = 1
+		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, cfg, log.NewNopLogger())
+		jobs, err := g.Groups(map[ulid.ULID]*block.Meta{
+			block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
+			block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
+		})
+		assert.NoError(t, err)
+
+		for _, job := range jobs {
+			assert.False(t, job.UseSplitting(), "expected no split jobs when shardCount is 0")
+		}
+	})
+
+	t.Run("OOO jobs use regular shardCount when oooShardCount is 0", func(t *testing.T) {
+		block1 := ulid.MustNew(1, nil)
+		block2 := ulid.MustNew(2, nil)
+		block3 := ulid.MustNew(3, nil)
+		block4 := ulid.MustNew(4, nil)
+
+		cfg := newMockConfigProvider()
+		cfg.splitAndMergeShards[userID] = 8
+		cfg.splitGroups[userID] = 1
+		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, cfg, log.NewNopLogger())
+		jobs, err := g.Groups(map[ulid.ULID]*block.Meta{
+			block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
+			block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}},
+			block3: {BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
+			block4: {BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
+		})
+		assert.NoError(t, err)
+
+		for _, job := range jobs {
+			if job.UseSplitting() {
+				assert.Equal(t, uint32(8), job.SplittingShards(), "both in-order and OOO jobs should use shardCount=8")
+			}
+		}
+	})
+
+	t.Run("OOO jobs use oooShardCount when configured", func(t *testing.T) {
+		block1 := ulid.MustNew(1, nil)
+		block2 := ulid.MustNew(2, nil)
+		block3 := ulid.MustNew(3, nil)
+		block4 := ulid.MustNew(4, nil)
+
+		cfg := newMockConfigProvider()
+		cfg.splitAndMergeShards[userID] = 8
+		cfg.oooSplitAndMergeShards[userID] = 2
+		cfg.splitGroups[userID] = 1
+		g := NewSplitAndMergeGrouper(userID, []int64{20, 40}, cfg, log.NewNopLogger())
+		jobs, err := g.Groups(map[ulid.ULID]*block.Meta{
+			block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
+			block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 20}},
+			block3: {BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
+			block4: {BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 0, MaxTime: 20}, Thanos: block.ThanosMeta{Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}}},
+		})
+		assert.NoError(t, err)
+
+		for _, job := range jobs {
+			if !job.UseSplitting() {
+				continue
+			}
+			metas := job.Metas()
+			if len(metas) > 0 && isOOOBlock(metas[0]) {
+				assert.Equal(t, uint32(2), job.SplittingShards(), "OOO job should use oooShardCount=2")
+			} else {
+				assert.Equal(t, uint32(8), job.SplittingShards(), "in-order job should use shardCount=8")
+			}
+		}
+	})
 }

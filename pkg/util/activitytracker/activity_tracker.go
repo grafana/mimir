@@ -4,7 +4,9 @@ package activitytracker
 
 import (
 	"encoding/binary"
+	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -13,7 +15,6 @@ import (
 
 	"github.com/edsrzf/mmap-go"
 	"github.com/grafana/dskit/multierror"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -28,8 +29,9 @@ type ActivityTracker struct {
 	freeIndexQueue chan int // Used as a queue for indexes of free entries.
 	maxEntries     int
 
-	failedInserts       *prometheus.CounterVec
-	freeActivityEntries prometheus.GaugeFunc
+	failedInserts             *prometheus.CounterVec
+	freeActivityEntries       prometheus.GaugeFunc
+	loadedActivitiesOnStartup prometheus.Gauge
 }
 
 const (
@@ -55,6 +57,9 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 	if cfg.Filepath == "" {
 		return nil, nil
 	}
+
+	// Load entries from the previous run before getMappedFile truncates the file.
+	prevEntries, _ := LoadUnfinishedEntries(cfg.Filepath)
 
 	filesize := cfg.MaxEntries * entrySize
 	file, fileAsBytes, err := getMappedFile(cfg.Filepath, filesize)
@@ -83,6 +88,12 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 	}, func() float64 {
 		return float64(len(tracker.freeIndexQueue))
 	})
+
+	tracker.loadedActivitiesOnStartup = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "activity_tracker_unfinished_activities_loaded",
+		Help: "Number of unfinished activities loaded from the activity tracker file on startup.",
+	})
+	tracker.loadedActivitiesOnStartup.Set(float64(len(prevEntries)))
 
 	for i := 0; i < cfg.MaxEntries; i++ {
 		tracker.freeIndexQueue <- i
@@ -174,7 +185,7 @@ func trimEntryToSize(entry string, size int) string {
 func getMappedFile(filename string, filesize int) (*os.File, mmap.MMap, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to create activity file")
+		return nil, nil, fmt.Errorf("failed to create activity file: %w", err)
 	}
 
 	closeOnReturn := true
@@ -186,12 +197,12 @@ func getMappedFile(filename string, filesize int) (*os.File, mmap.MMap, error) {
 
 	err = file.Truncate(int64(filesize))
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to truncate activity file")
+		return nil, nil, fmt.Errorf("failed to truncate activity file: %w", err)
 	}
 
 	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to mmap activity file")
+		return nil, nil, fmt.Errorf("failed to mmap activity file: %w", err)
 	}
 
 	closeOnReturn = false

@@ -8,6 +8,7 @@ package astmapper
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
@@ -17,16 +18,9 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
-// NewSharding creates a new query sharding mapper.
-func NewSharding(shardSummer ASTMapper) ASTMapper {
-	subtreeFolder := newSubtreeFolder()
-	return NewMultiMapper(
-		shardSummer,
-		subtreeFolder,
-	)
+type Squasher interface {
+	Squash(...EmbeddedQuery) (parser.Expr, error)
 }
-
-type Squasher = func(...EmbeddedQuery) (parser.Expr, error)
 
 type ShardLabeller interface {
 	GetLabelMatcher(shard int) (*labels.Matcher, error)
@@ -51,54 +45,43 @@ func (lbl *queryShardLabeller) GetParams(_ int) map[string]string {
 }
 
 // NewQueryShardSummer instantiates an ASTMapper which will fan out sum queries by shard.
-func NewQueryShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
+func NewQueryShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats) ASTMapper {
 	return NewShardSummerWithLabeller(shards, squasher, logger, stats, newQueryShardLabeller(shards))
 }
 
-func NewShardSummerWithLabeller(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller) (ASTMapper, error) {
-	summer, err := newShardSummer(shards, squasher, logger, stats, labeller)
-	if err != nil {
-		return nil, err
-	}
-	return NewASTExprMapper(summer), nil
+func NewShardSummerWithLabeller(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller) ASTMapper {
+	summer := newShardSummer(shards, squasher, logger, stats, labeller)
+	return NewASTExprMapper(summer)
 }
 
 type shardSummer struct {
 	shards       int
 	currentShard *int
-	squash       Squasher
+	squasher     Squasher
 	logger       log.Logger
 	stats        *MapperStats
 
 	shardLabeller ShardLabeller
 
-	canShardAllVectorSelectorsCache map[string]bool
+	analyzer *ShardingAnalyzer
 }
 
-func newShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) (*shardSummer, error) {
-	if squasher == nil {
-		return nil, errors.Errorf("squasher required and not passed")
-	}
-
+func newShardSummer(shards int, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) *shardSummer {
 	return &shardSummer{
 		shards:       shards,
-		squash:       squasher,
+		squasher:     squasher,
 		currentShard: nil,
 		logger:       logger,
 		stats:        stats,
 
 		shardLabeller: shardLabeller,
 
-		canShardAllVectorSelectorsCache: make(map[string]bool),
-	}, nil
-}
-
-// Clone returns a clone of shardSummer with stats and current shard index reset to default.
-func (summer *shardSummer) Clone() *shardSummer {
-	s := *summer
-	s.stats = NewMapperStats()
-	s.currentShard = nil
-	return &s
+		// FIXME: if we already have an analyzer we've used for the expression we're going to shard, we could reuse it here
+		// and make use of its cached results.
+		// Most expressions won't trigger the need for analysis during sharding, and passing the analyzer around adds some
+		// extra complexity, so we haven't bothered to do this yet.
+		analyzer: NewShardingAnalyzer(logger),
+	}
 }
 
 // CopyWithCurShard clones a shardSummer with a new current shard.
@@ -143,8 +126,15 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 				}
 				return summer.shardAndSquashFuncCall(ctx, e)
 			}
-			return e, false, nil
+
+			analysis, err := summer.analyzer.Analyze(expr)
+			if err != nil {
+				return nil, true, err
+			}
+
+			return e, !analysis.WillShardAllSelectors, nil
 		}
+
 		return e, false, nil
 
 	case *parser.BinaryExpr:
@@ -164,48 +154,8 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 		// process in the query-frontend. Since we can't estimate the cardinality, we prefer
 		// to be pessimistic and not parallelize at all the two legs unless we're able to
 		// parallelize all vector selectors in the legs.
-		canShardAllVectorSelectors := func(expr parser.Expr) (can bool, err error) {
-			query := expr.String()
-			// We need to cache the results of this function to avoid processing it again and again
-			// in queries like `a or b or c or d`, which would lead to exponential processing time.
-			if can, ok := summer.canShardAllVectorSelectorsCache[query]; ok {
-				return can, nil
-			}
-			defer func() {
-				if err == nil {
-					summer.canShardAllVectorSelectorsCache[query] = can
-				}
-			}()
-
-			// Clone the expression cause the mapper can modify it in-place.
-			clonedExpr, err := parser.ParseExpr(query)
-			if err != nil {
-				return false, err
-			}
-
-			c := summer.Clone()
-			c.shards = 1
-			m := NewASTExprMapper(c)
-
-			mappedExpr, err := m.Map(ctx, clonedExpr)
-			if err != nil {
-				return false, err
-			}
-
-			// The mapped expression could have been rewritten and the number of vector selectors
-			// be changed compared to the original expression, so we should compare with that.
-			return c.stats.GetShardedQueries() == countVectorSelectors(mappedExpr), nil
-		}
-
-		canLHS, err := canShardAllVectorSelectors(e.LHS)
-		if err != nil {
-			return e, true, err
-		}
-		if !canLHS {
-			return e, true, nil
-		}
-		canRHS, err := canShardAllVectorSelectors(e.RHS)
-		return e, !canRHS, err
+		analysis, err := summer.analyzer.Analyze(e)
+		return e, !analysis.WillShardAllSelectors, err
 
 	case *parser.SubqueryExpr:
 		// If the mapped expr is part of the sharded query, then it means we already checked whether it was
@@ -221,6 +171,175 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 
 	default:
 		return e, false, nil
+	}
+}
+
+type ShardingAnalyzer struct {
+	logger        log.Logger
+	analysisCache map[parser.Expr]ShardingAnalysisResult
+}
+
+type ShardingAnalysisResult struct {
+	// WillShardAllSelectors is true if all selectors in the expression will be sharded,
+	// or if there are no selectors in the expression.
+	WillShardAllSelectors bool
+
+	// The number of sharded selectors in the final expression.
+	// - If the original query was sum(foo), this would be 1.
+	// - If the original query was sum(foo) + bar, this would be 0, as the bar selector won't be sharded and so the sum is not sharded.
+	// - If the original query was sum(foo) + sum(bar), this would be 2.
+	// - If the original query was avg(foo), this would be 2, as avg(foo) is rewritten as sum(foo) / count(foo).
+	//
+	// If WillShardAllSelectors is false, then this will be 0.
+	ShardedSelectors int
+}
+
+func UnshardedExpression() ShardingAnalysisResult {
+	return ShardingAnalysisResult{
+		WillShardAllSelectors: false,
+		ShardedSelectors:      0,
+	}
+}
+
+func ShardedExpression(shardedSelectors int) ShardingAnalysisResult {
+	return ShardingAnalysisResult{
+		WillShardAllSelectors: true,
+		ShardedSelectors:      shardedSelectors,
+	}
+}
+
+func NewShardingAnalyzer(logger log.Logger) *ShardingAnalyzer {
+	return &ShardingAnalyzer{
+		logger:        logger,
+		analysisCache: make(map[parser.Expr]ShardingAnalysisResult),
+	}
+}
+
+// Analyze analyzes the given expression and returns true if all selectors in expr will be sharded,
+// and the number of shardable queries in the sharded expression.
+//
+// This differs from CanParallelize, which returns true if it is valid to shard the expr.
+//
+// For example, it is valid to shard a vector selector (so CanParallelize returns true), but we
+// don't bother doing this because it has no benefit (so Analyze returns false).
+//
+// However, if the expression was a sum aggregation over a vector selector, for example, then
+// both methods would return true.
+func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnalysisResult, err error) {
+	// We need to cache the results of this function to avoid processing it again and again
+	// in queries like `a or b or c or d`, which would lead to exponential processing time.
+	if cached, ok := analyzer.analysisCache[expr]; ok {
+		return cached, nil
+	}
+	defer func() {
+		if err == nil {
+			analyzer.analysisCache[expr] = result
+		}
+	}()
+
+	switch expr := expr.(type) {
+	case *parser.VectorSelector, *parser.MatrixSelector:
+		return UnshardedExpression(), nil
+	case *parser.ParenExpr:
+		return analyzer.Analyze(expr.Expr)
+	case *parser.StepInvariantExpr:
+		return analyzer.Analyze(expr.Expr)
+	case *parser.AggregateExpr:
+		if CanParallelize(expr, analyzer.logger) {
+			selectorCount := 1
+
+			if expr.Op == parser.AVG {
+				// We'll rewrite avg(foo) as sum(foo) / count(foo), so we need to account for both selectors.
+				selectorCount = 2
+			}
+
+			return ShardedExpression(selectorCount), nil
+		}
+
+		// If we can't shard this expression, we might still be able to shard the inner expression.
+		// eg. in avg(count(test)), we can't shard the avg(), but we can shard the count().
+		exprResult, err := analyzer.Analyze(expr.Expr)
+		if err != nil {
+			return UnshardedExpression(), err
+		}
+		if !exprResult.WillShardAllSelectors {
+			return UnshardedExpression(), nil
+		}
+
+		if expr.Param != nil {
+			paramResult, err := analyzer.Analyze(expr.Param)
+			if err != nil {
+				return UnshardedExpression(), err
+			}
+			if !paramResult.WillShardAllSelectors {
+				return UnshardedExpression(), nil
+			}
+
+			exprResult.ShardedSelectors += paramResult.ShardedSelectors
+		}
+
+		return exprResult, nil
+
+	case *parser.BinaryExpr:
+		if isShardableBinOp(expr) && CanParallelize(expr, analyzer.logger) {
+			return ShardedExpression(1), nil
+		}
+
+		lhs, err := analyzer.Analyze(expr.LHS)
+		if err != nil {
+			return UnshardedExpression(), err
+		}
+		if !lhs.WillShardAllSelectors {
+			return UnshardedExpression(), nil
+		}
+
+		rhs, err := analyzer.Analyze(expr.RHS)
+		if err != nil {
+			return UnshardedExpression(), err
+		}
+
+		if !rhs.WillShardAllSelectors {
+			return UnshardedExpression(), nil
+		}
+
+		return ShardedExpression(lhs.ShardedSelectors + rhs.ShardedSelectors), nil
+
+	case *parser.Call:
+		if isSubqueryCall(expr) {
+			if containsAggregateExpr(expr) {
+				return UnshardedExpression(), nil
+			}
+
+			if !CanParallelize(expr, analyzer.logger) {
+				return UnshardedExpression(), nil
+			}
+
+			return ShardedExpression(1), nil
+		}
+
+		for _, arg := range argsWithDefaults(expr) {
+			if result, err := analyzer.Analyze(arg); err != nil {
+				return UnshardedExpression(), err
+			} else if !result.WillShardAllSelectors {
+				return UnshardedExpression(), nil
+			}
+		}
+
+		return ShardedExpression(countSelectors(expr)), nil
+
+	case *parser.NumberLiteral, *parser.StringLiteral:
+		return ShardedExpression(0), nil
+
+	case *parser.UnaryExpr:
+		return analyzer.Analyze(expr.Expr)
+
+	case *parser.SubqueryExpr:
+		// If we've reached this point, then the subquery is not shardable.
+		// If the subquery was shardable, we would have returned true when examining the outer function call.
+		return UnshardedExpression(), nil
+
+	default:
+		return UnshardedExpression(), fmt.Errorf("unexpected expression type %T in ShardingAnalyzer.Analyze", expr)
 	}
 }
 
@@ -243,11 +362,13 @@ func (summer *shardSummer) shardAndSquashFuncCall(ctx context.Context, expr *par
 		To find the most outer matrix/vector selector, we need to traverse the AST by using each function arguments.
 	*/
 
+	summer.stats.AddShardedQueries(summer.shards)
+
 	children := make([]EmbeddedQuery, 0, summer.shards)
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
-		cloned, err := cloneExpr(expr)
+		cloned, err := CloneExpr(expr)
 		if err != nil {
 			return nil, true, err
 		}
@@ -274,12 +395,10 @@ func (summer *shardSummer) shardAndSquashFuncCall(ctx context.Context, expr *par
 			}
 		}
 
-		children = append(children, NewEmbeddedQuery(clonedCall.String(), summer.shardLabeller.GetParams(i)))
+		children = append(children, NewEmbeddedQuery(clonedCall, summer.shardLabeller.GetParams(i)))
 	}
 
-	// Update stats.
-	summer.stats.AddShardedQueries(summer.shards)
-	squashed, err := summer.squash(children...)
+	squashed, err := summer.squasher.Squash(children...)
 	if err != nil {
 		return nil, true, err
 	}
@@ -348,6 +467,8 @@ func (summer *shardSummer) shardGroup(ctx context.Context, expr *parser.Aggregat
 		)
 	*/
 
+	summer.stats.AddShardedQueries(summer.shards)
+
 	// Create a GROUP sub-query for each shard and squash it into a CONCAT expression.
 	sharded, err := summer.shardAndSquashAggregateExpr(ctx, expr, parser.GROUP)
 	if err != nil {
@@ -361,6 +482,7 @@ func (summer *shardSummer) shardGroup(ctx context.Context, expr *parser.Aggregat
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -386,6 +508,8 @@ func (summer *shardSummer) shardSum(ctx context.Context, expr *parser.AggregateE
 		)
 	*/
 
+	summer.stats.AddShardedQueries(summer.shards)
+
 	// Create a SUM sub-query for each shard and squash it into a CONCAT expression.
 	sharded, err := summer.shardAndSquashAggregateExpr(ctx, expr, parser.SUM)
 	if err != nil {
@@ -399,11 +523,14 @@ func (summer *shardSummer) shardSum(ctx context.Context, expr *parser.AggregateE
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
 // shardCount attempts to shard the given COUNT aggregation expression.
 func (summer *shardSummer) shardCount(ctx context.Context, expr *parser.AggregateExpr) (result *parser.AggregateExpr, err error) {
+	summer.stats.AddShardedQueries(summer.shards)
+
 	// The COUNT aggregation can be parallelized as the SUM of per-shard COUNT.
 	// Create a COUNT sub-query for each shard and squash it into a CONCAT expression.
 	sharded, err := summer.shardAndSquashAggregateExpr(ctx, expr, parser.COUNT)
@@ -417,6 +544,7 @@ func (summer *shardSummer) shardCount(ctx context.Context, expr *parser.Aggregat
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -426,6 +554,8 @@ func (summer *shardSummer) shardMinMax(ctx context.Context, expr *parser.Aggrega
 	if expr.Op != parser.MIN && expr.Op != parser.MAX {
 		return nil, errors.Errorf("expected MIN or MAX aggregation while got %s", expr.Op.String())
 	}
+
+	summer.stats.AddShardedQueries(summer.shards)
 
 	// The MIN/MAX aggregation can be parallelized as the MIN/MAX of per-shard MIN/MAX.
 	// Create a MIN/MAX sub-query for each shard and squash it into a CONCAT expression.
@@ -440,6 +570,7 @@ func (summer *shardSummer) shardMinMax(ctx context.Context, expr *parser.Aggrega
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -458,9 +589,10 @@ func (summer *shardSummer) shardAvg(ctx context.Context, expr *parser.AggregateE
 
 	return &parser.ParenExpr{
 		Expr: &parser.BinaryExpr{
-			Op:  parser.DIV,
-			LHS: sumExpr,
-			RHS: countExpr,
+			Op:             parser.DIV,
+			LHS:            sumExpr,
+			RHS:            countExpr,
+			VectorMatching: &parser.VectorMatching{},
 		},
 	}, nil
 }
@@ -484,33 +616,43 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(ctx context.Context, expr
 		aggExpr := &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
-			Grouping: expr.Grouping,
 			Without:  expr.Without,
+			PosRange: expr.PosRange,
+
+			// Clone the grouping slice, as MQE's aggregation operator mutates it to sort it and add __name__ if needed.
+			// We don't need to clone this slice for the aggregate expression that wraps this one (created by the caller of shardAndSquashAggregateExpr),
+			// as no other expression nodes will reference that slice, so it's safe for that one to be mutated.
+			Grouping: slices.Clone(expr.Grouping),
 		}
-		children = append(children, NewEmbeddedQuery(aggExpr.String(), summer.shardLabeller.GetParams(i)))
+		children = append(children, NewEmbeddedQuery(aggExpr, summer.shardLabeller.GetParams(i)))
 	}
 
-	// Update stats.
-	summer.stats.AddShardedQueries(summer.shards)
-
-	return summer.squash(children...)
+	return summer.squasher.Squash(children...)
 }
 
-// shardBinOp attempts to shard the given binary operation expression.
-func (summer *shardSummer) shardBinOp(ctx context.Context, expr *parser.BinaryExpr) (mapped parser.Expr, finished bool, err error) {
+func isShardableBinOp(expr *parser.BinaryExpr) bool {
 	switch expr.Op {
 	case parser.GTR,
 		parser.GTE,
 		parser.LSS,
 		parser.LTE:
-		mapped, err = summer.shardAndSquashBinOp(ctx, expr)
-		if err != nil {
-			return nil, false, err
-		}
-		return mapped, true, nil
+		return true
 	default:
+		return false
+	}
+}
+
+// shardBinOp attempts to shard the given binary operation expression.
+func (summer *shardSummer) shardBinOp(ctx context.Context, expr *parser.BinaryExpr) (mapped parser.Expr, finished bool, err error) {
+	if !isShardableBinOp(expr) {
 		return expr, false, nil
 	}
+
+	mapped, err = summer.shardAndSquashBinOp(ctx, expr)
+	if err != nil {
+		return nil, false, err
+	}
+	return mapped, true, nil
 }
 
 // shardAndSquashBinOp returns a squashed CONCAT expression including N embedded
@@ -523,6 +665,7 @@ func (summer *shardSummer) shardAndSquashBinOp(ctx context.Context, expr *parser
 		return nil, fmt.Errorf("tried to shard a bin op with vector matching: %s", expr)
 	}
 
+	summer.stats.AddShardedQueries(summer.shards)
 	children := make([]EmbeddedQuery, 0, summer.shards)
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
@@ -540,14 +683,13 @@ func (summer *shardSummer) shardAndSquashBinOp(ctx context.Context, expr *parser
 			Op:         expr.Op,
 			RHS:        shardedRHS,
 			ReturnBool: expr.ReturnBool,
+			// We don't need to set VectorMatching here: we expect that this method is only called for binary expressions
+			// that are not vector/vector expressions.
 		}
-		children = append(children, NewEmbeddedQuery(binExpr.String(), summer.shardLabeller.GetParams(i)))
+		children = append(children, NewEmbeddedQuery(binExpr, summer.shardLabeller.GetParams(i)))
 	}
 
-	// Update stats.
-	summer.stats.AddShardedQueries(summer.shards)
-
-	return summer.squash(children...)
+	return summer.squasher.Squash(children...)
 }
 
 func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) (parser.Expr, error) {
@@ -558,18 +700,23 @@ func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) 
 	if shardMatcher == nil {
 		return selector, nil
 	}
-	return &parser.VectorSelector{
-		Name:                 selector.Name,
-		Offset:               selector.Offset,
-		OriginalOffset:       selector.OriginalOffset,
-		Timestamp:            copyTimestamp(selector.Timestamp),
-		SkipHistogramBuckets: selector.SkipHistogramBuckets,
-		StartOrEnd:           selector.StartOrEnd,
-		LabelMatchers: append(
-			[]*labels.Matcher{shardMatcher},
-			selector.LabelMatchers...,
-		),
-	}, nil
+
+	shardedExpr, err := CloneExpr(selector)
+	if err != nil {
+		return nil, err
+	}
+
+	shardedSelector, ok := shardedExpr.(*parser.VectorSelector)
+	if !ok {
+		return nil, fmt.Errorf("expected cloneExpr to return a VectorSelector, got %T, this is a bug", shardedExpr)
+	}
+
+	shardedSelector.LabelMatchers = append(
+		[]*labels.Matcher{shardMatcher},
+		selector.LabelMatchers...,
+	)
+
+	return shardedSelector, nil
 }
 
 // isSubqueryCall returns true if the given function call expression is a subquery,
@@ -593,12 +740,4 @@ func isSubqueryCallVisitFn(expr parser.Expr) bool {
 	default:
 		return false
 	}
-}
-
-func copyTimestamp(original *int64) *int64 {
-	if original == nil {
-		return nil
-	}
-	ts := *original
-	return &ts
 }

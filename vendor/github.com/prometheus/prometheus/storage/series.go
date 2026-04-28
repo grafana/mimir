@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -41,6 +41,19 @@ type ChunkSeriesEntry struct {
 func (s *ChunkSeriesEntry) Labels() labels.Labels                       { return s.Lset }
 func (s *ChunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator { return s.ChunkIteratorFn(it) }
 func (s *ChunkSeriesEntry) ChunkCount() (int, error)                    { return s.ChunkCountFn() }
+
+func (s *ChunkSeriesEntry) IteratorFactory() ChunkIterable {
+	return &chunkIterableFn{iteratorFn: s.ChunkIteratorFn}
+}
+
+// chunkIterableFn implements ChunkIterable using a function.
+type chunkIterableFn struct {
+	iteratorFn func(chunks.Iterator) chunks.Iterator
+}
+
+func (c *chunkIterableFn) Iterator(it chunks.Iterator) chunks.Iterator {
+	return c.iteratorFn(it)
+}
 
 // NewListSeries returns series entry with iterator that allows to iterate over provided samples.
 func NewListSeries(lset labels.Labels, s []chunks.Sample) *SeriesEntry {
@@ -139,6 +152,11 @@ func (it *listSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64
 func (it *listSeriesIterator) AtT() int64 {
 	s := it.samples.Get(it.idx)
 	return s.T()
+}
+
+func (it *listSeriesIterator) AtST() int64 {
+	s := it.samples.Get(it.idx)
+	return s.ST()
 }
 
 func (it *listSeriesIterator) Next() chunkenc.ValueType {
@@ -339,11 +357,14 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	i := 0
 	seriesIter := s.Series.Iterator(nil)
 	lastType := chunkenc.ValNone
+	lastHadST := false
 	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
-		if typ != lastType || i >= seriesToChunkEncoderSplit {
+		st := seriesIter.AtST()
+		hasST := st != 0
+		if typ != lastType || lastHadST != hasST || i >= seriesToChunkEncoderSplit {
 			// Create a new chunk if the sample type changed or too many samples in the current one.
 			chks = appendChunk(chks, mint, maxt, chk)
-			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding())
+			chk, err = typ.NewChunk(hasST)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
@@ -356,6 +377,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			i = 0
 		}
 		lastType = typ
+		lastHadST = hasST
 
 		var (
 			t  int64
@@ -366,10 +388,10 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		switch typ {
 		case chunkenc.ValFloat:
 			t, v = seriesIter.At()
-			app.Append(t, v)
+			app.Append(st, t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram(nil)
-			newChk, recoded, app, err = app.AppendHistogram(nil, t, h, false)
+			newChk, recoded, app, err = app.AppendHistogram(nil, st, t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
@@ -384,7 +406,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram(nil)
-			newChk, recoded, app, err = app.AppendFloatHistogram(nil, t, fh, false)
+			newChk, recoded, app, err = app.AppendFloatHistogram(nil, st, t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
@@ -434,6 +456,10 @@ func (s *seriesToChunkEncoder) ChunkCount() (int, error) {
 	return chunkCount, it.Err()
 }
 
+func (s *seriesToChunkEncoder) IteratorFactory() ChunkIterable {
+	return s
+}
+
 func appendChunk(chks []chunks.Meta, mint, maxt int64, chk chunkenc.Chunk) []chunks.Meta {
 	if chk != nil {
 		chks = append(chks, chunks.Meta{
@@ -456,16 +482,26 @@ func (e errChunksIterator) Err() error    { return e.err }
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
 // sample implementations. if nil, sample type from this package will be used.
-func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
+// For float sample, NaN values are replaced with -42.
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(st, t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
+	return expandSamples(iter, true, newSampleFn)
+}
+
+// ExpandSamplesWithoutReplacingNaNs is same as ExpandSamples but it does not replace float sample NaN values with anything.
+func ExpandSamplesWithoutReplacingNaNs(iter chunkenc.Iterator, newSampleFn func(st, t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
+	return expandSamples(iter, false, newSampleFn)
+}
+
+func expandSamples(iter chunkenc.Iterator, replaceNaN bool, newSampleFn func(st, t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
 	if newSampleFn == nil {
-		newSampleFn = func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
+		newSampleFn = func(st, t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
 			switch {
 			case h != nil:
-				return hSample{t, h}
+				return hSample{st, t, h}
 			case fh != nil:
-				return fhSample{t, fh}
+				return fhSample{st, t, fh}
 			default:
-				return fSample{t, f}
+				return fSample{st, t, f}
 			}
 		}
 	}
@@ -477,17 +513,20 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, 
 			return result, iter.Err()
 		case chunkenc.ValFloat:
 			t, f := iter.At()
+			st := iter.AtST()
 			// NaNs can't be compared normally, so substitute for another value.
-			if math.IsNaN(f) {
+			if replaceNaN && math.IsNaN(f) {
 				f = -42
 			}
-			result = append(result, newSampleFn(t, f, nil, nil))
+			result = append(result, newSampleFn(st, t, f, nil, nil))
 		case chunkenc.ValHistogram:
 			t, h := iter.AtHistogram(nil)
-			result = append(result, newSampleFn(t, 0, h, nil))
+			st := iter.AtST()
+			result = append(result, newSampleFn(st, t, 0, h, nil))
 		case chunkenc.ValFloatHistogram:
 			t, fh := iter.AtFloatHistogram(nil)
-			result = append(result, newSampleFn(t, 0, nil, fh))
+			st := iter.AtST()
+			result = append(result, newSampleFn(st, t, 0, nil, fh))
 		}
 	}
 }

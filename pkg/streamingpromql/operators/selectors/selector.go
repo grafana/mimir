@@ -5,7 +5,6 @@ package selectors
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -24,7 +23,7 @@ type Selector struct {
 	TimeRange            types.QueryTimeRange
 	Timestamp            *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	Offset               int64  // In milliseconds
-	Matchers             []*labels.Matcher
+	Matchers             types.Matchers
 	EagerLoad            bool // If true, Select() call is made when Prepare() is called. This is used by query-frontends when evaluating shardable queries so that all selectors are evaluated in parallel.
 	SkipHistogramBuckets bool
 
@@ -36,24 +35,51 @@ type Selector struct {
 	// Set for range vector selectors, otherwise 0.
 	Range time.Duration
 
+	// When these range selector modifiers are used the start/end timestamps are adjusted to query for a larger range of points.
+	// It's the responsibility of the caller to apply any modifications to the returned samples for these modifiers.
+	Anchored bool
+	Smoothed bool
+
+	// When the Smoothed range modifier is used this flag can be set to request that interpolated boundary values compensate for counter resets.
+	// For instance this is used for rate and increase functions wrapping a smoothed selector.
+	// This flag has no effect unless Smoothed is set to true.
+	CounterAware bool
+
+	// Pass the set of labels required for the query to the Querier to avoid transferring labels that aren't needed
+	// back and forth between the querier and storage layer (ingesters, store-gateways). The storage layer may also
+	// apply further optimizations based on this information.
+	ProjectionInclude bool
+	ProjectionLabels  []string
+
+	// Subsets to report in operator stats.
+	Subsets []Subset
+
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	querier   storage.Querier
 	seriesSet storage.SeriesSet
 	series    *seriesList
 
+	seriesSubsetBitmap []bool // One entry per subset in Subsets. Reused for each call to Next().
+
 	seriesIdx int
+}
+
+type Subset struct {
+	Filter []*labels.Matcher
+
+	matchingSeries []bool // One entry per series. True means the corresponding series matches this subset.
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
 	if s.EagerLoad {
-		return s.loadSeriesSet(ctx)
+		return s.loadSeriesSet(ctx, s.Matchers)
 	}
 
 	return nil
 }
 
-func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	defer func() {
 		// Release our reference to the series set so it can be garbage collected as soon as possible.
 		s.seriesSet = nil
@@ -64,7 +90,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	}
 
 	if !s.EagerLoad {
-		if err := s.loadSeriesSet(ctx); err != nil {
+		if err := s.loadSeriesSet(ctx, s.mergeMatchers(s.Matchers, matchers)); err != nil {
 			return nil, err
 		}
 	}
@@ -81,26 +107,84 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 		s.series.Add(series)
 	}
 
+	if s.seriesSet.Err() != nil {
+		return nil, s.seriesSet.Err()
+	}
+
 	metadata, err := s.series.ToSeriesMetadata()
 	if err != nil {
 		return nil, err
 	}
 
-	return metadata, s.seriesSet.Err()
+	if err := s.computeSubsetBitmaps(metadata); err != nil {
+		return nil, err
+	}
+
+	return metadata, nil
 }
 
-func (s *Selector) loadSeriesSet(ctx context.Context) error {
+func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
+	if m1 == nil {
+		return m2
+	}
+
+	if m2 == nil {
+		return m1
+	}
+
+	unique := make(map[types.Matcher]struct{})
+	for _, m := range m1 {
+		unique[m] = struct{}{}
+	}
+	for _, m := range m2 {
+		unique[m] = struct{}{}
+	}
+
+	out := make([]types.Matcher, 0, len(unique))
+	for m := range unique {
+		out = append(out, m)
+	}
+
+	return out
+}
+
+func (s *Selector) computeSubsetBitmaps(metadata []types.SeriesMetadata) error {
+	if len(s.Subsets) == 0 {
+		return nil
+	}
+
+	for idx, subset := range s.Subsets {
+		bitmap, err := types.BoolSlicePool.Get(len(metadata), s.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		for _, series := range metadata {
+			bitmap = append(bitmap, types.MatchersMatch(subset.Filter, series.Labels))
+		}
+
+		s.Subsets[idx].matchingSeries = bitmap
+	}
+
+	return nil
+}
+
+func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) error {
 	if s.seriesSet != nil {
 		return errors.New("should not call Selector.loadSeriesSet() multiple times")
 	}
 
-	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta)
+	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,
 		End:   endTimestamp,
 		Step:  s.TimeRange.IntervalMilliseconds,
 		Range: s.Range.Milliseconds(),
+
+		// Mimir Queriers don't use projection hints for anything at time of writing.
+		ProjectionInclude: s.ProjectionInclude,
+		ProjectionLabels:  s.ProjectionLabels,
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
 		//
@@ -112,21 +196,34 @@ func (s *Selector) loadSeriesSet(ctx context.Context) error {
 		// label matcher is present, and ingesters set DisableTrimming to true.
 	}
 
-	var err error
+	// Convert our operator type matchers to Prometheus matchers. This parses any regular
+	// expressions contained in the matchers but this should never fail because they are
+	// parsed when the query is initially parsed.
+	promMatchers, err := matchers.ToPrometheusType()
+	if err != nil {
+		return err
+	}
+
 	s.querier, err = s.Queryable.Querier(startTimestamp, endTimestamp)
 	if err != nil {
 		return err
 	}
 
-	s.seriesSet = s.querier.Select(ctx, true, hints, s.Matchers...)
+	s.seriesSet = s.querier.Select(ctx, true, hints, promMatchers...)
+
+	if len(s.Subsets) > 0 {
+		s.seriesSubsetBitmap, err = types.BoolSlicePool.Get(len(s.Subsets), s.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		s.seriesSubsetBitmap = s.seriesSubsetBitmap[:len(s.Subsets)]
+	}
+
 	return nil
 }
 
-func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, selectorRange time.Duration, offset int64, lookbackDelta time.Duration) (int64, int64) {
-	if lookbackDelta != 0 && selectorRange != 0 {
-		panic(fmt.Sprintf("both lookback delta (%s) and selector range (%s) are non-zero", lookbackDelta, selectorRange))
-	}
-
+func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, selectorRange time.Duration, offset int64, lookbackDelta time.Duration, anchored bool, smoothed bool) (int64, int64) {
 	startTimestamp := timeRange.StartT
 	endTimestamp := timeRange.EndT
 
@@ -141,12 +238,21 @@ func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, s
 	startTimestamp = startTimestamp - lookbackDelta.Milliseconds() - rangeMilliseconds - offset + 1 // +1 to exclude samples on the lower boundary of the range (queriers work with closed intervals, we use left-open).
 	endTimestamp = endTimestamp - offset
 
+	if smoothed {
+		endTimestamp += lookbackDelta.Milliseconds()
+	}
+
 	return startTimestamp, endTimestamp
 }
 
-func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {
+// Next returns the iterator and subset bitmap for the next series in this selector.
+//
+// Each entry in the subset bitmap corresponds to an entry in Subsets. True means this series matches the subset.
+// The subset bitmap is only valid until the next call to Next or Close.
+// This Selector instance is responsible for returning it to the pool on Close.
+func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, []bool, error) {
 	if s.series.Len() == 0 {
-		return nil, types.EOS
+		return nil, nil, types.EOS
 	}
 
 	// Only check for cancellation every 128 series. This avoids a (relatively) expensive check on every iteration, but aborts
@@ -154,16 +260,25 @@ func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunke
 	// index so that we check for cancellation at least once for all selectors.
 	// See https://github.com/prometheus/prometheus/pull/14118 for more explanation of why we use 128 (rather than say 100).
 	if s.seriesIdx%128 == 0 && ctx.Err() != nil {
-		return nil, context.Cause(ctx)
+		return nil, nil, context.Cause(ctx)
 	}
 
+	s.updateSeriesSubsetBitmap()
 	s.seriesIdx++
-	return s.series.Pop().Iterator(existing), nil
+
+	return s.series.Pop().Iterator(existing), s.seriesSubsetBitmap, nil
+}
+
+func (s *Selector) updateSeriesSubsetBitmap() {
+	for subsetIdx, subset := range s.Subsets {
+		s.seriesSubsetBitmap[subsetIdx] = subset.matchingSeries[s.seriesIdx]
+	}
 }
 
 func (s *Selector) Close() {
 	if s.series != nil {
 		s.series.Close()
+		s.series = nil
 	}
 
 	if s.querier != nil {
@@ -172,6 +287,13 @@ func (s *Selector) Close() {
 	}
 
 	s.seriesSet = nil
+
+	for idx := range s.Subsets {
+		types.BoolSlicePool.Put(&s.Subsets[idx].matchingSeries, s.MemoryConsumptionTracker)
+	}
+
+	s.Subsets = nil
+	types.BoolSlicePool.Put(&s.seriesSubsetBitmap, s.MemoryConsumptionTracker)
 }
 
 // seriesList is a FIFO queue of storage.Series.

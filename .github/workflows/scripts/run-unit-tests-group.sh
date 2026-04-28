@@ -1,5 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-only
+set -o pipefail
 
 SCRIPT_DIR=$(cd `dirname $0` && pwd)
 MIMIR_DIR=$(realpath "${SCRIPT_DIR}/../../../")
@@ -36,15 +37,79 @@ if [[ -z "$TOTAL" ]]; then
     exit 1
 fi
 
-# List all tests.
-ALL_TESTS=$(go list "${MIMIR_DIR}/..." | sort)
+# If you change the build tags or CLI flags, update warmup-build-cache-unit-tests in the Makefile too.
+BUILD_TAGS="netgo,stringlabels"
+if [[ -n "$EXTRA_BUILD_TAGS" ]]; then
+    BUILD_TAGS="$BUILD_TAGS,$EXTRA_BUILD_TAGS"
+fi
+
+# List all tests, excluding integration tests which require Docker and a built Mimir image.
+ALL_TESTS=$(go list "${MIMIR_DIR}/..." | grep -v "^github.com/grafana/mimir/integration" | sort)
 
 # Filter tests by the requested group.
-GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX')
+GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL="$TOTAL" -v INDEX="$INDEX" 'NR % TOTAL == INDEX')
 
-echo "This group will run the following tests:"
-echo "$GROUP_TESTS"
-echo ""
+if [[ -z "$GROUP_TESTS" ]]; then
+    echo "ERROR: No packages found for group $INDEX of $TOTAL. This likely indicates a compilation error or misconfiguration."
+    exit 1
+fi
 
-# shellcheck disable=SC2086 # we *want* word splitting of GROUP_TESTS.
-exec go test -tags=netgo,stringlabels -timeout 30m -race ${GROUP_TESTS}
+# The tests in these MQE packages load an enormous amount of data, which causes the
+# race detector to consume a large amount of memory and run incredibly slowly on CI.
+# The same code is tested by other unit tests which run with the race detector enabled, so
+# don't bother running these tests with the race detector enabled.
+# If you add packages here, also update warmup-build-cache-unit-tests in the Makefile.
+SKIP_RACE_DETECTOR_PATTERN="^github.com/grafana/mimir/pkg/streamingpromql/(benchmarks|comparisons|fuzz)$"
+
+echo "This group will run the following tests (race detector enabled unless stated otherwise):"
+echo "$GROUP_TESTS" | while read -r pkg; do
+    if echo "$pkg" | grep -q --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN"; then
+        echo "$pkg (race detector disabled)"
+    else
+        echo "$pkg"
+    fi
+done
+echo
+
+EXIT_CODE=0
+FAILED_PACKAGES=""
+
+# Run one package at a time so that a failure can be retried individually without re-running
+# the entire group.
+MAX_ATTEMPTS=2
+
+for pkg in $GROUP_TESTS; do
+    if echo "$pkg" | grep -q --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN"; then
+        RACE_FLAG=""
+    else
+        RACE_FLAG="-race"
+    fi
+
+    for ATTEMPT in $(seq 1 $MAX_ATTEMPTS); do
+        if [[ $ATTEMPT -gt 1 ]]; then
+            echo "Retrying failed package: $pkg"
+            echo
+        fi
+
+        # shellcheck disable=SC2086 # we *want* word splitting of RACE_FLAG.
+        go test -tags="${BUILD_TAGS}" -timeout 30m $RACE_FLAG "$pkg"
+        PKG_EXIT_CODE=$?
+
+        if [[ $PKG_EXIT_CODE -eq 0 ]]; then
+            break
+        fi
+    done
+
+    if [[ $PKG_EXIT_CODE -ne 0 ]]; then
+        EXIT_CODE=1
+        FAILED_PACKAGES="${FAILED_PACKAGES} ${pkg}"
+    fi
+done
+
+# Store in GitHub environment variable if any packages failed.
+FAILED_PACKAGES=$(echo "$FAILED_PACKAGES" | xargs)
+if [[ -n "$FAILED_PACKAGES" ]]; then
+    echo "FAILED_PACKAGES=${FAILED_PACKAGES}" >> "$GITHUB_ENV"
+fi
+
+exit $EXIT_CODE

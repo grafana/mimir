@@ -315,7 +315,7 @@ func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
 				posrange.PositionRange{Start: 0, End: 10},
 			)
 
-			outputSeries, err := o.SeriesMetadata(ctx)
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})

@@ -1,0 +1,285 @@
+{
+  _config+:: {
+    multi_zone_memberlist_bridge_enabled: false,
+
+    // Whether the zone-aware routing should be enabled.
+    memberlist_zone_aware_routing_enabled: false,
+
+    // Priority class for memberlist-bridge pods. Memberlist-bridge pods act as bridges between AZs
+    // so they're critical to avoid network partitioning.
+    memberlist_bridge_priority_class: 'high-nonpreempting',
+
+    // Number of memberlist-bridge replicas per zone. Memberlist zone-aware routing has an
+    // auto-failover mechanism to temporarily disable zone-aware routing if it detects that
+    // a zone has no healthy bridges; 3 replicas provide high-availability without a significant
+    // risk of network partitioning if some bridges in a zone are unhealthy.
+    memberlist_bridge_replicas_per_zone: 3,
+
+    // Whether Mimir components should be configured to use memberlist-bridges as seed nodes.
+    memberlist_bridge_seed_nodes_enabled: $._config.multi_zone_memberlist_bridge_enabled,
+
+    memberlistConfig+:: if !$._config.memberlist_bridge_seed_nodes_enabled then {} else (
+      // By default, pods run in the logical zone-a.
+      memberlistSeedNodesForMimirZoneArgs('a') +
+      {
+        // Prevents pods from starting if they cannot join any seed node, reducing the risk of network partitioning.
+        'memberlist.abort-if-fast-join-fails': true,
+
+        // Enables periodic re-join to recover from network partitions.
+        'memberlist.rejoin-interval': '300s',
+      }
+    ),
+  },
+
+  _images+:: if $._config.multi_zone_memberlist_bridge_enabled then {
+    memberlist_bridge: $._images.mimir,
+  } else {},
+
+  local container = $.core.v1.container,
+  local containerPort = $.core.v1.containerPort,
+  local deployment = $.apps.v1.deployment,
+  local service = $.core.v1.service,
+
+  local isMultiZoneEnabled = $._config.multi_zone_memberlist_bridge_enabled,
+  local isZoneAEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isZoneBEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isZoneCEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+
+  local memberlistBridgeSeedNodeAddressZone(zone) =
+    'dns+memberlist-bridge-zone-%s.%s.svc.%s:7946' % [zone, $._config.namespace, $._config.cluster_domain],
+
+  local memberlistBridgeSeedNodeAddressesAllZones() = std.join(',', std.prune([
+    if isZoneAEnabled then memberlistBridgeSeedNodeAddressZone('a') else null,
+    if isZoneBEnabled then memberlistBridgeSeedNodeAddressZone('b') else null,
+    if isZoneCEnabled then memberlistBridgeSeedNodeAddressZone('c') else null,
+  ])),
+
+  local memberlistSeedNodesForMimirZoneArgs(zone) = if !$._config.memberlist_bridge_seed_nodes_enabled then {} else (
+    {
+      // Uses all zones bridges for the initial join to increase the likelihood of success and
+      // decrease the risk of network partitioning, at the cost of some inter-AZ data transfer.
+      'memberlist.join': memberlistBridgeSeedNodeAddressesAllZones(),
+
+      // Uses only same-zone bridges to avoid inter-AZ data transfer during periodic re-joins.
+      'memberlist.rejoin-seed-nodes': memberlistBridgeSeedNodeAddressZone(zone),
+
+      'memberlist.abort-if-fast-join-fails-min-nodes': 2,
+    }
+  ),
+
+  assert !$._config.memberlist_zone_aware_routing_enabled || $._config.multi_zone_memberlist_bridge_enabled : 'memberlist zone-aware routing requires memberlist-bridge multi-zone deployment',
+
+  local gossipPort = containerPort.newNamed(name='gossip-ring', containerPort=7946),
+
+  memberlist_bridge_ports:: $.util.defaultPorts + (if $._config.memberlist_ring_enabled then [gossipPort] else []),
+  memberlist_bridge_node_affinity_matchers:: [],
+
+  memberlist_bridge_container::
+    container.new('memberlist-bridge', $._images.memberlist_bridge)
+    + container.withPorts($.memberlist_bridge_ports)
+    + container.withArgs($.util.mapToFlags($.memberlist_bridge_args))
+    + $.tracing_env_mixin
+    + $.util.readinessProbe
+    + $.util.resourcesRequests('0.25', '1Gi')
+    + $.util.resourcesLimits(null, '2Gi'),
+
+  memberlist_bridge_args::
+    $._config.commonConfig
+    + $._config.usageStatsConfig
+    + $._config.querySchedulerRingClientConfig
+    + $._config.memberlistConfig
+    + {
+      target: 'memberlist-kv',
+      'server.http-listen-port': $._config.server_http_port,
+    },
+
+  // Zonal memberlist config that must be applied by all zonal deployments.
+  local memberlistZoneArgs(zone) = if $._config.memberlist_zone_aware_routing_enabled then {
+    'memberlist.zone-aware-routing.enabled': true,
+    'memberlist.zone-aware-routing.instance-availability-zone': 'zone-%s' % zone,
+    'memberlist.zone-aware-routing.role': 'member',
+  } else {},
+
+  memberlist_zone_a_args:: memberlistZoneArgs('a') + memberlistSeedNodesForMimirZoneArgs('a'),
+  memberlist_zone_b_args:: memberlistZoneArgs('b') + memberlistSeedNodesForMimirZoneArgs('b'),
+  memberlist_zone_c_args:: memberlistZoneArgs('c') + memberlistSeedNodesForMimirZoneArgs('c'),
+
+  // We always enable zone-aware routing for the zonal memberlist-bridge, so that "bridges" are zone-aware
+  // when zone-aware routing is enabled for "members" too (members are the other Mimir components).
+  local memberlistBridgeZoneArgs(zone) = {
+    // When memberlist cross-zone routing is enabled, memberlist-bridge pods act as bridges between AZs
+    // so they're critical to avoid network partitioning. We configure them to reduce likelihood of dropping
+    // messages in the brodcast queue.
+    'memberlist.zone-aware-routing.enabled': true,
+    'memberlist.zone-aware-routing.instance-availability-zone': 'zone-%s' % zone,
+    'memberlist.zone-aware-routing.role': 'bridge',
+    'memberlist.max-concurrent-writes': 15,
+  },
+
+  // Memberlist seed nodes args applied to memberlist-bridge pods.
+  local memberlistBridgeSeedNodesArgs = if $._config.memberlist_bridge_seed_nodes_enabled then {
+    // Allows Mimir to successfully bootstrap after cluster creation or disaster recovery when no seed nodes exist yet.
+    'memberlist.abort-if-fast-join-fails': false,
+    'memberlist.abort-if-fast-join-fails-min-nodes': null,
+
+    // Bridges must frequently rejoin all bridges across zones to ensure eventual convergence after network partitioning.
+    'memberlist.rejoin-interval': '60s',
+    'memberlist.rejoin-seed-nodes': memberlistBridgeSeedNodeAddressesAllZones(),
+  } else {},
+
+  memberlist_bridge_zone_a_args:: $.memberlist_bridge_args + $.memberlist_zone_a_args + memberlistBridgeZoneArgs('a') + memberlistBridgeSeedNodesArgs,
+  memberlist_bridge_zone_b_args:: $.memberlist_bridge_args + $.memberlist_zone_b_args + memberlistBridgeZoneArgs('b') + memberlistBridgeSeedNodesArgs,
+  memberlist_bridge_zone_c_args:: $.memberlist_bridge_args + $.memberlist_zone_c_args + memberlistBridgeZoneArgs('c') + memberlistBridgeSeedNodesArgs,
+
+  memberlist_bridge_zone_a_env_map:: {},
+  memberlist_bridge_zone_b_env_map:: {},
+  memberlist_bridge_zone_c_env_map:: {},
+
+  memberlist_bridge_zone_a_node_affinity_matchers:: $.memberlist_bridge_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])],
+  memberlist_bridge_zone_b_node_affinity_matchers:: $.memberlist_bridge_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])],
+  memberlist_bridge_zone_c_node_affinity_matchers:: $.memberlist_bridge_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])],
+
+  memberlist_bridge_zone_a_container:: if !isZoneAEnabled then null else
+    $.newMemberlistBridgeZoneContainer('a', $.memberlist_bridge_zone_a_args, $.memberlist_bridge_zone_a_env_map),
+
+  memberlist_bridge_zone_b_container:: if !isZoneBEnabled then null else
+    $.newMemberlistBridgeZoneContainer('b', $.memberlist_bridge_zone_b_args, $.memberlist_bridge_zone_b_env_map),
+
+  memberlist_bridge_zone_c_container:: if !isZoneCEnabled then null else
+    $.newMemberlistBridgeZoneContainer('c', $.memberlist_bridge_zone_c_args, $.memberlist_bridge_zone_c_env_map),
+
+  local seedNodeDeploymentMixin =
+    // Slows rollouts so bridges stabilize before being considered ready.
+    deployment.mixin.spec.withMinReadySeconds(300) +
+
+    // Minimizes disruption during rolling updates.
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1),
+
+  memberlist_bridge_zone_a_deployment: if !isZoneAEnabled then null else
+    $.newMemberlistBridgeZoneDeployment('a', $.memberlist_bridge_zone_a_container, $.memberlist_bridge_zone_a_node_affinity_matchers)
+    + (if $._config.memberlist_bridge_seed_nodes_enabled then seedNodeDeploymentMixin else {}),
+
+  memberlist_bridge_zone_b_deployment: if !isZoneBEnabled then null else
+    $.newMemberlistBridgeZoneDeployment('b', $.memberlist_bridge_zone_b_container, $.memberlist_bridge_zone_b_node_affinity_matchers)
+    + (if $._config.memberlist_bridge_seed_nodes_enabled then seedNodeDeploymentMixin else {}),
+
+  memberlist_bridge_zone_c_deployment: if !isZoneCEnabled then null else
+    $.newMemberlistBridgeZoneDeployment('c', $.memberlist_bridge_zone_c_container, $.memberlist_bridge_zone_c_node_affinity_matchers)
+    + (if $._config.memberlist_bridge_seed_nodes_enabled then seedNodeDeploymentMixin else {}),
+
+  memberlist_bridge_zone_a_pdb: if !isZoneAEnabled then null else
+    $.newMimirPdb('memberlist-bridge-zone-a'),
+
+  memberlist_bridge_zone_b_pdb: if !isZoneBEnabled then null else
+    $.newMimirPdb('memberlist-bridge-zone-b'),
+
+  memberlist_bridge_zone_c_pdb: if !isZoneCEnabled then null else
+    $.newMimirPdb('memberlist-bridge-zone-c'),
+
+  // Headless service used for seed nodes discovery.
+  memberlist_bridge_zone_a_service: if !isZoneAEnabled then null else
+    $.util.serviceFor($.memberlist_bridge_zone_a_deployment, $._config.service_ignored_labels)
+    + service.mixin.spec.withClusterIp('None'),
+
+  memberlist_bridge_zone_b_service: if !isZoneBEnabled then null else
+    $.util.serviceFor($.memberlist_bridge_zone_b_deployment, $._config.service_ignored_labels)
+    + service.mixin.spec.withClusterIp('None'),
+
+  memberlist_bridge_zone_c_service: if !isZoneCEnabled then null else
+    $.util.serviceFor($.memberlist_bridge_zone_c_deployment, $._config.service_ignored_labels)
+    + service.mixin.spec.withClusterIp('None'),
+
+  newMemberlistBridgeZoneContainer(zone, args, extraEnvVarMap={})::
+    $.memberlist_bridge_container
+    + container.withArgs($.util.mapToFlags(args))
+    + (if std.length(extraEnvVarMap) > 0 then container.withEnvMixin(std.prune(extraEnvVarMap)) else {}),
+
+  newMemberlistBridgeZoneDeployment(zone, container, nodeAffinityMatchers=[])::
+    local name = 'memberlist-bridge-zone-%s' % zone;
+
+    deployment.new(name, $._config.memberlist_bridge_replicas_per_zone, [container])
+    + $.newMimirSpreadTopology(name, 1)
+    + $.newMimirNodeAffinityMatchers(nodeAffinityMatchers)
+    + (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector))
+    + deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0)
+    + deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration())
+    // When memberlist cross-zone routing is enabled, memberlist-bridge pods act as bridges between AZs
+    // so they're critical to avoid network partitioning. We want to guarantee that 2 bridges don't run
+    // on the same node, and we also want to run them with higher-than-default priority.
+    + deployment.spec.template.spec.withPriorityClassName($._config.memberlist_bridge_priority_class)
+    + $.util.antiAffinity
+    + (if $._config.memberlist_ring_enabled then deployment.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }) else {}),
+
+  // Ensure all configured addresses are zonal ones.
+  local memberlistBridgeMultiZoneConfigError = $.validateMimirMultiZoneConfig([
+    'memberlist_bridge_zone_a_deployment',
+    'memberlist_bridge_zone_b_deployment',
+    'memberlist_bridge_zone_c_deployment',
+  ]),
+  assert memberlistBridgeMultiZoneConfigError == null : memberlistBridgeMultiZoneConfigError,
+
+  //
+  // Apply memberlist config to all Mimir components. Single-zone workloads should always connect
+  // to a single zone, which is zone A, as that is the default zone by design.
+  //
+
+  local isZoneBAvailable = std.length($._config.multi_zone_availability_zones) >= 2,
+  local isZoneCAvailable = std.length($._config.multi_zone_availability_zones) >= 3,
+
+  distributor_args+:: $.memberlist_zone_a_args,
+  distributor_zone_a_args+:: $.memberlist_zone_a_args,
+  distributor_zone_b_args+:: $.memberlist_zone_b_args,
+  distributor_zone_c_args+:: $.memberlist_zone_c_args,
+
+  query_frontend_args+:: $.memberlist_zone_a_args,
+  query_frontend_zone_a_args+:: $.memberlist_zone_a_args,
+  query_frontend_zone_b_args+:: $.memberlist_zone_b_args,
+  query_frontend_zone_c_args+:: $.memberlist_zone_c_args,
+
+  query_scheduler_args+:: $.memberlist_zone_a_args,
+  query_scheduler_zone_a_args+:: $.memberlist_zone_a_args,
+  query_scheduler_zone_b_args+:: $.memberlist_zone_b_args,
+  query_scheduler_zone_c_args+:: $.memberlist_zone_c_args,
+
+  querier_args+:: $.memberlist_zone_a_args,
+  querier_zone_a_args+:: $.memberlist_zone_a_args,
+  querier_zone_b_args+:: $.memberlist_zone_b_args,
+  querier_zone_c_args+:: $.memberlist_zone_c_args,
+
+  ruler_args+:: $.memberlist_zone_a_args,
+  ruler_zone_a_args+:: $.memberlist_zone_a_args,
+  ruler_zone_b_args+:: $.memberlist_zone_b_args,
+  ruler_zone_c_args+:: $.memberlist_zone_c_args,
+
+  ruler_query_frontend_args+:: $.memberlist_zone_a_args,
+  ruler_query_frontend_zone_a_args+:: $.memberlist_zone_a_args,
+  ruler_query_frontend_zone_b_args+:: $.memberlist_zone_b_args,
+  ruler_query_frontend_zone_c_args+:: $.memberlist_zone_c_args,
+
+  ruler_query_scheduler_args+:: $.memberlist_zone_a_args,
+  ruler_query_scheduler_zone_a_args+:: $.memberlist_zone_a_args,
+  ruler_query_scheduler_zone_b_args+:: $.memberlist_zone_b_args,
+  ruler_query_scheduler_zone_c_args+:: $.memberlist_zone_c_args,
+
+  ruler_querier_args+:: $.memberlist_zone_a_args,
+  ruler_querier_zone_a_args+:: $.memberlist_zone_a_args,
+  ruler_querier_zone_b_args+:: $.memberlist_zone_b_args,
+  ruler_querier_zone_c_args+:: $.memberlist_zone_c_args,
+
+  // Ingesters get split in "virtual" zones, that could eventually be mapped to different AZs.
+  // If multi-AZ deployment is enabled, then we apply the zone-specific memberlist config, otherwise the zone-a one.
+  ingester_zone_a_args+:: $.memberlist_zone_a_args,
+  ingester_zone_b_args+:: if $._config.multi_zone_ingester_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
+  ingester_zone_c_args+:: if $._config.multi_zone_ingester_multi_az_enabled && isZoneCAvailable then $.memberlist_zone_c_args else $.memberlist_zone_a_args,
+
+  // Store-gateways get split in "virtual" zones, that could eventually be mapped to different AZs.
+  // If multi-AZ deployment is enabled, then we apply the zone-specific memberlist config, otherwise the zone-a one.
+  store_gateway_zone_a_args+:: $.memberlist_zone_a_args,
+  store_gateway_zone_b_args+:: if $._config.multi_zone_store_gateway_zone_b_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
+  store_gateway_zone_c_args+:: if $._config.multi_zone_store_gateway_zone_c_multi_az_enabled && isZoneCAvailable then $.memberlist_zone_c_args else $.memberlist_zone_a_args,
+  store_gateway_zone_a_backup_args+:: $.memberlist_zone_a_args,
+  store_gateway_zone_b_backup_args+:: if $._config.multi_zone_store_gateway_zone_b_backup_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
+
+  // Other components only deployed to zone-a.
+  compactor_args+:: $.memberlist_zone_a_args,
+}

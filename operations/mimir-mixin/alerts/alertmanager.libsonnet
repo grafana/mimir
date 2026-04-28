@@ -7,7 +7,7 @@
           alert: $.alertName('AlertmanagerSyncConfigsFailing'),
           expr: |||
             rate(cortex_alertmanager_sync_configs_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(5),
+          ||| % $.rateInterval('5m'),
           'for': '30m',
           labels: {
             severity: 'critical',
@@ -22,7 +22,7 @@
           alert: $.alertName('AlertmanagerRingCheckFailing'),
           expr: |||
             rate(cortex_alertmanager_ring_check_errors_total[%s]) > 0
-          ||| % $.alertRangeInterval(2),
+          ||| % $.rateInterval('2m'),
           'for': '10m',
           labels: {
             severity: 'critical',
@@ -34,10 +34,10 @@
           },
         },
         {
-          alert: $.alertName('AlertmanagerPartialStateMergeFailing'),
+          alert: $.alertName('AlertmanagerStateMergeFailing'),
           expr: |||
             rate(cortex_alertmanager_partial_state_merges_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(2),
+          ||| % $.rateInterval('2m'),
           'for': '10m',
           labels: {
             severity: 'critical',
@@ -52,7 +52,7 @@
           alert: $.alertName('AlertmanagerReplicationFailing'),
           expr: |||
             rate(cortex_alertmanager_state_replication_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(2),
+          ||| % $.rateInterval('2m'),
           'for': '10m',
           labels: {
             severity: 'critical',
@@ -67,7 +67,7 @@
           alert: $.alertName('AlertmanagerPersistStateFailing'),
           expr: |||
             rate(cortex_alertmanager_state_persist_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(15),
+          ||| % $.rateInterval('15m'),
           'for': '1h',
           labels: {
             severity: 'critical',
@@ -82,9 +82,9 @@
           alert: $.alertName('AlertmanagerInitialSyncFailed'),
           expr: |||
             increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[%s]) > 0
-          ||| % $.alertRangeInterval(1),
+          ||| % $.rateInterval('1m'),
           labels: {
-            severity: 'critical',
+            severity: 'warning',
           },
           annotations: {
             message: |||
@@ -103,7 +103,7 @@
             message: |||
               Alertmanager %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-scaling.json'),
         },
         {
           alert: $.alertName('AlertmanagerAllocatingTooMuchMemory'),
@@ -116,7 +116,7 @@
             message: |||
               Alertmanager %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-scaling.json'),
         },
         {
           alert: $.alertName('AlertmanagerInstanceHasNoTenants'),
@@ -143,5 +143,12 @@
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
+  groups+:
+    $.withRunbookURL(
+      'https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s',
+      $.withDashboardURL(
+        'mimir-alertmanager.json',
+        $.withExtraLabelsAnnotations(alertGroups)
+      )
+    ),
 }

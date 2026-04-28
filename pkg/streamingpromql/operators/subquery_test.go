@@ -18,7 +18,7 @@ import (
 
 func TestSubquery_CloseWithoutPrepare(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	inner := &TestOperator{
 		Series:                   []labels.Labels{},

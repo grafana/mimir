@@ -68,69 +68,89 @@ func TestBlockBuilder(t *testing.T) {
 		},
 	}
 
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-			kafkaClient := mustKafkaClient(t, kafkaAddr)
-			kafkaClient.AddConsumeTopics(testTopic)
+	fetchModes := []struct {
+		name                string
+		fetchConcurrencyMax int
+	}{
+		{name: "without concurrent fetchers", fetchConcurrencyMax: 0},
+		{name: "with concurrent fetchers", fetchConcurrencyMax: 12},
+	}
 
-			cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+	for _, fm := range fetchModes {
+		t.Run(fm.name, func(t *testing.T) {
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+					kafkaClient := mustKafkaClient(t, kafkaAddr)
+					kafkaClient.AddConsumeTopics(testTopic)
 
-			producedSamples := make(map[string][]mimirpb.Sample, 0)
-			recsPerTenant := 0
-			kafkaRecTime := time.Now().Add(-time.Hour)
-			for range samplesPerTenant {
-				for _, tenant := range tenants {
-					samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
-					producedSamples[tenant] = append(producedSamples[tenant], samples...)
-				}
-				recsPerTenant++
+					cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
+					cfg.GenerateSparseIndexHeaders = true
+					cfg.Kafka.FetchConcurrencyMax = fm.fetchConcurrencyMax
+					// Lower FetchMaxWait so concurrent fetchers don't block on speculative reads
+					// past the job's end offset in tests where no further records arrive.
+					cfg.Kafka.FetchMaxWait = 500 * time.Millisecond
 
-				kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
+					producedSamples := make(map[string][]mimirpb.Sample, 0)
+					recsPerTenant := 0
+					kafkaRecTime := time.Now().Add(-time.Hour)
+					for range samplesPerTenant {
+						for _, tenant := range tenants {
+							samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
+							producedSamples[tenant] = append(producedSamples[tenant], samples...)
+						}
+						recsPerTenant++
+
+						kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
+					}
+					require.NotEmpty(t, producedSamples)
+
+					scheduler := &mockSchedulerClient{}
+					scheduler.addJob(
+						schedulerpb.JobKey{
+							Id:    "test-job-4898",
+							Epoch: 90000,
+						},
+						schedulerpb.JobSpec{
+							Topic:       testTopic,
+							Partition:   1,
+							StartOffset: c.startOffset,
+							EndOffset:   c.endOffset,
+						},
+					)
+
+					bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
+					require.NoError(t, err)
+
+					require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+					t.Cleanup(func() {
+						require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+					})
+
+					require.Eventually(t, func() bool {
+						return scheduler.completeJobCallCount() > 0
+					}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+					require.EqualValues(t,
+						[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90000}},
+						scheduler.completeJobCalls,
+					)
+
+					for _, tenant := range tenants {
+						tenantBucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
+						if bb.cfg.GenerateSparseIndexHeaders {
+							validateSparseIndexHeadersInDir(t, ctx, tenantBucketDir, cfg)
+						}
+
+						expSamples := producedSamples[tenant][c.expSampleRangeStart:c.expSampleRangeEnd]
+						compareQueryWithDir(t,
+							tenantBucketDir,
+							expSamples, nil,
+							labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+						)
+					}
+				})
 			}
-			require.NotEmpty(t, producedSamples)
-
-			scheduler := &mockSchedulerClient{}
-			scheduler.addJob(
-				schedulerpb.JobKey{
-					Id:    "test-job-4898",
-					Epoch: 90000,
-				},
-				schedulerpb.JobSpec{
-					Topic:       testTopic,
-					Partition:   1,
-					StartOffset: c.startOffset,
-					EndOffset:   c.endOffset,
-				},
-			)
-
-			bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
-			require.NoError(t, err)
-
-			require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
-			})
-
-			require.Eventually(t, func() bool {
-				return scheduler.completeJobCallCount() > 0
-			}, 5*time.Second, 100*time.Millisecond, "expected job completion")
-
-			require.EqualValues(t,
-				[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90000}},
-				scheduler.completeJobCalls,
-			)
-
-			for _, tenant := range tenants {
-				expSamples := producedSamples[tenant][c.expSampleRangeStart:c.expSampleRangeEnd]
-
-				compareQueryWithDir(t,
-					path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant),
-					expSamples, nil,
-					labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
-				)
-			}
-
 		})
 	}
 }
@@ -142,7 +162,7 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
 	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
 
 	f, err := os.CreateTemp(cfg.DataDir, "block")
 	require.NoError(t, err)
@@ -167,7 +187,11 @@ func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, 
 	for _, st := range sampleTs {
 		samples = append(samples, floatSample(st.UnixMilli(), 1)...)
 	}
-	val := createWriteRequest(t, tenantID, samples, nil)
+
+	req := createWriteRequest(tenantID, samples, nil)
+	val, err := req.Marshal()
+	require.NoError(t, err)
+
 	produceRecords(ctx, t, kafkaClient, ts, tenantID, testTopic, partition, val)
 	return samples
 }
@@ -254,6 +278,10 @@ func (m *mockSchedulerClient) CompleteJob(key schedulerpb.JobKey) error {
 	m.completeJobCalls = append(m.completeJobCalls, key)
 
 	// Do nothing.
+	return nil
+}
+
+func (m *mockSchedulerClient) FailJob(key schedulerpb.JobKey) error {
 	return nil
 }
 

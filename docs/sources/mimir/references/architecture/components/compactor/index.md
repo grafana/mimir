@@ -7,8 +7,6 @@ title: Grafana Mimir compactor
 weight: 10
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir compactor
 
 The compactor increases query performance and reduces long-term storage usage by combining blocks.

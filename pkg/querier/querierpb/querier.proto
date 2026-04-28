@@ -5,6 +5,7 @@ syntax = "proto3";
 package querierpb;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
 import "github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto";
 import "gogoproto/gogo.proto";
 
@@ -15,6 +16,13 @@ option (gogoproto.unmarshaler_all) = true;
 message EvaluateQueryRequest {
   planning.EncodedQueryPlan plan = 1 [(gogoproto.nullable) = false];
   repeated EvaluationNode nodes = 2 [(gogoproto.nullable) = false];
+  reserved 3; // Formerly: enablePerStepStats
+  uint64 batchSize = 4;
+  // seriesMetadataBatchSize is the maximum number of series metadata entries to include in a single
+  // EvaluateQueryResponseSeriesMetadata message. A non-zero value indicates that the query-frontend
+  // supports receiving batched series metadata messages (ie. multiple EvaluateQueryResponseSeriesMetadata
+  // messages per node).
+  uint64 seriesMetadataBatchSize = 5;
 }
 
 message EvaluationNode {
@@ -36,6 +44,12 @@ message EvaluateQueryResponse {
 message EvaluateQueryResponseSeriesMetadata {
   int64 nodeIndex = 1;
   repeated SeriesMetadata series = 2 [(gogoproto.nullable) = false];
+
+  // totalSeriesCountForNode is non-zero if the EvaluateQueryRequest has a non-zero seriesMetadataBatchSize and the
+  // querier supports batching series metadata messages.
+  // Why send a total count rather than a "more messages to come" flag? Sending the count allows the query-frontend to
+  // allocate a slice of exactly the right length to hold all series.
+  int64 totalSeriesCountForNode = 3;
 }
 
 message SeriesMetadata {
@@ -43,6 +57,7 @@ message SeriesMetadata {
     (gogoproto.nullable) = false,
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
+  bool dropName = 2;
 }
 
 message EvaluateQueryResponseStringValue {
@@ -57,8 +72,12 @@ message EvaluateQueryResponseScalarValue {
 
 message EvaluateQueryResponseInstantVectorSeriesData {
   int64 nodeIndex = 1;
-  repeated cortexpb.Sample floats = 2 [(gogoproto.nullable) = false];
-  repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
+  repeated InstantVectorSeriesData series = 2 [(gogoproto.nullable) = false];
+}
+
+message InstantVectorSeriesData {
+  repeated cortexpb.Sample floats = 1 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatHistogramPair histograms = 2 [(gogoproto.nullable) = false];
 }
 
 message EvaluateQueryResponseRangeVectorStepData {
@@ -81,15 +100,10 @@ message Error {
 
 message EvaluateQueryResponseEvaluationCompleted {
   Annotations annotations = 1 [(gogoproto.nullable) = false];
-  QueryStats stats = 2 [(gogoproto.nullable) = false];
+  stats.Stats stats = 2 [(gogoproto.nullable) = false];
 }
 
 message Annotations {
   repeated string warnings = 1;
   repeated string infos = 2;
-}
-
-message QueryStats {
-  int64 totalSamples = 1;
-  repeated int64 totalSamplesPerStep = 2;
 }

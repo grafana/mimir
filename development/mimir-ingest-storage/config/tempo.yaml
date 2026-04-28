@@ -52,7 +52,7 @@ metrics_generator:
   storage:
     path: /var/tempo/generator/wal
     remote_write:
-      - url: http://mimir-write-zone-a-0:8080/api/v1/push
+      - url: http://ingester-zone-a-0:8080/api/v1/push
         send_exemplars: true
   traces_storage:
     path: /var/tempo/generator/traces

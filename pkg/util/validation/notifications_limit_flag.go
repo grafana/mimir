@@ -6,22 +6,22 @@
 package validation
 
 import (
-	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
+	"fmt"
+	"slices"
 
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/dskit/flagext"
 )
 
 func validateIntegrationLimit(k string, _ float64) error {
-	if !util.StringsContain(allowedIntegrationNames, k) {
-		return errors.Errorf("unknown integration name: %s", k)
+	if !slices.Contains(allowedIntegrationNames, k) {
+		return fmt.Errorf("unknown integration name: %s", k)
 	}
 	return nil
 }
 
 // allowedIntegrationNames is a list of all the integrations that can be rate limited.
 var allowedIntegrationNames = []string{
-	"webhook", "email", "pagerduty", "opsgenie", "wechat", "slack", "victorops", "pushover", "sns", "webex", "telegram", "discord", "msteams",
+	"webhook", "email", "pagerduty", "opsgenie", "wechat", "slack", "victorops", "pushover", "sns", "webex", "telegram", "discord", "msteams", "msteamsv2",
 }
 
 // NotificationRateLimitMap returns a map that can be used as a flag for setting notification rate limits.

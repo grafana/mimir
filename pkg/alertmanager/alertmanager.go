@@ -8,10 +8,10 @@ package alertmanager
 import (
 	"context"
 	"crypto/md5"
-	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -22,15 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/alerting/definition"
-	alertingHttp "github.com/grafana/alerting/http"
-	"github.com/grafana/alerting/images"
-	alertingNotify "github.com/grafana/alerting/notify"
-	"github.com/grafana/alerting/notify/nfstatus"
-	alertingReceivers "github.com/grafana/alerting/receivers"
-	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -40,19 +32,20 @@ import (
 	"github.com/prometheus/alertmanager/inhibit"
 	"github.com/prometheus/alertmanager/nflog"
 	"github.com/prometheus/alertmanager/notify"
-	"github.com/prometheus/alertmanager/notify/discord"
-	"github.com/prometheus/alertmanager/notify/email"
-	"github.com/prometheus/alertmanager/notify/msteams"
-	"github.com/prometheus/alertmanager/notify/opsgenie"
-	"github.com/prometheus/alertmanager/notify/pagerduty"
-	"github.com/prometheus/alertmanager/notify/pushover"
-	"github.com/prometheus/alertmanager/notify/slack"
-	"github.com/prometheus/alertmanager/notify/sns"
-	"github.com/prometheus/alertmanager/notify/telegram"
-	"github.com/prometheus/alertmanager/notify/victorops"
-	"github.com/prometheus/alertmanager/notify/webex"
-	"github.com/prometheus/alertmanager/notify/webhook"
-	"github.com/prometheus/alertmanager/notify/wechat"
+	discord "github.com/prometheus/alertmanager/notify/discord"
+	email "github.com/prometheus/alertmanager/notify/email"
+	msteams "github.com/prometheus/alertmanager/notify/msteams"
+	msteamsv2 "github.com/prometheus/alertmanager/notify/msteamsv2"
+	opsgenie "github.com/prometheus/alertmanager/notify/opsgenie"
+	pagerduty "github.com/prometheus/alertmanager/notify/pagerduty"
+	pushover "github.com/prometheus/alertmanager/notify/pushover"
+	slack "github.com/prometheus/alertmanager/notify/slack"
+	sns "github.com/prometheus/alertmanager/notify/sns"
+	telegram "github.com/prometheus/alertmanager/notify/telegram"
+	victorops "github.com/prometheus/alertmanager/notify/victorops"
+	webex "github.com/prometheus/alertmanager/notify/webex"
+	webhook "github.com/prometheus/alertmanager/notify/webhook"
+	wechat "github.com/prometheus/alertmanager/notify/wechat"
 	"github.com/prometheus/alertmanager/provider/mem"
 	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/alertmanager/template"
@@ -65,12 +58,12 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"go.opentelemetry.io/otel"
-	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	utillog "github.com/grafana/mimir/pkg/util/log"
 	util_net "github.com/grafana/mimir/pkg/util/net"
-	"github.com/grafana/mimir/pkg/util/version"
 )
 
 const (
@@ -98,6 +91,7 @@ type Config struct {
 	ExternalURL                       *url.URL
 	Limits                            Limits
 	Features                          featurecontrol.Flagger
+	StateReadTimeout                  time.Duration
 
 	// Tenant-specific local directory where AM can store its state (notifications, silences, templates). When AM is stopped, entire dir is removed.
 	TenantDataDir string
@@ -107,9 +101,6 @@ type Config struct {
 	Replicator        Replicator
 	Store             alertstore.AlertStore
 	PersisterConfig   PersisterConfig
-
-	GrafanaAlertmanagerCompatibility bool
-	EnableNotifyHooks                bool
 }
 
 // An Alertmanager manages the alerts for one user.
@@ -121,7 +112,7 @@ type Alertmanager struct {
 	persister       *statePersister
 	nflog           *nflog.Log
 	silences        *silence.Silences
-	marker          types.Marker
+	marker          *types.MemMarker
 	alerts          *mem.Alerts
 	dispatcher      *dispatch.Dispatcher
 	inhibitor       *inhibit.Inhibitor
@@ -130,16 +121,6 @@ type Alertmanager struct {
 	wg              sync.WaitGroup
 	mux             *http.ServeMux
 	registry        *prometheus.Registry
-	receiversMtx    sync.Mutex
-	receivers       []*nfstatus.Receiver
-	templatesMtx    sync.RWMutex
-	templates       []alertingTemplates.TemplateDefinition
-	tmplExternalURL *url.URL
-	emailCfgMtx     sync.RWMutex
-	emailCfg        alertingReceivers.EmailSenderConfig
-
-	// usingGrafanaState indicates if the Grafana Alertmanager state is being used.
-	usingGrafanaState atomic.Bool
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
@@ -154,8 +135,6 @@ type Alertmanager struct {
 	configHashMetric prometheus.Gauge
 
 	rateLimitedNotifications *prometheus.CounterVec
-
-	notifyHooksMetrics *notifyHooksMetrics
 }
 
 var (
@@ -219,12 +198,8 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		}, []string{"integration"}), // "integration" is consistent with other alertmanager metrics.
 	}
 
-	if am.cfg.EnableNotifyHooks {
-		am.notifyHooksMetrics = newNotifyHooksMetrics(reg)
-	}
-
 	am.registry = reg
-	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.logger, am.registry)
+	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, cfg.StateReadTimeout, am.logger, am.registry)
 	am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, am.state, cfg.Store, am.logger, am.registry)
 
 	var err error
@@ -232,7 +207,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	am.nflog, err = nflog.New(nflog.Options{
 		SnapshotFile: snapshotFile,
 		Retention:    cfg.Retention,
-		Logger:       log.With(am.logger, "component", "nflog"),
+		Logger:       utillog.SlogFromGoKit(log.With(am.logger, "component", "nflog")),
 		Metrics:      am.registry,
 	})
 	if err != nil {
@@ -259,7 +234,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 			MaxSilences:         func() int { return cfg.Limits.AlertmanagerMaxSilencesCount(cfg.UserID) },
 			MaxSilenceSizeBytes: func() int { return cfg.Limits.AlertmanagerMaxSilenceSizeBytes(cfg.UserID) },
 		},
-		Logger:  log.With(am.logger, "component", "silences"),
+		Logger:  utillog.SlogFromGoKit(log.With(am.logger, "component", "silences")),
 		Metrics: am.registry,
 	})
 	if err != nil {
@@ -271,11 +246,11 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	// State replication needs to be started after the state keys are defined.
 	if err := am.state.StartAsync(context.Background()); err != nil {
-		return nil, errors.Wrap(err, "failed to start ring-based replication service")
+		return nil, fmt.Errorf("failed to start ring-based replication service: %w", err)
 	}
 
 	if err := am.persister.StartAsync(context.Background()); err != nil {
-		return nil, errors.Wrap(err, "failed to start state persister service")
+		return nil, fmt.Errorf("failed to start state persister service: %w", err)
 	}
 
 	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, cfg.Features)
@@ -292,22 +267,31 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		callback = newAlertsLimiter(am.cfg.UserID, am.cfg.Limits, reg)
 	}
 
-	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, 30*time.Minute, callback, am.logger, reg)
+	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, 30*time.Minute, 0, callback, utillog.SlogFromGoKit(am.logger), reg, cfg.Features)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create alerts: %v", err)
 	}
 
 	am.api, err = api.New(api.Options{
-		Alerts:      am.alerts,
-		Silences:    am.silences,
-		StatusFunc:  am.marker.Status,
-		Concurrency: cfg.MaxConcurrentGetRequestsPerTenant,
+		Alerts:          am.alerts,
+		Silences:        am.silences,
+		AlertStatusFunc: am.marker.Status,
+		GroupMutedFunc:  am.marker.Muted,
+		Concurrency:     cfg.MaxConcurrentGetRequestsPerTenant,
 		// Mimir should not expose cluster information back to its tenants.
 		Peer:     &NilPeer{},
 		Registry: am.registry,
-		Logger:   log.With(am.logger, "component", "api"),
-		GroupFunc: func(f1 func(*dispatch.Route) bool, f2 func(*types.Alert, time.Time) bool) (dispatch.AlertGroups, map[model.Fingerprint][]string) {
-			return am.dispatcher.Groups(f1, f2)
+		Logger:   utillog.SlogFromGoKit(log.With(am.logger, "component", "api")),
+		// RequestDuration is required by the upstream alertmanager API (it panics if nil),
+		// but Mimir already tracks request durations via cortex_request_duration_seconds.
+		// Passing a nil registerer so the metric is created but never collected.
+		RequestDuration: promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "alertmanager_http_request_duration_seconds",
+			Help:    "Histogram of request durations for the Alertmanager API.",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"handler"}),
+		GroupFunc: func(ctx context.Context, f1 func(*dispatch.Route) bool, f2 func(*types.Alert, time.Time) bool) (dispatch.AlertGroups, map[model.Fingerprint][]string, error) {
+			return am.dispatcher.Groups(ctx, f1, f2)
 		},
 	})
 	if err != nil {
@@ -316,7 +300,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	router := route.New().WithPrefix(am.cfg.ExternalURL.Path)
 
-	ui.Register(router, webReload, log.With(am.logger, "component", "ui"))
+	ui.Register(router, webReload, utillog.SlogFromGoKit(log.With(am.logger, "component", "ui")))
 	am.mux = am.api.Register(router, am.cfg.ExternalURL.Path)
 
 	// Override some extra paths registered in the router (eg. /metrics which by default exposes prometheus.DefaultRegisterer).
@@ -330,152 +314,15 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		am.mux.Handle(a, http.NotFoundHandler())
 	}
 
-	// This route is an experimental Mimir extension to the receivers API, so we put
-	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
-	if cfg.GrafanaAlertmanagerCompatibility {
-		am.mux.Handle("/api/v1/grafana/full_state", http.HandlerFunc(am.GetFullStateHandler))
-		am.mux.Handle("/api/v1/grafana/receivers", http.HandlerFunc(am.GetReceiversHandler))
-		am.mux.Handle("/api/v1/grafana/templates/test", http.HandlerFunc(am.TestTemplatesHandler))
-		am.mux.Handle("/api/v1/grafana/receivers/test", http.HandlerFunc(am.TestReceiversHandler))
-	}
-
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
 }
 
-func (am *Alertmanager) GetFullStateHandler(w http.ResponseWriter, _ *http.Request) {
-	st, err := am.state.GetFullState()
-	if err != nil {
-		level.Error(am.logger).Log("msg", "error getting full state", "err", err)
-		http.Error(w,
-			fmt.Sprintf("error getting full state: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	bytes, err := st.Marshal()
-	if err != nil {
-		level.Error(am.logger).Log("msg", "error marshalling full state", "err", err)
-		http.Error(w,
-			fmt.Sprintf("error marshalling full state: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	d, err := json.Marshal(successResult{
-		Status: statusSuccess,
-		Data:   &UserGrafanaState{State: base64.StdEncoding.EncodeToString(bytes)},
-	})
-	if err != nil {
-		level.Error(am.logger).Log("msg", "error marshalling success result", "err", err)
-		http.Error(w,
-			fmt.Sprintf("error marshalling success result: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(d); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Request) {
-	am.receiversMtx.Lock()
-	receivers := am.receivers
-	am.receiversMtx.Unlock()
-
-	response := alertingNotify.GetReceivers(receivers)
-
-	d, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w,
-			fmt.Sprintf("error marshalling receivers: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(d); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Request) {
-	c := alertingNotify.TestTemplatesConfigBodyParams{}
-	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-		http.Error(w,
-			fmt.Sprintf("error unmarshalling test templates config JSON: %s", err.Error()),
-			http.StatusBadRequest)
-		return
-	}
-
-	am.templatesMtx.RLock()
-	factory, err := alertingTemplates.NewFactory(am.templates, am.logger, am.cfg.ExternalURL.String(), am.cfg.UserID)
-	am.templatesMtx.RUnlock()
-	if err != nil {
-		http.Error(w,
-			fmt.Sprintf("error initializing configured templates: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-	response, err := alertingNotify.TestTemplate(r.Context(), c, factory, am.logger)
-	if err != nil {
-		http.Error(w,
-			fmt.Sprintf("error testing templates: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Request) {
-	c := alertingNotify.TestReceiversConfigBodyParams{}
-	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-		http.Error(w,
-			fmt.Sprintf("error unmarshalling test receivers config JSON: %s", err.Error()),
-			http.StatusBadRequest)
-	}
-
-	am.templatesMtx.RLock()
-	factory, err := alertingTemplates.NewFactory(am.templates, am.logger, am.cfg.ExternalURL.String(), am.cfg.UserID)
-	am.templatesMtx.RUnlock()
-	if err != nil {
-		http.Error(w,
-			fmt.Sprintf("error initializing templates: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	response, status, err := alertingNotify.TestReceivers(r.Context(), c, am.buildGrafanaReceiverIntegrations, factory)
-	if err != nil {
-		http.Error(w,
-			fmt.Sprintf("error testing receivers: %s", err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(status)
-}
-
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
 	if err := am.state.AwaitRunning(ctx); err != nil {
-		return errors.Wrap(err, "failed to wait for ring-based replication service")
+		return fmt.Errorf("failed to wait for ring-based replication service: %w", err)
 	}
 	return nil
 }
@@ -489,14 +336,13 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) error {
-	cfg := definition.GrafanaToUpstreamConfig(conf)
-	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL, usingGrafanaConfig)
+func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.TemplateDesc, rawCfg string) error {
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpls)
 	if err != nil {
 		return err
 	}
 
-	am.api.Update(&cfg, func(_ model.LabelSet) {})
+	am.api.Update(conf, func(_ context.Context, _ model.LabelSet) {})
 
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
@@ -508,7 +354,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		am.dispatcher.Stop()
 	}
 
-	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, am.marker, log.With(am.logger, "component", "inhibitor"))
+	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, am.marker, utillog.SlogFromGoKit(log.With(am.logger, "component", "inhibitor")))
 
 	waitFunc := clusterWait(am.state.Position, am.cfg.PeerTimeout)
 
@@ -518,10 +364,6 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		}
 		return d + waitFunc()
 	}
-	am.emailCfgMtx.Lock()
-	am.emailCfg = emailCfg
-	am.emailCfgMtx.Unlock()
-
 	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
 	for _, ti := range conf.MuteTimeIntervals {
 		timeIntervals[ti.Name] = ti.TimeIntervals
@@ -532,32 +374,15 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 	}
 	intervener := timeinterval.NewIntervener(timeIntervals)
 
-	route := dispatch.NewRoute(cfg.Route, nil)
-
-	receivers := make([]*nfstatus.Receiver, 0, len(integrationsMap))
-	activeReceivers := alertingNotify.GetActiveReceiversMap(route)
-
-	baseIntegrationsMap := make(map[string][]*notify.Integration)
-	for name, v := range integrationsMap {
-		_, isActive := activeReceivers[name]
-		receivers = append(receivers, nfstatus.NewReceiver(name, isActive, v))
-		baseIntegrationsMap[name] = nfstatus.GetIntegrations(v)
-	}
-	am.receiversMtx.Lock()
-	am.receivers = receivers
-	am.receiversMtx.Unlock()
-
-	am.templatesMtx.Lock()
-	am.templates = tmpls
-	am.tmplExternalURL = tmplExternalURL
-	am.templatesMtx.Unlock()
+	route := dispatch.NewRoute(conf.Route, nil)
 
 	pipeline := am.pipelineBuilder.New(
-		baseIntegrationsMap,
+		integrationsMap,
 		waitFunc,
 		am.inhibitor,
-		silence.NewSilencer(am.silences, am.marker, am.logger),
+		silence.NewSilencer(am.silences, am.marker, utillog.SlogFromGoKit(am.logger)),
 		intervener,
+		am.marker,
 		am.nflog,
 		am.state,
 	)
@@ -568,13 +393,13 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		pipeline,
 		am.marker,
 		timeoutFunc,
+		maintenancePeriod,
 		&dispatcherLimits{tenant: am.cfg.UserID, limits: am.cfg.Limits},
-		log.With(am.logger, "component", "dispatcher", "insight", "true"),
+		utillog.SlogFromGoKit(log.With(am.logger, "component", "dispatcher", "insight", "true")),
 		am.dispatcherMetrics,
-		nil,
 	)
 
-	go am.dispatcher.Run()
+	go am.dispatcher.Run(time.Now())
 	go am.inhibitor.Run()
 
 	am.configHashMetric.Set(md5HashAsMetricValue([]byte(rawCfg)))
@@ -616,25 +441,11 @@ func (am *Alertmanager) mergePartialExternalState(part *clusterpb.Part) error {
 	return am.state.MergePartialState(part)
 }
 
-func (am *Alertmanager) mergeFullGrafanaState(fs *clusterpb.FullState) error {
-	return am.state.MergeGrafanaState([]*clusterpb.FullState{fs})
-}
-
 func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 	return am.state.GetFullState()
 }
 
 func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Notifier) notify.Notifier {
-	if am.cfg.EnableNotifyHooks {
-		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger, am.notifyHooksMetrics)
-		if err != nil {
-			// It's rare an error is returned, but in theory it can happen.
-			level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)
-		} else {
-			notifier = n
-		}
-	}
-
 	if am.cfg.Limits != nil {
 		rl := &tenantRateLimits{
 			tenant:      am.cfg.UserID,
@@ -649,142 +460,45 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSenderConfig, nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition, tmplExternalURL *url.URL, usingGrafanaConfig bool) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*alertspb.TemplateDesc) (map[string][]notify.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
-	grafanaOpts := []alertingHttp.ClientOption{
-		alertingHttp.WithUserAgent(version.UserAgent()),
+	tmpl, err := loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
+	if err != nil {
+		return nil, err
 	}
+	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	if dialer := firewallDialer.Dialer(); dialer != nil {
-		grafanaOpts = append(grafanaOpts, alertingHttp.WithDialer(*dialer))
-	}
-
-	// Cached templates.
-	var tmpl *template.Template
-	var cached *alertingTemplates.CachedFactory
-	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
+	integrationsMap := make(map[string][]notify.Integration, len(nc))
 	for _, rcv := range nc {
-		var integrations []*nfstatus.Integration
-		var err error
-		switch rcv.Type() {
-		case definition.GrafanaReceiverType:
-			if cached == nil {
-				factory, err := alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
-				if err != nil {
-					return nil, err
-				}
-				cached = alertingTemplates.NewCachedFactory(factory)
-			}
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
-		case definition.AlertmanagerReceiverType:
-			if tmpl == nil {
-				tmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
-				if err != nil {
-					return nil, err
-				}
-				tmpl.ExternalURL = tmplExternalURL
-			}
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
-		case definition.EmptyReceiverType:
-			// Empty receiver, no integrations to build.
-		}
+		integrations, err := buildReceiverIntegrations(rcv, tmpl, firewallDialer, am.logger, am.wrapNotifier)
 		if err != nil {
 			return nil, err
 		}
-
 		integrationsMap[rcv.Name] = integrations
-	}
-
-	// Template validation shouldn't be dependent on whether receivers exist. So, in case we didn't hot-load any
-	// templates, we load our best guess as to the appropriate one (Grafana vs Cloud) here to ensure the definitions
-	// are valid.
-	// This might appear different from the above dynamic approach that depends on receiver types, and it is, but
-	// currently AMs should not have mixed receiver types. So, this is a safe (and necessary) workaround.
-	var err error
-	if usingGrafanaConfig {
-		var f *alertingTemplates.Factory
-		f, err = alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
-		if err == nil {
-			_, err = f.GetTemplate(alertingTemplates.GrafanaKind)
-		}
-	} else if tmpl == nil {
-		_, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	return integrationsMap, nil
 }
 
-func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl alertingNotify.TemplatesProvider) ([]*nfstatus.Integration, error) {
-	am.emailCfgMtx.RLock()
-	emailCfg := am.emailCfg
-	am.emailCfgMtx.RUnlock()
-
-	opts := []alertingHttp.ClientOption{
-		alertingHttp.WithUserAgent(version.UserAgent()),
-	}
-
-	if firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits)).Dialer(); firewallDialer != nil {
-		opts = append(opts, alertingHttp.WithDialer(*firewallDialer))
-	}
-
-	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger, am.wrapNotifier, opts...)
-}
-
-func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmplProvider alertingNotify.TemplatesProvider, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc, opts ...alertingHttp.ClientOption) ([]*nfstatus.Integration, error) {
-	// The decrypt functions and the context are used to decrypt the configuration.
-	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
-	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecode, alertingNotify.NoopDecrypt)
-	if err != nil {
-		return nil, err
-	}
-
-	tmpl, err := tmplProvider.GetTemplate(alertingTemplates.GrafanaKind)
-	if err != nil {
-		return nil, err
-	}
-
-	emailSender, err := alertingReceivers.NewEmailSender(emailCfg)
-	if err != nil {
-		return nil, err
-	}
-
-	integrations, err := alertingNotify.BuildGrafanaReceiverIntegrations(
-		rCfg,
-		tmpl,
-		&images.URLProvider{},
-		logger,
-		emailSender,
-		wrapper,
-		1, // orgID is always 1.
-		version.Version,
-		opts...,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return integrations, nil
-}
-
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*nfstatus.Integration, error) {
+func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
+
 	var (
 		errs         types.MultiError
-		integrations []*nfstatus.Integration
-		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
-			n, err := f(log.With(logger, "integration", name))
+		integrations []notify.Integration
+		add          = func(name string, i int, rs notify.ResolvedSender, f func(l *slog.Logger) (notify.Notifier, error)) {
+			integrationLogger := utillog.SlogFromGoKit(log.With(logger, "integration", name))
+			n, err := f(integrationLogger)
 			if err != nil {
 				errs.Add(err)
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name))
+			integrations = append(integrations, notify.NewIntegration(n, rs, name, i, nc.Name))
 		}
 	)
 
@@ -794,43 +508,74 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 	}
 
 	for i, c := range nc.WebhookConfigs {
-		add("webhook", i, c, func(l log.Logger) (notify.Notifier, error) { return webhook.New(c, tmpl, l, httpOps...) })
+		add("webhook", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return webhook.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.EmailConfigs {
-		add("email", i, c, func(l log.Logger) (notify.Notifier, error) { return email.New(c, tmpl, l), nil })
+		add("email", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return email.New(c, tmpl, l), nil
+		})
 	}
 	for i, c := range nc.PagerdutyConfigs {
-		add("pagerduty", i, c, func(l log.Logger) (notify.Notifier, error) { return pagerduty.New(c, tmpl, l, httpOps...) })
+		add("pagerduty", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return pagerduty.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.OpsGenieConfigs {
-		add("opsgenie", i, c, func(l log.Logger) (notify.Notifier, error) { return opsgenie.New(c, tmpl, l, httpOps...) })
+		add("opsgenie", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return opsgenie.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.WechatConfigs {
-		add("wechat", i, c, func(l log.Logger) (notify.Notifier, error) { return wechat.New(c, tmpl, l, httpOps...) })
+		add("wechat", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return wechat.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.SlackConfigs {
-		add("slack", i, c, func(l log.Logger) (notify.Notifier, error) { return slack.New(c, tmpl, l, httpOps...) })
+		add("slack", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return slack.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.VictorOpsConfigs {
-		add("victorops", i, c, func(l log.Logger) (notify.Notifier, error) { return victorops.New(c, tmpl, l, httpOps...) })
+		add("victorops", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return victorops.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.PushoverConfigs {
-		add("pushover", i, c, func(l log.Logger) (notify.Notifier, error) { return pushover.New(c, tmpl, l, httpOps...) })
+		add("pushover", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return pushover.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.SNSConfigs {
-		add("sns", i, c, func(l log.Logger) (notify.Notifier, error) { return sns.New(c, tmpl, l, httpOps...) })
+		add("sns", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return sns.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.TelegramConfigs {
-		add("telegram", i, c, func(l log.Logger) (notify.Notifier, error) { return telegram.New(c, tmpl, l, httpOps...) })
+		add("telegram", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return telegram.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.DiscordConfigs {
-		add("discord", i, c, func(l log.Logger) (notify.Notifier, error) { return discord.New(c, tmpl, l, httpOps...) })
+		add("discord", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return discord.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.WebexConfigs {
-		add("webex", i, c, func(l log.Logger) (notify.Notifier, error) { return webex.New(c, tmpl, l, httpOps...) })
+		add("webex", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return webex.New(c, tmpl, l, httpOps...)
+		})
 	}
 	for i, c := range nc.MSTeamsConfigs {
-		add("msteams", i, c, func(l log.Logger) (notify.Notifier, error) { return msteams.New(c, tmpl, l, httpOps...) })
+		add("msteams", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return msteams.New(c, tmpl, l, httpOps...)
+		})
+	}
+	for i, c := range nc.MSTeamsV2Configs {
+		add("msteamsv2", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return msteamsv2.New(c, tmpl, l, httpOps...)
+		})
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
 	if errs.Len() > 0 {

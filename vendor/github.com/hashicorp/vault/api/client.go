@@ -1,4 +1,4 @@
-// Copyright (c) HashiCorp, Inc.
+// Copyright IBM Corp. 2016, 2025
 // SPDX-License-Identifier: MPL-2.0
 
 package api
@@ -69,6 +69,9 @@ const (
 	// RequestHeaderName is the name of the header used by the Agent for
 	// SSRF protection.
 	RequestHeaderName = "X-Vault-Request"
+
+	SnapshotHeaderName          = "X-Vault-Recover-Snapshot-Id"
+	RecoverSourcePathHeaderName = "X-Vault-Recover-Source-Path"
 
 	TLSErrorString = "This error usually means that the server is running with TLS disabled\n" +
 		"but the client is configured to use TLS. Please either enable TLS\n" +
@@ -258,7 +261,7 @@ func DefaultConfig() *Config {
 		MinRetryWait: time.Millisecond * 1000,
 		MaxRetryWait: time.Millisecond * 1500,
 		MaxRetries:   2,
-		Backoff:      retryablehttp.LinearJitterBackoff,
+		Backoff:      retryablehttp.RateLimitLinearJitterBackoff,
 	}
 
 	transport := config.HttpClient.Transport.(*http.Transport)

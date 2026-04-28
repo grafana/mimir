@@ -5,16 +5,10 @@
 
 package util
 
-// StringsContain returns true if the search value is within the list of input values.
-func StringsContain(values []string, search string) bool {
-	for _, v := range values {
-		if search == v {
-			return true
-		}
-	}
-
-	return false
-}
+import (
+	"strings"
+	"unsafe"
+)
 
 // StringsMap returns a map where keys are input values.
 func StringsMap(values []string) map[string]bool {
@@ -23,4 +17,9 @@ func StringsMap(values []string) map[string]bool {
 		out[v] = true
 	}
 	return out
+}
+
+// JoinStrings is like [strings.Join], but generic over the string type.
+func JoinStrings[S interface{ ~string }](elems []S, sep string) string {
+	return strings.Join(*(*[]string)(unsafe.Pointer(&elems)), sep)
 }

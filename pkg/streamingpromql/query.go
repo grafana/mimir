@@ -10,13 +10,13 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 	promstats "github.com/prometheus/prometheus/util/stats"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -44,42 +44,17 @@ type Query struct {
 	annotations    *annotations.Annotations
 	stats          *types.QueryStats
 
-	resultIsVector bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
+	topLevelValueType parser.ValueType
+	resultIsVector    bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
 
 	succeeded bool
 }
 
-func (q *Query) Exec(ctx context.Context) *promql.Result {
-	defer func() {
-		logger := spanlogger.FromContext(ctx, q.engine.logger)
-		msg := make([]interface{}, 0, 2*(3+4)) // 3 fields for all query types, plus worst case of 4 fields for range queries
+func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
+	logger, ctx := spanlogger.New(ctx, q.engine.logger, tracer, "Query.Exec")
+	defer logger.Finish()
 
-		msg = append(msg,
-			"msg", "evaluation stats",
-			"estimatedPeakMemoryConsumption", int64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
-			"expr", q.originalExpression,
-		)
-
-		if q.topLevelQueryTimeRange.IsInstant {
-			msg = append(msg,
-				"queryType", "instant",
-				"time", q.topLevelQueryTimeRange.StartT,
-			)
-		} else {
-			msg = append(msg,
-				"queryType", "range",
-				"start", q.topLevelQueryTimeRange.StartT,
-				"end", q.topLevelQueryTimeRange.EndT,
-				"step", q.topLevelQueryTimeRange.IntervalMilliseconds,
-			)
-		}
-
-		level.Info(logger).Log(msg...)
-		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
-	}()
-
-	_, isInstantVectorOperator := q.evaluator.root.(types.InstantVectorOperator)
-	q.resultIsVector = q.topLevelQueryTimeRange.IsInstant && isInstantVectorOperator
+	q.resultIsVector = q.topLevelQueryTimeRange.IsInstant && q.topLevelValueType == parser.ValueTypeVector
 
 	if err := q.evaluator.Evaluate(ctx, q); err != nil {
 		q.returnResultToPool()
@@ -126,13 +101,13 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 }
 
 // SeriesMetadataEvaluated implements the EvaluationObserver interface.
-func (q *Query) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, series []types.SeriesMetadata) error {
+func (q *Query) SeriesMetadataEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, series []types.SeriesMetadata) error {
 	q.seriesMetadata = series
 	return nil
 }
 
 // InstantVectorSeriesDataEvaluated implements the EvaluationObserver interface.
-func (q *Query) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+func (q *Query) InstantVectorSeriesDataEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, seriesIndex int, _ int, seriesData types.InstantVectorSeriesData) error {
 	if len(seriesData.Floats) == 0 && len(seriesData.Histograms) == 0 {
 		// Nothing to do.
 		types.PutInstantVectorSeriesData(seriesData, q.memoryConsumptionTracker)
@@ -199,7 +174,7 @@ func (q *Query) appendSeriesToMatrix(series types.SeriesMetadata, seriesData typ
 }
 
 // RangeVectorStepSamplesEvaluated implements the EvaluationObserver interface.
-func (q *Query) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+func (q *Query) RangeVectorStepSamplesEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	if stepIndex != 0 {
 		// Top-level range vector expressions should only ever have one step (ie. be an instant query).
 		return fmt.Errorf("unexpected step index for range vector result: %d", stepIndex)
@@ -237,7 +212,7 @@ func (q *Query) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *
 }
 
 // ScalarEvaluated implements the EvaluationObserver interface.
-func (q *Query) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data types.ScalarData) error {
+func (q *Query) ScalarEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, data types.ScalarData) error {
 	if q.topLevelQueryTimeRange.IsInstant {
 		defer types.FPointSlicePool.Put(&data.Samples, q.memoryConsumptionTracker)
 
@@ -259,7 +234,7 @@ func (q *Query) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data 
 }
 
 // StringEvaluated implements the EvaluationObserver interface.
-func (q *Query) StringEvaluated(ctx context.Context, evaluator *Evaluator, data string) error {
+func (q *Query) StringEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, data string) error {
 	q.string = &promql.String{
 		T: q.topLevelQueryTimeRange.StartT,
 		V: data,
@@ -269,7 +244,7 @@ func (q *Query) StringEvaluated(ctx context.Context, evaluator *Evaluator, data 
 }
 
 // EvaluationCompleted implements the EvaluationObserver interface.
-func (q *Query) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
 	q.annotations = annotations
 	q.stats = stats
 	return nil
@@ -316,6 +291,10 @@ func (q *Query) returnResultToPool() {
 
 	// And nothing to do for strings: these don't come from a pool.
 	q.string = nil
+
+	// Note this will also be called in the evaluator close but this is safe and help ensure this is always deregistered as quickly as possible.
+	// This also avoids an issue where the Query (and underlying Evaluator) Close() may not be called on Query.Exec() error.
+	q.engine.memoryConsumptionTrackerFactory.Deregister(q.evaluator.MemoryConsumptionTracker)
 }
 
 func (q *Query) Statement() parser.Statement {
@@ -326,11 +305,10 @@ func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
 		Timers: promstats.NewQueryTimers(),
 		Samples: &promstats.QuerySamples{
-			TotalSamples:        q.stats.TotalSamples,
-			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
-			EnablePerStepStats:  q.stats.EnablePerStepStats,
-			Interval:            q.topLevelQueryTimeRange.IntervalMilliseconds,
-			StartTimestamp:      q.topLevelQueryTimeRange.StartT,
+			TotalSamples:       q.stats.TotalSamples,
+			EnablePerStepStats: false,
+			Interval:           q.topLevelQueryTimeRange.IntervalMilliseconds,
+			StartTimestamp:     q.topLevelQueryTimeRange.StartT,
 		},
 	}
 }

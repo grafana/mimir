@@ -9,12 +9,14 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -30,14 +32,14 @@ func TestIngester_ActiveSeries(t *testing.T) {
 		return mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(
-					labels.FromStrings(labels.MetricName, "test", "lbl", fmt.Sprintf(tpl, index))),
+					labels.FromStrings(model.MetricNameLabel, "test", "lbl", fmt.Sprintf(tpl, index))),
 				Samples: samples,
 			},
 		}
 	}
 
-	expectedMessageCount := 4
-	totalSeriesSize := expectedMessageCount * activeSeriesMaxSizeBytes
+	totalMessageCount := 4
+	totalSeriesSize := totalMessageCount * activeSeriesMaxSizeBytes
 
 	writeReq := &mimirpb.WriteRequest{Source: mimirpb.API}
 	currentSize := 0
@@ -53,29 +55,49 @@ func TestIngester_ActiveSeries(t *testing.T) {
 	_, err := ingesterClient.Push(ctx, writeReq)
 	require.NoError(t, err)
 
-	// Get active series
-	req, err := client.ToActiveSeriesRequest([]*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
-	})
-	require.NoError(t, err)
-
-	server := &mockActiveSeriesServer{ctx: ctx}
-	err = ingesterClient.ActiveSeries(req, server)
-	require.NoError(t, err)
-
-	// Check that all series were returned.
-	returnedSeriesCount := 0
-	for _, res := range server.responses {
-		returnedSeriesCount += len(res.Metric)
-		// Check that all series have the expected number of labels.
-		for _, m := range res.Metric {
-			assert.Equal(t, 2, len(m.Labels))
-		}
+	testCases := []struct {
+		matchers             []*labels.Matcher
+		expectedMessageCount int
+		expectedSeriesCount  int
+	}{
+		{ // Match all series by name.
+			matchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")},
+			expectedMessageCount: totalMessageCount,
+			expectedSeriesCount:  len(writeReq.Timeseries),
+		},
+		{ // Match all series by blanket regex, but sharded.
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, sharding.ShardLabel, "1_of_4"),
+				labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".*"),
+			},
+			expectedMessageCount: totalMessageCount / 4,
+			expectedSeriesCount:  1012, // Note this number should change if the sample data changes.
+		},
 	}
-	assert.Equal(t, len(writeReq.Timeseries), returnedSeriesCount)
 
-	// Check that we got the correct number of messages.
-	assert.Equal(t, expectedMessageCount, len(server.responses))
+	for _, tc := range testCases {
+		t.Run(fmt.Sprint(tc.matchers), func(t *testing.T) {
+			// Get active series
+			req, err := client.ToActiveSeriesRequest(tc.matchers)
+			require.NoError(t, err)
+
+			server := &mockActiveSeriesServer{ctx: ctx}
+			err = ingesterClient.ActiveSeries(req, server)
+			require.NoError(t, err)
+
+			// Check that all series were returned.
+			returnedSeriesCount := 0
+			for _, res := range server.responses {
+				returnedSeriesCount += len(res.Metric)
+				// Check that all series have the expected number of labels.
+				for _, m := range res.Metric {
+					assert.Equal(t, 2, len(m.Labels))
+				}
+			}
+			assert.Equal(t, tc.expectedSeriesCount, returnedSeriesCount)
+			assert.Equal(t, tc.expectedMessageCount, len(server.responses))
+		})
+	}
 }
 
 func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
@@ -88,7 +110,7 @@ func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 		require.Greater(t, size, 24, "minimum message size is 24 bytes")
 		tpl := fmt.Sprintf("%%0%dd", size-24)
 		ts := &mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "test", "lbl", fmt.Sprintf(tpl, index))),
+			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "test", "lbl", fmt.Sprintf(tpl, index))),
 		}
 		if isHistogram {
 			ts.Histograms = histograms
@@ -120,7 +142,7 @@ func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 
 	// Get active series
 	req, err := client.ToActiveSeriesRequest([]*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 	})
 	req.Type = client.NATIVE_HISTOGRAM_SERIES
 	require.NoError(t, err)
@@ -161,7 +183,7 @@ func BenchmarkIngester_ActiveSeries(b *testing.B) {
 		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
-					labels.MetricName, metricName,
+					model.MetricNameLabel, metricName,
 					// Use mod prime to make label values repeat every n series
 					"mod_10", strconv.Itoa(s%(2*5)),
 					"mod_4199", strconv.Itoa(s%(13*17*19)))),
@@ -208,4 +230,61 @@ func (s *mockActiveSeriesServer) Send(resp *client.ActiveSeriesResponse) error {
 
 func (s *mockActiveSeriesServer) Context() context.Context {
 	return s.ctx
+}
+
+func TestMatchAllSeries(t *testing.T) {
+	tests := []struct {
+		name     string
+		matchers []*labels.Matcher
+		expected bool
+	}{
+		{
+			name:     "empty matchers",
+			matchers: []*labels.Matcher{},
+			expected: false,
+		},
+		{
+			name: "single matcher with regexp .*",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+			},
+			expected: true,
+		},
+		{
+			name: "single matcher on __name__ with regexp .+",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+			},
+			expected: true,
+		},
+		{
+			name: "single matcher on __name__ with not-equal to empty string",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, ""),
+			},
+			expected: true,
+		},
+		{
+			name: "single matcher with different regexp pattern",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar"),
+			},
+			expected: false,
+		},
+		{
+			name: "multiple matchers with regexp .*",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+				labels.MustNewMatcher(labels.MatchEqual, "bar", "baz"),
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := matchAllSeries(tc.matchers)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }

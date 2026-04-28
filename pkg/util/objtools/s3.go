@@ -4,12 +4,13 @@ package objtools
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"io"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/pkg/errors"
 )
 
 type S3ClientConfig struct {
@@ -24,8 +25,8 @@ type S3ClientConfig struct {
 func (c *S3ClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
 	f.StringVar(&c.BucketName, prefix+"bucket-name", "", "The name of the bucket (not prefixed by a scheme).")
 	f.StringVar(&c.Endpoint, prefix+"endpoint", "", "The endpoint to contact when accessing the bucket.")
-	f.StringVar(&c.AccessKeyID, prefix+"access-key-id", "", "The access key ID used in AWS Signature Version 4 authentication.")
-	f.StringVar(&c.SecretAccessKey, prefix+"secret-access-key", "", "The secret access key used in AWS Signature Version 4 authentication.")
+	f.StringVar(&c.AccessKeyID, prefix+"access-key-id", "", "The access key ID used in AWS Signature Version 4 authentication. If unset along with "+prefix+"secret-access-key, credentials are resolved from the environment (IAM roles for service accounts, ECS task roles, or EC2 instance metadata).")
+	f.StringVar(&c.SecretAccessKey, prefix+"secret-access-key", "", "The secret access key used in AWS Signature Version 4 authentication. If unset along with "+prefix+"access-key-id, credentials are resolved from the environment (IAM roles for service accounts, ECS task roles, or EC2 instance metadata).")
 	f.BoolVar(&c.Secure, prefix+"secure", true, "If true (default), use HTTPS when connecting to the bucket. If false, insecure HTTP is used.")
 	f.Uint64Var(&c.PartSize, prefix+"part-size", 0, "If 0, and object's size is known and optimal for multipart upload, the default value is the minimum allowed size 16MiB.")
 }
@@ -37,22 +38,26 @@ func (c *S3ClientConfig) Validate(prefix string) error {
 	if c.Endpoint == "" {
 		return errors.New(prefix + "endpoint is missing")
 	}
-	if c.AccessKeyID == "" {
-		return errors.New(prefix + "access-key-id is missing")
-	}
-	if c.SecretAccessKey == "" {
-		return errors.New(prefix + "secret-access-key is missing")
+	if (c.AccessKeyID == "") != (c.SecretAccessKey == "") {
+		return errors.New(prefix + "access-key-id and " + prefix + "secret-access-key must be set together, or both left empty to use credentials from the environment")
 	}
 	return nil
 }
 
 func (c *S3ClientConfig) ToBucket() (Bucket, error) {
+	var creds *credentials.Credentials
+	if c.AccessKeyID != "" {
+		creds = credentials.NewStaticV4(c.AccessKeyID, c.SecretAccessKey, "")
+	} else {
+		// Resolves IAM roles for service accounts (IRSA), ECS task roles and EC2 instance metadata from standard AWS environment variables.
+		creds = credentials.NewIAM("")
+	}
 	client, err := minio.New(c.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(c.AccessKeyID, c.SecretAccessKey, ""),
+		Creds:  creds,
 		Secure: c.Secure,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize S3 client")
+		return nil, fmt.Errorf("failed to initialize S3 client: %w", err)
 	}
 	return &s3Bucket{
 		client:     client,
@@ -119,17 +124,21 @@ func (bkt *s3Bucket) ClientSideCopy(ctx context.Context, objectName string, dstB
 		VersionID: options.SourceVersionID,
 	})
 	if err != nil {
-		return errors.Wrap(err, "failed to get source object from S3")
+		return fmt.Errorf("failed to get source object from S3: %w", err)
 	}
 	objInfo, err := obj.Stat()
 	if err != nil {
-		return errors.Wrap(err, "failed to get source object information from S3")
+		return fmt.Errorf("failed to get source object information from S3: %w", err)
 	}
 	if err := dstBucket.Upload(ctx, options.destinationObjectName(objectName), obj, objInfo.Size); err != nil {
 		_ = obj.Close()
-		return errors.Wrap(err, "failed to upload source object from S3 to destination")
+		return fmt.Errorf("failed to upload source object from S3 to destination: %w", err)
 	}
-	return errors.Wrap(obj.Close(), "failed to close source object reader from S3")
+	if err := obj.Close(); err != nil {
+		return fmt.Errorf("failed to close source object reader from S3: %w", err)
+	}
+
+	return nil
 }
 
 func (bkt *s3Bucket) List(ctx context.Context, options ListOptions) (*ListResult, error) {

@@ -32,6 +32,7 @@ Set up secure multi-tenant environments.
 
 - [About Grafana Mimir tenant IDs](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-tenant-ids/)
 - [Configure Grafana Mimir high-availability deduplication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/)
+- [Migrate HA tracker from Consul or etcd to memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/migrate-ha-tracker-to-memberlist/)
 - [About Grafana Mimir anonymous usage statistics reporting](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-anonymous-usage-statistics-reporting/)
 
 ## Storage and data management
@@ -69,7 +70,6 @@ Manage and optimize query behavior.
 
 - [Configure queries to block](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-blocked-queries/)
 - [Configure experimental PromQL functions](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-experimental-promql-functions/)
-- [Configure the Grafana Mimir query-frontend to work with Prometheus](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-the-query-frontend-work-with-prometheus/)
 
 ## High availability and clustering
 

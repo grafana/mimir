@@ -26,7 +26,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -256,9 +255,7 @@ func TestIterBlockMetas(t *testing.T) {
 			Version: 1,
 		},
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id3.String())))
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource)
-	metas, err := shipper.blockMetasFromOldest()
+	metas, err := blockMetasFromOldest(dir)
 	require.NoError(t, err)
 	require.True(t, slices.IsSortedFunc(metas, func(a, b *block.Meta) int {
 		return cmp.Compare(a.MinTime, b.MinTime)
@@ -377,7 +374,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 				},
 			}),
 			oooCompactionHintExpected: true,
-			expectedLabels:            map[string]string{mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
+			expectedLabels:            map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
 		},
 		{
 			name:        "OOO block, addOOOLabel = true, additional labels",
@@ -395,7 +392,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 				Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 			}),
 			oooCompactionHintExpected: true,
-			expectedLabels:            map[string]string{"a": "b", mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
+			expectedLabels:            map[string]string{"a": "b", block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

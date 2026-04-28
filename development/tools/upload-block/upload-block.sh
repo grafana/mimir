@@ -24,7 +24,7 @@ function main() {
   fi
 
   BLOCK_ULID="$(basename "$BLOCK_DIR")"
-  if ! go run "$SCRIPT_DIR/../../../tools/ulidtime" "$BLOCK_ULID" >/dev/null 2>&1; then
+  if ! go run -C "$SCRIPT_DIR/../../../tools/ulidtime" . "$BLOCK_ULID" >/dev/null 2>&1; then
     echo "'$BLOCK_ULID' is not a valid ULID." >/dev/stderr
     exit 1
   fi
@@ -45,7 +45,7 @@ function main() {
 }
 
 function mark_blocks() {
-  go run "$SCRIPT_DIR/../../../tools/mark-blocks" \
+  go run -C "$SCRIPT_DIR/../../../tools/mark-blocks" . \
     -backend="s3" \
     -s3.access-key-id="$AWS_ACCESS_KEY_ID" \
     -s3.secret-access-key="$AWS_SECRET_ACCESS_KEY" \

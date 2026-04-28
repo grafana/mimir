@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -27,9 +28,10 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/storage/fixtures"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -65,10 +67,10 @@ func TestSeriesChunkRef_Compare(t *testing.T) {
 
 func TestSeriesChunkRefsIterator(t *testing.T) {
 	c := generateSeriesChunksRanges(ulid.MustNew(1, nil), 5)
-	series1 := labels.FromStrings(labels.MetricName, "metric_1")
-	series2 := labels.FromStrings(labels.MetricName, "metric_2")
-	series3 := labels.FromStrings(labels.MetricName, "metric_3")
-	series4 := labels.FromStrings(labels.MetricName, "metric_4")
+	series1 := labels.FromStrings(model.MetricNameLabel, "metric_1")
+	series2 := labels.FromStrings(model.MetricNameLabel, "metric_2")
+	series3 := labels.FromStrings(model.MetricNameLabel, "metric_3")
+	series4 := labels.FromStrings(model.MetricNameLabel, "metric_4")
 
 	t.Run("should iterate an empty set", func(t *testing.T) {
 		it := newSeriesChunkRefsIterator(seriesChunkRefsSet{
@@ -1096,19 +1098,24 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 		b.Add(name, value)
 		return b.Labels()
 	}
-	defaultTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appenderFactory func() storage.Appender) {
+
+	tb := test.NewTB(t)
+
+	appendFunc := func(t testing.TB, appenderFactory func() storage.Appender) {
 		appender := appenderFactory()
 		for i := 0; i < 100; i++ {
 			_, err := appender.Append(0, oneLabel("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
 			assert.NoError(t, err)
 		}
 		assert.NoError(t, appender.Commit())
-	})
+	}
+	testBlock := fixtures.SetupTestBlock(tb, appendFunc)
+	defaultTestBlockFactory := testBlockToBucketBlock(tb, testBlock)
 
-	const largerTestBlockSeriesCount = 100_000
-	largerTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appenderFactory func() storage.Appender) {
+	const largerTestBlockSeriesCount = 10_000
+	largerAppendFunc := func(t testing.TB, appenderFactory func() storage.Appender) {
+		appender := appenderFactory()
 		for i := 0; i < largerTestBlockSeriesCount; i++ {
-			appender := appenderFactory()
 			lbls := oneLabel("l1", fmt.Sprintf("v%d", i))
 			var ref storage.SeriesRef
 			const numSamples = 240 // Write enough samples to have two chunks per series
@@ -1117,9 +1124,11 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				ref, err = appender.Append(ref, lbls, int64(i*10+j), float64(j))
 				assert.NoError(t, err)
 			}
-			assert.NoError(t, appender.Commit())
 		}
-	})
+		assert.NoError(t, appender.Commit())
+	}
+	largerTestBlock := fixtures.SetupTestBlock(tb, largerAppendFunc)
+	largerTestBlockFactory := testBlockToBucketBlock(tb, largerTestBlock)
 
 	type testCase struct {
 		blockFactory func() *bucketBlock // if nil, defaultTestBlockFactory is used
@@ -1269,7 +1278,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			blockFactory: largerTestBlockFactory,
 			minT:         0,
 			maxT:         math.MaxInt64,
-			batchSize:    5000,
+			batchSize:    500,
 			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", ".*")},
 			expectedSets: func() []seriesChunkRefsSet {
 				series := make([]seriesChunkRefs, 0, largerTestBlockSeriesCount)
@@ -1281,7 +1290,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					return labels.Compare(a.lset, b.lset)
 				})
 
-				const numBatches = largerTestBlockSeriesCount / 5000
+				const numBatches = largerTestBlockSeriesCount / 500
 				sets := make([]seriesChunkRefsSet, numBatches)
 				for setIdx := 0; setIdx < numBatches; setIdx++ {
 					sets[setIdx].series = series[setIdx*largerTestBlockSeriesCount/numBatches : (setIdx+1)*largerTestBlockSeriesCount/numBatches]
@@ -1438,7 +1447,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			// Tests
 			sets := readAllSeriesChunkRefsSet(loadingIterator)
 			assert.NoError(t, loadingIterator.Err())
-			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, tc.minT, tc.maxT, tc.strategy, tc.expectedSets, sets)
+			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(*fixtures.FsInstrumentedBucket).RootDir(), tc.minT, tc.maxT, tc.strategy, tc.expectedSets, sets)
 		})
 	}
 }
@@ -1501,7 +1510,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	newTestBlock := prepareTestBlock(test.NewTB(t), func(_ testing.TB, appenderFactory func() storage.Appender) {
+	tb := test.NewTB(t)
+
+	appendFunc := func(_ testing.TB, appenderFactory func() storage.Appender) {
 		const (
 			samplesFor1Chunk   = 100                  // not a complete chunk
 			samplesFor2Chunks  = samplesFor1Chunk * 2 // not a complete chunk
@@ -1562,7 +1573,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 		}
 
 		assert.NoError(t, appender.Commit())
-	})
+	}
+	testBlock := fixtures.SetupTestBlock(tb, appendFunc)
+	newTestBlock := testBlockToBucketBlock(tb, testBlock)
 
 	testCases := map[string]struct {
 		matcher    *labels.Matcher
@@ -1721,7 +1734,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			require.NoError(t, err)
 
 			actualSeriesSets := readAllSeriesChunkRefsSet(iterator)
-			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(localBucket).dir, minT, maxT, strategy, testCase.expectedSeries, actualSeriesSets)
+			assertSeriesChunkRefsSetsEqual(t, block.meta.ULID, block.bkt.(*fixtures.FsInstrumentedBucket).RootDir(), minT, maxT, strategy, testCase.expectedSeries, actualSeriesSets)
 			if testCase.expectedErr != "" {
 				assert.ErrorContains(t, iterator.Err(), "test limit exceeded")
 			} else {
@@ -1735,7 +1748,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	newTestBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(10_000))
+	tb := test.NewTB(t)
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(10_000))
+	newTestBlock := testBlockToBucketBlock(tb, testBlock)
 
 	testCases := map[string]struct {
 		matchers        []*labels.Matcher
@@ -1847,7 +1862,9 @@ func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...inte
 func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 	const series = 5e6
 
-	newTestBlock := prepareTestBlock(test.NewTB(b), appendTestSeries(series))
+	tb := test.NewTB(b)
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
+	newTestBlock := testBlockToBucketBlock(tb, testBlock)
 
 	testSetups := map[string]struct {
 		indexCache indexcache.IndexCache
@@ -1858,8 +1875,8 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 
 	for name, setup := range testSetups {
 		b.Run(name, func(b *testing.B) {
-			for _, testCase := range seriesSelectionTestCases(test.NewTB(b), series) {
-				b.Run(testCase.name, func(b *testing.B) {
+			for _, testCase := range fixtures.SeriesSelectorTestCases(test.NewTB(b), series) {
+				b.Run(testCase.Name, func(b *testing.B) {
 					ctx, cancel := context.WithCancel(context.Background())
 					b.Cleanup(cancel)
 
@@ -1880,7 +1897,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							indexReader,
 							setup.indexCache,
 							block.meta,
-							testCase.matchers,
+							testCase.Matchers,
 							nil,
 							cachedSeriesHasher{hashCache},
 							defaultStrategy, // we don't skip chunks, so we can measure impact in loading chunk refs too
@@ -1893,7 +1910,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 						require.NoError(b, err)
 
 						actualSeriesSets := readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
-						assert.Len(b, actualSeriesSets, testCase.expectedSeriesLen)
+						assert.Len(b, actualSeriesSets, testCase.ExpectedCount)
 						assert.NoError(b, iterator.Err())
 					}
 				})
@@ -2002,9 +2019,10 @@ func TestMetasToChunkRefs(t *testing.T) {
 		},
 	}
 
+	queryStats := newQueryStats()
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			actualRanges := metasToChunkRefs(testCase.partitions, blockID, testCase.minT, testCase.maxT)
+			actualRanges := metasToChunkRefs(testCase.partitions, blockID, testCase.minT, testCase.maxT, queryStats)
 			assert.Equal(t, testCase.expectedChunks, actualRanges)
 			assert.Equal(t, len(testCase.expectedChunks), cap(actualRanges)) // Assert that we've done the slice preallocation correctly. This won't always catch all incorrect or missing preallocations, but might catch some.
 		})
@@ -2014,7 +2032,8 @@ func TestMetasToChunkRefs(t *testing.T) {
 // TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching currently tests logic in loadingSeriesChunkRefsSetIterator.
 // If openBlockSeriesChunkRefsSetsIterator becomes more complex, consider making this a test for loadingSeriesChunkRefsSetIterator only.
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
-	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appenderFactory func() storage.Appender) {
+	tb := test.NewTB(t)
+	appendFunc := func(tb testing.TB, appenderFactory func() storage.Appender) {
 		existingSeries := []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"), // series ref 32
 			labels.FromStrings("a", "1", "b", "2"), // series ref 48
@@ -2031,7 +2050,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 			}
 		}
 		assert.NoError(tb, appender.Commit())
-	})
+	}
+	testBlock := fixtures.SetupTestBlock(tb, appendFunc)
+	newTestBlock := testBlockToBucketBlock(tb, testBlock)
 
 	mockedSeriesHashes := map[string]uint64{
 		`{a="1", b="1"}`: 1,
@@ -2430,7 +2451,7 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 
 	for seriesID := minSeriesID; seriesID <= maxSeriesID; seriesID++ {
 		b.Reset()
-		b.Add(labels.MetricName, fmt.Sprintf("metric_%06d", seriesID))
+		b.Add(model.MetricNameLabel, fmt.Sprintf("metric_%06d", seriesID))
 		set.series = append(set.series, seriesChunkRefs{lset: b.Labels()})
 	}
 
@@ -2440,9 +2461,9 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 func TestCreateSeriesChunkRefsSet(t *testing.T) {
 	set := createSeriesChunkRefsSet(5, 7, true)
 	require.Len(t, set.series, 3)
-	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
-	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
-	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(model.MetricNameLabel, "metric_000005")}, set.series[0])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(model.MetricNameLabel, "metric_000006")}, set.series[1])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(model.MetricNameLabel, "metric_000007")}, set.series[2])
 }
 
 func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {

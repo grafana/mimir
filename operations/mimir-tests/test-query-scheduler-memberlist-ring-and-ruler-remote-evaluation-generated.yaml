@@ -532,6 +532,27 @@ metadata:
   name: ruler-query-frontend
   namespace: default
 spec:
+  ports:
+  - name: ruler-query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-query-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-frontend
+  name: ruler-query-frontend-headless
+  namespace: default
+spec:
   clusterIP: None
   ports:
   - name: ruler-query-frontend-http-metrics
@@ -637,9 +658,8 @@ spec:
       - args:
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
         - -distributor.ha-tracker.prefix=prom_ha/
-        - -distributor.ha-tracker.store=etcd
+        - -distributor.ha-tracker.store=memberlist
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
@@ -655,6 +675,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -667,7 +688,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -766,7 +787,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -849,7 +870,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -929,7 +950,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -999,6 +1020,7 @@ spec:
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
+        - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -querier.max-partial-query-length=768h
@@ -1011,7 +1033,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///ruler-query-frontend.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///ruler-query-frontend-headless.default.svc.cluster.local.:9095
         - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
@@ -1025,7 +1047,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1106,6 +1128,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
+        - -querier.ring.prefix=ruler-querier/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=ruler-query-scheduler/
         - -query-scheduler.ring.store=memberlist
@@ -1121,7 +1144,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -1185,6 +1208,7 @@ spec:
       - args:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -querier.ring.prefix=ruler-querier/
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
@@ -1197,6 +1221,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=300
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc-max-send-msg-size-bytes=104857600
         - -server.grpc.keepalive.max-connection-age=30s
@@ -1208,7 +1233,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1288,7 +1313,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1361,7 +1386,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1461,7 +1486,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1572,7 +1597,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1627,6 +1652,7 @@ metadata:
   name: memcached
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1686,6 +1712,7 @@ metadata:
   name: memcached-frontend
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1745,6 +1772,7 @@ metadata:
   name: memcached-index-queries
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1804,6 +1832,7 @@ metadata:
   name: memcached-metadata
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1933,7 +1962,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.17.0
+        image: grafana/mimir:3.0.6
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -1981,36 +2010,3 @@ spec:
         requests:
           storage: 50Gi
       storageClassName: standard
----
-apiVersion: etcd.database.coreos.com/v1beta2
-kind: EtcdCluster
-metadata:
-  annotations:
-    etcd.database.coreos.com/scope: clusterwide
-  name: etcd
-  namespace: default
-spec:
-  pod:
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              etcd_cluster: etcd
-          topologyKey: kubernetes.io/hostname
-    annotations:
-      prometheus.io/port: "2379"
-      prometheus.io/scrape: "true"
-    etcdEnv:
-    - name: ETCD_AUTO_COMPACTION_RETENTION
-      value: 1h
-    labels:
-      name: etcd
-    resources:
-      limits:
-        memory: 512Mi
-      requests:
-        cpu: 500m
-        memory: 512Mi
-  size: 3
-  version: 3.3.13

@@ -8,7 +8,7 @@ package commands
 import (
 	"context"
 	"fmt"
-	"log"
+	stdlog "log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
@@ -28,7 +30,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
@@ -56,6 +57,8 @@ type LoadgenCommand struct {
 
 	metricsListenAddress string
 
+	logger log.Logger
+
 	// Runtime stuff.
 	wg          sync.WaitGroup
 	writeClient remote.WriteClient
@@ -66,8 +69,11 @@ type LoadgenCommand struct {
 	queryRequestDuration *prometheus.HistogramVec
 }
 
-func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames, reg prometheus.Registerer) {
-	cmd := app.Command("loadgen", "Simple load generator for Grafana Mimir.").PreAction(func(k *kingpin.ParseContext) error { return c.setup(k, reg) }).Action(c.run)
+func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames, logConfig *LoggerConfig, reg prometheus.Registerer) {
+	cmd := app.Command("loadgen", "Simple load generator for Grafana Mimir.").PreAction(func(k *kingpin.ParseContext) error {
+		c.logger = logConfig.Logger()
+		return c.setup(k, reg)
+	}).Action(c.run)
 	cmd.Flag("write-url", "Remote write URL where to push metrics to (e.g. \"http://mimir.local/api/v1/push\")").
 		Default("").StringVar(&c.writeURL)
 	cmd.Flag("series-name", "name of the metric that will be generated").
@@ -125,12 +131,12 @@ func (c *LoadgenCommand) run(_ *kingpin.ParseContext) error {
 			WriteTimeout: 10 * time.Second,
 		}
 		if err := server.ListenAndServe(); err != nil {
-			logrus.WithError(err).Errorln("metrics listener failed")
+			level.Error(c.logger).Log("msg", "metrics listener failed", "err", err)
 		}
 	}()
 
 	if c.writeURL != "" {
-		log.Printf("setting up write load gen:\n  url=%s\n  parallelism: %v\n  active_series: %d\n interval: %v\n", c.writeURL, c.parallelism, c.activeSeries, c.scrapeInterval)
+		stdlog.Printf("setting up write load gen:\n  url=%s\n  parallelism: %v\n  active_series: %d\n interval: %v\n", c.writeURL, c.parallelism, c.activeSeries, c.scrapeInterval)
 		writeURL, err := url.Parse(c.writeURL)
 		if err != nil {
 			return err
@@ -155,11 +161,11 @@ func (c *LoadgenCommand) run(_ *kingpin.ParseContext) error {
 			go c.runWriteShard(i, i+metricsPerShard)
 		}
 	} else {
-		log.Println("write load generation is disabled, -write-url flag has not been set")
+		stdlog.Println("write load generation is disabled, -write-url flag has not been set")
 	}
 
 	if c.queryURL != "" {
-		log.Printf("setting up query load gen:\n  url=%s\n  parallelism: %v\n  query: %s", c.queryURL, c.queryParallelism, c.query)
+		stdlog.Printf("setting up query load gen:\n  url=%s\n  parallelism: %v\n  query: %s", c.queryURL, c.queryParallelism, c.query)
 		queryClient, err := api.NewClient(api.Config{
 			Address: c.queryURL,
 		})
@@ -174,7 +180,7 @@ func (c *LoadgenCommand) run(_ *kingpin.ParseContext) error {
 			go c.runQueryShard()
 		}
 	} else {
-		log.Println("query load generation is disabled, -query-url flag has not been set")
+		stdlog.Println("query load generation is disabled, -query-url flag has not been set")
 	}
 
 	c.wg.Wait()
@@ -193,7 +199,7 @@ func (c *LoadgenCommand) runWriteShard(from, to int) {
 func (c *LoadgenCommand) runScrape(from, to int) {
 	for i := from; i < to; i += c.batchSize {
 		if err := c.runBatch(i, i+c.batchSize); err != nil {
-			log.Printf("error sending batch: %v", err)
+			stdlog.Printf("error sending batch: %v", err)
 		}
 	}
 	fmt.Printf("sent %d samples\n", to-from)
@@ -260,7 +266,7 @@ func (c *LoadgenCommand) runQuery() {
 	_, _, err := c.queryClient.QueryRange(ctx, c.query, r)
 	if err != nil {
 		c.queryRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
-		log.Printf("error doing query: %v", err)
+		stdlog.Printf("error doing query: %v", err)
 		return
 	}
 	c.queryRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())

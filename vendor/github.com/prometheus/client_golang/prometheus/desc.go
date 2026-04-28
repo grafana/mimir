@@ -95,7 +95,8 @@ func (v2) NewDesc(fqName, help string, variableLabels ConstrainableLabels, const
 		help:           help,
 		variableLabels: variableLabels.compile(),
 	}
-	if !model.IsValidMetricName(model.LabelValue(fqName)) {
+	//nolint:staticcheck // TODO: Don't use deprecated model.NameValidationScheme.
+	if !model.NameValidationScheme.IsValidMetricName(fqName) {
 		d.err = fmt.Errorf("%q is not a valid metric name", fqName)
 		return d
 	}
@@ -179,6 +180,15 @@ func NewInvalidDesc(err error) *Desc {
 	return &Desc{
 		err: err,
 	}
+}
+
+// Err returns an error that occurred during construction, if any.
+//
+// Calling this method is optional. It can be used to detect construction
+// errors early, before invoking other methods on the Desc. If an error is
+// present, later operations may not behave as expected.
+func (d *Desc) Err() error {
+	return d.err
 }
 
 func (d *Desc) String() string {

@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package types;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "types";
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message EncodedOperatorEvaluationStats {
+  EncodedSubsetStats allSeries = 1 [(gogoproto.nullable) = false];
+  repeated EncodedSubsetStats subsets = 2 [(gogoproto.nullable) = false];
+}
+
+message EncodedSubsetStats {
+  repeated int64 samplesProcessedPerStep = 1;
+  repeated int64 newSamplesReadPerStep = 2;
+}

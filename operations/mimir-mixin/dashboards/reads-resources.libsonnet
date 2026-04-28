@@ -11,16 +11,22 @@ local filename = 'mimir-reads-resources.json';
       .addPanel(
         $.timeseriesPanel('CPU') +
         $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip +
         $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
         $.stack +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('read') +
+        $.stack,
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('read') +
         $.stack,
       )
     )
@@ -36,6 +42,9 @@ local filename = 'mimir-reads-resources.json';
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('gateway'),
       )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('gateway'),
+      )
     )
     .addRow(
       $.row('Query-frontend')
@@ -47,6 +56,9 @@ local filename = 'mimir-reads-resources.json';
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('query_frontend'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('query_frontend'),
       )
     )
     .addRow(
@@ -60,6 +72,9 @@ local filename = 'mimir-reads-resources.json';
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('query_scheduler'),
       )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('query_scheduler'),
+      )
     )
     .addRow(
       $.row('Querier')
@@ -72,6 +87,9 @@ local filename = 'mimir-reads-resources.json';
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('querier'),
       )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('querier'),
+      )
     )
     .addRow(
       $.row('Ingester')
@@ -79,38 +97,13 @@ local filename = 'mimir-reads-resources.json';
         $.containerCPUUsagePanelByComponent('ingester'),
       )
       .addPanel(
-        $.containerGoHeapInUsePanelByComponent('ingester'),
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.containerMemoryRSSPanelByComponent('ingester'),
-      )
-      .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('ingester'),
       )
-    )
-    .addRow(
-      $.row('Ruler')
       .addPanel(
-        $.timeseriesPanel('Rules') +
-        $.queryPanel(
-          'sum by(%s) (cortex_prometheus_rule_group_rules{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
-          '{{%s}}' % $._config.per_instance_label
-        ),
+        $.containerGoHeapInUsePanelByComponent('ingester'),
       )
       .addPanel(
-        $.containerCPUUsagePanelByComponent('ruler'),
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('ruler'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('ruler'),
+        $.containerEphemeralStoragePanelByComponent('ingester'),
       )
     )
     .addRow(
@@ -119,16 +112,13 @@ local filename = 'mimir-reads-resources.json';
         $.containerCPUUsagePanelByComponent('store_gateway'),
       )
       .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('store_gateway'),
+      )
+      .addPanel(
         $.containerGoHeapInUsePanelByComponent('store_gateway'),
       )
-    )
-    .addRow(
-      $.row('')
       .addPanel(
-        $.containerMemoryRSSPanelByComponent('store_gateway'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('store_gateway'),
+        $.containerEphemeralStoragePanelByComponent('store_gateway'),
       )
     )
     .addRow(
@@ -142,7 +132,35 @@ local filename = 'mimir-reads-resources.json';
       .addPanel(
         $.containerDiskSpaceUtilizationPanelByComponent('store_gateway'),
       )
-    ) + {
+    )
+    .addRow(
+      $.row('Ruler')
+      .addPanel(
+        $.containerCPUUsagePanelByComponent('ruler'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('ruler'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('ruler'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('ruler'),
+      )
+      .addPanel(
+        $.timeseriesPanel('Rules') +
+        $.queryPanel(
+          'sum by(%s) (cortex_prometheus_rule_group_rules{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
+          '{{%s}}' % $._config.per_instance_label
+        ) +
+        // Use a stack to quickly see all the rules loaded across all ruler pods,
+        // and don't get misled when the per-pod rules decrease due to a ruler scale out (more replicas added).
+        $.stack +
+        { fieldConfig+: { defaults+: { custom+: { fillOpacity: 20, lineWidth: 1 } } } },
+      )
+      .splitIntoLines([4, 1])  // Puts "rules" panel below the rest of the resources
+    )
+    + {
       templating+: {
         list: [
           // Do not allow to include all namespaces otherwise this dashboard

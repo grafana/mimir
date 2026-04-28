@@ -13,8 +13,10 @@ import (
 )
 
 var (
-	errBadLookbackConfigs = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", validation.QueryIngestersWithinFlag, queryStoreAfterFlag)
-	errEmptyTimeRange     = errors.New("empty time range")
+	errBadLookbackConfigs              = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", validation.QueryIngestersWithinFlag, queryStoreAfterFlag)
+	errStreamingIngesterBufferSize     = fmt.Errorf("the -%s setting must be greater than 0", streamingChunksPerIngesterBufferSizeFlag)
+	errStreamingStoreGatewayBufferSize = fmt.Errorf("the -%s setting must be greater than 0", streamingChunksPerStoreGatewayBufferSizeFlag)
+	errEmptyTimeRange                  = errors.New("empty time range")
 )
 
 func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) validation.LimitError {
@@ -23,7 +25,7 @@ func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) valida
 		validation.MaxPartialQueryLengthFlag))
 }
 
-func NewMaxSeriesQueryLimitError(limit, maxLimit int) validation.LimitError {
+func NewMaxLimitError(limit, maxLimit int, flag string) validation.LimitError {
 	return validation.NewLimitError(
-		fmt.Sprintf("results may be truncated due to %s (requested limit: %d, enforced: %d)", validation.MaxSeriesQueryLimitFlag, limit, maxLimit))
+		fmt.Sprintf("results may be truncated due to %s (requested limit: %d, enforced: %d)", flag, limit, maxLimit))
 }

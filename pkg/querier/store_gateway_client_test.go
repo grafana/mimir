@@ -67,12 +67,17 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	// we can't predict the exact time it took, we need to workaround it.
 	metrics, err := reg.Gather()
 	require.NoError(t, err)
+	assert.Len(t, metrics, 2)
 
-	assert.Len(t, metrics, 1)
 	assert.Equal(t, "cortex_storegateway_client_request_duration_seconds", metrics[0].GetName())
 	assert.Equal(t, dto.MetricType_HISTOGRAM, metrics[0].GetType())
 	assert.Len(t, metrics[0].GetMetric(), 1)
 	assert.Equal(t, uint64(2), metrics[0].GetMetric()[0].GetHistogram().GetSampleCount())
+
+	assert.Equal(t, "cortex_storegateway_client_transferred_bytes_total", metrics[1].GetName())
+	assert.Equal(t, dto.MetricType_COUNTER, metrics[1].GetType())
+	assert.Len(t, metrics[1].GetMetric(), 1)
+	assert.Greater(t, metrics[1].GetMetric()[0].GetCounter().GetValue(), 0.0)
 }
 
 type mockStoreGatewayServer struct {

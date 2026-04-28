@@ -5,7 +5,9 @@ package ingester
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +80,17 @@ func (cfg *RingConfig) Validate() error {
 		return fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", cfg.TokenGenerationStrategy, flagTokenGenerationStrategy)
 	}
 
+	// Tokenless mode validation.
+	if cfg.NumTokens == 0 {
+		if cfg.TokensFilePath != "" {
+			return fmt.Errorf("tokens file path must be empty when ring tokens are disabled")
+		}
+		if cfg.TokenGenerationStrategy == tokenGenerationSpreadMinimizing {
+			return fmt.Errorf("spread minimizing token generation strategy is not supported when ring tokens are disabled")
+		}
+		return nil
+	}
+
 	if cfg.TokenGenerationStrategy == tokenGenerationSpreadMinimizing {
 		if cfg.TokensFilePath != "" {
 			return fmt.Errorf("%w: strategy requires %q to be empty", ErrSpreadMinimizingValidation, flagTokensFilePath)
@@ -111,9 +124,9 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.KVStore.Store = "memberlist" // Override default value.
 	cfg.KVStore.RegisterFlagsWithPrefix(prefix, "collectors/", f)
 
-	f.DurationVar(&cfg.HeartbeatPeriod, prefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
-	f.IntVar(&cfg.ReplicationFactor, prefix+"replication-factor", 3, "Number of ingesters that each time series is replicated to."+sharedOptionWithRingClient)
+	f.DurationVar(&cfg.HeartbeatPeriod, prefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring.")
+	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes."+sharedOptionWithRingClient)
+	f.IntVar(&cfg.ReplicationFactor, prefix+"replication-factor", 3, "Number of ingesters that each time series is replicated to. This configuration is not used when ingest storage is enabled."+sharedOptionWithRingClient)
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones."+sharedOptionWithRingClient)
 	f.Var(&cfg.ExcludedZones, prefix+"excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring."+sharedOptionWithRingClient)
 
@@ -155,7 +168,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled
 	rc.ExcludedZones = cfg.ExcludedZones
 	rc.SubringCacheDisabled = false // Enable subring caching.
-	rc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
+	rc.StatusPageConfig.HideTokensUIElements = cfg.HideTokensInStatusPage
 
 	return rc
 }
@@ -186,9 +199,32 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.ListenPort = cfg.ListenPort
 	lc.EnableInet6 = cfg.EnableIPv6
 	lc.RingTokenGenerator = cfg.customTokenGenerator()
-	lc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
+	lc.StatusPageConfig.HideTokensUIElements = cfg.HideTokensInStatusPage
 
 	return lc
+}
+
+// ToTokenlessBasicLifecyclerConfig returns a ring.BasicLifecyclerConfig for tokenless mode.
+// This should only be used when ingest storage is enabled and NumTokens is 0.
+func (cfg *RingConfig) ToTokenlessBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
+	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger, cfg.EnableIPv6)
+	if err != nil {
+		return ring.BasicLifecyclerConfig{}, err
+	}
+
+	instancePort := ring.GetInstancePort(cfg.InstancePort, cfg.ListenPort)
+
+	return ring.BasicLifecyclerConfig{
+		ID:                              cfg.InstanceID,
+		Addr:                            net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
+		Zone:                            cfg.InstanceZone,
+		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
+		HeartbeatTimeout:                cfg.HeartbeatTimeout,
+		TokensObservePeriod:             0, // No tokens to observe in tokenless mode.
+		NumTokens:                       0, // Tokenless mode.
+		KeepInstanceInTheRingOnShutdown: !cfg.UnregisterOnShutdown,
+		StatusPageConfig:                ring.StatusPageConfig{HideTokensUIElements: cfg.HideTokensInStatusPage},
+	}, nil
 }
 
 // customTokenGenerator returns a token generator, which is an implementation of ring.TokenGenerator,

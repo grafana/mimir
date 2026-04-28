@@ -37,19 +37,20 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 	fixtures := []mimirpb.PreallocTimeseries{
 		// Note: it's important to write at least a sample, otherwise the exemplar timestamp validation doesn't pass.
-		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "a"}, makeSamples(int64(now), 1), nil, makeExemplars([]string{"trace_id", "A"}, int64(now), 0)),
-		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "b"}, makeSamples(int64(now), 2), nil, makeExemplars([]string{"trace_id", "B"}, int64(now), 0)),
-		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "a"}, makeSamples(int64(now), 3), nil, makeExemplars([]string{"trace_id", "C"}, int64(now), 0)),
-		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "b"}, makeSamples(int64(now), 4), nil, makeExemplars([]string{"trace_id", "D"}, int64(now), 0)),
+		makeTimeseries([]string{model.MetricNameLabel, "series_1", "namespace", "a"}, makeSamples(int64(now), 1), nil, makeExemplars([]string{"trace_id", "A"}, int64(now), 0)),
+		makeTimeseries([]string{model.MetricNameLabel, "series_1", "namespace", "b"}, makeSamples(int64(now), 2), nil, makeExemplars([]string{"trace_id", "B"}, int64(now), 0)),
+		makeTimeseries([]string{model.MetricNameLabel, "series_2", "namespace", "a"}, makeSamples(int64(now), 3), nil, makeExemplars([]string{"trace_id", "C"}, int64(now), 0)),
+		makeTimeseries([]string{model.MetricNameLabel, "series_2", "namespace", "b"}, makeSamples(int64(now), 4), nil, makeExemplars([]string{"trace_id", "D"}, int64(now), 0)),
 	}
 
 	tests := map[string]struct {
-		shuffleShardSize  int
-		multiMatchers     [][]*labels.Matcher
-		maxSeriesPerQuery int
-		expectedResult    []mimirpb.TimeSeries
-		expectedIngesters int
-		expectedErr       error
+		shuffleShardSize        int
+		shuffleShardingDisabled bool
+		multiMatchers           [][]*labels.Matcher
+		maxSeriesPerQuery       int
+		expectedResult          []mimirpb.TimeSeries
+		expectedIngesters       int
+		expectedErr             error
 	}{
 		"should return an empty response if no series match": {
 			multiMatchers: [][]*labels.Matcher{
@@ -88,6 +89,18 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 			shuffleShardSize:  3,
 			expectedIngesters: 3,
 		},
+		"should query all ingesters when shuffle sharding is disabled": {
+			multiMatchers: [][]*labels.Matcher{
+				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "series_1")},
+			},
+			expectedResult: []mimirpb.TimeSeries{
+				{Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars},
+				{Labels: fixtures[1].Labels, Exemplars: fixtures[1].Exemplars},
+			},
+			shuffleShardSize:        3,
+			shuffleShardingDisabled: true,
+			expectedIngesters:       numIngesters,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -107,6 +120,12 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 					// Enable exemplars ingestion.
 					testConfig.limits.MaxGlobalExemplarsPerUser = 1000
+
+					testConfig.configure = func(config *Config) {
+						if testData.shuffleShardingDisabled {
+							config.ShuffleShardingEnabled = false
+						}
+					}
 
 					if ingestStorageEnabled {
 						testConfig.ingestStorageEnabled = true
@@ -183,6 +202,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 			for _, minimizeIngesterRequests := range []bool{true, false} {
 				t.Run(fmt.Sprintf("request minimization enabled: %v", minimizeIngesterRequests), func(t *testing.T) {
 					userCtx := user.InjectOrgID(context.Background(), "user")
+					userCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(userCtx)
 					limits := prepareDefaultLimits()
 					limits.MaxChunksPerQuery = limit
 
@@ -196,6 +216,9 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
 					})
+
+					dedupMetrics := limiter.NewSeriesDeduplicatorMetrics(reg[0])
+					userCtx = limiter.ContextWithNewSeriesLabelsDeduplicator(userCtx, dedupMetrics)
 
 					// Push a number of series below the max chunks limit. Each series has 1 sample,
 					// so expect 1 chunk per series when querying back.
@@ -259,76 +282,75 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReached(t *testing.T) {
 	const maxSeriesLimit = 10
 
-	for _, disableStreamingResponse := range []bool{true, false} {
-		for _, minimizeIngesterRequests := range []bool{true, false} {
-			t.Run(fmt.Sprintf("streaming response disabled: %v, request minimization enabled: %v", disableStreamingResponse, minimizeIngesterRequests), func(t *testing.T) {
-				userCtx := user.InjectOrgID(context.Background(), "user")
-				limits := prepareDefaultLimits()
+	for _, minimizeIngesterRequests := range []bool{true, false} {
+		t.Run(fmt.Sprintf("request minimization enabled: %v", minimizeIngesterRequests), func(t *testing.T) {
+			userCtx := user.InjectOrgID(context.Background(), "user")
+			userCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(userCtx)
+			limits := prepareDefaultLimits()
 
-				// Prepare distributors.
-				ds, ingesters, reg, _ := prepare(t, prepConfig{
-					numIngesters:             3,
-					happyIngesters:           3,
-					numDistributors:          1,
-					limits:                   limits,
-					disableStreamingResponse: disableStreamingResponse,
-					configure: func(config *Config) {
-						config.MinimizeIngesterRequests = minimizeIngesterRequests
-					},
-				})
-
-				// Push a number of series below the max series limit.
-				initialSeries := maxSeriesLimit
-				writeReq := makeWriteRequest(0, initialSeries, 0, false, true, "foo")
-				writeRes, err := ds[0].Push(userCtx, writeReq)
-				assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-				assert.Nil(t, err)
-
-				allSeriesMatchers := []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
-				}
-
-				queryMetrics := stats.NewQueryMetrics(reg[0])
-
-				// Since the number of series is equal to the limit (but doesn't
-				// exceed it), we expect a query running on all series to succeed.
-				queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
-				queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-				require.NoError(t, err)
-				if disableStreamingResponse {
-					assert.Len(t, queryRes.Chunkseries, initialSeries)
-				} else {
-					assert.Len(t, queryRes.StreamingSeries, initialSeries)
-				}
-
-				firstRequestIngesterQueryCount := countCalls(ingesters, "QueryStream")
-
-				if minimizeIngesterRequests {
-					require.LessOrEqual(t, firstRequestIngesterQueryCount, 2, "should not call third ingester if request minimisation is enabled and first two ingesters return a successful response")
-				}
-
-				// Push more series to exceed the limit once we'll query back all series.
-				writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil, nil))
-
-				writeRes, err = ds[0].Push(userCtx, writeReq)
-				assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
-				assert.Nil(t, err)
-
-				// Reset the query limiter in the context.
-				queryCtx = limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
-
-				// Since the number of series is exceeding the limit, we expect
-				// a query running on all series to fail.
-				_, err = ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
-				require.Error(t, err)
-				assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
-
-				if minimizeIngesterRequests {
-					secondRequestIngesterQueryCallCount := countCalls(ingesters, "QueryStream") - firstRequestIngesterQueryCount
-					require.LessOrEqual(t, secondRequestIngesterQueryCallCount, 2, "should not call third ingester if request minimisation is enabled and either of first two ingesters fail with limits error")
-				}
+			// Prepare distributors.
+			ds, ingesters, reg, _ := prepare(t, prepConfig{
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: 1,
+				limits:          limits,
+				configure: func(config *Config) {
+					config.MinimizeIngesterRequests = minimizeIngesterRequests
+				},
 			})
-		}
+
+			metrics := limiter.NewSeriesDeduplicatorMetrics(reg[0])
+			userCtx = limiter.ContextWithNewSeriesLabelsDeduplicator(userCtx, metrics)
+
+			// Push a number of series below the max series limit.
+			initialSeries := maxSeriesLimit
+			writeReq := makeWriteRequest(0, initialSeries, 0, false, true, "foo")
+			writeRes, err := ds[0].Push(userCtx, writeReq)
+			assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+			assert.Nil(t, err)
+
+			allSeriesMatchers := []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+			}
+
+			queryMetrics := stats.NewQueryMetrics(reg[0])
+
+			// Since the number of series is equal to the limit (but doesn't
+			// exceed it), we expect a query running on all series to succeed.
+			queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+			queryCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(queryCtx)
+			queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+			require.NoError(t, err)
+
+			assert.Len(t, queryRes.StreamingSeries, initialSeries)
+
+			firstRequestIngesterQueryCount := countCalls(ingesters, "QueryStream")
+
+			if minimizeIngesterRequests {
+				require.LessOrEqual(t, firstRequestIngesterQueryCount, 2, "should not call third ingester if request minimisation is enabled and first two ingesters return a successful response")
+			}
+
+			// Push more series to exceed the limit once we'll query back all series.
+			writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil, nil))
+
+			writeRes, err = ds[0].Push(userCtx, writeReq)
+			assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+			assert.Nil(t, err)
+
+			// Reset the query limiter in the context.
+			queryCtx = limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+
+			// Since the number of series is exceeding the limit, we expect
+			// a query running on all series to fail.
+			_, err = ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
+
+			if minimizeIngesterRequests {
+				secondRequestIngesterQueryCallCount := countCalls(ingesters, "QueryStream") - firstRequestIngesterQueryCount
+				require.LessOrEqual(t, secondRequestIngesterQueryCallCount, 2, "should not call third ingester if request minimisation is enabled and either of first two ingesters fail with limits error")
+			}
+		})
 	}
 }
 
@@ -336,19 +358,21 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	const seriesToAdd = 10
 
 	ctx := user.InjectOrgID(context.Background(), "user")
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	limits := prepareDefaultLimits()
 
 	// Prepare distributors.
 	// Use replication factor of 1 so that we always wait the response from all ingesters.
 	// This guarantees us to always read the same chunks and have a stable test.
 	ds, _, reg, _ := prepare(t, prepConfig{
-		numIngesters:             3,
-		happyIngesters:           3,
-		numDistributors:          1,
-		limits:                   limits,
-		replicationFactor:        1,
-		disableStreamingResponse: true,
+		numIngesters:      3,
+		happyIngesters:    3,
+		numDistributors:   1,
+		limits:            limits,
+		replicationFactor: 1,
 	})
+	metrics := limiter.NewSeriesDeduplicatorMetrics(reg[0])
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 
 	allSeriesMatchers := []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
@@ -363,8 +387,10 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	chunkSizeResponse, err := ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 	require.NoError(t, err)
 
+	_, responseChunkSize, err := countStreamingChunksAndBytes(chunkSizeResponse)
+	require.NoError(t, err)
+
 	// Use the resulting chunks size to calculate the limit as (series to add + our test series) * the response chunk size.
-	responseChunkSize := ingester_client.ChunksSize(chunkSizeResponse.Chunkseries)
 	maxBytesLimit := (seriesToAdd) * responseChunkSize
 
 	// Update the limiter with the calculated limits.
@@ -380,7 +406,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	// exceed it), we expect a query running on all series to succeed.
 	queryRes, err := ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 	require.NoError(t, err)
-	assert.Len(t, queryRes.Chunkseries, seriesToAdd)
+	assert.Len(t, queryRes.StreamingSeries, seriesToAdd)
 
 	// Push another series to exceed the chunk bytes limit once we'll query back all series.
 	writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series_1"}, makeSamples(0, 0), nil, nil))
@@ -390,10 +416,35 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	assert.Nil(t, err)
 
 	// Since the aggregated chunk size is exceeding the limit, we expect
-	// a query running on all series to fail.
-	_, err = ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	// a query running on all series to fail but only when the chunks are
+	// actually consumed from the stream.
+	finalResp, err := ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+	require.NoError(t, err)
+
+	_, _, err = countStreamingChunksAndBytes(finalResp)
 	require.Error(t, err)
 	assert.Equal(t, err, limiter.NewMaxChunkBytesHitLimitError(uint64(maxBytesLimit)))
+}
+
+func countStreamingChunksAndBytes(resp ingester_client.CombinedQueryStreamResponse) (int, int, error) {
+	count := 0
+	size := 0
+
+	for _, series := range resp.StreamingSeries {
+		for _, source := range series.Sources {
+			chunks, err := source.StreamReader.GetChunks(source.SeriesIndex)
+			if err != nil {
+				return 0, 0, err
+			}
+
+			count += len(chunks)
+			for _, chunk := range chunks {
+				size += chunk.Size()
+			}
+		}
+	}
+
+	return count, size, nil
 }
 
 func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamingChunksIsEnabled(t *testing.T) {
@@ -421,6 +472,9 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 
 			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 			ctx := user.InjectOrgID(context.Background(), "test")
+			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+			metrics := limiter.NewSeriesDeduplicatorMetrics(reg[0])
+			ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, metrics)
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 			// Push series.
@@ -430,7 +484,7 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 			}
 
 			// Query back multiple times and ensure each response is consistent.
-			matchers := labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "series_.*")
+			matchers := labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "series_.*")
 			queryMetrics := stats.NewQueryMetrics(reg[0])
 
 			for i := 1; i <= numQueries; i++ {
@@ -453,105 +507,6 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 		})
 	}
 
-}
-
-func TestMergeSamplesIntoFirstDuplicates(t *testing.T) {
-	a := []mimirpb.Sample{
-		{Value: 1.084537996, TimestampMs: 1583946732744},
-		{Value: 1.086111723, TimestampMs: 1583946750366},
-		{Value: 1.086111723, TimestampMs: 1583946768623},
-		{Value: 1.087776094, TimestampMs: 1583946795182},
-		{Value: 1.089301187, TimestampMs: 1583946810018},
-		{Value: 1.089301187, TimestampMs: 1583946825064},
-		{Value: 1.089301187, TimestampMs: 1583946835547},
-		{Value: 1.090722985, TimestampMs: 1583946846629},
-		{Value: 1.090722985, TimestampMs: 1583946857608},
-		{Value: 1.092038719, TimestampMs: 1583946882302},
-	}
-
-	b := []mimirpb.Sample{
-		{Value: 1.084537996, TimestampMs: 1583946732744},
-		{Value: 1.086111723, TimestampMs: 1583946750366},
-		{Value: 1.086111723, TimestampMs: 1583946768623},
-		{Value: 1.087776094, TimestampMs: 1583946795182},
-		{Value: 1.089301187, TimestampMs: 1583946810018},
-		{Value: 1.089301187, TimestampMs: 1583946825064},
-		{Value: 1.089301187, TimestampMs: 1583946835547},
-		{Value: 1.090722985, TimestampMs: 1583946846629},
-		{Value: 1.090722985, TimestampMs: 1583946857608},
-		{Value: 1.092038719, TimestampMs: 1583946882302},
-	}
-
-	a = mergeSamples(a, b)
-
-	// should be the same
-	require.Equal(t, a, b)
-}
-
-func TestMergeSamplesIntoFirst(t *testing.T) {
-	a := []mimirpb.Sample{
-		{Value: 1, TimestampMs: 10},
-		{Value: 2, TimestampMs: 20},
-		{Value: 3, TimestampMs: 30},
-		{Value: 4, TimestampMs: 40},
-		{Value: 5, TimestampMs: 45},
-		{Value: 5, TimestampMs: 50},
-	}
-
-	b := []mimirpb.Sample{
-		{Value: 1, TimestampMs: 5},
-		{Value: 2, TimestampMs: 15},
-		{Value: 3, TimestampMs: 25},
-		{Value: 3, TimestampMs: 30},
-		{Value: 4, TimestampMs: 35},
-		{Value: 5, TimestampMs: 45},
-		{Value: 6, TimestampMs: 55},
-	}
-
-	a = mergeSamples(a, b)
-
-	require.Equal(t, []mimirpb.Sample{
-		{Value: 1, TimestampMs: 5},
-		{Value: 1, TimestampMs: 10},
-		{Value: 2, TimestampMs: 15},
-		{Value: 2, TimestampMs: 20},
-		{Value: 3, TimestampMs: 25},
-		{Value: 3, TimestampMs: 30},
-		{Value: 4, TimestampMs: 35},
-		{Value: 4, TimestampMs: 40},
-		{Value: 5, TimestampMs: 45},
-		{Value: 5, TimestampMs: 50},
-		{Value: 6, TimestampMs: 55},
-	}, a)
-}
-
-func TestMergeSamplesIntoFirstNilA(t *testing.T) {
-	b := []mimirpb.Sample{
-		{Value: 1, TimestampMs: 5},
-		{Value: 2, TimestampMs: 15},
-		{Value: 3, TimestampMs: 25},
-		{Value: 4, TimestampMs: 35},
-		{Value: 5, TimestampMs: 45},
-		{Value: 6, TimestampMs: 55},
-	}
-
-	a := mergeSamples(nil, b)
-
-	require.Equal(t, b, a)
-}
-
-func TestMergeSamplesIntoFirstNilB(t *testing.T) {
-	a := []mimirpb.Sample{
-		{Value: 1, TimestampMs: 10},
-		{Value: 2, TimestampMs: 20},
-		{Value: 3, TimestampMs: 30},
-		{Value: 4, TimestampMs: 40},
-		{Value: 5, TimestampMs: 50},
-	}
-
-	b := mergeSamples(a, nil)
-
-	require.Equal(t, b, a)
 }
 
 func TestMergeExemplars(t *testing.T) {

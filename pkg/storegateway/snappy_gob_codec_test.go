@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 )
 
 func TestSnappyGobSeriesCacheEntryCodec(t *testing.T) {

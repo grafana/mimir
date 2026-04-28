@@ -7,6 +7,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -26,19 +27,20 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb" //lint:ignore faillint we can't avoid using this given that's where the Protobuf definition lives
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -71,7 +73,8 @@ type Scheduler struct {
 	inflightRequestsMu sync.Mutex
 	// schedulerInflightRequests tracks requests from the time they are received to be enqueued by the scheduler
 	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
-	schedulerInflightRequests map[queue.RequestKey]*queue.SchedulerRequest
+	schedulerInflightRequests     map[queue.RequestKey]*queue.SchedulerRequest
+	schedulerInflightRequestCount *atomic.Int64
 
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
@@ -131,9 +134,10 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		schedulerInflightRequests: map[queue.RequestKey]*queue.SchedulerRequest{},
-		connectedFrontends:        map[string]*connectedFrontend{},
-		subservicesWatcher:        services.NewFailureWatcher(),
+		schedulerInflightRequests:     map[queue.RequestKey]*queue.SchedulerRequest{},
+		schedulerInflightRequestCount: atomic.NewInt64(0),
+		connectedFrontends:            map[string]*connectedFrontend{},
+		subservicesWatcher:            services.NewFailureWatcher(),
 	}
 
 	s.queueLength = promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
@@ -248,7 +252,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 	// We stop accepting new queries in Stopping state. By returning quickly, we disconnect frontends, which in turns
 	// cancels all their queries.
-	for s.State() == services.Running {
+	for s.isRunning() {
 		msg, err := frontend.Recv()
 		if err != nil {
 			// No need to report this as error, it is expected when query-frontend performs SendClose() (as frontendSchedulerWorker does).
@@ -274,7 +278,8 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			case *schedulerpb.FrontendToScheduler_HttpRequest:
 				parentSpanContext, _ = httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, req.HttpRequest)
 			case *schedulerpb.FrontendToScheduler_ProtobufRequest:
-				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, propagation.MapCarrier(req.ProtobufRequest.TraceHeaders))
+				carrier := schedulerpb.MetadataMapTracingCarrier(schedulerpb.MetadataSliceToMap(req.ProtobufRequest.Metadata))
+				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, carrier)
 			default:
 				level.Debug(s.log).Log("msg", "received a message that contained neither a HTTP nor a Protobuf payload, tracing information may be incomplete")
 			}
@@ -288,6 +293,9 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			case errors.Is(err, queue.ErrTooManyRequests):
 				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+			case errors.Is(err, queue.ErrStopped):
+				enqueueSpan.RecordError(err)
+				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 			default:
 				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
@@ -410,6 +418,7 @@ func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
 	defer s.inflightRequestsMu.Unlock()
 
 	s.schedulerInflightRequests[req.Key()] = req
+	s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
 }
 
 // This method doesn't do removal from the queue.
@@ -423,6 +432,7 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reas
 	}
 
 	delete(s.schedulerInflightRequests, key)
+	s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
 	return req
 }
 
@@ -466,6 +476,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			// (see note in transformRequestQueueError).
 			// ErrQuerierWorkerDisconnected is caused by connection/goroutine crash;
 			// we expect this loop is no longer alive to receive the error anyway.
+			level.Info(s.log).Log("msg", "AwaitRequestForQuerier returned an error", "err", err)
 			return s.transformRequestQueueError(err)
 		}
 
@@ -502,6 +513,8 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			return err
 		}
 	}
+
+	level.Info(s.log).Log("msg", "query loop closed because scheduler is not running", "querier_id", querierID)
 
 	return schedulerpb.ErrSchedulerIsNotRunning
 }
@@ -604,7 +617,9 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 		[]grpc.UnaryClientInterceptor{
 			middleware.ClientUserHeaderInterceptor,
 		},
-		nil,
+		[]grpc.StreamClientInterceptor{
+			middleware.StreamClientUserHeaderInterceptor,
+		},
 		util.NewInvalidClusterValidationReporter(s.cfg.GRPCClientConfig.ClusterValidation.Label, s.invalidClusterValidation, s.log),
 	)
 	if err != nil {
@@ -626,17 +641,46 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 	client := frontendv2pb.NewFrontendForQuerierClient(conn)
 
 	userCtx := user.InjectOrgID(ctx, req.UserID)
-	_, err = client.QueryResult(userCtx, &frontendv2pb.QueryResultRequest{
-		QueryID: req.QueryID,
-		HttpResponse: &httpgrpc.HTTPResponse{
-			Code: http.StatusInternalServerError,
-			Body: []byte(requestErr.Error()),
-		},
-	})
 
-	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
-		return
+	if req.HttpRequest != nil {
+		_, err = client.QueryResult(userCtx, &frontendv2pb.QueryResultRequest{
+			QueryID: req.QueryID,
+			HttpResponse: &httpgrpc.HTTPResponse{
+				Code: http.StatusInternalServerError,
+				Body: []byte(requestErr.Error()),
+			},
+		})
+
+		if err != nil {
+			level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			return
+		}
+	} else { // Protobuf request, so send a streaming response.
+		stream, err := client.QueryResultStream(userCtx)
+		if err != nil {
+			level.Warn(s.log).Log("msg", "failed to create stream to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			return
+		}
+
+		msg := frontendv2pb.QueryResultStreamRequest{
+			QueryID: req.QueryID,
+			Data: &frontendv2pb.QueryResultStreamRequest_Error{
+				Error: &querierpb.Error{
+					Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+					Message: requestErr.Error(),
+				},
+			},
+		}
+
+		if err := stream.Send(&msg); err != nil {
+			level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			return
+		}
+
+		if _, err = stream.CloseAndRecv(); err != nil {
+			level.Warn(s.log).Log("msg", "failed to close stream to frontend after forwarding error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			return
+		}
 	}
 }
 
@@ -654,7 +698,7 @@ func (s *Scheduler) starting(ctx context.Context) error {
 	s.subservicesWatcher.WatchManager(s.subservices)
 
 	if err := services.StartManagerAndAwaitHealthy(ctx, s.subservices); err != nil {
-		return errors.Wrap(err, "unable to start scheduler subservices")
+		return fmt.Errorf("unable to start scheduler subservices: %w", err)
 	}
 
 	return nil
@@ -671,23 +715,22 @@ func (s *Scheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-inflightRequestsTicker.C:
-			s.inflightRequestsMu.Lock()
-			inflight := len(s.schedulerInflightRequests)
-			s.inflightRequestsMu.Unlock()
-
-			s.inflightRequests.Observe(float64(inflight))
+			s.inflightRequests.Observe(float64(s.schedulerInflightRequestCount.Load()))
 		case <-ctx.Done():
 			return nil
 		case err := <-s.subservicesWatcher.Chan():
-			return errors.Wrap(err, "scheduler subservice failed")
+			return fmt.Errorf("scheduler subservice failed: %w", err)
 		}
 	}
 }
 
 // Close the Scheduler.
 func (s *Scheduler) stopping(_ error) error {
-	// This will also stop the requests queue, which stop accepting new requests and errors out any pending requests.
-	return services.StopManagerAndAwaitStopped(context.Background(), s.subservices)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute) // 10 minute hard upper timeout to avoid blocking forever in worst case scenario
+	defer cancel()
+
+	// This will also stop the requests queue, which stop accepting new requests and wait for any pending requests to be dispatched to queriers.
+	return services.StopManagerAndAwaitStopped(timeout, s.subservices)
 }
 
 func (s *Scheduler) cleanupMetricsForInactiveUser(user string) {

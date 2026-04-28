@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -46,6 +45,8 @@ type blockBaseQuerier struct {
 
 	mint, maxt int64
 }
+
+var _ storage.Searcher = &blockBaseQuerier{}
 
 func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, error) {
 	indexr, err := b.Index()
@@ -82,9 +83,60 @@ func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, hints *
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.LabelNames(ctx, matchers...)
-	return res, nil, err
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if hints != nil && hints.Limit > 0 && len(res) > hints.Limit {
+		res = res[:hints.Limit]
+	}
+
+	return res, nil, nil
+}
+
+// SearchLabelNames implements storage.Searcher.
+func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	names, err := q.index.LabelNames(ctx, matchers...)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+
+	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(names, hints), nil)
+}
+
+// SearchLabelValues implements storage.Searcher.
+func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	if hints == nil {
+		hints = &storage.SearchHints{}
+	}
+
+	// Limit pushdown is only correct when natural (ascending) index order
+	// is preserved all the way to the output and no filtering discards
+	// values ahead of the limit.
+	labelHints := &storage.LabelHints{}
+	if hints.OrderBy == storage.OrderByValueAsc && hints.Filter == nil {
+		labelHints.Limit = hints.Limit
+	}
+
+	var (
+		values []string
+		err    error
+	)
+	switch hints.OrderBy {
+	case storage.OrderByScoreDesc:
+		// Score-based sorting happens in ApplySearchHints; avoid the
+		// index-level sort.
+		values, err = q.index.LabelValues(ctx, name, labelHints, matchers...)
+	default:
+		values, err = q.index.SortedLabelValues(ctx, name, labelHints, matchers...)
+	}
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+
+	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, hints), nil)
 }
 
 func (q *blockBaseQuerier) Close() error {
@@ -92,13 +144,13 @@ func (q *blockBaseQuerier) Close() error {
 		return errors.New("block querier already closed")
 	}
 
-	errs := tsdb_errors.NewMulti(
+	errs := []error{
 		q.index.Close(),
 		q.chunks.Close(),
 		q.tombstones.Close(),
-	)
+	}
 	q.closed = true
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 type blockQuerier struct {
@@ -118,11 +170,24 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
 }
 
+// chunkCacheToggler is an optional interface implemented by chunk readers that
+// support an in-memory head-chunk cache. The cache is only beneficial for range
+// queries (Step > 0) where every chunk of a series is accessed.
+type chunkCacheToggler interface {
+	EnableChunkCache()
+}
+
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
 	ix IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
 ) storage.SeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
+
+	if hints != nil && hints.Step > 0 {
+		if toggler, ok := chunks.(chunkCacheToggler); ok {
+			toggler.EnableChunkCache()
+		}
+	}
 
 	if hints != nil {
 		mint = hints.Start
@@ -131,12 +196,16 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 	}
 
 	// Use the planner to decide which matchers to apply during index lookup vs scanning
-	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
-	if err != nil {
-		return storage.ErrSeriesSet(fmt.Errorf("creating index lookup plan: %w", err))
+	var (
+		indexMatchers = ms
+		scanMatchers  []*labels.Matcher
+	)
+	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), hints)
+	// We ignore errors from the planner because we prefer returning a result even if it's not optimally executed.
+	if err == nil {
+		indexMatchers = plan.IndexMatchers()
+		scanMatchers = plan.ScanMatchers()
 	}
-	indexMatchers := plan.IndexMatchers()
-	scanMatchers := plan.ScanMatchers()
 
 	p, err := ix.PostingsForMatchers(ctx, sharded, indexMatchers...)
 	if err != nil {
@@ -181,6 +250,12 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
 
+	if hints != nil && hints.Step > 0 {
+		if toggler, ok := chunks.(chunkCacheToggler); ok {
+			toggler.EnableChunkCache()
+		}
+	}
+
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
@@ -188,12 +263,16 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	}
 
 	// Use the planner to decide which matchers to apply during index lookup vs scanning
-	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
-	if err != nil {
-		return storage.ErrChunkSeriesSet(fmt.Errorf("creating index lookup plan: %w", err))
+	var (
+		indexMatchers = ms
+		scanMatchers  []*labels.Matcher
+	)
+	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), hints)
+	// We ignore errors from the planner because we prefer returning a result even if it's not optimally executed.
+	if err == nil {
+		indexMatchers = plan.IndexMatchers()
+		scanMatchers = plan.ScanMatchers()
 	}
-	indexMatchers := plan.IndexMatchers()
-	scanMatchers := plan.ScanMatchers()
 
 	p, err := ix.PostingsForMatchers(ctx, sharded, indexMatchers...)
 	if err != nil {
@@ -848,16 +927,37 @@ type chunkSeriesEntry struct {
 }
 
 func (s *chunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator {
-	pi, ok := it.(*populateWithDelChunkSeriesIterator)
-	if !ok {
-		pi = &populateWithDelChunkSeriesIterator{}
-	}
-	pi.reset(s.blockID, s.chunks, s.chks, s.intervals)
-	return pi
+	return s.IteratorFactory().Iterator(it)
 }
 
 func (s *chunkSeriesEntry) ChunkCount() (int, error) {
 	return len(s.chks), nil
+}
+
+func (s *chunkSeriesEntry) IteratorFactory() storage.ChunkIterable {
+	return &blockChunkIterable{
+		chunks:    s.chunks,
+		blockID:   s.blockID,
+		chks:      s.chks,
+		intervals: s.intervals,
+	}
+}
+
+// blockChunkIterable implements ChunkIterable for block storage.
+type blockChunkIterable struct {
+	chunks    ChunkReader
+	blockID   ulid.ULID
+	chks      []chunks.Meta
+	intervals tombstones.Intervals
+}
+
+func (b *blockChunkIterable) Iterator(it chunks.Iterator) chunks.Iterator {
+	pi, ok := it.(*populateWithDelChunkSeriesIterator)
+	if !ok {
+		pi = &populateWithDelChunkSeriesIterator{}
+	}
+	pi.reset(b.blockID, b.chunks, b.chks, b.intervals)
+	return pi
 }
 
 // populateWithDelSeriesIterator allows to iterate over samples for the single series.
@@ -920,6 +1020,11 @@ func (p *populateWithDelSeriesIterator) AtFloatHistogram(fh *histogram.FloatHist
 
 func (p *populateWithDelSeriesIterator) AtT() int64 {
 	return p.curr.AtT()
+}
+
+// AtST TODO(krajorama): test AtST() when chunks support it.
+func (p *populateWithDelSeriesIterator) AtST() int64 {
+	return p.curr.AtST()
 }
 
 func (p *populateWithDelSeriesIterator) Err() error {
@@ -1011,60 +1116,50 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 	var (
 		newChunk chunkenc.Chunk
 		app      chunkenc.Appender
-		t        int64
+		st, t    int64
 		err      error
 	)
-	switch valueType {
-	case chunkenc.ValHistogram:
-		newChunk = chunkenc.NewHistogramChunk()
-		if app, err = newChunk.Appender(); err != nil {
+	newChunk, err = chunkenc.NewEmptyChunk(p.currMeta.Chunk.Encoding())
+	if err != nil {
+		p.err = fmt.Errorf("create new chunk while re-encoding: %w", err)
+		return false
+	}
+	app, err = newChunk.Appender()
+	if err != nil {
+		p.err = fmt.Errorf("create appender while re-encoding: %w", err)
+		return false
+	}
+
+loop:
+	for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+		if vt != valueType {
+			err = fmt.Errorf("found value type %v in chunk with %v", vt, valueType)
 			break
 		}
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-			if vt != chunkenc.ValHistogram {
-				err = fmt.Errorf("found value type %v in histogram chunk", vt)
-				break
-			}
-			var h *histogram.Histogram
-			t, h = p.currDelIter.AtHistogram(nil)
-			_, _, app, err = app.AppendHistogram(nil, t, h, true)
-			if err != nil {
-				break
-			}
-		}
-	case chunkenc.ValFloat:
-		newChunk = chunkenc.NewXORChunk()
-		if app, err = newChunk.Appender(); err != nil {
-			break
-		}
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-			if vt != chunkenc.ValFloat {
-				err = fmt.Errorf("found value type %v in float chunk", vt)
-				break
-			}
+		st = p.currDelIter.AtST()
+		switch vt {
+		case chunkenc.ValFloat:
 			var v float64
 			t, v = p.currDelIter.At()
-			app.Append(t, v)
-		}
-	case chunkenc.ValFloatHistogram:
-		newChunk = chunkenc.NewFloatHistogramChunk()
-		if app, err = newChunk.Appender(); err != nil {
-			break
-		}
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-			if vt != chunkenc.ValFloatHistogram {
-				err = fmt.Errorf("found value type %v in histogram chunk", vt)
-				break
+			app.Append(st, t, v)
+		case chunkenc.ValHistogram:
+			var h *histogram.Histogram
+			t, h = p.currDelIter.AtHistogram(nil)
+			_, _, app, err = app.AppendHistogram(nil, st, t, h, true)
+			if err != nil {
+				break loop
 			}
+		case chunkenc.ValFloatHistogram:
 			var h *histogram.FloatHistogram
 			t, h = p.currDelIter.AtFloatHistogram(nil)
-			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
+			_, _, app, err = app.AppendFloatHistogram(nil, st, t, h, true)
 			if err != nil {
-				break
+				break loop
 			}
+		default:
+			err = fmt.Errorf("populateCurrForSingleChunk: value type %v unsupported", valueType)
+			break loop
 		}
-	default:
-		err = fmt.Errorf("populateCurrForSingleChunk: value type %v unsupported", valueType)
 	}
 
 	if err != nil {
@@ -1099,7 +1194,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 
 	var (
 		// t is the timestamp for the current sample.
-		t     int64
+		st, t int64
 		cmint int64
 		cmaxt int64
 
@@ -1107,30 +1202,37 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 
 		app chunkenc.Appender
 
-		newChunk chunkenc.Chunk
-		recoded  bool
-
 		err error
 	)
 
 	prevValueType := chunkenc.ValNone
+	hasTS := false
 
 	for currentValueType := firstValueType; currentValueType != chunkenc.ValNone; currentValueType = p.currDelIter.Next() {
+		var (
+			newChunk chunkenc.Chunk
+			recoded  bool
+		)
 		// Check if the encoding has changed (i.e. we need to create a new
 		// chunk as chunks can't have multiple encoding types).
 		// For the first sample, the following condition will always be true as
 		// ValNone != ValFloat | ValHistogram | ValFloatHistogram.
-		if currentValueType != prevValueType {
+		// Also if we need to store start time (ST), but the current chunk is
+		// not capable.
+		st = p.currDelIter.AtST()
+		needTS := st != 0
+		if currentValueType != prevValueType || !hasTS && needTS {
 			if prevValueType != chunkenc.ValNone {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
 			cmint = p.currDelIter.AtT()
-			if currentChunk, err = currentValueType.NewChunk(); err != nil {
+			if currentChunk, err = currentValueType.NewChunk(needTS); err != nil {
 				break
 			}
 			if app, err = currentChunk.Appender(); err != nil {
 				break
 			}
+			hasTS = needTS
 		}
 
 		switch currentValueType {
@@ -1138,7 +1240,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 			{
 				var v float64
 				t, v = p.currDelIter.At()
-				app.Append(t, v)
+				app.Append(st, t, v)
 			}
 		case chunkenc.ValHistogram:
 			{
@@ -1146,7 +1248,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 				t, v = p.currDelIter.AtHistogram(nil)
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
-				newChunk, recoded, app, err = app.AppendHistogram(nil, t, v, false)
+				newChunk, recoded, app, err = app.AppendHistogram(nil, st, t, v, false)
 			}
 		case chunkenc.ValFloatHistogram:
 			{
@@ -1154,7 +1256,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 				t, v = p.currDelIter.AtFloatHistogram(nil)
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
-				newChunk, recoded, app, err = app.AppendFloatHistogram(nil, t, v, false)
+				newChunk, recoded, app, err = app.AppendFloatHistogram(nil, st, t, v, false)
 			}
 		}
 
@@ -1403,6 +1505,11 @@ func (it *DeletedIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64
 
 func (it *DeletedIterator) AtT() int64 {
 	return it.Iter.AtT()
+}
+
+// AtST TODO(krajorama): test AtST() when chunks support it.
+func (it *DeletedIterator) AtST() int64 {
+	return it.Iter.AtST()
 }
 
 func (it *DeletedIterator) Seek(t int64) chunkenc.ValueType {

@@ -1,0 +1,85 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-revisionhistorylimit-values-minio
+  labels:
+    app: minio
+    chart: minio-5.4.0
+    release: test-revisionhistorylimit-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-revisionhistorylimit-values
+  template:
+    metadata:
+      name: test-revisionhistorylimit-values-minio
+      labels:
+        app: minio
+        release: test-revisionhistorylimit-values
+      annotations:
+        checksum/secrets: 083ac1a3c8ea035c9074ece50e6c0686ba161b85dc3ca2466947dbd5bf8f9947
+        checksum/config: 26fe72651b4f6c23a64b7e3fb1277c7e0d0ddd391876d18486409fa4e16dd8be
+    spec:
+      securityContext:
+        
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-revisionhistorylimit-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-revisionhistorylimit-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-revisionhistorylimit-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-revisionhistorylimit-values-minio

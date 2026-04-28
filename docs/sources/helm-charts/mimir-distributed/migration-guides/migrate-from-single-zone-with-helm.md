@@ -13,8 +13,6 @@ This document explains how to migrate stateful components from single zone to [z
 
 The migration path of Alertmanager and store-gateway is straight forward, however migrating ingesters is more complicated.
 
-This document is applicable to both Grafana Mimir and Grafana Enterprise Metrics.
-
 ## Prerequisite
 
 Depending on what version of the `mimir-distributed` Helm chart is installed currently, make sure to meet the following requirements.

@@ -33,7 +33,6 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -58,6 +57,7 @@ const (
 	resultsCacheMissBytes        = "results_cache_miss_bytes"
 	shardedQueries               = "sharded_queries"
 	splitQueries                 = "split_queries"
+	remoteExecutionRequestCount  = "remote_execution_request_count"
 )
 
 var (
@@ -90,17 +90,15 @@ type Handler struct {
 	headersToLog []string
 	log          log.Logger
 	roundTripper http.RoundTripper
-	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds                       *prometheus.CounterVec
-	querySeries                        *prometheus.CounterVec
-	queryChunkBytes                    *prometheus.CounterVec
-	queryChunks                        *prometheus.CounterVec
-	queryIndexBytes                    *prometheus.CounterVec
-	querySamplesProcessed              *prometheus.CounterVec
-	querySamplesProcessedCacheAdjusted *prometheus.CounterVec
-	activeUsers                        *util.ActiveUsersCleanupService
+	querySeconds          *prometheus.CounterVec
+	querySeries           *prometheus.CounterVec
+	queryChunkBytes       *prometheus.CounterVec
+	queryChunks           *prometheus.CounterVec
+	queryIndexBytes       *prometheus.CounterVec
+	querySamplesProcessed *prometheus.CounterVec
+	activeUsers           *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -109,13 +107,12 @@ type Handler struct {
 }
 
 // NewHandler creates a new frontend handler.
-func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer, at *activitytracker.ActivityTracker) *Handler {
+func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer) *Handler {
 	h := &Handler{
 		cfg:          cfg,
 		headersToLog: filterHeadersToLog(cfg.LogQueryRequestHeaders),
 		log:          log,
 		roundTripper: roundTripper,
-		at:           at,
 	}
 	h.cond = sync.NewCond(&h.mtx)
 
@@ -149,11 +146,6 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Name: "cortex_query_samples_processed_total",
 			Help: "Number of samples processed to execute a query.",
 		}, []string{"user"})
-		h.querySamplesProcessedCacheAdjusted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_query_samples_processed_cache_adjusted_total",
-			Help: "Number of samples processed to execute a query taking into account the original number of samples processed for parts of the query results looked up from the cache. " +
-				"Note, that it is reported only in conjunction with `-query-frontend.cache-samples-processed-stats` enabled. Otherwise, it is 0.",
-		}, []string{"user"})
 
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
@@ -163,7 +155,6 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			h.queryChunks.DeleteLabelValues(user)
 			h.queryIndexBytes.DeleteLabelValues(user)
 			h.querySamplesProcessed.DeleteLabelValues(user)
-			h.querySamplesProcessedCacheAdjusted.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -213,12 +204,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
-	// Ensure to close the request body reader.
-	defer func() { _ = r.Body.Close() }()
-
-	// Limit the read body size.
-	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
-
 	var params url.Values
 	var err error
 
@@ -232,9 +217,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
 	}
-
-	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, r.Header.Get("User-Agent"), params) })
-	defer f.at.Delete(activityIndex)
 
 	if isActiveSeriesEndpoint(r) && f.cfg.ActiveSeriesWriteTimeout > 0 {
 		deadline := time.Now().Add(f.cfg.ActiveSeriesWriteTimeout)
@@ -280,8 +262,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk {
-		cl, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
-		parts = append(parts, getResponseQueryStats(queryResponseTime, cl, queryDetails)...)
+		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, queryDetails)...)
 	}
 
 	if len(parts) > 0 {
@@ -331,10 +312,8 @@ func (f *Handler) reportQueryStats(
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 	var stats *querier_stats.SafeStats
-	var samplesProcessedCacheAdjusted uint64
 	if details != nil {
 		stats = details.QuerierStats
-		samplesProcessedCacheAdjusted = details.SamplesProcessedCacheAdjusted
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
@@ -352,7 +331,6 @@ func (f *Handler) reportQueryStats(
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
-		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 	}
 
 	// Log stats.
@@ -374,11 +352,12 @@ func (f *Handler) reportQueryStats(
 		shardedQueries, stats.LoadShardedQueries(),
 		splitQueries, stats.LoadSplitQueries(),
 		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
+		"split_range_vectors", stats.LoadSplitRangeVectors(),
 		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
+		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
 		"samples_processed", samplesProcessed,
-		"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
@@ -396,12 +375,17 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage,
 			resultsCacheHitBytes, details.ResultsCacheHitBytes,
 			resultsCacheMissBytes, details.ResultsCacheMissBytes,
+			"response_series_count", details.ResponseSeriesCount,
+			"response_samples_count", details.ResponseSamplesCount,
 		)
 	}
 
 	// Log the read consistency only when explicitly defined.
 	if consistency, ok := querierapi.ReadConsistencyLevelFromContext(r.Context()); ok {
 		logMessage = append(logMessage, "read_consistency", consistency)
+	}
+	if delay, ok := querierapi.ReadConsistencyMaxDelayFromContext(r.Context()); ok {
+		logMessage = append(logMessage, "read_consistency_max_delay", delay)
 	}
 
 	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
@@ -462,6 +446,10 @@ func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName stri
 	case "step":
 		if details.Step != 0 {
 			return strconv.FormatInt(details.Step.Milliseconds(), 10)
+		}
+	case "lookback_delta":
+		if details.LookbackDelta != 0 {
+			return details.LookbackDelta.String()
 		}
 	}
 	return ""
@@ -540,13 +528,14 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 }
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int, details *querymiddleware.QueryDetails) []string {
+// contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querymiddleware.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
 	stats := details.QuerierStats
-	return []string{
-		statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()),
+
+	statsResponse := []string{
 		statsValue(estimatedSeriesCount, stats.LoadEstimatedSeriesCount()),
 		statsValue(fetchedChunkBytes, stats.LoadFetchedChunkBytes()),
 		statsValue(fetchedChunksCount, stats.LoadFetchedChunks()),
@@ -560,7 +549,17 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		statsValue(resultsCacheMissBytes, details.ResultsCacheMissBytes),
 		statsValue(shardedQueries, stats.LoadShardedQueries()),
 		statsValue(splitQueries, stats.LoadSplitQueries()),
+		statsValue(remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount()),
 	}
+
+	if contentLengthBytes >= 0 {
+		// encode_time_seconds is always 0 for streaming responses: encoding runs concurrently with body
+		// streaming, so the encode time is not available until after the headers have been sent.
+		// We only insert this if we are in a non-streaming response.
+		statsResponse = append(statsResponse, statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()))
+	}
+
+	return statsResponse
 }
 
 func statsValue(name string, val interface{}) string {
@@ -575,21 +574,6 @@ func statsValue(name string, val interface{}) string {
 	default:
 		return fmt.Sprintf("%s;val=%v", name, val)
 	}
-}
-
-func httpRequestActivity(request *http.Request, userAgent string, requestParams url.Values) string {
-	tenantID := "(unknown)"
-	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
-		tenantID = tenant.JoinTenantIDs(tenantIDs)
-	}
-
-	params := requestParams.Encode()
-	if params == "" {
-		params = "(no params)"
-	}
-
-	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
-	return fmt.Sprintf("user:%s UA:%s req:%s %s %s", tenantID, userAgent, request.Method, request.URL.Path, params)
 }
 
 func isActiveSeriesEndpoint(r *http.Request) bool {

@@ -90,6 +90,48 @@ func TestVectorSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"}, skip histogram buckets`,
 		},
+		"one matcher, skip histogram buckets and smoothed enabled": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers:             singleMatcher,
+					SkipHistogramBuckets: true,
+					Smoothed:             true,
+				},
+			},
+			expected: `{__name__="foo"} smoothed, skip histogram buckets`,
+		},
+		"one matcher, smoothed enabled": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: singleMatcher,
+					Smoothed: true,
+				},
+			},
+			expected: `{__name__="foo"} smoothed`,
+		},
+		"one subset": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: singleMatcher,
+					Subsets: []SubsetMatchers{
+						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
+					},
+				},
+			},
+			expected: `{__name__="foo"}, subsets: {env="prod"}`,
+		},
+		"two subsets": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: singleMatcher,
+					Subsets: []SubsetMatchers{
+						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
+						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}}},
+					},
+				},
+			},
+			expected: `{__name__="foo"}, subsets: {env="prod"}, {env="test"}`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -314,19 +356,243 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					ExpressionPosition:   PositionRange{Start: 1, End: 2},
 				},
 			},
+			expectEquivalent: true,
+		},
+		"one with smoothed and one without": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			expectEquivalent: false,
+		},
+		"both smoothed": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			expectEquivalent: true,
+		},
+		"both not smoothed": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			expectEquivalent: true,
+		},
+		"same subsets": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Subsets: []SubsetMatchers{
+						{
+							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+						},
+					},
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Subsets: []SubsetMatchers{
+						{
+							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+						},
+					},
+				},
+			},
+			expectEquivalent: true,
+		},
+		"different subsets": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Subsets: []SubsetMatchers{
+						{
+							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+						},
+					},
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Subsets: []SubsetMatchers{
+						{
+							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+						},
+					},
+				},
+			},
 			expectEquivalent: false,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentTo(testCase.b))
-			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentTo(testCase.a))
+			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.b), "a.EquivalentToIgnoringHintsAndChildren(b) did not return expected value")
+			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.a), "b.EquivalentToIgnoringHintsAndChildren(a) did not return expected value")
 
-			require.True(t, testCase.a.EquivalentTo(testCase.a))
-			require.True(t, testCase.b.EquivalentTo(testCase.b))
+			require.True(t, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.a), "a should be equivalent to itself")
+			require.True(t, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.b), "b should be equivalent to itself")
 		})
 	}
+}
+
+func TestVectorSelector_MergeHints_SkipHistogramBuckets(t *testing.T) {
+	runTest := func(t *testing.T, skipFirst, skipSecond bool, expectSkip bool) {
+		first := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				SkipHistogramBuckets: skipFirst,
+			},
+		}
+		second := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				SkipHistogramBuckets: skipSecond,
+			},
+		}
+
+		err := first.MergeHints(second)
+		require.NoError(t, err)
+		require.Equal(t, expectSkip, first.SkipHistogramBuckets)
+	}
+
+	t.Run("neither has skip histogram buckets enabled", func(t *testing.T) {
+		runTest(t, false, false, false)
+	})
+
+	t.Run("first has skip histogram buckets enabled, other does not", func(t *testing.T) {
+		runTest(t, true, false, false)
+	})
+
+	t.Run("first has skip histogram buckets disabled, other does not", func(t *testing.T) {
+		runTest(t, false, true, false)
+	})
+
+	t.Run("both have skip histogram buckets enabled", func(t *testing.T) {
+		runTest(t, true, true, true)
+	})
+}
+
+func TestVectorSelector_MergeHints_ProjectionLabels(t *testing.T) {
+	// NOTE: Test cases for this test should be kept in sync with TestMatrixSelector_MergeHints_ProjectionLabels
+
+	runTest := func(t *testing.T, includeFirst bool, lblsFirst []string, includeSecond bool, lblsSecond []string, expectInclude bool, expectLbls []string) {
+		first := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				ProjectionInclude: includeFirst,
+				ProjectionLabels:  lblsFirst,
+			},
+		}
+		second := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				ProjectionInclude: includeSecond,
+				ProjectionLabels:  lblsSecond,
+			},
+		}
+
+		err := first.MergeHints(second)
+		require.NoError(t, err)
+		require.Equal(t, expectInclude, first.ProjectionInclude)
+		require.Equal(t, expectLbls, first.ProjectionLabels)
+	}
+
+	t.Run("differing include/exclude", func(t *testing.T) {
+		runTest(
+			t,
+			true,
+			[]string{"job"},
+			false,
+			[]string{"pod"},
+			false,
+			[]string{},
+		)
+	})
+
+	t.Run("both exclude empty labels", func(t *testing.T) {
+		runTest(
+			t,
+			false,
+			[]string{},
+			false,
+			[]string{},
+			false,
+			[]string{},
+		)
+	})
+
+	t.Run("both include some labels", func(t *testing.T) {
+		runTest(
+			t,
+			true,
+			[]string{"job"},
+			true,
+			[]string{"pod"},
+			true,
+			[]string{"job", "pod"},
+		)
+	})
+
+	t.Run("one excludes some labels one excludes no labels", func(t *testing.T) {
+		runTest(
+			t,
+			false,
+			[]string{"job"},
+			false,
+			[]string{},
+			false,
+			[]string{},
+		)
+	})
 }
 
 func timestampOf(ts int64) *time.Time {
@@ -381,7 +647,9 @@ func TestVectorSelector_QueriedTimeRange(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, testCase.selector.QueriedTimeRange(queryTimeRange, lookbackDelta))
+			timeRange, err := testCase.selector.QueriedTimeRange(queryTimeRange, lookbackDelta)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, timeRange)
 		})
 	}
 }

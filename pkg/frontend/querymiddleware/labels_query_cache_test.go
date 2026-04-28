@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -23,13 +22,13 @@ func TestLabelsQueryCache_RoundTrip(t *testing.T) {
 			reqPath:        "/prometheus/api/v1/labels",
 			reqData:        url.Values{"start": []string{"2023-07-05T01:00:00Z"}, "end": []string{"2023-07-05T08:00:00Z"}, "match[]": []string{`{job="test_1"}`, `{job!="test_2"}`}},
 			cacheKey:       "user-1:1688515200000\x001688544000000\x00{job!=\"test_2\"},{job=\"test_1\"}",
-			hashedCacheKey: labelNamesQueryCachePrefix + cacheHashKey("user-1:1688515200000\x001688544000000\x00{job!=\"test_2\"},{job=\"test_1\"}"),
+			hashedCacheKey: labelNamesQueryCachePrefix + hashCacheKey("user-1:1688515200000\x001688544000000\x00{job!=\"test_2\"},{job=\"test_1\"}"),
 		},
 		"label values request": {
 			reqPath:        "/prometheus/api/v1/label/test/values",
 			reqData:        url.Values{"start": []string{"2023-07-05T01:00:00Z"}, "end": []string{"2023-07-05T08:00:00Z"}, "match[]": []string{`{job="test_1"}`, `{job!="test_2"}`}},
 			cacheKey:       "user-1:1688515200000\x001688544000000\x00test\x00{job!=\"test_2\"},{job=\"test_1\"}",
-			hashedCacheKey: labelValuesQueryCachePrefix + cacheHashKey("user-1:1688515200000\x001688544000000\x00test\x00{job!=\"test_2\"},{job=\"test_1\"}"),
+			hashedCacheKey: labelValuesQueryCachePrefix + hashCacheKey("user-1:1688515200000\x001688544000000\x00test\x00{job!=\"test_2\"},{job=\"test_1\"}"),
 		},
 	})
 }
@@ -141,8 +140,7 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 		},
 	}
 
-	reg := prometheus.NewPedanticRegistry()
-	codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
+	codec := newTestCodec()
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {

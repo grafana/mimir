@@ -46,8 +46,8 @@ func NewSortByLabel(
 	}
 }
 
-func (s *SortByLabel) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := s.inner.SeriesMetadata(ctx)
+func (s *SortByLabel) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := s.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -149,13 +149,25 @@ func (s *SortByLabel) Prepare(ctx context.Context, params *types.PrepareParams) 
 	return s.inner.Prepare(ctx, params)
 }
 
-func (s *SortByLabel) Close() {
+func (s *SortByLabel) AfterPrepare(ctx context.Context) error {
+	return s.inner.AfterPrepare(ctx)
+}
+
+func (s *SortByLabel) Finalize(ctx context.Context) error {
 	if s.buffer != nil {
-		// Closing the buffer also closes its source operator which is our `inner`.
-		s.buffer.Close()
+		s.buffer.Finalize()
+		s.buffer = nil
 	}
-	// If the buffer hasn't been initialized yet, we still need to close `inner`
-	// ourselves. It's safe to call Close on operators multiple times.
-	s.inner.Close()
+
 	types.IntSlicePool.Put(&s.originalIndexes, s.memoryConsumptionTracker)
+
+	return s.inner.Finalize(ctx)
+}
+
+func (s *SortByLabel) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return s.inner.Stats(ctx)
+}
+
+func (s *SortByLabel) Close() {
+	s.inner.Close()
 }

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -23,8 +24,8 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/api/googleapi"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -89,7 +90,7 @@ type RuleGroup struct {
 type rule interface{}
 
 type alertingRule struct {
-	// State can be "pending", "firing", "inactive".
+	// State can be "unknown", "pending", "firing", "inactive".
 	State          string        `json:"state"`
 	Name           string        `json:"name"`
 	Query          string        `json:"query"`
@@ -448,6 +449,10 @@ func parseNamespace(params map[string]string) (string, error) {
 		return "", err
 	}
 
+	if !filepath.IsLocal(namespace) {
+		return "", errors.New("invalid namespace: path traversal not allowed")
+	}
+
 	return namespace, nil
 }
 
@@ -462,6 +467,10 @@ func parseGroupName(params map[string]string) (string, error) {
 	groupName, err := url.PathUnescape(groupName)
 	if err != nil {
 		return "", err
+	}
+
+	if !filepath.IsLocal(groupName) {
+		return "", errors.New("invalid groupname: path traversal not allowed")
 	}
 
 	return groupName, nil
@@ -694,9 +703,15 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	// Only list rule groups when enforcing a max number of groups for this tenant and namespace.
 	if a.ruler.IsMaxRuleGroupsLimited(userID, namespace) {
-		// Disable any caching when getting list of all rule groups since listing results
+		// Disable any caching when getting list of rule groups since listing results
 		// are cached and not invalidated and we need the most up-to-date number.
-		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", rulestore.WithCacheDisabled())
+		// If a namespace-specific limit is configured, count only rule groups in that namespace.
+		// Otherwise, use the global limit and count all rule groups across all namespaces.
+		namespaceToQuery := ""
+		if a.ruler.IsNamespaceSpecificRuleGroupLimitConfigured(userID, namespace) {
+			namespaceToQuery = namespace
+		}
+		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, namespaceToQuery, rulestore.WithCacheDisabled())
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to fetch current rule groups for validation", "err", err.Error(), "user", userID)
 			http.Error(w, err.Error(), http.StatusInternalServerError)

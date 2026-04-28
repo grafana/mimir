@@ -46,8 +46,16 @@ func (f *FunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_FUNCTION_CALL
 }
 
-func (f *FunctionCall) Children() []planning.Node {
-	return f.Args
+func (f *FunctionCall) Child(idx int) planning.Node {
+	if idx >= len(f.Args) {
+		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))
+	}
+
+	return f.Args[idx]
+}
+
+func (f *FunctionCall) ChildCount() int {
+	return len(f.Args)
 }
 
 func (f *FunctionCall) SetChildren(children []planning.Node) error {
@@ -55,15 +63,26 @@ func (f *FunctionCall) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (f *FunctionCall) EquivalentTo(other planning.Node) bool {
+func (f *FunctionCall) ReplaceChild(idx int, node planning.Node) error {
+	if idx >= len(f.Args) {
+		return fmt.Errorf("this FunctionCall node has %d children, but attempted to replace child at index %d", len(f.Args), idx)
+	}
+
+	f.Args[idx] = node
+	return nil
+}
+
+func (f *FunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherFunctionCall, ok := other.(*FunctionCall)
 
 	return ok &&
 		f.Function == otherFunctionCall.Function &&
-		slices.EqualFunc(f.Args, otherFunctionCall.Args, func(a, b planning.Node) bool {
-			return a.EquivalentTo(b)
-		}) &&
 		slices.Equal(f.AbsentLabels, otherFunctionCall.AbsentLabels)
+}
+
+func (f *FunctionCall) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (f *FunctionCall) ChildrenLabels() []string {
@@ -106,7 +125,7 @@ func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materialize
 		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
-	o, err := fnc.OperatorFactory(children, absentLabels, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition(), timeRange)
+	o, err := fnc.OperatorFactory(children, absentLabels, params, f.GetExpressionPosition().ToPrometheusType(), timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -122,16 +141,25 @@ func (f *FunctionCall) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeNone, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
 }
 
-func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	timeRange := planning.NoDataQueried()
 
 	for _, arg := range f.Args {
-		timeRange = timeRange.Union(arg.QueriedTimeRange(queryTimeRange, lookbackDelta))
+		argTimeRange, err := arg.QueriedTimeRange(queryTimeRange, lookbackDelta)
+		if err != nil {
+			return planning.NoDataQueried(), err
+		}
+
+		timeRange = timeRange.Union(argTimeRange)
 	}
 
-	return timeRange
+	return timeRange, nil
 }
 
-func (f *FunctionCall) ExpressionPosition() posrange.PositionRange {
-	return f.GetExpressionPosition().ToPrometheusType()
+func (f *FunctionCall) ExpressionPosition() (posrange.PositionRange, error) {
+	return f.GetExpressionPosition().ToPrometheusType(), nil
+}
+
+func (f *FunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }

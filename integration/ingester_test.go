@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//go:build requires_docker
 
 package integration
 
@@ -805,13 +804,17 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 	}
 	metadata := []mimirpb.MetricMetadata{
 		{
-			Help: "foo",
-			Unit: "By",
+			MetricFamilyName: "not_foobar",
+			Help:             "foo",
+			Unit:             "By",
 		},
 	}
 
 	pushPromRemoteWrite := func(client *e2emimir.Client) (*http.Response, error) { return client.Push(series) }
-	pushOTLP := func(client *e2emimir.Client) (*http.Response, error) { return client.PushOTLP(series, metadata) }
+	pushOTLP := func(client *e2emimir.Client) (*http.Response, error) {
+		res, _, err := client.PushOTLP(series, metadata)
+		return res, err
+	}
 
 	testCases := map[string]struct {
 		distributorClusterLabel           string

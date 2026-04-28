@@ -19,6 +19,7 @@ Before a piece of work is finished:
 - Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
 - Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
 - If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation.
+- Follow the [pull request template](.github/PULL_REQUEST_TEMPLATE.md) when creating PRs.
 
 ## Grafana Mimir Helm chart
 
@@ -26,11 +27,39 @@ Please see the dedicated "[Contributing to Grafana Mimir helm chart](contributin
 
 ## Formatting
 
-Grafana Mimir uses `goimports` tool (`go get golang.org/x/tools/cmd/goimports` to install) to format the Go files, and sort imports. We use goimports with `-local github.com/grafana/mimir` parameter, to put Grafana Mimir internal imports into a separate group. We try to keep imports sorted into three groups: imports from standard library, imports of 3rd party packages and internal Grafana Mimir imports. Goimports will fix the order, but will keep existing newlines between imports in the groups. We try to avoid extra newlines like that.
+### Go
+
+Grafana Mimir uses `goimports` tool (`go get golang.org/x/tools/cmd/goimports` to install) to format the Go files, and sort imports.
+We use goimports with `-local github.com/grafana/mimir` parameter, to put Grafana Mimir internal imports into a separate group.
+
+We try to keep imports sorted into three groups:
+
+- imports from standard library
+- imports of 3rd party packages and
+- internal Grafana Mimir imports.
+
+Goimports will fix the order, but will keep existing newlines between imports in the groups. We try to avoid extra newlines like that.
 
 You're using an IDE you may find useful the following settings for the Grafana Mimir project:
 
 - [VSCode](vscode-goimports-settings.json)
+
+**Always run `make format` before creating commits**, or configure your IDE to run goimports on save. This prevents formatting-only commits and keeps the git history clean.
+
+### Jsonnet
+
+When making changes to jsonnet/libsonnet files, always format before creating commits:
+
+- **Mixin files** (`operations/mimir-mixin/`): Run `make format-mixin` then `make build-mixin` to render compiled YAML outputs
+- **Other jsonnet files** (`operations/mimir`, `operations/mimir-tests`, `development/`): Run `make format-jsonnet-manifests`
+
+This prevents formatting-only commits and ensures your jsonnet changes compile correctly.
+
+### Other formatters
+
+- **Makefiles**: Run `make format-makefiles` for any Makefile changes
+- **Protobuf files**: Run `make format-protobuf` for `.proto` file changes
+- **PromQL test files**: Run `make format-promql-tests` for PromQL test changes
 
 ## Building Grafana Mimir
 
@@ -49,7 +78,7 @@ The mount options can be adjusted with `CONTAINER_MOUNT_OPTIONS`.)
 To run the unit tests suite:
 
 ```
-go test ./...
+make test
 ```
 
 To run the integration tests suite please see "[How integration tests work](./how-integration-tests-work.md)".
@@ -63,6 +92,12 @@ Example:
 
 ```
 make CONTAINER_MOUNT_OPTIONS=delegated
+```
+
+To compile Protobuf files (`.proto`) to Go code (`.pb.go`), run:
+
+```
+make protos
 ```
 
 ### Run Grafana Mimir locally
@@ -124,10 +159,12 @@ Some (but maybe not all) specific critical areas are:
 
 ## Documentation
 
-The Grafana Mimir documentation and the Helm chart _documentation_ for Mimir and GEM are compiled and published to [https://grafana.com/docs/mimir/latest/](https://grafana.com/docs/mimir/latest/) and [https://grafana.com/docs/helm-charts/mimir-distributed/latest/](https://grafana.com/docs/helm-charts/mimir-distributed/latest/). Run `make docs` to build and serve the documentation locally.
+The Grafana Mimir documentation and the Helm chart documentation for Mimir and GEM are compiled and published to [https://grafana.com/docs/mimir/latest/](https://grafana.com/docs/mimir/latest/) and [https://grafana.com/docs/helm-charts/mimir-distributed/latest/](https://grafana.com/docs/helm-charts/mimir-distributed/latest/). Run `make docs` to build and serve the documentation locally.
 For more detail on style and organisation of the documentation, refer to the dedicated page "[How to write documentation](how-to-write-documentation.md)".
 
 Note: if you attempt to view pages on GitHub, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
+
+Please see dedicated [instructions for documentation authoring](documentation-authoring.md) for more information on the Docs toolkit.
 
 ## Errors catalog
 

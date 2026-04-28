@@ -2,12 +2,12 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/util.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
-//go:build requires_docker
 
 package integration
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,9 +16,7 @@ import (
 	"time"
 
 	"github.com/grafana/e2e"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/grafana/mimir/integration/e2ehistograms"
@@ -39,6 +37,15 @@ var (
 
 // generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms
 type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
+
+// skipMissingMetricsIfZero returns e2e.SkipMissingMetrics when value == 0, otherwise a no-op.
+func skipMissingMetricsIfZero(value float64) e2e.MetricsOption {
+	return func(opts *e2e.MetricsOptions) {
+		if value == 0 {
+			opts.SkipMissingMetrics = true
+		}
+	}
+}
 
 func generateFloatSeriesModel(name string, ts time.Time, additionalLabels ...prompb.Label) prompb.TimeSeries {
 	series, _, _ := generateFloatSeries(name, ts, additionalLabels...)
@@ -98,7 +105,7 @@ func writeFileToSharedDir(s *e2e.Scenario, dst string, content []byte) error {
 func copyFileToSharedDir(s *e2e.Scenario, src, dst string) error {
 	content, err := os.ReadFile(filepath.Join(getMimirProjectDir(), src))
 	if err != nil {
-		return errors.Wrapf(err, "unable to read local file %s", src)
+		return fmt.Errorf("unable to read local file %s: %w", src, err)
 	}
 
 	return writeFileToSharedDir(s, dst, content)
@@ -232,5 +239,5 @@ func remoteReadQueryByMetricName(metricName string, start, end time.Time) *promp
 }
 
 func remoteReadQueryMatchersByMetricName(metricName string) []*prompb.LabelMatcher {
-	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}}
+	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: metricName}}
 }

@@ -72,8 +72,12 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 		}
 	}
 
+	// Compute the expected request size for metric assertions.
+	expectedRequestSize := createRequest().Size()
+
 	tests := map[string]struct {
 		shardSize                    int
+		writeShardSize               int
 		kafkaPartitionCustomResponse map[int32]*kmsg.ProduceResponse
 		expectedErr                  error
 		expectedSeriesByPartition    map[int32][]string
@@ -93,13 +97,21 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				2: {"series_five", "series_four"},
 			},
 		},
+		"should shard writes to fewer partitions when write shard size is smaller than read shard size": {
+			shardSize:      0,
+			writeShardSize: 1,
+			expectedSeriesByPartition: map[int32][]string{
+				// With writeShardSize=1, all series go to the single partition in the write shard.
+				2: {"series_five", "series_four", "series_one", "series_three", "series_two"},
+			},
+		},
 		"should return gRPC error if writing to 1 out of N partitions fail with a non-retryable error": {
 			shardSize: 0,
 			kafkaPartitionCustomResponse: map[int32]*kmsg.ProduceResponse{
 				// Non-retryable error.
 				1: testkafka.CreateProduceResponseError(0, kafkaTopic, 1, kerr.InvalidTopicException),
 			},
-			expectedErr: fmt.Errorf("%s 1", failedPushingToPartitionMessage),
+			expectedErr: errors.New(failedPushingToPartitionMessage),
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
 				0: {"series_four", "series_one", "series_three"},
@@ -131,21 +143,24 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 			limits := prepareDefaultLimits()
 			limits.IngestionPartitionsTenantShardSize = testData.shardSize
+			limits.IngestionPartitionsTenantWriteShardSize = testData.writeShardSize
 			limits.MaxGlobalExemplarsPerUser = 1000
+
+			const numPartitions = 3
+
+			// Create a cluster with a number of brokers equal to the number of partitions,
+			// so that each partition is on a different broker.
+			kafkaCluster, _ := testkafka.CreateCluster(t, numPartitions, kafkaTopic, testkafka.WithNumBrokers(numPartitions))
 
 			testConfig := prepConfig{
 				numDistributors:         1,
 				ingestStorageEnabled:    true,
-				ingestStoragePartitions: 3,
+				ingestStoragePartitions: numPartitions,
+				ingestStorageKafka:      kafkaCluster,
 				limits:                  limits,
-				configure: func(cfg *Config) {
-					// Run a number of clients equal to the number of partitions, so that each partition
-					// has its own client, as requested by some test cases.
-					cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
-				},
 			}
 
-			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
+			distributors, _, regs, _ := prepare(t, testConfig)
 			require.Len(t, distributors, 1)
 			require.Len(t, regs, 1)
 
@@ -153,13 +168,18 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			kafkaCluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 				kafkaCluster.KeepControl()
 
-				for _, topic := range request.(*kmsg.ProduceRequest).Topics {
+				produceReq := request.(*kmsg.ProduceRequest)
+				for _, topic := range produceReq.Topics {
 					// For this test to work correctly we expect each request to write only to 1 partition,
 					// because we'll fail the entire request.
 					require.Len(t, topic.Partitions, 1)
 
 					if res := testData.kafkaPartitionCustomResponse[topic.Partitions[0].Partition]; res != nil {
 						res.SetVersion(request.GetVersion())
+						// Copy the TopicID from the request to the response (required for produce v13+)
+						if len(res.Topics) > 0 {
+							res.Topics[0].TopicID = topic.TopicID
+						}
 						return res, nil, true
 					}
 				}
@@ -169,7 +189,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 			// Send write request.
 			res, err := distributors[0].Push(ctx, createRequest())
-
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				assert.Nil(t, res)
@@ -227,14 +246,19 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 					# TYPE cortex_distributor_received_exemplars_total counter
 					cortex_distributor_received_exemplars_total{user="user"} 1
 
+					# HELP cortex_distributor_received_bytes_total The total number of uncompressed bytes received in the original request body (before any protocol conversion). Excludes requests rejected by middleware (e.g., rate limiting, size limits, HA deduplication) but includes bytes from requests where individual samples may be filtered or rejected during processing.
+					# TYPE cortex_distributor_received_bytes_total counter
+					cortex_distributor_received_bytes_total{user="user"} %d
+
 					# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 					# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
 					cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} %f
-				`, float64(now.UnixMilli())/1000.)),
+				`, expectedRequestSize, float64(now.UnixMilli())/1000.)),
 				"cortex_distributor_received_requests_total",
 				"cortex_distributor_received_samples_total",
 				"cortex_distributor_received_exemplars_total",
 				"cortex_distributor_received_metadata_total",
+				"cortex_distributor_received_bytes_total",
 				"cortex_distributor_requests_in_total",
 				"cortex_distributor_samples_in_total",
 				"cortex_distributor_exemplars_in_total",
@@ -396,6 +420,12 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 			limits.IngestionPartitionsTenantShardSize = testData.shardSize
 			limits.IngestionTenantShardSize = testData.shardSize
 
+			const numPartitions = 3
+
+			// Create a cluster with a number of brokers equal to the number of partitions,
+			// so that each partition is on a different broker.
+			kafkaCluster, _ := testkafka.CreateCluster(t, numPartitions, kafkaTopic, testkafka.WithNumBrokers(numPartitions))
+
 			testConfig := prepConfig{
 				numDistributors:         1,
 				numIngesters:            3,
@@ -403,14 +433,15 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				replicationFactor:       1,
 				ingesterIngestionType:   ingesterIngestionTypeGRPC, // Do not consume from Kafka. Partitions are asserted directly checking Kafka.
 				ingestStorageEnabled:    true,
-				ingestStoragePartitions: 3,
+				ingestStoragePartitions: numPartitions,
+				ingestStorageKafka:      kafkaCluster,
 				limits:                  limits,
 				configure: func(cfg *Config) {
 					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
 				},
 			}
 
-			distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+			distributors, ingesters, regs, _ := prepare(t, testConfig)
 			require.Len(t, distributors, 1)
 			require.Len(t, ingesters, 3)
 			require.Len(t, regs, 1)
@@ -419,8 +450,13 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
 					kafkaCluster.KeepControl()
 
-					partitionID := req.(*kmsg.ProduceRequest).Topics[0].Partitions[0].Partition
+					produceReq := req.(*kmsg.ProduceRequest)
+					partitionID := produceReq.Topics[0].Partitions[0].Partition
 					res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
+					// Copy the TopicID from the request to the response (required for produce v13+)
+					if len(res.Topics) > 0 {
+						res.Topics[0].TopicID = produceReq.Topics[0].TopicID
+					}
 
 					return res, nil, true
 				})
@@ -975,7 +1011,7 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 						ingesterDataByZone:   testData.ingesterDataByZone,
 						ingestStorageEnabled: true,
 						configure: func(config *Config) {
-							config.PreferAvailabilityZone = preferredZone
+							config.PreferAvailabilityZones = []string{preferredZone}
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
 						limits: func() *validation.Limits {
@@ -1007,12 +1043,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 
 	var (
 		// Define fixtures used in tests.
-		series1 = makeTimeseries([]string{labels.MetricName, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series2 = makeTimeseries([]string{labels.MetricName, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series3 = makeTimeseries([]string{labels.MetricName, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series4 = makeTimeseries([]string{labels.MetricName, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		series5 = makeTimeseries([]string{labels.MetricName, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil, nil)
-		series6 = makeTimeseries([]string{labels.MetricName, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil, nil)
+		series1 = makeTimeseries([]string{model.MetricNameLabel, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series2 = makeTimeseries([]string{model.MetricNameLabel, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series3 = makeTimeseries([]string{model.MetricNameLabel, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series4 = makeTimeseries([]string{model.MetricNameLabel, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series5 = makeTimeseries([]string{model.MetricNameLabel, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil, nil)
+		series6 = makeTimeseries([]string{model.MetricNameLabel, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil, nil)
 
 		// To keep assertions simple, all tests push all series, and then request the cardinality of the same label names,
 		// so we expect the same response from each successful test.
@@ -1273,7 +1309,7 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 						ingesterDataByZone:   testData.ingesterDataByZone,
 						ingestStorageEnabled: true,
 						configure: func(config *Config) {
-							config.PreferAvailabilityZone = preferredZone
+							config.PreferAvailabilityZones = []string{preferredZone}
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
 						limits: func() *validation.Limits {
@@ -1563,7 +1599,7 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 						ingestStorageEnabled: true,
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
-							config.PreferAvailabilityZone = preferredZone
+							config.PreferAvailabilityZones = []string{preferredZone}
 						},
 						limits: func() *validation.Limits {
 							limits := prepareDefaultLimits()

@@ -12,7 +12,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/prometheus/prometheus/model/labels"
-	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -20,8 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
-
-var tracer = otel.Tracer("pkg/ingester/client")
 
 // StreamingSeries represents a single series used in evaluation of a query where the chunks for the series
 // are streamed from one or more ingesters.
@@ -37,12 +34,7 @@ type StreamingSeriesSource struct {
 	SeriesIndex  uint64
 }
 
-type memoryConsumptionTracker interface {
-	IncreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource) error
-	DecreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource)
-}
-
-func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
+func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		ctx:                 ctx,
 		client:              client,
@@ -62,7 +54,7 @@ type SeriesChunksStreamReader struct {
 	client              Ingester_QueryStreamClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
-	memoryTracker       memoryConsumptionTracker
+	memoryTracker       *limiter.MemoryConsumptionTracker
 	cleanup             func()
 	log                 log.Logger
 
@@ -129,14 +121,14 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 	s.errorChan = make(chan error, 1)
 
 	go func() {
-		log, _ := spanlogger.New(s.client.Context(), s.log, tracer, "SeriesChunksStreamReader.StartBuffering")
+		log := spanlogger.FromContext(s.client.Context(), s.log)
+		log.DebugLog("msg", "SeriesChunksStreamReader.StartBuffering")
 
 		defer func() {
 			s.Close()
 
 			close(s.seriesMessageChan)
 			close(s.errorChan)
-			log.Finish()
 		}()
 
 		if err := s.readStream(log); err != nil {

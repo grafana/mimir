@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/prometheus/common/model"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -12,25 +13,25 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type protobufFormatter struct{}
+type ProtobufFormatter struct{}
 
-func (f protobufFormatter) Name() string {
+func (f ProtobufFormatter) Name() string {
 	return formatProtobuf
 }
 
-func (f protobufFormatter) ContentType() v1.MIMEType {
+func (f ProtobufFormatter) ContentType() v1.MIMEType {
 	return v1.MIMEType{Type: mimirpb.QueryResponseMimeTypeType, SubType: mimirpb.QueryResponseMimeTypeSubType}
 }
 
-func (f protobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error) {
+func (f ProtobufFormatter) EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error {
 	status, err := mimirpb.StatusFromPrometheusString(resp.Status)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	errorType, err := mimirpb.ErrorTypeFromPrometheusString(resp.ErrorType)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	payload := mimirpb.QueryResponse{
@@ -46,7 +47,7 @@ func (f protobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte
 		case model.ValString.String():
 			data, err := f.encodeStringData(resp.Data.Result)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			payload.Data = &mimirpb.QueryResponse_String_{String_: &data}
@@ -54,7 +55,7 @@ func (f protobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte
 		case model.ValScalar.String():
 			data, err := f.encodeScalarData(resp.Data.Result)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			payload.Data = &mimirpb.QueryResponse_Scalar{Scalar: &data}
@@ -62,7 +63,7 @@ func (f protobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte
 		case model.ValVector.String():
 			data, err := f.encodeVectorData(resp.Data.Result)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			payload.Data = &mimirpb.QueryResponse_Vector{Vector: &data}
@@ -72,14 +73,22 @@ func (f protobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte
 			payload.Data = &mimirpb.QueryResponse_Matrix{Matrix: &data}
 
 		default:
-			return nil, fmt.Errorf("unknown result type '%s'", resp.Data.ResultType)
+			return fmt.Errorf("unknown result type '%s'", resp.Data.ResultType)
 		}
 	}
 
-	return payload.Marshal()
+	// Protobuf cannot stream directly to an io.Writer; MarshalTo with a pre-sized
+	// buffer avoids the internal growth logic that Marshal() uses.
+	b := make([]byte, payload.Size())
+	n, err := payload.MarshalTo(b)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(b[:n])
+	return err
 }
 
-func (protobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
+func (ProtobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringData, error) {
 	if len(data) != 1 {
 		return mimirpb.StringData{}, fmt.Errorf("expected string response to contain exactly one stream, but it has %d", len(data))
 	}
@@ -108,7 +117,7 @@ func (protobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringDa
 	}, nil
 }
 
-func (protobufFormatter) encodeScalarData(data []SampleStream) (mimirpb.ScalarData, error) {
+func (ProtobufFormatter) encodeScalarData(data []SampleStream) (mimirpb.ScalarData, error) {
 	if len(data) != 1 {
 		return mimirpb.ScalarData{}, fmt.Errorf("expected scalar response to contain exactly one stream, but it has %d", len(data))
 	}
@@ -127,7 +136,7 @@ func (protobufFormatter) encodeScalarData(data []SampleStream) (mimirpb.ScalarDa
 	}, nil
 }
 
-func (protobufFormatter) encodeVectorData(data []SampleStream) (mimirpb.VectorData, error) {
+func (ProtobufFormatter) encodeVectorData(data []SampleStream) (mimirpb.VectorData, error) {
 	floatCount := 0
 	histogramCount := 0
 
@@ -172,7 +181,7 @@ func (protobufFormatter) encodeVectorData(data []SampleStream) (mimirpb.VectorDa
 	}, nil
 }
 
-func (protobufFormatter) encodeMatrixData(data []SampleStream) mimirpb.MatrixData {
+func (ProtobufFormatter) encodeMatrixData(data []SampleStream) mimirpb.MatrixData {
 	series := make([]mimirpb.MatrixSeries, len(data))
 
 	for i, stream := range data {
@@ -186,7 +195,7 @@ func (protobufFormatter) encodeMatrixData(data []SampleStream) mimirpb.MatrixDat
 	return mimirpb.MatrixData{Series: series}
 }
 
-func (f protobufFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse, error) {
+func (f ProtobufFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse, error) {
 	var resp mimirpb.QueryResponse
 
 	if err := resp.Unmarshal(buf); err != nil {
@@ -218,7 +227,7 @@ func (f protobufFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse,
 	}, nil
 }
 
-func (f protobufFormatter) decodeData(resp mimirpb.QueryResponse) (*PrometheusData, error) {
+func (f ProtobufFormatter) decodeData(resp mimirpb.QueryResponse) (*PrometheusData, error) {
 	if resp.Data == nil {
 		if resp.Status != mimirpb.QUERY_STATUS_SUCCESS {
 			return nil, nil
@@ -241,7 +250,7 @@ func (f protobufFormatter) decodeData(resp mimirpb.QueryResponse) (*PrometheusDa
 	}
 }
 
-func (f protobufFormatter) decodeStringData(data *mimirpb.StringData) *PrometheusData {
+func (f ProtobufFormatter) decodeStringData(data *mimirpb.StringData) *PrometheusData {
 	return &PrometheusData{
 		ResultType: model.ValString.String(),
 		Result: []SampleStream{
@@ -253,7 +262,7 @@ func (f protobufFormatter) decodeStringData(data *mimirpb.StringData) *Prometheu
 	}
 }
 
-func (f protobufFormatter) decodeScalarData(data *mimirpb.ScalarData) *PrometheusData {
+func (f ProtobufFormatter) decodeScalarData(data *mimirpb.ScalarData) *PrometheusData {
 	return &PrometheusData{
 		ResultType: model.ValScalar.String(),
 		Result: []SampleStream{
@@ -264,7 +273,7 @@ func (f protobufFormatter) decodeScalarData(data *mimirpb.ScalarData) *Prometheu
 	}
 }
 
-func (f protobufFormatter) decodeVectorData(data *mimirpb.VectorData) (*PrometheusData, error) {
+func (f ProtobufFormatter) decodeVectorData(data *mimirpb.VectorData) (*PrometheusData, error) {
 	streams := make([]SampleStream, len(data.Samples)+len(data.Histograms))
 
 	for i, sample := range data.Samples {
@@ -304,7 +313,7 @@ func (f protobufFormatter) decodeVectorData(data *mimirpb.VectorData) (*Promethe
 	}, nil
 }
 
-func (f protobufFormatter) decodeMatrixData(data *mimirpb.MatrixData) (*PrometheusData, error) {
+func (f ProtobufFormatter) decodeMatrixData(data *mimirpb.MatrixData) (*PrometheusData, error) {
 	streams := make([]SampleStream, len(data.Series))
 
 	for seriesIdx, series := range data.Series {
@@ -326,19 +335,19 @@ func (f protobufFormatter) decodeMatrixData(data *mimirpb.MatrixData) (*Promethe
 	}, nil
 }
 
-func (f protobufFormatter) EncodeLabelsResponse(*PrometheusLabelsResponse) ([]byte, error) {
-	return nil, errors.New("protobuf labels encoding is not supported")
+func (f ProtobufFormatter) EncodeLabelsResponseTo(_ io.Writer, _ *PrometheusLabelsResponse) error {
+	return errors.New("protobuf labels encoding is not supported")
 }
 
-func (f protobufFormatter) DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error) {
+func (f ProtobufFormatter) DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error) {
 	return nil, errors.New("protobuf labels decoding is not supported")
 }
 
-func (f protobufFormatter) EncodeSeriesResponse(*PrometheusSeriesResponse) ([]byte, error) {
-	return nil, errors.New("protobuf series encoding is not supported")
+func (f ProtobufFormatter) EncodeSeriesResponseTo(_ io.Writer, _ *PrometheusSeriesResponse) error {
+	return errors.New("protobuf series encoding is not supported")
 }
 
-func (f protobufFormatter) DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error) {
+func (f ProtobufFormatter) DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error) {
 	return nil, errors.New("protobuf series decoding is not supported")
 }
 

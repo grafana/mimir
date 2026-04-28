@@ -6,11 +6,16 @@
 package api
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -19,7 +24,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
+	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 )
 
@@ -39,7 +46,7 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{})
+	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{}, nil)
 	require.NoError(t, err)
 	require.Nil(t, api.sourceIPs)
 }
@@ -55,7 +62,7 @@ func TestNewApiWithSourceIPExtractor(t *testing.T) {
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{})
+	api, err := New(cfg, federationCfg, serverCfg, srv, &FakeLogger{}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, api.sourceIPs)
 }
@@ -72,13 +79,13 @@ func TestNewApiWithInvalidSourceIPExtractor(t *testing.T) {
 	serverCfg.MetricsNamespace = "with_invalid_source_ip_extractor"
 	federationCfg := tenantfederation.Config{}
 
-	api, err := New(cfg, federationCfg, serverCfg, &s, &FakeLogger{})
+	api, err := New(cfg, federationCfg, serverCfg, &s, &FakeLogger{}, nil)
 	require.Error(t, err)
 	require.Nil(t, api)
 }
 
 func TestApiGzip(t *testing.T) {
-	cfg := Config{}
+	cfg := Config{GzipCompressionLevel: gzip.DefaultCompression}
 	serverCfg := getServerConfig(t)
 	federationCfg := tenantfederation.Config{}
 	srv, err := server.New(serverCfg)
@@ -86,7 +93,7 @@ func TestApiGzip(t *testing.T) {
 	go func() { _ = srv.Run() }()
 	t.Cleanup(srv.Stop)
 
-	api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger())
+	api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +198,7 @@ func TestApiGzip(t *testing.T) {
 }
 
 type MockIngester struct {
-	Ingester
+	ingester.API
 }
 
 func (mi MockIngester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
@@ -209,13 +216,13 @@ func TestApiIngesterShutdown(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := Config{}
+			cfg := Config{GzipCompressionLevel: gzip.DefaultCompression}
 			serverCfg := getServerConfig(t)
 			federationCfg := tenantfederation.Config{}
 			srv, err := server.New(serverCfg)
 			require.NoError(t, err)
 
-			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger())
+			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			api.RegisterIngester(&MockIngester{})
 
@@ -271,4 +278,145 @@ func getHostnameAndRandomPort(t *testing.T) (string, int) {
 	portNum, err := strconv.Atoi(port)
 	require.NoError(t, err)
 	return host, portNum
+}
+
+// TestNewRouteMaxBodySize verifies that the handler chain assembled by newRoute correctly enforces
+// the max body size limit. The max body size handler must run before the activity tracking middleware
+// so that body reads by the activity tracker are also subject to the limit.
+func TestNewRouteMaxBodySize(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		body        string
+		contentType string
+		// maxBytes is the limit passed to RegisterRouteWithMaxBodySize; 0 means no limit.
+		maxBytes               int64
+		expectedStatus         int
+		expectInnerHandlerRuns bool
+		// expectHandlerBodyErr is set when the inner handler reads the body and expects a MaxBytesError.
+		expectHandlerBodyErr bool
+	}{
+		{
+			name:                   "no limit: handler always runs",
+			body:                   "query=up&time=42",
+			contentType:            "application/x-www-form-urlencoded",
+			maxBytes:               0,
+			expectedStatus:         http.StatusOK,
+			expectInnerHandlerRuns: true,
+		},
+		{
+			name:                   "form-encoded body within limit: handler runs",
+			body:                   "query=up&time=42",
+			contentType:            "application/x-www-form-urlencoded",
+			maxBytes:               1024,
+			expectedStatus:         http.StatusOK,
+			expectInnerHandlerRuns: true,
+		},
+		{
+			// The activity tracker reads the form body to capture params. When the body exceeds
+			// the limit applied by the outer max body size handler, the read returns a MaxBytesError
+			// and the activity tracker rejects the request before calling the inner handler.
+			name:                   "form-encoded body exceeds limit: rejected before inner handler",
+			body:                   "query=up&time=42",
+			contentType:            "application/x-www-form-urlencoded",
+			maxBytes:               5,
+			expectedStatus:         http.StatusRequestEntityTooLarge,
+			expectInnerHandlerRuns: false,
+		},
+		{
+			// For non-form-encoded requests the activity tracker does not read the body, so it
+			// passes r.Body (already wrapped with MaxBytesReader) to the inner handler, which
+			// must handle the limit itself.
+			name:                   "non-form-encoded body exceeds limit: MaxBytesReader passed to inner handler",
+			body:                   "binary payload that is too large",
+			contentType:            "application/octet-stream",
+			maxBytes:               5,
+			expectedStatus:         http.StatusOK,
+			expectInnerHandlerRuns: true,
+			expectHandlerBodyErr:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			activityFile := filepath.Join(t.TempDir(), "activity-tracker")
+			reg := prometheus.NewPedanticRegistry()
+			at, err := activitytracker.NewActivityTracker(activitytracker.Config{Filepath: activityFile, MaxEntries: 1024}, reg)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, at.Close()) })
+
+			cfg := Config{}
+			serverCfg := getServerConfig(t)
+			federationCfg := tenantfederation.Config{}
+			srv, err := server.New(serverCfg)
+			require.NoError(t, err)
+
+			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), at)
+			require.NoError(t, err)
+
+			var innerHandlerRan bool
+			var handlerBodyErr error
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				innerHandlerRan = true
+				// application/x-www-form-urlencoded bodies are read in the activity tracker
+				if tc.contentType != "application/x-www-form-urlencoded" {
+					_, handlerBodyErr = io.ReadAll(r.Body)
+				}
+				w.WriteHeader(http.StatusOK)
+			})
+
+			api.RegisterRouteWithMaxBodySize("/test-max-body", inner, false, false, tc.maxBytes, http.MethodPost)
+
+			req := httptest.NewRequest(http.MethodPost, "/test-max-body", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+			w := httptest.NewRecorder()
+			api.server.HTTP.ServeHTTP(w, req)
+
+			require.Equal(t, tc.expectedStatus, w.Code)
+			require.Equal(t, tc.expectInnerHandlerRuns, innerHandlerRan)
+			if tc.expectHandlerBodyErr {
+				require.Error(t, handlerBodyErr)
+				var maxBytesErr *http.MaxBytesError
+				require.ErrorAs(t, handlerBodyErr, &maxBytesErr)
+			}
+		})
+	}
+}
+
+// TestActivityTrackingNotAppliedToPushRoute verifies that the activity tracking middleware is not
+// applied to routes registered without a max body size (like /api/v1/push). A remote write v1
+// request with Content-Type: application/x-www-form-urlencoded and a protobuf body containing
+// 0x3B (';') must reach the inner handler. If the middleware ran, it would call r.ParseForm() on
+// the body and Go 1.17+ would reject the semicolon with "invalid semicolon separator in query",
+// returning HTTP 500 before the handler is ever called.
+func TestActivityTrackingNotAppliedToPushRoute(t *testing.T) {
+	activityFile := filepath.Join(t.TempDir(), "activity-tracker")
+	reg := prometheus.NewPedanticRegistry()
+	at, err := activitytracker.NewActivityTracker(activitytracker.Config{Filepath: activityFile, MaxEntries: 1024}, reg)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, at.Close()) })
+
+	cfg := Config{}
+	serverCfg := getServerConfig(t)
+	federationCfg := tenantfederation.Config{}
+	srv, err := server.New(serverCfg)
+	require.NoError(t, err)
+
+	api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), at)
+	require.NoError(t, err)
+
+	var innerHandlerCalled bool
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		innerHandlerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// RegisterRoute passes maxBodySizeIfAny=0, matching how /api/v1/push is registered.
+	api.RegisterRoute("/api/v1/push", inner, false, false, http.MethodPost)
+
+	body := []byte{0x0a, 0x12, 0x3B, 0x08, 0x01, 0x12, 0x0e}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/push", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	api.server.HTTP.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, innerHandlerCalled, "activity tracking middleware must not run on routes registered without a max body size")
 }

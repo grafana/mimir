@@ -80,7 +80,7 @@ func amzRestoreToStruct(restore string) (ongoing bool, expTime time.Time, err er
 			return false, time.Time{}, err
 		}
 	}
-	return
+	return ongoing, expTime, err
 }
 
 // xmlDecoder provide decoded value in xml.
@@ -177,6 +177,11 @@ func isValidEndpointURL(endpointURL url.URL) error {
 	if strings.Contains(host, ".googleapis.com") {
 		if !s3utils.IsGoogleEndpoint(endpointURL) {
 			return errInvalidArgument("Google Cloud Storage endpoint should be 'storage.googleapis.com'.")
+		}
+	}
+	if strings.Contains(host, "s3-outposts") {
+		if !s3utils.IsAmazonOutpostsEndpoint(endpointURL) {
+			return errInvalidArgument("S3 Outposts endpoint must match <prefix>.s3-outposts.<region>.amazonaws.com")
 		}
 	}
 	return nil
@@ -381,6 +386,7 @@ func ToObjectInfo(bucketName, objectName string, h http.Header) (ObjectInfo, err
 		Size:              size,
 		LastModified:      mtime,
 		ContentType:       contentType,
+		ContentEncoding:   strings.TrimSpace(h.Get("Content-Encoding")),
 		Expires:           expiry,
 		VersionID:         h.Get(amzVersionID),
 		IsDeleteMarker:    deleteMarker,
@@ -402,6 +408,7 @@ func ToObjectInfo(bucketName, objectName string, h http.Header) (ObjectInfo, err
 		ChecksumSHA1:      h.Get(ChecksumSHA1.Key()),
 		ChecksumSHA256:    h.Get(ChecksumSHA256.Key()),
 		ChecksumCRC64NVME: h.Get(ChecksumCRC64NVME.Key()),
+		ChecksumAlgorithm: h.Get(amzChecksumAlgo),
 		ChecksumMode:      h.Get(ChecksumFullObjectMode.Key()),
 	}, nil
 }
@@ -438,7 +445,7 @@ var readFull = func(r io.Reader, buf []byte) (n int, err error) {
 	} else if n > 0 && err == io.EOF {
 		err = io.ErrUnexpectedEOF
 	}
-	return
+	return n, err
 }
 
 // regCred matches credential string in HTTP header

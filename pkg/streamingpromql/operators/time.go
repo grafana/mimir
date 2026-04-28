@@ -58,6 +58,19 @@ func (s *Time) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	return nil
 }
 
+func (s *Time) AfterPrepare(_ context.Context) error {
+	return nil
+}
+
+func (s *Time) Finalize(_ context.Context) error {
+	// Nothing to do.
+	return nil
+}
+
+func (s *Time) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.NewOperatorEvaluationStats(s.TimeRange, s.MemoryConsumptionTracker, 0)
+}
+
 func (s *Time) Close() {
 	// Nothing to do.
 }

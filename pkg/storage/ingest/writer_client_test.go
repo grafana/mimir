@@ -38,8 +38,8 @@ func TestNewKafkaWriterClient_ShouldSupportSASLPlainAuthentication(t *testing.T)
 		t.Parallel()
 
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
-		cfg.SASLUsername = username
-		require.NoError(t, cfg.SASLPassword.Set("wrong"))
+		cfg.SASL.Username = username
+		require.NoError(t, cfg.SASL.Password.Set("wrong"))
 
 		client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
@@ -52,8 +52,8 @@ func TestNewKafkaWriterClient_ShouldSupportSASLPlainAuthentication(t *testing.T)
 		t.Parallel()
 
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
-		cfg.SASLUsername = username
-		require.NoError(t, cfg.SASLPassword.Set(password))
+		cfg.SASL.Username = username
+		require.NoError(t, cfg.SASL.Password.Set(password))
 
 		client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
@@ -161,7 +161,7 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 
 	// At the beginning, the buffered produced bytes metric should be 0.
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.InDelta(collect, 0, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes", 1), 0.0001)
+		assert.InDelta(collect, 0, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
 	}, time.Second, 100*time.Millisecond)
 
 	// Produce a 1st record.
@@ -178,7 +178,7 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 
 	// At this point, the buffered produced bytes metric should have tracked 1 record.
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.InDelta(collect, expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes", 1), 0.0001)
+		assert.InDelta(collect, expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
 	}, time.Second, 100*time.Millisecond)
 
 	// Produce a 2nd record, while the 1st is still in-flight (because in this test Produce requests are blocked on Kafka side).
@@ -190,7 +190,7 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 
 	// At this point, the buffered produced bytes metric should have tracked 2 records.
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.InDelta(collect, 2*expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes", 1), 0.0001)
+		assert.InDelta(collect, 2*expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
 	}, time.Second, 100*time.Millisecond)
 
 	// Release Produce requests and wait until done.

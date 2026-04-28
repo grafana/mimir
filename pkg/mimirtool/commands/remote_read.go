@@ -31,23 +31,53 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid/v2"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
-	"github.com/grafana/mimir/pkg/mimirtool/client"
+	mimirtool_client "github.com/grafana/mimir/pkg/mimirtool/client"
+	util2 "github.com/grafana/mimir/pkg/mimirtool/util"
+	"github.com/grafana/mimir/pkg/util"
 )
+
+// selectorFlag implements kingpin.Value for parsing metric selectors into label matchers
+type selectorFlag struct {
+	selectors *[][]*labels.Matcher
+}
+
+func (s *selectorFlag) Set(value string) error {
+	matchers, err := util2.CreatePromQLParser(false).ParseMetricSelector(value)
+	if err != nil {
+		return fmt.Errorf("error parsing selector '%s': %w", value, err)
+	}
+	*s.selectors = append(*s.selectors, matchers)
+	return nil
+}
+
+func (s *selectorFlag) String() string {
+	var result []string
+	for _, selectorMatchers := range *s.selectors {
+		var matcherStrs []string
+		for _, matcher := range selectorMatchers {
+			matcherStrs = append(matcherStrs, matcher.String())
+		}
+		result = append(result, "{"+strings.Join(matcherStrs, ",")+"}")
+	}
+	return strings.Join(result, ",")
+}
 
 // DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
 // 50MB is the default. This is equivalent to ~100k full XOR chunks and average labelset.
@@ -61,18 +91,29 @@ type RemoteReadCommand struct {
 	apiKey   string
 	apiUser  string
 
+	tlsCAPath             string
+	tlsCertPath           string
+	tlsKeyPath            string
+	tlsInsecureSkipVerify bool
+
 	readTimeout time.Duration
 	tsdbPath    string
 
-	selector      string
+	selectors     [][]*labels.Matcher
 	from          string
 	to            string
 	readSizeLimit uint64
 	blockDuration time.Duration
+	useChunks     bool
+
+	logger log.Logger
 }
 
-func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	remoteReadCmd := app.Command("remote-read", "Inspect stored series in Grafana Mimir using the remote read API.")
+func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig) {
+	remoteReadCmd := app.Command("remote-read", "Inspect stored series in Grafana Mimir using the remote read API.").PreAction(func(_ *kingpin.ParseContext) error {
+		c.logger = logConfig.Logger()
+		return nil
+	})
 	exportCmd := remoteReadCmd.Command("export", "Export metrics remote read series into a local TSDB.").Action(c.export)
 	dumpCmd := remoteReadCmd.Command("dump", "Dump remote read series.").Action(c.dump)
 	statsCmd := remoteReadCmd.Command("stats", "Show statistic of remote read series.").Action(c.stats)
@@ -99,13 +140,29 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 			Envar(envVars.APIKey).
 			Default("").
 			StringVar(&c.apiKey)
+		cmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCAPath+".").
+			Default("").
+			Envar(envVars.TLSCAPath).
+			StringVar(&c.tlsCAPath)
+		cmd.Flag("tls-cert-path", "TLS client certificate to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCertPath+".").
+			Default("").
+			Envar(envVars.TLSCertPath).
+			StringVar(&c.tlsCertPath)
+		cmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSKeyPath+".").
+			Default("").
+			Envar(envVars.TLSKeyPath).
+			StringVar(&c.tlsKeyPath)
+		cmd.Flag("tls-insecure-skip-verify", "Skip TLS certificate verification; alternatively, set "+envVars.TLSInsecureSkipVerify+".").
+			Default("false").
+			Envar(envVars.TLSInsecureSkipVerify).
+			BoolVar(&c.tlsInsecureSkipVerify)
 		cmd.Flag("read-timeout", "timeout for read requests").
 			Default("30s").
 			DurationVar(&c.readTimeout)
 
-		cmd.Flag("selector", `PromQL selector to filter metrics on. To return all metrics '{__name__!=""}' can be used.`).
-			Default("up").
-			StringVar(&c.selector)
+		flag := cmd.Flag("selector", `PromQL selector to filter metrics on. To return all metrics '{__name__!=""}' can be used. Can be specified multiple times to send multiple queries in a single remote read request.`)
+		flag.SetValue(&selectorFlag{selectors: &c.selectors})
+		flag.Default("up")
 
 		cmd.Flag("from", "Start of the time window to select metrics (inclusive).").
 			Default(now.Add(-time.Hour).Format(time.RFC3339)).
@@ -116,6 +173,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		cmd.Flag("read-size-limit", "Maximum number of bytes to read.").
 			Default(strconv.Itoa(DefaultChunkedReadLimit)).
 			Uint64Var(&c.readSizeLimit)
+		cmd.Flag("use-chunks", "Request chunked streaming response (STREAMED_XOR_CHUNKS) instead of samples response (SAMPLES).").
+			Default("true").
+			BoolVar(&c.useChunks)
 	}
 
 	exportCmd.Flag("tsdb-path", "Path to the folder where to store the TSDB blocks, if not set a new directory in $TEMP is created.").
@@ -174,10 +234,16 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 				Username: cmp.Or(c.apiUser, c.tenantID),
 				Password: config_util.Secret(c.apiKey),
 			},
+			TLSConfig: config_util.TLSConfig{
+				CAFile:             c.tlsCAPath,
+				CertFile:           c.tlsCertPath,
+				KeyFile:            c.tlsKeyPath,
+				InsecureSkipVerify: c.tlsInsecureSkipVerify,
+			},
 		},
 		ChunkedReadLimit: c.readSizeLimit,
 		Headers: map[string]string{
-			"User-Agent": client.UserAgent(),
+			"User-Agent": mimirtool_client.UserAgent(),
 		},
 	})
 	if err != nil {
@@ -196,7 +262,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 		}
 	}
 
-	log.Infof("Created remote read client using endpoint '%s'", redactedURL(addressURL))
+	level.Info(c.logger).Log("msg", "created remote read client", "endpoint", redactedURL(addressURL))
 
 	return readClient, nil
 }
@@ -212,9 +278,8 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 		return nil, time.Time{}, time.Time{}, fmt.Errorf("error parsing to: '%s' value: %w", c.to, err)
 	}
 
-	matchers, err := parser.ParseMetricSelector(c.selector)
-	if err != nil {
-		return nil, time.Time{}, time.Time{}, err
+	if len(c.selectors) == 0 {
+		return nil, time.Time{}, time.Time{}, fmt.Errorf("at least one selector must be specified")
 	}
 
 	readClient, err := c.readClient()
@@ -222,42 +287,43 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 		return nil, time.Time{}, time.Time{}, err
 	}
 
-	return func(ctx context.Context, from, to time.Time) (storage.SeriesSet, error) {
-		log.Infof("Querying time from=%s to=%s with selector=%s", from.Format(time.RFC3339Nano), to.Format(time.RFC3339Nano), c.selector)
-		pbQuery, err := remote.ToQuery(
-			int64(model.TimeFromUnixNano(from.UnixNano())),
-			int64(model.TimeFromUnixNano(to.UnixNano())),
-			matchers,
-			nil,
-		)
-		if err != nil {
-			return nil, err
+	return func(ctx context.Context, queryFrom, queryTo time.Time) (storage.SeriesSet, error) {
+		level.Info(c.logger).Log("msg", "querying time", "from", queryFrom.Format(time.RFC3339), "to", queryTo.Format(time.RFC3339), "selectors", len(c.selectors))
+		// Use already parsed selectors
+		var pbQueries []*prompb.Query
+		for i, matchers := range c.selectors {
+			level.Debug(c.logger).Log("msg", "selector", "index", i+1, "matchers", fmt.Sprintf("%v", matchers))
+
+			pbQuery, err := remote.ToQuery(
+				int64(model.TimeFromUnixNano(queryFrom.UnixNano())),
+				int64(model.TimeFromUnixNano(queryTo.UnixNano())),
+				matchers,
+				nil,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("error creating query for selector %s: %w", util.MatchersStringer(matchers), err)
+			}
+			pbQueries = append(pbQueries, pbQuery)
 		}
 
-		resp, err := readClient.Read(ctx, pbQuery, false)
-		if err != nil {
-			return nil, err
-		}
-
-		return resp, nil
-
+		return readClient.ReadMultiple(ctx, pbQueries, true)
 	}, from, to, nil
 }
 
 // prepare() validates the input and prepares the client to query remote read endpoints
-func (c *RemoteReadCommand) prepare() (func(context.Context) (storage.SeriesSet, error), error) {
+func (c *RemoteReadCommand) prepare() (func(context.Context) (storage.SeriesSet, error), time.Time, time.Time, error) {
 	query, from, to, err := c.parseArgsAndPrepareClient()
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, time.Time{}, err
 	}
 
 	return func(ctx context.Context) (storage.SeriesSet, error) {
 		return query(ctx, from, to)
-	}, nil
+	}, from, to, nil
 }
 
 func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
-	query, err := c.prepare()
+	query, _, _, err := c.prepare()
 	if err != nil {
 		return err
 	}
@@ -310,7 +376,7 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 }
 
 func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
-	query, err := c.prepare()
+	query, _, _, err := c.prepare()
 	if err != nil {
 		return err
 	}
@@ -400,7 +466,7 @@ func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
 
 	for _, line := range strings.Split(output.String(), "\n") {
 		if len(line) != 0 {
-			log.Info(line)
+			level.Info(c.logger).Log("msg", line)
 		}
 	}
 
@@ -422,15 +488,15 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 		if err != nil {
 			return err
 		}
-		log.Infof("Created TSDB in path '%s'", c.tsdbPath)
+		level.Info(c.logger).Log("msg", "created TSDB", "path", c.tsdbPath)
 	} else {
 		if _, err := os.Stat(c.tsdbPath); err != nil && os.IsNotExist(err) {
 			if err = os.Mkdir(c.tsdbPath, 0755); err != nil {
 				return err
 			}
-			log.Infof("Created TSDB in path '%s'", c.tsdbPath)
+			level.Info(c.logger).Log("msg", "created TSDB", "path", c.tsdbPath)
 		} else {
-			log.Infof("Using existing TSDB in path '%s'", c.tsdbPath)
+			level.Info(c.logger).Log("msg", "using existing TSDB", "path", c.tsdbPath)
 		}
 	}
 
@@ -489,7 +555,7 @@ func (c *RemoteReadCommand) printBlocks(blocks []ulid.ULID) error {
 		defer pipeR.Close()
 		scanner := bufio.NewScanner(pipeR)
 		for scanner.Scan() {
-			log.Info(scanner.Text())
+			level.Info(c.logger).Log("msg", scanner.Text())
 		}
 	}()
 	defer func() { <-done }()

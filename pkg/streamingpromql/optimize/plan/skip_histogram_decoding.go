@@ -9,7 +9,6 @@ import (
 	"context"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -24,36 +23,26 @@ func (s *SkipHistogramDecodingOptimizationPass) Name() string {
 	return "Skip decoding histogram buckets"
 }
 
-func (s *SkipHistogramDecodingOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
-	duplicatedSelectors := map[planning.Node]bool{}
-	s.applyToNode(plan.Root, false, false, duplicatedSelectors)
+func (s *SkipHistogramDecodingOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	s.applyToNode(plan.Root, false)
 
 	return plan, nil
 }
 
-func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, skipHistogramBuckets bool, childOfDuplicateNode bool, duplicatedSelectors duplicatedSelectorTracker) {
+func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, skipHistogramBuckets bool) {
 	if vs, ok := node.(*core.VectorSelector); ok {
-		if childOfDuplicateNode {
-			skipHistogramBuckets = duplicatedSelectors.canSkipHistogramBuckets(node, skipHistogramBuckets)
-		}
-
 		vs.SkipHistogramBuckets = skipHistogramBuckets
-
 		return
 	}
 
 	if ms, ok := node.(*core.MatrixSelector); ok {
-		if childOfDuplicateNode {
-			skipHistogramBuckets = duplicatedSelectors.canSkipHistogramBuckets(node, skipHistogramBuckets)
-		}
-
 		ms.SkipHistogramBuckets = skipHistogramBuckets
 		return
 	}
 
-	if dup, ok := node.(*commonsubexpressionelimination.Duplicate); ok {
-		s.applyToNode(dup.Inner, skipHistogramBuckets, true, duplicatedSelectors)
-		return
+	// If we see a subquery, don't skip buckets. We need the buckets for correct counter reset detection.
+	if _, ok := node.(*core.Subquery); ok {
+		skipHistogramBuckets = false
 	}
 
 	if f, ok := node.(*core.FunctionCall); ok {
@@ -67,16 +56,7 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 		}
 	}
 
-	for _, child := range node.Children() {
-		s.applyToNode(child, skipHistogramBuckets, childOfDuplicateNode, duplicatedSelectors)
+	for child := range planning.ChildrenIter(node) {
+		s.applyToNode(child, skipHistogramBuckets)
 	}
-}
-
-type duplicatedSelectorTracker map[planning.Node]bool
-
-func (t duplicatedSelectorTracker) canSkipHistogramBuckets(node planning.Node, pathSeenAllowsSkippingHistogramBuckets bool) bool {
-	otherInstancesCanSkipBuckets, seenOtherInstancesAlready := t[node]
-	skipHistogramBuckets := pathSeenAllowsSkippingHistogramBuckets && (otherInstancesCanSkipBuckets || !seenOtherInstancesAlready)
-	t[node] = skipHistogramBuckets
-	return skipHistogramBuckets
 }

@@ -14,11 +14,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -62,7 +62,7 @@ func TestSeriesChunksSet(t *testing.T) {
 		for r := 0; r < numRuns; r++ {
 			set := newSeriesChunksSet(numSeries, true)
 
-			lset := labels.FromStrings(labels.MetricName, "metric")
+			lset := labels.FromStrings(model.MetricNameLabel, "metric")
 			// Ensure the series slice is made of all zero values. Then write something inside before releasing it again.
 			// The slice is expected to be picked from the pool, at least in some runs (there's an assertion on it at
 			// the end of the test).
@@ -128,170 +128,6 @@ func TestSeriesChunksSet(t *testing.T) {
 
 		assert.Equal(t, 0, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()))
 		assert.Equal(t, 0, int(chunksSlicePool.(*pool.TrackedPool).Balance.Load()))
-	})
-}
-
-func TestSeriesChunksSeriesSet(t *testing.T) {
-	c := generateAggrChunk(6)
-
-	series1 := labels.FromStrings(labels.MetricName, "metric_1")
-	series2 := labels.FromStrings(labels.MetricName, "metric_2")
-	series3 := labels.FromStrings(labels.MetricName, "metric_3")
-	series4 := labels.FromStrings(labels.MetricName, "metric_4")
-	series5 := labels.FromStrings(labels.MetricName, "metric_4")
-
-	// Utility function to create sets, so that each test starts from a clean setup (e.g. releaser is not released).
-	createSets := func() (sets []seriesChunksSet, releasers []*releaserMock) {
-		for i := 0; i < 3; i++ {
-			releasers = append(releasers, newReleaserMock())
-		}
-
-		set1 := newSeriesChunksSet(2, true)
-		set1.chunksReleaser = releasers[0]
-		set1.series = append(set1.series,
-			seriesChunks{lset: series1, chks: []storepb.AggrChunk{c[1]}},
-			seriesChunks{lset: series2, chks: []storepb.AggrChunk{c[2]}},
-		)
-
-		set2 := newSeriesChunksSet(2, true)
-		set2.chunksReleaser = releasers[1]
-		set2.series = append(set2.series,
-			seriesChunks{lset: series3, chks: []storepb.AggrChunk{c[3]}},
-			seriesChunks{lset: series4, chks: []storepb.AggrChunk{c[4]}},
-		)
-
-		set3 := newSeriesChunksSet(1, true)
-		set3.chunksReleaser = releasers[2]
-		set3.series = append(set3.series,
-			seriesChunks{lset: series5, chks: []storepb.AggrChunk{c[5]}},
-		)
-
-		sets = append(sets, set1, set2, set3)
-		return
-	}
-
-	t.Run("should iterate over a single set and release it once done", func(t *testing.T) {
-		sets, releasers := createSets()
-		source := newSliceSeriesChunksSetIterator(sets[0])
-		it := newSeriesChunksSeriesSet(source)
-
-		lbls, chks := it.At()
-		require.True(t, lbls.IsEmpty())
-		require.Zero(t, chks)
-		require.NoError(t, it.Err())
-
-		require.True(t, it.Next())
-		lbls, chks = it.At()
-		require.Equal(t, series1, lbls)
-		require.Equal(t, []storepb.AggrChunk{c[1]}, chks)
-		require.NoError(t, it.Err())
-		require.False(t, releasers[0].isReleased())
-
-		require.True(t, it.Next())
-		lbls, chks = it.At()
-		require.Equal(t, series2, lbls)
-		require.Equal(t, []storepb.AggrChunk{c[2]}, chks)
-		require.NoError(t, it.Err())
-		require.False(t, releasers[0].isReleased())
-
-		require.False(t, it.Next())
-		lbls, chks = it.At()
-		require.True(t, lbls.IsEmpty())
-		require.Zero(t, chks)
-		require.NoError(t, it.Err())
-		require.True(t, releasers[0].isReleased())
-	})
-
-	t.Run("should iterate over a multiple sets and release each set once we begin to iterate the next one", func(t *testing.T) {
-		sets, releasers := createSets()
-		source := newSliceSeriesChunksSetIterator(sets[0], sets[1])
-		it := newSeriesChunksSeriesSet(source)
-
-		lbls, chks := it.At()
-		require.True(t, lbls.IsEmpty())
-		require.Zero(t, chks)
-		require.NoError(t, it.Err())
-
-		// Set 1.
-		require.True(t, it.Next())
-		lbls, chks = it.At()
-		require.Equal(t, series1, lbls)
-		require.Equal(t, []storepb.AggrChunk{c[1]}, chks)
-		require.NoError(t, it.Err())
-		require.False(t, releasers[0].isReleased())
-		require.False(t, releasers[1].isReleased())
-
-		require.True(t, it.Next())
-		lbls, chks = it.At()
-		require.Equal(t, series2, lbls)
-		require.Equal(t, []storepb.AggrChunk{c[2]}, chks)
-		require.NoError(t, it.Err())
-		require.False(t, releasers[0].isReleased())
-		require.False(t, releasers[1].isReleased())
-
-		// Set 2.
-		require.True(t, it.Next())
-		lbls, chks = it.At()
-		require.Equal(t, series3, lbls)
-		require.Equal(t, []storepb.AggrChunk{c[3]}, chks)
-		require.NoError(t, it.Err())
-		require.True(t, releasers[0].isReleased())
-		require.False(t, releasers[1].isReleased())
-
-		require.True(t, it.Next())
-		lbls, chks = it.At()
-		require.Equal(t, series4, lbls)
-		require.Equal(t, []storepb.AggrChunk{c[4]}, chks)
-		require.NoError(t, it.Err())
-		require.True(t, releasers[0].isReleased())
-		require.False(t, releasers[1].isReleased())
-
-		require.False(t, it.Next())
-		lbls, chks = it.At()
-		require.True(t, lbls.IsEmpty())
-		require.Zero(t, chks)
-		require.NoError(t, it.Err())
-		require.True(t, releasers[0].isReleased())
-	})
-
-	t.Run("should release the current set on error", func(t *testing.T) {
-		expectedErr := errors.New("mocked error")
-
-		sets, releasers := createSets()
-		source := newSliceSeriesChunksSetIteratorWithError(expectedErr, 1, sets[0], sets[1], sets[2])
-		it := newSeriesChunksSeriesSet(source)
-
-		lbls, chks := it.At()
-		require.True(t, lbls.IsEmpty())
-		require.Zero(t, chks)
-		require.NoError(t, it.Err())
-
-		require.True(t, it.Next())
-		lbls, chks = it.At()
-		require.Equal(t, series1, lbls)
-		require.Equal(t, []storepb.AggrChunk{c[1]}, chks)
-		require.NoError(t, it.Err())
-		require.False(t, releasers[0].isReleased())
-
-		require.True(t, it.Next())
-		lbls, chks = it.At()
-		require.Equal(t, series2, lbls)
-		require.Equal(t, []storepb.AggrChunk{c[2]}, chks)
-		require.NoError(t, it.Err())
-		require.False(t, releasers[0].isReleased())
-
-		require.False(t, it.Next())
-		lbls, chks = it.At()
-		require.True(t, lbls.IsEmpty())
-		require.Zero(t, chks)
-		require.Equal(t, expectedErr, it.Err())
-
-		// The current set is released.
-		require.True(t, releasers[0].isReleased())
-
-		// Can't release the next ones because can't move forward with the iteration (due to the error).
-		require.False(t, releasers[1].isReleased())
-		require.False(t, releasers[2].isReleased())
 	})
 }
 
@@ -927,37 +763,6 @@ func (s *delayedIterator[S]) At() S {
 
 func (s *delayedIterator[S]) Err() error {
 	return s.wrapped.Err()
-}
-
-func generateAggrChunk(num int) []storepb.AggrChunk {
-	out := make([]storepb.AggrChunk, 0, num)
-
-	for i := 0; i < num; i++ {
-		out = append(out, storepb.AggrChunk{
-			MinTime: int64(i),
-			MaxTime: int64(i),
-		})
-	}
-
-	return out
-}
-
-type releaserMock struct {
-	released *atomic.Bool
-}
-
-func newReleaserMock() *releaserMock {
-	return &releaserMock{
-		released: atomic.NewBool(false),
-	}
-}
-
-func (r *releaserMock) Release() {
-	r.released.Store(true)
-}
-
-func (r *releaserMock) isReleased() bool {
-	return r.released.Load()
 }
 
 func readAllSeriesChunksSets(it iterator[seriesChunksSet]) []seriesChunksSet {

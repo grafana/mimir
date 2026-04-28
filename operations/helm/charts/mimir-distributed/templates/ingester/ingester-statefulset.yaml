@@ -1,4 +1,4 @@
-{{- if and .Values.ingester.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.ingester.enabled }}
 {{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
@@ -15,7 +15,7 @@ metadata:
     {{- else }}
     {{- if (eq $rolloutZone.prepareDownscale true )}}
     grafana.com/prepare-downscale: {{ $rolloutZone.prepareDownscale | quote }}
-    grafana.com/min-time-between-zones-downscale: 12h
+    grafana.com/min-time-between-zones-downscale: {{ $rolloutZone.minTimeBetweenZonesDownscale }}
     {{- end }}
     {{- end }}
   annotations:
@@ -45,7 +45,7 @@ spec:
     {{- else }}
     {{- toYaml .Values.ingester.statefulStrategy | nindent 4 }}
     {{- end }}
-  serviceName: {{ template "mimir.fullname" . }}-ingester{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
+  serviceName: {{ template "mimir.fullname" . }}-ingester-headless
   {{- if .Values.ingester.persistentVolume.enabled }}
   {{- with .Values.ingester.persistentVolume }}
   volumeClaimTemplates:
@@ -56,6 +56,10 @@ spec:
         {{- if .annotations }}
         annotations:
           {{- toYaml .annotations | nindent 10 }}
+        {{- end }}
+        {{- if .labels }}
+        labels:
+          {{- toYaml .labels | nindent 10 }}
         {{- end }}
       spec:
         {{- $storageClass := default .storageClass $rolloutZone.storageClass }}
@@ -114,14 +118,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}
+      {{- with .Values.ingester.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
@@ -150,6 +153,9 @@ spec:
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- if $zoneName }}
             - "-ingester.ring.instance-availability-zone={{ $zoneName }}"
+            {{- if and .Values.ingester.zoneAwareReplication.autoIngestStorageClientRack (ne (dig "ingest_storage" "enabled" true .Values.mimir.structuredConfig) false) }}
+            - "-ingest-storage.kafka.client-rack={{ $zoneName }}"
+            {{- end }}
             {{- else }}
             - "-ingester.ring.instance-availability-zone=zone-default"
             {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
@@ -180,10 +186,6 @@ spec:
               {{- if .Values.ingester.persistentVolume.subPath }}
               subPath: {{ .Values.ingester.persistentVolume.subPath }}
               {{- end }}
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:

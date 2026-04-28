@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"      //lint:ignore faillint streamingpromql is fine
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint activitytracker is fine
 	util_log "github.com/grafana/mimir/pkg/util/log"    //lint:ignore faillint log is fine
+	"github.com/grafana/mimir/pkg/util/promqlext"       //lint:ignore faillint promqlext is fine
 )
 
 // Config holds the PromQL engine config exposed by Mimir.
@@ -31,6 +32,8 @@ type Config struct {
 	// series is considered stale.
 	LookbackDelta time.Duration `yaml:"lookback_delta" category:"advanced"`
 
+	EnableDelayedNameRemovalPrometheusEngine bool `yaml:"enable_delayed_name_removal_prometheus_engine" category:"experimental"`
+
 	MimirQueryEngine streamingpromql.EngineOpts `yaml:"mimir_query_engine" category:"experimental"`
 }
 
@@ -47,17 +50,24 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.Timeout, "querier.timeout", 2*time.Minute, sharedWithQueryFrontend("The timeout for a query.")+" This also applies to queries evaluated by the ruler (internally or remotely).")
 	f.IntVar(&cfg.MaxSamples, "querier.max-samples", 50e6, sharedWithQueryFrontend("Maximum number of samples a single query can load into memory."))
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, sharedWithQueryFrontend("The default evaluation interval or step size for subqueries."))
-	f.DurationVar(&cfg.LookbackDelta, "querier.lookback-delta", 5*time.Minute, sharedWithQueryFrontend("Time since the last sample after which a time series is considered stale and ignored by expression evaluations."))
+	f.DurationVar(&cfg.LookbackDelta, "querier.lookback-delta", streamingpromql.DefaultLookbackDelta, sharedWithQueryFrontend("Time since the last sample after which a time series is considered stale and ignored by expression evaluations."))
+	f.BoolVar(&cfg.EnableDelayedNameRemovalPrometheusEngine, "querier.enable-delayed-name-removal-prometheus-engine", false, "Enable the experimental PromQL feature for delayed name removal in the Prometheus engine. Note that this only applies when the Prometheus engine is selected or used as fallback from the Mimir Query Engine.")
 
 	cfg.MimirQueryEngine.RegisterFlags(f)
 }
 
+func (cfg *Config) Validate() error {
+	return cfg.MimirQueryEngine.Validate()
+}
+
 // NewPromQLEngineOptions returns the PromQL engine options based on the provided config.
-func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) (promql.EngineOpts, streamingpromql.EngineOpts) {
+func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer, limits streamingpromql.QueryLimitsProvider) (promql.EngineOpts, streamingpromql.EngineOpts) {
+	tracker := newQueryTracker(activityTracker)
+
 	commonOpts := promql.EngineOpts{
 		Logger:               util_log.SlogFromGoKit(logger),
 		Reg:                  reg,
-		ActiveQueryTracker:   newQueryTracker(activityTracker),
+		ActiveQueryTracker:   tracker,
 		MaxSamples:           cfg.MaxSamples,
 		Timeout:              cfg.Timeout,
 		LookbackDelta:        cfg.LookbackDelta,
@@ -66,10 +76,15 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
-		EnablePerStepStats: true, // Always enable per-step stats, since they are collected only if "stats=all" query parameter is set in addition to engine option.
+		// This only applies to the fallback Prometheus engine. MQE's is defined per-tenant via limits.
+		EnableDelayedNameRemoval: cfg.EnableDelayedNameRemovalPrometheusEngine,
+		Parser:                   promqlext.NewPromQLParser(),
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts
+	cfg.MimirQueryEngine.ActiveQueryTracker = tracker
+	cfg.MimirQueryEngine.Logger = logger
+	cfg.MimirQueryEngine.Limits = limits
 
 	return commonOpts, cfg.MimirQueryEngine
 }

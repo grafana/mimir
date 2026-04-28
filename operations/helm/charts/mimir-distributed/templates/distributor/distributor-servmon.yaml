@@ -1,3 +1,3 @@
-{{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.distributor.enabled }}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "distributor" "memberlist" true) }}
 {{- end }}

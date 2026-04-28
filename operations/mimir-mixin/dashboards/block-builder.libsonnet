@@ -124,44 +124,9 @@ local filename = 'mimir-block-builder.json';
           'Overview of per-second rate of records fetched from Kafka split by pods.',
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder) },
-          '{{pod}}'
-        ) +
-        $.stack,
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.timeseriesPanel('Partition processing / sec') +
-        $.panelDescription(
-          'Partition processing / sec',
-          'Per-partition rate of consumption cycles.',
-        ) +
-        $.queryPanel(
-          'sum by (partition) (histogram_count(increase(cortex_blockbuilder_process_partition_duration_seconds{%(job)s}[1m])))' % [$.jobMatcher($._config.job_names.block_builder)],
-          '{{partition}}'
-        )
-      )
-      .addPanel(
-        $.timeseriesPanel('Partition processing duration') +
-        $.panelDescription(
-          'Partition processing duration',
-          'Amount of time that it takes to process a partition.'
-        ) +
-        $.queryPanel(
-          [
-            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_process_partition_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_process_partition_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-            'histogram_avg(sum (rate(cortex_blockbuilder_process_partition_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-          ],
-          [
-            '50th percentile',
-            '99th percentile',
-            'average',
-          ],
-        ) +
-        { fieldConfig+: { defaults+: { unit: 's' } } },
+          'sum by (%(per_instance_label)s) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { per_instance_label: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.block_builder) },
+          '{{%(per_instance_label)s}}' % $._config.per_instance_label,
+        ),
       )
       .addPanel(
         $.timeseriesPanel('Job processing duration') +
@@ -183,7 +148,6 @@ local filename = 'mimir-block-builder.json';
         ) +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
-
     )
     .addRow(
       $.row('TSDB')
@@ -234,6 +198,37 @@ local filename = 'mimir-block-builder.json';
       .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('block_builder'),
       )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.timeseriesPanel('In-memory series') +
+        $.panelDescription(
+          'In-memory series',
+          'Number of in-memory series handled by each block-builder instance.',
+        ) +
+        $.queryPanel(
+          'sum by (%(per_instance_label)s) (cortex_blockbuilder_memory_series{%(job)s})' % { per_instance_label: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.block_builder) },
+          '{{%(per_instance_label)s}}' % $._config.per_instance_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'short' }, custom+: { fillOpacity: 0 } } },
+      )
+      .splitIntoLines([4, 1])  // Puts "in-memory series" panel below the rest of the resources
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.containerDiskWritesPanelByComponent('block_builder')
+      )
+      .addPanel(
+        $.containerDiskReadsPanelByComponent('block_builder')
+      )
+      .addPanel(
+        $.containerDiskSpaceUtilizationPanelByComponent('block_builder'),
+      )
     )
     .addRowIf(
       $._config.autoscaling.block_builder.enabled,
@@ -249,12 +244,18 @@ local filename = 'mimir-block-builder.json';
       )
     )
     .addRow(
-      $.row('Scheduler resources')
+      $.row('Block-builder-scheduler resources')
       .addPanel(
         $.containerCPUUsagePanelByComponent('block_builder_scheduler'),
       )
       .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('block_builder_scheduler'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('block_builder_scheduler'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('block_builder_scheduler'),
       )
     ),
 }

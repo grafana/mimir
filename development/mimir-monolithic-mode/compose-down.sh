@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 # Provenance-includes-location: https://github.com/cortexproject/cortex/development/tsdb-blocks-storage-s3-single-binary/compose-down.sh
 # Provenance-includes-license: Apache-2.0
@@ -35,6 +35,7 @@ done
 
 DEFAULT_PROFILES=(
     "--profile" "prometheus"
+    "--profile" "prometheusRW2"
     "--profile" "grafana-agent-static"
     "--profile" "grafana-agent-flow"
     "--profile" "otel-collector-remote-write"

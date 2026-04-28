@@ -12,10 +12,16 @@
 //	#{ns}_produce_bytes_total{node_id="#{node}",topic="#{topic}"}
 //	#{ns}_fetch_bytes_total{node_id="#{node}",topic="#{topic}"}
 //	#{ns}_buffered_produce_records_total
+//	#{ns}_buffered_produce_bytes_total
 //	#{ns}_buffered_fetch_records_total
+//	#{ns}_buffered_fetch_bytes_total
 //
 // The above metrics can be expanded considerably with options in this package,
 // allowing timings, uncompressed and compressed bytes, and different labels.
+//
+// The labels on broker-level metrics can be configured with the
+// BrokerLabels option to reduce cardinality or add dimensions like host
+// or rack.
 //
 // This can be used in a client like so:
 //
@@ -98,7 +104,12 @@ type Metrics struct {
 
 	// Buffered
 	bufferedFetchRecords   prometheus.GaugeFunc
+	bufferedFetchBytes     prometheus.GaugeFunc
 	bufferedProduceRecords prometheus.GaugeFunc
+	bufferedProduceBytes   prometheus.GaugeFunc
+
+	// Holds references to all metric collectors
+	allMetricCollectors []prometheus.Collector
 }
 
 // NewMetrics returns a new Metrics that adds prometheus metrics to the
@@ -128,10 +139,12 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		factory     = promauto.With(m.cfg.reg)
 		namespace   = m.cfg.namespace
 		subsystem   = m.cfg.subsystem
-		constLabels prometheus.Labels
+		constLabels = m.cfg.withConstLabels
 	)
 	if m.cfg.withClientLabel {
-		constLabels = make(prometheus.Labels)
+		if constLabels == nil {
+			constLabels = make(prometheus.Labels)
+		}
 		constLabels["client_id"] = client.OptValue(kgo.ClientID).(string)
 	}
 
@@ -151,7 +164,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		ConstLabels: constLabels,
 		Name:        "connects_total",
 		Help:        "Total number of connections opened",
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	m.connConnectErrorsTotal = factory.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
@@ -159,7 +172,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		ConstLabels: constLabels,
 		Name:        "connect_errors_total",
 		Help:        "Total number of connection errors",
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	m.connDisconnectsTotal = factory.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
@@ -167,7 +180,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		ConstLabels: constLabels,
 		Name:        "disconnects_total",
 		Help:        "Total number of connections closed",
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	// Write
 
@@ -176,8 +189,8 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Subsystem:   subsystem,
 		ConstLabels: constLabels,
 		Name:        "write_bytes_total",
-		Help:        "Total number of bytes written",
-	}, []string{"node_id"})
+		Help:        "Total number of bytes written to the TCP connection. The bytes count is tracked after compression (when used).",
+	}, m.cfg.brokerLabels)
 
 	m.writeErrorsTotal = factory.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
@@ -185,7 +198,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		ConstLabels: constLabels,
 		Name:        "write_errors_total",
 		Help:        "Total number of write errors",
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	m.writeWaitSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   namespace,
@@ -194,7 +207,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Name:        "write_wait_seconds",
 		Help:        "Time spent waiting to write to Kafka",
 		Buckets:     getHistogramBuckets(WriteWait),
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	m.writeTimeSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   namespace,
@@ -203,7 +216,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Name:        "write_time_seconds",
 		Help:        "Time spent writing to Kafka",
 		Buckets:     getHistogramBuckets(WriteTime),
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	// Read
 
@@ -212,8 +225,8 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Subsystem:   subsystem,
 		ConstLabels: constLabels,
 		Name:        "read_bytes_total",
-		Help:        "Total number of bytes read",
-	}, []string{"node_id"})
+		Help:        "Total number of bytes read from the TCP connection. The bytes count is tracked before uncompression (when used).",
+	}, m.cfg.brokerLabels)
 
 	m.readErrorsTotal = factory.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
@@ -221,7 +234,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		ConstLabels: constLabels,
 		Name:        "read_errors_total",
 		Help:        "Total number of read errors",
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	m.readWaitSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   namespace,
@@ -230,7 +243,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Name:        "read_wait_seconds",
 		Help:        "Time spent waiting to read from Kafka",
 		Buckets:     getHistogramBuckets(ReadWait),
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	m.readTimeSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   namespace,
@@ -239,7 +252,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Name:        "read_time_seconds",
 		Help:        "Time spent reading from Kafka",
 		Buckets:     getHistogramBuckets(ReadTime),
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	// Request E2E duration & Throttle
 
@@ -250,7 +263,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Name:        "request_duration_e2e_seconds",
 		Help:        "Time from the start of when a request is written to the end of when the response for that request was fully read",
 		Buckets:     getHistogramBuckets(RequestDurationE2E),
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	m.requestThrottledSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   namespace,
@@ -259,7 +272,7 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Name:        "request_throttled_seconds",
 		Help:        "Time the request was throttled",
 		Buckets:     getHistogramBuckets(RequestThrottled),
-	}, []string{"node_id"})
+	}, m.cfg.brokerLabels)
 
 	// Produce
 
@@ -350,6 +363,17 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		func() float64 { return float64(client.BufferedProduceRecords()) },
 	)
 
+	m.bufferedProduceBytes = factory.NewGaugeFunc(
+		prometheus.GaugeOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			ConstLabels: constLabels,
+			Name:        "buffered_produce_bytes",
+			Help:        "Total number of bytes buffered within the client ready to be produced",
+		},
+		func() float64 { return float64(client.BufferedProduceBytes()) },
+	)
+
 	m.bufferedFetchRecords = factory.NewGaugeFunc(
 		prometheus.GaugeOpts{
 			Namespace:   namespace,
@@ -360,53 +384,73 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		},
 		func() float64 { return float64(client.BufferedFetchRecords()) },
 	)
+
+	m.bufferedFetchBytes = factory.NewGaugeFunc(
+		prometheus.GaugeOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			ConstLabels: constLabels,
+			Name:        "buffered_fetch_bytes",
+			Help:        "Total number of bytes buffered within the client ready to be consumed",
+		},
+		func() float64 { return float64(client.BufferedFetchBytes()) },
+	)
+
+	m.allMetricCollectors = append(m.allMetricCollectors,
+		m.connConnectsTotal,
+		m.connConnectErrorsTotal,
+		m.connDisconnectsTotal,
+		m.writeBytesTotal,
+		m.writeErrorsTotal,
+		m.writeWaitSeconds,
+		m.writeTimeSeconds,
+		m.readBytesTotal,
+		m.readErrorsTotal,
+		m.readWaitSeconds,
+		m.readTimeSeconds,
+		m.requestDurationE2ESeconds,
+		m.requestThrottledSeconds,
+		m.produceCompressedBytes,
+		m.produceUncompressedBytes,
+		m.produceBatchesTotal,
+		m.produceRecordsTotal,
+		m.fetchCompressedBytes,
+		m.fetchUncompressedBytes,
+		m.fetchBatchesTotal,
+		m.fetchRecordsTotal,
+		m.bufferedFetchRecords,
+		m.bufferedFetchBytes,
+		m.bufferedProduceRecords,
+		m.bufferedProduceBytes,
+	)
 }
 
 // OnClientClosed will unregister kprom metrics from kprom registerer
 func (m *Metrics) OnClientClosed(*kgo.Client) {
-	_ = m.cfg.reg.Unregister(m.connConnectsTotal)
-	_ = m.cfg.reg.Unregister(m.connConnectErrorsTotal)
-	_ = m.cfg.reg.Unregister(m.connDisconnectsTotal)
-	_ = m.cfg.reg.Unregister(m.writeBytesTotal)
-	_ = m.cfg.reg.Unregister(m.writeErrorsTotal)
-	_ = m.cfg.reg.Unregister(m.writeWaitSeconds)
-	_ = m.cfg.reg.Unregister(m.writeTimeSeconds)
-	_ = m.cfg.reg.Unregister(m.readBytesTotal)
-	_ = m.cfg.reg.Unregister(m.readErrorsTotal)
-	_ = m.cfg.reg.Unregister(m.readWaitSeconds)
-	_ = m.cfg.reg.Unregister(m.readTimeSeconds)
-	_ = m.cfg.reg.Unregister(m.requestDurationE2ESeconds)
-	_ = m.cfg.reg.Unregister(m.requestThrottledSeconds)
-	_ = m.cfg.reg.Unregister(m.produceCompressedBytes)
-	_ = m.cfg.reg.Unregister(m.produceUncompressedBytes)
-	_ = m.cfg.reg.Unregister(m.produceBatchesTotal)
-	_ = m.cfg.reg.Unregister(m.produceRecordsTotal)
-	_ = m.cfg.reg.Unregister(m.fetchCompressedBytes)
-	_ = m.cfg.reg.Unregister(m.fetchUncompressedBytes)
-	_ = m.cfg.reg.Unregister(m.fetchBatchesTotal)
-	_ = m.cfg.reg.Unregister(m.fetchRecordsTotal)
-	_ = m.cfg.reg.Unregister(m.bufferedFetchRecords)
-	_ = m.cfg.reg.Unregister(m.bufferedProduceRecords)
+	if m.cfg.reg != nil {
+		for _, c := range m.allMetricCollectors {
+			m.cfg.reg.Unregister(c)
+		}
+	}
 }
 
 // OnBrokerConnect implements the HookBrokerConnect interface for metrics
 // gathering.
 // This method is meant to be called by the hook system and not by the user
 func (m *Metrics) OnBrokerConnect(meta kgo.BrokerMetadata, _ time.Duration, _ net.Conn, err error) {
-	nodeId := kgo.NodeName(meta.NodeID)
+	labels := m.brokerLabelValues(meta)
 	if err != nil {
-		m.connConnectErrorsTotal.WithLabelValues(nodeId).Inc()
+		m.connConnectErrorsTotal.WithLabelValues(labels...).Inc()
 		return
 	}
-	m.connConnectsTotal.WithLabelValues(nodeId).Inc()
+	m.connConnectsTotal.WithLabelValues(labels...).Inc()
 }
 
 // OnBrokerDisconnect implements the HookBrokerDisconnect interface for metrics
 // gathering.
 // This method is meant to be called by the hook system and not by the user
 func (m *Metrics) OnBrokerDisconnect(meta kgo.BrokerMetadata, _ net.Conn) {
-	nodeId := kgo.NodeName(meta.NodeID)
-	m.connDisconnectsTotal.WithLabelValues(nodeId).Inc()
+	m.connDisconnectsTotal.WithLabelValues(m.brokerLabelValues(meta)...).Inc()
 }
 
 // OnBrokerThrottle implements the HookBrokerThrottle interface for metrics
@@ -414,8 +458,7 @@ func (m *Metrics) OnBrokerDisconnect(meta kgo.BrokerMetadata, _ net.Conn) {
 // This method is meant to be called by the hook system and not by the user
 func (m *Metrics) OnBrokerThrottle(meta kgo.BrokerMetadata, throttleInterval time.Duration, _ bool) {
 	if _, ok := m.cfg.histograms[RequestThrottled]; ok {
-		nodeId := kgo.NodeName(meta.NodeID)
-		m.requestThrottledSeconds.WithLabelValues(nodeId).Observe(throttleInterval.Seconds())
+		m.requestThrottledSeconds.WithLabelValues(m.brokerLabelValues(meta)...).Observe(throttleInterval.Seconds())
 	}
 }
 
@@ -468,32 +511,70 @@ func (m *Metrics) OnBrokerWrite(meta kgo.BrokerMetadata, _ int16, bytesWritten i
 // OnBrokerE2E implements the HookBrokerE2E interface for metrics gathering
 // This method is meant to be called by the hook system and not by the user
 func (m *Metrics) OnBrokerE2E(meta kgo.BrokerMetadata, _ int16, e2e kgo.BrokerE2E) {
-	nodeId := kgo.NodeName(meta.NodeID)
+	labels := m.brokerLabelValues(meta)
 	if e2e.WriteErr != nil {
-		m.writeErrorsTotal.WithLabelValues(nodeId).Inc()
+		m.writeErrorsTotal.WithLabelValues(labels...).Inc()
 		return
 	}
-	m.writeBytesTotal.WithLabelValues(nodeId).Add(float64(e2e.BytesWritten))
+	m.writeBytesTotal.WithLabelValues(labels...).Add(float64(e2e.BytesWritten))
 	if _, ok := m.cfg.histograms[WriteWait]; ok {
-		m.writeWaitSeconds.WithLabelValues(nodeId).Observe(e2e.WriteWait.Seconds())
+		m.writeWaitSeconds.WithLabelValues(labels...).Observe(e2e.WriteWait.Seconds())
 	}
 	if _, ok := m.cfg.histograms[WriteTime]; ok {
-		m.writeTimeSeconds.WithLabelValues(nodeId).Observe(e2e.TimeToWrite.Seconds())
+		m.writeTimeSeconds.WithLabelValues(labels...).Observe(e2e.TimeToWrite.Seconds())
 	}
 	if e2e.ReadErr != nil {
-		m.readErrorsTotal.WithLabelValues(nodeId).Inc()
+		m.readErrorsTotal.WithLabelValues(labels...).Inc()
 		return
 	}
-	m.readBytesTotal.WithLabelValues(nodeId).Add(float64(e2e.BytesRead))
+	m.readBytesTotal.WithLabelValues(labels...).Add(float64(e2e.BytesRead))
 	if _, ok := m.cfg.histograms[ReadWait]; ok {
-		m.readWaitSeconds.WithLabelValues(nodeId).Observe(e2e.ReadWait.Seconds())
+		m.readWaitSeconds.WithLabelValues(labels...).Observe(e2e.ReadWait.Seconds())
 	}
 	if _, ok := m.cfg.histograms[ReadTime]; ok {
-		m.readTimeSeconds.WithLabelValues(nodeId).Observe(e2e.TimeToRead.Seconds())
+		m.readTimeSeconds.WithLabelValues(labels...).Observe(e2e.TimeToRead.Seconds())
 	}
 	if _, ok := m.cfg.histograms[RequestDurationE2E]; ok {
-		m.requestDurationE2ESeconds.WithLabelValues(nodeId).Observe(e2e.DurationE2E().Seconds())
+		m.requestDurationE2ESeconds.WithLabelValues(labels...).Observe(e2e.DurationE2E().Seconds())
 	}
+}
+
+// Collect returns the current state of all metrics of the collector.
+// Collect & Describe will allow applications that use kprom to
+// register multiple collectors to the same registry by inverting the dependency.
+// This follows the recommended approach of collector implementation
+// https://github.com/prometheus/client_golang/blob/main/prometheus/collector.go#L16-L18
+func (m *Metrics) Collect(ch chan<- prometheus.Metric) {
+	for _, c := range m.allMetricCollectors {
+		c.Collect(ch)
+	}
+}
+
+// Describe returns all descriptions of the collector.
+func (m *Metrics) Describe(ch chan<- *prometheus.Desc) {
+	for _, c := range m.allMetricCollectors {
+		c.Describe(ch)
+	}
+}
+
+func (m *Metrics) brokerLabelValues(meta kgo.BrokerMetadata) []string {
+	if len(m.cfg.brokerLabels) == 0 {
+		return nil
+	}
+	values := make([]string, len(m.cfg.brokerLabels))
+	for i, l := range m.cfg.brokerLabels {
+		switch l {
+		case "node_id":
+			values[i] = kgo.NodeName(meta.NodeID)
+		case "host":
+			values[i] = meta.Host
+		case "rack":
+			if meta.Rack != nil {
+				values[i] = *meta.Rack
+			}
+		}
+	}
+	return values
 }
 
 func (m *Metrics) fetchProducerLabels(nodeId, topic string) prometheus.Labels {

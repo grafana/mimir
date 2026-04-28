@@ -67,10 +67,10 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}[$__rate_interval]))",
@@ -115,10 +115,10 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n",
@@ -166,7 +166,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"})",
@@ -177,6 +177,21 @@
                   ],
                   "title": "Memory (go heap inuse)",
                   "type": "timeseries"
+               },
+               {
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
+                           "stacking": {
+                              "mode": "normal"
+                           }
+                        }
+                     }
+                  },
+                  "id": 4,
+                  "span": 3
                }
             ],
             "repeat": null,
@@ -266,7 +281,7 @@
                         }
                      ]
                   },
-                  "id": 4,
+                  "id": 5,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -277,7 +292,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}[$__rate_interval]))",
@@ -362,10 +377,37 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
-                  "id": 5,
+                  "id": 6,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -376,7 +418,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}\n",
@@ -413,7 +455,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 6,
+                  "id": 7,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -424,7 +466,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"})",
@@ -435,6 +477,10 @@
                   ],
                   "title": "Memory (go heap inuse)",
                   "type": "timeseries"
+               },
+               {
+                  "id": 8,
+                  "span": 3
                }
             ],
             "repeat": null,
@@ -524,7 +570,7 @@
                         }
                      ]
                   },
-                  "id": 7,
+                  "id": 9,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -535,7 +581,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}[$__rate_interval]))",
@@ -620,10 +666,37 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
-                  "id": 8,
+                  "id": 10,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -634,7 +707,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}\n",
@@ -671,216 +744,6 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 9,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "desc"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"})",
-                        "format": "time_series",
-                        "legendFormat": "{{instance}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Memory (go heap inuse)",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Query-scheduler",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 0,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "short"
-                     },
-                     "overrides": [
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "request"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#FFC000",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "limit"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E02F44",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        }
-                     ]
-                  },
-                  "id": 10,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "desc"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}[$__rate_interval]))",
-                        "format": "time_series",
-                        "legendFormat": "{{instance}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "CPU",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 0,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "bytes"
-                     },
-                     "overrides": [
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "request"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#FFC000",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "limit"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E02F44",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        }
-                     ]
-                  },
                   "id": 11,
                   "links": [ ],
                   "options": {
@@ -892,58 +755,10 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
-                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n",
-                        "format": "time_series",
-                        "legendFormat": "{{instance}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Memory (workingset)",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 0,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "bytes"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 12,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "desc"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"})",
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -951,13 +766,17 @@
                   ],
                   "title": "Memory (go heap inuse)",
                   "type": "timeseries"
+               },
+               {
+                  "id": 12,
+                  "span": 3
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Querier",
+            "title": "Query-scheduler",
             "titleSize": "h6"
          },
          {
@@ -1051,7 +870,296 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "CPU",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "request"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#FFC000",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E02F44",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 14,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}\n",
+                        "format": "time_series",
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Memory (workingset)",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 15,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"})",
+                        "format": "time_series",
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Memory (go heap inuse)",
+                  "type": "timeseries"
+               },
+               {
+                  "id": 16,
+                  "span": 3
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Querier",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "request"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#FFC000",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E02F44",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 17,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]))",
@@ -1086,66 +1194,6 @@
                         },
                         "unit": "bytes"
                      },
-                     "overrides": [ ]
-                  },
-                  "id": 14,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "desc"
-                     }
-                  },
-                  "span": 6,
-                  "targets": [
-                     {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"})",
-                        "format": "time_series",
-                        "legendFormat": "{{instance}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Memory (go heap inuse)",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Ingester",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 0,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "bytes"
-                     },
                      "overrides": [
                         {
                            "matcher": {
@@ -1196,262 +1244,31 @@
                                  }
                               }
                            ]
-                        }
-                     ]
-                  },
-                  "id": 15,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "desc"
-                     }
-                  },
-                  "span": 6,
-                  "targets": [
-                     {
-                        "expr": "node_memory_Active_anon_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n+ node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n",
-                        "format": "time_series",
-                        "legendFormat": "{{instance}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Memory (RSS)",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 0,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
                         },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "bytes"
-                     },
-                     "overrides": [
                         {
                            "matcher": {
-                              "id": "byName",
-                              "options": "request"
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
                            },
                            "properties": [
                               {
                                  "id": "color",
                                  "value": {
-                                    "fixedColor": "#FFC000",
+                                    "fixedColor": "#E24D42",
                                     "mode": "fixed"
                                  }
                               },
                               {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
                               },
                               {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "limit"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E02F44",
-                                    "mode": "fixed"
-                                 }
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
                               },
                               {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        }
-                     ]
-                  },
-                  "id": 16,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "desc"
-                     }
-                  },
-                  "span": 6,
-                  "targets": [
-                     {
-                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n",
-                        "format": "time_series",
-                        "legendFormat": "{{instance}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Memory (workingset)",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "short"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 17,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 6,
-                  "targets": [
-                     {
-                        "expr": "sum by(instance) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"})",
-                        "format": "time_series",
-                        "legendFormat": "{{instance}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Rules",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 0,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "short"
-                     },
-                     "overrides": [
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "request"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#FFC000",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "limit"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E02F44",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
+                                 "id": "unit",
+                                 "value": "none"
                               }
                            ]
                         }
@@ -1468,121 +1285,10 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}[$__rate_interval]))",
-                        "format": "time_series",
-                        "legendFormat": "{{instance}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "CPU",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Ruler",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 0,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "bytes"
-                     },
-                     "overrides": [
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "request"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#FFC000",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "limit"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E02F44",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        }
-                     ]
-                  },
-                  "id": 19,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "desc"
-                     }
-                  },
-                  "span": 6,
-                  "targets": [
-                     {
-                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n",
+                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -1616,7 +1322,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1627,10 +1333,10 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"})",
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -1638,13 +1344,17 @@
                   ],
                   "title": "Memory (go heap inuse)",
                   "type": "timeseries"
+               },
+               {
+                  "id": 20,
+                  "span": 3
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "",
+            "title": "Ingester",
             "titleSize": "h6"
          },
          {
@@ -1738,7 +1448,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}[$__rate_interval]))",
@@ -1773,66 +1483,6 @@
                         },
                         "unit": "bytes"
                      },
-                     "overrides": [ ]
-                  },
-                  "id": 22,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "desc"
-                     }
-                  },
-                  "span": 6,
-                  "targets": [
-                     {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"})",
-                        "format": "time_series",
-                        "legendFormat": "{{instance}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Memory (go heap inuse)",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Store-gateway",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 0,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "bytes"
-                     },
                      "overrides": [
                         {
                            "matcher": {
@@ -1883,10 +1533,37 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
-                  "id": 23,
+                  "id": 22,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1897,16 +1574,16 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
-                        "expr": "node_memory_Active_anon_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n+ node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n",
+                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
                   ],
-                  "title": "Memory (RSS)",
+                  "title": "Memory (workingset)",
                   "type": "timeseries"
                },
                {
@@ -1932,60 +1609,9 @@
                         },
                         "unit": "bytes"
                      },
-                     "overrides": [
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "request"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#FFC000",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
-                              "options": "limit"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#E02F44",
-                                    "mode": "fixed"
-                                 }
-                              },
-                              {
-                                 "id": "custom.fillOpacity",
-                                 "value": 0
-                              },
-                              {
-                                 "id": "custom.lineStyle",
-                                 "value": {
-                                    "fill": "dash"
-                                 }
-                              }
-                           ]
-                        }
-                     ]
+                     "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1996,24 +1622,28 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
-                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}\n",
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
                   ],
-                  "title": "Memory (workingset)",
+                  "title": "Memory (go heap inuse)",
                   "type": "timeseries"
+               },
+               {
+                  "id": 24,
+                  "span": 3
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "",
+            "title": "Store-gateway",
             "titleSize": "h6"
          },
          {
@@ -2053,7 +1683,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
@@ -2101,7 +1731,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
@@ -2152,7 +1782,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
@@ -2173,6 +1803,343 @@
             "repeatRowId": null,
             "showTitle": true,
             "title": "",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "request"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#FFC000",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E02F44",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 28,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "CPU",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "request"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#FFC000",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E02F44",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 29,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}\n",
+                        "format": "time_series",
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Memory (workingset)",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 30,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"})",
+                        "format": "time_series",
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Memory (go heap inuse)",
+                  "type": "timeseries"
+               },
+               {
+                  "id": 31,
+                  "span": 3
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 20,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 32,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "sum by(instance) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
+                        "format": "time_series",
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Rules",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Ruler",
             "titleSize": "h6"
          }
       ],

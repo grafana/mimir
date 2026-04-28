@@ -27,9 +27,9 @@ To use autoscaling, you need:
 2. Prometheus metrics available for scaling decisions
 
 {{< admonition type="warning" >}}
-Don't use the same Mimir or Grafana Enterprise Metrics cluster for storing and querying autoscaling metrics. Using the same cluster can create a dangerous feedback loop.
+Don't use the same Mimir cluster for storing and querying autoscaling metrics. Using the same cluster can create a dangerous feedback loop.
 
-For instance, if the Mimir or GEM cluster becomes unavailable, autoscaling stops working, because it cannot query the metrics. This prevents the cluster from automatically scaling up during high load or recovery. This inability to scale further exacerbates the cluster's unavailability, which might, in turn, prevent the cluster from recovering.
+For instance, if the Mimir cluster becomes unavailable, autoscaling stops working, because it cannot query the metrics. This prevents the cluster from automatically scaling up during high load or recovery. This inability to scale further exacerbates the cluster's unavailability, which might, in turn, prevent the cluster from recovering.
 
 Instead, use a separate Prometheus instance or a different metrics backend for autoscaling metrics.
 {{< /admonition >}}

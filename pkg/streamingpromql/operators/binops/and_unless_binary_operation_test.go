@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -18,15 +19,125 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
+func TestAndUnlessBinaryOperation_PassesHintMatchersToRHS(t *testing.T) {
+	// Test that when hints are provided, matchers derived from the LHS series' label values are
+	// passed to the RHS SeriesMetadata call to narrow what the RHS fetches. When hints are nil,
+	// the RHS receives nil matchers (which is what happened before).
+	testCases := map[string]struct {
+		isUnless bool
+		hints    *Hints
+
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedRHSMatchers  types.Matchers
+		expectedOutputSeries []labels.Labels
+	}{
+		"and op with hints: RHS receives matcher derived from LHS label values, filtering non-matching RHS series": {
+			isUnless: false,
+			hints:    &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "prod", "series", "left-2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+				labels.FromStrings("env", "staging", "series", "right-2"), // these labels will be filtered out by hint matcher because they're not in RHS
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "prod", "series", "left-2"),
+			},
+		},
+		"unless op with hints: RHS receives matchers for all LHS env values; RHS series not in LHS env values are filtered out": {
+			isUnless: true,
+			hints:    &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+				labels.FromStrings("env", "dev", "series", "right-2"), // filtered out by hint matcher like above
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
+			},
+			// the SeriesMetadata for unless should always returns all of the LHS series, filtering happens in a different part of the pipeline
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+		},
+		"and op with no hints: RHS receives nil matchers": {
+			isUnless: false,
+			hints:    nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+			},
+			expectedRHSMatchers: nil,
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+			},
+		},
+		"unless op with no hints: RHS receives nil matchers": {
+			isUnless: true,
+			hints:    nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+			},
+			expectedRHSMatchers: nil,
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				// the SeriesMetadata for unless should always returns all of the LHS series, filtering happens in a different part of the pipeline
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"env"}}
+			o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{}, testCase.hints, log.NewNopLogger())
+
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedRHSMatchers, right.MatchersProvided, "matchers passed to RHS")
+
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+			require.NoError(t, o.Finalize(ctx))
+			o.Close()
+		})
+	}
+}
+
+func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 	testCases := map[string]struct {
 		isUnless    bool
 		leftSeries  []labels.Labels
 		rightSeries []labels.Labels
 
-		expectedOutputSeries                        []labels.Labels
-		expectLeftSideClosedAfterOutputSeriesIndex  int
-		expectRightSideClosedAfterOutputSeriesIndex int
+		expectedOutputSeries                           []labels.Labels
+		expectLeftSideFinalizedAfterOutputSeriesIndex  int
+		expectRightSideFinalizedAfterOutputSeriesIndex int
 	}{
 		"and: reach end of both sides at the same time": {
 			isUnless: false,
@@ -46,8 +157,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-2"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  2,
-			expectRightSideClosedAfterOutputSeriesIndex: 2,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 2,
 		},
 		"unless: reach end of both sides at the same time": {
 			isUnless: true,
@@ -67,8 +178,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-2"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  2,
-			expectRightSideClosedAfterOutputSeriesIndex: 2,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 2,
 		},
 		"and: no more matches with unmatched series still to read on both sides": {
 			isUnless: false,
@@ -87,8 +198,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "1", "series", "left-2"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  1,
-			expectRightSideClosedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
 		},
 		"unless: no more matches with unmatched series still to read on both sides": {
 			isUnless: true,
@@ -108,8 +219,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-2"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  2,
-			expectRightSideClosedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
 		},
 		"and: no more matches with unmatched series still to read on left side": {
 			isUnless: false,
@@ -127,8 +238,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "1", "series", "left-2"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  1,
-			expectRightSideClosedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
 		},
 		"unless: no more matches with unmatched series still to read on left side": {
 			isUnless: true,
@@ -147,8 +258,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-2"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  2,
-			expectRightSideClosedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
 		},
 		"and: no more matches with unmatched series still to read on right side": {
 			isUnless: false,
@@ -166,8 +277,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "1", "series", "left-2"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  1,
-			expectRightSideClosedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
 		},
 		"unless: no more matches with unmatched series still to read on right side": {
 			isUnless: true,
@@ -185,8 +296,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "1", "series", "left-2"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  1,
-			expectRightSideClosedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
 		},
 		"and: some series do not match anything on the right": {
 			isUnless: false,
@@ -207,8 +318,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-3"),
 				labels.FromStrings("group", "3", "series", "left-4"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  2,
-			expectRightSideClosedAfterOutputSeriesIndex: 2,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
+			expectRightSideFinalizedAfterOutputSeriesIndex: 2,
 		},
 		"and: no series match": {
 			isUnless: false,
@@ -220,9 +331,9 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "3", "series", "right-1"),
 			},
 
-			expectedOutputSeries:                        []labels.Labels{},
-			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
-			expectRightSideClosedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries:                           []labels.Labels{},
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
 		},
 		"unless: no series match": {
 			isUnless: true,
@@ -238,8 +349,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "2", "series", "left-2"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  1,
-			expectRightSideClosedAfterOutputSeriesIndex: -1,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
 		},
 		"and: no series on left": {
 			isUnless:   false,
@@ -250,9 +361,9 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "3", "series", "right-3"),
 			},
 
-			expectedOutputSeries:                        []labels.Labels{},
-			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
-			expectRightSideClosedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries:                           []labels.Labels{},
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
 		},
 		"unless: no series on left": {
 			isUnless:   true,
@@ -263,9 +374,9 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "3", "series", "right-3"),
 			},
 
-			expectedOutputSeries:                        []labels.Labels{},
-			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
-			expectRightSideClosedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries:                           []labels.Labels{},
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
 		},
 		"and: no series on right": {
 			isUnless: false,
@@ -276,9 +387,9 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 			},
 			rightSeries: []labels.Labels{},
 
-			expectedOutputSeries:                        []labels.Labels{},
-			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
-			expectRightSideClosedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries:                           []labels.Labels{},
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
+			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
 		},
 		"unless: no series on right": {
 			isUnless: true,
@@ -294,19 +405,19 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				labels.FromStrings("group", "2", "series", "left-2"),
 				labels.FromStrings("group", "3", "series", "left-3"),
 			},
-			expectLeftSideClosedAfterOutputSeriesIndex:  2,
-			expectRightSideClosedAfterOutputSeriesIndex: -1,
+			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
+			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			if testCase.expectLeftSideClosedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
-				require.Failf(t, "invalid test case", "expectLeftSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			if testCase.expectLeftSideFinalizedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectLeftSideFinalizedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideFinalizedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
-			if testCase.expectRightSideClosedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
-				require.Failf(t, "invalid test case", "expectRightSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			if testCase.expectRightSideFinalizedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectRightSideFinalizedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideFinalizedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
 			ctx := context.Background()
@@ -315,9 +426,9 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
-			o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{})
+			o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{}, nil, log.NewNopLogger())
 
-			outputSeries, err := o.SeriesMetadata(ctx)
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
@@ -326,43 +437,55 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
 
-			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
-				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
+			if testCase.expectLeftSideFinalizedAfterOutputSeriesIndex == -1 {
+				require.True(t, left.Finalized, "left side should be finalized after SeriesMetadata, but it is not")
 			} else {
-				require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
+				require.False(t, left.Finalized, "left side should not be finalized after SeriesMetadata, but it is")
 			}
 
-			if testCase.expectRightSideClosedAfterOutputSeriesIndex == -1 {
-				require.True(t, right.Closed, "right side should be closed after SeriesMetadata, but it is not")
+			if testCase.expectRightSideFinalizedAfterOutputSeriesIndex == -1 {
+				require.True(t, right.Finalized, "right side should be finalized after SeriesMetadata, but it is not")
 			} else {
-				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
+				require.False(t, right.Finalized, "right side should not be finalized after SeriesMetadata, but it is")
 			}
+
+			require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
+			require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
 
 			for outputSeriesIdx := range outputSeries {
 				_, err := o.NextSeries(ctx)
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
-				if outputSeriesIdx >= testCase.expectLeftSideClosedAfterOutputSeriesIndex {
-					require.Truef(t, left.Closed, "left side should be closed after output series at index %v, but it is not", outputSeriesIdx)
+				if outputSeriesIdx >= testCase.expectLeftSideFinalizedAfterOutputSeriesIndex {
+					require.Truef(t, left.Finalized, "left side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
-					require.Falsef(t, left.Closed, "left side should not be closed after output series at index %v, but it is", outputSeriesIdx)
+					require.Falsef(t, left.Finalized, "left side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
 				}
 
-				if outputSeriesIdx >= testCase.expectRightSideClosedAfterOutputSeriesIndex {
-					require.Truef(t, right.Closed, "right side should be closed after output series at index %v, but it is not", outputSeriesIdx)
+				if outputSeriesIdx >= testCase.expectRightSideFinalizedAfterOutputSeriesIndex {
+					require.Truef(t, right.Finalized, "right side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
-					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
+					require.Falsef(t, right.Finalized, "right side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
+
+			require.False(t, left.Closed, "left side should not be closed after reading all output series, but it is")
+			require.False(t, right.Closed, "right side should not be closed after reading all output series, but it is")
 
 			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
 
-			o.Close()
+			require.NoError(t, o.Finalize(ctx))
+			require.True(t, left.Finalized, "left side should be finalized after calling Finalize, but it is not")
+			require.True(t, right.Finalized, "right side should be finalized after calling Finalize, but it is not")
 			// Make sure we've returned everything to their pools.
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+			o.Close()
+			require.True(t, left.Closed, "left side should be closed after closing operator, but it isn't")
+			require.True(t, right.Closed, "right side should be closed after closing operator, but it isn't")
 		})
 	}
 }
@@ -438,9 +561,9 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 					left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 					right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 					vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
-					o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, isUnless, timeRange, posrange.PositionRange{})
+					o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, isUnless, timeRange, posrange.PositionRange{}, nil, log.NewNopLogger())
 
-					outputSeries, err := o.SeriesMetadata(ctx)
+					outputSeries, err := o.SeriesMetadata(ctx, nil)
 					require.NoError(t, err)
 
 					if isUnless {
@@ -454,9 +577,10 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 					_, err = o.NextSeries(ctx)
 					require.NoError(t, err)
 
-					// Close the operator and confirm that we've returned everything to their pools.
-					o.Close()
+					// Finalize the operator and confirm that we've returned everything to their pools.
+					require.NoError(t, o.Finalize(ctx))
 					require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+					o.Close()
 				})
 			}
 		})

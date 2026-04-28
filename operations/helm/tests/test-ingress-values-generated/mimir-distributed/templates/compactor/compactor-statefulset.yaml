@@ -64,6 +64,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: compactor
       terminationGracePeriodSeconds: 900
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:

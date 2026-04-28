@@ -28,7 +28,7 @@ spec:
         release: keda-autoscaling-metamonitoring-values
       annotations:
         checksum/secrets: 2b079ce61089452f9095ab14f5feb3ae1899db15bbf20a8815723477371230a7
-        checksum/config: b02cc0c7ffd8183fd8f34c542c1f7b18803881bd596f6b87bb122f991cba33ff
+        checksum/config: 90da3b0cf8ca5272131d650b465f6d1d89e0153611b876feb312e5fcb9248b1b
     spec:
       securityContext:
         

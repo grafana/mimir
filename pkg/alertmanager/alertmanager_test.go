@@ -7,26 +7,17 @@ package alertmanager
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/alerting/definition"
-	alertingmodels "github.com/grafana/alerting/models"
-	alertingReceivers "github.com/grafana/alerting/receivers"
-	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/alertmanager/silence/silencepb"
@@ -36,7 +27,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/time/rate"
+
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {
@@ -99,11 +91,10 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	var emailCfg alertingReceivers.EmailSenderConfig
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
+	tmpls := make([]*alertspb.TemplateDesc, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw))
 
 	now := time.Now()
 
@@ -141,7 +132,7 @@ route:
 				Timeout:   false,
 			},
 		}
-		require.NoError(t, am.alerts.Put(inputAlerts...))
+		require.NoError(t, am.alerts.Put(context.Background(), inputAlerts...))
 	}
 
 	// Give it some time, as alerts are sent to dispatcher asynchronously.
@@ -185,11 +176,10 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	cfg, err := config.Load(cfgRaw)
 	require.NoError(t, err)
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	var emailCfg alertingReceivers.EmailSenderConfig
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
+	tmpls := make([]*alertspb.TemplateDesc, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -208,7 +198,7 @@ route:
 			Timeout:   false,
 		},
 	}
-	require.NoError(t, am.alerts.Put(inputAlerts...))
+	require.NoError(t, am.alerts.Put(context.Background(), inputAlerts...))
 
 	test.Poll(t, 3*time.Second, true, func() interface{} {
 		logs := buf.String()
@@ -358,6 +348,7 @@ func toMeshSilence(t *testing.T, sil *silencepb.Silence, retention time.Duration
 }
 
 func TestSilenceLimits(t *testing.T) {
+	ctx := context.Background()
 	user := "test"
 
 	r := prometheus.NewPedanticRegistry()
@@ -392,7 +383,7 @@ func TestSilenceLimits(t *testing.T) {
 		StartsAt: time.Now(),
 		EndsAt:   time.Now().Add(5 * time.Minute),
 	}
-	require.NoError(t, am.silences.Set(sil1))
+	require.NoError(t, am.silences.Set(ctx, sil1))
 
 	// Insert sil2 should fail because maximum number of silences has been
 	// exceeded.
@@ -401,17 +392,17 @@ func TestSilenceLimits(t *testing.T) {
 		StartsAt: time.Now(),
 		EndsAt:   time.Now().Add(5 * time.Minute),
 	}
-	require.EqualError(t, am.silences.Set(sil2), "exceeded maximum number of silences: 1 (limit: 1)")
+	require.EqualError(t, am.silences.Set(ctx, sil2), "exceeded maximum number of silences: 1 (limit: 1)")
 
 	// Expire sil1 and run the GC. This should allow sil2 to be inserted.
-	require.NoError(t, am.silences.Expire(sil1.Id))
+	require.NoError(t, am.silences.Expire(ctx, sil1.Id))
 	n, err := am.silences.GC()
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
-	require.NoError(t, am.silences.Set(sil2))
+	require.NoError(t, am.silences.Set(ctx, sil2))
 
 	// Expire sil2 and run the GC.
-	require.NoError(t, am.silences.Expire(sil2.Id))
+	require.NoError(t, am.silences.Expire(ctx, sil2.Id))
 	n, err = am.silences.GC()
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
@@ -433,7 +424,7 @@ func TestSilenceLimits(t *testing.T) {
 		StartsAt:  time.Now(),
 		EndsAt:    time.Now().Add(5 * time.Minute),
 	}
-	require.EqualError(t, am.silences.Set(sil3), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil3, 0).Size()))
+	require.EqualError(t, am.silences.Set(ctx, sil3), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil3, 0).Size()))
 
 	// Should be able to insert sil4.
 	sil4 := &silencepb.Silence{
@@ -441,19 +432,19 @@ func TestSilenceLimits(t *testing.T) {
 		StartsAt: time.Now(),
 		EndsAt:   time.Now().Add(5 * time.Minute),
 	}
-	require.NoError(t, am.silences.Set(sil4))
+	require.NoError(t, am.silences.Set(ctx, sil4))
 
 	// Should be able to update sil4 without modifications. It is expected to
 	// keep the same ID.
 	sil5 := cloneSilence(t, sil4)
-	require.NoError(t, am.silences.Set(sil5))
+	require.NoError(t, am.silences.Set(ctx, sil5))
 	require.Equal(t, sil4.Id, sil5.Id)
 
 	// Should be able to update the comment. It is also expected to keep the
 	// same ID.
 	sil6 := cloneSilence(t, sil5)
 	sil6.Comment = "m"
-	require.NoError(t, am.silences.Set(sil6))
+	require.NoError(t, am.silences.Set(ctx, sil6))
 	require.Equal(t, sil5.Id, sil6.Id)
 
 	// Should not be able to update the start and end time as this requires
@@ -463,10 +454,10 @@ func TestSilenceLimits(t *testing.T) {
 	sil7 := cloneSilence(t, sil6)
 	sil7.StartsAt = time.Now().Add(5 * time.Minute)
 	sil7.EndsAt = time.Now().Add(10 * time.Minute)
-	require.EqualError(t, am.silences.Set(sil7), "exceeded maximum number of silences: 1 (limit: 1)")
+	require.EqualError(t, am.silences.Set(ctx, sil7), "exceeded maximum number of silences: 1 (limit: 1)")
 
 	// sil6 should not be expired because the update failed.
-	sils, _, err := am.silences.Query(silence.QState(types.SilenceStateExpired))
+	sils, _, err := am.silences.Query(ctx, silence.QState(types.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
 
@@ -475,10 +466,10 @@ func TestSilenceLimits(t *testing.T) {
 	limits.maxSilencesCount = 2
 	sil8 := cloneSilence(t, sil6)
 	sil8.Comment = strings.Repeat("m", 2<<11)
-	require.EqualError(t, am.silences.Set(sil8), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil8, 0).Size()))
+	require.EqualError(t, am.silences.Set(ctx, sil8), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil8, 0).Size()))
 
 	// sil6 should not be expired because the update failed.
-	sils, _, err = am.silences.Query(silence.QState(types.SilenceStateExpired))
+	sils, _, err = am.silences.Query(ctx, silence.QState(types.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
 
@@ -490,329 +481,10 @@ func TestSilenceLimits(t *testing.T) {
 	// should still be active.
 	sil9 := cloneSilence(t, sil8)
 	sil9.Matchers = []*silencepb.Matcher{{Name: "n", Pattern: "o"}}
-	require.EqualError(t, am.silences.Set(sil9), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil9, 0).Size()))
+	require.EqualError(t, am.silences.Set(ctx, sil9), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil9, 0).Size()))
 
 	// sil6 should not be expired because the update failed.
-	sils, _, err = am.silences.Query(silence.QState(types.SilenceStateExpired))
+	sils, _, err = am.silences.Query(ctx, silence.QState(types.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
-}
-
-func TestExperimentalReceiversAPI(t *testing.T) {
-	var buf concurrency.SyncBuffer
-	logger := log.NewLogfmtLogger(&buf)
-
-	user := "test"
-	reg := prometheus.NewPedanticRegistry()
-	am, err := New(&Config{
-		UserID:            user,
-		Logger:            logger,
-		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: 10},
-		Features:          featurecontrol.NoopFlags{},
-		TenantDataDir:     t.TempDir(),
-		ExternalURL:       &url.URL{Path: "/am"},
-		ShardingEnabled:   true,
-		Store:             prepareInMemoryAlertStore(),
-		Replicator:        &stubReplicator{},
-		ReplicationFactor: 1,
-		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, reg)
-	require.NoError(t, err)
-	defer am.StopAndWait()
-
-	cfgRaw := `receivers:
-- name: 'recv-1'
-  webhook_configs:
-  - url: http://example.com/
-    send_resolved: true
-
-- name: 'recv-2'
-  webhook_configs:
-  - url: http://example.com/
-    send_resolved: false
-
-route:
-  group_by: ['alertname']
-  group_wait: 10ms
-  group_interval: 10ms
-  receiver: 'recv-1'`
-
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
-	require.NoError(t, err)
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	var emailCfg alertingReceivers.EmailSenderConfig
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
-
-	doGetReceivers := func() []alertingmodels.Receiver {
-		rr := httptest.NewRecorder()
-		am.GetReceiversHandler(rr, nil)
-		require.Equal(t, http.StatusOK, rr.Code)
-		result := []alertingmodels.Receiver{}
-		err = json.Unmarshal(rr.Body.Bytes(), &result)
-		assert.NoError(t, err)
-		slices.SortFunc(result, func(a, b alertingmodels.Receiver) int {
-			return strings.Compare(a.Name, b.Name)
-		})
-		return result
-	}
-
-	// Check the API returns all receivers but without any notification status.
-
-	result := doGetReceivers()
-	assert.Equal(t, []alertingmodels.Receiver{
-		{
-			Name:   "recv-1",
-			Active: true,
-			Integrations: []alertingmodels.Integration{
-				{
-					Name:                      "webhook",
-					LastNotifyAttemptDuration: "0s",
-					SendResolved:              true,
-				},
-			},
-		},
-		{
-			Name: "recv-2",
-			// Receiver not used in a route.
-			Active: false,
-			Integrations: []alertingmodels.Integration{
-				{
-					Name:                      "webhook",
-					LastNotifyAttemptDuration: "0s",
-					// We configure send_resolved to false.
-					SendResolved: false,
-				},
-			},
-		},
-	}, result)
-
-	// Send an alert to cause a notification attempt.
-
-	now := time.Now()
-	inputAlerts := []*types.Alert{
-		{
-			Alert: model.Alert{
-				Labels: model.LabelSet{
-					"alertname": model.LabelValue("Alert-1"),
-					"a":         "b",
-				},
-				Annotations:  model.LabelSet{"templates": `{{ template "test" . }}`},
-				StartsAt:     now,
-				EndsAt:       now.Add(5 * time.Minute),
-				GeneratorURL: "http://example.com/prometheus",
-			},
-			UpdatedAt: now,
-			Timeout:   false,
-		},
-	}
-	require.NoError(t, am.alerts.Put(inputAlerts...))
-
-	// Wait for the API to tell us there was a notification attempt.
-
-	result = []alertingmodels.Receiver{}
-	require.Eventually(t, func() bool {
-		result = doGetReceivers()
-		return len(result) == 2 &&
-			len(result[0].Integrations) == 1 &&
-			len(result[1].Integrations) == 1 &&
-			!result[0].Integrations[0].LastNotifyAttempt.IsZero()
-	}, 5*time.Second, 100*time.Millisecond)
-
-	assert.Equal(t, "webhook", result[0].Integrations[0].Name)
-	assert.NotZero(t, result[0].Integrations[0].LastNotifyAttempt)
-	assert.Equal(t, errRateLimited.Error(), result[0].Integrations[0].LastNotifyAttemptError)
-
-	// Check the status of the other integration is not changed.
-
-	assert.Equal(t, "webhook", result[1].Integrations[0].Name)
-	assert.Zero(t, result[1].Integrations[0].LastNotifyAttempt)
-	assert.Equal(t, "", result[1].Integrations[0].LastNotifyAttemptError)
-}
-
-func TestGrafanaAlertmanager(t *testing.T) {
-	limits := mockAlertManagerLimits{
-		emailNotificationRateLimit: rate.Inf,
-	}
-
-	suffix := "-grafana"
-	am, err := New(&Config{
-		UserID:            "test" + suffix,
-		Logger:            log.NewNopLogger(),
-		Limits:            &limits,
-		Features:          featurecontrol.NoopFlags{},
-		TenantDataDir:     t.TempDir(),
-		ExternalURL:       &url.URL{Path: "/am"},
-		ShardingEnabled:   true,
-		Store:             prepareInMemoryAlertStore(),
-		Replicator:        &stubReplicator{},
-		ReplicationFactor: 1,
-		// We have to set this interval non-zero, though we don't need the persister to do anything.
-		PersisterConfig:                  PersisterConfig{Interval: time.Hour},
-		GrafanaAlertmanagerCompatibility: true,
-	}, prometheus.NewPedanticRegistry())
-	require.NoError(t, err)
-	defer am.StopAndWait()
-
-	// The webhook message should contain the executed Grafana template.
-	type notification struct {
-		*alertingTemplates.ExtendedData
-
-		Message string `json:"message"`
-	}
-	c := make(chan notification)
-	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		var got notification
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
-		defer func() {
-			require.NoError(t, r.Body.Close())
-		}()
-		c <- got
-	}))
-	defer s.Close()
-
-	cfgRaw := fmt.Sprintf(`{
-            "route": {
-                "receiver": "test_receiver",
-                "group_by": ["alertname"]
-            },
-            "receivers": [{
-                "name": "test_receiver",
-                "grafana_managed_receiver_configs": [{
-                    "uid": "",
-                    "name": "webhook test",
-                    "type": "webhook",
-                    "disableResolveMessage": true,
-                    "settings": {
-                        "url": %q,
-                        "message": %q
-                    },
-                }]
-            }],
-        }`, s.URL, `{{ template "test" . }}`)
-
-	cfg, err := definition.LoadCompat([]byte(cfgRaw))
-	require.NoError(t, err)
-	expMessage := `{"field":"value"}`
-	testTemplate := alertingTemplates.TemplateDefinition{
-		Name:     "test",
-		Template: `{{ define "test" -}} {{ coll.Dict "field" "value" | data.ToJSON }} {{- end }}`,
-		Kind:     alertingTemplates.GrafanaKind,
-	}
-
-	expectedImageURL := "http://example.com/image.png"
-
-	var emailCfg alertingReceivers.EmailSenderConfig
-	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
-
-	now := time.Now()
-	alert := types.Alert{
-		Alert: model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue("test-alert"),
-			},
-			Annotations: model.LabelSet{
-				// Check that the image URL is included in the message.
-				alertingmodels.ImageURLAnnotation: model.LabelValue(expectedImageURL),
-			},
-			StartsAt: now.Add(-5 * time.Minute),
-			EndsAt:   now.Add(5 * time.Minute),
-		},
-		UpdatedAt: now,
-	}
-	expected := testTemplate
-	expected.Kind = alertingTemplates.GrafanaKind // should patch kind
-	require.NoError(t, am.alerts.Put(&alert))
-	require.Equal(t, am.templates[0], expected)
-	require.Eventually(t, func() bool {
-		select {
-		case got := <-c:
-			return got.Message == expMessage && got.Alerts[0].ImageURL == expectedImageURL
-		default:
-			return false
-		}
-	}, 5*time.Second, 100*time.Millisecond)
-
-	// Ensure templates are correctly built for empty/noop/blackhole notifiers.
-	cfgRaw = `{
-            "route": {
-                "receiver": "empty_receiver",
-                "group_by": ["alertname"]
-            },
-            "receivers": [{
-                "name": "empty_receiver"
-            }],
-        }`
-
-	cfg, err = definition.LoadCompat([]byte(cfgRaw))
-	require.NoError(t, err)
-
-	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
-
-	// Now attempt to use a template function that doesn't exist. Ensure ApplyConfig fails to validate even if there are no non-empty receivers.
-	testTemplate = alertingTemplates.TemplateDefinition{
-		Name:     "test",
-		Template: `{{ define "test" -}} {{ DOESNTEXIST "field" "value" }} {{- end }}`,
-		Kind:     alertingTemplates.GrafanaKind,
-	}
-	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
-}
-
-func TestGetFullStateHandler(t *testing.T) {
-	am, err := New(&Config{
-		UserID:            "test",
-		Logger:            log.NewNopLogger(),
-		Limits:            &mockAlertManagerLimits{},
-		Features:          featurecontrol.NoopFlags{},
-		TenantDataDir:     t.TempDir(),
-		ExternalURL:       &url.URL{Path: "/am"},
-		ShardingEnabled:   true,
-		Store:             prepareInMemoryAlertStore(),
-		Replicator:        &stubReplicator{},
-		ReplicationFactor: 1,
-		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, prometheus.NewPedanticRegistry())
-	require.NoError(t, err)
-	defer am.StopAndWait()
-
-	// Get the state from the Alertmanager.
-	{
-		rec := httptest.NewRecorder()
-		am.GetFullStateHandler(rec, nil)
-		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-
-		body, err := io.ReadAll(rec.Body)
-		require.NoError(t, err)
-
-		var parsedBody struct {
-			Status string `json:"status"`
-			Data   struct {
-				State string `json:"state"`
-			} `json:"data"`
-		}
-		require.NoError(t, json.Unmarshal(body, &parsedBody))
-		require.Equal(t, "success", parsedBody.Status)
-
-		decodedState, err := base64.StdEncoding.DecodeString(parsedBody.Data.State)
-		require.NoError(t, err)
-
-		var parsedState clusterpb.FullState
-		require.NoError(t, parsedState.Unmarshal([]byte(decodedState)))
-		require.Len(t, parsedState.Parts, 2)
-
-		var nflC, silC int
-		for _, p := range parsedState.Parts {
-			switch p.Key {
-			case "nfl:test":
-				nflC++
-			case "sil:test":
-				silC++
-			default:
-				t.Errorf("unexpected part key in full state: %s", p.Key)
-			}
-		}
-
-		require.Equal(t, 1, nflC, "Expected exactly one notification")
-		require.Equal(t, 1, silC, "Expected exactly one silence")
-	}
 }

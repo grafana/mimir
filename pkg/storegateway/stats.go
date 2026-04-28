@@ -35,8 +35,14 @@ type queryStats struct {
 	cachedPostingsDecompressionErrors  int
 	cachedPostingsDecompressionTimeSum time.Duration
 
-	seriesProcessed        int
+	// seriesProcessed counts series loaded from the index or from the series-for-postings cache.
+	seriesProcessed int
+
+	// seriesProcessedSizeSum tracks the total size in bytes of series entries loaded from the index.
+	// Series loaded from the series-for-postings cache are not included because the cache stores
+	// a re-encoded representation (protobuf + snappy) whose size is not comparable to raw index bytes.
 	seriesProcessedSizeSum int
+
 	seriesOmitted          int
 	seriesFetched          int
 	seriesFetchedSizeSum   int
@@ -56,6 +62,9 @@ type queryStats struct {
 	chunksProcessedSizeSum int
 	chunksReturned         int
 	chunksReturnedSizeSum  int
+
+	chunksInferredSizeCount int
+	chunksFallbackSizeCount int
 
 	mergedSeriesCount int
 	mergedChunksCount int
@@ -99,7 +108,7 @@ func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
 	m := blockQueriedMeta{
 		source:     meta.Thanos.Source,
 		level:      strconv.Itoa(meta.Compaction.Level),
-		outOfOrder: meta.Compaction.FromOutOfOrder(),
+		outOfOrder: meta.IsOutOfOrder(),
 	}
 
 	if m.source == "" {
@@ -110,6 +119,7 @@ func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
 	if meta.Compaction.Level == 0 {
 		m.level = "unknown/old_block"
 	}
+
 	return m
 }
 
@@ -157,6 +167,9 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.chunksProcessedSizeSum += o.chunksProcessedSizeSum
 	s.chunksReturned += o.chunksReturned
 	s.chunksReturnedSizeSum += o.chunksReturnedSizeSum
+
+	s.chunksInferredSizeCount += o.chunksInferredSizeCount
+	s.chunksFallbackSizeCount += o.chunksFallbackSizeCount
 
 	s.mergedSeriesCount += o.mergedSeriesCount
 	s.mergedChunksCount += o.mergedChunksCount

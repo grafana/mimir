@@ -6,6 +6,8 @@
 package types
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -17,7 +19,8 @@ import (
 )
 
 type SeriesMetadata struct {
-	Labels labels.Labels
+	Labels   labels.Labels
+	DropName bool
 }
 
 // AppendSeriesMetadata appends base SeriesMetadataSlice with the provided otherSeriesMetadata.
@@ -154,6 +157,45 @@ type RangeVectorStepData struct {
 	// produced by the query.
 	// RangeEnd is inclusive (ie. points with timestamp <= RangeEnd are included in the range).
 	RangeEnd int64
+
+	// Anchored is set to true when the anchored modifier has been requested on a range query
+	Anchored bool
+
+	// Smoothed is set to true when the smoothed modifier has been requested on a range query
+	Smoothed bool
+}
+
+// SubStep returns a substep with the same StepT but filtered to range (rangeStart, rangeEnd].
+// If previousSubStep is provided, it will be reused to create the new substep. previousSubStep must be a previous
+// substep for the same parent step, and the next step is assumed to cover a later range (we only start searching from
+// after the samples of the previous subviews).
+func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, previousSubStep *RangeVectorStepData) (*RangeVectorStepData, error) {
+	if s.Anchored || s.Smoothed {
+		return nil, errors.New("substep not supported for range vectors with anchored or smoothed modifiers")
+	}
+
+	if rangeStart < s.RangeStart {
+		return nil, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
+	}
+	if rangeEnd > s.RangeEnd {
+		return nil, fmt.Errorf("substep end (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
+	}
+	if rangeStart >= rangeEnd {
+		return nil, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
+	}
+
+	if previousSubStep == nil {
+		previousSubStep = &RangeVectorStepData{}
+	}
+
+	previousSubStep.StepT = s.StepT
+	previousSubStep.RangeStart = rangeStart
+	previousSubStep.RangeEnd = rangeEnd
+
+	previousSubStep.Floats = s.Floats.SubView(rangeStart, rangeEnd, previousSubStep.Floats)
+	previousSubStep.Histograms = s.Histograms.SubView(rangeStart, rangeEnd, previousSubStep.Histograms)
+
+	return previousSubStep, nil
 }
 
 type ScalarData struct {
@@ -173,12 +215,7 @@ func HasDuplicateSeries(metadata []SeriesMetadata) bool {
 	case 0, 1:
 		return false
 	case 2:
-		if metadata[0].Labels.Hash() == metadata[1].Labels.Hash() {
-			return true
-		}
-
-		return false
-
+		return metadata[0].Labels.Hash() == metadata[1].Labels.Hash()
 	default:
 		seen := make(map[uint64]struct{}, len(metadata))
 
@@ -220,25 +257,33 @@ func NewInstantQueryTimeRange(t time.Time) QueryTimeRange {
 func NewRangeQueryTimeRange(start time.Time, end time.Time, interval time.Duration) QueryTimeRange {
 	startT := timestamp.FromTime(start)
 	endT := timestamp.FromTime(end)
-	IntervalMilliseconds := interval.Milliseconds()
+	intervalMilliseconds := interval.Milliseconds()
+	stepCount := int((endT-startT)/intervalMilliseconds) + 1
+
+	if startT > endT {
+		// It is valid for the timestamps to be around the wrong way: this can happen in the case where a subquery selects no points in the range.
+		// However, if this has happened, we need to make sure the step count is not a negative number to prevent trying to allocate a per-step slice
+		// with a negative number of elements.
+		stepCount = 0
+	}
 
 	return QueryTimeRange{
 		StartT:               startT,
 		EndT:                 endT,
-		IntervalMilliseconds: IntervalMilliseconds,
-		StepCount:            int((endT-startT)/IntervalMilliseconds) + 1,
+		IntervalMilliseconds: intervalMilliseconds,
+		StepCount:            stepCount,
 		IsInstant:            false,
 	}
 }
 
 // PointIndex returns the index in the QueryTimeRange that the timestamp, t, falls on.
-// t must be in line with IntervalMs (ie the step).
+// t must be in line with IntervalMilliseconds (ie the step).
 func (q *QueryTimeRange) PointIndex(t int64) int64 {
 	return (t - q.StartT) / q.IntervalMilliseconds
 }
 
 // IndexTime returns the timestamp that the point index, p, falls on.
-// p must be less than StepCount
+// p must be less than StepCount.
 func (q *QueryTimeRange) IndexTime(p int64) int64 {
 	return q.StartT + p*q.IntervalMilliseconds
 }
@@ -249,4 +294,42 @@ func (q *QueryTimeRange) Equal(other QueryTimeRange) bool {
 		q.IntervalMilliseconds == other.IntervalMilliseconds &&
 		q.StepCount == other.StepCount &&
 		q.IsInstant == other.IsInstant
+}
+
+// FirstPointIndexAfter returns the index of the first step with a timestamp strictly greater than t.
+// Returns q.StepCount if no such step exists.
+func (q *QueryTimeRange) FirstPointIndexAfter(t int64) int {
+	offset := t - q.StartT
+	if offset < 0 {
+		return 0
+	}
+	idx := int(offset/q.IntervalMilliseconds) + 1
+	if idx > q.StepCount {
+		return q.StepCount
+	}
+	return idx
+}
+
+// LastPointIndexAtOrBefore returns the index of the last step with a timestamp at or before t.
+// Returns -1 if no such step exists.
+func (q *QueryTimeRange) LastPointIndexAtOrBefore(t int64) int {
+	if t < q.StartT {
+		return -1
+	}
+	offset := t - q.StartT
+	idx := int(offset / q.IntervalMilliseconds)
+	if idx >= q.StepCount {
+		return q.StepCount - 1
+	}
+	return idx
+}
+
+func MatchersMatch(matchers []*labels.Matcher, lbls labels.Labels) bool {
+	for _, matcher := range matchers {
+		if !matcher.Matches(lbls.Get(matcher.Name)) {
+			return false
+		}
+	}
+
+	return true
 }

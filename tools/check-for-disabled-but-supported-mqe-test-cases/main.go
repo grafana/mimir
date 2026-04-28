@@ -14,11 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -33,9 +31,6 @@ var (
 )
 
 func main() {
-	parser.EnableExperimentalFunctions = true // Silence parsing errors due to the use of experimental functions.
-	parser.ExperimentalDurationExpr = true    // Silence parsing errors due to the use of experimental duration expressions.
-
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -58,7 +53,12 @@ func run() error {
 	}
 
 	opts := streamingpromql.NewTestEngineOpts()
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	if err != nil {
+		return fmt.Errorf("could not create planner: %w", err)
+	}
+
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	if err != nil {
 		return fmt.Errorf("could not create engine: %w", err)
 	}

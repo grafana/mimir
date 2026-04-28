@@ -4,8 +4,8 @@
 # Provenance-includes-copyright: The Cortex Authors.
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
-FROM alpine/helm:3.17.2 AS helm
-FROM golang:1.24.6-bookworm
+FROM alpine/helm:4.1.4@sha256:4b0bdd2cf18ff6bca12aba0b2c5671384dab5035c19c57f0c58b854a0baf65be AS helm
+FROM golang:1.25.9-trixie@sha256:091e6099f4a58e9393b8cc5615622a59c1cef64481b0ffcf349ec1574449059e
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -21,47 +21,44 @@ RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN npm install -g prettier@2.3.2
 
-ENV SHFMT_VERSION=3.2.4
+# renovate: depName=github.com/mvdan/sh
+ENV SHFMT_VERSION=3.13.1
 RUN GOARCH=$(go env GOARCH) && \
-	if [ "$GOARCH" = "amd64" ]; then \
-    	DIGEST=3f5a47f8fec27fae3e06d611559a2063f5d27e4b9501171dde9959b8c60a3538; \
-    elif [ "$GOARCH" = "arm64" ]; then \
-    	DIGEST=6474d9cc08a1c9fe2ef4be7a004951998e3067d46cf55a011ddd5ff7bfab3de6; \
-    fi && \
     URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
     curl -fsSLo shfmt "${URL}" && \
-	echo "$DIGEST shfmt" | sha256sum -c && \
 	chmod +x shfmt && \
 	mv shfmt /usr/bin
 
-ENV TANKA_VERSION=0.26.0
+# renovate: depName=github.com/grafana/tanka
+ENV TANKA_VERSION=0.37.0
 RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.0.2
+RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.8.0
 
-ENV SKOPEO_VERSION=v1.15.1
+# renovate: depName=github.com/containers/skopeo
+ENV SKOPEO_VERSION=v1.22.2
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
     rm -rf /go/pkg /go/src /root/.cache
 
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6 && \
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 && \
 	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2 && \
 	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
 	go install github.com/fatih/faillint@v1.15.0 && \
-	go install github.com/campoy/embedmd@v1.0.0 && \
-	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.4.0 && \
+	go install github.com/campoy/embedmd/v2@v2.0.0 && \
+	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.6.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
-	go install github.com/mikefarah/yq/v4@v4.13.4 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.19.1 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.19.1 && \
-	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
-	go install github.com/open-policy-agent/conftest@v0.42.1 && \
+	go install github.com/mikefarah/yq/v4@v4.53.2 && \
+	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.22.0 && \
+	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.22.0 && \
+	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2 && \
+	go install github.com/open-policy-agent/conftest@v0.68.2 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \
-	go install github.com/bufbuild/buf/cmd/buf@v1.55.1 && \
+	go install github.com/bufbuild/buf/cmd/buf@v1.68.4 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm

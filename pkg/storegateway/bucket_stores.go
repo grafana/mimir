@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -23,7 +24,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc/metadata"
@@ -32,7 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -41,9 +41,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
-// (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
-const GrpcContextMetadataTenantID = "__org_id__"
+const (
+	// GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
+	// (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
+	GrpcContextMetadataTenantID = "__org_id__"
+	// GrpcContextMetadataBucketIndexUpdatedAt is a key for GPRC Metadata used to pass bucket index metadata to store-gateway.
+	GrpcContextMetadataBucketIndexUpdatedAt = "__bktidx_updated_at__"
+)
 
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
@@ -81,11 +85,12 @@ type BucketStores struct {
 	allowedTenants *util.AllowList
 
 	// Metrics.
-	syncTimes         prometheus.Histogram
-	syncLastSuccess   prometheus.Gauge
-	tenantsDiscovered prometheus.Gauge
-	tenantsSynced     prometheus.Gauge
-	blocksLoaded      *prometheus.Desc
+	syncTimes             prometheus.Histogram
+	syncLastSuccess       prometheus.Gauge
+	tenantsDiscovered     prometheus.Gauge
+	tenantsSynced         prometheus.Gauge
+	blocksLoaded          *prometheus.Desc
+	blocksLoadedSizeBytes *prometheus.Desc
 }
 
 // NewBucketStores makes a new BucketStores. After starting the returned BucketStores
@@ -118,6 +123,11 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		lazyLoadingGate = timeoutGate{delegate: lazyLoadingGate, timeout: cfg.BucketStore.IndexHeader.LazyLoadingConcurrencyQueueTimeout}
 	}
 
+	maxGapBytesChunks := cfg.BucketStore.PartitionerMaxGapBytesChunks
+	if maxGapBytesChunks == 0 {
+		maxGapBytesChunks = cfg.BucketStore.PartitionerMaxGapBytes
+	}
+
 	u := &BucketStores{
 		logger:             logger,
 		cfg:                cfg,
@@ -130,8 +140,13 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
 		queryGate:          queryGate,
 		lazyLoadingGate:    lazyLoadingGate,
-		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
-		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
+		partitioners: newGapBasedPartitioners(
+			maxGapBytesChunks,
+			cfg.BucketStore.PartitionerMaxGapBytes,
+			cfg.BucketStore.PartitionerMaxGapBytes,
+			reg,
+		),
+		seriesHashCache: hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncBackoffConfig: backoff.Config{
 			MinBackoff: 1 * time.Second,
 			MaxBackoff: 10 * time.Second,
@@ -162,9 +177,14 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		"Number of currently loaded blocks.",
 		nil, nil,
 	)
+	u.blocksLoadedSizeBytes = prometheus.NewDesc(
+		"cortex_bucket_store_blocks_loaded_size_bytes",
+		"Size in bytes used by loaded blocks of discovered tenants.",
+		[]string{"user"}, nil,
+	)
 
 	// Init the index cache.
-	if u.indexCache, err = tsdb.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
+	if u.indexCache, err = indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
 		return nil, errors.Wrap(err, "create index cache")
 	}
 
@@ -194,6 +214,10 @@ func (u *BucketStores) stopBucketStores(error) error {
 func (u *BucketStores) initialSync(ctx context.Context) error {
 	level.Info(u.logger).Log("msg", "synchronizing TSDB blocks for all users")
 
+	if err := os.MkdirAll(u.cfg.BucketStore.SyncDir, 0750); err != nil {
+		return fmt.Errorf("create sync-dir: %w", err)
+	}
+
 	if err := u.syncUsersBlocksWithRetries(ctx, func(ctx context.Context, store *BucketStore) error {
 		return store.InitialSync(ctx)
 	}); err != nil {
@@ -219,6 +243,7 @@ func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(co
 	for retries.Ongoing() {
 		userIDs, err := u.ownedUsers(ctx)
 		if err != nil {
+			lastErr = fmt.Errorf("list owned users: %w", err)
 			retries.Wait()
 			continue
 		}
@@ -267,7 +292,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 
 	wg := &sync.WaitGroup{}
 	jobs := make(chan job)
-	errs := tsdb_errors.NewMulti()
+	errs := multierror.New()
 	errsMx := sync.Mutex{}
 
 	u.tenantsSynced.Set(float64(len(includeUserIDs)))
@@ -327,10 +352,10 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 
 // Series implements the storegatewaypb.StoreGatewayServer interface, making a series request to the underlying user bucket store.
 func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
-	spanLog, spanCtx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.Series")
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.Series")
 	defer spanLog.Finish()
 
-	userID := getUserIDFromGRPCContext(spanCtx)
+	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return fmt.Errorf("no userID")
 	}
@@ -342,16 +367,16 @@ func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 
 	return store.Series(req, spanSeriesServer{
 		StoreGateway_SeriesServer: srv,
-		ctx:                       spanCtx,
+		ctx:                       ctx,
 	})
 }
 
 // LabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	spanLog, spanCtx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelNames")
+	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelNames")
 	defer spanLog.Finish()
 
-	userID := getUserIDFromGRPCContext(spanCtx)
+	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return nil, fmt.Errorf("no userID")
 	}
@@ -366,10 +391,10 @@ func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 
 // LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	spanLog, spanCtx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelValues")
+	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelValues")
 	defer spanLog.Finish()
 
-	userID := getUserIDFromGRPCContext(spanCtx)
+	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return nil, fmt.Errorf("no userID")
 	}
@@ -499,6 +524,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 
 	userBkt := bucket.NewUserBucketClient(userID, u.bucket, u.limits)
 	fetcherReg := prometheus.NewRegistry()
+	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(fetcherReg, u.bucketStoreMetrics)
 
 	// The sharding strategy filter MUST be before the ones we create here (order matters).
 	filters := []block.MetadataFilter{
@@ -511,14 +537,8 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}
-	fetcher := NewBucketIndexMetadataFetcher(
-		userID,
-		u.bucket,
-		u.limits,
-		u.logger,
-		fetcherReg,
-		filters,
-	)
+	loader := NewBucketIndexLoader(userID, u.bucket, u.limits, u.logger)
+	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, u.logger, fetcherMetrics, filters)
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
@@ -529,6 +549,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	bs, err := NewBucketStore(
 		userID,
 		userBkt,
+		newBucketIndexMetadataReaderFromLoader(loader),
 		fetcher,
 		u.syncDirForUser(userID),
 		u.cfg.BucketStore,
@@ -597,28 +618,34 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 	}
 }
 
-// countBlocksLoaded returns the total number of blocks loaded, summed for all users.
-func (u *BucketStores) countBlocksLoaded() int {
-	total := 0
-
-	u.storesMu.RLock()
-	defer u.storesMu.RUnlock()
-
-	for _, store := range u.stores {
-		stats := store.Stats()
-		total += stats.BlocksLoadedTotal
-	}
-
-	return total
-}
-
 func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
 	descs <- u.blocksLoaded
+	descs <- u.blocksLoadedSizeBytes
 }
 
 func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
-	total := u.countBlocksLoaded()
-	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(total))
+	u.storesMu.RLock()
+	// Total number of blocks loaded, summed for all users.
+	loadedTotal := 0
+	// Block sizes by userID.
+	blockSizes := make(map[string]int64, len(u.stores))
+	for userID, store := range u.stores {
+		stats := store.Stats()
+		loadedTotal += stats.BlocksLoadedTotal
+		blockSizes[userID] = stats.BlocksLoadedSizeBytes
+	}
+	u.storesMu.RUnlock()
+
+	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(loadedTotal))
+
+	for userID, size := range blockSizes {
+		metrics <- prometheus.MustNewConstMetric(
+			u.blocksLoadedSizeBytes,
+			prometheus.GaugeValue,
+			float64(size),
+			userID,
+		)
+	}
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {
@@ -628,6 +655,18 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 	}
 
 	return values[0]
+}
+
+func getBucketIndexUpdatedAtFromGRPCContext(ctx context.Context) (int64, error) {
+	values := metadata.ValueFromIncomingContext(ctx, GrpcContextMetadataBucketIndexUpdatedAt)
+	if len(values) != 1 {
+		return 0, fmt.Errorf("no bucket index updated at")
+	}
+	value, err := strconv.ParseInt(values[0], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse bucket index updated at value %q: %w", values[0], err)
+	}
+	return value, nil
 }
 
 type spanSeriesServer struct {

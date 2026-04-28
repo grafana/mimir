@@ -53,7 +53,7 @@ func NewCountValues(
 	expressionPosition posrange.PositionRange,
 ) *CountValues {
 	if without {
-		grouping = append(grouping, labels.MetricName)
+		grouping = append(grouping, model.MetricNameLabel)
 	}
 
 	slices.Sort(grouping)
@@ -81,12 +81,12 @@ var countValuesSeriesPool = sync.Pool{
 	},
 }
 
-func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (c *CountValues) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := c.loadLabelName(); err != nil {
 		return nil, err
 	}
 
-	innerMetadata, err := c.Inner.SeriesMetadata(ctx)
+	innerMetadata, err := c.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -249,16 +249,38 @@ func (c *CountValues) ExpressionPosition() posrange.PositionRange {
 }
 
 func (c *CountValues) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	return c.Inner.Prepare(ctx, params)
+	if err := c.Inner.Prepare(ctx, params); err != nil {
+		return err
+	}
+	return c.LabelName.Prepare(ctx, params)
 }
 
-func (c *CountValues) Close() {
-	c.Inner.Close()
-	c.LabelName.Close()
+func (c *CountValues) AfterPrepare(ctx context.Context) error {
+	if err := c.Inner.AfterPrepare(ctx); err != nil {
+		return err
+	}
+	return c.LabelName.AfterPrepare(ctx)
+}
 
+func (c *CountValues) Finalize(ctx context.Context) error {
 	for _, d := range c.series {
 		types.FPointSlicePool.Put(&d, c.MemoryConsumptionTracker)
 	}
 
 	c.series = nil
+
+	if err := c.Inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return c.LabelName.Finalize(ctx)
+}
+
+func (c *CountValues) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.CombineStats[types.StatsProvider](ctx, c.Inner, c.LabelName)
+}
+
+func (c *CountValues) Close() {
+	c.Inner.Close()
+	c.LabelName.Close()
 }

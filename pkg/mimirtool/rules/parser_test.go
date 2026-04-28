@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
+	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
 
 func TestParseFiles(t *testing.T) {
@@ -122,9 +124,11 @@ func TestParseFiles(t *testing.T) {
 		},
 	}
 
+	promqlParser := util.CreatePromQLParser(false)
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseFiles(tt.backend, tt.files, model.UTF8Validation)
+			got, err := ParseFiles(tt.backend, tt.files, model.UTF8Validation, promqlParser, log.NewNopLogger())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseFiles() error = %v, wantErr %v", err, tt.wantErr)
 				return

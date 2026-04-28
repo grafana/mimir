@@ -45,6 +45,14 @@ message RuleGroupDesc {
   ];
 
   bool align_evaluation_time_on_interval = 12;
+
+  repeated cortexpb.LabelPair labels = 14 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
+
+  // The limit is enforced in Mimir per-user.
+  int32 limit = 15;
 }
 
 // RuleDesc is a proto representation of a Prometheus Rule

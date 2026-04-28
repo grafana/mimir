@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -39,11 +39,11 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
@@ -53,11 +53,14 @@ var (
 	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 	patExpect      = regexp.MustCompile(`^expect\s+(ordered|fail|warn|no_warn|info|no_info)(?:\s+(regex|msg):(.+))?$`)
 	patMatchAny    = regexp.MustCompile(`^.*$`)
+	patExpectRange = regexp.MustCompile(`^` + rangeVectorPrefix + `\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+)$`)
 )
 
 const (
 	defaultEpsilon            = 0.000001 // Relative error allowed for sample values.
 	DefaultMaxSamplesPerQuery = 10000
+	rangeVectorPrefix         = "expect range vector"
+	expectStringPrefix        = "expect string"
 )
 
 type TBRun interface {
@@ -69,7 +72,7 @@ var testStartTime = time.Unix(0, 0).UTC()
 
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
-func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
+func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
 	test, err := newTest(t, input, false, newTestStorage)
 	require.NoError(t, err)
 
@@ -82,6 +85,14 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 		}
 	}
 	return test.storage.(*teststorage.TestStorage)
+}
+
+// TestParserOpts are the parser options used for all built-in test engines.
+var TestParserOpts = parser.Options{
+	EnableExperimentalFunctions:  true,
+	ExperimentalDurationExpr:     true,
+	EnableExtendedRangeSelectors: true,
+	EnableBinopFillModifiers:     true,
 }
 
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.
@@ -97,6 +108,8 @@ func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Du
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
+		UseStartTimestamps:       true,
+		Parser:                   parser.NewParser(TestParserOpts),
 	})
 }
 
@@ -110,20 +123,52 @@ func NewTestEngineWithOpts(tb testing.TB, opts promql.EngineOpts) *promql.Engine
 	return ng
 }
 
+// GetBuiltInExprs returns all the eval statement expressions from the built-in test files.
+func GetBuiltInExprs() ([]string, error) {
+	files, err := fs.Glob(testsFs, "*/*.test")
+	if err != nil {
+		return nil, err
+	}
+
+	var exprs []string
+	for _, fn := range files {
+		content, err := fs.ReadFile(testsFs, fn)
+		if err != nil {
+			return nil, err
+		}
+
+		// Create a minimal test struct just for parsing
+		testInstance := &test{
+			cmds: []testCommand{},
+		}
+		if err := testInstance.parse(string(content)); err != nil {
+			return nil, err
+		}
+
+		// Extract expressions from eval commands
+		for _, cmd := range testInstance.cmds {
+			if evalCmd, ok := cmd.(*evalCmd); ok {
+				exprs = append(exprs, evalCmd.expr)
+			}
+		}
+	}
+
+	return exprs, nil
+}
+
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
 func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
-	RunBuiltinTestsWithStorage(t, engine, newTestStorage)
+	RunBuiltinTestsWithStorage(t, engine, func(t testing.TB) storage.Storage {
+		return teststorage.New(t, func(opt *tsdb.Options) {
+			opt.EnableSTStorage = true
+			opt.EnableXOR2Encoding = true
+		})
+	})
 }
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
-func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
-	t.Cleanup(func() {
-		parser.EnableExperimentalFunctions = false
-		parser.ExperimentalDurationExpr = false
-	})
-	parser.EnableExperimentalFunctions = true
-	parser.ExperimentalDurationExpr = true
-
+// The engine must be created with ParserOptions that enable all experimental features used in the test files.
+func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage) {
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)
 
@@ -137,22 +182,22 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 }
 
 // RunTest parses and runs the test against the provided engine.
-func RunTest(t testutil.T, input string, engine promql.QueryEngine) {
+func RunTest(t testing.TB, input string, engine promql.QueryEngine) {
 	RunTestWithStorage(t, input, engine, newTestStorage)
 }
 
 // RunTestWithStorage parses and runs the test against the provided engine and storage.
-func RunTestWithStorage(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
+func RunTestWithStorage(t testing.TB, input string, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage) {
 	require.NoError(t, runTest(t, input, engine, newStorage, false))
 }
 
 // testTest allows tests to be run in "test-the-test" mode (true for
 // testingMode). This is a special mode for testing test code execution itself.
-func testTest(t testutil.T, input string, engine promql.QueryEngine) error {
+func testTest(t testing.TB, input string, engine promql.QueryEngine) error {
 	return runTest(t, input, engine, newTestStorage, true)
 }
 
-func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, testingMode bool) error {
+func runTest(t testing.TB, input string, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage, testingMode bool) error {
 	test, err := newTest(t, input, testingMode, newStorage)
 
 	// Why do this before checking err? newTest() can create the test storage and then return an error,
@@ -187,13 +232,14 @@ func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage f
 // test is a sequence of read and write commands that are run
 // against a test storage.
 type test struct {
-	testutil.T
+	testing.TB
+
 	// testingMode distinguishes between normal execution and test-execution mode.
 	testingMode bool
 
 	cmds []testCommand
 
-	open    func(testutil.T) storage.Storage
+	open    func(testing.TB) storage.Storage
 	storage storage.Storage
 
 	context   context.Context
@@ -201,9 +247,9 @@ type test struct {
 }
 
 // newTest returns an initialized empty Test.
-func newTest(t testutil.T, input string, testingMode bool, newStorage func(testutil.T) storage.Storage) (*test, error) {
+func newTest(t testing.TB, input string, testingMode bool, newStorage func(testing.TB) storage.Storage) (*test, error) {
 	test := &test{
-		T:           t,
+		TB:          t,
 		cmds:        []testCommand{},
 		testingMode: testingMode,
 		open:        newStorage,
@@ -214,19 +260,27 @@ func newTest(t testutil.T, input string, testingMode bool, newStorage func(testu
 	return test, err
 }
 
-func newTestStorage(t testutil.T) storage.Storage { return teststorage.New(t) }
+// testStorageOptions holds additional tsdb.Options applied by newTestStorage.
+// It is populated via init() in test files so that options only take effect
+// when the promqltest package itself is under test, not when callers such as
+// promql_test.go invoke RunBuiltinTests.
+var testStorageOptions []teststorage.Option
+
+func newTestStorage(t testing.TB) storage.Storage {
+	return teststorage.New(t, testStorageOptions...)
+}
 
 //go:embed testdata
 var testsFs embed.FS
 
-func raise(line int, format string, v ...interface{}) error {
+func raise(line int, format string, v ...any) error {
 	return &parser.ParseErr{
 		LineOffset: line,
 		Err:        fmt.Errorf(format, v...),
 	}
 }
 
-func parseLoad(lines []string, i int) (int, *loadCmd, error) {
+func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error) {
 	if !patLoad.MatchString(lines[i]) {
 		return i, nil, raise(i, "invalid load command. (load[_with_nhcb] <step:duration>)")
 	}
@@ -240,24 +294,223 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 		return i, nil, raise(i, "invalid step definition %q: %s", step, err)
 	}
 	cmd := newLoadCmd(time.Duration(gap), withNHCB)
+	cmd.startTime = startTime
+	var (
+		pendingSTVals   []parser.SequenceValue
+		pendingSTMetric labels.Labels
+		pendingSTLine   int
+	)
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
-		if len(defLine) == 0 {
+		if defLine == "" {
 			i--
 			break
+		}
+		if isSTLine(defLine) {
+			if pendingSTVals != nil {
+				return i, nil, raise(pendingSTLine, "@st line has no following sample line")
+			}
+			stMetric, stVals, err := parseSTLine(defLine, i)
+			if err != nil {
+				return i, nil, err
+			}
+			pendingSTVals = stVals
+			pendingSTMetric = stMetric
+			pendingSTLine = i
+			continue
 		}
 		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
 			return i, nil, err
 		}
-		cmd.set(metric, vals...)
+		if pendingSTVals != nil {
+			if !labels.Equal(metric, pendingSTMetric) {
+				return i, nil, raise(pendingSTLine, "@st metric does not match the following sample line metric")
+			}
+			if len(pendingSTVals) != len(vals) {
+				return i, nil, raise(pendingSTLine, "@st line has %d values but sample line has %d", len(pendingSTVals), len(vals))
+			}
+		}
+		cmd.set(metric, vals, pendingSTVals)
+		pendingSTVals = nil
+	}
+	if pendingSTVals != nil {
+		return i, nil, raise(pendingSTLine, "@st line has no following sample line")
 	}
 	return i, cmd, nil
 }
 
+// isSTLine returns true if defLine is a start-timestamp (ST) definition line.
+// An ST line has the metric name and optional labels immediately followed by
+// "@st" (no space), then a space and the ST offset sequence.
+func isSTLine(defLine string) bool {
+	defLine = strings.TrimSpace(defLine)
+	spaceIdx := strings.IndexAny(defLine, " \t")
+	if spaceIdx < 0 {
+		return false
+	}
+	return strings.HasSuffix(defLine[:spaceIdx], "@st")
+}
+
+// parseSTLine parses a start-timestamp line of the form:
+//
+//	metric{labels}@st <st_sequence>
+//
+// It returns the metric labels and a slice of SequenceValues where each
+// non-omitted SequenceValue.Value is the ST offset in milliseconds relative
+// to the corresponding sample's timestamp.
+func parseSTLine(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
+	defLine = strings.TrimSpace(defLine)
+	spaceIdx := strings.IndexAny(defLine, " \t")
+	if spaceIdx < 0 {
+		return labels.Labels{}, nil, raise(line, "invalid @st line: missing value sequence")
+	}
+	metricPart := strings.TrimSuffix(defLine[:spaceIdx], "@st")
+	valsPart := strings.TrimSpace(defLine[spaceIdx+1:])
+
+	// Parse metric labels by reusing the series description parser with a dummy value.
+	metric, _, err := parseSeries(metricPart+" _", line)
+	if err != nil {
+		return labels.Labels{}, nil, raise(line, "invalid @st line metric %q: %s", metricPart, err)
+	}
+	stVals, err := parseSTSequence(valsPart)
+	if err != nil {
+		return labels.Labels{}, nil, raise(line, "invalid @st sequence: %s", err)
+	}
+	return metric, stVals, nil
+}
+
+// parseSTSequence parses a space-separated sequence of start-timestamp offset
+// items. The grammar for each item is:
+//
+//	_            – one omitted position
+//	_xN          – N omitted positions
+//	<dur>        – one position with the given offset
+//	<dur>xN      – N+1 positions all with the same offset
+//	<dur>+<dur>xN – N+1 positions, offset increasing by delta each step
+//	<dur>-<dur>xN – N+1 positions, offset decreasing by delta each step
+//
+// Offsets are Prometheus durations (e.g. -1m, 30s, 0s) and stored as
+// milliseconds in SequenceValue.Value.
+func parseSTSequence(input string) ([]parser.SequenceValue, error) {
+	var result []parser.SequenceValue
+	for item := range strings.FieldsSeq(input) {
+		vals, err := parseSTItem(item)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ST item %q: %w", item, err)
+		}
+		result = append(result, vals...)
+	}
+	return result, nil
+}
+
+func parseSTItem(item string) ([]parser.SequenceValue, error) {
+	if item == "_" {
+		return []parser.SequenceValue{{Omitted: true}}, nil
+	}
+	if strings.HasPrefix(item, "_x") {
+		n, err := strconv.ParseUint(item[2:], 10, 64)
+		if err != nil || n == 0 {
+			return nil, errors.New("invalid repeat count")
+		}
+		vals := make([]parser.SequenceValue, n)
+		for i := range vals {
+			vals[i] = parser.SequenceValue{Omitted: true}
+		}
+		return vals, nil
+	}
+
+	base, rest, err := parseDurationPrefix(item)
+	if err != nil {
+		return nil, err
+	}
+	// No step: <dur> or <dur>xN.
+	if rest == "" {
+		return []parser.SequenceValue{{Value: float64(base)}}, nil
+	}
+	if rest[0] == 'x' {
+		n, err := strconv.ParseUint(rest[1:], 10, 64)
+		if err != nil {
+			return nil, errors.New("invalid repeat count")
+		}
+		vals := make([]parser.SequenceValue, n+1)
+		for i := range vals {
+			vals[i] = parser.SequenceValue{Value: float64(base)}
+		}
+		return vals, nil
+	}
+	// Step: <dur>+<dur>xN or <dur>-<dur>xN.
+	if rest[0] != '+' && rest[0] != '-' {
+		return nil, fmt.Errorf("unexpected character %q after duration", rest[0])
+	}
+	negative := rest[0] == '-'
+	delta, rest2, err := parseDurationPrefix(rest[1:])
+	if err != nil {
+		return nil, fmt.Errorf("invalid step duration: %w", err)
+	}
+	if negative {
+		delta = -delta
+	}
+	if rest2 == "" || rest2[0] != 'x' {
+		return nil, errors.New("expected 'x<count>' after step duration")
+	}
+	n, err := strconv.ParseUint(rest2[1:], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid repeat count: %w", err)
+	}
+	vals := make([]parser.SequenceValue, n+1)
+	offset := base
+	for i := range vals {
+		vals[i] = parser.SequenceValue{Value: float64(offset)}
+		offset += delta
+	}
+	return vals, nil
+}
+
+// parseDurationPrefix parses a Prometheus duration (with optional leading sign)
+// from the start of s. It returns the duration in milliseconds and the
+// remaining unparsed string.
+func parseDurationPrefix(s string) (int64, string, error) {
+	if s == "" {
+		return 0, "", errors.New("empty duration")
+	}
+	negative := false
+	i := 0
+	switch s[i] {
+	case '-':
+		negative = true
+		i++
+	case '+':
+		i++
+	}
+	// Scan digits.
+	start := i
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i == start {
+		return 0, "", fmt.Errorf("expected digits in duration %q", s)
+	}
+	// Scan unit (one or two alpha chars; handles "ms"). Stop at 'x' which is
+	// the repeat-count separator and never part of a valid duration unit.
+	for i < len(s) && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z')) && s[i] != 'x' {
+		i++
+	}
+	dur, err := model.ParseDuration(s[start:i])
+	if err != nil {
+		return 0, "", fmt.Errorf("invalid duration %q: %w", s[start:i], err)
+	}
+	ms := int64(time.Duration(dur) / time.Millisecond)
+	if negative {
+		ms = -ms
+	}
+	return ms, s[i:], nil
+}
+
 func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
-	metric, vals, err := parser.ParseSeriesDesc(defLine)
+	testParser := parser.NewParser(TestParserOpts)
+	metric, vals, err := testParser.ParseSeriesDesc(defLine)
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = line
@@ -314,7 +567,58 @@ func validateExpectedCmds(cmd *evalCmd) error {
 	return nil
 }
 
-func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
+// Given an expected range vector definition, parse the line and return the start & end times and the step duration.
+// ie parse a line such as "expect range vector from 10s to 1m step 10s".
+// The from and to are parsed as durations and their values added to epoch(0) to form a time.Time.
+// The step is parsed as a duration and returned as a time.Duration.
+func (t *test) parseExpectRangeVector(line string) (*time.Time, *time.Time, *time.Duration, error) {
+	parts := patExpectRange.FindStringSubmatch(line)
+	if len(parts) != 4 {
+		return nil, nil, nil, fmt.Errorf("invalid range vector definition %q", line)
+	}
+
+	from := parts[1]
+	to := parts[2]
+	step := parts[3]
+
+	parsedFrom, parsedTo, parsedStep, err := t.parseDurations(from, to, step)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	start := testStartTime.Add(time.Duration(*parsedFrom))
+	end := testStartTime.Add(time.Duration(*parsedTo))
+	stepDuration := time.Duration(*parsedStep)
+
+	return &start, &end, &stepDuration, nil
+}
+
+// parseDurations parses the given from, to and step strings to Durations.
+// Additionally, a check is performed to ensure to is before from.
+func (*test) parseDurations(from, to, step string) (*model.Duration, *model.Duration, *model.Duration, error) {
+	parsedFrom, err := model.ParseDuration(from)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid start timestamp definition %q: %w", from, err)
+	}
+
+	parsedTo, err := model.ParseDuration(to)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid end timestamp definition %q: %w", to, err)
+	}
+
+	if parsedTo < parsedFrom {
+		return nil, nil, nil, fmt.Errorf("invalid test definition, end timestamp (%s) is before start timestamp (%s)", to, from)
+	}
+
+	parsedStep, err := model.ParseDuration(step)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid step definition %q: %w", step, err)
+	}
+
+	return &parsedFrom, &parsedTo, &parsedStep, nil
+}
+
+func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	instantParts := patEvalInstant.FindStringSubmatch(lines[i])
 	rangeParts := patEvalRange.FindStringSubmatch(lines[i])
 
@@ -335,7 +639,7 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		expr = rangeParts[5]
 	}
 
-	_, err := parser.ParseExpr(expr)
+	_, err := parserForBuiltinTests.ParseExpr(expr)
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = i
@@ -355,10 +659,11 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	}
 
 	var cmd *evalCmd
+	var offset model.Duration
 
 	if isInstant {
 		at := instantParts[2]
-		offset, err := model.ParseDuration(at)
+		offset, err = model.ParseDuration(at)
 		if err != nil {
 			return i, nil, formatErr("invalid timestamp definition %q: %s", at, err)
 		}
@@ -369,26 +674,12 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		to := rangeParts[3]
 		step := rangeParts[4]
 
-		parsedFrom, err := model.ParseDuration(from)
+		parsedFrom, parsedTo, parsedStep, err := t.parseDurations(from, to, step)
 		if err != nil {
-			return i, nil, formatErr("invalid start timestamp definition %q: %s", from, err)
+			return i, nil, formatErr(err.Error())
 		}
 
-		parsedTo, err := model.ParseDuration(to)
-		if err != nil {
-			return i, nil, formatErr("invalid end timestamp definition %q: %s", to, err)
-		}
-
-		if parsedTo < parsedFrom {
-			return i, nil, formatErr("invalid test definition, end timestamp (%s) is before start timestamp (%s)", to, from)
-		}
-
-		parsedStep, err := model.ParseDuration(step)
-		if err != nil {
-			return i, nil, formatErr("invalid step definition %q: %s", step, err)
-		}
-
-		cmd = newRangeEvalCmd(expr, testStartTime.Add(time.Duration(parsedFrom)), testStartTime.Add(time.Duration(parsedTo)), time.Duration(parsedStep), i+1)
+		cmd = newRangeEvalCmd(expr, testStartTime.Add(time.Duration(*parsedFrom)), testStartTime.Add(time.Duration(*parsedTo)), time.Duration(*parsedStep), i+1)
 	}
 
 	switch mod {
@@ -404,10 +695,12 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		cmd.info = true
 	}
 
+	var expectRangeVector bool
+
 	for j := 1; i+1 < len(lines); j++ {
 		i++
 		defLine := lines[i]
-		if len(defLine) == 0 {
+		if defLine == "" {
 			i--
 			break
 		}
@@ -424,6 +717,32 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 				return i, nil, formatErr("invalid regexp '%s' for expected_fail_regexp: %w", pattern, err)
 			}
 			break
+		}
+
+		if strings.HasPrefix(defLine, rangeVectorPrefix) {
+			start, end, step, err := t.parseExpectRangeVector(defLine)
+			if err != nil {
+				return i, nil, formatErr("%w", err)
+			}
+
+			expectRangeVector = true
+			cmd.start = *start
+			cmd.end = *end
+			cmd.step = *step
+			cmd.eval = *end
+			cmd.excludeFromRangeQuery = true
+
+			continue
+		}
+
+		if strings.HasPrefix(defLine, expectStringPrefix) {
+			expectString, err := parseAsStringLiteral(defLine)
+			if err != nil {
+				return i, nil, formatErr("%w", err)
+			}
+			cmd.expectedString = expectString
+			cmd.excludeFromRangeQuery = true
+			continue
 		}
 
 		// This would still allow a metric named 'expect' if it is written as 'expect{}'.
@@ -450,13 +769,33 @@ func (*test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			return i, nil, err
 		}
 
-		// Currently, we are not expecting any matrices.
-		if len(vals) > 1 && isInstant {
-			return i, nil, formatErr("expecting multiple values in instant evaluation not allowed")
+		// Only allow a range vector for an instant query where we have defined the expected range vector timestamps.
+		if len(vals) > 1 && isInstant && !expectRangeVector {
+			return i, nil, formatErr("expecting multiple values in instant evaluation not allowed. consider using 'expect range vector' directive to enable a range vector result for an instant query")
 		}
 		cmd.expectMetric(j, metric, vals...)
 	}
 	return i, cmd, nil
+}
+
+// parseAsStringLiteral returns the expected string from an expect string expression.
+// It is valid for the line to match the expect string prefix exactly, and an empty string is returned.
+func parseAsStringLiteral(line string) (string, error) {
+	if line == expectStringPrefix {
+		return "", errors.New("expected string literal not valid - a quoted string literal is required")
+	}
+
+	str := strings.TrimPrefix(line, expectStringPrefix+" ")
+	if str == "" {
+		return "", errors.New("expected string literal not valid - a quoted string literal is required")
+	}
+
+	str, err := strconv.Unquote(str)
+	if err != nil {
+		return "", errors.New("expected string literal not valid - check that the string is correctly quoted")
+	}
+
+	return str, nil
 }
 
 // getLines returns trimmed lines after removing the comments.
@@ -479,7 +818,7 @@ func (t *test) parse(input string) error {
 	// Scan for steps line by line.
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
-		if len(l) == 0 {
+		if l == "" {
 			continue
 		}
 		var cmd testCommand
@@ -488,7 +827,7 @@ func (t *test) parse(input string) error {
 		case c == "clear":
 			cmd = &clearCmd{}
 		case strings.HasPrefix(c, "load"):
-			i, cmd, err = parseLoad(lines, i)
+			i, cmd, err = parseLoad(lines, i, testStartTime)
 		case strings.HasPrefix(c, "eval"):
 			i, cmd, err = t.parseEval(lines, i)
 		default:
@@ -512,23 +851,32 @@ func (*clearCmd) testCmd() {}
 func (*loadCmd) testCmd()  {}
 func (*evalCmd) testCmd()  {}
 
+// sampleST extends promql.Sample with an optional start timestamp.
+// ST=0 means no start timestamp (unknown), matching the AppenderV2 convention.
+type sampleST struct {
+	promql.Sample
+	ST int64
+}
+
 // loadCmd is a command that loads sequences of sample values for specific
 // metrics into the storage.
 type loadCmd struct {
 	gap       time.Duration
 	metrics   map[uint64]labels.Labels
-	defs      map[uint64][]promql.Sample
+	defs      map[uint64][]sampleST
 	exemplars map[uint64][]exemplar.Exemplar
 	withNHCB  bool
+	startTime time.Time
 }
 
 func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
 	return &loadCmd{
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
-		defs:      map[uint64][]promql.Sample{},
+		defs:      map[uint64][]sampleST{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
 		withNHCB:  withNHCB,
+		startTime: testStartTime,
 	}
 }
 
@@ -536,19 +884,27 @@ func (loadCmd) String() string {
 	return "load"
 }
 
-// set a sequence of sample values for the given metric.
-func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
+// set stores a sequence of sample values for the given metric with optional start timestamps.
+// stVals must be nil (no ST for any sample) or have the same length as vals.
+func (cmd *loadCmd) set(m labels.Labels, vals, stVals []parser.SequenceValue) {
 	h := m.Hash()
 
-	samples := make([]promql.Sample, 0, len(vals))
-	ts := testStartTime
-	for _, v := range vals {
+	samples := make([]sampleST, 0, len(vals))
+	ts := cmd.startTime
+	for i, v := range vals {
+		tsMs := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 		if !v.Omitted {
-			samples = append(samples, promql.Sample{
-				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
-				F: v.Value,
-				H: v.Histogram,
-			})
+			s := sampleST{
+				Sample: promql.Sample{
+					T: tsMs,
+					F: v.Value,
+					H: v.Histogram,
+				},
+			}
+			if len(stVals) > 0 && !stVals[i].Omitted {
+				s.ST = tsMs + int64(stVals[i].Value)
+			}
+			samples = append(samples, s)
 		}
 		ts = ts.Add(cmd.gap)
 	}
@@ -557,7 +913,7 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 }
 
 // append the defined time series to the storage.
-func (cmd *loadCmd) append(a storage.Appender) error {
+func (cmd *loadCmd) append(a storage.AppenderV2) error {
 	for h, smpls := range cmd.defs {
 		m := cmd.metrics[h]
 
@@ -584,7 +940,7 @@ func newTempHistogramWrapper() tempHistogramWrapper {
 	}
 }
 
-func processClassicHistogramSeries(m labels.Labels, name string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogram func(*convertnhcb.TempHistogram, float64)) {
+func processClassicHistogramSeries(m labels.Labels, name string, histogramMap map[uint64]tempHistogramWrapper, smpls []sampleST, updateHistogram func(*convertnhcb.TempHistogram, float64)) {
 	m2 := convertnhcb.GetHistogramMetricBase(m, name)
 	m2hash := m2.Hash()
 	histogramWrapper, exists := histogramMap[m2hash]
@@ -608,7 +964,7 @@ func processClassicHistogramSeries(m labels.Labels, name string, histogramMap ma
 
 // If classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
-func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
+func (cmd *loadCmd) appendCustomHistogram(a storage.AppenderV2) error {
 	histogramMap := map[uint64]tempHistogramWrapper{}
 
 	// Go through all the time series to collate classic histogram data
@@ -663,7 +1019,7 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 		}
 		sort.Slice(samples, func(i, j int) bool { return samples[i].T < samples[j].T })
 		for _, s := range samples {
-			if err := appendSample(a, s, histogramWrapper.metric); err != nil {
+			if err := appendSample(a, sampleST{Sample: s}, histogramWrapper.metric); err != nil {
 				return err
 			}
 		}
@@ -671,17 +1027,13 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	return nil
 }
 
-func appendSample(a storage.Appender, s promql.Sample, m labels.Labels) error {
+func appendSample(a storage.AppenderV2, s sampleST, m labels.Labels) error {
 	if s.H != nil {
-		if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
-			return err
-		}
-	} else {
-		if _, err := a.Append(0, m, s.T, s.F); err != nil {
-			return err
-		}
+		_, err := a.Append(0, m, s.ST, s.T, 0, nil, s.H, storage.AppendV2Options{})
+		return err
 	}
-	return nil
+	_, err := a.Append(0, m, s.ST, s.T, s.F, nil, nil, storage.AppendV2Options{})
+	return err
 }
 
 // evalCmd is a command that evaluates an expression for the given time (range)
@@ -692,6 +1044,7 @@ type evalCmd struct {
 	end   time.Time
 	step  time.Duration
 	line  int
+	eval  time.Time
 
 	isRange                   bool // if false, instant query
 	fail, warn, ordered, info bool
@@ -703,6 +1056,12 @@ type evalCmd struct {
 	metrics      map[uint64]labels.Labels
 	expectScalar bool
 	expected     map[uint64]entry
+
+	// we expect a string literal - is set instead of expected
+	expectedString string
+
+	// if true and this is an instant query then we will not test this in a range query scenario
+	excludeFromRangeQuery bool
 }
 
 func (ev *evalCmd) isOrdered() bool {
@@ -772,6 +1131,7 @@ func newInstantEvalCmd(expr string, start time.Time, line int) *evalCmd {
 	return &evalCmd{
 		expr:  expr,
 		start: start,
+		eval:  start,
 		line:  line,
 
 		metrics:      map[uint64]labels.Labels{},
@@ -910,7 +1270,12 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			exp := ev.expected[hash]
 
 			var expectedFloats []promql.FPoint
-			var expectedHistograms []promql.HPoint
+			// expectedHPoint wraps HPoint with CounterResetHintSet flag from SequenceValue.
+			type expectedHPoint struct {
+				promql.HPoint
+				CounterResetHintSet bool
+			}
+			var expectedHistograms []expectedHPoint
 
 			for i, e := range exp.vals {
 				ts := ev.start.Add(time.Duration(i) * ev.step)
@@ -922,7 +1287,10 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 				t := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 
 				if e.Histogram != nil {
-					expectedHistograms = append(expectedHistograms, promql.HPoint{T: t, H: e.Histogram})
+					expectedHistograms = append(expectedHistograms, expectedHPoint{
+						HPoint:              promql.HPoint{T: t, H: e.Histogram},
+						CounterResetHintSet: e.CounterResetHintSet,
+					})
 				} else if !e.Omitted {
 					expectedFloats = append(expectedFloats, promql.FPoint{T: t, F: e.Value})
 				}
@@ -951,7 +1319,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 					return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
 				}
 
-				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0)) {
+				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0), expected.CounterResetHintSet) {
 					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H.TestExpression(), actual.H.TestExpression(), formatSeriesResult(s))
 				}
 			}
@@ -990,7 +1358,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if expH != nil && v.H == nil {
 				return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
 			}
-			if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0)) {
+			if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0), exp0.CounterResetHintSet) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
 			if !almost.Equal(exp0.Value, v.F, defaultEpsilon) {
@@ -1016,7 +1384,10 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		if !almost.Equal(exp0.Value, val.V, defaultEpsilon) {
 			return fmt.Errorf("expected scalar %v but got %v", exp0.Value, val.V)
 		}
-
+	case promql.String:
+		if ev.expectedString != val.V {
+			return fmt.Errorf("expected string \"%v\" but got \"%v\"", ev.expectedString, val.V)
+		}
 	default:
 		panic(fmt.Errorf("promql.Test.compareResult: unexpected result type %T", result))
 	}
@@ -1025,7 +1396,9 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 
 // compareNativeHistogram is helper function to compare two native histograms
 // which can tolerate some differ in the field of float type, such as Count, Sum.
-func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
+// The counterResetHintSet parameter indicates whether the counter reset hint was
+// explicitly specified in the expected histogram (from the test file).
+func compareNativeHistogram(exp, cur *histogram.FloatHistogram, counterResetHintSet bool) bool {
 	if exp == nil || cur == nil {
 		return false
 	}
@@ -1037,7 +1410,7 @@ func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
 	}
 
 	if exp.UsesCustomBuckets() {
-		if !histogram.FloatBucketsMatch(exp.CustomValues, cur.CustomValues) {
+		if !histogram.CustomBucketBoundsMatch(exp.CustomValues, cur.CustomValues) {
 			return false
 		}
 	}
@@ -1059,6 +1432,15 @@ func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
 	}
 	if !floatBucketsMatch(exp.PositiveBuckets, cur.PositiveBuckets) {
 		return false
+	}
+
+	// Compare CounterResetHint only if explicitly specified in expected histogram.
+	// When counterResetHintSet is false, no hint was specified, meaning "don't care".
+	// When counterResetHintSet is true, the hint was explicitly specified and must match.
+	if counterResetHintSet {
+		if exp.CounterResetHint != cur.CounterResetHint {
+			return false
+		}
 	}
 
 	return true
@@ -1204,8 +1586,17 @@ type atModifierTestCase struct {
 	evalTime time.Time
 }
 
+var (
+	// parserForBuiltinTests is the parser used when parsing expressions in the
+	// built-in test framework (e.g. atModifierTestCases). It must match the Parser
+	// used by NewTestEngine so that expressions parse consistently.
+	parserForBuiltinTests = parser.NewParser(TestParserOpts)
+	// reQueryContextFuncs matches start(), end(), range(), and step() calls, which depend on query context.
+	reQueryContextFuncs = regexp.MustCompile(`(start|end|range|step)\(\)`)
+)
+
 func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCase, error) {
-	expr, err := parser.ParseExpr(exprStr)
+	expr, err := parserForBuiltinTests.ParseExpr(exprStr)
 	if err != nil {
 		return nil, err
 	}
@@ -1284,9 +1675,9 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 		t.clear()
 
 	case *loadCmd:
-		app := t.storage.Appender(t.context)
+		app := t.storage.AppenderV2(t.context)
 		if err := cmd.append(app); err != nil {
-			app.Rollback()
+			_ = app.Rollback()
 			return err
 		}
 
@@ -1316,7 +1707,7 @@ func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		return do()
 	}
 
-	if tt, ok := t.T.(*testing.T); ok {
+	if tt, ok := t.TB.(*testing.T); ok {
 		tt.Run(fmt.Sprintf("line %d/%s", cmd.line, cmd.expr), func(t *testing.T) {
 			require.NoError(t, do())
 		})
@@ -1328,6 +1719,11 @@ func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
 func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	q, err := engine.NewRangeQuery(t.context, t.storage, nil, cmd.expr, cmd.start, cmd.end, cmd.step)
 	if err != nil {
+		if cmd.isFail() {
+			if err := cmd.checkExpectedFailure(err); err == nil {
+				return nil
+			}
+		}
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	defer q.Close()
@@ -1354,11 +1750,12 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 }
 
 func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
-	queries, err := atModifierTestCases(cmd.expr, cmd.start)
+	queries, err := atModifierTestCases(cmd.expr, cmd.eval)
 	if err != nil {
 		return err
 	}
-	queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.start}}, queries...)
+	queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.eval}}, queries...)
+
 	for _, iq := range queries {
 		if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 			return err
@@ -1370,6 +1767,11 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promql.QueryEngine) error {
 	q, err := engine.NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
 	if err != nil {
+		if cmd.isFail() {
+			if err := cmd.checkExpectedFailure(err); err == nil {
+				return nil
+			}
+		}
 		return fmt.Errorf("error creating instant query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	defer q.Close()
@@ -1395,8 +1797,18 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 		return fmt.Errorf("error in %s %s (line %d): %w", cmd, iq.expr, cmd.line, err)
 	}
 
+	// this query has have been explicitly excluded from range query testing
+	// ie it could be that the query result is not an instant vector or scalar
+	if cmd.excludeFromRangeQuery {
+		return nil
+	}
+
 	// Check query returns same result in range mode,
 	// by checking against the middle step.
+	// Skip this check for queries containing range(), step(), start(), or end() since they would resolve differently.
+	if reQueryContextFuncs.MatchString(iq.expr) {
+		return nil
+	}
 	q, err = engine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
 	if err != nil {
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
@@ -1463,12 +1875,12 @@ func assertMatrixSorted(m promql.Matrix) error {
 func (t *test) clear() {
 	if t.storage != nil {
 		err := t.storage.Close()
-		require.NoError(t.T, err, "Unexpected error while closing test storage.")
+		require.NoError(t.TB, err, "Unexpected error while closing test storage.")
 	}
 	if t.cancelCtx != nil {
 		t.cancelCtx()
 	}
-	t.storage = t.open(t.T)
+	t.storage = t.open(t.TB)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
@@ -1508,6 +1920,8 @@ type LazyLoaderOpts struct {
 	// Currently defaults to false, matches the "promql-delayed-name-removal"
 	// feature flag.
 	EnableDelayedNameRemoval bool
+	// StartTime is the start time for the test. If zero, defaults to Unix epoch.
+	StartTime time.Time
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
@@ -1527,13 +1941,18 @@ func NewLazyLoader(input string, opts LazyLoaderOpts) (*LazyLoader, error) {
 func (ll *LazyLoader) parse(input string) error {
 	lines := getLines(input)
 	// Accepts only 'load' command.
-	for i := 0; i < len(lines); i++ {
+	for i := range lines {
 		l := lines[i]
-		if len(l) == 0 {
+		if l == "" {
 			continue
 		}
 		if strings.HasPrefix(strings.ToLower(patSpace.Split(l, 2)[0]), "load") {
-			_, cmd, err := parseLoad(lines, i)
+			// Determine the start time to use for loading samples.
+			startTime := testStartTime
+			if !ll.opts.StartTime.IsZero() {
+				startTime = ll.opts.StartTime
+			}
+			_, cmd, err := parseLoad(lines, i, startTime)
 			if err != nil {
 				return err
 			}
@@ -1580,7 +1999,7 @@ func (ll *LazyLoader) clear() error {
 
 // appendTill appends the defined time series to the storage till the given timestamp (in milliseconds).
 func (ll *LazyLoader) appendTill(ts int64) error {
-	app := ll.storage.Appender(ll.Context())
+	app := ll.storage.AppenderV2(ll.Context())
 	for h, smpls := range ll.loadCmd.defs {
 		m := ll.loadCmd.metrics[h]
 		for i, s := range smpls {

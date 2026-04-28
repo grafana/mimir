@@ -88,7 +88,7 @@ func (e *errorCachingHandler) Do(ctx context.Context, request MetricsQueryReques
 
 	addWithExemplar(ctx, e.cacheLoadAttempted, 1)
 	key := e.keyGen.QueryRequestError(ctx, tenant.JoinTenantIDs(tenantIDs), request)
-	hashedKey := cacheHashKey(key)
+	hashedKey := hashCacheKey(key)
 
 	if cachedErr := e.loadErrorFromCache(ctx, key, hashedKey, spanLog); cachedErr != nil {
 		e.cacheLoadHits.Inc()

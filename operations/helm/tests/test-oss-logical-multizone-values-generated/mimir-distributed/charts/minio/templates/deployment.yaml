@@ -28,7 +28,7 @@ spec:
         release: test-oss-logical-multizone-values
       annotations:
         checksum/secrets: 03d2f10947845b85015576560f9d92abdca682e9a81f16a9cca94d7fe973d2fb
-        checksum/config: 63fa03875dcd92711eda0e8d01e0b99f30d4d96f4c9028769f2dee82ae800906
+        checksum/config: 57488051099e6794ae04882a796ee65a364055bdacae7a364c178e73e9361149
     spec:
       securityContext:
         

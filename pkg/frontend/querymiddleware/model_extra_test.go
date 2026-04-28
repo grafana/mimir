@@ -14,10 +14,13 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 func TestEncodeAndDecodeCachedHTTPResponse(t *testing.T) {
@@ -118,7 +121,7 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 			httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			httpReq.Header.Set("X-Test-Header", "test-value")
 
-			c := NewCodec(prometheus.NewPedanticRegistry(), time.Minute*5, "json", nil)
+			c := NewCodec(prometheus.NewPedanticRegistry(), time.Minute*5, "json", nil, &propagation.NoopInjector{}, log.NewNopLogger())
 			originalReq, err := c.DecodeMetricsQueryRequest(context.Background(), httpReq)
 			require.NoError(t, err)
 
@@ -175,6 +178,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 	start := now
 	end := now.Add(17 * time.Minute)
 	defaultLookback := 1 * time.Minute
+	parser := promqlext.NewPromQLParser()
 
 	testCases := map[string]struct {
 		query        string
@@ -280,6 +284,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 	now := time.Now()
 	defaultLookback := 1 * time.Minute
+	parser := promqlext.NewPromQLParser()
 
 	testCases := map[string]struct {
 		query        string

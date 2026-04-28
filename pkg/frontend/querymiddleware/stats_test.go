@@ -11,11 +11,13 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
@@ -35,28 +37,35 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 		"happy path range query": {
 			args: args{
 				req: []MetricsQueryRequest{&PrometheusRangeQueryRequest{
-					path:      "/query_range",
-					start:     util.TimeToMillis(start),
-					end:       util.TimeToMillis(end),
-					step:      step.Milliseconds(),
-					queryExpr: parseQuery(t, `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`),
+					path:          "/query_range",
+					start:         util.TimeToMillis(start),
+					end:           util.TimeToMillis(end),
+					step:          step.Milliseconds(),
+					queryExpr:     parseQuery(t, `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`),
+					lookbackDelta: 5 * time.Minute,
 				}},
 			},
 			expectedMetrics: `
-			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_count counter
-			cortex_query_frontend_regexp_matcher_count 1
-			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
-			cortex_query_frontend_regexp_matcher_optimized_count 1
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 61
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
+			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_total counter
+			cortex_query_frontend_regexp_matchers_total 1
+			# HELP cortex_query_frontend_regexp_matchers_optimized_total Total number of optimized regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
+			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
 			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.SafeStats{},
-				Start:        start.Truncate(time.Millisecond),
-				End:          end.Truncate(time.Millisecond),
-				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
-				MaxT:         end.Truncate(time.Millisecond),
-				Step:         step,
+				QuerierStats:  &querier_stats.SafeStats{},
+				Start:         start.Truncate(time.Millisecond),
+				End:           end.Truncate(time.Millisecond),
+				MinT:          start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
+				MaxT:          end.Truncate(time.Millisecond),
+				Step:          step,
+				LookbackDelta: 5 * time.Minute,
 			},
 		},
 		"explicit consistency range query": {
@@ -71,12 +80,17 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				}},
 			},
 			expectedMetrics: `
-			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_count counter
-			cortex_query_frontend_regexp_matcher_count 1
-			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
-			cortex_query_frontend_regexp_matcher_optimized_count 1
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 61
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
+			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_total counter
+			cortex_query_frontend_regexp_matchers_total 1
+			# HELP cortex_query_frontend_regexp_matchers_optimized_total Total number of optimized regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
+			cortex_query_frontend_regexp_matchers_optimized_total 1
 			# HELP cortex_query_frontend_queries_consistency_total Total number of queries that explicitly request a level of consistency.
 			# TYPE cortex_query_frontend_queries_consistency_total counter
 			cortex_query_frontend_queries_consistency_total{consistency="strong",user="test"} 1
@@ -104,19 +118,25 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				)},
 			},
 			expectedMetrics: `
-			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_count counter
-			cortex_query_frontend_regexp_matcher_count 1
-			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
-			cortex_query_frontend_regexp_matcher_optimized_count 1
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 42
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
+			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_total counter
+			cortex_query_frontend_regexp_matchers_total 1
+			# HELP cortex_query_frontend_regexp_matchers_optimized_total Total number of optimized regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
+			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
 			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.SafeStats{},
-				Start:        start.Truncate(time.Millisecond),
-				End:          start.Truncate(time.Millisecond),
-				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
-				MaxT:         start.Truncate(time.Millisecond),
+				QuerierStats:  &querier_stats.SafeStats{},
+				Start:         start.Truncate(time.Millisecond),
+				End:           start.Truncate(time.Millisecond),
+				MinT:          start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
+				MaxT:          start.Truncate(time.Millisecond),
+				LookbackDelta: 5 * time.Minute,
 			},
 		},
 		"remote read queries without hints": {
@@ -153,12 +173,17 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
-			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_count counter
-			cortex_query_frontend_regexp_matcher_count 2
-			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
-			cortex_query_frontend_regexp_matcher_optimized_count 2
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 2
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 26
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 2
+			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_total counter
+			cortex_query_frontend_regexp_matchers_total 2
+			# HELP cortex_query_frontend_regexp_matchers_optimized_total Total number of optimized regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
+			cortex_query_frontend_regexp_matchers_optimized_total 2
 			`,
 			expectedQueryDetails: QueryDetails{
 				QuerierStats: &querier_stats.SafeStats{},
@@ -193,12 +218,17 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
-			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_count counter
-			cortex_query_frontend_regexp_matcher_count 1
-			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
-			cortex_query_frontend_regexp_matcher_optimized_count 1
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 13
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
+			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_total counter
+			cortex_query_frontend_regexp_matchers_total 1
+			# HELP cortex_query_frontend_regexp_matchers_optimized_total Total number of optimized regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
+			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
 			expectedQueryDetails: QueryDetails{
 				QuerierStats: &querier_stats.SafeStats{},
@@ -213,7 +243,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				reg := prometheus.NewPedanticRegistry()
-				mw := newQueryStatsMiddleware(reg, opts)
+				mw := newQueryStatsMiddleware(reg)
 				ctx := context.Background()
 				if tt.args.ctx != nil {
 					ctx = tt.args.ctx
@@ -229,6 +259,126 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tt.expectedMetrics)))
 				assert.Equal(t, tt.expectedQueryDetails, *actualDetails)
 			})
+		})
+	}
+}
+
+func Test_queryStatsMiddleware_ResponseDetails(t *testing.T) {
+	const tenantID = "test"
+	req := &PrometheusRangeQueryRequest{
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: parseQuery(t, `metric`),
+	}
+
+	tests := map[string]struct {
+		resp                         *PrometheusResponse
+		expectedResponseSeriesCount  int
+		expectedResponseSamplesCount int
+	}{
+		"nil response": {
+			resp:                         nil,
+			expectedResponseSeriesCount:  0,
+			expectedResponseSamplesCount: 0,
+		},
+		"empty response": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data:   &PrometheusData{ResultType: model.ValMatrix.String(), Result: []SampleStream{}},
+			},
+			expectedResponseSeriesCount:  0,
+			expectedResponseSamplesCount: 0,
+		},
+		"matrix response with samples": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{Samples: []mimirpb.Sample{{TimestampMs: 0, Value: 1}, {TimestampMs: 1000, Value: 2}}},
+						{Samples: []mimirpb.Sample{{TimestampMs: 0, Value: 3}}},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  2,
+			expectedResponseSamplesCount: 3,
+		},
+		"vector response with histograms": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 0}}},
+						{Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 0}}},
+						{Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 0}}},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  3,
+			expectedResponseSamplesCount: 3,
+		},
+		"response with mixed samples and histograms": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Samples:    []mimirpb.Sample{{TimestampMs: 0, Value: 1}},
+							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1000}},
+						},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  1,
+			expectedResponseSamplesCount: 2,
+		},
+		"string response": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValString.String(),
+					Result: []SampleStream{
+						{
+							Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
+							Samples: []mimirpb.Sample{{TimestampMs: 1_500}},
+						},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  1,
+			expectedResponseSamplesCount: 1,
+		},
+		"scalar response": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValScalar.String(),
+					Result: []SampleStream{
+						{Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  1,
+			expectedResponseSamplesCount: 1,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			mw := newQueryStatsMiddleware(reg)
+			actualDetails, ctx := ContextWithEmptyDetails(context.Background())
+			ctx = user.InjectOrgID(ctx, tenantID)
+
+			_, err := mw.Wrap(mockHandlerWith(tt.resp, nil)).Do(ctx, req)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedResponseSeriesCount, actualDetails.ResponseSeriesCount)
+			require.Equal(t, tt.expectedResponseSamplesCount, actualDetails.ResponseSamplesCount)
 		})
 	}
 }

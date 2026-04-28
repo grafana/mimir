@@ -1,4 +1,4 @@
-{{- if and .Values.overrides_exporter.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
+{{- if .Values.overrides_exporter.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,6 +10,9 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.overrides_exporter.replicas }}
+  {{- with .Values.overrides_exporter.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "overrides-exporter") | nindent 6 }}
@@ -59,10 +62,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/mimir
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
@@ -105,14 +104,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.overrides_exporter.terminationGracePeriodSeconds }}
+      {{- with .Values.overrides_exporter.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime

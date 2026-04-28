@@ -22,10 +22,14 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude, v.Subsets)
 
 	if v.ReturnSampleTimestamps {
-		return d + ", return sample timestamps"
+		d = d + ", return sample timestamps"
+	}
+
+	if v.ReturnSampleTimestampsPreserveHistograms {
+		d = d + ", return sample timestamps preserving histograms"
 	}
 
 	return d
@@ -43,8 +47,12 @@ func (v *VectorSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_VECTOR_SELECTOR
 }
 
-func (v *VectorSelector) Children() []planning.Node {
-	return nil
+func (v *VectorSelector) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
+}
+
+func (v *VectorSelector) ChildCount() int {
+	return 0
 }
 
 func (v *VectorSelector) SetChildren(children []planning.Node) error {
@@ -55,15 +63,49 @@ func (v *VectorSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
+func (v *VectorSelector) ReplaceChild(idx int, node planning.Node) error {
+	return fmt.Errorf("node of type VectorSelector supports no children, but attempted to replace child at index %d", idx)
+}
+
+func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherVectorSelector, ok := other.(*VectorSelector)
 
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
+		slices.EqualFunc(v.Subsets, otherVectorSelector.Subsets, subsetsEqual) &&
+		v.EquivalentToIgnoringMatchersAndHints(otherVectorSelector)
+}
+
+func (v *VectorSelector) EquivalentToIgnoringMatchersAndHints(other planning.Node) bool {
+	otherVectorSelector, ok := other.(*VectorSelector)
+
+	return ok &&
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
 		v.Offset == otherVectorSelector.Offset &&
 		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
-		v.SkipHistogramBuckets == otherVectorSelector.SkipHistogramBuckets
+		v.ReturnSampleTimestampsPreserveHistograms == otherVectorSelector.ReturnSampleTimestampsPreserveHistograms &&
+		v.Smoothed == otherVectorSelector.Smoothed
+}
+
+func (v *VectorSelector) GetMatchers() []*LabelMatcher {
+	return v.Matchers
+}
+
+func (v *VectorSelector) MergeHints(other planning.Node) error {
+	otherVectorSelector, ok := other.(*VectorSelector)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, v)
+	}
+
+	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
+	v.ProjectionInclude, v.ProjectionLabels = mergeProjectionLabels(
+		v.ProjectionInclude,
+		v.ProjectionLabels,
+		otherVectorSelector.ProjectionInclude,
+		otherVectorSelector.ProjectionLabels,
+	)
+
+	return nil
 }
 
 func (v *VectorSelector) ChildrenLabels() []string {
@@ -71,36 +113,47 @@ func (v *VectorSelector) ChildrenLabels() []string {
 }
 
 func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	matchers, err := LabelMatchersToPrometheusType(v.Matchers)
+	subsets, err := SubsetsToSelectorType(v.Subsets)
 	if err != nil {
 		return nil, err
 	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
 		Timestamp:                TimestampFromTime(v.Timestamp),
 		Offset:                   v.Offset.Milliseconds(),
-		LookbackDelta:            params.LookbackDelta,
-		Matchers:                 matchers,
+		LookbackDelta:            params.QueryParameters.LookbackDelta,
+		Matchers:                 LabelMatchersToOperatorType(v.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
-		ExpressionPosition:       v.ExpressionPosition(),
+		ExpressionPosition:       v.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+		Smoothed:                 v.Smoothed,
+		ProjectionInclude:        v.ProjectionInclude,
+		ProjectionLabels:         v.ProjectionLabels,
+		Subsets:                  subsets,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps)), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps, v.ReturnSampleTimestampsPreserveHistograms)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
 }
 
-func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta)
-
-	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta, false, v.Smoothed)
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT)), nil
 }
 
-func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
-	return v.GetExpressionPosition().ToPrometheusType()
+func (v *VectorSelector) ExpressionPosition() (posrange.PositionRange, error) {
+	return v.GetExpressionPosition().ToPrometheusType(), nil
+}
+
+func (v *VectorSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	if v.Smoothed {
+		return planning.QueryPlanV4, nil
+	}
+	return planning.QueryPlanVersionZero, nil
 }

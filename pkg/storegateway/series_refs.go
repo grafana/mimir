@@ -26,7 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -885,6 +885,11 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		} else {
 			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
 				s.currentSet = cachedSet
+				// Count cached series as processed so that seriesProcessed >= seriesOmitted
+				// holds when a downstream filteringSeriesChunkRefsSetIterator omits some of them.
+				s.stats.update(func(stats *queryStats) {
+					stats.seriesProcessed += cachedSet.len()
+				})
 				return true
 			}
 		}
@@ -966,7 +971,7 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 			}
 		case !s.strategy.isNoChunkRefs():
 			clampLastChunkLength(symbolizedSet.series, metas)
-			series.refs = metasToChunkRefs(metas, s.blockID, s.minTime, s.maxTime)
+			series.refs = metasToChunkRefs(metas, s.blockID, s.minTime, s.maxTime, stats)
 		default:
 			// What's left is "no chunk refs on entire block."
 			// In this case we don't have to do anything with the chunk metas because we know they all
@@ -1047,7 +1052,7 @@ func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet,
 }
 
 // metasToChunkRefs converts metas to chunk refs. It excludes any chunks that do not overlap with minT and maxT.
-func metasToChunkRefs(metas []chunks.Meta, blockID ulid.ULID, minT, maxT int64) []seriesChunkRef {
+func metasToChunkRefs(metas []chunks.Meta, blockID ulid.ULID, minT, maxT int64, stats *queryStats) []seriesChunkRef {
 	numChunksOverlapping := 0
 	for _, m := range metas {
 		if m.OverlapsClosedInterval(minT, maxT) {
@@ -1076,8 +1081,10 @@ func metasToChunkRefs(metas []chunks.Meta, blockID ulid.ULID, minT, maxT int64) 
 				// but if it does, we don't want to have an erroneously large length.
 				chunkLen = tsdb.EstimatedMaxChunkSize
 			}
+			stats.chunksInferredSizeCount++
 		} else {
 			chunkLen = tsdb.EstimatedMaxChunkSize
+			stats.chunksFallbackSizeCount++
 		}
 		refs = append(refs, seriesChunkRef{
 			segFileOffset: chunkOffset(m.Ref),

@@ -7,30 +7,27 @@ package backfill
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
+	pkgerrors "github.com/pkg/errors"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
 // this is adapted from  https://github.com/prometheus/prometheus/blob/2f54aa060484a9a221eb227e1fb917ae66051c76/cmd/promtool/backfill.go#L68-L171
 func CreateBlock(input storage.SeriesSet, outputDir string, blockDuration time.Duration) (blockID ulid.ULID, returnErr error) {
 	blockWriter, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, blockDuration.Milliseconds()*2) // Multiply by 2 so that we can append samples anywhere in the original time window.
 	if err != nil {
-		return ulid.Zero, errors.Wrap(err, "create block writer")
+		return ulid.Zero, pkgerrors.Wrap(err, "create block writer")
 	}
 
 	defer func() {
-		mErr := tsdb_errors.NewMulti()
-		mErr.Add(returnErr)
-		mErr.Add(blockWriter.Close())
-		returnErr = mErr.Err()
+		returnErr = errors.Join(returnErr, blockWriter.Close())
 	}()
 
 	ctx := context.Background()
@@ -38,7 +35,7 @@ func CreateBlock(input storage.SeriesSet, outputDir string, blockDuration time.D
 
 	for input.Next() {
 		if err := input.Err(); err != nil {
-			return ulid.Zero, errors.Wrap(err, "read next series")
+			return ulid.Zero, pkgerrors.Wrap(err, "read next series")
 		}
 
 		series := input.At()
@@ -71,14 +68,14 @@ func CreateBlock(input storage.SeriesSet, outputDir string, blockDuration time.D
 			}
 
 			if err != nil {
-				return ulid.Zero, errors.Wrap(err, "append sample")
+				return ulid.Zero, pkgerrors.Wrap(err, "append sample")
 			}
 
 			wroteAny = true
 		}
 
 		if err := it.Err(); err != nil {
-			return ulid.Zero, errors.Wrap(err, "read series data")
+			return ulid.Zero, pkgerrors.Wrap(err, "read series data")
 		}
 
 		if !wroteAny {
@@ -86,13 +83,13 @@ func CreateBlock(input storage.SeriesSet, outputDir string, blockDuration time.D
 		}
 
 		if err := app.Commit(); err != nil {
-			return ulid.Zero, errors.Wrap(err, "commit")
+			return ulid.Zero, pkgerrors.Wrap(err, "commit")
 		}
 	}
 
 	blockID, err = blockWriter.Flush(ctx)
 	if err != nil {
-		return ulid.Zero, errors.Wrap(err, "flush")
+		return ulid.Zero, pkgerrors.Wrap(err, "flush")
 	}
 
 	return blockID, nil

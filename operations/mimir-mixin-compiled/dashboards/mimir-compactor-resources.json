@@ -121,7 +121,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"}[$__rate_interval]))",
@@ -130,7 +130,7 @@
                         "legendLink": null
                      },
                      {
-                        "expr": "min(container_spec_cpu_quota{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"} / container_spec_cpu_period{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
+                        "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",resource=\"cpu\"})",
                         "format": "time_series",
                         "legendFormat": "limit",
                         "legendLink": null
@@ -145,66 +145,6 @@
                   "title": "CPU",
                   "type": "timeseries"
                },
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 0,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "bytes"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 2,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "desc"
-                     }
-                  },
-                  "span": 6,
-                  "targets": [
-                     {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
-                        "format": "time_series",
-                        "legendFormat": "{{pod}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Memory (go heap inuse)",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "CPU and memory",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
                {
                   "datasource": "$datasource",
                   "fieldConfig": {
@@ -278,10 +218,37 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - oomkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
-                  "id": 3,
+                  "id": 2,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -292,10 +259,10 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
-                        "expr": "max by(pod) (container_memory_rss{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
+                        "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -311,9 +278,63 @@
                         "format": "time_series",
                         "legendFormat": "request",
                         "legendLink": null
+                     },
+                     {
+                        "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
+                        "format": "time_series",
+                        "legendFormat": "{{pod}} - oomkilled",
+                        "legendLink": null
                      }
                   ],
-                  "title": "Memory (RSS)",
+                  "title": "Memory (workingset)",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 3,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
+                        "format": "time_series",
+                        "legendFormat": "{{pod}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Memory (go heap inuse)",
                   "type": "timeseries"
                },
                {
@@ -403,28 +424,28 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
-                        "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
+                        "expr": "max by(pod) (kubelet_container_log_filesystem_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"})",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
                      },
                      {
-                        "expr": "min(container_spec_memory_limit_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\"} > 0)",
+                        "expr": "min(kube_pod_container_resource_limits{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",resource=\"ephemeral_storage\"})",
                         "format": "time_series",
                         "legendFormat": "limit",
                         "legendLink": null
                      },
                      {
-                        "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",resource=\"memory\"})",
+                        "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"compactor\",resource=\"ephemeral_storage\"})",
                         "format": "time_series",
                         "legendFormat": "request",
                         "legendLink": null
                      }
                   ],
-                  "title": "Memory (workingset)",
+                  "title": "Ephemeral Storage (log fs)",
                   "type": "timeseries"
                }
             ],
@@ -432,7 +453,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "",
+            "title": "Compactor resources",
             "titleSize": "h6"
          },
          {
@@ -472,7 +493,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 6,
@@ -520,7 +541,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 6,
@@ -580,7 +601,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
@@ -628,7 +649,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
@@ -679,7 +700,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,

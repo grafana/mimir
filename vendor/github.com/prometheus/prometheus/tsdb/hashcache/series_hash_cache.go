@@ -1,3 +1,16 @@
+// Copyright 2021 Grafana Labs
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package hashcache
 
 import (
@@ -13,7 +26,7 @@ const (
 
 	// approxBytesPerEntry is the estimated memory footprint (in bytes) of 1 cache
 	// entry, measured with TestSeriesHashCache_MeasureApproximateSizePerEntry().
-	approxBytesPerEntry = 38
+	approxBytesPerEntry = 36
 )
 
 // SeriesHashCache is a bounded cache mapping the per-block series ID with
@@ -26,15 +39,12 @@ type SeriesHashCache struct {
 }
 
 func NewSeriesHashCache(maxBytes uint64) *SeriesHashCache {
-	maxEntriesPerGeneration := maxBytes / approxBytesPerEntry / numGenerations
-	if maxEntriesPerGeneration < 1 {
-		maxEntriesPerGeneration = 1
-	}
+	maxEntriesPerGeneration := max(maxBytes/approxBytesPerEntry/numGenerations, 1)
 
 	c := &SeriesHashCache{maxEntriesPerGeneration: maxEntriesPerGeneration}
 
 	// Init generations.
-	for idx := 0; idx < numGenerations; idx++ {
+	for idx := range numGenerations {
 		c.generations[idx].blocks = &sync.Map{}
 		c.generations[idx].length = atomic.NewUint64(0)
 	}
@@ -58,7 +68,7 @@ func (c *SeriesHashCache) GetBlockCache(blockID string) *BlockSeriesHashCache {
 		c.generationsMx.RLock()
 	}
 
-	for idx := 0; idx < numGenerations; idx++ {
+	for idx := range numGenerations {
 		gen := c.generations[idx]
 
 		if value, ok := gen.blocks.Load(blockID); ok {
@@ -140,7 +150,7 @@ type BlockSeriesHashCache struct {
 // whether the series was found in the cache or not.
 func (c *BlockSeriesHashCache) Fetch(seriesID storage.SeriesRef) (uint64, bool) {
 	// Look for it in all generations, starting from the most recent one (index 0).
-	for idx := 0; idx < numGenerations; idx++ {
+	for idx := range numGenerations {
 		gen := c.generations[idx]
 
 		// Skip if the cache doesn't exist for this generation.

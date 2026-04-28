@@ -30,12 +30,15 @@ const (
 type RingConfig struct {
 	Common util.CommonRingConfig `yaml:",inline"`
 
+	InstanceZone string `yaml:"instance_availability_zone" category:"advanced"`
+
 	AutoForgetUnhealthyPeriods int `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
 }
 
 func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.Common.RegisterFlags("distributor.ring.", "collectors/", "distributors", f, logger)
-	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "distributor.ring.auto-forget-unhealthy-periods", 10, "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.")
+	f.StringVar(&cfg.InstanceZone, "distributor.ring.instance-availability-zone", "", "The availability zone where this instance is running. Used for zone-aware rate limiting.")
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "distributor.ring.auto-forget-unhealthy-periods", 10, "Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget.")
 }
 
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
@@ -49,6 +52,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 	return ring.BasicLifecyclerConfig{
 		ID:                              cfg.Common.InstanceID,
 		Addr:                            net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
+		Zone:                            cfg.InstanceZone,
 		HeartbeatPeriod:                 cfg.Common.HeartbeatPeriod,
 		HeartbeatTimeout:                cfg.Common.HeartbeatTimeout,
 		TokensObservePeriod:             0,

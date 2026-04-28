@@ -9,11 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/alertmanager/matchers/parse"
+	"github.com/prometheus/alertmanager/matcher/parse"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // csvTestData provides generic CSV parsing and writing functionality for test data.
@@ -77,7 +79,7 @@ func newCSVTestData[T any](columnNames []string, filePath string, fromCSVRecord 
 }
 
 // ParseTestCases reads and parses test cases from the CSV file
-func (d *csvTestData[T]) ParseTestCases(t *testing.T) []T {
+func (d *csvTestData[T]) ParseTestCases(t testing.TB) []T {
 	file, err := os.Open(d.filePath)
 	require.NoError(t, err)
 	defer file.Close()
@@ -144,6 +146,10 @@ func parseMatcher(t *testing.T, m string) *labels.Matcher {
 	return promMatcher
 }
 
+func formatFloat(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
 func parseFloat(t *testing.T, str string) float64 {
 	f, err := strconv.ParseFloat(str, 64)
 	require.NoErrorf(t, err, "Failed to parse float: %s", str)
@@ -154,4 +160,10 @@ func parseUint(t *testing.T, str string) uint64 {
 	u, err := strconv.ParseUint(str, 10, 64)
 	require.NoErrorf(t, err, "Failed to parse uint: %s", str)
 	return u
+}
+
+func parseVectorSelector(t testing.TB, str string) []*labels.Matcher {
+	matchers, err := promqlext.NewPromQLParser().ParseMetricSelector(str)
+	require.NoError(t, err)
+	return matchers
 }

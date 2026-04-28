@@ -766,11 +766,10 @@ func TestBlocksCleaner_ShouldCleanUpFilesWhenNoMoreBlocksRemain(t *testing.T) {
 	require.NoError(t, bucketClient.Upload(context.Background(), debugMetaFile, strings.NewReader("random content")))
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:              deletionDelay,
-		CleanupInterval:            time.Minute,
-		CleanupConcurrency:         1,
-		DeleteBlocksConcurrency:    1,
-		NoBlocksFileCleanupEnabled: true,
+		DeletionDelay:           deletionDelay,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
 	}
 
 	logger := test.NewTestingLogger(t)
@@ -1147,6 +1146,16 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	))
 }
 
+// bucketWithoutUpdatedAt is a wrapper that removes UpdatedAt support from a bucket
+type bucketWithoutUpdatedAt struct {
+	objstore.Bucket
+}
+
+func (b *bucketWithoutUpdatedAt) SupportedIterOptions() []objstore.IterOptionType {
+	// Return only Recursive, excluding UpdatedAt
+	return []objstore.IterOptionType{objstore.Recursive}
+}
+
 func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 	b, dir := mimir_testutil.PrepareFilesystemBucket(t)
 
@@ -1159,12 +1168,17 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 		require.NoError(t, os.Chtimes(filepath.Join(dir, tenant, blockID.String(), filepath.FromSlash(f)), objectTime, objectTime))
 	}
 
-	userBucket := bucket.NewUserBucketClient(tenant, b, nil)
+	// Create a bucket that supports UpdatedAt (original filesystem bucket)
+	userBucketWithUpdatedAt := bucket.NewUserBucketClient(tenant, b, nil)
+
+	// Create a bucket that doesn't support UpdatedAt (wrapped filesystem bucket)
+	bucketWithoutUpdatedAt := &bucketWithoutUpdatedAt{b}
+	userBucketWithoutUpdatedAt := bucket.NewUserBucketClient(tenant, bucketWithoutUpdatedAt, nil)
 
 	emptyBlockID := ulid.ULID{}
 	require.NotEqual(t, blockID, emptyBlockID)
 	empty := true
-	err := userBucket.Iter(context.Background(), emptyBlockID.String(), func(_ string) error {
+	err := userBucketWithUpdatedAt.Iter(context.Background(), emptyBlockID.String(), func(_ string) error {
 		empty = false
 		return nil
 	})
@@ -1176,16 +1190,33 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 		blockID              ulid.ULID
 		cutoff               time.Time
 		expectedLastModified time.Time
+		bucket               objstore.InstrumentedBucket
 	}{
-		{name: "no objects", blockID: emptyBlockID, cutoff: objectTime, expectedLastModified: time.Time{}},
-		{name: "objects newer than delay cutoff", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModified: time.Time{}},
-		{name: "objects equal to delay cutoff", blockID: blockID, cutoff: objectTime, expectedLastModified: objectTime},
-		{name: "objects older than delay cutoff", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModified: objectTime},
+		{name: "no objects (in the bucket with UpdatedAt support)", blockID: emptyBlockID, cutoff: objectTime, expectedLastModified: time.Time{}, bucket: userBucketWithUpdatedAt},
+		{name: "no objects (in the bucket without UpdatedAt support)", blockID: emptyBlockID, cutoff: objectTime, expectedLastModified: time.Time{}, bucket: userBucketWithoutUpdatedAt},
+
+		{name: "objects newer than delay cutoff (in the bucket with UpdatedAt support)", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModified: time.Time{}, bucket: userBucketWithUpdatedAt},
+		{name: "objects newer than delay cutoff (in the bucket without UpdatedAt support)", blockID: blockID, cutoff: objectTime.Add(-1 * time.Second), expectedLastModified: time.Time{}, bucket: userBucketWithoutUpdatedAt},
+
+		{name: "objects equal to delay cutoff (in the bucket with UpdatedAt support)", blockID: blockID, cutoff: objectTime, expectedLastModified: objectTime, bucket: userBucketWithUpdatedAt},
+		{name: "objects equal to delay cutoff (in the bucket without UpdatedAt support)", blockID: blockID, cutoff: objectTime, expectedLastModified: objectTime, bucket: userBucketWithoutUpdatedAt},
+
+		{name: "objects older than delay cutoff (in the bucket with UpdatedAt support)", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModified: objectTime, bucket: userBucketWithUpdatedAt},
+		{name: "objects older than delay cutoff (in the bucket without UpdatedAt support)", blockID: blockID, cutoff: objectTime.Add(1 * time.Second), expectedLastModified: objectTime, bucket: userBucketWithoutUpdatedAt},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lastModified, err := stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, userBucket, tc.cutoff)
+			// Create a BlocksCleaner with the appropriate bucket to test the correct path
+			var baseBucket objstore.Bucket
+			if tc.bucket == userBucketWithUpdatedAt {
+				baseBucket = b
+			} else {
+				baseBucket = bucketWithoutUpdatedAt
+			}
+
+			cleaner := NewBlocksCleaner(BlocksCleanerConfig{}, baseBucket, func(userID string) (bool, error) { return true, nil }, nil, log.NewNopLogger(), nil)
+			lastModified, err := cleaner.stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, tc.bucket, tc.cutoff)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedLastModified, lastModified)
 		})
@@ -1246,7 +1277,7 @@ func TestComputeCompactionJobs(t *testing.T) {
 				// Compactor wouldn't produce a job for this pair as their external labels differ:
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
 					Labels: map[string]string{
-						tsdb.OutOfOrderExternalLabel: tsdb.OutOfOrderExternalLabelValue,
+						block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue,
 					},
 				},
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
@@ -1263,32 +1294,147 @@ func TestComputeCompactionJobs(t *testing.T) {
 				// Compactor will ignore deprecated labels when computing jobs. Estimation should do the same.
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
 					Labels: map[string]string{
-						"honored_label":                        "12345",
-						tsdb.DeprecatedTenantIDExternalLabel:   "tenant1",
-						tsdb.DeprecatedIngesterIDExternalLabel: "ingester1",
+						"honored_label":                         "12345",
+						block.DeprecatedTenantIDExternalLabel:   "tenant1",
+						block.DeprecatedIngesterIDExternalLabel: "ingester1",
 					},
 				},
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
 					Labels: map[string]string{
-						"honored_label":                        "12345",
-						tsdb.DeprecatedTenantIDExternalLabel:   "tenant2",
-						tsdb.DeprecatedIngesterIDExternalLabel: "ingester2",
+						"honored_label":                         "12345",
+						block.DeprecatedTenantIDExternalLabel:   "tenant2",
+						block.DeprecatedIngesterIDExternalLabel: "ingester2",
 					},
 				},
 			},
 			expectedSplits: 0,
 			expectedMerges: 1,
 		},
+		"OOO blocks are grouped separately from in-order blocks": {
+			blocks: bucketindex.Blocks{
+				// In-order blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				// OOO blocks - should create a separate split job
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{
+						block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue,
+					},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{
+						block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue,
+					},
+				},
+			},
+			// Both in-order and OOO groups should create split jobs (2 total)
+			expectedSplits: 2,
+			expectedMerges: 0,
+		},
 	}
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			index := &bucketindex.Index{Blocks: c.blocks}
-			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, 3, 0)
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.splitAndMergeShards[user] = 3
+			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, cfgProvider)
 			require.NoError(t, err)
 			split, merge := computeSplitAndMergeJobs(jobs)
 			require.Equal(t, c.expectedSplits, split)
 			require.Equal(t, c.expectedMerges, merge)
+		})
+	}
+}
+
+func TestComputeCompactionJobsWithOOOShards(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+		CompactionBlockRanges:         tsdb.DurationList{2 * time.Hour, 24 * time.Hour},
+	}
+
+	const user = "test"
+	twoHoursMS := 2 * time.Hour.Milliseconds()
+
+	userBucket := bucket.NewUserBucketClient(user, bucketClient, nil)
+
+	cases := map[string]struct {
+		blocks                    bucketindex.Blocks
+		mergeShards               int
+		oooMergeShards            int
+		expectedInOrderShardCount uint32
+		expectedOOOShardCount     uint32
+	}{
+		"OOO blocks use oooMergeShards when set": {
+			blocks: bucketindex.Blocks{
+				// In-order blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				// OOO blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
+				},
+			},
+			mergeShards:               8,
+			oooMergeShards:            2,
+			expectedInOrderShardCount: 8,
+			expectedOOOShardCount:     2,
+		},
+		"OOO blocks fall back to mergeShards when oooMergeShards is 0": {
+			blocks: bucketindex.Blocks{
+				// In-order blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				// OOO blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
+				},
+			},
+			mergeShards:               8,
+			oooMergeShards:            0,
+			expectedInOrderShardCount: 8,
+			expectedOOOShardCount:     8,
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			index := &bucketindex.Index{Blocks: c.blocks}
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.splitAndMergeShards[user] = c.mergeShards
+			cfgProvider.oooSplitAndMergeShards[user] = c.oooMergeShards
+			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, cfgProvider)
+			require.NoError(t, err)
+
+			var inOrderJob, oooJob *Job
+			for _, job := range jobs {
+				if job.UseSplitting() {
+					metas := job.Metas()
+					if len(metas) > 0 && isOOOBlock(metas[0]) {
+						oooJob = job
+					} else {
+						inOrderJob = job
+					}
+				}
+			}
+
+			require.NotNil(t, inOrderJob, "expected an in-order split job")
+			require.NotNil(t, oooJob, "expected an OOO split job")
+			require.Equal(t, c.expectedInOrderShardCount, inOrderJob.SplittingShards(), "in-order job shard count")
+			require.Equal(t, c.expectedOOOShardCount, oooJob.SplittingShards(), "OOO job shard count")
 		})
 	}
 }
@@ -1340,29 +1486,29 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 				},
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{
-				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "78"}),
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{block.CompactorShardIDExternalLabel: "78"}),
 			},
 		},
 		"use labeled shard ID": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS,
-						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+						Labels: map[string]string{block.CompactorShardIDExternalLabel: "3"}},
 				},
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{
-				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{block.CompactorShardIDExternalLabel: "3"}),
 			},
 		},
 		"don't overwrite labeled shard ID": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78",
-						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+						Labels: map[string]string{block.CompactorShardIDExternalLabel: "3"}},
 				},
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{
-				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{block.CompactorShardIDExternalLabel: "3"}),
 			},
 		},
 		"honor deletion marks": {
@@ -1422,7 +1568,6 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 			CleanupConcurrency:            1,
 			DeleteBlocksConcurrency:       1,
 			GetDeletionMarkersConcurrency: 1,
-			NoBlocksFileCleanupEnabled:    true,
 		}
 	)
 
@@ -1689,7 +1834,7 @@ type mockBucketFailure struct {
 }
 
 func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
-	if util.StringsContain(m.DeleteFailures, name) {
+	if slices.Contains(m.DeleteFailures, name) {
 		return errors.New("mocked delete failure")
 	}
 	return m.Bucket.Delete(ctx, name)
@@ -1698,6 +1843,7 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 type mockConfigProvider struct {
 	userRetentionPeriods         map[string]time.Duration
 	splitAndMergeShards          map[string]int
+	oooSplitAndMergeShards       map[string]int
 	instancesShardSize           map[string]int
 	splitGroups                  map[string]int
 	blockUploadEnabled           map[string]bool
@@ -1706,7 +1852,6 @@ type mockConfigProvider struct {
 	userPartialBlockDelay        map[string]time.Duration
 	userPartialBlockDelayInvalid map[string]bool
 	verifyChunks                 map[string]bool
-	perTenantInMemoryCache       map[string]int
 	maxLookback                  map[string]time.Duration
 	maxPerBlockUploadConcurrency map[string]int
 }
@@ -1715,6 +1860,7 @@ func newMockConfigProvider() *mockConfigProvider {
 	return &mockConfigProvider{
 		userRetentionPeriods:         make(map[string]time.Duration),
 		splitAndMergeShards:          make(map[string]int),
+		oooSplitAndMergeShards:       make(map[string]int),
 		splitGroups:                  make(map[string]int),
 		blockUploadEnabled:           make(map[string]bool),
 		blockUploadValidationEnabled: make(map[string]bool),
@@ -1722,7 +1868,6 @@ func newMockConfigProvider() *mockConfigProvider {
 		userPartialBlockDelay:        make(map[string]time.Duration),
 		userPartialBlockDelayInvalid: make(map[string]bool),
 		verifyChunks:                 make(map[string]bool),
-		perTenantInMemoryCache:       make(map[string]int),
 		maxLookback:                  make(map[string]time.Duration),
 		maxPerBlockUploadConcurrency: make(map[string]int),
 	}
@@ -1740,6 +1885,13 @@ func (m *mockConfigProvider) CompactorSplitAndMergeShards(user string) int {
 		return result
 	}
 	return 0
+}
+
+func (m *mockConfigProvider) CompactorOOOSplitAndMergeShards(user string) int {
+	if result, ok := m.oooSplitAndMergeShards[user]; ok {
+		return result
+	}
+	return m.CompactorSplitAndMergeShards(user)
 }
 
 func (m *mockConfigProvider) CompactorSplitGroups(user string) int {
@@ -1774,10 +1926,6 @@ func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) b
 
 func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) int64 {
 	return m.blockUploadMaxBlockSizeBytes[user]
-}
-
-func (m *mockConfigProvider) CompactorInMemoryTenantMetaCacheSize(userID string) int {
-	return m.perTenantInMemoryCache[userID]
 }
 
 func (m *mockConfigProvider) S3SSEType(string) string {

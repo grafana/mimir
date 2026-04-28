@@ -46,6 +46,15 @@ Incoming samples are considered duplicated (and thus dropped) if they are receiv
 If the HA tracker is enabled but incoming samples contain only one or none of the cluster and replica labels, these samples are accepted by default and never deduplicated.
 
 > Note: for performance reasons, the HA tracker only checks the cluster and replica label of the first series in the request to determine whether all series in the request should be deduplicated. This assumes that all series inside the request have the same cluster and replica labels, which is typically true when Prometheus is configured with external labels. Ensure this requirement is honored if you have a non-standard Prometheus setup (for example, you're using Prometheus federation or have a metrics proxy in between).
+>
+> If all series inside a single write request can't be guaranteed to share the same cluster and replica labels, enable the experimental per-series HA deduplication via `-distributor.ha-tracker.per-sample-dedupe` (or the `ha_tracker_per_sample_dedupe` per-tenant limit). With this setting enabled, each timeseries in the request is evaluated independently, so non-elected replicas are dropped even when mixed with elected-replica or non-HA series in the same request.
+
+### Error responses
+
+When the HA tracker drops samples, Mimir returns one of the following errors depending on the reason:
+
+- **Replicas did not match**: When samples are received from a non-elected replica, Mimir returns an HTTP `202 Accepted` response with the message `replicas did not match, rejecting sample: replica=<replica>, elected=<elected>`. This indicates that the samples were successfully deduplicated and can be safely ignored.
+- **Too many HA clusters**: When the number of HA clusters for a tenant exceeds the configured limit, Mimir returns an HTTP `400 Bad Request` response with the error ID `err-mimir-tenant-too-many-ha-clusters`. To adjust this limit, configure `-distributor.ha-tracker.max-clusters` or contact your service administrator.
 
 ## Configuration
 
@@ -106,21 +115,16 @@ Alternatively, you can enable the HA tracker only on a per-tenant basis, keeping
 #### Configure the HA tracker KV store
 
 The HA tracker requires a key-value (KV) store to coordinate which replica is currently elected.
-The supported KV stores for the HA tracker are `consul` and `etcd`.
+Starting from Mimir 3.0, `memberlist` is the recommended and default KV store backend for the HA tracker.
 
-{{< admonition type="note" >}}
-`memberlist` isn't supported.
-
-Memberlist-based KV stores propagate updates using the Gossip protocol, which is too slow for the HA tracker.
-
-The result would be that different distributors might see a different Prometheus server elected as leaders at the same time.
-{{< /admonition >}}
+To migrate from Consul or etcd to memberlist without downtime, see [Migrate HA tracker from Consul or etcd to memberlist](../migrate-ha-tracker-to-memberlist/).
 
 The following CLI flags (and their respective YAML configuration options) are available for configuring the HA tracker KV store:
 
-- `-distributor.ha-tracker.store`: The backend storage to use, which is either `consul` or `etcd`.
-- `-distributor.ha-tracker.consul.*`: The Consul client configuration. Only use this if you have defined `consul` as your backend storage.
-- `-distributor.ha-tracker.etcd.*`: The etcd client configuration. Only use this if you have defined `etcd` as your backend storage.
+- `-distributor.ha-tracker.store`: Backend storage to use (default: `memberlist`).
+- `-memberlist.*`: Memberlist client configuration. This is shared by multiple components.
+
+The memberlist configuration is typically shared across multiple Mimir components (distributors, ingesters, etc.), so if you already have memberlist configured for hash ring synchronization, no additional configuration is required for the HA tracker.
 
 #### Configure expected label names for each Prometheus cluster and replica
 
@@ -143,12 +147,22 @@ The following configuration example snippet enables the HA tracker for all tenan
 ```yaml
 limits:
   accept_ha_samples: true
+
 distributor:
   ha_tracker:
     enable_ha_tracker: true
     kvstore:
-      [store: <string> | default = "consul"]
-      [consul | etcd: <config>]
+      store: memberlist
+
+memberlist:
+  # Memberlist configuration (typically shared with other components)
+  join_members:
+    - <IP_OR_DNS:PORT>
+    - <IP_OR_DNS:PORT>
 ```
+
+{{< admonition type="note" >}}
+If memberlist is already configured for other Mimir components, such as the hash ring, the HA tracker automatically uses that configuration. In most deployments, you don't need any additional memberlist configuration.
+{{< /admonition >}}
 
 For more information, see [distributor](../configuration-parameters/#distributor). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.

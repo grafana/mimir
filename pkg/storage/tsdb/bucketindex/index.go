@@ -15,7 +15,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -66,6 +65,21 @@ func (idx *Index) RemoveBlock(id ulid.ULID) {
 			idx.BlockDeletionMarks = append(idx.BlockDeletionMarks[:i], idx.BlockDeletionMarks[i+1:]...)
 			break
 		}
+	}
+}
+
+// Metadata contains metadata about the bucket index.
+type Metadata struct {
+	// Bucket index format version
+	Version int
+	// Unix timestamp in seconds when the bucket index was last updated
+	UpdatedAt int64
+}
+
+func (idx *Index) Metadata() *Metadata {
+	return &Metadata{
+		UpdatedAt: idx.UpdatedAt,
+		Version:   idx.Version,
 	}
 }
 
@@ -182,7 +196,7 @@ func BlockFromThanosMeta(meta block.Meta) *Block {
 		MaxTime:          meta.MaxTime,
 		SegmentsFormat:   segmentsFormat,
 		SegmentsNum:      segmentsNum,
-		CompactorShardID: meta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel],
+		CompactorShardID: meta.Thanos.Labels[block.CompactorShardIDExternalLabel],
 		Source:           string(meta.Thanos.Source),
 		CompactionLevel:  meta.Compaction.Level,
 		OutOfOrder:       meta.Compaction.FromOutOfOrder(),

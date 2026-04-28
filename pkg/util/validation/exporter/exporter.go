@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -27,18 +27,25 @@ import (
 )
 
 var (
-	defaultEnabledMetricNames = []string{
-		ingestionRate,
-		ingestionBurstSize,
-		maxGlobalSeriesPerUser,
-		maxGlobalSeriesPerMetric,
-		maxGlobalExemplarsPerUser,
-		maxChunksPerQuery,
-		maxFetchedSeriesPerQuery,
-		maxFetchedChunkBytesPerQuery,
-		rulerMaxRulesPerRuleGroup,
-		rulerMaxRuleGroupsPerTenant,
-	}
+	defaultEnabledMetricNames = func() []string {
+		names := []string{
+			ingestionRate,
+			ingestionBurstSize,
+			maxGlobalSeriesPerUser,
+			maxGlobalSeriesPerMetric,
+			maxGlobalExemplarsPerUser,
+			maxChunksPerQuery,
+			maxFetchedSeriesPerQuery,
+			maxFetchedChunkBytesPerQuery,
+			rulerMaxRulesPerRuleGroup,
+			rulerMaxRuleGroupsPerTenant,
+		}
+
+		// Ensure they're sorted so that the default CLI flag value matches the
+		// explicit setting we have in jsonnet.
+		slices.Sort(names)
+		return names
+	}()
 )
 
 const (
@@ -92,7 +99,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 // Validate validates the configuration for an overrides-exporter.
 func (c *Config) Validate() error {
 	if err := c.Ring.Validate(); err != nil {
-		return errors.Wrap(err, "invalid overrides-exporter.ring config")
+		return fmt.Errorf("invalid overrides-exporter.ring config: %w", err)
 	}
 	fieldRegistry := newLimitsFieldRegistry()
 	for _, metricName := range c.EnabledMetrics {
@@ -154,7 +161,7 @@ func NewOverridesExporter(
 
 		exporter.ring, err = newRing(config.Ring, log, registerer)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to create ring/lifecycler")
+			return nil, fmt.Errorf("failed to create ring/lifecycler: %w", err)
 		}
 	}
 

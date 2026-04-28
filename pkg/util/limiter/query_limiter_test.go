@@ -12,6 +12,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,12 +27,12 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 
 	var (
 		series1 = labels.FromMap(map[string]string{
-			labels.MetricName: metricName + "_1",
-			"series1":         "1",
+			model.MetricNameLabel: metricName + "_1",
+			"series1":             "1",
 		})
 		series2 = labels.FromMap(map[string]string{
-			labels.MetricName: metricName + "_2",
-			"series2":         "1",
+			model.MetricNameLabel: metricName + "_2",
+			"series2":             "1",
 		})
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
@@ -57,16 +58,16 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 
 	var (
 		series1 = labels.FromMap(map[string]string{
-			labels.MetricName: metricName + "_1",
-			"series1":         "1",
+			model.MetricNameLabel: metricName + "_1",
+			"series1":             "1",
 		})
 		series2 = labels.FromMap(map[string]string{
-			labels.MetricName: metricName + "_2",
-			"series2":         "1",
+			model.MetricNameLabel: metricName + "_2",
+			"series2":             "1",
 		})
 		series3 = labels.FromMap(map[string]string{
-			labels.MetricName: metricName + "_3",
-			"series2":         "1",
+			model.MetricNameLabel: metricName + "_3",
+			"series2":             "1",
 		})
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
@@ -178,8 +179,8 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		series = append(series,
 			labels.FromMap(map[string]string{
-				labels.MetricName: metricName + "_1",
-				"series1":         fmt.Sprint(i),
+				model.MetricNameLabel: metricName + "_1",
+				"series1":             fmt.Sprint(i),
 			}))
 	}
 	b.ResetTimer()

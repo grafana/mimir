@@ -4,6 +4,7 @@ package schedulerdiscovery
 
 import (
 	"flag"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -15,7 +16,6 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -65,9 +65,9 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// Ring flags
 	cfg.KVStore.Store = "memberlist" // Override default value.
 	cfg.KVStore.RegisterFlagsWithPrefix("query-scheduler.ring.", "collectors/", f)
-	f.DurationVar(&cfg.HeartbeatPeriod, "query-scheduler.ring.heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
+	f.DurationVar(&cfg.HeartbeatPeriod, "query-scheduler.ring.heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring.")
 	f.DurationVar(&cfg.HeartbeatTimeout, "query-scheduler.ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which query-schedulers are considered unhealthy within the ring."+sharedOptionWithRingClient)
-	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "query-scheduler.ring.auto-forget-unhealthy-periods", 10, "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.")
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "query-scheduler.ring.auto-forget-unhealthy-periods", 10, "Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget.")
 
 	// Instance flags
 	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
@@ -116,12 +116,12 @@ func NewRingLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registe
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(cfg.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "query-scheduler-lifecycler"), logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize query-schedulers' KV store")
+		return nil, fmt.Errorf("failed to initialize query-schedulers' KV store: %w", err)
 	}
 
 	lifecyclerCfg, err := cfg.ToBasicLifecyclerConfig(logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build query-schedulers' lifecycler config")
+		return nil, fmt.Errorf("failed to build query-schedulers' lifecycler config: %w", err)
 	}
 
 	var delegate ring.BasicLifecyclerDelegate
@@ -133,7 +133,7 @@ func NewRingLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registe
 
 	lifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "query-scheduler", ringKey, kvStore, delegate, logger, reg)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize query-schedulers' lifecycler")
+		return nil, fmt.Errorf("failed to initialize query-schedulers' lifecycler: %w", err)
 	}
 
 	return lifecycler, nil
@@ -143,7 +143,7 @@ func NewRingLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registe
 func NewRingClient(cfg RingConfig, component string, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, error) {
 	client, err := ring.New(cfg.ToRingConfig(), component, ringKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize query-schedulers' ring client")
+		return nil, fmt.Errorf("failed to initialize query-schedulers' ring client: %w", err)
 	}
 
 	return client, err

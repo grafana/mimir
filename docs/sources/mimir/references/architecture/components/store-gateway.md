@@ -4,10 +4,8 @@ aliases:
 description: The store-gateway queries blocks from long-term storage.
 menuTitle: Store-gateway
 title: Grafana Mimir store-gateway
-weight: 70
+weight: 80
 ---
-
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir store-gateway
 

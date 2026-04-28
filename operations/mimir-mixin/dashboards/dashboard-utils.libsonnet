@@ -23,6 +23,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.overrideProperty('custom.fillOpacity', 0),
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
+  local oomKilledStyle = $.overrideField('byRegexp', '/.+ - oomkilled/', [
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.failed }),
+    $.overrideProperty('custom.axisPlacement', 'hidden'),
+    $.overrideProperty('custom.drawStyle', 'points'),
+    $.overrideProperty('unit', 'none'),
+  ]),
 
   local sortAscending = 1,
   local sortNaturalAscending = 7,
@@ -46,6 +52,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
             super.panels[i] { span: span + if i < (12 % n) then 1 else 0 }
             for i in std.range(0, n - 1)
           ],
+        },
+
+      // splitIntoLines distributes panels across multiple visual lines within the same row,
+      // allowing for multiple "sub-rows" within the same row, making them collapsible together.
+      // panelsPerLine is an array with the number of panels on each line, e.g. [4, 2].
+      splitIntoLines(panelsPerLine)::
+        // To keep things simple, require divisors of 12.
+        // This could be relaxed by doing something like what justifyPanels does.
+        assert std.all([12 % lineCount == 0 for lineCount in panelsPerLine]) :
+               'splitIntoLines: each line count must be a divisor of 12, got %s' % [std.toString(panelsPerLine)];
+        // Create an array of span sizes to fill each line (12) with the correct number of panels.
+        // span[i] is the span of the i-th panel, e.g. panelsPerLine=[3,2] -> spans=[4,4,4,6,6].
+        local spans = std.flattenArrays([
+          [std.floor(12 / lineCount) for _ in std.range(0, lineCount - 1)]
+          for lineCount in panelsPerLine
+        ]);
+        local allPanels = self.panels;
+        assert std.length(allPanels) == std.length(spans) :
+               'splitIntoLines: panelsPerLine sums to %d but row has %d panels' % [std.length(spans), std.length(allPanels)];
+        // Now assign the calculated span to each panel
+        self + {
+          panels: [allPanels[i] { span: spans[i] } for i in std.range(0, std.length(allPanels) - 1)],
         },
     },
 
@@ -233,48 +261,51 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
+  qpsPanelColors:: {
+    '1xx': $._colors.warning,
+    '2xx': $._colors.success,
+    '3xx': '#6ED0E0',
+    '4xx': '#EF843C',
+    '5xx': $._colors.failed,
+    OK: $._colors.success,
+    success: $._colors.success,
+    'error': $._colors.failed,
+    cancel: '#A9A9A9',
+    Canceled: '#A9A9A9',
+  },
+
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
-    $.aliasColors({
-      '1xx': $._colors.warning,
-      '2xx': $._colors.success,
-      '3xx': '#6ED0E0',
-      '4xx': '#EF843C',
-      '5xx': $._colors.failed,
-      OK: $._colors.success,
-      success: $._colors.success,
-      'error': $._colors.failed,
-      cancel: '#A9A9A9',
-      Canceled: '#A9A9A9',
-    }) + {
+    $.aliasColors($.qpsPanelColors) + {
       fieldConfig+: {
         defaults+: { unit: 'reqps' },
       },
     },
 
-  qpsPanelNativeHistogram(selector, statusLabelName='status_code')::
-    super.qpsPanelNativeHistogram(selector, statusLabelName) +
-    $.aliasColors({
-      '1xx': $._colors.warning,
-      '2xx': $._colors.success,
-      '3xx': '#6ED0E0',
-      '4xx': '#EF843C',
-      '5xx': $._colors.failed,
-      OK: $._colors.success,
-      Success: $._colors.success,
-      'error': $._colors.failed,
-      cancel: '#A9A9A9',
-      Canceled: '#A9A9A9',
-    }) + {
+  qpsPanelNativeHistogram(metricName, selector, statusLabelName='status_code', nativeOnly=false)::
+    super.qpsPanelNativeHistogram(metricName, selector, statusLabelName, nativeOnly) +
+    $.aliasColors($.qpsPanelColors) + {
       fieldConfig+: {
-        defaults+: { unit: 'reqps' },
+        defaults+: {
+          unit: 'reqps',
+          custom+: {
+            fillOpacity: 100,
+          },
+        },
       },
     },
 
-  latencyPanel(metricName, selector, multiplier='1e3')::
+  latencyPanel(metricName, selector, multiplier='')::
     super.latencyPanel(metricName, selector, multiplier) + {
       fieldConfig+: {
-        defaults+: { unit: 'ms' },
+        defaults+: { unit: 's' },
+      },
+    },
+
+  ncLatencyPanel(metricName, selector, multiplier='', quantile=[99, 50])::
+    super.latencyPanelNativeHistogram(metricName, selector, multiplier, quantile) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
       },
     },
 
@@ -310,13 +341,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
-  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, legends=null, instanceLabel=$._config.per_instance_label, from_recording=false)::
-    local queries = [
-      utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
-      utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
-    ];
+  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, legends=null, instanceLabel=$._config.per_instance_label, from_recording=false, nativeOnly=false)::
+    local q = utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording);
+    local queries = if nativeOnly then
+      [q.native]
+    else
+      [utils.showClassicHistogramQuery(q), utils.showNativeHistogramQuery(q)];
+    local emptyLegends = if nativeOnly then [''] else ['', ''];
     if legends == null then
-      $.hiddenLegendQueryPanel(queries, ['', ''])
+      $.hiddenLegendQueryPanel(queries, emptyLegends)
     else
       $.queryPanel(queries, legends),
 
@@ -422,14 +455,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerMemoryWorkingSetPanel(instanceName, containerName)::
+    local queries =
+      $.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName)
+      + if $._config.deployment_type == 'kubernetes'
+      then [
+        $._config.resources_panel_queries[$._config.deployment_type].memory_oom_killed % {
+          instanceLabel: $._config.per_instance_label,
+          namespace: $.namespaceMatcher(),
+          instanceName: instanceName,
+          containerName: containerName,
+        },
+      ]
+      else [];
+    local legends =
+      $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)
+      + if $._config.deployment_type == 'kubernetes'
+      then ['{{%s}} - oomkilled' % $._config.per_instance_label]
+      else [];
+
     $.timeseriesPanel('Memory (workingset)') +
-    $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel(queries, legends) +
     $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
           resourceRequestStyle,
           resourceLimitStyle,
+          oomKilledStyle,
         ],
         defaults+: {
           unit: 'bytes',
@@ -490,25 +542,59 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerGoHeapInUsePanelByComponent(componentName)::
     $.containerGoHeapInUsePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
-  containerNetworkBytesPanel(title, metric, instanceName)::
+  containerNetworkBytesPanel(title, metric, instanceName, excludeInstanceName='')::
+    local instanceMatcher = '%s=~"%s"' % [$._config.per_instance_label, instanceName] +
+                            if excludeInstanceName == '' then '' else ',%s!~"%s"' % [$._config.per_instance_label, excludeInstanceName];
     $.timeseriesPanel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type][metric] % {
         namespaceMatcher: $.namespaceMatcher(),
         instanceLabel: $._config.per_instance_label,
-        instanceName: instanceName,
+        instanceMatcher: instanceMatcher,
       }, '{{%s}}' % $._config.per_instance_label
     ) +
     $.stack +
+    $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerNetworkReceiveBytesPanelByComponent(componentName)::
-    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', $._config.instance_names[componentName]),
+  containerEphemeralStoragePanelByComponent(componentName)::
+    $.containerEphemeralStoragePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerEphemeralStoragePanel(instanceName, containerName)::
+    if $._config.deployment_type == 'kubernetes' then
+      $.timeseriesPanel('Ephemeral Storage (log fs)') +
+      $.queryPanel($.resourceUtilizationAndLimitQueries('ephemeral_storage', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+      $.showAllTooltip +
+      {
+        fieldConfig+: {
+          overrides+: [
+            resourceRequestStyle,
+            resourceLimitStyle,
+          ],
+          defaults+: {
+            unit: 'bytes',
+            custom+: {
+              fillOpacity: 0,
+            },
+          },
+        },
+      }
+    else {},  // Nothing to render for non-kubernetes deployments
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerNetworkTransmitBytesPanelByComponent(componentName)::
-    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', $._config.instance_names[componentName]),
+  // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerNetworkReceiveBytesPanelByComponent(componentName, excludeComponentName='')::
+    local excludeInstanceName = if excludeComponentName == '' then '' else $._config.instance_names[excludeComponentName];
+    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', $._config.instance_names[componentName], excludeInstanceName),
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerNetworkTransmitBytesPanelByComponent(componentName, excludeComponentName='')::
+    local excludeInstanceName = if excludeComponentName == '' then '' else $._config.instance_names[excludeComponentName];
+    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', $._config.instance_names[componentName], excludeInstanceName),
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
@@ -525,6 +611,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
+    $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -546,6 +633,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
+    $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -554,18 +642,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
-  containerDiskSpaceUtilizationPanel(instanceName, containerName)::
+  // The optional excludeContainerName is useful to exclude components
+  // in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerDiskSpaceUtilizationPanel(instanceName, containerName, excludeContainerName='')::
     local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
+    local excludePvcMatcher = if excludeContainerName == '' then '' else ', ' + $.containerPersistentVolumeClaimExcludeMatcher(excludeContainerName);
     $.timeseriesPanel('Disk space utilization') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespaceMatcher: $.namespaceMatcher(),
-        persistentVolumeClaimMatcher: $.containerPersistentVolumeClaimMatcher(containerName),
+        persistentVolumeClaimMatcher: $.containerPersistentVolumeClaimMatcher(containerName) + excludePvcMatcher,
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
       }, label
     ) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         defaults+: { unit: 'percentunit' },
@@ -576,12 +668,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerDiskSpaceUtilizationPanelByComponent(componentName)::
-    $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+  // The optional excludeComponentName is useful to exclude components in case of prefix collisions (e.g. "compactor.*" and "compactor-scheduler").
+  containerDiskSpaceUtilizationPanelByComponent(componentName, excludeComponentName='')::
+    local excludeContainerName = if excludeComponentName == '' then '' else $._config.container_names[excludeComponentName];
+    $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName], excludeContainerName),
 
   // The provided containerName should be a regexp from $._config.container_names.
   containerPersistentVolumeClaimMatcher(containerName)::
     'persistentvolumeclaim=~".*(%s).*"' % containerName,
+
+  // The provided containerName should be a regexp from $._config.container_names.
+  containerPersistentVolumeClaimExcludeMatcher(containerName)::
+    'persistentvolumeclaim!~".*(%s).*"' % containerName,
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerNetworkingRowByComponent(title, componentName)::
@@ -638,11 +736,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.row(title)
     .addPanel(
       $.timeseriesPanel('Requests / sec') +
-      $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.qpsPanelNativeHistogram('cortex_kv_request_duration_seconds', '%s, kv_name=~"%s"' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     )
     .addPanel(
       $.timeseriesPanel('Latency') +
-      $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.ncLatencyPanel('cortex_kv_request_duration_seconds', '%s, kv_name=~"%s"' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
@@ -846,19 +944,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       |||
     ),
 
-  cpuBasedAutoScalingRow(componentTitle)::
-    local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
-    super.row('%s – autoscaling' % [componentTitle])
-    .addPanel(
-      $.autoScalingActualReplicas(componentName)
-    )
-    .addPanel(
-      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'CPU', 'cpu')
-    )
-    .addPanel(
-      $.autoScalingFailuresPanel(componentName)
-    ),
-
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::
     local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
     super.row('%s – autoscaling' % [componentTitle])
@@ -875,8 +960,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.autoScalingFailuresPanel(componentName)
     ),
 
-  ncSumCountRateStatPanel(metric, selectors, extra_selector, thresholds=[])::
-    local ncQuery = $.ncSumHistogramCountRate(metric, selectors, extra_selector);
+  // ncSumCountRateStatPanel builds a stat panel that shows the summed rate of a histogram counter.
+  ncSumCountRateStatPanel(metric, selectors, thresholds=[], unit='reqps', instant=true)::
+    local query = $.ncSumHistogramCountRate(metric, selectors);
+    local queries = [
+      utils.showClassicHistogramQuery(query),
+      utils.showNativeHistogramQuery(query),
+    ];
+    $.newStatPanel(
+      queries=queries,
+      legends=['', ''],
+      unit=unit,
+      thresholds=thresholds,
+      instant=instant,
+    ) + { options: { colorMode: 'none' } },
+
+  // ncSumCountRateRatioStatPanel builds a stat panel that shows ratios of histogram counter rates
+  // between two selector sets. Formatted as a percentage.
+  ncSumCountRateRatioStatPanel(metric, selectors, extra_selector, thresholds=[])::
+    local ncQuery = $.ncSumHistogramCountRateRatio(metric, selectors, extra_selector);
     local queries = [
       utils.showClassicHistogramQuery(ncQuery),
       utils.showNativeHistogramQuery(ncQuery),
@@ -1176,7 +1278,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   },
 
   getObjectStoreRows(title, component):: [
-    super.row(title)
+    $.row(title)
     .addPanel(
       $.timeseriesPanel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
@@ -1190,29 +1292,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Attributes') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="attributes"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Exists') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
-    ),
-    $.row('')
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="exists"' % [$.namespaceMatcher(), component]),
+    )
     .addPanel(
       $.timeseriesPanel('Latency of op: Get') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: GetRange') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get_range"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Upload') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="upload"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="upload"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Delete') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
-    ),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="delete"' % [$.namespaceMatcher(), component]),
+    )
+    .splitIntoLines([4, 4]),
   ],
 
   thanosMemcachedCache(title, jobName, component, cacheName)::
@@ -1241,15 +1343,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency (getmulti)') +
-      $.latencyPanel(
+      $.ncLatencyPanel(
         'thanos_cache_operation_duration_seconds',
         |||
-          {
-            %(jobMatcher)s,
-            operation="getmulti",
-            component="%(component)s",
-            name="%(cacheName)s"
-          }
+          %(jobMatcher)s, operation="getmulti", component="%(component)s", name="%(cacheName)s"
         ||| % config
       )
     )
@@ -1281,38 +1378,54 @@ local utils = import 'mixin-utils/utils.libsonnet';
   latencyPanelLabelBreakout(
     metricName,
     selector,
-    percentiles=['0.99', '0.50'],
+    percentiles=['0.99'],
     includeAverage=true,
     labels=[],
     labelReplaceArgSets=[{}],
-    multiplier='1e3',
+    multiplier='',
   )::
-    local averageExprTmpl = $.wrapMultiLabelReplace(
-      query='sum(rate(%s_sum%s[$__rate_interval])) by (%s) * %s / sum(rate(%s_count%s[$__rate_interval])) by (%s)',
-      labelReplaceArgSets=labelReplaceArgSets,
-    );
-    local histogramExprTmpl = $.wrapMultiLabelReplace(
-      query='histogram_quantile(%s, sum(rate(%s_bucket%s[$__rate_interval])) by (%s)) * %s',
-      labelReplaceArgSets=labelReplaceArgSets,
-    );
-    local labelBreakouts = '%s' % std.join(', ', labels);
-    local histogramLabelBreakouts = '%s' % std.join(', ', ['le'] + labels);
+    assert 0 <= std.length(percentiles) && std.length(percentiles) <= 1 : 'latencyPanelLabelBreakout currently only supports a single percentile due to fixed refId';
+    local labelReplace = $.wrapMultiLabelReplace(labelReplaceArgSets=labelReplaceArgSets);
+    local labelBreakouts = std.join(', ', labels);
 
-    local percentileTargets = [
-      {
-        expr: histogramExprTmpl % [percentile, metricName, selector, histogramLabelBreakouts, multiplier],
-        format: 'time_series',
-        legendFormat: '%sth Percentile: {{ %s }}' % [std.lstripChars(percentile, '0.'), labelBreakouts],
-        refId: 'A',
-      }
+    local percentileTargets = std.flattenArrays([
+      local query = utils.ncHistogramApplyTemplate(
+        labelReplace,
+        utils.ncHistogramQuantile(percentile, metricName, selector, sum_by=labels, multiplier=multiplier),
+      );
+      [
+        {
+          expr: utils.showNativeHistogramQuery(query),
+          format: 'time_series',
+          legendFormat: '%sth Percentile: {{ %s }}' % [std.lstripChars(percentile, '0.'), labelBreakouts],
+          refId: 'A',
+        },
+        {
+          expr: utils.showClassicHistogramQuery(query),
+          format: 'time_series',
+          legendFormat: '%sth Percentile: {{ %s }}' % [std.lstripChars(percentile, '0.'), labelBreakouts],
+          refId: 'A_classic',
+        },
+      ]
       for percentile in percentiles
-    ];
+    ]);
+
+    local averageQuery = utils.ncHistogramApplyTemplate(
+      labelReplace,
+      utils.ncHistogramAverageRate(metricName, selector, multiplier=multiplier, sum_by=labels),
+    );
     local averageTargets = [
       {
-        expr: averageExprTmpl % [metricName, selector, labelBreakouts, multiplier, metricName, selector, labelBreakouts],
+        expr: utils.showNativeHistogramQuery(averageQuery),
         format: 'time_series',
         legendFormat: 'Average: {{ %s }}' % [labelBreakouts],
         refId: 'C',
+      },
+      {
+        expr: utils.showClassicHistogramQuery(averageQuery),
+        format: 'time_series',
+        legendFormat: 'Average: {{ %s }}' % [labelBreakouts],
+        refId: 'C_classic',
       },
     ];
 
@@ -1321,29 +1434,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
     {
       targets: targets,
       fieldConfig+: {
-        defaults+: { unit: 'ms', noValue: 0 },
+        defaults+: { unit: 's', noValue: 0 },
       },
     },
 
-  latencyRecordingRulePanel(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
+  latencyRecordingRulePanel(metric, selectors, extra_selectors=[], multiplier='', sum_by=[])::
     utils.latencyRecordingRulePanel(metric, selectors, extra_selectors, multiplier, sum_by) + {
       // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
       yaxes:: super.yaxes,
       fieldConfig+: {
         defaults+: {
-          unit: 'ms',
+          unit: 's',
           min: 0,
         },
       },
     },
 
-  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
-    utils.latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors, multiplier, sum_by) + {
+  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='', sum_by=[], nativeOnly=false)::
+    utils.latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors, multiplier, sum_by, nativeOnly) + {
       // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
       yaxes:: super.yaxes,
       fieldConfig+: {
         defaults+: {
-          unit: 'ms',
+          unit: 's',
           min: 0,
         },
       },
@@ -1352,10 +1465,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
   requestAddedLatencyPanelNativeHistogram(metric, selector)::
     $.queryPanel(
       [
-        'histogram_quantile(0.99, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
-        'histogram_quantile(0.50, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
-        'histogram_quantile(0.01, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
-        'histogram_avg(sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
+        'histogram_quantile(0.99, sum(rate(%s{%s}[$__rate_interval])))' % [metric, selector],
+        'histogram_quantile(0.50, sum(rate(%s{%s}[$__rate_interval])))' % [metric, selector],
+        'histogram_quantile(0.01, sum(rate(%s{%s}[$__rate_interval])))' % [metric, selector],
+        'histogram_avg(sum(rate(%s{%s}[$__rate_interval])))' % [metric, selector],
       ],
       [
         '99th percentile',
@@ -1369,7 +1482,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) + {
       fieldConfig+: {
         defaults+: {
-          unit: 'ms',
+          unit: 's',
           min: 0,
         },
       },
@@ -1531,7 +1644,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       replaceFields: replaceFields,
     }),
 
-  wrapMultiLabelReplace(query, labelReplaceArgSets=[{}])::
+  wrapMultiLabelReplace(query='%s', labelReplaceArgSets=[{}])::
     std.foldl(
       function(query, labelReplaceArgSet) $.wrapLabelReplace(query, labelReplaceArgSet),
       labelReplaceArgSets,
@@ -1555,13 +1668,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
   aliasColors(colors):: {
     // aliasColors was the configuration in (deprecated) graph panel; we hide it from JSON model.
     aliasColors:: super.aliasColors,
+    local newOverrides = [
+      $.overrideFieldByName(name, [
+        $.overrideProperty('color', { mode: 'fixed', fixedColor: colors[name] }),
+      ])
+      for name in std.objectFields(colors)
+    ],
+    local byName(o) =
+      assert o.matcher.id == 'byName' : 'invalid matcher with id %s' % o.matcher.id;
+      o.matcher.options,
     fieldConfig+: {
-      overrides+: [
-        $.overrideFieldByName(name, [
-          $.overrideProperty('color', { mode: 'fixed', fixedColor: colors[name] }),
-        ])
-        for name in std.objectFields(colors)
-      ],
+      // Take existing field overrides and extend them with the new ones. Let new ones take
+      // precedence over already existing ones.
+      overrides: std.sort(std.setDiff(if 'overrides' in super then super.overrides else [], newOverrides, byName) + newOverrides, byName),
     },
   },
 
@@ -1596,10 +1715,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.timeseriesPanel(title) +
         $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.queryPanel(
-          |||
-            sum(rate(cortex_query_scheduler_queue_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % $.jobMatcher(querySchedulerJobName),
-          'Requests/s'
+          local query = utils.ncHistogramSumBy(utils.ncHistogramCountRate(
+            metric='cortex_query_scheduler_queue_duration_seconds',
+            selector=$.jobMatcher(querySchedulerJobName)
+          ));
+
+          [utils.showNativeHistogramQuery(query), utils.showClassicHistogramQuery(query)],
+          ['Requests/s', 'Requests/s']
         ) +
         $.stack +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } },
@@ -1608,7 +1730,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Latency (Time in Queue)';
         $.timeseriesPanel(title) +
         $.onlyRelevantIfQuerySchedulerEnabled(title) +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
+        $.ncLatencyPanel('cortex_query_scheduler_queue_duration_seconds', $.jobMatcher(querySchedulerJobName))
       )
       .addPanel(
         local title = 'Queue length';
@@ -1638,7 +1760,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_queue_duration_seconds';
-      local selector = '{%s}' % $.jobMatcher(querySchedulerJobName);
+      local selector = $.jobMatcher(querySchedulerJobName);
       local labels = ['additional_queue_dimensions'];
       local labelReplaceArgSets = [
         {
@@ -1751,9 +1873,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
         .addPanel(
           $.timeseriesPanel('Latency') +
-          $.latencyPanel(
+          $.ncLatencyPanel(
             'thanos_cache_operation_duration_seconds',
-            '{%s, name="frontend-cache"}' % $.jobMatcher(queryFrontendJobName)
+            '%s, name="frontend-cache"' % $.jobMatcher(queryFrontendJobName)
           )
         ),
       ]
@@ -1761,16 +1883,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row($.capitalize(rowTitlePrefix + 'querier'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(querierJobName), $.queries.read_http_routes_regex])
+        $.qpsPanelNativeHistogram('cortex_querier_request_duration_seconds', '%s, route=~"%s"' % [$.jobMatcher(querierJobName), $.queries.querier_read_routes_regex])
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.read_http_routes_regex], ''
+        $.perInstanceLatencyPanelNativeHistogram(
+          '0.99',
+          'cortex_querier_request_duration_seconds',
+          $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)],
         )
       ),
     ] +
@@ -1847,7 +1971,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel(
       $.timeseriesPanel('Latency') +
       $.panelDescription('Latency', description) +
-      $.latencyPanel(querierRequestsPerSecondMetric, utils.toPrometheusSelector(selectors))
+      $.ncLatencyPanel(querierRequestsPerSecondMetric, utils.toPrometheusSelectorNaked(selectors))
     )
     .addPanel(
       $.timeseriesPanel('Per querier %s p99 latency' % $._config.per_instance_label) +
@@ -1923,7 +2047,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.hiddenLegendQueryPanel(
       |||
-        histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
+        histogram_quantile(1.0, sum by(%(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
 
         # Add a filter to show only the outliers. We consider an ingester an outlier if its
         # 100th percentile latency is greater than the 200%% of the average 100th of the 10%%
@@ -1951,7 +2075,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         per_instance_label: $._config.per_instance_label,
         per_namespace_label: $._config.per_namespace_label,
       },
-      '{{pod}}',
+      '{{%(per_instance_label)s}}' % {
+        per_instance_label: $._config.per_instance_label,
+      },
     ) + {
       fieldConfig+: {
         defaults+: { unit: 's' },
@@ -2173,4 +2299,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       </p>
     ||| % querySchedulerDescription
   ),
+
+  // latencyVariableDefault returns the default to use for the native / classic latency variable.
+  // Use like: $._config.dashboards_default_latency_mode = 'native'.
+  latencyVariableDefault()::
+    if std.objectHas($._config, 'dashboards_default_latency_mode') then
+      $._config.dashboards_default_latency_mode
+    else
+      'classic',
 }

@@ -14,6 +14,8 @@ mimir {
     alertmanager_enabled: true,
     alertmanager_storage_bucket_name: 'alerts-bucket',
 
+    overrides_exporter_enabled: true,
+
     shuffle_sharding+:: {
       ingester_write_path_enabled: true,
       ingester_read_path_enabled: true,

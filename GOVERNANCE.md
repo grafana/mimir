@@ -30,13 +30,14 @@ Each project must have a [`MAINTAINERS.md`][maintainers] file with at least one 
 
 Team member status may be given to those who have made ongoing contributions to the Mimir project for at least 3 months. This is usually in the form of code improvements and/or notable work on documentation, but organizing events or user support could also be taken into account.
 
-New members may be proposed by any existing member by email to the [team mailing list][team]. It is highly desirable to reach consensus about acceptance of a new member. However, the proposal is ultimately voted on by a formal [supermajority vote](#supermajority-vote).
+- For Grafana Cloud Hosted Metrics engineers, an engineer is automatically added as a team member as soon as they join the on-call rotation.
+- For other people, they may be proposed by any existing member by email to the [team mailing list][team]. It is highly desirable to reach consensus about acceptance of a new member. However, the proposal is ultimately voted on by a formal [supermajority vote](#supermajority-vote).
 
 If the new member proposal is accepted, the proposed team member should be contacted privately via email to confirm or deny their acceptance of team membership. This email will also be CC'd to the [team mailing list][team] for record-keeping purposes.
 
 If they choose to accept, the [onboarding](#onboarding) procedure is followed.
 
-Team members may retire at any time by emailing [the team][team].
+Team members may retire at any time by emailing [the team][team]. Grafana Labs employees who stop being Grafana Cloud Hosted Metrics engineers or leave Grafana Labs are assumed to have retired unless they state otherwise.
 
 Team members can be removed by [supermajority vote](#supermajority-vote) on [the team mailing list][team].
 For this vote, the member in question is not eligible to vote and does not count towards the quorum.
@@ -48,6 +49,7 @@ In case a member leaves, the [offboarding](#offboarding) procedure is applied.
 
 The current team members are:
 
+- Andrew Hall [@tcp13equals2](https://github.com/tcp13equals2) ([Grafana Labs](https://grafana.com/))
 - Andy Asp [@andyasp](https://github.com/andyasp) ([Grafana Labs](https://grafana.com/))
 - Arve Knudsen — [@aknuds1](https://github.com/aknuds1) ([Grafana Labs](https://grafana.com/))
 - Bryan Boreham — [@bboreham](https://github.com/bboreham) ([Grafana Labs](https://grafana.com/))
@@ -60,16 +62,19 @@ The current team members are:
 - Franco Posa [@francoposa](https://github.com/francoposa) ([Grafana Labs](https://grafana.com/))
 - George Krajcsovits - [@krajorama](https://github.com/krajorama) ([Grafana Labs](https://grafana.com/))
 - Jeanette Tan [@zenador](https://github.com/zenador) ([Grafana Labs](https://grafana.com/))
+- Jesús Vázquez — [@jesusvazquez](https://github.com/jesusvazquez) ([Grafana Labs](https://grafana.com/))
 - Jon Kartago Lamida [@lamida](https://github.com/lamida) ([Grafana Labs](https://grafana.com/))
 - Jonathan Halterman [@jhalterman](https://github.com/jhalterman) ([Grafana Labs](https://grafana.com/))
 - Josh Abreu Mesa [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
 - Joshua Hesketh [@jhesketh](https://github.com/jhesketh) ([Grafana Labs](https://grafana.com/))
 - Justin Lei [@leizor](https://github.com/leizor) ([Grafana Labs](https://grafana.com/))
+- Karl Skewes [@karlskewes](https://github.com/karlskewes) ([Grafana Labs](https://grafana.com/))
 - Marco Pracucci — [@pracucci](https://github.com/pracucci) ([Grafana Labs](https://grafana.com/))
 - Mauro Stettler — [@replay](https://github.com/replay) ([Grafana Labs](https://grafana.com/))
 - Miguel Ángel Ortuño [@ortuman](https://github.com/ortuman) ([Grafana Labs](https://grafana.com/))
 - Nick Pillitteri — [@56quarters](https://github.com/56quarters) ([Grafana Labs](https://grafana.com/))
 - Oleg Zaytsev — [@colega](https://github.com/colega) ([Grafana Labs](https://grafana.com/))
+- Oliver Herrmann - [@monoxane](https://github.com/monoxane) ([Grafana Labs](https://grafana.com/))
 - Patrick Oyarzun - [@Logiraptor](https://github.com/Logiraptor) ([Grafana Labs](https://grafana.com/))
 - Patryk Prus [@pr00se](https://github.com/pr00se) ([Grafana Labs](https://grafana.com/))
 - Peter Štibraný — [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
@@ -98,7 +103,7 @@ Changes in maintainership are formalized by modifying the [`MAINTAINERS.md`][mai
 
 Maintainers are granted commit rights to all projects covered by this governance.
 
-A maintainer or committer may resign by notifying the [team mailing list][team]. A maintainer with no project activity for a year is considered to have resigned. Maintainers that wish to resign are encouraged to propose another team member to take over the project.
+A maintainer or committer may resign by notifying the [team mailing list][team]. A maintainer with no project activity for a year is considered to have resigned. Grafana Labs employees who stop being Grafana Cloud Hosted Metrics engineers or leave Grafana Labs are assumed to have resigned unless they state otherwise. Maintainers that wish to resign are encouraged to propose another team member to take over the project.
 
 A project may have multiple maintainers, as long as the responsibilities are clearly agreed upon between them. This includes coordinating who handles which issues and pull requests.
 

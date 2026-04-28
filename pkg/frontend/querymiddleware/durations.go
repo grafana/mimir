@@ -55,21 +55,20 @@ func (d *durationsMiddleware) rewriteIfNeeded(ctx context.Context, req MetricsQu
 	defer spanLog.Finish()
 
 	origQuery := req.GetQuery()
-	expr, err := parser.ParseExpr(origQuery)
+	expr, err := req.GetClonedParsedQuery()
 	if err != nil {
 		// This middleware focuses on duration expressions, so if the query is
 		// not valid, we just fall through to the next handler.
 		return req, nil
 	}
 
-	expr, err = promql.PreprocessExpr(expr, time.UnixMilli(req.GetStart()), time.UnixMilli(req.GetEnd()), time.Duration(req.GetStep())*time.Second)
+	expr, err = promql.PreprocessExpr(expr, time.UnixMilli(req.GetStart()), time.UnixMilli(req.GetEnd()), time.Duration(req.GetStep())*time.Millisecond)
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to evaluate duration expressions in query", "err", err)
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	checkVisitor := &durationVisitor{}
-	if err := parser.Walk(checkVisitor, expr, nil); err != nil {
+	if err := inspect(expr, durationVisitor); err != nil {
 		level.Warn(spanLog).Log("msg", "the query contains unsupported duration expressions", "err", err)
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
@@ -90,58 +89,56 @@ func (d *durationsMiddleware) rewriteIfNeeded(ctx context.Context, req MetricsQu
 	return req, nil
 }
 
-type durationVisitor struct{}
-
-// Visit verifies that duration expressions only contain durations that Mimir supports.
+// durationVisitor verifies that duration expressions only contain durations that Mimir supports.
 // And also clear the original expressions to not confuse the frontend.
-func (v *durationVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
+func durationVisitor(node parser.Node) error {
 	switch n := node.(type) {
 	case *parser.VectorSelector:
 		if n.OriginalOffsetExpr != nil {
-			err := v.checkDuration(n.OriginalOffsetExpr)
+			err := checkDuration(n.OriginalOffsetExpr)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			n.OriginalOffsetExpr = nil
 		}
 	case *parser.MatrixSelector:
 		if n.RangeExpr != nil {
-			err := v.checkDuration(n.RangeExpr)
+			err := checkDuration(n.RangeExpr)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			n.RangeExpr = nil
 		}
 	case *parser.SubqueryExpr:
 		if n.OriginalOffsetExpr != nil {
-			err := v.checkDuration(n.OriginalOffsetExpr)
+			err := checkDuration(n.OriginalOffsetExpr)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			n.OriginalOffsetExpr = nil
 		}
 		if n.StepExpr != nil {
-			err := v.checkDuration(n.StepExpr)
+			err := checkDuration(n.StepExpr)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			n.StepExpr = nil
 		}
 		if n.RangeExpr != nil {
-			err := v.checkDuration(n.RangeExpr)
+			err := checkDuration(n.RangeExpr)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			n.RangeExpr = nil
 		}
 	}
-	return v, nil
+	return nil
 }
 
 // checkDuration checks if we know how to handle the duration expression.
 // Has the same structure as in promql/durations.go, but does not calculate
 // the duration.
-func (v *durationVisitor) checkDuration(expr parser.Expr) error {
+func checkDuration(expr parser.Expr) error {
 	switch n := expr.(type) {
 	case *parser.NumberLiteral:
 		return nil
@@ -149,14 +146,14 @@ func (v *durationVisitor) checkDuration(expr parser.Expr) error {
 		var err error
 
 		if n.LHS != nil {
-			err = v.checkDuration(n.LHS)
+			err = checkDuration(n.LHS)
 			if err != nil {
 				return err
 			}
 		}
 
 		if n.RHS != nil {
-			err = v.checkDuration(n.RHS)
+			err = checkDuration(n.RHS)
 			if err != nil {
 				return err
 			}
@@ -164,6 +161,8 @@ func (v *durationVisitor) checkDuration(expr parser.Expr) error {
 
 		switch n.Op {
 		case parser.STEP:
+			return nil
+		case parser.RANGE:
 			return nil
 		case parser.MIN:
 			return nil
@@ -187,4 +186,18 @@ func (v *durationVisitor) checkDuration(expr parser.Expr) error {
 	default:
 		return fmt.Errorf("unexpected duration expression type %T in query-frontend", n)
 	}
+}
+
+// inspect recursively traverses a PromQL AST and calls fn for each node encountered.
+// If fn returns an error, traversal stops and that error is returned by inspect.
+func inspect(node parser.Node, fn func(node parser.Node) error) error {
+	if err := fn(node); err != nil {
+		return err
+	}
+	for e := range parser.ChildrenIter(node) {
+		if err := inspect(e, fn); err != nil {
+			return err
+		}
+	}
+	return nil
 }

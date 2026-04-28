@@ -7,15 +7,20 @@ package local
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	promRules "github.com/prometheus/prometheus/rules"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // Client expects to load already existing rules located at:
@@ -26,14 +31,14 @@ type Client struct {
 	loader promRules.GroupLoader
 }
 
-func NewLocalRulesClient(cfg rulestore.LocalStoreConfig, loader promRules.GroupLoader) (*Client, error) {
+func NewLocalRulesClient(cfg rulestore.LocalStoreConfig) (*Client, error) {
 	if cfg.Directory == "" {
 		return nil, errors.New("directory required for local rules config")
 	}
 
 	return &Client{
 		cfg:    cfg,
-		loader: loader,
+		loader: newFileLoader(),
 	}, nil
 }
 
@@ -171,9 +176,34 @@ func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (
 func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID string, namespace string) (*rulefmt.RuleGroups, error) {
 	filename := filepath.Join(l.cfg.Directory, userID, namespace)
 
-	rulegroups, errs := l.loader.Load(filename, false)
+	// Note that we hard code UTF-8 metric/label name validation mode, since we don't want to prevent
+	// loading rule groups created in UTF-8 mode if validation mode is legacy.
+	rulegroups, errs := l.loader.Load(filename, false, model.UTF8Validation)
 	if len(errs) > 0 {
 		return nil, errors.Wrapf(errs[0], "error parsing %s", filename)
 	}
 	return rulegroups, nil
+}
+
+// fileLoader implements promRules.GroupLoader interface.
+// It loads rule groups from files
+type fileLoader struct {
+	parser parser.Parser
+	logger *slog.Logger
+}
+
+// newFileLoader creates a new fileLoader.
+func newFileLoader() *fileLoader {
+	return &fileLoader{
+		parser: promqlext.NewPromQLParser(),
+		logger: promslog.NewNopLogger(),
+	}
+}
+
+func (fl *fileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser, fl.logger)
+}
+
+func (fl *fileLoader) Parse(query string) (parser.Expr, error) {
+	return fl.parser.ParseExpr(query)
 }

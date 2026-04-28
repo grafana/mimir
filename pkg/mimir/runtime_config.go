@@ -7,6 +7,7 @@ package mimir
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -14,7 +15,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -33,8 +34,6 @@ type runtimeConfigValues struct {
 	TenantLimits map[string]*validation.Limits `yaml:"overrides"`
 
 	Multi kv.MultiRuntimeConfig `yaml:"multi_kv_config"`
-
-	IngesterChunkStreaming *bool `yaml:"ingester_stream_chunks_when_using_blocks"`
 
 	IngesterLimits    *ingester.InstanceLimits    `yaml:"ingester_limits"`
 	DistributorLimits *distributor.InstanceLimits `yaml:"distributor_limits"`
@@ -89,12 +88,12 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 	}
 
 	if l.validate != nil {
-		for _, limits := range overrides.TenantLimits {
+		for tenantID, limits := range overrides.TenantLimits {
 			if limits == nil {
 				continue
 			}
 			if err := l.validate(limits); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("tenant %q: %w", tenantID, err)
 			}
 		}
 	}
@@ -126,28 +125,6 @@ func multiClientRuntimeConfigChannel(manager *runtimeconfig.Manager) func() <-ch
 		}()
 
 		return outCh
-	}
-}
-
-func ingesterChunkStreaming(manager *runtimeconfig.Manager) func() ingester.QueryStreamType {
-	if manager == nil {
-		return nil
-	}
-
-	return func() ingester.QueryStreamType {
-		val := manager.GetConfig()
-		if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
-			if cfg.IngesterChunkStreaming == nil {
-				return ingester.QueryStreamDefault
-			}
-
-			if *cfg.IngesterChunkStreaming {
-				return ingester.QueryStreamChunks
-			}
-			return ingester.QueryStreamSamples
-		}
-
-		return ingester.QueryStreamDefault
 	}
 }
 

@@ -24,7 +24,6 @@ import (
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // TestStreamBinaryReader_ShouldBuildSparseHeadersFromFile tests if StreamBinaryReader constructs
@@ -50,19 +49,19 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 		labels.FromStrings("a", "3"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	require.NoError(t, err)
 
 	// Write sparse index headers to disk on first build.
-	r, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	_, err = NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 
-	// Read sparse index headers to disk on second build.
-	sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
-	sparseData, err := os.ReadFile(sparseHeadersPath)
+	// Confirm sparse index headers can be read from disk on subsequent builds.
+	_, _, _, err = DownloadAndLoadSparseHeader(ctx, blockID, bkt, tmpDir, 3, log.NewNopLogger())
 	require.NoError(t, err)
 
-	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
-	err = r.loadFromSparseIndexHeader(logger, sparseData, 3)
+	// Confirm end-to-end success of second build.
+	_, err = NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 }
 
@@ -91,7 +90,8 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 
 				blockID, err := block.CreateBlock(ctx, tmpDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 				require.NoError(t, err)
-				require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+				_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+				require.NoError(t, err)
 
 				indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, blockID.String(), block.IndexFilename))
 				require.NoError(t, err)
@@ -100,10 +100,10 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 				b := realByteSlice(indexFile.Bytes())
 
 				// Write sparse index headers to disk on first build.
-				_, err = NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+				_, err = NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 				require.NoError(t, err)
 				// Read sparse index headers to disk on second build.
-				r2, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+				r2, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 				require.NoError(t, err)
 
 				// Check correctness of sparse index headers.
@@ -135,10 +135,11 @@ func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) 
 	}
 	blockID, err := block.CreateBlock(ctx, tmpDir, lbls, 1, 0, 10, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	require.NoError(t, err)
 
 	// Write sparse index headers to disk on first build.
-	r, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	r, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 
 	// LabelValuesOffsets will read all series and check for cancelation every CheckContextEveryNIterations,
@@ -174,7 +175,7 @@ func TestStreamBinaryReader_FailedSparseHeaderGetOpsAreNotTracked(t *testing.T) 
 	})
 
 	// Create a new StreamBinaryReader - no sparse index header in object storage to use, will return 4XX on GET.
-	newReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	newReader, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 32, logger, NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 	defer newReader.Close()
 
@@ -230,10 +231,11 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	require.NoError(t, err)
 
 	// Upload block to bucket
-	require.NoError(t, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, blockID.String()), nil))
+	_, err = block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	require.NoError(t, err)
 
 	// First, create a StreamBinaryReader to generate the sparse header file
-	origReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
+	origReader, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 	require.NoError(t, origReader.Close())
 
@@ -243,7 +245,7 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	// Read the sparse header file content and save its size
 	originalSparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
-	originalSparseHeader, err := decodeSparseData(logger, originalSparseData)
+	originalSparseHeader, err := unzipSparseHeader(originalSparseData, logger)
 	require.NoError(t, err)
 
 	// Delete the local sparse header file to ensure we'll need to get it from the object store
@@ -262,7 +264,7 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	}
 
 	// Create a new StreamBinaryReader - it should use the sparse header from the object store
-	newReader, err := NewStreamBinaryReader(ctx, logger, trackedBkt, tmpDir, blockID, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
+	newReader, err := NewStreamBinaryReader(ctx, blockID, trackedBkt, tmpDir, Config{}, samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 	defer newReader.Close()
 
@@ -273,7 +275,7 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	// Verify that the sparse header file exists locally
 	newSparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
-	newSparseHeader, err := decodeSparseData(logger, newSparseData)
+	newSparseHeader, err := unzipSparseHeader(newSparseData, logger)
 	require.NoError(t, err)
 	require.Equal(t, originalSparseHeader, newSparseHeader, "Downloaded file should have the same size as the original")
 

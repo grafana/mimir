@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,7 +72,7 @@ func (c *ownedSeriesTestContextBase) checkTestedIngesterOwnedSeriesState(t *test
 }
 
 func (c *ownedSeriesTestContextBase) checkActiveSeriesCount(t *testing.T, expected int) {
-	totalSeries, _, _ := c.db.activeSeries.Active()
+	totalSeries, _, _, _ := c.db.activeSeries.Active()
 	require.Equal(t, expected, totalSeries, "total active series")
 }
 
@@ -112,7 +113,7 @@ func (c *ownedSeriesWithIngesterRingTestContext) registerTestedIngesterIntoRing(
 		tokens = append(tokens, userToken(c.user, c.ingesterZone, skip)+1)
 		slices.Sort(tokens)
 
-		desc.AddIngester(instanceID, instanceAddr, instanceZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester(instanceID, instanceAddr, instanceZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 }
 
@@ -132,7 +133,7 @@ func (c *ownedSeriesWithIngesterRingTestContext) registerSecondIngesterOwningHal
 		slices.Sort(tokens)
 
 		// Must be in the same zone, because we use RF=1, and require RF=num of zones.
-		desc.AddIngester("second-ingester", "localhost", c.ingesterZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester("second-ingester", "localhost", c.ingesterZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 }
 
@@ -408,7 +409,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 
 				// add a PENDING ingester with no tokens
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
-					desc.AddIngester("second-ingester", "localhost", c.ingesterZone, []uint32{}, ring.PENDING, time.Now(), false, time.Time{})
+					desc.AddIngester("second-ingester", "localhost", c.ingesterZone, []uint32{}, ring.PENDING, time.Now(), false, time.Time{}, nil)
 				})
 
 				// verify no change in state before owned series run
@@ -767,7 +768,7 @@ func generateSeriesWithTokensAt(testUser string, startTime time.Time) ([]util_te
 	var seriesTokens []uint32
 	for seriesIdx := 0; seriesIdx < ownedServiceSeriesCount; seriesIdx++ {
 		s := util_test.Series{
-			Labels:  labels.FromStrings(labels.MetricName, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
 			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(seriesIdx) * time.Millisecond).UnixMilli(), Val: float64(0)}},
 		}
 		seriesToWrite = append(seriesToWrite, s)
@@ -793,8 +794,8 @@ func (c *ownedSeriesWithPartitionsRingTestContext) pushUserSeries(t *testing.T) 
 	})
 
 	for _, s := range c.seriesToWrite {
-		req, _, _, _ := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
-		require.NoError(t, writer.WriteSync(context.Background(), c.partitionID, c.user, req))
+		req := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
+		require.NoError(t, writer.WriteSync(context.Background(), c.cfg.IngestStorageConfig.KafkaConfig.Topic, c.partitionID, c.user, req))
 	}
 
 	// Wait until the ingester ingested all series from Kafka.
@@ -826,7 +827,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.partitionsRing))
 	}
 
-	ing, _, prw := createTestIngesterWithIngestStorage(t, &c.cfg, c.overrides, nil)
+	ing, _, prw := createTestIngesterWithIngestStorage(t, &c.cfg, c.overrides, nil, nil, util_test.NewTestingLogger(t))
 	c.ing = ing
 	c.partitionsRing = prw
 
@@ -887,7 +888,8 @@ func TestOwnedSeriesPartitionsTestUserShuffleSharding(t *testing.T) {
 				rd.AddPartition(pid, ring.PartitionActive, time.Time{})
 			}
 
-			r := ring.NewPartitionRing(*rd)
+			r, err := ring.NewPartitionRing(*rd)
+			require.NoError(t, err)
 			nr, err := r.ShuffleShard(ownedServiceTestUserPartitionsRing, tc.shardSize)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedPartitionsInTheShard, nr.PartitionIDs())
@@ -1430,6 +1432,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			c := ownedSeriesWithPartitionsRingTestContext{
 				ownedSeriesTestContextBase: ownedSeriesTestContextBase{
 					user:          ownedServiceTestUserPartitionsRing,
@@ -1491,7 +1494,7 @@ func TestOwnedSeriesStartsQuicklyWithEmptyIngesterRing(t *testing.T) {
 
 	// Add an instance to the ring. This is enough to start doing checks.
 	updateRingAndWaitForWatcherToReadUpdate(t, kvStore, func(desc *ring.Desc) {
-		desc.AddIngester("an-instance", "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester("an-instance", "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 
 	// We should see owned series doing its checks now.
@@ -1562,7 +1565,7 @@ func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {
 	ringStrategy := newOwnedSeriesIngesterRingStrategy(instanceID1, rng, nil)
 
 	updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
-		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 
 	// First call should indicate ring change.
@@ -1580,7 +1583,7 @@ func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("new instance added", func(t *testing.T) {
 		updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
-			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.ACTIVE, time.Now(), false, time.Time{})
+			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 		})
 
 		changed, err := ringStrategy.checkRingForChanges()
@@ -1674,7 +1677,8 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("inactive partition changed to active, change reported", func(t *testing.T) {
 		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
-			partitionRing.UpdatePartitionState(3, ring.PartitionActive, time.Now())
+			_, err := partitionRing.UpdatePartitionState(3, ring.PartitionActive, time.Now())
+			require.NoError(t, err)
 		})
 		// State of the ring: 1: Active, 2: Active, 3: Active, 4: Pending
 		checkExpectedRingChange(true)
@@ -1684,7 +1688,8 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("active partition changed to inactive, change reported", func(t *testing.T) {
 		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
-			partitionRing.UpdatePartitionState(1, ring.PartitionInactive, time.Now())
+			_, err := partitionRing.UpdatePartitionState(1, ring.PartitionInactive, time.Now())
+			require.NoError(t, err)
 		})
 		// State of the ring: 1: Inactive, 2: Active, 3: Active, 4: Pending
 		checkExpectedRingChange(true)
@@ -1694,7 +1699,8 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("inactive partition changed to pending, no change reported", func(t *testing.T) {
 		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
-			partitionRing.UpdatePartitionState(1, ring.PartitionPending, time.Now())
+			_, err := partitionRing.UpdatePartitionState(1, ring.PartitionPending, time.Now())
+			require.NoError(t, err)
 		})
 		// State of the ring: 1: Pending, 2: Active, 3: Active, 4: Pending
 		checkExpectedRingChange(false)
@@ -1702,8 +1708,11 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("two partitions change at the same time", func(t *testing.T) {
 		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
-			partitionRing.UpdatePartitionState(1, ring.PartitionActive, time.Now())
-			partitionRing.UpdatePartitionState(2, ring.PartitionInactive, time.Now())
+			_, err := partitionRing.UpdatePartitionState(1, ring.PartitionActive, time.Now())
+			require.NoError(t, err)
+
+			_, err = partitionRing.UpdatePartitionState(2, ring.PartitionInactive, time.Now())
+			require.NoError(t, err)
 		})
 		// State of the ring: 1: Active, 2: Inactive, 3: Active, 4: Pending
 		checkExpectedRingChange(true)
@@ -1740,12 +1749,9 @@ func userToken(user, zone string, skip int) uint32 {
 }
 
 func setupIngesterWithOverrides(t *testing.T, cfg Config, overrides *validation.Overrides, ingesterRing ring.ReadRing, dataDir string) *Ingester {
-	ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, ingesterRing, dataDir, "", nil)
+	ing, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, ingesterRing, dataDir, "", nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
-	})
+	startAndWaitHealthy(t, ing, r)
 	return ing
 }
 

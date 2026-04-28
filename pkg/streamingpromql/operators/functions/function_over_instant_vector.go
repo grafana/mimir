@@ -31,8 +31,9 @@ type FunctionOverInstantVector struct {
 	// These are returned the pool at Close().
 	scalarArgsData []types.ScalarData
 
-	expressionPosition posrange.PositionRange
-	timeRange          types.QueryTimeRange
+	expressionPosition       posrange.PositionRange
+	timeRange                types.QueryTimeRange
+	enableDelayedNameRemoval bool
 }
 
 var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
@@ -44,6 +45,7 @@ func NewFunctionOverInstantVector(
 	f FunctionOverInstantVectorDefinition,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *FunctionOverInstantVector {
 	return &FunctionOverInstantVector{
 		Inner:                    inner,
@@ -51,8 +53,9 @@ func NewFunctionOverInstantVector(
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Func:                     f,
 
-		expressionPosition: expressionPosition,
-		timeRange:          timeRange,
+		expressionPosition:       expressionPosition,
+		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -77,20 +80,20 @@ func (m *FunctionOverInstantVector) processScalarArgs(ctx context.Context) error
 	return nil
 }
 
-func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Pre-process any Scalar arguments
 	err := m.processScalarArgs(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	metadata, err := m.Inner.SeriesMetadata(ctx)
+	metadata, err := m.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	if m.Func.SeriesMetadataFunction.Func != nil {
-		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker)
+		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
 	}
 
 	return metadata, nil
@@ -117,12 +120,52 @@ func (m *FunctionOverInstantVector) Prepare(ctx context.Context, params *types.P
 	return nil
 }
 
-func (m *FunctionOverInstantVector) Close() {
-	m.Inner.Close()
+func (m *FunctionOverInstantVector) AfterPrepare(ctx context.Context) error {
+	if err := m.Inner.AfterPrepare(ctx); err != nil {
+		return err
+	}
+	for _, sa := range m.ScalarArgs {
+		if err := sa.AfterPrepare(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
+func (m *FunctionOverInstantVector) Finalize(ctx context.Context) error {
 	for _, sd := range m.scalarArgsData {
 		types.FPointSlicePool.Put(&sd.Samples, m.MemoryConsumptionTracker)
 	}
 
 	m.scalarArgsData = nil
+
+	if err := m.Inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	for _, sa := range m.ScalarArgs {
+		if err := sa.Finalize(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *FunctionOverInstantVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	ops := make([]types.Operator, 1+len(m.ScalarArgs))
+	ops[0] = m.Inner
+	for i, sa := range m.ScalarArgs {
+		ops[1+i] = sa
+	}
+
+	return types.CombineStats(ctx, ops...)
+}
+
+func (m *FunctionOverInstantVector) Close() {
+	m.Inner.Close()
+
+	for _, sa := range m.ScalarArgs {
+		sa.Close()
+	}
 }
