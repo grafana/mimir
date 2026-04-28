@@ -74,11 +74,9 @@ func BenchmarkZSTDDecompress(b *testing.B) {
 	var buf bytes.Buffer
 	w, err := c.Compress(&buf)
 	require.NoError(b, err)
-	b.Cleanup(func() {
-		require.NoError(b, w.Close())
-	})
 	_, err = w.Write(data)
 	require.NoError(b, err)
+	require.NoError(b, w.Close())
 	reader := bytes.NewReader(buf.Bytes())
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
