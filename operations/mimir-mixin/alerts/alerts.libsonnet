@@ -49,7 +49,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       // Note if alert_aggregation_labels is "job", this will repeat the label. But
       // prometheus seems to tolerate that.
       error_selector='status_code=~"5..", status_code!~"529|598"',
-      rate_interval=$.alertRangeInterval(1),
+      rate_interval=$.rateInterval('1m'),
       sum_by=[$._config.alert_aggregation_labels, $._config.per_job_label, 'route'],
       comment=|||
         # The following 5xx errors considered as non-error:
@@ -77,7 +77,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     local query = requestErrorsQuery(
       selector='route="/httpgrpc.HTTP/Handle", %s' % $.jobMatcher($._config.job_names.ruler_query_frontend),
       error_selector='status_code=~"5.."',
-      rate_interval=$.alertRangeInterval(5),
+      rate_interval=$.rateInterval('5m'),
       sum_by=[$._config.alert_aggregation_labels],
     ),
     alert: $.alertName('RulerRemoteEvaluationFailing'),
@@ -97,9 +97,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   local kvStoreFailure(histogram_type) = {
     alert: $.alertName('KVStoreFailure'),
     local sum_by = [$._config.alert_aggregation_labels, $._config.per_instance_label, 'status_code', 'kv_name'],
-    local range_interval = $.alertRangeInterval(1),
-    local numerator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_kv_request_duration_seconds', 'status_code!~"2.+"', rate_interval=range_interval, from_recording=false), sum_by),
-    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_kv_request_duration_seconds', '', rate_interval=range_interval, from_recording=false), sum_by),
+    local rate_interval = $.rateInterval('1m'),
+    local numerator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_kv_request_duration_seconds', 'status_code!~"2.+"', rate_interval=rate_interval, from_recording=false), sum_by),
+    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_kv_request_duration_seconds', '', rate_interval=rate_interval, from_recording=false), sum_by),
     expr: |||
       (
         %(numerator)s
@@ -181,14 +181,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 # Don't include config hashes that are still being rolled out.
                 # Kubernetes configmap propagation can be slow,
                 # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
-                (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[10m:]) > 0)
+                (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[%(rate_interval)s:]) > 0)
                 # Don't include configs that didn't exist one minute ago.
                 # changes() == 0 for metrics appearing for the first time,
                 # but this is still a "we're rolling out a new config" scenario.
                 and on (%(alert_aggregation_labels)s, sha256)
                 group by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash offset 1m)
             )  > 1
-          ||| % $._config,
+          ||| % $._config {
+            rate_interval: $.rateInterval('10m'),
+          },
           'for': '1h',
           labels: {
             severity: 'critical',
@@ -228,16 +230,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
               min_over_time(
                 delta(
                   sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length)
-                  [%(range_interval)s:%(range_subinterval)s]
+                  [%(rate_interval)s:%(step_interval)s]
                 )
-                [%(range_interval)s:%(range_subinterval)s]
+                [%(rate_interval)s:%(step_interval)s]
               ) >= 0
             )
           ||| % {
             group_by: $._config.alert_aggregation_labels,
             job_label: $._config.per_job_label,
-            range_interval: $.alertRangeInterval(1),
-            range_subinterval: $.alertRangeInterval(0.25),
+            rate_interval: $.rateInterval('1m'),
+            step_interval: $.stepInterval('15s'),
           },
           'for': '7m',  // We don't want to block for longer.
           labels: {
@@ -266,16 +268,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             (
               sum by(%(group_by)s, name, operation) (
-                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[%(range_interval)s])
+                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[%(rate_interval)s])
               )
               /
               sum by(%(group_by)s, name, operation) (
-                rate(thanos_cache_operations_total{operation!~"add|delete"}[%(range_interval)s])
+                rate(thanos_cache_operations_total{operation!~"add|delete"}[%(rate_interval)s])
               ) > 10
             ) * 100 > 5
           ||| % {
             group_by: $._config.alert_aggregation_labels,
-            range_interval: $.alertRangeInterval(1),
+            rate_interval: $.rateInterval('1m'),
           },
           'for': '5m',
           labels: {
@@ -416,10 +418,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('StoreGatewayTooManyFailedOperations'),
           'for': '5m',
           expr: |||
-            sum by(%(alert_aggregation_labels)s, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[%(range_interval)s])) > 0
+            sum by(%(alert_aggregation_labels)s, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[%(rate_interval)s])) > 0
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
-            range_interval: $.alertRangeInterval(1),
+            rate_interval: $.rateInterval('1m'),
           },
           labels: {
             severity: 'warning',
@@ -437,11 +439,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // Alert if servers are receiving requests with invalid cluster validation labels (i.e. meant for other clusters).
           alert: $.alertName('ServerInvalidClusterLabelRequests'),
           expr: |||
-            (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
+            (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(rate_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
             and on (%(alert_aggregation_labels)s) (mimir_build_info > 0)
           ||| % $._config {
-            range_interval: $.alertRangeInterval(5),
+            rate_interval: $.rateInterval('5m'),
           },
           labels: {
             severity: 'warning',
@@ -454,11 +456,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // Alert if clients' requests are rejected due to invalid cluster validation labels (i.e. there's a mismatch between clients' and servers' cluster validation labels).
           alert: $.alertName('ClientInvalidClusterLabelRequests'),
           expr: |||
-            (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
+            (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(rate_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
             and on (%(alert_aggregation_labels)s) (mimir_build_info > 0)
           ||| % $._config {
-            range_interval: $.alertRangeInterval(5),
+            rate_interval: $.rateInterval('5m'),
           },
           labels: {
             severity: 'warning',
@@ -511,11 +513,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('HighGRPCStreamsPerConnection'),
           expr: |||
-            max(avg_over_time(grpc_concurrent_streams_by_conn_max[10m])) by (%(alert_aggregation_labels)s, container)
+            max(avg_over_time(grpc_concurrent_streams_by_conn_max[%(rate_interval)s])) by (%(alert_aggregation_labels)s, container)
             /
             min(cortex_grpc_concurrent_streams_limit) by (%(alert_aggregation_labels)s, container) > 0.9
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
+            rate_interval: $.rateInterval('10m'),
           },
           labels: {
             severity: 'warning',
@@ -751,7 +754,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             )
           ) and (
             # Pick only those which are unchanging for the interval.
-            changes(%(kube_statefulset_status_replicas_updated)s[%(range_interval)s])
+            changes(%(kube_statefulset_status_replicas_updated)s[%(rate_interval)s:%(step_interval)s])
               ==
             0
           )
@@ -765,7 +768,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_update_revision', $._config.rollout_stuck_alert_ignore_statefulsets),
           kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas', $._config.rollout_stuck_alert_ignore_statefulsets),
           kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated', $._config.rollout_stuck_alert_ignore_statefulsets),
-          range_interval: '15m:' + $.alertRangeInterval(1),
+          rate_interval: $.rateInterval('15m'),
+          step_interval: $.stepInterval('1m'),
         },
         'for': for_duration,
         labels: {
@@ -787,7 +791,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               !=
             %(kube_deployment_status_replicas_updated)s
           ) and (
-            changes(%(kube_deployment_status_replicas_updated)s[%(range_interval)s])
+            changes(%(kube_deployment_status_replicas_updated)s[%(rate_interval)s:%(step_interval)s])
               ==
             0
           )
@@ -796,7 +800,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           aggregation_labels: $._config.alert_aggregation_labels,
           kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas', $._config.rollout_stuck_alert_ignore_deployments),
           kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated', $._config.rollout_stuck_alert_ignore_deployments),
-          range_interval: '15m:' + $.alertRangeInterval(1),
+          rate_interval: $.rateInterval('15m'),
+          step_interval: $.stepInterval('1m'),
         },
         'for': for_duration,
         labels: {
@@ -886,12 +891,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             100 * (
             # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[%(range_interval)s]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[%(rate_interval)s]))
               /
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_total[%(range_interval)s]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_total[%(rate_interval)s]))
             ) > 1
           ||| % $._config {
-            range_interval: $.alertRangeInterval(1),
+            rate_interval: $.rateInterval('1m'),
           },
           'for': '5m',
           labels: {
@@ -908,12 +913,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             100 * (
             # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[%(range_interval)s]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[%(rate_interval)s]))
               /
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_total[%(range_interval)s]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_total[%(rate_interval)s]))
             ) > 1
           ||| % $._config {
-            range_interval: $.alertRangeInterval(1),
+            rate_interval: $.rateInterval('1m'),
           },
           'for': '5m',
           labels: {
@@ -932,12 +937,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerMissedEvaluations'),
           expr: |||
             100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(range_interval)s]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(rate_interval)s]))
               /
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[%(range_interval)s]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[%(rate_interval)s]))
             ) > 1
           ||| % $._config {
-            range_interval: $.alertRangeInterval(1),
+            rate_interval: $.rateInterval('1m'),
           },
           'for': '5m',
           labels: {
@@ -952,10 +957,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('RulerFailedRingCheck'),
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ruler_ring_check_errors_total[%(range_interval)s]))
+            sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ruler_ring_check_errors_total[%(rate_interval)s]))
                > 0
           ||| % $._config {
-            range_interval: $.alertRangeInterval(1),
+            rate_interval: $.rateInterval('1m'),
           },
           'for': '5m',
           labels: {
@@ -1119,7 +1124,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             sum by (%(alert_aggregation_labels)s) (rate(memberlist_client_zone_aware_routing_select_nodes_skipped_total[%(range)s])) > 0
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
-            range: $.alertRangeInterval(1),
+            range: $.rateInterval('1m'),
           },
           'for': '10m',
           labels: {

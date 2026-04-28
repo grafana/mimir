@@ -8,19 +8,19 @@
           alert: $.alertName('DistributorGcUsesTooMuchCpu'),
           'for': '10m',
           expr: |||
-            (quantile by (%(alert_aggregation_labels)s) (0.9, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(go_cpu_classes_gc_total_cpu_seconds_total{container="distributor"}[%(range_interval)s]))
+            (quantile by (%(alert_aggregation_labels)s) (0.9, sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(go_cpu_classes_gc_total_cpu_seconds_total{container="distributor"}[%(rate_interval)s]))
               /
               (
-                sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(go_cpu_classes_total_cpu_seconds_total{container="distributor"}[%(range_interval)s]))
+                sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(go_cpu_classes_total_cpu_seconds_total{container="distributor"}[%(rate_interval)s]))
                 -
-                sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(go_cpu_classes_idle_cpu_seconds_total{container="distributor"}[%(range_interval)s]))
+                sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(go_cpu_classes_idle_cpu_seconds_total{container="distributor"}[%(rate_interval)s]))
               )
             ) * 100) > %(distributor_gc_cpu_threshold)s
 
             # Alert only for namespaces with Mimir clusters.
             and (count by (%(alert_aggregation_labels)s) (mimir_build_info) > 0)
           ||| % $._config {
-            range_interval: $.alertRangeInterval(5),
+            rate_interval: $.rateInterval('5m'),
           },
           labels: {
             severity: 'warning',

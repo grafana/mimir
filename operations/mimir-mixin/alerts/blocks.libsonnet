@@ -93,7 +93,7 @@
           'for': '15m',
           expr: |||
             rate(cortex_ingester_tsdb_compactions_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(5),
+          ||| % $.rateInterval('5m'),
           labels: {
             severity: 'critical',
           },
@@ -105,7 +105,7 @@
           alert: $.alertName('IngesterTSDBHeadTruncationFailed'),
           expr: |||
             rate(cortex_ingester_tsdb_head_truncations_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(5),
+          ||| % $.rateInterval('5m'),
           labels: {
             severity: 'critical',
           },
@@ -117,7 +117,7 @@
           alert: $.alertName('IngesterTSDBCheckpointCreateFailed'),
           expr: |||
             rate(cortex_ingester_tsdb_checkpoint_creations_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(5),
+          ||| % $.rateInterval('5m'),
           labels: {
             severity: 'critical',
           },
@@ -129,7 +129,7 @@
           alert: $.alertName('IngesterTSDBCheckpointDeleteFailed'),
           expr: |||
             rate(cortex_ingester_tsdb_checkpoint_deletions_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(5),
+          ||| % $.rateInterval('5m'),
           labels: {
             severity: 'critical',
           },
@@ -141,7 +141,7 @@
           alert: $.alertName('IngesterTSDBWALTruncationFailed'),
           expr: |||
             rate(cortex_ingester_tsdb_wal_truncations_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(5),
+          ||| % $.rateInterval('5m'),
           labels: {
             severity: 'warning',
           },
@@ -153,12 +153,12 @@
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
             # alert when there are more than one corruptions
-            count by (%(alert_aggregation_labels)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(range_interval)s]) > 0) > 1
+            count by (%(alert_aggregation_labels)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(rate_interval)s]) > 0) > 1
             and
             # and there is only one zone
             count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
           ||| % $._config {
-            range_interval: $.alertRangeInterval(5),
+            rate_interval: $.rateInterval('5m'),
           },
           labels: {
             severity: 'critical',
@@ -172,12 +172,12 @@
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
             # alert when there are more than one corruptions
-            count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(range_interval)s]) > 0)) > 1
+            count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(rate_interval)s]) > 0)) > 1
             and
             # and there are multiple zones
             count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
           ||| % $._config {
-            range_interval: $.alertRangeInterval(5),
+            rate_interval: $.rateInterval('5m'),
           },
           labels: {
             severity: 'critical',
@@ -192,7 +192,7 @@
           'for': '3m',
           expr: |||
             rate(cortex_ingester_tsdb_wal_writes_failed_total[%s]) > 0
-          ||| % $.alertRangeInterval(1),
+          ||| % $.rateInterval('1m'),
           labels: {
             severity: 'critical',
           },
@@ -237,8 +237,10 @@
           // by default). Allow a 15m lookback (the default compactor.cleanup-interval) to include compactors that may have recently updated the index and then been terminated.
           alert: $.alertName('BucketIndexNotUpdated'),
           expr: |||
-            min by(%(alert_aggregation_labels)s, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]))) > 2100
-          ||| % $._config,
+            min by(%(alert_aggregation_labels)s, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[%(rate_interval)s]))) > 2100
+          ||| % $._config {
+            rate_interval: $.rateInterval('15m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -253,13 +255,13 @@
           'for': '6h',
           expr: |||
             (
-            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%(job)s}[%(range_interval)s]))
+            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%(job)s}[%(rate_interval)s]))
             /
-            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",%(job)s}[%(range_interval)s]))
+            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",%(job)s}[%(rate_interval)s]))
             ) > 0.05
           ||| % $._config {
             job: $.jobMatcher($._config.job_names.store_gateway),
-            range_interval: $.alertRangeInterval(10),
+            rate_interval: $.rateInterval('10m'),
           },
           labels: {
             severity: 'warning',

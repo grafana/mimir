@@ -280,6 +280,7 @@
 
 ### Mixin
 
+* [CHANGE] Alerts and rules: Replaced `_config.base_alerts_range_interval_minutes` with `_config.scrape_interval` (default `15s`). Instead of configuring a pre-multiplied number of minutes, configure your actual Prometheus scrape interval and the mixin will compute safe rate-function windows automatically (at least 4× the scrape interval). #15174
 * [CHANGE] Dashboards: Add configuration option `dashboards_default_latency_mode` to control the default value of the native/classic latency variable (uses 'classic' if unset). #14424
 * [CHANGE] Alerts: Renamed the following alerts to fit within 40 characters: #13363
   * `MimirAlertmanagerPartialStateMergeFailing` → `MimirAlertmanagerStateMergeFailing`
