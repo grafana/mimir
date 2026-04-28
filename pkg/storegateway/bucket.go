@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -131,6 +132,9 @@ type BucketStore struct {
 
 	// postingsStrategy is a strategy shared among all tenants.
 	postingsStrategy postingsSelectionStrategy
+
+	// sourceOffsets tracks the highest Kafka source offset per partition, shared across all tenants.
+	sourceOffsets *sourceOffsetTracker
 }
 
 type noopCache struct{}
@@ -198,6 +202,13 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.lazyLoadingGate = lazyLoadingGate
+	}
+}
+
+// WithSourceOffsetTracker sets the source offset tracker for the bucket store.
+func WithSourceOffsetTracker(tracker *sourceOffsetTracker) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.sourceOffsets = tracker
 	}
 }
 
@@ -323,6 +334,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			for meta := range blockc {
+				s.fetchAndTrackSourceOffsets(ctx, meta.ULID)
 				if err := s.addBlock(ctx, meta); err != nil {
 					continue
 				}
@@ -366,6 +378,37 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 	_ = s.snapshotter.StartAsync(context.Background())
 
 	return nil
+}
+
+// fetchAndTrackSourceOffsets reads a block's meta.json from object storage and
+// updates the source offset tracker with the block's SourceOffsets. Failures are
+// logged and do not prevent the block from being loaded.
+func (s *BucketStore) fetchAndTrackSourceOffsets(ctx context.Context, id ulid.ULID) {
+	if s.sourceOffsets == nil {
+		return
+	}
+
+	metaPath := path.Join(id.String(), block.MetaFilename)
+	r, err := s.bkt.Get(ctx, metaPath)
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to fetch block meta.json for source offsets", "block", id, "err", err)
+		return
+	}
+	defer runutil.CloseWithLogOnErr(s.logger, r, "close meta.json reader")
+
+	content, err := io.ReadAll(r)
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to read block meta.json for source offsets", "block", id, "err", err)
+		return
+	}
+
+	var m block.Meta
+	if err := json.Unmarshal(content, &m); err != nil {
+		level.Warn(s.logger).Log("msg", "failed to unmarshal block meta.json for source offsets", "block", id, "err", err)
+		return
+	}
+
+	s.sourceOffsets.update(m.Thanos.SourceOffsets)
 }
 
 // InitialSync perform blocking sync with extra step at the end to delete locally saved blocks that are no longer

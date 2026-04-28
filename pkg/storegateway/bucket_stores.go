@@ -84,6 +84,9 @@ type BucketStores struct {
 	// Tenants that are specifically enabled or disabled via configuration
 	allowedTenants *util.AllowList
 
+	// Tracks the highest Kafka source offset seen per partition across all blocks.
+	sourceOffsets *sourceOffsetTracker
+
 	// Metrics.
 	syncTimes             prometheus.Histogram
 	syncLastSuccess       prometheus.Gauge
@@ -138,6 +141,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		stores:             map[string]*BucketStore{},
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
+		sourceOffsets:      newSourceOffsetTracker(reg),
 		queryGate:          queryGate,
 		lazyLoadingGate:    lazyLoadingGate,
 		partitioners: newGapBasedPartitioners(
@@ -544,6 +548,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
+		WithSourceOffsetTracker(u.sourceOffsets),
 	}
 
 	bs, err := NewBucketStore(
