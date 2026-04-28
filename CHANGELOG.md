@@ -277,6 +277,7 @@
 * [BUGFIX] Query-frontend: Fix max total query length limit (`-query-frontend.max-total-query-length`) not being enforced on instant queries with subqueries or range selectors. #14985
 * [BUGFIX] Compactor: Fix potential goroutine leak when compaction iteration exits early due to errors. #13420
 * [BUGFIX] Query-frontend: Fix bugs with matcher propagation for binary operations where it was not being properly applied within nested expressions and also wrongly propagating internal label matchers. #15110
+* [BUGFIX] Distributor: Cancel DoUntilQuorum in cardinality analysis API when active_series_results_max_size_bytes is breached. #15177
 
 ### Mixin
 
