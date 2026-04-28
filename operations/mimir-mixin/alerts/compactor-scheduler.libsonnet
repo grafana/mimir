@@ -61,7 +61,7 @@
               increase(cortex_compactor_scheduler_jobs_completed_total[%(rate_interval)s])
             ) == 0
           ||| % $._config {
-            rate_interval: '6h',
+            rate_interval: $.rateInterval('6h'),
           },
           labels: {
             severity: 'critical',
