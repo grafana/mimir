@@ -30,10 +30,13 @@ type RangeVectorDuplicationBuffer struct {
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
 
+	lastReadSeriesIndex      int
+	lastReadStepSamplesIndex int
+
+	lastNextSeriesCallIndex      int
 	lastNextStepSamplesCallIndex int
-	lastReadSeriesIndex          int
 	consumers                    []*RangeVectorDuplicationConsumer
-	buffer                       *SeriesDataRingBuffer[bufferedRangeVectorSeriesData]
+	buffer                       *rangeVectorSeriesDataRingBuffer
 
 	// Multiple RangeVectorDuplicationConsumers will call RangeVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
 	prepareCalled      bool
@@ -48,9 +51,11 @@ func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryCons
 		MemoryConsumptionTracker:     memoryConsumptionTracker,
 		timeRange:                    timeRange,
 		logger:                       logger,
-		lastNextStepSamplesCallIndex: -1,
 		lastReadSeriesIndex:          -1,
-		buffer:                       &SeriesDataRingBuffer[bufferedRangeVectorSeriesData]{},
+		lastReadStepSamplesIndex:     -1,
+		lastNextSeriesCallIndex:      -1,
+		lastNextStepSamplesCallIndex: -1,
+		buffer:                       newRangeVectorSeriesDataRingBuffer(timeRange.StepCount),
 	}
 }
 
@@ -123,9 +128,7 @@ func (b *RangeVectorDuplicationBuffer) NextSeries(consumer *RangeVectorDuplicati
 	thisSeriesIndex := consumer.nextUnfilteredSeriesIndex
 	consumer.currentUnfilteredSeriesIndex = thisSeriesIndex
 	consumer.advanceToNextUnfilteredSeries()
-	consumer.hasReadCurrentSeriesSamples = false
-	consumer.currentSeriesStepIndex = 0
-	consumer.passThrough = false
+	consumer.currentSeriesStepIndex = -1
 	b.releaseLastReadSamples()
 
 	// Note that we deliberately don't call NextSeries here to simplify the logic: instead,
@@ -134,65 +137,79 @@ func (b *RangeVectorDuplicationBuffer) NextSeries(consumer *RangeVectorDuplicati
 	return nil
 }
 
-func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Context, desiredSeriesIndex int) (bufferedRangeVectorSeriesData, error) {
-	var lastSeriesData bufferedRangeVectorSeriesData
+func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Context, desiredSeriesIndex int, desiredStepIndex int) (bufferedRangeVectorStepData, error) {
+	var lastSeriesData bufferedRangeVectorStepData
 
-	for b.lastNextStepSamplesCallIndex < desiredSeriesIndex {
-		if err := b.Inner.NextSeries(ctx); err != nil {
-			return nil, err
+	for b.lastNextSeriesCallIndex < desiredSeriesIndex || (b.lastNextSeriesCallIndex == desiredSeriesIndex && b.lastNextStepSamplesCallIndex < desiredStepIndex) {
+		if b.lastNextStepSamplesCallIndex == b.timeRange.StepCount-1 || b.lastNextSeriesCallIndex == -1 {
+			// We just read the last step of the current series, or we haven't read anything yet. We need to move to the next series first.
+			if err := b.Inner.NextSeries(ctx); err != nil {
+				return bufferedRangeVectorStepData{}, err
+			}
+
+			b.lastNextStepSamplesCallIndex = -1
+			b.lastNextSeriesCallIndex++
+			if !b.anyConsumerWillReadSeries(b.lastNextSeriesCallIndex, nil) {
+				// No consumer needs this series, so we can skip to the next one.
+				b.lastNextStepSamplesCallIndex = b.timeRange.StepCount - 1
+				continue
+			}
+		}
+
+		stepData, err := b.Inner.NextStepSamples(ctx)
+		if err != nil {
+			return bufferedRangeVectorStepData{}, err
 		}
 
 		b.lastNextStepSamplesCallIndex++
-		currentSeriesIndex := b.lastNextStepSamplesCallIndex
-		if b.anyConsumerWillRead(currentSeriesIndex) {
-			var err error
-			if lastSeriesData, err = b.cacheAllStepsForSeries(ctx); err != nil {
-				return nil, err
-			}
+		clonedData, err := cloneStepData(stepData)
+		if err != nil {
+			return bufferedRangeVectorStepData{}, err
 		}
+
+		b.buffer.Append(clonedData, b.lastNextSeriesCallIndex, b.lastNextStepSamplesCallIndex)
+		lastSeriesData = clonedData
 	}
 
 	return lastSeriesData, nil
 }
 
-func (b *RangeVectorDuplicationBuffer) cacheAllStepsForSeries(ctx context.Context) (bufferedRangeVectorSeriesData, error) {
-	var allSteps bufferedRangeVectorSeriesData
-
-	for {
-		stepData, err := b.Inner.NextStepSamples(ctx)
-
-		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
-		if err == types.EOS {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		clonedData, err := cloneStepData(stepData)
-		if err != nil {
-			return nil, err
-		}
-
-		allSteps = append(allSteps, clonedData)
-	}
-
-	b.buffer.Append(allSteps, b.lastNextStepSamplesCallIndex)
-
-	return allSteps, nil
-}
-
-func (b *RangeVectorDuplicationBuffer) anyConsumerWillRead(unfilteredSeriesIndex int) bool {
+func (b *RangeVectorDuplicationBuffer) anyConsumerWillReadSeries(unfilteredSeriesIndex int, ignore *RangeVectorDuplicationConsumer) bool {
 	for _, consumer := range b.consumers {
-		if consumer.hasReadCurrentSeriesSamples && consumer.nextUnfilteredSeriesIndex > unfilteredSeriesIndex {
+		if consumer == ignore {
 			continue
 		}
 
-		if !consumer.hasReadCurrentSeriesSamples && consumer.currentUnfilteredSeriesIndex > unfilteredSeriesIndex {
+		if consumer.hasReadAllStepsForCurrentSeries() && consumer.nextUnfilteredSeriesIndex > unfilteredSeriesIndex {
+			continue
+		}
+
+		if !consumer.hasReadAllStepsForCurrentSeries() && consumer.currentUnfilteredSeriesIndex > unfilteredSeriesIndex {
 			continue
 		}
 
 		if consumer.shouldReturnUnfilteredSeries(unfilteredSeriesIndex) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (b *RangeVectorDuplicationBuffer) anyConsumerWillReadStep(unfilteredSeriesIndex int, stepIndex int) bool {
+	for _, consumer := range b.consumers {
+		if consumer.currentUnfilteredSeriesIndex > unfilteredSeriesIndex {
+			// Consumer is already on a later series.
+			continue
+		}
+
+		if consumer.currentUnfilteredSeriesIndex == unfilteredSeriesIndex && consumer.currentSeriesStepIndex >= stepIndex {
+			// Consumer is already on a later step.
+			continue
+		}
+
+		if consumer.shouldReturnUnfilteredSeries(unfilteredSeriesIndex) {
+			// Consumer is not ahead of the desired step, and still needs to return this series.
 			return true
 		}
 	}
@@ -206,111 +223,77 @@ func (b *RangeVectorDuplicationBuffer) releaseLastReadSamples() {
 	}
 
 	// Release the previously read series, if we can.
-	if !b.anyConsumerWillRead(b.lastReadSeriesIndex) {
-		if d, present := b.buffer.RemoveIfPresent(b.lastReadSeriesIndex); present {
+	if !b.anyConsumerWillReadStep(b.lastReadSeriesIndex, b.lastReadStepSamplesIndex) {
+		if d, present := b.buffer.RemoveIfPresent(b.lastReadSeriesIndex, b.lastReadStepSamplesIndex); present {
 			d.Close()
 		}
 	}
 
 	b.lastReadSeriesIndex = -1
+	b.lastReadStepSamplesIndex = -1
 }
 
 func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.RangeVectorStepData, error) {
-	if consumer.hasReadCurrentSeriesSamples {
+	seriesIdx := consumer.currentUnfilteredSeriesIndex
+	consumer.currentSeriesStepIndex++
+	stepIdx := consumer.currentSeriesStepIndex
+
+	if stepIdx >= b.timeRange.StepCount {
 		return nil, types.EOS
 	}
 
-	// Pass-through mode: read directly from the inner operator without buffering.
-	if consumer.passThrough {
-		stepData, err := b.Inner.NextStepSamples(ctx)
-
-		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
-		if err == types.EOS {
-			consumer.hasReadCurrentSeriesSamples = true
-			return nil, types.EOS
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		return stepData, nil
-	}
-
-	seriesIdx := consumer.currentUnfilteredSeriesIndex
-
-	// On the first step for this series, release the previous series if all consumers are done with it.
-	if consumer.currentSeriesStepIndex == 0 {
-		b.releaseLastReadSamples()
-		b.lastReadSeriesIndex = seriesIdx
-	}
+	// Release the previous step if all consumers are done with it.
+	b.releaseLastReadSamples()
+	b.lastReadSeriesIndex = seriesIdx
+	b.lastReadStepSamplesIndex = stepIdx
 
 	// Check if the series is already buffered (e.g., another consumer triggered buffering first).
-	if d, ok := b.buffer.GetIfPresent(seriesIdx); ok {
+	if d, ok := b.buffer.GetIfPresent(seriesIdx, stepIdx); ok {
 		// We can't remove the step data from the buffer now even if this is the last consumer for this series -
 		// we'll do this in the next call to NextSeries so that we can return the cloned sample ring buffers to their pools.
-		return consumer.nextStepFromBuffer(d)
+		return d.stepData, nil
 	}
 
-	// Series is not in the buffer yet. Temporarily mark this consumer as done to determine whether any other
-	// consumer needs this series.
-	consumer.hasReadCurrentSeriesSamples = true
-	isLastConsumerOfThisSeries := !b.anyConsumerWillRead(seriesIdx)
-	consumer.hasReadCurrentSeriesSamples = false
+	// Step is not in the buffer yet. Check if any other consumer will read this series.
+	isLastConsumerOfThisSeries := !b.anyConsumerWillReadSeries(seriesIdx, consumer)
 
 	if isLastConsumerOfThisSeries {
-		// This series isn't present in the buffer, and no other consumer needs it.
+		// This step isn't present in the buffer, and no other consumer needs the series.
 		// Don't bother buffering this series, but buffer anything before this one that other consumers might need,
 		// then read and return the data directly.
-		if _, err := b.bufferUpToAndIncluding(ctx, seriesIdx-1); err != nil {
+		if seriesIdx > 0 {
+			if _, err := b.bufferUpToAndIncluding(ctx, seriesIdx-1, b.timeRange.StepCount-1); err != nil {
+				return nil, err
+			}
+		}
+
+		for b.lastNextSeriesCallIndex < seriesIdx {
+			if err := b.Inner.NextSeries(ctx); err != nil {
+				return nil, err
+			}
+
+			b.lastNextSeriesCallIndex++
+			b.lastNextStepSamplesCallIndex = -1
+		}
+
+		stepData, err := b.Inner.NextStepSamples(ctx)
+		if err != nil {
 			return nil, err
 		}
 
 		b.lastNextStepSamplesCallIndex++
-		if err := b.Inner.NextSeries(ctx); err != nil {
-			return nil, err
-		}
-
-		consumer.passThrough = true
-
-		stepData, err := b.Inner.NextStepSamples(ctx)
-
-		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
-		if err == types.EOS {
-			consumer.hasReadCurrentSeriesSamples = true
-			return nil, types.EOS
-		}
-		if err != nil {
-			return nil, err
-		}
 
 		return stepData, nil
 	}
 
-	// This series isn't present in the buffer, and other consumers might need it.
-	// Buffer all steps for this series, then return the first step.
-	d, err := b.bufferUpToAndIncluding(ctx, seriesIdx)
+	// This step isn't present in the buffer, and other consumers might need it.
+	// Buffer all steps up to and including this one, then return it.
+	d, err := b.bufferUpToAndIncluding(ctx, seriesIdx, stepIdx)
 	if err != nil {
 		return nil, err
 	}
 
-	return consumer.nextStepFromBuffer(d)
-}
-
-func (d *RangeVectorDuplicationConsumer) nextStepFromBuffer(data bufferedRangeVectorSeriesData) (*types.RangeVectorStepData, error) {
-	if d.currentSeriesStepIndex >= len(data) {
-		d.hasReadCurrentSeriesSamples = true
-		return nil, types.EOS
-	}
-
-	stepData := data[d.currentSeriesStepIndex].stepData
-	d.currentSeriesStepIndex++
-
-	if d.currentSeriesStepIndex >= len(data) {
-		// This was the last step; the next call will return EOS.
-		d.hasReadCurrentSeriesSamples = true
-	}
-
-	return stepData, nil
+	return d.stepData, nil
 }
 
 func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumer *RangeVectorDuplicationConsumer) {
@@ -352,10 +335,9 @@ func (b *RangeVectorDuplicationBuffer) releaseBufferedData(consumer *RangeVector
 
 	// Remove any buffered series that are no longer needed because they were only being retained for the consumer
 	// that was just closed.
-	consumer.hasReadCurrentSeriesSamples = true
 	earliestSeriesIndexStillToReturn := b.earliestSeriesIndexStillToReturn()
 	allOpenConsumersHaveNoFilters := b.allOpenConsumersHaveNoFilters()
-	lastIndexToCheck := b.lastNextStepSamplesCallIndex
+	lastIndexToCheck := b.lastNextSeriesCallIndex
 
 	if allOpenConsumersHaveNoFilters {
 		// If all open consumers have no filters, then we only need to check for buffered series to discard up to
@@ -375,9 +357,7 @@ func (b *RangeVectorDuplicationBuffer) releaseBufferedData(consumer *RangeVector
 
 		if thisSeriesIndex < earliestSeriesIndexStillToReturn {
 			// We know no consumer needs this series, as all consumers are past it. Remove it if it's buffered.
-			if d, ok := b.buffer.RemoveIfPresent(thisSeriesIndex); ok {
-				d.Close()
-			}
+			b.buffer.RemoveAllStepsForSeriesIfPresent(thisSeriesIndex)
 		} else {
 			// It's possible no consumer needs this series, but we'll have to check if it matches the filters on any open consumer first.
 
@@ -388,10 +368,8 @@ func (b *RangeVectorDuplicationBuffer) releaseBufferedData(consumer *RangeVector
 				continue
 			}
 
-			if !b.anyConsumerWillRead(thisSeriesIndex) {
-				if d, ok := b.buffer.RemoveIfPresent(thisSeriesIndex); ok {
-					d.Close()
-				}
+			if !b.anyConsumerWillReadSeries(thisSeriesIndex, nil) {
+				b.buffer.RemoveAllStepsForSeriesIfPresent(thisSeriesIndex)
 			}
 		}
 	}
@@ -416,7 +394,7 @@ func (b *RangeVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 
 		currentSeriesIndex := consumer.currentUnfilteredSeriesIndex
 
-		if consumer.hasReadCurrentSeriesSamples {
+		if consumer.hasReadAllStepsForCurrentSeries() {
 			currentSeriesIndex = consumer.nextUnfilteredSeriesIndex
 		}
 
@@ -554,15 +532,6 @@ func (b *RangeVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
 	return true
 }
 
-// bufferedRangeVectorSeriesData holds all buffered step data for a single series.
-type bufferedRangeVectorSeriesData []bufferedRangeVectorStepData
-
-func (d bufferedRangeVectorSeriesData) Close() {
-	for _, step := range d {
-		step.Close()
-	}
-}
-
 type bufferedRangeVectorStepData struct {
 	stepData        *types.RangeVectorStepData
 	floatBuffer     *types.FPointRingBuffer
@@ -612,9 +581,7 @@ type RangeVectorDuplicationConsumer struct {
 
 	currentUnfilteredSeriesIndex int // -1 means the consumer hasn't advanced to the first series yet.
 	nextUnfilteredSeriesIndex    int
-	hasReadCurrentSeriesSamples  bool
-	currentSeriesStepIndex       int  // index of the next step to return from the buffer for the current series
-	passThrough                  bool // if true, read directly from the inner operator without buffering
+	currentSeriesStepIndex       int // -1 means the consumer hasn't called NextStepSamples for the current series yet.
 	finalized                    bool
 	closed                       bool
 	hasReadStats                 bool
@@ -653,6 +620,10 @@ func (d *RangeVectorDuplicationConsumer) advanceToNextUnfilteredSeries() {
 	}
 }
 
+func (d *RangeVectorDuplicationConsumer) hasReadAllStepsForCurrentSeries() bool {
+	return d.finalized || d.currentSeriesStepIndex >= d.Buffer.timeRange.StepCount-1
+}
+
 func (d *RangeVectorDuplicationConsumer) NextSeries(_ context.Context) error {
 	return d.Buffer.NextSeries(d)
 }
@@ -683,4 +654,48 @@ func (d *RangeVectorDuplicationConsumer) Stats(ctx context.Context) (*types.Oper
 
 func (d *RangeVectorDuplicationConsumer) Close() {
 	d.Buffer.CloseConsumer(d)
+}
+
+type rangeVectorSeriesDataRingBuffer struct {
+	buffer    *SeriesDataRingBuffer[bufferedRangeVectorStepData]
+	stepCount int
+}
+
+func newRangeVectorSeriesDataRingBuffer(stepCount int) *rangeVectorSeriesDataRingBuffer {
+	return &rangeVectorSeriesDataRingBuffer{
+		buffer:    &SeriesDataRingBuffer[bufferedRangeVectorStepData]{},
+		stepCount: stepCount,
+	}
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) elementIndexFor(seriesIndex int, stepIndex int) int {
+	return seriesIndex*b.stepCount + stepIndex
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) Append(data bufferedRangeVectorStepData, seriesIndex int, stepIndex int) {
+	b.buffer.Append(data, b.elementIndexFor(seriesIndex, stepIndex))
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) GetIfPresent(seriesIndex int, stepIndex int) (bufferedRangeVectorStepData, bool) {
+	return b.buffer.GetIfPresent(b.elementIndexFor(seriesIndex, stepIndex))
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) RemoveAllStepsForSeriesIfPresent(seriesIndex int) {
+	for stepIdx := range b.stepCount {
+		if d, ok := b.RemoveIfPresent(seriesIndex, stepIdx); ok {
+			d.Close()
+		}
+	}
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) RemoveIfPresent(seriesIndex int, stepIndex int) (bufferedRangeVectorStepData, bool) {
+	return b.buffer.RemoveIfPresent(b.elementIndexFor(seriesIndex, stepIndex))
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) RemoveFirst() bufferedRangeVectorStepData {
+	return b.buffer.RemoveFirst()
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) Size() int {
+	return b.buffer.Size()
 }

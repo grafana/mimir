@@ -176,7 +176,7 @@ func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) 
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 0, buffer.buffer.Size())
-	require.Equal(t, 0, cap(buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
+	require.Equal(t, 0, cap(buffer.buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
@@ -264,7 +264,7 @@ func TestRangeVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesMet
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 0, buffer.buffer.Size())
-	require.Equal(t, 0, cap(buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
+	require.Equal(t, 0, cap(buffer.buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
@@ -580,7 +580,7 @@ func TestRangeVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 		d, err := consumer1.NextStepSamples(ctx)
 		require.NoError(t, err)
 		requireEqualDataAndReturnToPool(t, filteredData[idx], d, memoryConsumptionTracker)
-		require.Equal(t, 0, buffer.buffer.Size())
+		require.Equalf(t, 0, buffer.buffer.Size(), "expected buffer to be empty after reading series at index %v", idx)
 	}
 }
 
@@ -1160,7 +1160,7 @@ func TestRangeVectorOperator_Stats(t *testing.T) {
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-func TestRangeVectorOperator_Buffering_RangeQuery(t *testing.T) {
+func TestRangeVectorOperator_RangeQuery(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
@@ -1218,12 +1218,12 @@ func TestRangeVectorOperator_Buffering_RangeQuery(t *testing.T) {
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 30000, F: 10.5}, {T: 60000, F: 11}}}, d, memoryConsumptionTracker)
-	require.Equal(t, 1, buffer.buffer.Size())
+	require.Equal(t, 2, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 10.5}, {T: 60000, F: 11}, {T: 90000, F: 11.5}, {T: 120000, F: 12}}}, d, memoryConsumptionTracker)
-	require.Equal(t, 1, buffer.buffer.Size())
+	require.Equal(t, 3, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1235,15 +1235,17 @@ func TestRangeVectorOperator_Buffering_RangeQuery(t *testing.T) {
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 20}}}, d, memoryConsumptionTracker)
-	require.Equal(t, 2, buffer.buffer.Size())
+	require.Equal(t, 4, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 30000, F: 20.5}, {T: 60000, F: 21}}}, d, memoryConsumptionTracker)
+	require.Equal(t, 5, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 20.5}, {T: 60000, F: 21}, {T: 90000, F: 21.5}, {T: 120000, F: 22}}}, d, memoryConsumptionTracker)
+	require.Equal(t, 6, buffer.buffer.Size())
 
 	d, err = consumer1.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1255,15 +1257,17 @@ func TestRangeVectorOperator_Buffering_RangeQuery(t *testing.T) {
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 10}}}, d, memoryConsumptionTracker)
-	require.Equal(t, 2, buffer.buffer.Size(), "data should remain buffered until the next NextSeries call")
+	require.Equal(t, 6, buffer.buffer.Size(), "data should remain buffered until the next NextSeries call")
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 30000, F: 10.5}, {T: 60000, F: 11}}}, d, memoryConsumptionTracker)
+	require.Equal(t, 5, buffer.buffer.Size(), "data from first step of first series should be released")
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 10.5}, {T: 60000, F: 11}, {T: 90000, F: 11.5}, {T: 120000, F: 12}}}, d, memoryConsumptionTracker)
+	require.Equal(t, 4, buffer.buffer.Size(), "data from second step of first series should be released")
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
@@ -1271,26 +1275,29 @@ func TestRangeVectorOperator_Buffering_RangeQuery(t *testing.T) {
 
 	// Consumer2 advances to series 1. Series 0 should be released.
 	require.NoError(t, consumer2.NextSeries(ctx))
-	require.Equal(t, 1, buffer.buffer.Size(), "series 0 should be released after both consumers have read it")
+	require.Equal(t, 3, buffer.buffer.Size(), "data from third step of first series should be released")
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 20}}}, d, memoryConsumptionTracker)
+	require.Equal(t, 3, buffer.buffer.Size(), "data should remain buffered until the next NextSeries call")
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 30000, F: 20.5}, {T: 60000, F: 21}}}, d, memoryConsumptionTracker)
+	require.Equal(t, 2, buffer.buffer.Size(), "data should remain buffered until the next NextSeries call")
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 20.5}, {T: 60000, F: 21}, {T: 90000, F: 21.5}, {T: 120000, F: 22}}}, d, memoryConsumptionTracker)
+	require.Equal(t, 1, buffer.buffer.Size(), "data should remain buffered until the next NextSeries call")
 
 	d, err = consumer2.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
 	require.Nil(t, d)
 
 	// Finalize consumer2 so that consumer1 is the only remaining consumer.
-	// Consumer1 will then read series 2 in pass-through mode (no buffering).
+	// consumer1 will then read series 2 without buffering.
 	require.NoError(t, consumer2.Finalize(ctx))
 	consumer2.Close()
 	require.False(t, inner.finalized, "inner should not be finalized until all consumers are finalized")
@@ -1306,9 +1313,13 @@ func TestRangeVectorOperator_Buffering_RangeQuery(t *testing.T) {
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 30}, {T: 30000, F: 30.5}, {T: 60000, F: 31}}}, d, memoryConsumptionTracker)
+	require.Equal(t, 0, buffer.buffer.Size(), "sole remaining consumer should not buffer series 2")
+
 	d, err = consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 30000, F: 30.5}, {T: 60000, F: 31}, {T: 90000, F: 31.5}, {T: 120000, F: 32}}}, d, memoryConsumptionTracker)
+	require.Equal(t, 0, buffer.buffer.Size(), "sole remaining consumer should not buffer series 2")
+
 	d, err = consumer1.NextStepSamples(ctx)
 	require.Equal(t, types.EOS, err)
 	require.Nil(t, d)
