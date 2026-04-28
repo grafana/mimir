@@ -689,10 +689,119 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 	}
 }
 
+func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) {
+	testCases := map[string]struct {
+		card          parser.VectorMatchCardinality
+		leftSeries    []labels.Labels
+		rightSeries   []labels.Labels
+		hints         *Hints
+		outerMatchers types.Matchers
+
+		expectedLeftMatchers  types.Matchers
+		expectedRightMatchers types.Matchers
+	}{
+		"group_left with hints: left (many) side receives hint-built matchers": {
+			card: parser.CardManyToOne,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging"),
+			},
+			hints:         &Hints{Include: []string{"env"}},
+			outerMatchers: nil,
+			// one side (right) gets outer matchers
+			expectedRightMatchers: nil,
+			// many side (left) gets hint-built matchers derived from right (one) series
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
+			},
+		},
+		"group_right with hints: right (many) side receives hint-built matchers": {
+			card: parser.CardOneToMany,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "prod", "pod", "2"),
+			},
+			hints:         &Hints{Include: []string{"env"}},
+			outerMatchers: nil,
+			// one side (left) gets outer matchers
+			expectedLeftMatchers: nil,
+			// many side (right) gets hint-built matchers derived from left (one) series
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_left without hints: left (many) side receives the same outer matchers as one side": {
+			card: parser.CardManyToOne,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			hints:         nil,
+			outerMatchers: nil,
+			// both sides get outer matchers (nil)
+			expectedLeftMatchers:  nil,
+			expectedRightMatchers: nil,
+		},
+		"group_right without hints: right (many) side receives the same outer matchers as one side": {
+			card: parser.CardOneToMany,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+			},
+			hints:         nil,
+			outerMatchers: nil,
+			// both sides get outer matchers (nil)
+			expectedLeftMatchers:  nil,
+			expectedRightMatchers: nil,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			o, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{Card: testCase.card, MatchingLabels: []string{"env"}, On: true},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				nil,
+				posrange.PositionRange{},
+				types.QueryTimeRange{},
+				testCase.hints,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			_, err = o.SeriesMetadata(ctx, testCase.outerMatchers)
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedLeftMatchers, left.MatchersProvided, "left side received unexpected matchers")
+			require.Equal(t, testCase.expectedRightMatchers, right.MatchersProvided, "right side received unexpected matchers")
+		})
+	}
+}
+
 // BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering measures the benefit of
 // the hints-based optimization introduced for GroupedVectorVectorBinaryOperation.
 //
-// The scenario is a group_left (many-to-one) with:
+// The scenario has:
 //   - a small "one" side covering oneSideEnvs distinct env values
 //   - a large "many" side covering manySideEnvsTotal distinct env values (most having no match)
 //
@@ -701,9 +810,11 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 // passed to the many-side operator before it returns any series, so the many side only
 // materialises the fraction of series that can actually contribute to the output.
 //
+// Both group_left (many-to-one) and group_right (one-to-many) are benchmarked.
+//
 // Custom metrics reported:
-//   - one-series/op: series fetched from the one (right) side per operation
-//   - many-series/op: series fetched from the many (left) side per operation
+//   - one-series/op: series fetched from the one side per operation
+//   - many-series/op: series fetched from the many side per operation
 //   - total-series/op: sum of both sides per operation
 //
 // Run with:
@@ -718,12 +829,6 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 
 	ctx := context.Background()
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
-
-	vectorMatching := parser.VectorMatching{
-		Card:           parser.CardManyToOne,
-		MatchingLabels: []string{"env"},
-		On:             true,
-	}
 	hints := &Hints{Include: []string{"env"}}
 
 	// One side: env-0 … env-9 (the smaller, "one" side).
@@ -744,7 +849,7 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 		}
 	}
 
-	run := func(b *testing.B, h *Hints) {
+	run := func(b *testing.B, card parser.VectorMatchCardinality, h *Hints) {
 		b.Helper()
 		b.ReportAllocs()
 
@@ -755,17 +860,29 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 			// Series slice in-place when hint-based matchers are applied to it.
 			memTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 
+			// For CardManyToOne (group_left): left=many, right=one.
+			// For CardOneToMany (group_right): left=one, right=many.
+			var leftSeries, rightSeries []labels.Labels
+			if card == parser.CardManyToOne {
+				leftSeries = append([]labels.Labels(nil), allManySeries...)
+				rightSeries = append([]labels.Labels(nil), oneSeries...)
+			} else {
+				leftSeries = append([]labels.Labels(nil), oneSeries...)
+				rightSeries = append([]labels.Labels(nil), allManySeries...)
+			}
+
 			left := &operators.TestOperator{
-				Series:                   append([]labels.Labels(nil), allManySeries...),
-				Data:                     make([]types.InstantVectorSeriesData, len(allManySeries)),
+				Series:                   leftSeries,
+				Data:                     make([]types.InstantVectorSeriesData, len(leftSeries)),
 				MemoryConsumptionTracker: memTracker,
 			}
 			right := &operators.TestOperator{
-				Series:                   append([]labels.Labels(nil), oneSeries...),
-				Data:                     make([]types.InstantVectorSeriesData, len(oneSeries)),
+				Series:                   rightSeries,
+				Data:                     make([]types.InstantVectorSeriesData, len(rightSeries)),
 				MemoryConsumptionTracker: memTracker,
 			}
 
+			vectorMatching := parser.VectorMatching{Card: card, MatchingLabels: []string{"env"}, On: true}
 			op, err := NewGroupedVectorVectorBinaryOperation(
 				left, right, vectorMatching, parser.MUL, false,
 				memTracker, annotations.New(), posrange.PositionRange{}, timeRange, h, log.NewNopLogger(),
@@ -779,10 +896,14 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 			}
 
 			// Capture series counts after SeriesMetadata has applied any hint-based filtering.
-			// For CardManyToOne: left=many side, right=one side.
 			// TestOperator retains only the series that passed the matcher filter in t.Series.
-			totalManySeries += len(left.Series)
-			totalOneSeries += len(right.Series)
+			if card == parser.CardManyToOne {
+				totalManySeries += len(left.Series)
+				totalOneSeries += len(right.Series)
+			} else {
+				totalOneSeries += len(left.Series)
+				totalManySeries += len(right.Series)
+			}
 
 			if err = op.Finalize(ctx); err != nil {
 				b.Fatal(err)
@@ -795,6 +916,8 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 		b.ReportMetric(float64(totalOneSeries+totalManySeries)/float64(b.N), "total-series/op")
 	}
 
-	b.Run("with_hints", func(b *testing.B) { run(b, hints) })
-	b.Run("without_hints", func(b *testing.B) { run(b, nil) })
+	b.Run("group_left/with_hints", func(b *testing.B) { run(b, parser.CardManyToOne, hints) })
+	b.Run("group_left/without_hints", func(b *testing.B) { run(b, parser.CardManyToOne, nil) })
+	b.Run("group_right/with_hints", func(b *testing.B) { run(b, parser.CardOneToMany, hints) })
+	b.Run("group_right/without_hints", func(b *testing.B) { run(b, parser.CardOneToMany, nil) })
 }
