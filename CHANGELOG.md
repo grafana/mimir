@@ -1,5 +1,11 @@
 # Changelog
 
+## unreleased
+
+### Grafana Mimir
+
+* [BUGFIX] Distributor: Fix nil pointer panic in `WriteRequest.Unmarshal` when receiving a Remote Write 2.0 request with zero timeseries. #14698
+
 ## 3.0.6
 
 ### Grafana Mimir
