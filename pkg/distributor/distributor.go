@@ -2996,8 +2996,6 @@ func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int,
 	}
 }
 
-// var ErrResponseTooLarge = errors.New("response too large")
-
 var ErrResponseTooLarge = validation.NewLimitError("response too large")
 
 func (r *activeSeriesResponse) add(series []*mimirpb.Metric, bucketCounts []uint64) error {
