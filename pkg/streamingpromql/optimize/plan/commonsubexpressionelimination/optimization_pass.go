@@ -450,16 +450,15 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 	stats := group.computeStats()
 
 	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && (rangeQueryRangeVectorEliminationEnabled || timeRange.IsInstant)) {
-		// Deduplicate instant vectors always, and range vectors when range vector CSE is enabled or the query is an instant query.
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
-		// query, and range vector CSE is not enabled.
+		// query, and range query range vector CSE is not enabled.
 		// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
 		// subquery.
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
 	} else {
-		// Duplicated range vector selector in a range query with range vector CSE disabled, and the function that encloses
+		// Duplicated range vector selector in a range query with range query range vector CSE disabled, and the function that encloses
 		// each instance isn't the same (or isn't the same on all paths).
 		skippedBecauseRangeVectorSelectorInRangeQuery = true
 		stats = deduplicationStats{}
@@ -489,7 +488,7 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 		return deduplicationStats{}, err
 	} else if skippedBecauseRangeVectorSelectorInRangeQuery {
 		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector
-		// in a range query with range vector CSE disabled), return the number returned by the next level.
+		// in a range query with range query range vector CSE disabled), return the number returned by the next level.
 		stats = nextLevelStats
 	}
 

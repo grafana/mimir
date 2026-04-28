@@ -30,13 +30,17 @@ type RangeVectorDuplicationBuffer struct {
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
 
-	lastReadSeriesIndex      int
-	lastReadStepSamplesIndex int
+	// The series and step index of the last step returned from NextStepSamples.
+	// Used to release this step (if not needed) on the next call to NextSeries or NextStepSamples.
+	lastReturnedSeriesIndex      int
+	lastReturnedStepSamplesIndex int
 
+	// The series and step index of the last step read from Inner.
 	lastNextSeriesCallIndex      int
 	lastNextStepSamplesCallIndex int
-	consumers                    []*RangeVectorDuplicationConsumer
-	buffer                       *rangeVectorSeriesDataRingBuffer
+
+	consumers []*RangeVectorDuplicationConsumer
+	buffer    *rangeVectorSeriesDataRingBuffer
 
 	// Multiple RangeVectorDuplicationConsumers will call RangeVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
 	prepareCalled      bool
@@ -51,8 +55,8 @@ func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryCons
 		MemoryConsumptionTracker:     memoryConsumptionTracker,
 		timeRange:                    timeRange,
 		logger:                       logger,
-		lastReadSeriesIndex:          -1,
-		lastReadStepSamplesIndex:     -1,
+		lastReturnedSeriesIndex:      -1,
+		lastReturnedStepSamplesIndex: -1,
 		lastNextSeriesCallIndex:      -1,
 		lastNextStepSamplesCallIndex: -1,
 		buffer:                       newRangeVectorSeriesDataRingBuffer(timeRange.StepCount),
@@ -218,19 +222,19 @@ func (b *RangeVectorDuplicationBuffer) anyConsumerWillReadStep(unfilteredSeriesI
 }
 
 func (b *RangeVectorDuplicationBuffer) releaseLastReadSamples() {
-	if b.lastReadSeriesIndex == -1 {
+	if b.lastReturnedSeriesIndex == -1 {
 		return
 	}
 
 	// Release the previously read series, if we can.
-	if !b.anyConsumerWillReadStep(b.lastReadSeriesIndex, b.lastReadStepSamplesIndex) {
-		if d, present := b.buffer.RemoveIfPresent(b.lastReadSeriesIndex, b.lastReadStepSamplesIndex); present {
+	if !b.anyConsumerWillReadStep(b.lastReturnedSeriesIndex, b.lastReturnedStepSamplesIndex) {
+		if d, present := b.buffer.RemoveIfPresent(b.lastReturnedSeriesIndex, b.lastReturnedStepSamplesIndex); present {
 			d.Close()
 		}
 	}
 
-	b.lastReadSeriesIndex = -1
-	b.lastReadStepSamplesIndex = -1
+	b.lastReturnedSeriesIndex = -1
+	b.lastReturnedStepSamplesIndex = -1
 }
 
 func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.RangeVectorStepData, error) {
@@ -244,8 +248,8 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 
 	// Release the previous step if all consumers are done with it.
 	b.releaseLastReadSamples()
-	b.lastReadSeriesIndex = seriesIdx
-	b.lastReadStepSamplesIndex = stepIdx
+	b.lastReturnedSeriesIndex = seriesIdx
+	b.lastReturnedStepSamplesIndex = stepIdx
 
 	// Check if the series is already buffered (e.g., another consumer triggered buffering first).
 	if d, ok := b.buffer.GetIfPresent(seriesIdx, stepIdx); ok {
