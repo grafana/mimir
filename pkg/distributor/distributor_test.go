@@ -2921,7 +2921,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 	tests := map[string]struct {
 		shuffleShardSize            int
 		requestMatchers             []*labels.Matcher
-		expectError                 error
+		expectLimitError            error
 		expectedSeries              [][]mimirpb.LabelAdapter
 		expectedNumQueriedIngesters int
 	}{
@@ -2947,8 +2947,8 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			expectedNumQueriedIngesters: numIngesters,
 		},
 		"aborts if response is too large": {
-			requestMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "large_metric")},
-			expectError:     ErrResponseTooLarge,
+			requestMatchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "large_metric")},
+			expectLimitError: ErrResponseTooLarge,
 		},
 	}
 
@@ -3019,8 +3019,9 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 
 					// Query active series.
 					series, err := d.ActiveSeries(ctx, testData.requestMatchers)
-					if testData.expectError != nil {
-						require.ErrorIs(t, err, testData.expectError)
+					if testData.expectLimitError != nil {
+						require.ErrorIs(t, err, testData.expectLimitError)
+						require.True(t, validation.IsLimitError(err), "expected error to be a LimitError")
 						return
 					}
 
