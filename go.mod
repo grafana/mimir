@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20260417113503-29a3c41c2ad7
+	github.com/grafana/dskit v0.0.0-20260427162712-0457a92dacc3
 	github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.8.0
@@ -39,8 +39,8 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.49.0
-	golang.org/x/net v0.52.0
+	golang.org/x/crypto v0.50.0
+	golang.org/x/net v0.53.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.80.0
@@ -51,7 +51,7 @@ require (
 	cloud.google.com/go/storage v1.62.1
 	github.com/alecthomas/chroma/v2 v2.23.1
 	github.com/alecthomas/kingpin/v2 v2.4.0
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.1
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.100.0
 	github.com/cortexproject/promqlsmith v0.0.0-20260205231645-0c8ef5fe46a5
 	github.com/dennwc/varint v1.0.0
 	github.com/felixge/fgprof v0.9.5
@@ -63,7 +63,7 @@ require (
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/hashicorp/vault/api v1.22.0
+	github.com/hashicorp/vault/api v1.23.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/oklog/ulid/v2 v2.1.1
@@ -74,34 +74,34 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.3
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20250813080715-4e5fd4289b50
-	github.com/tjhop/slog-gokit v0.1.6
-	github.com/twmb/franz-go v1.20.7
+	github.com/tjhop/slog-gokit v0.2.0
+	github.com/twmb/franz-go v1.21.0
 	github.com/twmb/franz-go/pkg/kadm v1.17.2-0.20251227070528-0c71f7e25fa1
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260121195810-e0832fcbdccb
-	github.com/twmb/franz-go/pkg/kmsg v1.12.1-0.20251024215757-aea970d4d0d2
+	github.com/twmb/franz-go/pkg/kmsg v1.13.1
 	github.com/twmb/franz-go/plugin/kotel v1.6.0
-	github.com/twmb/franz-go/plugin/kprom v1.3.0
+	github.com/twmb/franz-go/plugin/kprom v1.4.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 	github.com/xlab/treeprint v1.2.0
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/collector/pdata v1.56.0
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.67.0
-	go.opentelemetry.io/contrib/propagators/jaeger v1.42.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0
+	go.opentelemetry.io/contrib/propagators/jaeger v1.43.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	go.opentelemetry.io/proto/otlp v1.10.0
 	go.uber.org/multierr v1.11.0
 	go.yaml.in/yaml/v3 v3.0.4
-	golang.org/x/term v0.41.0
-	google.golang.org/api v0.274.0
+	golang.org/x/term v0.42.0
+	google.golang.org/api v0.276.0
 	google.golang.org/protobuf v1.36.11
 	sigs.k8s.io/kustomize/kyaml v0.21.1
 )
 
 require (
 	cel.dev/expr v0.25.1 // indirect
-	cloud.google.com/go/auth v0.19.0 // indirect
+	cloud.google.com/go/auth v0.20.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/monitoring v1.24.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0 // indirect
@@ -295,9 +295,9 @@ require (
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/hashicorp/memberlist v0.5.4 // indirect
 	github.com/hashicorp/serf v0.10.2 // indirect
-	github.com/hashicorp/vault/api/auth/approle v0.11.0
-	github.com/hashicorp/vault/api/auth/kubernetes v0.10.0
-	github.com/hashicorp/vault/api/auth/userpass v0.11.0
+	github.com/hashicorp/vault/api/auth/approle v0.12.0
+	github.com/hashicorp/vault/api/auth/kubernetes v0.12.0
+	github.com/hashicorp/vault/api/auth/userpass v0.12.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jessevdk/go-flags v1.6.1 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
@@ -333,24 +333,24 @@ require (
 	go.etcd.io/etcd/api/v3 v3.6.9 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.6.9 // indirect
 	go.etcd.io/etcd/client/v3 v3.6.9 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90
-	golang.org/x/mod v0.34.0 // indirect
+	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
-	golang.org/x/tools v0.43.0
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/tools v0.44.0
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260406210006-6f92a3bedf2d
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260421065545-af7900704075
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260427033810-555ef1101b85
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.

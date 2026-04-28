@@ -195,7 +195,7 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 		handler = gziphandler.GzipHandler(handler, a.cfg.GzipCompressionLevel)
 	}
 
-	if a.activityTracker != nil {
+	if a.activityTracker != nil && maxBodySizeIfAny > 0 {
 		handler = NewActivityTrackingMiddleware(a.activityTracker, a.logger, handler)
 	}
 

@@ -38,6 +38,7 @@
 * [CHANGE] Ingest storage: deprecated `-ingest-storage.kafka.write-clients` CLI flag. The flag is now ignored and Mimir always uses a single Kafka write client. The flag will be removed in Mimir 3.3. #14903
 * [CHANGE] Alertmanager: `-alertmanager.grafana-alertmanager-idle-grace-period` renamed to `-alertmanager.strict-initialization-idle-grace-period`. #14960
 * [CHANGE] Query-frontend: The per-query memory consumption limit now spans all time-split sub-queries when MQE is enabled rather than applying per split query. #14980
+* [CHANGE] Query-frontend: Rewriting middleware now runs before user-injected middlewares. #15111
 * [FEATURE] Distributor: experimental per-tenant limit `-distributor.ha-tracker.per-sample-dedupe` (per-tenant `ha_tracker_per_sample_dedupe`) to evaluate HA deduplication for each timeseries within a write request rather than making a single decision based on the first series. Enables correct behavior for mixed-label requests (e.g. Prometheus federation, metrics proxies) without affecting standard setups that have uniform HA labels within a single request. Disabled by default. #15064
 * [FEATURE] Distributor: add `-validation.enforce-out-of-order-window-on-distributor` per-tenant option. When enabled and `past_grace_period` is 0, distributors reject samples older than `out_of_order_time_window`, matching ingester behavior, without relying on a small `past_grace_period`. #15090
 * [FEATURE] Runtime config: Support loading configuration from `http://` and `https://` URLs in addition to local files via `-runtime-config.file`. Added `-runtime-config.http-client-timeout` (default `30s`) to control the HTTP fetch timeout. #15052
@@ -188,7 +189,7 @@
 * [ENHANCEMENT] Query-frontend: Stream JSON encoding directly to the response body to avoid a full-copy allocation of the serialized payload. #14840
 * [ENHANCEMENT] Activity tracker: Added `activity_tracker_unfinished_activities_loaded` metric to report the number of unfinished activities detected on startup. #14860
 * [ENHANCEMENT] Distributor now uses record validation time as Kafka record timestamp to reduce rejections among consumers. #14921
-* [ENHANCEMENT] MQE: Add optimisation pass to optimise away expressions containing comparisons with `timestamp()` that can't produce results due to the query time range. #14989 #15014
+* [ENHANCEMENT] MQE: Add optimisation pass to optimise away expressions containing comparisons with `timestamp()` that can't produce results due to the query time range. #14989 #15014 #15163
 * [ENHANCEMENT] Distributor: OTLP endpoint now returns partial success (HTTP 200) instead of HTTP 429 when the usage tracker rejects some series due to the active series limit but other series are successfully ingested. The `RejectedDataPoints` field reports the count of distributor-side rejections (usage tracker filtering). #14789
 * [ENHANCEMENT] MQE: Account for memory consumption of labels returned by binary operations in query memory consumption estimate earlier. #15033
 * [ENHANCEMENT] Query-frontend: Log the number of series and samples returned for queries in `query stats` log lines. #15044
@@ -201,6 +202,8 @@
   * `-ingest-storage.kafka.max-buffered-bytes` from `100MB` to `1GB`
 * [ENHANCEMENT] MQE: Enable narrow selectors optimisation and hints passing for `and`/`unless` binary operation. #15096
 * [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in one-to-many and many-to-one binary operations (eg. `group_left` and `group_right`). #15137
+* [BUGFIX] Tracing: Respect `OTEL_TRACES_SAMPLER` and `OTEL_TRACES_SAMPLER_ARG` environment variables in `NewOTelFromEnv()`. Previously, the sampler was always hardcoded to `AlwaysSample()` when no Jaeger remote sampler was configured, making it impossible to control trace volume through standard OpenTelemetry configuration. #15128
+* [BUGFIX] API: Scope activity tracking middleware to query routes only, preventing it from rejecting write requests that have an unexpected `Content-Type` header with HTTP 500. #15129
 * [BUGFIX] Ingester: enforce a minimum 10s delay between TSDB head compaction iterations when an iteration approaches or exceeds the configured `-blocks-storage.tsdb.head-compaction-interval`, so ingestion is not starved by back-to-back compactions. #15061
 * [BUGFIX] Update to Go v1.25.9. #15030
 * [BUGFIX] Distributor: OTLP partial success responses now correctly populate `RejectedDataPoints` with the actual count of rejected samples, instead of always reporting 0. In classical architecture, this includes rejected samples propagated from the ingester. #14789
@@ -274,6 +277,7 @@
 * [BUGFIX] Alertmanager: Fix deadlock when trying to broadcast after stopping a tenant #14922
 * [BUGFIX] Query-frontend: Fix max total query length limit (`-query-frontend.max-total-query-length`) not being enforced on instant queries with subqueries or range selectors. #14985
 * [BUGFIX] Compactor: Fix potential goroutine leak when compaction iteration exits early due to errors. #13420
+* [BUGFIX] Query-frontend: Fix bugs with matcher propagation for binary operations where it was not being properly applied within nested expressions and also wrongly propagating internal label matchers. #15110
 
 ### Mixin
 

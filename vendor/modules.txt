@@ -7,7 +7,7 @@ cloud.google.com/go/internal
 cloud.google.com/go/internal/optional
 cloud.google.com/go/internal/trace
 cloud.google.com/go/internal/version
-# cloud.google.com/go/auth v0.19.0
+# cloud.google.com/go/auth v0.20.0
 ## explicit; go 1.25.0
 cloud.google.com/go/auth
 cloud.google.com/go/auth/credentials
@@ -211,7 +211,7 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
 # github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.22
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
-# github.com/aws/aws-sdk-go-v2/service/s3 v1.99.1
+# github.com/aws/aws-sdk-go-v2/service/s3 v1.100.0
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/service/s3/types
 # github.com/aws/aws-sdk-go-v2/service/signin v1.0.8
@@ -669,7 +669,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20260417113503-29a3c41c2ad7
+# github.com/grafana/dskit v0.0.0-20260427162712-0457a92dacc3
 ## explicit; go 1.25.8
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -814,17 +814,17 @@ github.com/hashicorp/memberlist
 # github.com/hashicorp/serf v0.10.2
 ## explicit; go 1.19
 github.com/hashicorp/serf/coordinate
-# github.com/hashicorp/vault/api v1.22.0
-## explicit; go 1.23.0
+# github.com/hashicorp/vault/api v1.23.0
+## explicit; go 1.24.0
 github.com/hashicorp/vault/api
-# github.com/hashicorp/vault/api/auth/approle v0.11.0
-## explicit; go 1.23.0
+# github.com/hashicorp/vault/api/auth/approle v0.12.0
+## explicit; go 1.24.0
 github.com/hashicorp/vault/api/auth/approle
-# github.com/hashicorp/vault/api/auth/kubernetes v0.10.0
-## explicit; go 1.23.0
+# github.com/hashicorp/vault/api/auth/kubernetes v0.12.0
+## explicit; go 1.24.0
 github.com/hashicorp/vault/api/auth/kubernetes
-# github.com/hashicorp/vault/api/auth/userpass v0.11.0
-## explicit; go 1.23.0
+# github.com/hashicorp/vault/api/auth/userpass v0.12.0
+## explicit; go 1.24.0
 github.com/hashicorp/vault/api/auth/userpass
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
@@ -1156,7 +1156,7 @@ github.com/prometheus/otlptranslator
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20260421065545-af7900704075
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20260427033810-555ef1101b85
 ## explicit; go 1.25.0
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1310,7 +1310,7 @@ github.com/thanos-io/objstore/tracing/opentelemetry
 ## explicit; go 1.24
 github.com/tinylib/msgp/msgp
 github.com/tinylib/msgp/msgp/setof
-# github.com/tjhop/slog-gokit v0.1.6
+# github.com/tjhop/slog-gokit v0.2.0
 ## explicit; go 1.21
 github.com/tjhop/slog-gokit
 # github.com/tklauser/go-sysconf v0.3.16
@@ -1319,12 +1319,13 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.11.0
 ## explicit; go 1.24.0
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.20.7
-## explicit; go 1.24.0
+# github.com/twmb/franz-go v1.21.0
+## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
 github.com/twmb/franz-go/pkg/kgo
 github.com/twmb/franz-go/pkg/kgo/internal/sticky
+github.com/twmb/franz-go/pkg/kgo/internal/xsync
 github.com/twmb/franz-go/pkg/kversion
 github.com/twmb/franz-go/pkg/sasl
 github.com/twmb/franz-go/pkg/sasl/aws
@@ -1337,15 +1338,15 @@ github.com/twmb/franz-go/pkg/kadm
 # github.com/twmb/franz-go/pkg/kfake v0.0.0-20260121195810-e0832fcbdccb
 ## explicit; go 1.24.0
 github.com/twmb/franz-go/pkg/kfake
-# github.com/twmb/franz-go/pkg/kmsg v1.12.1-0.20251024215757-aea970d4d0d2
+# github.com/twmb/franz-go/pkg/kmsg v1.13.1
 ## explicit; go 1.24.0
 github.com/twmb/franz-go/pkg/kmsg
 github.com/twmb/franz-go/pkg/kmsg/internal/kbin
 # github.com/twmb/franz-go/plugin/kotel v1.6.0
 ## explicit; go 1.22.0
 github.com/twmb/franz-go/plugin/kotel
-# github.com/twmb/franz-go/plugin/kprom v1.3.0
-## explicit; go 1.23.8
+# github.com/twmb/franz-go/plugin/kprom v1.4.0
+## explicit; go 1.25.0
 github.com/twmb/franz-go/plugin/kprom
 # github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 ## explicit
@@ -1472,7 +1473,7 @@ go.opentelemetry.io/contrib/detectors/gcp
 # go.opentelemetry.io/contrib/exporters/autoexport v0.67.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/contrib/exporters/autoexport
-# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.67.0
+# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc/internal
@@ -1480,12 +1481,12 @@ go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc/inte
 ## explicit; go 1.25.0
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace/internal/semconv
-# go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0
+# go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/request
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/semconv
-# go.opentelemetry.io/contrib/propagators/jaeger v1.42.0
+# go.opentelemetry.io/contrib/propagators/jaeger v1.43.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/contrib/propagators/jaeger
 # go.opentelemetry.io/contrib/samplers/jaegerremote v0.36.0
@@ -1508,6 +1509,7 @@ go.opentelemetry.io/otel/semconv/v1.18.0
 go.opentelemetry.io/otel/semconv/v1.21.0
 go.opentelemetry.io/otel/semconv/v1.26.0
 go.opentelemetry.io/otel/semconv/v1.37.0
+go.opentelemetry.io/otel/semconv/v1.37.0/rpcconv
 go.opentelemetry.io/otel/semconv/v1.40.0
 go.opentelemetry.io/otel/semconv/v1.40.0/httpconv
 go.opentelemetry.io/otel/semconv/v1.40.0/otelconv
@@ -1681,7 +1683,7 @@ go.yaml.in/yaml/v3
 ## explicit; go 1.18
 go.yaml.in/yaml/v4
 go.yaml.in/yaml/v4/internal/libyaml
-# golang.org/x/crypto v0.49.0
+# golang.org/x/crypto v0.50.0
 ## explicit; go 1.25.0
 golang.org/x/crypto/argon2
 golang.org/x/crypto/bcrypt
@@ -1701,10 +1703,10 @@ golang.org/x/crypto/pkcs12/internal/rc2
 ## explicit; go 1.25.0
 golang.org/x/exp/constraints
 golang.org/x/exp/slices
-# golang.org/x/mod v0.34.0
+# golang.org/x/mod v0.35.0
 ## explicit; go 1.25.0
 golang.org/x/mod/semver
-# golang.org/x/net v0.52.0
+# golang.org/x/net v0.53.0
 ## explicit; go 1.25.0
 golang.org/x/net/bpf
 golang.org/x/net/context/ctxhttp
@@ -1741,17 +1743,17 @@ golang.org/x/oauth2/jwt
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.42.0
+# golang.org/x/sys v0.43.0
 ## explicit; go 1.25.0
 golang.org/x/sys/cpu
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/term v0.41.0
+# golang.org/x/term v0.42.0
 ## explicit; go 1.25.0
 golang.org/x/term
-# golang.org/x/text v0.35.0
+# golang.org/x/text v0.36.0
 ## explicit; go 1.25.0
 golang.org/x/text/cases
 golang.org/x/text/internal
@@ -1767,7 +1769,7 @@ golang.org/x/text/unicode/norm
 # golang.org/x/time v0.15.0
 ## explicit; go 1.25.0
 golang.org/x/time/rate
-# golang.org/x/tools v0.43.0
+# golang.org/x/tools v0.44.0
 ## explicit; go 1.25.0
 golang.org/x/tools/go/ast/edge
 golang.org/x/tools/go/ast/inspector
@@ -1788,7 +1790,7 @@ golang.org/x/tools/internal/stdlib
 golang.org/x/tools/internal/typeparams
 golang.org/x/tools/internal/typesinternal
 golang.org/x/tools/internal/versions
-# google.golang.org/api v0.274.0
+# google.golang.org/api v0.276.0
 ## explicit; go 1.25.0
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/transport
@@ -1822,7 +1824,7 @@ google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/googleapis/api/label
 google.golang.org/genproto/googleapis/api/metric
 google.golang.org/genproto/googleapis/api/monitoredres
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20260406210006-6f92a3bedf2d
 ## explicit; go 1.25.0
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
@@ -2177,7 +2179,7 @@ sigs.k8s.io/structured-merge-diff/v6/value
 # sigs.k8s.io/yaml v1.6.0
 ## explicit; go 1.22
 sigs.k8s.io/yaml
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260421065545-af7900704075
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260427033810-555ef1101b85
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
 # go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71
