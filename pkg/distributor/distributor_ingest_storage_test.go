@@ -1629,6 +1629,49 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 	}
 }
 
+func TestDistributor_ActiveSeries_TerminalErrorsWithIngestStorage(t *testing.T) {
+	reqMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}
+
+	ingesterStateByZone := map[string]ingesterZoneState{
+		"zone-a": {numIngesters: 1, happyIngesters: 1},
+		"zone-b": {numIngesters: 1, happyIngesters: 1},
+	}
+	ingesterDataByZone := map[string][]*mimirpb.WriteRequest{
+		"zone-a": {
+			makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+		},
+		"zone-b": {
+			makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+		},
+	}
+
+	limits := prepareDefaultLimits()
+	limits.ActiveSeriesResultsMaxSizeBytes = 1
+
+	distributors, ingesters, _, _ := prepare(t, prepConfig{
+		ingesterStateByZone:  ingesterStateByZone,
+		ingesterDataByZone:   ingesterDataByZone,
+		numDistributors:      1,
+		ingestStorageEnabled: true,
+		limits:               limits,
+		configure: func(config *Config) {
+			config.MinimizeIngesterRequests = true
+			config.PreferAvailabilityZones = []string{"zone-a"}
+		},
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	_, err := distributors[0].ActiveSeries(ctx, reqMatchers)
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+
+	// With MinimizeRequests enabled and RF=2 (2 zones, MaxUnavailableZones=1),
+	// only 1 zone is queried initially. When that zone returns
+	// ErrResponseTooLarge and the error is treated as terminal, the operation
+	// should abort immediately without starting a request to the 2nd zone.
+	assert.Equal(t, 1, countMockIngestersCalled(ingesters, "ActiveSeries"))
+}
+
 func readAllRecordsFromKafka(t testing.TB, kafkaAddresses []string, numPartitions int32, timeout time.Duration) []*kgo.Record {
 	// Read all partitions from the beginning.
 	offsets := make(map[int32]kgo.Offset, numPartitions)
