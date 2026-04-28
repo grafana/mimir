@@ -3683,7 +3683,7 @@ func TestDistributor_ActiveSeries_TerminalErrors(t *testing.T) {
 	// while the query is still in-flight to the second ingester.
 	// In that case, the query to the second ingester is cancelled.
 	// Hence, we expect 1 or 2 ingesters to be queried here, but never 3.
-	assert.LessOrEqual(t, 2, countMockIngestersCalled(ingesters, "ActiveSeries"))
+	assert.LessOrEqual(t, countMockIngestersCalled(ingesters, "ActiveSeries"), 2)
 }
 
 func BenchmarkDistributor_ActiveSeries(b *testing.B) {
