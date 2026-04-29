@@ -9226,7 +9226,7 @@
               "required": false,
               "desc": "The record version that this producer sends.",
               "fieldValue": null,
-              "fieldDefaultValue": 1,
+              "fieldDefaultValue": 2,
               "fieldFlag": "ingest-storage.kafka.producer-record-version",
               "fieldType": "int"
             },

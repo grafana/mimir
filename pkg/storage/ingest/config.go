@@ -207,7 +207,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
-	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 1, "The record version that this producer sends.")
+	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 2, "The record version that this producer sends.")
 
 	f.DurationVar(&cfg.FetchMaxWait, prefix+"fetch-max-wait", 5*time.Second, "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.")
 	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 12, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.")

@@ -638,7 +638,7 @@
   "ingest-storage.kafka.producer-max-record-size-bytes": 15983616,
   "ingest-storage.kafka.producer-max-buffered-bytes": 1073741824,
   "ingest-storage.kafka.wait-strong-read-consistency-timeout": 20000000000,
-  "ingest-storage.kafka.producer-record-version": 1,
+  "ingest-storage.kafka.producer-record-version": 2,
   "ingest-storage.kafka.fetch-max-wait": 5000000000,
   "ingest-storage.kafka.fetch-concurrency-max": 12,
   "ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes": true,

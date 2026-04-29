@@ -5450,7 +5450,7 @@ kafka:
 
   # The record version that this producer sends.
   # CLI flag: -ingest-storage.kafka.producer-record-version
-  [producer_record_version: <int> | default = 1]
+  [producer_record_version: <int> | default = 2]
 
   # The maximum amount of time a Kafka broker waits for some records before a
   # Fetch response is returned.
