@@ -128,7 +128,7 @@ type KafkaConfig struct {
 
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
-	ProducerRecordVersion int `yaml:"producer_record_version" category:"experimental"`
+	ProducerRecordVersion int `yaml:"producer_record_version"`
 
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
