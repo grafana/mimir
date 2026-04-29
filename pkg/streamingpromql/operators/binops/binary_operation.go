@@ -814,23 +814,32 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 
 // buildMatchersForWithout builds matchers to limit the data selected on one side of a binary
 // operation when using without or default (no on/without) matching, based on the series returned
-// by the other side. For each label name present in the metadata that is not excluded (i.e. not
-// in excludeLabels and not __name__), it calls getUniqueLabelValues and, if within the hard-coded
-// cap, builds a regexp matcher for that label.
+// by the other side. For each label name present on all involved series (i.e. not in excludeLabels and not __name__),
+// it calls getUniqueLabelValues and builds a regexp matcher for that label if its below the cap.
+//
+// Only labels present on every LHS series are considered. If any LHS series lacks a label,
+// a RHS series also lacking it could still be a valid match under without semantics so generating a matcher for that label would incorrectly filter the RHS.
 func buildMatchersForWithout(metadata []types.SeriesMetadata, excludeLabels []string) types.Matchers {
-	// Collect all label names present in the metadata.
-	labelNames := make(map[string]struct{})
+	// If there's no metadata we take the fast path because passing any matchers would be wrong.
+	if len(metadata) == 0 {
+		return nil
+	}
+
+	// Count occurrences of each label name across all LHS series.
+	labelCounts := make(map[string]int)
 	for _, s := range metadata {
 		s.Labels.Range(func(l labels.Label) {
-			labelNames[l.Name] = struct{}{}
+			labelCounts[l.Name]++
 		})
 	}
 
 	var matchers []types.Matcher
-	// Iterate label names in sorted order for deterministic output.
-	sortedNames := make([]string, 0, len(labelNames))
-	for name := range labelNames {
-		sortedNames = append(sortedNames, name)
+	// Iterate label names in sorted order for deterministic output, keeping only labels that appear on every LHS series.
+	sortedNames := make([]string, 0, len(labelCounts))
+	for name, count := range labelCounts {
+		if count == len(metadata) {
+			sortedNames = append(sortedNames, name)
+		}
 	}
 	slices.Sort(sortedNames)
 

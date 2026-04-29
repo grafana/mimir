@@ -209,6 +209,31 @@ func TestAndUnlessBinaryOperation_PassesWithoutDerivedMatchersToRHS(t *testing.T
 				labels.FromStrings("env", "prod", "region", "us-east"),
 			},
 		},
+		"and op with heterogeneous LHS labels: no matcher generated for label absent from some LHS series": {
+			// region is only present on one of the two LHS series.
+			// A RHS series with no region label is a valid match for the LHS series that also
+			// has no region region, so no region matcher should be emitted.
+			isUnless:       false,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging", "region", "us-east"),
+			},
+			// Only env is on every LHS series here so we only want to generate an env matcher
+			// region only exists in one LHS series series so make sure it does not generate a matcher.
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"),
+			},
+		},
 		"and op with on matching and no hints: RHS receives nil matchers": {
 			isUnless:       false,
 			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"env"}},
