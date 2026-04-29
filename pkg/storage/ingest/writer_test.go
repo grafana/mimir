@@ -58,7 +58,9 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, reg := createTestWriter(t, cfg)
 
 		produceRequestProcessed := atomic.NewBool(false)
 
@@ -142,6 +144,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		// Customize the max record size to force splitting the WriteRequest into two records.
 		expectedReq := &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API}
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
 		cfg.ProducerMaxRecordSizeBytes = int(float64(expectedReq.Size()) * 0.8)
 
 		writer, reg := createTestWriter(t, cfg)
@@ -239,6 +242,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		config := createTestKafkaConfig(clusterAddr, topicName)
+		config.ProducerRecordVersion = 1
 		writer, reg := createTestWriter(t, config)
 
 		// Write to partitions.
@@ -291,7 +295,9 @@ func TestWriter_WriteSync(t *testing.T) {
 		)
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, _ := createTestWriter(t, cfg)
 
 		// Get the underlying Kafka client used by the writer.
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -365,6 +371,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
 		cfg.MaxInflightProduceRequests = 1
 		writer, _ := createTestWriter(t, cfg)
 
@@ -417,7 +424,9 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, reg := createTestWriter(t, cfg)
 
 		// Write to a non-existing partition.
 		err := writer.WriteSync(ctx, topicName, 100, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
@@ -442,6 +451,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg.ProducerRecordVersion = 1
 		writer, reg := createTestWriter(t, kafkaCfg)
 
 		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
@@ -477,6 +487,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg.ProducerRecordVersion = 1
 		writer, _ := createTestWriter(t, kafkaCfg)
 
 		var (
@@ -550,7 +561,9 @@ func TestWriter_WriteSync(t *testing.T) {
 		}
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, reg := createTestWriter(t, cfg)
 
 		produceRequestProcessed := atomic.NewBool(false)
 
@@ -658,6 +671,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
 		cfg.ProducerMaxBufferedBytes = int64((estimatedRecordSize * 4) - 1) // Configure the test so that we expect 3 produced records.
 		cfg.WriteTimeout = time.Second
 
@@ -782,7 +796,9 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, _ := createTestWriter(t, cfg)
 
 		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
 		require.NoError(t, err)
@@ -812,7 +828,9 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, reg := createTestWriter(t, cfg)
 
 		req1 := &mimirpb.WriteRequest{Timeseries: series1, Source: mimirpb.API}
 		req2 := &mimirpb.WriteRequest{Timeseries: series2, Source: mimirpb.API}
@@ -894,7 +912,9 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, reg := createTestWriter(t, cfg)
 
 		nonEmptyReq := &mimirpb.WriteRequest{Timeseries: series1, Source: mimirpb.API}
 		inputSize := nonEmptyReq.Size()
