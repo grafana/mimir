@@ -5505,7 +5505,7 @@ kafka:
   # setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than
   # 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
-  [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
+  [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 200]
 
 migration:
   # When both this option and ingest storage are enabled, distributors write to
