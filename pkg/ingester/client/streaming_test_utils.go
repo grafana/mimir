@@ -19,10 +19,10 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
-// StreamsToMatrix converts a slice of QueryStreamResponse to a model.Matrix.
+// StreamsToMatrixForTests converts a slice of QueryStreamResponse to a model.Matrix.
 //
 // NOTE: This should only be called from test code.
-func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse) (model.Matrix, error) {
+func StreamsToMatrixForTests(from, through model.Time, responses []*QueryStreamResponse) (model.Matrix, error) {
 	result := model.Matrix{}
 	streamingSeries := [][]mimirpb.LabelAdapter{}
 	haveReachedEndOfStreamingSeriesLabels := false
@@ -55,10 +55,10 @@ func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse)
 	return result, nil
 }
 
-// StreamingSeriesToMatrix converts slice of []client.TimeSeriesChunk to a model.Matrix.
+// StreamingSeriesToMatrixForTests converts slice of []client.TimeSeriesChunk to a model.Matrix.
 //
 // NOTE: This should only be called from test code.
-func StreamingSeriesToMatrix(from, through model.Time, sSeries []StreamingSeries) (model.Matrix, error) {
+func StreamingSeriesToMatrixForTests(from, through model.Time, sSeries []StreamingSeries) (model.Matrix, error) {
 	if sSeries == nil {
 		return nil, nil
 	}

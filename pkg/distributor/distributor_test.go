@@ -1155,7 +1155,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.True(t, ok, fmt.Sprintf("expected error to be a status error, but got: %T", err))
 			}
 
-			m, err := client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
+			m, err := client.StreamingSeriesToMatrixForTests(0, 10, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedResponse.String(), m.String())
 
