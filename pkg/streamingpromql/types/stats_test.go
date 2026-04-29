@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	promstats "github.com/prometheus/prometheus/util/stats"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -1270,4 +1271,36 @@ func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
 			require.EqualError(t, err, testCase.expectedError)
 		})
 	}
+}
+
+func TestOperatorEvaluationStats_FinalizeAndComputePrometheusStats(t *testing.T) {
+	startT := timestamp.Time(1000)
+	timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second)
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 2)
+	require.NoError(t, err)
+
+	stats.allSeries.samplesProcessedPerStep[0] = 100
+	stats.allSeries.samplesProcessedPerStep[1] = 101
+	stats.allSeries.samplesProcessedPerStep[2] = 102
+	stats.allSeries.samplesReadIfSubsequentStep[0] = 200
+	stats.allSeries.samplesReadIfSubsequentStep[1] = 201
+	stats.allSeries.samplesReadIfSubsequentStep[2] = 202
+	stats.allSeries.samplesReadIfFirstStep[0] = 300
+	stats.allSeries.samplesReadIfFirstStep[1] = 301
+	stats.allSeries.samplesReadIfFirstStep[2] = 302
+
+	actual, err := stats.FinalizeAndComputePrometheusStats()
+	require.NoError(t, err)
+
+	expected := &promstats.QuerySamples{
+		TotalSamples:        100 + 101 + 102,
+		TotalSamplesPerStep: []int64{100, 101, 102},
+		SamplesRead:         300 + 201 + 202,
+		SamplesReadPerStep:  []int64{300, 201, 202},
+		EnablePerStepStats:  true,
+		Interval:            time.Second.Milliseconds(),
+		StartTimestamp:      timestamp.FromTime(startT),
+	}
+	require.Equal(t, expected, actual)
 }
