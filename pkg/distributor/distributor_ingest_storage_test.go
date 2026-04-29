@@ -158,6 +158,9 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				ingestStoragePartitions: numPartitions,
 				ingestStorageKafka:      kafkaCluster,
 				limits:                  limits,
+				configure: func(cfg *Config) {
+					cfg.IngestStorageConfig.KafkaConfig.ProducerRecordVersion = 1
+				},
 			}
 
 			distributors, _, regs, _ := prepare(t, testConfig)
@@ -438,6 +441,7 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				limits:                  limits,
 				configure: func(cfg *Config) {
 					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+					cfg.IngestStorageConfig.KafkaConfig.ProducerRecordVersion = 1
 				},
 			}
 
@@ -523,6 +527,7 @@ func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAn
 		limits:                  prepareDefaultLimits(),
 		configure: func(cfg *Config) {
 			cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+			cfg.IngestStorageConfig.KafkaConfig.ProducerRecordVersion = 1
 		},
 	}
 

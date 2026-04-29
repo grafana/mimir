@@ -980,7 +980,9 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, _ := createTestWriter(t, cfg)
 
 		partitionRequests := []PartitionWriteRequest{
 			{PartitionID: 0, WriteRequest: &mimirpb.WriteRequest{}},
