@@ -6511,6 +6511,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		distributorCfg.IngestersLookbackPeriod = time.Hour
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
 		distributorCfg.IngestStorageConfig = ingestCfg
+		// Disable request hedging to other zones to avoid flaky tests when timing is unlucky.
+		distributorCfg.MinimiseIngesterRequestsHedgingDelay = 0
 
 		if cfg.configure != nil {
 			cfg.configure(&distributorCfg)
