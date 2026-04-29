@@ -215,6 +215,7 @@
 * [BUGFIX] Distributor: Fix ingestion rate limit error message reporting incorrect burst size when `ingestion_burst_factor` is configured. #14471
 * [BUGFIX] Mimir: Fix nil pointer dereference when `-target` is set to an empty string. #14381
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
+* [BUGFIX] API: Fixed embedded web UI static assets (CSS, JS, images) returning 404 when `-server.path-prefix` is configured. #15181
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
