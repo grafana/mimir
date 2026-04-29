@@ -1303,4 +1303,7 @@ func TestOperatorEvaluationStats_FinalizeAndComputePrometheusStats(t *testing.T)
 		StartTimestamp:      timestamp.FromTime(startT),
 	}
 	require.Equal(t, expected, actual)
+
+	stats.Close()
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
