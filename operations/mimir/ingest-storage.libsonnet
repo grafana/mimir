@@ -16,7 +16,7 @@
     ingest_storage_ingester_zones: 3,
 
     // The version of the Kafka record wire format. Versions 0, 1, and 2 are stable.
-    ingest_storage_kafka_producer_record_version: 1,
+    ingest_storage_kafka_producer_record_version: 2,
 
     commonConfig+:: if !$._config.ingest_storage_enabled then {} else
       $.ingest_storage_args +
