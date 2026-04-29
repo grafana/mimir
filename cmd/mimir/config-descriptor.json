@@ -9228,8 +9228,7 @@
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "ingest-storage.kafka.producer-record-version",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldType": "int"
             },
             {
               "kind": "field",
