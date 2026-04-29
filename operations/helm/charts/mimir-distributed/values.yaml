@@ -3382,6 +3382,8 @@ gateway:
       serverSnippet: ""
       # -- Allows appending custom configuration to the http block
       httpSnippet: ""
+      # -- Alows to set how the X-Scope-OrgID header should get set (default $ensured_x_scope_orgid, replace it with '$remote_user' if you want to set X-Scope-OrgID to the authenticated user)
+      xScopeOrgIDHeaderValue: $ensured_x_scope_orgid
       # -- Allow to set client_max_body_size in the nginx configuration
       clientMaxBodySize: 540M
       # -- Allows to set a custom resolver
@@ -3474,8 +3476,8 @@ gateway:
               return 200 'OK';
               auth_basic off;
             }
-
-            proxy_set_header X-Scope-OrgID $ensured_x_scope_orgid;
+            
+            proxy_set_header X-Scope-OrgID {{ .Values.gateway.nginx.config. }};
 
             # Distributor endpoints
             location /distributor {
