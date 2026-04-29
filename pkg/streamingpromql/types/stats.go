@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	promstats "github.com/prometheus/prometheus/util/stats"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -52,6 +53,10 @@ type OperatorEvaluationStats struct {
 
 	allSeries *subsetStats
 	subsets   []*subsetStats
+
+	// finalizedSamplesRead is the slice returned as the QueryStats.SamplesRead slice by FinalizeAndComputePrometheusStats.
+	// It is retained so that it can be returned to a pool in Close.
+	finalizedSamplesRead []int64
 }
 
 // NewOperatorEvaluationStats creates a new OperatorEvaluationStats for the given time range.
@@ -104,11 +109,11 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 
 	pointIdx := s.timeRange.PointIndex(stepT)
 
-	s.allSeries.Add(pointIdx, sampleCount, sampleCount)
+	s.allSeries.Add(pointIdx, sampleCount, sampleCount, sampleCount)
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {
-			subset.Add(pointIdx, sampleCount, sampleCount)
+			subset.Add(pointIdx, sampleCount, sampleCount, sampleCount)
 		}
 	}
 }
@@ -130,7 +135,7 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 
 	pointIdx := s.timeRange.PointIndex(stepT)
 
-	samplesProcessed := int64(floats.CountUntil(rangeEnd)) + histograms.EquivalentFloatSampleCountUntil(rangeEnd)
+	allSamplesInRange := int64(floats.CountUntil(rangeEnd)) + histograms.EquivalentFloatSampleCountUntil(rangeEnd)
 
 	newSampleRangeStart := rangeEnd - s.timeRange.IntervalMilliseconds
 	if s.timeRange.IsInstant {
@@ -138,11 +143,11 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 	}
 	newSamplesRead := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
 
-	s.allSeries.Add(pointIdx, samplesProcessed, newSamplesRead)
+	s.allSeries.Add(pointIdx, allSamplesInRange, newSamplesRead, allSamplesInRange)
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {
-			subset.Add(pointIdx, samplesProcessed, newSamplesRead)
+			subset.Add(pointIdx, allSamplesInRange, newSamplesRead, allSamplesInRange)
 		}
 	}
 }
@@ -166,12 +171,12 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 	}
 
 	for i := range s.timeRange.StepCount {
-		s.allSeries.Add(int64(i), other.allSeries.samplesProcessedPerStep[i], other.allSeries.newSamplesReadPerStep[i])
+		s.allSeries.Add(int64(i), other.allSeries.samplesProcessedPerStep[i], other.allSeries.newSamplesReadPerStep[i], other.allSeries.samplesReadIfFirstStep[i])
 	}
 
 	for _, subset := range s.subsets {
 		for i := range subset.samplesProcessedPerStep {
-			subset.Add(int64(i), other.allSeries.samplesProcessedPerStep[i], other.allSeries.newSamplesReadPerStep[i])
+			subset.Add(int64(i), other.allSeries.samplesProcessedPerStep[i], other.allSeries.newSamplesReadPerStep[i], other.allSeries.samplesReadIfFirstStep[i])
 		}
 	}
 
@@ -239,10 +244,10 @@ func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange Query
 		return nil, err
 	}
 
-	expanded.allSeries.SetFromStepInvariant(s.allSeries.samplesProcessedPerStep[0], s.allSeries.newSamplesReadPerStep[0])
+	expanded.allSeries.SetFromStepInvariant(s.allSeries.samplesProcessedPerStep[0], s.allSeries.newSamplesReadPerStep[0], s.allSeries.samplesReadIfFirstStep[0])
 
 	for i, subset := range s.subsets {
-		expanded.subsets[i].SetFromStepInvariant(subset.samplesProcessedPerStep[0], subset.newSamplesReadPerStep[0])
+		expanded.subsets[i].SetFromStepInvariant(subset.samplesProcessedPerStep[0], subset.newSamplesReadPerStep[0], subset.samplesReadIfFirstStep[0])
 	}
 
 	return expanded, nil
@@ -302,6 +307,35 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 
 func (s *OperatorEvaluationStats) HasSubsets() bool {
 	return len(s.subsets) > 0
+}
+
+// FinalizeAndComputePrometheusStats computes an equivalent QuerySamples instance as expected
+// by Prometheus' Query.Stats() method.
+//
+// Mutating the returned QuerySamples instance may result in changes to this OperatorEvaluationStats instance.
+//
+// The returned QuerySamples instance is only valid until Close is called, as it contains references to slices
+// that will be returned to a pool when Close is called.
+func (s *OperatorEvaluationStats) FinalizeAndComputePrometheusStats() (*promstats.QuerySamples, error) {
+	var err error
+	s.finalizedSamplesRead, err = Int64SlicePool.Get(len(s.allSeries.newSamplesReadPerStep), s.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	s.finalizedSamplesRead = s.finalizedSamplesRead[:len(s.allSeries.newSamplesReadPerStep)]
+	s.finalizedSamplesRead[0] = s.allSeries.samplesReadIfFirstStep[0]
+	copy(s.finalizedSamplesRead[1:], s.allSeries.newSamplesReadPerStep[1:])
+
+	return &promstats.QuerySamples{
+		TotalSamples:        sum(s.allSeries.samplesProcessedPerStep),
+		TotalSamplesPerStep: s.allSeries.samplesProcessedPerStep,
+		SamplesRead:         sum(s.finalizedSamplesRead),
+		SamplesReadPerStep:  s.finalizedSamplesRead,
+		EnablePerStepStats:  true,
+		Interval:            s.timeRange.IntervalMilliseconds,
+		StartTimestamp:      s.timeRange.StartT,
+	}, nil
 }
 
 // GetSamplesProcessed returns the total count and per-step count of samples processed.
@@ -380,11 +414,14 @@ func (s *OperatorEvaluationStats) Close() {
 	for _, subset := range s.subsets {
 		subset.Close()
 	}
+
+	Int64SlicePool.Put(&s.finalizedSamplesRead, s.memoryConsumptionTracker)
 }
 
 type subsetStats struct {
 	samplesProcessedPerStep []int64
 	newSamplesReadPerStep   []int64
+	samplesReadIfFirstStep  []int64
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
@@ -400,16 +437,23 @@ func newSubsetStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.
 		return nil, err
 	}
 
+	samplesReadIfFirstStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	return &subsetStats{
 		samplesProcessedPerStep:  samplesProcessed[:timeRange.StepCount],
 		newSamplesReadPerStep:    newSamplesRead[:timeRange.StepCount],
+		samplesReadIfFirstStep:   samplesReadIfFirstStep[:timeRange.StepCount],
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}, nil
 }
 
-func (s *subsetStats) Add(pointIndex int64, samplesProcessed int64, newSamplesRead int64) {
+func (s *subsetStats) Add(pointIndex int64, samplesProcessed int64, newSamplesRead int64, samplesReadIfFirstStep int64) {
 	s.samplesProcessedPerStep[pointIndex] += samplesProcessed
 	s.newSamplesReadPerStep[pointIndex] += newSamplesRead
+	s.samplesReadIfFirstStep[pointIndex] += samplesReadIfFirstStep
 }
 
 func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int) {
@@ -420,24 +464,37 @@ func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInner
 	for innerIdx := firstNewSamplesInnerIdx; innerIdx <= lastIdx; innerIdx++ {
 		s.newSamplesReadPerStep[parentIdx] += source.newSamplesReadPerStep[innerIdx]
 	}
+
+	for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+		if innerIdx == firstInnerIdx {
+			s.samplesReadIfFirstStep[parentIdx] += source.samplesReadIfFirstStep[innerIdx]
+		} else {
+			s.samplesReadIfFirstStep[parentIdx] += source.newSamplesReadPerStep[innerIdx]
+		}
+	}
 }
 
-func (s *subsetStats) SetFromStepInvariant(samplesProcessed int64, newSamplesRead int64) {
+func (s *subsetStats) SetFromStepInvariant(samplesProcessed int64, newSamplesRead int64, samplesReadIfFirstStep int64) {
 	s.newSamplesReadPerStep[0] = newSamplesRead
 	for idx := range s.samplesProcessedPerStep {
 		s.samplesProcessedPerStep[idx] = samplesProcessed
+	}
+	for idx := range s.samplesReadIfFirstStep {
+		s.samplesReadIfFirstStep[idx] = samplesReadIfFirstStep
 	}
 }
 
 func (s *subsetStats) CopyFrom(source *subsetStats) {
 	copy(s.samplesProcessedPerStep, source.samplesProcessedPerStep)
 	copy(s.newSamplesReadPerStep, source.newSamplesReadPerStep)
+	copy(s.samplesReadIfFirstStep, source.samplesReadIfFirstStep)
 }
 
 func (s *subsetStats) Encode() EncodedSubsetStats {
 	return EncodedSubsetStats{
 		SamplesProcessedPerStep: s.samplesProcessedPerStep,
 		NewSamplesReadPerStep:   s.newSamplesReadPerStep,
+		SamplesReadIfFirstStep:  s.samplesReadIfFirstStep,
 	}
 }
 
@@ -450,13 +507,18 @@ func (e *EncodedSubsetStats) decode(timeRange QueryTimeRange, memoryConsumptionT
 		return nil, fmt.Errorf("number of new samples read steps in encoded form (%d) does not match expected (%d)", len(e.NewSamplesReadPerStep), timeRange.StepCount)
 	}
 
-	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(e.SamplesProcessedPerStep)+cap(e.NewSamplesReadPerStep))*Int64Size, limiter.Int64Slices); err != nil {
+	if len(e.SamplesReadIfFirstStep) != timeRange.StepCount {
+		return nil, fmt.Errorf("number of samples read if first step steps in encoded form (%d) does not match expected (%d)", len(e.SamplesReadIfFirstStep), timeRange.StepCount)
+	}
+
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(e.SamplesProcessedPerStep)+cap(e.NewSamplesReadPerStep)+cap(e.SamplesReadIfFirstStep))*Int64Size, limiter.Int64Slices); err != nil {
 		return nil, err
 	}
 
 	return &subsetStats{
 		samplesProcessedPerStep:  e.SamplesProcessedPerStep,
 		newSamplesReadPerStep:    e.NewSamplesReadPerStep,
+		samplesReadIfFirstStep:   e.SamplesReadIfFirstStep,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}, nil
 }
@@ -464,6 +526,7 @@ func (e *EncodedSubsetStats) decode(timeRange QueryTimeRange, memoryConsumptionT
 func (s *subsetStats) Close() {
 	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.newSamplesReadPerStep, s.memoryConsumptionTracker)
+	Int64SlicePool.Put(&s.samplesReadIfFirstStep, s.memoryConsumptionTracker)
 }
 
 // CombineStats retrieves and combines query stats from multiple operators.
