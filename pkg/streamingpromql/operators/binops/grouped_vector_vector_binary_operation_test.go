@@ -945,6 +945,27 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
 			},
 		},
+		"group_left with WithoutMatching hints and non-empty Include: Include label from many side does not appear in without-derived matchers": {
+			// region is a VectorMatching.Include label: it comes from the many (left) side, not the one (right) side.
+			// buildMatchersForWithout runs on the one-side metadata, which does not carry "region",
+			// so "region" must not appear in the generated matchers even though the many side has it.
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}, Include: []string{"region"}},
+			hints:          &Hints{WithoutMatching: true, Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+				labels.FromStrings("env", "prod", "region", "eu"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"), // one side: does NOT carry "region"
+			},
+			expectedRightMatchers: nil,
+			// many side gets only env matcher (derived from one-side metadata); no region matcher
+			// since region is absent from the one side
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
 		"group_left fallback (nil hints, !On): left (many) side receives without-derived matchers": {
 			card:           parser.CardManyToOne,
 			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}},

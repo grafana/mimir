@@ -509,6 +509,25 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 0,
 		},
+		"binary expression with on (synthesized_label) gets no hints: synthesized label cannot narrow storage selectors": {
+			// "foo" is produced by label_replace on the LHS; it does not exist on the raw
+			// series in storage. filterLabels removes it from the MatchingLabels list, leaving
+			// an empty Include set, so no hint is emitted.
+			expr: `label_replace(some_metric, "foo", "$1", "bar", ".*") + on (foo) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS + on (foo) RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: label_replace(...)
+							- param 0: VectorSelector: {__name__="some_metric"}
+							- param 1: StringLiteral: "foo"
+							- param 2: StringLiteral: "$1"
+							- param 3: StringLiteral: "bar"
+							- param 4: StringLiteral: ".*"
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
 		"binary expression with explicit ignoring labels": {
 			expr: `some_metric + ignoring (foo) some_other_metric`,
 			expectedPlan: `
