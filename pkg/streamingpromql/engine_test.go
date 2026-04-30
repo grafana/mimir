@@ -3690,22 +3690,21 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				600000: 5,
 			},
-			expectedSamplesRead: 10,
+			expectedSamplesRead: 5,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				600000: 10,
+				600000: 5,
 			},
 			isInstantQuery: true,
 		},
 		"aggregation over subquery - range query": {
-			expr:                        `max_over_time(dense_series[5m:1m])`,
-			expectedTotalSamples:        45,
-			expectedTotalSamplesWithMQE: 11,
+			expr:                 `max_over_time(dense_series[5m:1m])`,
+			expectedTotalSamples: 45,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 2, 120000: 3, 180000: 4, 240000: 5, 300000: 5, 360000: 5, 420000: 5, 480000: 5, 540000: 5, 600000: 5,
 			},
-			expectedSamplesRead: 22,
+			expectedSamplesRead: 11,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
 			},
 		},
 		"subquery range equals subquery interval": {
@@ -3726,9 +3725,9 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
 			},
-			expectedSamplesRead: 22,
+			expectedSamplesRead: 11,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
 			},
 		},
 		"subquery resolution greater than subquery interval": {
@@ -3749,9 +3748,9 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 1,
 			},
-			expectedSamplesRead: 6,
+			expectedSamplesRead: 3,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				0: 2, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 2, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 2,
+				0: 1, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 1,
 			},
 			isInstantQuery: false,
 		},
@@ -3768,15 +3767,14 @@ func TestQueryStats(t *testing.T) {
 			isInstantQuery: true,
 		},
 		"subquery not aligned with parent query - range query": {
-			expr:                        `max_over_time(dense_series{}[5m:44s])`,
-			expectedTotalSamples:        57,
-			expectedTotalSamplesWithMQE: 14,
+			expr:                 `max_over_time(dense_series{}[5m:44s])`,
+			expectedTotalSamples: 57,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 2, 120000: 3, 180000: 5, 240000: 6, 300000: 6, 360000: 7, 420000: 7, 480000: 6, 540000: 7, 600000: 7,
 			},
-			expectedSamplesRead: 28,
+			expectedSamplesRead: 14,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				0: 2, 60000: 2, 120000: 2, 180000: 4, 240000: 2, 300000: 2, 360000: 4, 420000: 2, 480000: 2, 540000: 4, 600000: 2,
+				0: 1, 60000: 1, 120000: 1, 180000: 2, 240000: 1, 300000: 1, 360000: 2, 420000: 1, 480000: 1, 540000: 2, 600000: 1,
 			},
 		},
 		"classic histogram quantile": {
@@ -3844,30 +3842,28 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				600000: 10,
 			},
-			expectedSamplesRead: 20,
+			expectedSamplesRead: 10,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				600000: 20,
+				600000: 10,
 			},
 		},
 		"common subexpression elimination inside subquery, range query": {
-			expr:                        `sum_over_time((sum(dense_series))[5m:1m]) + sum_over_time((count(dense_series))[5m:1m])`,
-			expectedTotalSamples:        90,
-			expectedTotalSamplesWithMQE: 11,
+			expr:                 `sum_over_time((sum(dense_series))[5m:1m]) + sum_over_time((count(dense_series))[5m:1m])`,
+			expectedTotalSamples: 90,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 2, 60000: 4, 120000: 6, 180000: 8, 240000: 10, 300000: 10, 360000: 10, 420000: 10, 480000: 10, 540000: 10, 600000: 10,
 			},
-			expectedSamplesRead: 44,
+			expectedSamplesRead: 22,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				0: 4, 60000: 4, 120000: 4, 180000: 4, 240000: 4, 300000: 4, 360000: 4, 420000: 4, 480000: 4, 540000: 4, 600000: 4,
+				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
 			},
 		},
 		// Three tests below cover PQE bug: sample counting is incorrect when subqueries with range vector selectors are wrapped in functions.
 		// In MQE it's fixed, so that's why cases have a skipCompareWithPrometheus set.
 		// See this for details: https://github.com/prometheus/prometheus/issues/16638
 		"subquery with range vector selector": {
-			expr:                        `rate(dense_series[1m30s])[5m:1m]`,
-			expectedTotalSamples:        10,
-			expectedTotalSamplesWithMQE: 10,
+			expr:                 `rate(dense_series[1m30s])[5m:1m]`,
+			expectedTotalSamples: 10,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				600000: 10,
 			},
@@ -3878,28 +3874,42 @@ func TestQueryStats(t *testing.T) {
 			isInstantQuery: true,
 		},
 		"aggregation over subquery with range vector selector": {
-			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
-			expectedTotalSamples:        5,
-			expectedTotalSamplesWithMQE: 10,
+			expr:                 `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
+			expectedTotalSamples: 5,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				600000: 5,
 			},
-			expectedSamplesRead: 11,
+
+			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
+			// See https://github.com/prometheus/prometheus/issues/16638 for details.
+			expectedTotalSamplesWithMQE: 10,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				600000: 10,
+			},
+
+			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				600000: 11,
+				600000: 6,
 			},
 			isInstantQuery: true,
 		},
 		"aggregation over subquery with range vector selector, range query": {
-			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
-			expectedTotalSamples:        40,
-			expectedTotalSamplesWithMQE: 21,
+			expr:                 `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
+			expectedTotalSamples: 40,
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 0, 60000: 1, 120000: 2, 180000: 3, 240000: 4, 300000: 5, 360000: 5, 420000: 5, 480000: 5, 540000: 5, 600000: 5,
 			},
-			expectedSamplesRead: 21,
+
+			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
+			// See https://github.com/prometheus/prometheus/issues/16638 for details.
+			expectedTotalSamplesWithMQE: 85,
+			expectedTotalSamplesPerStepWithMQE: promstats.TotalSamplesPerStep{
+				0: 1, 60000: 3, 120000: 5, 180000: 7, 240000: 9, 300000: 10, 360000: 10, 420000: 10, 480000: 10, 540000: 10, 600000: 10,
+			},
+
+			expectedSamplesRead: 11,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
-				0: 1, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
 			},
 		},
 	}
