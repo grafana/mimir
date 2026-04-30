@@ -42,7 +42,10 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 	metrics := kprom.NewMetrics(
 		"", // No prefix. We expect the input prometheus.Registered to be wrapped with a prefix.
 		kprom.Registerer(reg),
-		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
+		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes),
+		// Drop the "node_id" label from broker-level metrics to reduce cardinality. The node ID
+		// can change frequently (e.g. when brokers are restarted) and isn't useful for our alerting.
+		kprom.BrokerLabels())
 
 	// Allow to disable linger in tests.
 	linger := 50 * time.Millisecond
