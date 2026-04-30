@@ -167,9 +167,6 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 				ingestStorageEnabled:    true,
 				ingestStoragePartitions: 1,
 				limits:                  limits,
-				configure: func(cfg *Config) {
-					cfg.IngestStorageConfig.KafkaConfig.ProducerRecordVersion = 1
-				},
 			}
 
 			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
