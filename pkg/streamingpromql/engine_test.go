@@ -3824,7 +3824,7 @@ func TestQueryStats(t *testing.T) {
 				0: 6, 60000: 6, 120000: 6, 180000: 6, 240000: 6, 300000: 6, 360000: 6, 420000: 6, 480000: 6, 540000: 6, 600000: 6,
 			},
 		},
-		"common subexpression elimination": {
+		"common subexpression elimination of instant vector": {
 			expr:                 `sum(dense_series) + sum(dense_series)`,
 			isInstantQuery:       true,
 			expectedTotalSamples: 2,
@@ -3834,6 +3834,18 @@ func TestQueryStats(t *testing.T) {
 			expectedSamplesRead: 2,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				600000: 2,
+			},
+		},
+		"common subexpression elimination of range vector": {
+			expr:                 `sum_over_time(dense_series[5m]) + avg_over_time(dense_series[5m])`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 10,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 10,
+			},
+			expectedSamplesRead: 10,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 10,
 			},
 		},
 		"common subexpression elimination inside subquery, instant query": {
@@ -3911,6 +3923,51 @@ func TestQueryStats(t *testing.T) {
 			expectedSamplesRead: 11,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 1, 120000: 1, 180000: 1, 240000: 1, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 1,
+			},
+		},
+		"subset selector elimination of instant vector": {
+			expr:                 `sum(abs(classic_histogram_series)) + sum(sin(classic_histogram_series{le="1"}))`,
+			expectedTotalSamples: 77,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 7, 60000: 7, 120000: 7, 180000: 7, 240000: 7, 300000: 7, 360000: 7, 420000: 7, 480000: 7, 540000: 7, 600000: 7,
+			},
+			expectedSamplesRead: 77,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 7, 60000: 7, 120000: 7, 180000: 7, 240000: 7, 300000: 7, 360000: 7, 420000: 7, 480000: 7, 540000: 7, 600000: 7,
+			},
+		},
+		"subset selector elimination of range vector": {
+			expr:                 `sum(sum_over_time(classic_histogram_series[5m])) + sum(sum_over_time(classic_histogram_series{le="1"}[5m]))`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 35,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				600000: 35,
+			},
+			expectedSamplesRead: 35,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				600000: 35,
+			},
+		},
+		"multi-aggregation": {
+			expr:                 `sum(dense_series) / count(dense_series)`,
+			expectedTotalSamples: 22,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
+			expectedSamplesRead: 22,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 2, 60000: 2, 120000: 2, 180000: 2, 240000: 2, 300000: 2, 360000: 2, 420000: 2, 480000: 2, 540000: 2, 600000: 2,
+			},
+		},
+		"multi-aggregation with subset": {
+			expr:                 `sum(classic_histogram_series{le="1"}) / sum(classic_histogram_series)`,
+			expectedTotalSamples: 77,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 7, 60000: 7, 120000: 7, 180000: 7, 240000: 7, 300000: 7, 360000: 7, 420000: 7, 480000: 7, 540000: 7, 600000: 7,
+			},
+			expectedSamplesRead: 77,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 7, 60000: 7, 120000: 7, 180000: 7, 240000: 7, 300000: 7, 360000: 7, 420000: 7, 480000: 7, 540000: 7, 600000: 7,
 			},
 		},
 	}
