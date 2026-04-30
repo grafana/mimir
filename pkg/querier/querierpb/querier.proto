@@ -102,6 +102,7 @@ message Error {
 message EvaluateQueryResponseEvaluationCompleted {
   Annotations annotations = 1 [(gogoproto.nullable) = false];
   stats.Stats stats = 2 [(gogoproto.nullable) = false];
+  map<int64, types.EncodedOperatorEvaluationStats> perNodeStats = 3 [(gogoproto.nullable) = false];
 }
 
 message Annotations {
