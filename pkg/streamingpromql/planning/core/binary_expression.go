@@ -178,14 +178,9 @@ func (b *BinaryExpression) MergeHints(other planning.Node) error {
 	}
 
 	if thisWithout {
-		var thisExclude, otherExclude []string
-		if b.Hints != nil {
-			thisExclude = b.Hints.Exclude
-		}
-		if otherBinaryExpression.Hints != nil {
-			otherExclude = otherBinaryExpression.Hints.Exclude
-		}
-		if slices.Equal(thisExclude, otherExclude) {
+		// When thisWithout is true, b.Hints != nil and otherBinaryExpression.Hints != nil
+		// are guaranteed by the expressions above that set thisWithout/otherWithout.
+		if slices.Equal(b.Hints.Exclude, otherBinaryExpression.Hints.Exclude) {
 			return nil
 		}
 		return errCannotMergeBinaryExpressionHints

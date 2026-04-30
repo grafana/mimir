@@ -24,7 +24,7 @@ const expectedMetricsTemplate = `
 	# HELP cortex_mimir_query_engine_narrow_selectors_attempted_total Total number of queries that the optimization pass has attempted to add hints to narrow selectors for.
     # TYPE cortex_mimir_query_engine_narrow_selectors_attempted_total counter
     cortex_mimir_query_engine_narrow_selectors_attempted_total %d
-    # HELP cortex_mimir_query_engine_narrow_selectors_modified_total Total number of queries where the optimization pass has been able to add hints to narrow selectors for.
+    # HELP cortex_mimir_query_engine_narrow_selectors_modified_total Total number of queries where the optimization pass has added hints to narrow selectors for. Incremented whenever any binary expression in the query receives either on-matching include hints or without-matching exclude hints.
     # TYPE cortex_mimir_query_engine_narrow_selectors_modified_total counter
     cortex_mimir_query_engine_narrow_selectors_modified_total %d
 `
@@ -468,6 +468,46 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			`,
 			expectedAttempts: 1,
 			expectedModified: 1,
+		},
+		"group_left binary expression with ignoring () (without) matching should have without hints added": {
+			expr: `many_side * ignoring () group_left () one_side`,
+			expectedPlan: `
+				- BinaryExpression: LHS * group_left () RHS, hints (without ())
+					- LHS: VectorSelector: {__name__="many_side"}
+					- RHS: VectorSelector: {__name__="one_side"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"group_right binary expression with ignoring () (without) matching should have without hints added": {
+			expr: `one_side * ignoring () group_right () many_side`,
+			expectedPlan: `
+				- BinaryExpression: LHS * group_right () RHS, hints (without ())
+					- LHS: VectorSelector: {__name__="one_side"}
+					- RHS: VectorSelector: {__name__="many_side"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"group_left binary expression with ignoring labels should exclude those labels from without hints": {
+			expr: `many_side * ignoring (region) group_left () one_side`,
+			expectedPlan: `
+				- BinaryExpression: LHS * ignoring (region) group_left () RHS, hints (without (region))
+					- LHS: VectorSelector: {__name__="many_side"}
+					- RHS: VectorSelector: {__name__="one_side"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression with on () (empty explicit on) should get no hints": {
+			expr: `some_metric * on () some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS * on () RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
 		},
 		"binary expression with explicit ignoring labels": {
 			expr: `some_metric + ignoring (foo) some_other_metric`,

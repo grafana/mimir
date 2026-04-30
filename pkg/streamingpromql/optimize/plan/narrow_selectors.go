@@ -38,7 +38,7 @@ func NewNarrowSelectorsOptimizationPass(reg prometheus.Registerer, logger log.Lo
 		}),
 		modified: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_narrow_selectors_modified_total",
-			Help: "Total number of queries where the optimization pass has been able to add hints to narrow selectors for.",
+			Help: "Total number of queries where the optimization pass has added hints to narrow selectors for. Incremented whenever any binary expression in the query receives either on-matching include hints or without-matching exclude hints.",
 		}),
 		logger: logger,
 	}
