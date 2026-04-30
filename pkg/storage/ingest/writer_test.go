@@ -1736,7 +1736,7 @@ func deserializeRecord(t *testing.T, rec *kgo.Record) mimirpb.WriteRequest {
 	version := ParseRecordVersion(rec)
 	var prealloc mimirpb.PreallocWriteRequest
 	require.NoError(t, DeserializeRecordContent(rec.Value, &prealloc, version))
-	prealloc.WriteRequest.ClearTimeseriesUnmarshalData()
+	prealloc.ClearTimeseriesUnmarshalData()
 	return prealloc.WriteRequest
 }
 

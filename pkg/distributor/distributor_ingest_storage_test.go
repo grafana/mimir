@@ -1740,7 +1740,7 @@ func readAllRequestsByPartitionFromKafka(t testing.TB, kafkaAddresses []string, 
 		version := ingest.ParseRecordVersion(record)
 		var prealloc mimirpb.PreallocWriteRequest
 		require.NoError(t, ingest.DeserializeRecordContent(record.Value, &prealloc, version))
-		prealloc.WriteRequest.ClearTimeseriesUnmarshalData()
+		prealloc.ClearTimeseriesUnmarshalData()
 
 		requestsByPartition[record.Partition] = append(requestsByPartition[record.Partition], &prealloc.WriteRequest)
 	}
