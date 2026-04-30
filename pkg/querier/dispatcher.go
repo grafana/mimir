@@ -589,12 +589,22 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		annos.Warnings, annos.Infos = annotations.AsStrings(o.originalExpression, 0, 0)
 	}
 
+	encodedStats := make(map[int64]types.EncodedOperatorEvaluationStats, len(stats))
+	for node, stats := range stats {
+		nodeIndex, err := o.nodeToIndex(node)
+		if err != nil {
+			return err
+		}
+
+		encodedStats[nodeIndex] = *stats.Encode()
+	}
+
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-				Annotations: annos,
-				Stats:       o.populateStats(ctx, stats),
-				// TODO: send per-node stats
+				Annotations:  annos,
+				Stats:        o.populateStats(ctx, stats),
+				PerNodeStats: encodedStats,
 			},
 		},
 	})
