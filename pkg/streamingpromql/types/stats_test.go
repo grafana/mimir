@@ -1514,3 +1514,54 @@ func TestOperatorEvaluationStats_GetTotalSamplesProcessed(t *testing.T) {
 	stats.Close()
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
+
+func TestOperatorEvaluationStats_HalveCounts(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	s, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 2)
+	require.NoError(t, err)
+
+	s.allSeries.samplesProcessedPerStep[0] = 100
+	s.allSeries.samplesProcessedPerStep[1] = 200
+	s.allSeries.samplesReadIfSubsequentStep[0] = 10
+	s.allSeries.samplesReadIfSubsequentStep[1] = 20
+	s.allSeries.samplesReadIfFirstStep[0] = 12
+	s.allSeries.samplesReadIfFirstStep[1] = 22
+
+	s.subsets[0].samplesProcessedPerStep[0] = 60
+	s.subsets[0].samplesProcessedPerStep[1] = 80
+	s.subsets[0].samplesReadIfSubsequentStep[0] = 6
+	s.subsets[0].samplesReadIfSubsequentStep[1] = 8
+	s.subsets[0].samplesReadIfFirstStep[0] = 4
+	s.subsets[0].samplesReadIfFirstStep[1] = 18
+
+	s.subsets[1].samplesProcessedPerStep[0] = 40
+	s.subsets[1].samplesProcessedPerStep[1] = 120
+	s.subsets[1].samplesReadIfSubsequentStep[0] = 4
+	s.subsets[1].samplesReadIfSubsequentStep[1] = 12
+	s.subsets[1].samplesReadIfFirstStep[0] = 2
+	s.subsets[1].samplesReadIfFirstStep[1] = 28
+
+	s.HalveCounts()
+
+	require.Equal(t, []int64{50, 100}, s.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{5, 10}, s.allSeries.samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{6, 11}, s.allSeries.samplesReadIfFirstStep)
+
+	require.Equal(t, []int64{30, 40}, s.subsets[0].samplesProcessedPerStep)
+	require.Equal(t, []int64{3, 4}, s.subsets[0].samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{2, 9}, s.subsets[0].samplesReadIfFirstStep)
+
+	require.Equal(t, []int64{20, 60}, s.subsets[1].samplesProcessedPerStep)
+	require.Equal(t, []int64{2, 6}, s.subsets[1].samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{1, 14}, s.subsets[1].samplesReadIfFirstStep)
+
+	s.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
