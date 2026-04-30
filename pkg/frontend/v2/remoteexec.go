@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -36,8 +38,8 @@ var errUnexpectedEndOfStream = errors.New("expected EvaluateQueryResponse, got e
 var _ remoteexec.GroupEvaluator = &RemoteExecutionGroupEvaluator{}
 
 func RegisterRemoteExecutionMaterializers(engine *streamingpromql.Engine, frontend ProtobufFrontend, cfg Config) error {
-	groupEvaluatorFactory := func(eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.GroupEvaluator {
-		return NewRemoteExecutionGroupEvaluator(frontend, cfg, eagerLoad, queryParameters, memoryConsumptionTracker)
+	groupEvaluatorFactory := func(eagerLoad bool, queryParameters *planning.QueryParameters, logger log.Logger, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.GroupEvaluator {
+		return NewRemoteExecutionGroupEvaluator(frontend, cfg, logger, eagerLoad, queryParameters, memoryConsumptionTracker)
 	}
 
 	if err := engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_GROUP, remoteexec.NewRemoteExecutionGroupMaterializer(groupEvaluatorFactory)); err != nil {
@@ -62,13 +64,15 @@ type ProtobufFrontend interface {
 type RemoteExecutionGroupEvaluator struct {
 	frontend                 ProtobufFrontend
 	cfg                      Config
+	logger                   log.Logger
 	eagerLoad                bool
 	queryParameters          *planning.QueryParameters
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	stream      ResponseStream
-	nodeStreams *remoteExecutionNodeStreamsCollection
-	requestSent bool
+	stream       ResponseStream
+	nodeStreams  *remoteExecutionNodeStreamsCollection
+	requestSent  bool
+	perNodeStats map[int64]types.EncodedOperatorEvaluationStats
 }
 
 type remoteExecutionNodeStreamState struct {
@@ -85,10 +89,11 @@ type remoteExecutionNodeStreamState struct {
 // We use a different type to make it harder to accidentally confuse it with a node index in the query plan.
 type remoteExecutionNodeStreamIndex int
 
-func NewRemoteExecutionGroupEvaluator(frontend ProtobufFrontend, cfg Config, eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RemoteExecutionGroupEvaluator {
+func NewRemoteExecutionGroupEvaluator(frontend ProtobufFrontend, cfg Config, logger log.Logger, eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RemoteExecutionGroupEvaluator {
 	return &RemoteExecutionGroupEvaluator{
 		frontend:                 frontend,
 		cfg:                      cfg,
+		logger:                   logger,
 		eagerLoad:                eagerLoad,
 		queryParameters:          queryParameters,
 		memoryConsumptionTracker: memoryConsumptionTracker,
@@ -325,12 +330,12 @@ func (g *RemoteExecutionGroupEvaluator) finalizeStream(ctx context.Context, node
 	// If we reach the end of the stream, tryToReadEvaluationCompleted will return an error (because readNextMessage will return an error),
 	// so we don't need to do anything special here to handle that case.
 	for {
-		ok, annos, stats, err := g.tryToReadEvaluationCompleted(ctx)
+		ok, annos, overallStats, err := g.tryToReadEvaluationCompleted(ctx)
 		if err != nil {
-			return nil, stats, err
+			return nil, overallStats, err
 		}
 		if ok {
-			return annos, stats, nil
+			return annos, overallStats, nil
 		}
 	}
 }
@@ -352,8 +357,30 @@ func (g *RemoteExecutionGroupEvaluator) tryToReadEvaluationCompleted(ctx context
 		return false, nil, stats.Stats{}, nil
 	}
 
-	annos, stats := decodeEvaluationCompletedMessage(completion)
-	return true, annos, stats, nil
+	annos, overallStats, perNodeStats := decodeEvaluationCompletedMessage(completion)
+	g.perNodeStats = perNodeStats
+	return true, annos, overallStats, nil
+}
+
+func (g *RemoteExecutionGroupEvaluator) statsForStream(ctx context.Context, nodeStreamIndex remoteExecutionNodeStreamIndex) (*types.OperatorEvaluationStats, error) {
+	if !g.nodeStreams.allFinished() {
+		return nil, fmt.Errorf("attempted to get stats for node stream index %v, but one or more nodes are not finished", nodeStreamIndex)
+	}
+
+	nodeState := g.nodeStreams.streams[nodeStreamIndex]
+
+	if len(g.perNodeStats) == 0 {
+		// We're talking to an old querier that doesn't support per-node evaluation stats. Log a warning and return an empty set of stats.
+		level.Warn(g.logger).Log("msg", "RemoteExecutionGroupEvaluator expected node statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
+		return types.NewOperatorEvaluationStats(ctx, nodeState.timeRange, g.memoryConsumptionTracker, 0)
+	}
+
+	stats, ok := g.perNodeStats[nodeState.nodeIndex]
+	if !ok {
+		return nil, fmt.Errorf("attempted to get stats for node %v, but the querier did not return any stats for that node", nodeState.nodeIndex)
+	}
+
+	return stats.Decode(ctx, nodeState.timeRange, g.memoryConsumptionTracker)
 }
 
 func (g *RemoteExecutionGroupEvaluator) closeStream(nodeStreamIndex remoteExecutionNodeStreamIndex) {
@@ -507,6 +534,10 @@ func (r *scalarExecutionResponse) Finalize(ctx context.Context) (*annotations.An
 	return r.group.finalizeStream(ctx, r.nodeStreamIndex)
 }
 
+func (r *scalarExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return r.group.statsForStream(ctx, r.nodeStreamIndex)
+}
+
 func (r *scalarExecutionResponse) Close() {
 	if r.closed {
 		return
@@ -592,6 +623,10 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 
 func (r *instantVectorExecutionResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
 	return r.group.finalizeStream(ctx, r.nodeStreamIndex)
+}
+
+func (r *instantVectorExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return r.group.statsForStream(ctx, r.nodeStreamIndex)
 }
 
 func (r *instantVectorExecutionResponse) Close() {
@@ -700,6 +735,10 @@ func (r *rangeVectorExecutionResponse) Finalize(ctx context.Context) (*annotatio
 	return r.group.finalizeStream(ctx, r.nodeStreamIndex)
 }
 
+func (r *rangeVectorExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return r.group.statsForStream(ctx, r.nodeStreamIndex)
+}
+
 func (r *rangeVectorExecutionResponse) Close() {
 	if r.closed {
 		return
@@ -766,7 +805,7 @@ func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluato
 	}
 }
 
-func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (*annotations.Annotations, stats.Stats) {
+func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (*annotations.Annotations, stats.Stats, map[int64]types.EncodedOperatorEvaluationStats) {
 	count := len(msg.Annotations.Infos) + len(msg.Annotations.Warnings)
 
 	annos := make(annotations.Annotations, count)
@@ -778,7 +817,7 @@ func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvalua
 		annos.Add(querierpb.NewWarningAnnotation(a))
 	}
 
-	return &annos, msg.Stats
+	return &annos, msg.Stats, msg.PerNodeStats
 }
 
 func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {

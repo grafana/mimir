@@ -8,10 +8,9 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations, queryStats *types.QueryStats) error {
+func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations) error {
 	newAnnos, remoteStats, err := resp.Finalize(ctx)
 	if err != nil {
 		return err
@@ -21,11 +20,9 @@ func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotati
 		annos.Merge(*newAnnos)
 	}
 
-	queryStats.IncrementSamples(int64(remoteStats.SamplesProcessed))
-
 	if localStats := stats.FromContext(ctx); localStats != nil {
-		// We need to remove the samples processed from the remote stats before merging them into the local stats, as we already added them to MQE's queryStats above.
-		// MQE's queryStats will be added to the local stats in engineQueryRequestRoundTripperHandler.Do when the query completes.
+		// We need to remove the samples processed from the remote stats before merging them into the local stats, as the total samples
+		// processed count will be computed from the overall evaluation stats when the query completes.
 		remoteStats.SamplesProcessed = 0
 		localStats.Merge(&stats.SafeStats{Stats: remoteStats})
 	}

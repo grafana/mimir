@@ -4,7 +4,6 @@ package remoteexec
 
 import (
 	"context"
-	"errors"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -57,7 +56,7 @@ func (s *ScalarRemoteExec) Finalize(ctx context.Context) error {
 
 	s.finalized = true
 
-	return finalize(ctx, s.resp, s.Annotations, s.QueryStats)
+	return finalize(ctx, s.resp, s.Annotations)
 }
 
 func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {
@@ -65,7 +64,7 @@ func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {
 }
 
 func (s *ScalarRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return nil, errors.New("Stats not implemented for scalar remote execution")
+	return s.resp.Stats(ctx)
 }
 
 func (s *ScalarRemoteExec) Close() {
