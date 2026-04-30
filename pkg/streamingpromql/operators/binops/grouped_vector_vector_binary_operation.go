@@ -297,6 +297,15 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 				"ignored_matchers", len(ignored),
 			)
 		}
+	} else if !g.VectorMatching.On {
+		// Fallback for old query-frontend plans that don't set WithoutMatching hints.
+		manySideMatchers = append(buildMatchersForWithout(g.oneSideMetadata, g.VectorMatching.MatchingLabels), includeMatchers...)
+		sl := spanlogger.FromContext(ctx, g.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing without-derived matchers to many side (fallback)",
+			"excluded_labels", g.VectorMatching.MatchingLabels,
+			"hint_matchers", len(manySideMatchers),
+		)
 	}
 
 	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, manySideMatchers)

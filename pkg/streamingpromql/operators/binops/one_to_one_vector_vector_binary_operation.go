@@ -219,6 +219,15 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 				"ignored_matchers", len(ignored),
 			)
 		}
+	} else if !b.VectorMatching.On {
+		// Fallback for old query-frontend plans that don't set WithoutMatching hints.
+		matchers = buildMatchersForWithout(b.leftMetadata, b.VectorMatching.MatchingLabels)
+		sl := spanlogger.FromContext(ctx, b.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing without-derived matchers to RHS (fallback)",
+			"excluded_labels", b.VectorMatching.MatchingLabels,
+			"hint_matchers", len(matchers),
+		)
 	}
 
 	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)

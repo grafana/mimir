@@ -878,6 +878,138 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 	}
 }
 
+func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySide(t *testing.T) {
+	// Verifies that without-style matchers are forwarded to the many side both via explicit
+	// WithoutMatching hints (set by an up-to-date query-frontend) and via the fallback
+	// path (old query-frontend plans that predate hints).
+	testCases := map[string]struct {
+		card           parser.VectorMatchCardinality
+		vectorMatching parser.VectorMatching
+		hints          *Hints
+		leftSeries     []labels.Labels
+		rightSeries    []labels.Labels
+
+		expectedLeftMatchers  types.Matchers
+		expectedRightMatchers types.Matchers
+	}{
+		"group_left with WithoutMatching hints: left (many) side receives without-derived matchers from right (one) side": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}},
+			hints:          &Hints{WithoutMatching: true, Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "2"), // should be filtered by env hint
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			// one side (right) gets nil outer matchers
+			expectedRightMatchers: nil,
+			// many side (left) gets without-derived matchers built from right (one) metadata
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_right with WithoutMatching hints: right (many) side receives without-derived matchers from left (one) side": {
+			card:           parser.CardOneToMany,
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToMany, On: false, MatchingLabels: []string{}},
+			hints:          &Hints{WithoutMatching: true, Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "2"), // should be filtered by env hint
+			},
+			// one side (left) gets nil outer matchers
+			expectedLeftMatchers: nil,
+			// many side (right) gets without-derived matchers built from left (one) metadata
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_left with WithoutMatching hints and ignoring label: excluded label does not appear in matchers": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"pod"}},
+			hints:          &Hints{WithoutMatching: true, Exclude: []string{"pod"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "prod", "pod", "2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			expectedRightMatchers: nil,
+			// pod is excluded; only env matcher is generated
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_left fallback (nil hints, !On): left (many) side receives without-derived matchers": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}},
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			expectedRightMatchers: nil,
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_right fallback (nil hints, !On): right (many) side receives without-derived matchers": {
+			card:           parser.CardOneToMany,
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToMany, On: false, MatchingLabels: []string{}},
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "2"),
+			},
+			expectedLeftMatchers: nil,
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			o, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				testCase.vectorMatching,
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				nil,
+				posrange.PositionRange{},
+				types.QueryTimeRange{},
+				testCase.hints,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			_, err = o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedLeftMatchers, left.MatchersProvided, "left side received unexpected matchers")
+			require.Equal(t, testCase.expectedRightMatchers, right.MatchersProvided, "right side received unexpected matchers")
+		})
+	}
+}
+
 // BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering measures the benefit of
 // the hints-based optimization introduced for GroupedVectorVectorBinaryOperation.
 //
