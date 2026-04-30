@@ -775,6 +775,16 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 // Hints are hints that can be applied to binary operations to avoid doing unnecessary work.
 type Hints struct {
 	Include []string
+	// Exclude lists label names that should not be used as extra selectors when
+	// WithoutMatching is true. See WithoutMatching for details.
+	Exclude []string
+	// WithoutMatching indicates that the binary operation uses "without" or default
+	// (no on/without) label matching semantics. When true, BuildMatchers will generate
+	// selectors for all LHS labels not present in Exclude, using the actual series
+	// metadata rather than a fixed include list. This flag distinguishes a new plan
+	// (WithoutMatching=true) from an old plan (hints nil) so that new queriers do not
+	// incorrectly apply without-style filtering when no hints were set.
+	WithoutMatching bool
 }
 
 const (
@@ -785,7 +795,14 @@ const (
 // based on the series returned by the other side and QueryHints as determined by the query
 // planner. If there are more than a hard-coded maximum number of values for the hinted labels
 // matchers for that label are skipped.
+// When hints.WithoutMatching is true, matchers are built from all LHS labels not present in
+// hints.Exclude (using without-matching semantics). Otherwise, matchers are built from the
+// labels listed in hints.Include.
 func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers {
+	if hints.WithoutMatching {
+		return buildMatchersForWithout(metadata, hints.Exclude)
+	}
+
 	var matchers []types.Matcher
 
 	for _, label := range hints.Include {

@@ -108,16 +108,25 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 	if a.hints != nil {
 		rhsMatchers = BuildMatchers(leftMetadata, a.hints)
 		sl := spanlogger.FromContext(ctx, a.logger)
-		sl.DebugLog(
-			"msg", "binary operator passing additional matchers to RHS",
-			"fields", a.hints.Include,
-			"hint_matchers", len(rhsMatchers),
-		)
+		if a.hints.WithoutMatching {
+			sl.DebugLog(
+				"msg", "binary operator passing without-derived matchers to RHS",
+				"excluded_labels", a.hints.Exclude,
+				"hint_matchers", len(rhsMatchers),
+			)
+		} else {
+			sl.DebugLog(
+				"msg", "binary operator passing additional matchers to RHS",
+				"fields", a.hints.Include,
+				"hint_matchers", len(rhsMatchers),
+			)
+		}
 	} else if !a.VectorMatching.On {
+		// Fallback for old query-frontend plans that don't set WithoutMatching hints.
 		rhsMatchers = buildMatchersForWithout(leftMetadata, a.VectorMatching.MatchingLabels)
 		sl := spanlogger.FromContext(ctx, a.logger)
 		sl.DebugLog(
-			"msg", "binary operator passing without-derived matchers to RHS",
+			"msg", "binary operator passing without-derived matchers to RHS (fallback)",
 			"excluded_labels", a.VectorMatching.MatchingLabels,
 			"hint_matchers", len(rhsMatchers),
 		)

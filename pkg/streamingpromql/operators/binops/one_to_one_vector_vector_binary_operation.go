@@ -204,12 +204,21 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		matchers = BuildMatchers(b.leftMetadata, b.hints)
 
 		sl := spanlogger.FromContext(ctx, b.logger)
-		sl.DebugLog(
-			"msg", "binary operator passing additional matchers to RHS",
-			"fields", b.hints.Include,
-			"hint_matchers", len(matchers),
-			"ignored_matchers", len(ignored),
-		)
+		if b.hints.WithoutMatching {
+			sl.DebugLog(
+				"msg", "binary operator passing without-derived matchers to RHS",
+				"excluded_labels", b.hints.Exclude,
+				"hint_matchers", len(matchers),
+				"ignored_matchers", len(ignored),
+			)
+		} else {
+			sl.DebugLog(
+				"msg", "binary operator passing additional matchers to RHS",
+				"fields", b.hints.Include,
+				"hint_matchers", len(matchers),
+				"ignored_matchers", len(ignored),
+			)
+		}
 	}
 
 	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)

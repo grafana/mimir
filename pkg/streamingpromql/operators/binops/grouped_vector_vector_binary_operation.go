@@ -282,12 +282,21 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 		manySideMatchers = append(BuildMatchers(g.oneSideMetadata, g.hints), includeMatchers...)
 
 		sl := spanlogger.FromContext(ctx, g.logger)
-		sl.DebugLog(
-			"msg", "binary operator passing additional matchers to many side",
-			"fields", g.hints.Include,
-			"hint_matchers", len(manySideMatchers),
-			"ignored_matchers", len(ignored),
-		)
+		if g.hints.WithoutMatching {
+			sl.DebugLog(
+				"msg", "binary operator passing without-derived matchers to many side",
+				"excluded_labels", g.hints.Exclude,
+				"hint_matchers", len(manySideMatchers),
+				"ignored_matchers", len(ignored),
+			)
+		} else {
+			sl.DebugLog(
+				"msg", "binary operator passing additional matchers to many side",
+				"fields", g.hints.Include,
+				"hint_matchers", len(manySideMatchers),
+				"ignored_matchers", len(ignored),
+			)
+		}
 	}
 
 	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, manySideMatchers)
