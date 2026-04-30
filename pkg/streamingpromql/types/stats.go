@@ -393,6 +393,18 @@ func (s *OperatorEvaluationStats) GetTotalSamplesProcessed() int64 {
 	return sum(s.allSeries.samplesProcessedPerStep)
 }
 
+// HalveCounts divides all sample counters in this instance by 2, rounding down.
+//
+// This is used to correct for double-counting when both the sum and count legs
+// of a sharded avg() expression process the same underlying data.
+func (s *OperatorEvaluationStats) HalveCounts() {
+	s.allSeries.HalveCounts()
+
+	for _, subset := range s.subsets {
+		subset.HalveCounts()
+	}
+}
+
 // FinalizeAndComputePrometheusStats computes an equivalent QuerySamples instance as expected
 // by Prometheus' Query.Stats() method.
 //
@@ -565,6 +577,20 @@ func (s *subsetStats) CopySingleStepFrom(source *subsetStats, stepIdx int64) {
 	s.samplesProcessedPerStep[0] = source.samplesProcessedPerStep[stepIdx]
 	s.samplesReadIfSubsequentStep[0] = source.samplesReadIfSubsequentStep[stepIdx]
 	s.samplesReadIfFirstStep[0] = source.samplesReadIfFirstStep[stepIdx]
+}
+
+func (s *subsetStats) HalveCounts() {
+	for i := range s.samplesProcessedPerStep {
+		s.samplesProcessedPerStep[i] /= 2
+	}
+
+	for i := range s.samplesReadIfSubsequentStep {
+		s.samplesReadIfSubsequentStep[i] /= 2
+	}
+
+	for i := range s.samplesReadIfFirstStep {
+		s.samplesReadIfFirstStep[i] /= 2
+	}
 }
 
 func (s *subsetStats) Encode() EncodedSubsetStats {

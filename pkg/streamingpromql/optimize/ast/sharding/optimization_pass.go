@@ -93,6 +93,13 @@ func (c *concatSquasher) Squash(exprs ...astmapper.EmbeddedQuery) (parser.Expr, 
 	}, nil
 }
 
+func (c *concatSquasher) WrapAvgResult(expr parser.Expr) (parser.Expr, error) {
+	return &parser.Call{
+		Func: AvgFunction,
+		Args: []parser.Expr{expr},
+	}, nil
+}
+
 func containsSpunOffSubquery(expr parser.Expr) bool {
 	return astmapper.AnyNode(expr, func(node parser.Node) bool {
 		ms, isMatrixSelector := node.(*parser.MatrixSelector)
