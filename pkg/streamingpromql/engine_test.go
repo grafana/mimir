@@ -1493,6 +1493,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 	rangeQueryStatsMemoryConsumption := 3 * (8 * types.Int64Size) // Three sample counter slices (one for samples processed, one for samples read if first step, one for samples read if subsequent step), each with capacity 8 (5 steps, rounded up to nearest power of two)
 	instantQueryStatsMemoryConsumption := 3 * types.Int64Size     // Three sample counter slices (same as above), each with capacity 1
+	rangeQueryFinalStatsMemoryConsumption := 8 * types.Int64Size  // One more sample counter slice for the finalizedSamplesRead slice produced by OperatorEvaluationStats.FinalizeAndComputePrometheusStats.
 
 	testCases := map[string]struct {
 		expr                     string
@@ -1508,7 +1509,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has five samples, which will be rounded up to eight (the nearest power of two) by the bucketed pool,
 			// and we have five series and each of the series has labels of the same size.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption,
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption + rangeQueryFinalStatsMemoryConsumption,
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
@@ -1523,8 +1524,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption,
-			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption,
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption + rangeQueryFinalStatsMemoryConsumption,
+			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) + rangeQueryStatsMemoryConsumption + rangeQueryFinalStatsMemoryConsumption,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
@@ -1782,7 +1783,7 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts.CommonOpts.Reg = reg
 
 	limits := NewStaticQueryLimitsProvider()
-	limits.MaxEstimatedMemoryConsumptionPerQuery = 800
+	limits.MaxEstimatedMemoryConsumptionPerQuery = 900
 	opts.Limits = limits
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
