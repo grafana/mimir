@@ -772,6 +772,20 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			return inner, nil
 		}
 
+		if resultType, err := inner.ResultType(); err != nil {
+			return nil, err
+		} else if resultType != parser.ValueTypeVector && resultType != parser.ValueTypeScalar {
+			// If the query was wrapped in a step-invariant expression and this branch is reached, the inner expression must be a
+			// subquery or range vector selector that returns a range vector at a fixed evaluation timestamp. For example:
+			// metric[3m:1m] @ 100, metric[3m] @ 100, or the range vector selector in
+			// quantile_over_time(scalar(arg), metric[3m] @ 100).
+			//
+			// Both the range vector selector and subquery operators handle this scenario themselves, and we don't need to
+			// wrap them in a step-invariant expression operator, so we don't bother wrapping them in a step-invariant node
+			// either.
+			return inner, nil
+		}
+
 		p.planningMetricsTracker.StepInvariantTracker.OnStepInvariantExpressionAdded(timeRange.StepCount)
 
 		return &core.StepInvariantExpression{
