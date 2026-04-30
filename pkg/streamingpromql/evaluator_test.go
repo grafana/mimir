@@ -5,6 +5,9 @@ package streamingpromql
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -116,7 +120,14 @@ func TestEvaluator(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	observer := &loggingEvaluationObserver{}
+	observer := &loggingEvaluationObserver{
+		nodeNames: map[planning.Node]string{
+			scalarNode:        "scalarNode",
+			stringNode:        "stringNode",
+			instantVectorNode: "instantVectorNode",
+			rangeVectorNode:   "rangeVectorNode",
+		},
+	}
 	require.NoError(t, evaluator.Evaluate(ctx, observer))
 
 	expectedObserverEvents := []evaluationObserverEvent{
@@ -134,14 +145,25 @@ func TestEvaluator(t *testing.T) {
 		{node: rangeVectorNode, event: "RangeVectorStepSamplesEvaluated", details: `series: 1, floats: [23 @[100000] 25 @[110000] 27 @[120000]], histograms: []`},
 		{node: instantVectorNode, event: "InstantVectorSeriesDataEvaluated", details: `series: 2, floats: [1 @[0] 19 @[60000] 37 @[120000]], histograms: []`},
 		{node: instantVectorNode, event: "InstantVectorSeriesDataEvaluated", details: `series: 3, floats: [1 @[0] 25 @[60000] 49 @[120000]], histograms: []`},
-		{event: "EvaluationCompleted", details: `annotations: <nil>, stats: {26}`},
+		{
+			event: "EvaluationCompleted",
+			details: testutils.TrimIndent(`
+				annotations: <nil>
+				stats:
+				  instantVectorNode: processed: [4 4 4], read if subsequent step: [4 4 4], read if first step: [4 4 4]
+				  rangeVectorNode: processed: [2 6 6], read if subsequent step: [2 6 6], read if first step: [2 6 6]
+				  scalarNode: processed: [0 0 0], read if subsequent step: [0 0 0], read if first step: [0 0 0]
+				  stringNode: processed: [0 0 0], read if subsequent step: [0 0 0], read if first step: [0 0 0]
+			`),
+		},
 	}
 
 	require.Equal(t, expectedObserverEvents, observer.events)
 }
 
 type loggingEvaluationObserver struct {
-	events []evaluationObserverEvent
+	events    []evaluationObserverEvent
+	nodeNames map[planning.Node]string
 }
 
 type evaluationObserverEvent struct {
@@ -186,6 +208,27 @@ func (l *loggingEvaluationObserver) StringEvaluated(ctx context.Context, evaluat
 }
 
 func (l *loggingEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
-	l.events = append(l.events, evaluationObserverEvent{event: "EvaluationCompleted", details: fmt.Sprintf("annotations: %v, stats: %v", annotations, stats)})
+	formattedStats := make(map[string]string, len(stats))
+
+	for node, nodeStats := range stats {
+		name, ok := l.nodeNames[node]
+		if !ok {
+			return fmt.Errorf("unknown %[1]T node passed to loggingEvaluationObserver.EvaluationCompleted: %[1]v", node)
+		}
+
+		encoded := nodeStats.Encode().AllSeries
+		formattedStats[name] = fmt.Sprintf("processed: %v, read if subsequent step: %v, read if first step: %v", encoded.SamplesProcessedPerStep, encoded.SamplesReadIfSubsequentStep, encoded.SamplesReadIfFirstStep)
+	}
+
+	details := &strings.Builder{}
+	fmt.Fprintf(details, "annotations: %v\n", annotations)
+	details.WriteString("stats:\n")
+
+	for _, name := range slices.Sorted(maps.Keys(formattedStats)) {
+		formatted := formattedStats[name]
+		fmt.Fprintf(details, "  %v: %v\n", name, formatted)
+	}
+
+	l.events = append(l.events, evaluationObserverEvent{event: "EvaluationCompleted", details: strings.TrimSpace(details.String())})
 	return nil
 }
