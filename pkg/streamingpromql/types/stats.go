@@ -420,11 +420,14 @@ func newSubsetStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.
 
 	newSamplesRead, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
+		Int64SlicePool.Put(&samplesProcessed, memoryConsumptionTracker)
 		return nil, err
 	}
 
 	samplesReadIfFirstStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
+		Int64SlicePool.Put(&samplesProcessed, memoryConsumptionTracker)
+		Int64SlicePool.Put(&newSamplesRead, memoryConsumptionTracker)
 		return nil, err
 	}
 
