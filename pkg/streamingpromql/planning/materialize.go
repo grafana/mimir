@@ -88,6 +88,20 @@ func (m *Materializer) ConvertNodeToInstantVectorOperator(node Node, timeRange t
 	return ivo, nil
 }
 
+func (m *Materializer) ConvertNodeToRangeVectorOperator(node Node, timeRange types.QueryTimeRange) (types.RangeVectorOperator, error) {
+	o, err := m.ConvertNodeToOperator(node, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	rvo, ok := o.(types.RangeVectorOperator)
+	if !ok {
+		return nil, fmt.Errorf("expected RangeVectorOperator, got %T", o)
+	}
+
+	return rvo, nil
+}
+
 func (m *Materializer) ConvertNodeToScalarOperator(node Node, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
 	o, err := m.ConvertNodeToOperator(node, timeRange)
 	if err != nil {

@@ -90,6 +90,24 @@ func (s *StepInvariantExpression) ChildrenLabels() []string {
 }
 
 func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	resultType, err := s.Inner.ResultType()
+	if err != nil {
+		return nil, err
+	}
+
+	if resultType == parser.ValueTypeMatrix {
+		// Earlier versions incorrectly wrapped range vector expressions in step-invariant expression nodes.
+		// This has since been fixed, but new queriers might still get incorrect plans from old query-frontends.
+		// If this happens, materialize the inner node as if the step-invariant node does not exist: both the range
+		// vector selector operator and subquery operator behave correctly in this case.
+		op, err := materializer.ConvertNodeToRangeVectorOperator(s.Inner, timeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		return planning.NewSingleUseOperatorFactory(op), nil
+	}
+
 	adjustedTimeRange := s.ChildrenTimeRange(timeRange)
 
 	op, err := materializer.ConvertNodeToOperator(s.Inner, adjustedTimeRange)
