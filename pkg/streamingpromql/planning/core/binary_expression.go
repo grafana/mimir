@@ -19,7 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different included labels")
+var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different hints")
 
 type BinaryExpression struct {
 	*BinaryExpressionDetails
@@ -79,12 +79,24 @@ func (b *BinaryExpression) Describe() string {
 
 	if b.Hints != nil {
 		builder.WriteString(", hints (")
-		for i, l := range b.Hints.Include {
-			if i > 0 {
-				builder.WriteString(", ")
-			}
+		if b.Hints.WithoutMatching {
+			builder.WriteString("without (")
+			for i, l := range b.Hints.Exclude {
+				if i > 0 {
+					builder.WriteString(", ")
+				}
 
-			builder.WriteString(l)
+				builder.WriteString(l)
+			}
+			builder.WriteByte(')')
+		} else {
+			for i, l := range b.Hints.Include {
+				if i > 0 {
+					builder.WriteString(", ")
+				}
+
+				builder.WriteString(l)
+			}
 		}
 
 		builder.WriteByte(')')
@@ -158,21 +170,37 @@ func (b *BinaryExpression) MergeHints(other planning.Node) error {
 		return fmt.Errorf("cannot merge hints from %T into %T", other, b)
 	}
 
-	var thisLabels []string
-	var otherLabels []string
+	thisWithout := b.Hints != nil && b.Hints.WithoutMatching
+	otherWithout := otherBinaryExpression.Hints != nil && otherBinaryExpression.Hints.WithoutMatching
 
+	if thisWithout != otherWithout {
+		return errCannotMergeBinaryExpressionHints
+	}
+
+	if thisWithout {
+		var thisExclude, otherExclude []string
+		if b.Hints != nil {
+			thisExclude = b.Hints.Exclude
+		}
+		if otherBinaryExpression.Hints != nil {
+			otherExclude = otherBinaryExpression.Hints.Exclude
+		}
+		if slices.Equal(thisExclude, otherExclude) {
+			return nil
+		}
+		return errCannotMergeBinaryExpressionHints
+	}
+
+	var thisInclude, otherInclude []string
 	if b.Hints != nil {
-		thisLabels = b.Hints.Include
+		thisInclude = b.Hints.Include
 	}
-
 	if otherBinaryExpression.Hints != nil {
-		otherLabels = otherBinaryExpression.Hints.Include
+		otherInclude = otherBinaryExpression.Hints.Include
 	}
-
-	if slices.Equal(thisLabels, otherLabels) {
+	if slices.Equal(thisInclude, otherInclude) {
 		return nil
 	}
-
 	return errCannotMergeBinaryExpressionHints
 }
 

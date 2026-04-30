@@ -22,6 +22,19 @@ message PositionRange {
 
 message BinaryExpressionHints {
   repeated string include = 1;
+  // exclude lists label names that should not be used as extra selectors on
+  // the RHS of a binary operation. Only meaningful when without_matching is
+  // true. See without_matching for details.
+  repeated string exclude = 2;
+  // without_matching indicates that this binary operation uses "without" or
+  // default (no on/without) label matching semantics, and that the RHS should
+  // be filtered using all LHS labels except those in exclude. This flag is
+  // required for backwards compatibility: a new querier receiving a plan from
+  // an old query-frontend (where hints is nil) must not interpret the absence
+  // of exclude labels as "use all labels for extra matchers". Similarly, we
+  // cannot reuse the include slice for excluded labels because old queriers
+  // would misinterpret a list of excluded labels as a list of included labels.
+  bool without_matching = 3;
 }
 
 message AggregateExpressionDetails {

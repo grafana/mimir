@@ -4,6 +4,7 @@ package plan
 
 import (
 	"context"
+	"slices"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -60,28 +61,63 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	addedHint := false
 
 	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, _ []planning.Node) error {
-		if e, ok := node.(*core.BinaryExpression); ok {
-			// Only find hints for this binary expression if it is an operation that is compatible
-			// with adding extra selectors to the right side of the expression. For example, "logical
-			// or" includes series from the right side only when they _don't_ have matching label sets
-			// on the left side.
-			if _, disallowed := disallowedOperations[e.Op]; !disallowed {
-				// If this is a binary expression, try to find appropriate labels to use as hints
-				// based on joins or aggregations being performed by child nodes. We start with an
-				// empty "created" set of labels that we _cannot_ use as hints. This is populated
-				// and checked when generating hints.
-				if include := n.includeFromNode(ctx, e, nil); len(include) > 0 {
-					if e.Hints == nil {
-						e.Hints = &core.BinaryExpressionHints{}
-					}
+		e, ok := node.(*core.BinaryExpression)
+		if !ok {
+			return nil
+		}
 
-					e.Hints.Include = include
-					sl := spanlogger.FromContext(ctx, n.logger)
-					sl.DebugLog("msg", "setting query hint on binary expression", "labels", include)
-					addedHint = true
+		// Only set hints for operations that are compatible with adding extra selectors to
+		// the right side of the expression. For example, "logical or" includes series from
+		// the right side only when they _don't_ have matching label sets on the left side.
+		if _, disallowed := disallowedOperations[e.Op]; disallowed {
+			return nil
+		}
+
+		if e.VectorMatching == nil {
+			return nil
+		}
+
+		// Labels created by label_replace or label_join anywhere within this binary
+		// expression's subtree. We must not generate matchers for these labels because they
+		// don't exist on the raw series fetched from storage.
+		created := createdLabels(e)
+
+		if e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
+			// "on (labels)" matching: use only the matching labels as Include hints, filtered
+			// by any labels that are synthesised by label_replace/label_join.
+			include := filterLabels(e.VectorMatching.MatchingLabels, created)
+			if len(include) > 0 {
+				if e.Hints == nil {
+					e.Hints = &core.BinaryExpressionHints{}
+				}
+				e.Hints.Include = include
+				sl := spanlogger.FromContext(ctx, n.logger)
+				sl.DebugLog("msg", "setting on-matching query hint on binary expression", "labels", include)
+				addedHint = true
+			}
+		} else if !e.VectorMatching.On {
+			// "without (labels)" or default (no on/without) matching: tell the operator to
+			// build RHS matchers from all LHS labels at query time, excluding both the
+			// without-labels and any synthesised labels. The WithoutMatching flag is needed
+			// for backwards compatibility so that a new querier receiving an old plan (where
+			// Hints is nil) does not mistakenly apply without-style filtering.
+			exclude := slices.Clone(e.VectorMatching.MatchingLabels)
+			for lbl := range created {
+				if !slices.Contains(exclude, lbl) {
+					exclude = append(exclude, lbl)
 				}
 			}
+			slices.Sort(exclude)
+			if e.Hints == nil {
+				e.Hints = &core.BinaryExpressionHints{}
+			}
+			e.Hints.Exclude = exclude
+			e.Hints.WithoutMatching = true
+			sl := spanlogger.FromContext(ctx, n.logger)
+			sl.DebugLog("msg", "setting without-matching query hint on binary expression", "excluded_labels", exclude)
+			addedHint = true
 		}
+
 		return nil
 	}))
 
@@ -90,51 +126,6 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	}
 
 	return plan, nil
-}
-
-func (n *NarrowSelectorsOptimizationPass) includeFromNode(ctx context.Context, node planning.Node, created map[string]struct{}) []string {
-	switch e := node.(type) {
-	case *core.BinaryExpression:
-		// The current node is a binary expression: we only want to exclude created labels
-		// (via label_replace or label_join) from hints if they are created by the left or
-		// right side of the current binary expression. Labels created by a function call in
-		// a parent expression shouldn't affect hints applied to this expression.
-		created = createdLabels(e)
-		if e.VectorMatching != nil && e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
-			if filtered := filterLabels(e.VectorMatching.MatchingLabels, created); len(filtered) > 0 {
-				return filtered
-			}
-
-			return nil
-		}
-
-		// If we aren't joining sides of this binary expression by particular labels, look for an
-		// aggregation on the left side of this binary expression to see if there's a label we could
-		// use as a hint. We pass along any labels created from label_replace or label_join on the
-		// left or right side of this binary expression when trying to find labels for hints to make
-		// sure we don't use them.
-		return n.includeFromNode(ctx, e.LHS, created)
-	case *core.AggregateExpression:
-		if !e.Without && len(e.Grouping) > 0 {
-			// Make sure to remove labels from potential hints that have been created by a function
-			// call (via label_replace or label_join) in a parent expression.
-			if filtered := filterLabels(e.Grouping, created); len(filtered) > 0 {
-				return filtered
-			}
-
-			return nil
-		}
-	}
-
-	// If the current node isn't a binary expression or aggregation, keep looking at the
-	// children to see if there are any that we can use to find a suitable query hint.
-	for child := range planning.ChildrenIter(node) {
-		if i := n.includeFromNode(ctx, child, created); len(i) > 0 {
-			return i
-		}
-	}
-
-	return nil
 }
 
 // filterLabels returns a new slice of labels that does not include any label in the created set.

@@ -25,7 +25,9 @@ func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
 		return nil
 	}
 	return &binops.Hints{
-		Include: slices.Clone(h.Include),
+		Include:         slices.Clone(h.Include),
+		Exclude:         slices.Clone(h.Exclude),
+		WithoutMatching: h.WithoutMatching,
 	}
 }
 
