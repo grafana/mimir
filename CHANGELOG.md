@@ -345,7 +345,7 @@
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743 #14933 #15051
 * [ENHANCEMENT] Alerts: Suppress `MimirRingMembersMismatch` alert during ingester rollouts. The alert now uses an `unless` clause to avoid false positives when ingester statefulsets are being updated. #14895
 * [ENHANCEMENT] Recording rules: add a low-cardinality recorded version of usage_tracker_active_series. #14901
-* [ENHANCEMENT] Alerts: Fix `MimirSchedulerQueriesStuck` false positives by only looking for cases where the number of enqueued queries doesn't decrease. #14943
+* [ENHANCEMENT] Alerts: Fix `MimirSchedulerQueriesStuck` false positives by only looking for cases where the number of enqueued queries doesn't decrease. #14943 #15193
 * [ENHANCEMENT] Dashboards: Add ephemeral storage panels to "Resources" dashboards. #14999
 * [ENHANCEMENT] Dashboards: Add disk utilization panels to experimental Block-builder dashboard. #15029
 * [BUGFIX] Dashboards: Fix compactor dashboard to exclude instances without the last successful run metric in the "Last successful run per-compactor replica" table. #14784

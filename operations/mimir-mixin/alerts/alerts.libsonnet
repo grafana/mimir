@@ -224,22 +224,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
             # There are some queries in the queue.
             (sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length) > 0)
 
-            # And the queue size doesn't decrease. We compute the delta with an higher frequency (so a lower step
-            # in the subquery) to increase chances of detecting even short-term downward variations.
+            # And the queue size doesn't decrease.
+            # We use a hardcoded 5s subquery step rather than a dynamic step interval. Prometheus aligns subquery
+            # evaluation times to the Unix epoch modulo the step, so a larger step can miss brief decreases in
+            # queue length that fall between evaluation points, causing delta() to appear non-negative even when
+            # the queue is slowly draining. With 5s we get dense sampling to detect any short-term downward trend.
             and (
               min_over_time(
                 delta(
                   sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length)
-                  [%(rate_interval)s:%(step_interval)s]
+                  [%(rate_interval)s:5s]
                 )
-                [%(rate_interval)s:%(step_interval)s]
+                [%(rate_interval)s:5s]
               ) >= 0
             )
           ||| % {
             group_by: $._config.alert_aggregation_labels,
             job_label: $._config.per_job_label,
             rate_interval: $.rateInterval('1m'),
-            step_interval: $.stepInterval('15s'),
           },
           'for': '7m',  // We don't want to block for longer.
           labels: {
