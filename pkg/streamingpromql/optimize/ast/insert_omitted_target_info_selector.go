@@ -5,12 +5,16 @@ package ast
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+)
 
-	"github.com/grafana/mimir/pkg/util/promqlext"
+const (
+	targetInfoName = "target_info"
 )
 
 type InsertOmittedTargetInfoSelector struct{}
@@ -36,28 +40,33 @@ func (h *InsertOmittedTargetInfoSelector) Visit(node parser.Node, _ []parser.Nod
 	}
 	switch length := len(expr.Args); length {
 	case 1:
-		infoExpr, err := promqlext.NewPromQLParser().ParseExpr("target_info")
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse target_info expression: %v", err)
-		}
-		expr.Args = append(expr.Args, infoExpr)
+		expr.Args = append(expr.Args, defaultTargetInfoSelector())
 	case 2:
 		dataLabelMatchersExpr, ok := expr.Args[1].(*parser.VectorSelector)
 		if !ok {
 			return nil, fmt.Errorf("expected second argument to 'info' function to be a VectorSelector, got %T", expr.Args[1])
 		}
-		hasMetricNameMatcher := false
-		for _, m := range dataLabelMatchersExpr.LabelMatchers {
-			if m.Name == model.MetricNameLabel {
-				hasMetricNameMatcher = true
-				break
-			}
-		}
-		if !hasMetricNameMatcher {
-			dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "target_info"))
+
+		if hasMetricNameMatcher := slices.ContainsFunc(dataLabelMatchersExpr.LabelMatchers, func(matcher *labels.Matcher) bool {
+			return matcher.Name == model.MetricNameLabel
+		}); !hasMetricNameMatcher {
+			dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfoName))
 		}
 	default:
 		return nil, fmt.Errorf("expected 'info' function to have 1 or 2 arguments, got %d", length)
 	}
 	return h, nil
+}
+
+func defaultTargetInfoSelector() *parser.VectorSelector {
+	return &parser.VectorSelector{
+		Name: targetInfoName,
+		PosRange: posrange.PositionRange{
+			Start: 0,
+			End:   posrange.Pos(len(targetInfoName)),
+		},
+		LabelMatchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfoName),
+		},
+	}
 }

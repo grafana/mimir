@@ -237,7 +237,16 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			queryStart:      time.UnixMilli(selectorThresholdMs),
 			expectUnchanged: true,
 		},
-		"conflicting equals matchers in info function: should not optimize": {
+		"conflicting equals matchers in first info() argument: should optimize": {
+			expr:       `info(metric{pod="foo", pod="bar"}, {__name__="other_info"})`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- FunctionCall: info(...)
+					- param 0: NoOp
+					- param 1: DataLabelSelector: {__name__="other_info"}, return sample timestamps preserving histograms
+			`,
+		},
+		"conflicting equals matchers in second info() argument: should not optimize": {
 			expr:            `info(metric, {env="prod", env="dev"})`,
 			queryStart:      time.UnixMilli(selectorThresholdMs),
 			expectUnchanged: true,
