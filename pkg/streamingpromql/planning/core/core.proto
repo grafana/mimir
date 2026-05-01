@@ -21,20 +21,16 @@ message PositionRange {
 }
 
 message BinaryExpressionHints {
+  // include lists label names to use as extra selectors on the RHS of a binary
+  // operation. Used for "on (labels)" matching. When include is non-empty, only
+  // these labels are used to build matchers.
   repeated string include = 1;
   // exclude lists label names that should not be used as extra selectors on
-  // the RHS of a binary operation. Only meaningful when without_matching is
-  // true. See without_matching for details.
+  // the RHS of a binary operation. Used for "without" / "ignoring" / default
+  // (no on/without) matching. When include is empty and hints is non-nil,
+  // matchers are built from all LHS labels except those in exclude.
   repeated string exclude = 2;
-  // without_matching indicates that this binary operation uses "without" or
-  // default (no on/without) label matching semantics, and that the RHS should
-  // be filtered using all LHS labels except those in exclude. This flag is
-  // required for backwards compatibility: a new querier receiving a plan from
-  // an old query-frontend (where hints is nil) must not interpret the absence
-  // of exclude labels as "use all labels for extra matchers". Similarly, we
-  // cannot reuse the include slice for excluded labels because old queriers
-  // would misinterpret a list of excluded labels as a list of included labels.
-  bool without_matching = 3;
+  reserved 3;
 }
 
 message AggregateExpressionDetails {

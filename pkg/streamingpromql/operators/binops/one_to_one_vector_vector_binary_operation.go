@@ -204,9 +204,9 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		matchers = BuildMatchers(b.leftMetadata, b.hints)
 
 		sl := spanlogger.FromContext(ctx, b.logger)
-		if b.hints.WithoutMatching {
+		if b.hints.IsExcludeMatching() {
 			sl.DebugLog(
-				"msg", "binary operator passing without-derived matchers to RHS",
+				"msg", "binary operator passing exclude-derived matchers to RHS",
 				"excluded_labels", b.hints.Exclude,
 				"hint_matchers", len(matchers),
 				"ignored_matchers", len(ignored),
@@ -220,12 +220,15 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 			)
 		}
 	} else if !b.VectorMatching.On {
-		// Fallback for old query-frontend plans that don't set WithoutMatching hints.
+		// Fallback for old query-frontend plans that don't set exclude hints.
+		// During rolling upgrades an old query-frontend may send a plan without
+		// hints; the operator still produces correct results but may fetch more
+		// RHS series than necessary (performance-only regression, not correctness).
 		ignored := matchers
 		matchers = buildMatchersForWithout(b.leftMetadata, b.VectorMatching.MatchingLabels)
 		sl := spanlogger.FromContext(ctx, b.logger)
 		sl.DebugLog(
-			"msg", "binary operator passing without-derived matchers to RHS (fallback)",
+			"msg", "binary operator passing exclude-derived matchers to RHS (fallback)",
 			"excluded_labels", b.VectorMatching.MatchingLabels,
 			"hint_matchers", len(matchers),
 			"ignored_matchers", len(ignored),

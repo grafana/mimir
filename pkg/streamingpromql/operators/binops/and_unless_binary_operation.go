@@ -99,18 +99,19 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 	}
 
 	// Build RHS matchers to narrow the series fetched on the right-hand side.
-	// - When hints are set (from the optimization pass, covering on/aggregation-by cases),
-	//   build matchers from the hint's Include labels.
+	// - When hints are set with non-empty Include (on-matching), build matchers from those labels.
+	// - When hints are set with empty Include (exclude-matching), build matchers from all
+	//   LHS labels except those in Exclude.
 	// - When hints are not set but the operator uses without or default (no on/without)
-	//   matching, we can still build matchers from every non-excluded LHS label.
+	//   matching, fall back to building exclude-derived matchers from VectorMatching labels.
 	// - Otherwise (on matching without hints) we pass nil.
 	var rhsMatchers types.Matchers
 	if a.hints != nil {
 		rhsMatchers = BuildMatchers(leftMetadata, a.hints)
 		sl := spanlogger.FromContext(ctx, a.logger)
-		if a.hints.WithoutMatching {
+		if a.hints.IsExcludeMatching() {
 			sl.DebugLog(
-				"msg", "binary operator passing without-derived matchers to RHS",
+				"msg", "binary operator passing exclude-derived matchers to RHS",
 				"excluded_labels", a.hints.Exclude,
 				"hint_matchers", len(rhsMatchers),
 			)
@@ -122,11 +123,14 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 			)
 		}
 	} else if !a.VectorMatching.On {
-		// Fallback for old query-frontend plans that don't set WithoutMatching hints.
+		// Fallback for old query-frontend plans that don't set exclude hints.
+		// During rolling upgrades an old query-frontend may send a plan without
+		// hints; the operator still produces correct results but may fetch more
+		// RHS series than necessary (performance-only regression, not correctness).
 		rhsMatchers = buildMatchersForWithout(leftMetadata, a.VectorMatching.MatchingLabels)
 		sl := spanlogger.FromContext(ctx, a.logger)
 		sl.DebugLog(
-			"msg", "binary operator passing without-derived matchers to RHS (fallback)",
+			"msg", "binary operator passing exclude-derived matchers to RHS (fallback)",
 			"excluded_labels", a.VectorMatching.MatchingLabels,
 			"hint_matchers", len(rhsMatchers),
 		)

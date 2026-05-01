@@ -879,8 +879,8 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 }
 
 func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySide(t *testing.T) {
-	// Verifies that without-style matchers are forwarded to the many side both via explicit
-	// WithoutMatching hints (set by an up-to-date query-frontend) and via the fallback
+	// Verifies that exclude-style matchers are forwarded to the many side both via explicit
+	// exclude hints (set by an up-to-date query-frontend) and via the fallback
 	// path (old query-frontend plans that predate hints).
 	testCases := map[string]struct {
 		card           parser.VectorMatchCardinality
@@ -892,10 +892,10 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 		expectedLeftMatchers  types.Matchers
 		expectedRightMatchers types.Matchers
 	}{
-		"group_left with WithoutMatching hints: left (many) side receives without-derived matchers from right (one) side": {
+		"group_left with exclude hints: left (many) side receives exclude-derived matchers from right (one) side": {
 			card:           parser.CardManyToOne,
 			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}},
-			hints:          &Hints{WithoutMatching: true, Exclude: []string{}},
+			hints:          &Hints{Exclude: []string{}},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "pod", "1"),
 				labels.FromStrings("env", "staging", "pod", "2"), // should be filtered by env hint
@@ -905,15 +905,15 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 			},
 			// one side (right) gets nil outer matchers
 			expectedRightMatchers: nil,
-			// many side (left) gets without-derived matchers built from right (one) metadata
+			// many side (left) gets exclude-derived matchers built from right (one) metadata
 			expectedLeftMatchers: types.Matchers{
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
 			},
 		},
-		"group_right with WithoutMatching hints: right (many) side receives without-derived matchers from left (one) side": {
+		"group_right with exclude hints: right (many) side receives exclude-derived matchers from left (one) side": {
 			card:           parser.CardOneToMany,
 			vectorMatching: parser.VectorMatching{Card: parser.CardOneToMany, On: false, MatchingLabels: []string{}},
-			hints:          &Hints{WithoutMatching: true, Exclude: []string{}},
+			hints:          &Hints{Exclude: []string{}},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod"),
 			},
@@ -923,15 +923,15 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 			},
 			// one side (left) gets nil outer matchers
 			expectedLeftMatchers: nil,
-			// many side (right) gets without-derived matchers built from left (one) metadata
+			// many side (right) gets exclude-derived matchers built from left (one) metadata
 			expectedRightMatchers: types.Matchers{
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
 			},
 		},
-		"group_left with WithoutMatching hints and ignoring label: excluded label does not appear in matchers": {
+		"group_left with exclude hints and ignoring label: excluded label does not appear in matchers": {
 			card:           parser.CardManyToOne,
 			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"pod"}},
-			hints:          &Hints{WithoutMatching: true, Exclude: []string{"pod"}},
+			hints:          &Hints{Exclude: []string{"pod"}},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "pod", "1"),
 				labels.FromStrings("env", "prod", "pod", "2"),
@@ -945,13 +945,13 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
 			},
 		},
-		"group_left with WithoutMatching hints and non-empty Include: Include label from many side does not appear in without-derived matchers": {
+		"group_left with exclude hints and non-empty Include: Include label from many side does not appear in exclude-derived matchers": {
 			// region is a VectorMatching.Include label: it comes from the many (left) side, not the one (right) side.
 			// buildMatchersForWithout runs on the one-side metadata, which does not carry "region",
 			// so "region" must not appear in the generated matchers even though the many side has it.
 			card:           parser.CardManyToOne,
 			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}, Include: []string{"region"}},
-			hints:          &Hints{WithoutMatching: true, Exclude: []string{}},
+			hints:          &Hints{Exclude: []string{}},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "region", "us"),
 				labels.FromStrings("env", "prod", "region", "eu"),

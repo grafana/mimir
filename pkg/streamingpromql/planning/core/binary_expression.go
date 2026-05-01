@@ -79,8 +79,8 @@ func (b *BinaryExpression) Describe() string {
 
 	if b.Hints != nil {
 		builder.WriteString(", hints (")
-		if b.Hints.WithoutMatching {
-			builder.WriteString("without (")
+		if b.Hints.IsExcludeMatching() {
+			builder.WriteString("exclude (")
 			for i, l := range b.Hints.Exclude {
 				if i > 0 {
 					builder.WriteString(", ")
@@ -170,16 +170,16 @@ func (b *BinaryExpression) MergeHints(other planning.Node) error {
 		return fmt.Errorf("cannot merge hints from %T into %T", other, b)
 	}
 
-	thisWithout := b.Hints != nil && b.Hints.WithoutMatching
-	otherWithout := otherBinaryExpression.Hints != nil && otherBinaryExpression.Hints.WithoutMatching
+	thisExclude := b.Hints.IsExcludeMatching()
+	otherExclude := otherBinaryExpression.Hints.IsExcludeMatching()
 
-	if thisWithout != otherWithout {
+	if thisExclude != otherExclude {
 		return errCannotMergeBinaryExpressionHints
 	}
 
-	if thisWithout {
-		// When thisWithout is true, b.Hints != nil and otherBinaryExpression.Hints != nil
-		// are guaranteed by the expressions above that set thisWithout/otherWithout.
+	if thisExclude {
+		// When thisExclude is true, b.Hints != nil and otherBinaryExpression.Hints != nil
+		// are guaranteed by the expressions above that set thisExclude/otherExclude.
 		if slices.Equal(b.Hints.Exclude, otherBinaryExpression.Hints.Exclude) {
 			return nil
 		}

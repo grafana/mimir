@@ -38,7 +38,7 @@ func NewNarrowSelectorsOptimizationPass(reg prometheus.Registerer, logger log.Lo
 		}),
 		modified: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_narrow_selectors_modified_total",
-			Help: "Total number of queries where the optimization pass has added hints to narrow selectors for. Incremented whenever any binary expression in the query receives either on-matching include hints or without-matching exclude hints.",
+			Help: "Total number of queries where the optimization pass has added hints to narrow selectors for. Incremented whenever any binary expression in the query receives either on-matching include hints or exclude hints.",
 		}),
 		logger: logger,
 	}
@@ -96,11 +96,10 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 				addedHint = true
 			}
 		} else if !e.VectorMatching.On {
-			// "without (labels)" or default (no on/without) matching: tell the operator to
-			// build RHS matchers from all LHS labels at query time, excluding both the
-			// without-labels and any synthesised labels. The WithoutMatching flag is needed
-			// for backwards compatibility so that a new querier receiving an old plan (where
-			// Hints is nil) does not mistakenly apply without-style filtering.
+			// "without (labels)" / "ignoring (labels)" / default (no on/without) matching:
+			// tell the operator to build RHS matchers from all LHS labels at query time,
+			// excluding both the without/ignoring labels and any synthesised labels.
+			// Setting Exclude with an empty Include signals exclude-matching mode.
 			exclude := slices.Clone(e.VectorMatching.MatchingLabels)
 			for lbl := range created {
 				if !slices.Contains(exclude, lbl) {
@@ -112,9 +111,8 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 				e.Hints = &core.BinaryExpressionHints{}
 			}
 			e.Hints.Exclude = exclude
-			e.Hints.WithoutMatching = true
 			sl := spanlogger.FromContext(ctx, n.logger)
-			sl.DebugLog("msg", "setting without-matching query hint on binary expression", "excluded_labels", exclude)
+			sl.DebugLog("msg", "setting exclude-matching query hint on binary expression", "excluded_labels", exclude)
 			addedHint = true
 		}
 

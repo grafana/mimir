@@ -20,14 +20,28 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+// IsExcludeMatching reports whether these hints use exclude-matching mode
+// (without/ignoring/default matching semantics). Exclude-matching means matchers
+// are built from all LHS labels except those in Exclude.
+//
+// The convention is:
+//   - nil hints → no hints at all (no optimization applied).
+//   - Non-nil hints with non-empty Include → include-matching (on-matching).
+//   - Non-nil hints with empty Include → exclude-matching (without/ignoring/default).
+//
+// This method centralises the check so callers don't rely on the implicit
+// "len(Include) == 0 on a non-nil pointer" convention directly.
+func (h *BinaryExpressionHints) IsExcludeMatching() bool {
+	return h != nil && len(h.Include) == 0
+}
+
 func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
 	if h == nil {
 		return nil
 	}
 	return &binops.Hints{
-		Include:         slices.Clone(h.Include),
-		Exclude:         slices.Clone(h.Exclude),
-		WithoutMatching: h.WithoutMatching,
+		Include: slices.Clone(h.Include),
+		Exclude: slices.Clone(h.Exclude),
 	}
 }
 

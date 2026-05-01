@@ -24,7 +24,7 @@ const expectedMetricsTemplate = `
 	# HELP cortex_mimir_query_engine_narrow_selectors_attempted_total Total number of queries that the optimization pass has attempted to add hints to narrow selectors for.
     # TYPE cortex_mimir_query_engine_narrow_selectors_attempted_total counter
     cortex_mimir_query_engine_narrow_selectors_attempted_total %d
-    # HELP cortex_mimir_query_engine_narrow_selectors_modified_total Total number of queries where the optimization pass has added hints to narrow selectors for. Incremented whenever any binary expression in the query receives either on-matching include hints or without-matching exclude hints.
+    # HELP cortex_mimir_query_engine_narrow_selectors_modified_total Total number of queries where the optimization pass has added hints to narrow selectors for. Incremented whenever any binary expression in the query receives either on-matching include hints or exclude hints.
     # TYPE cortex_mimir_query_engine_narrow_selectors_modified_total counter
     cortex_mimir_query_engine_narrow_selectors_modified_total %d
 `
@@ -47,7 +47,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression raw vector selectors": {
 			expr: `some_metric + some_other_metric`,
 			expectedPlan: `
-				- BinaryExpression: LHS + RHS, hints (without ())
+				- BinaryExpression: LHS + RHS, hints (exclude ())
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
 			`,
@@ -67,7 +67,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"nested binary expression on raw vector selectors": {
 			expr: `some_metric + (some_other_metric / on (cluster) some_third_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS + RHS, hints (without ())
+				- BinaryExpression: LHS + RHS, hints (exclude ())
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: BinaryExpression: LHS / on (cluster) RHS, hints (cluster)
 						- LHS: VectorSelector: {__name__="some_other_metric"}
@@ -79,7 +79,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression aggregation LHS raw vector selector RHS": {
 			expr: `sum by (region) (some_metric) / some_other_metric`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints (without ())
+				- BinaryExpression: LHS / RHS, hints (exclude ())
 					- LHS: AggregateExpression: sum by (region)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
@@ -90,7 +90,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression aggregation LHS aggregation RHS": {
 			expr: `sum by (region) (some_metric) / sum(some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints (without ())
+				- BinaryExpression: LHS / RHS, hints (exclude ())
 					- LHS: AggregateExpression: sum by (region)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum
@@ -102,7 +102,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression aggregation LHS aggregation RHS aggregation": {
 			expr: `sum by (region) (some_metric) / sum by (region) (some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints (without ())
+				- BinaryExpression: LHS / RHS, hints (exclude ())
 					- LHS: AggregateExpression: sum by (region)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum by (region)
@@ -114,7 +114,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression multiple aggregation LHS aggregation RHS": {
 			expr: `sum by (region, env) (some_metric) / sum(some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints (without ())
+				- BinaryExpression: LHS / RHS, hints (exclude ())
 					- LHS: AggregateExpression: sum by (region, env)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum
@@ -126,7 +126,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression multiple aggregation LHS aggregation RHS aggregation": {
 			expr: `sum by (region, env) (some_metric) / sum by (region, env) (some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints (without ())
+				- BinaryExpression: LHS / RHS, hints (exclude ())
 					- LHS: AggregateExpression: sum by (region, env)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum by (region, env)
@@ -138,7 +138,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression multiple aggregation LHS aggregation RHS aggregation different labels": {
 			expr: `sum by (region, env) (some_metric) / sum by (region, cluster) (some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints (without ())
+				- BinaryExpression: LHS / RHS, hints (exclude ())
 					- LHS: AggregateExpression: sum by (region, env)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum by (region, cluster)
@@ -162,10 +162,10 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression aggregation LHS aggregation and nested binary expression RHS": {
 			expr: `sum by (region) (some_metric) / (sum(some_other_metric) + sum(some_third_metric))`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints (without ())
+				- BinaryExpression: LHS / RHS, hints (exclude ())
 					- LHS: AggregateExpression: sum by (region)
 						- VectorSelector: {__name__="some_metric"}
-					- RHS: BinaryExpression: LHS + RHS, hints (without ())
+					- RHS: BinaryExpression: LHS + RHS, hints (exclude ())
 						- LHS: AggregateExpression: sum
 							- VectorSelector: {__name__="some_other_metric"}
 						- RHS: AggregateExpression: sum
@@ -177,10 +177,10 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression aggregation LHS aggregation and nested binary expression RHS aggregation": {
 			expr: `sum by (region) (some_metric) / (sum by (cluster) (some_other_metric) + sum(some_third_metric))`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints (without ())
+				- BinaryExpression: LHS / RHS, hints (exclude ())
 					- LHS: AggregateExpression: sum by (region)
 						- VectorSelector: {__name__="some_metric"}
-					- RHS: BinaryExpression: LHS + RHS, hints (without ())
+					- RHS: BinaryExpression: LHS + RHS, hints (exclude ())
 						- LHS: AggregateExpression: sum by (cluster)
 							- VectorSelector: {__name__="some_other_metric"}
 						- RHS: AggregateExpression: sum
@@ -192,7 +192,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression LHS aggregation RHS aggregation": {
 			expr: `sum(some_metric) / sum by (cluster) (some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints (without ())
+				- BinaryExpression: LHS / RHS, hints (exclude ())
 					- LHS: AggregateExpression: sum
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum by (cluster)
@@ -256,7 +256,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			// Exclude to prevent incorrect matchers from being pushed to the RHS selector.
 			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_replace(not_ready, "statefulset", "$1", "job", ".+/(.+)"))`,
 			expectedPlan: `
-				- BinaryExpression: LHS - RHS, hints (without (statefulset))
+				- BinaryExpression: LHS - RHS, hints (exclude (statefulset))
 					- LHS: AggregateExpression: sum by (statefulset)
 						- VectorSelector: {__name__="kube_statefulset_replicas"}
 					- RHS: AggregateExpression: sum by (statefulset)
@@ -276,7 +276,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			// Exclude to prevent incorrect matchers from being pushed to the RHS selector.
 			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_join(not_ready, "statefulset", "job", "workload"))`,
 			expectedPlan: `
-				- BinaryExpression: LHS - RHS, hints (without (statefulset))
+				- BinaryExpression: LHS - RHS, hints (exclude (statefulset))
 					- LHS: AggregateExpression: sum by (statefulset)
 						- VectorSelector: {__name__="kube_statefulset_replicas"}
 					- RHS: AggregateExpression: sum by (statefulset)
@@ -295,7 +295,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			// At query time buildMatchersForWithout uses all non-excluded LHS labels (env).
 			expr: `sum by (env, region) (first_metric) - sum by (env, region) (label_replace(second_metric, "region", "$1", "job", ".+/(.+)"))`,
 			expectedPlan: `
-				- BinaryExpression: LHS - RHS, hints (without (region))
+				- BinaryExpression: LHS - RHS, hints (exclude (region))
 					- LHS: AggregateExpression: sum by (env, region)
 						- VectorSelector: {__name__="first_metric"}
 					- RHS: AggregateExpression: sum by (env, region)
@@ -315,7 +315,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			// At query time buildMatchersForWithout uses all non-excluded LHS labels (env).
 			expr: `sum by (env, region) (first_metric) - sum by (env, region) (label_join(second_metric, "region", "job", "workload"))`,
 			expectedPlan: `
-				- BinaryExpression: LHS - RHS, hints (without (region))
+				- BinaryExpression: LHS - RHS, hints (exclude (region))
 					- LHS: AggregateExpression: sum by (env, region)
 						- VectorSelector: {__name__="first_metric"}
 					- RHS: AggregateExpression: sum by (env, region)
@@ -351,7 +351,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expr: `(sum by (env, region)(rate(first_metric[5m])) * sum(rate(second_metric[5m]))) / on (env, region) label_join(rate(third_metric[5m]), "region", "job", "workload")`,
 			expectedPlan: `
 				- BinaryExpression: LHS / on (env, region) RHS, hints (env)
-					- LHS: BinaryExpression: LHS * RHS, hints (without ())
+					- LHS: BinaryExpression: LHS * RHS, hints (exclude ())
 						- LHS: AggregateExpression: sum by (env, region)
 							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
@@ -472,7 +472,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"group_left binary expression with ignoring () (without) matching should have without hints added": {
 			expr: `many_side * ignoring () group_left () one_side`,
 			expectedPlan: `
-				- BinaryExpression: LHS * group_left () RHS, hints (without ())
+				- BinaryExpression: LHS * group_left () RHS, hints (exclude ())
 					- LHS: VectorSelector: {__name__="many_side"}
 					- RHS: VectorSelector: {__name__="one_side"}
 			`,
@@ -482,7 +482,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"group_right binary expression with ignoring () (without) matching should have without hints added": {
 			expr: `one_side * ignoring () group_right () many_side`,
 			expectedPlan: `
-				- BinaryExpression: LHS * group_right () RHS, hints (without ())
+				- BinaryExpression: LHS * group_right () RHS, hints (exclude ())
 					- LHS: VectorSelector: {__name__="one_side"}
 					- RHS: VectorSelector: {__name__="many_side"}
 			`,
@@ -492,7 +492,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"group_left binary expression with ignoring labels should exclude those labels from without hints": {
 			expr: `many_side * ignoring (region) group_left () one_side`,
 			expectedPlan: `
-				- BinaryExpression: LHS * ignoring (region) group_left () RHS, hints (without (region))
+				- BinaryExpression: LHS * ignoring (region) group_left () RHS, hints (exclude (region))
 					- LHS: VectorSelector: {__name__="many_side"}
 					- RHS: VectorSelector: {__name__="one_side"}
 			`,
@@ -531,7 +531,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression with explicit ignoring labels": {
 			expr: `some_metric + ignoring (foo) some_other_metric`,
 			expectedPlan: `
-				- BinaryExpression: LHS + ignoring (foo) RHS, hints (without (foo))
+				- BinaryExpression: LHS + ignoring (foo) RHS, hints (exclude (foo))
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
 			`,
@@ -541,7 +541,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression with explicit ignoring labels and aggregation LHS": {
 			expr: `sum by (env, region) (some_metric) + ignoring (foo) some_other_metric`,
 			expectedPlan: `
-				- BinaryExpression: LHS + ignoring (foo) RHS, hints (without (foo))
+				- BinaryExpression: LHS + ignoring (foo) RHS, hints (exclude (foo))
 					- LHS: AggregateExpression: sum by (env, region)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
@@ -556,7 +556,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 				second_metric
 			`,
 			expectedPlan: `
-				- BinaryExpression: LHS unless ignoring (env) RHS, hints (without (env))
+				- BinaryExpression: LHS unless ignoring (env) RHS, hints (exclude (env))
 					- LHS: VectorSelector: {__name__="first_metric"}
 					- RHS: VectorSelector: {__name__="second_metric"}
 			`,

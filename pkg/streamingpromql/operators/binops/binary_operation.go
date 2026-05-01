@@ -773,18 +773,23 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 }
 
 // Hints are hints that can be applied to binary operations to avoid doing unnecessary work.
+//
+// When Include is non-empty, matchers are built from those specific labels (on-matching).
+// When Include is empty, matchers are built from all LHS labels except those in Exclude
+// (exclude-matching, used for without/ignoring/default matching).
 type Hints struct {
 	Include []string
 	// Exclude lists label names that should not be used as extra selectors when
-	// WithoutMatching is true. See WithoutMatching for details.
+	// Include is empty. In this mode, BuildMatchers will generate selectors for
+	// all LHS labels not present in Exclude.
 	Exclude []string
-	// WithoutMatching indicates that the binary operation uses "without" or default
-	// (no on/without) label matching semantics. When true, BuildMatchers will generate
-	// selectors for all LHS labels not present in Exclude, using the actual series
-	// metadata rather than a fixed include list. This flag distinguishes a new plan
-	// (WithoutMatching=true) from an old plan (hints nil) so that new queriers do not
-	// incorrectly apply without-style filtering when no hints were set.
-	WithoutMatching bool
+}
+
+// IsExcludeMatching reports whether these hints use exclude-matching mode
+// (without/ignoring/default matching semantics), where matchers are built from
+// all LHS labels except those in Exclude.
+func (h *Hints) IsExcludeMatching() bool {
+	return h != nil && len(h.Include) == 0
 }
 
 const (
@@ -795,11 +800,11 @@ const (
 // based on the series returned by the other side and QueryHints as determined by the query
 // planner. If there are more than a hard-coded maximum number of values for the hinted labels
 // matchers for that label are skipped.
-// When hints.WithoutMatching is true, matchers are built from all LHS labels not present in
-// hints.Exclude (using without-matching semantics). Otherwise, matchers are built from the
+// When hints.Include is empty, matchers are built from all LHS labels not present in
+// hints.Exclude (exclude-matching semantics). Otherwise, matchers are built from the
 // labels listed in hints.Include.
 func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers {
-	if hints.WithoutMatching {
+	if hints.IsExcludeMatching() {
 		return buildMatchersForWithout(metadata, hints.Exclude)
 	}
 

@@ -84,7 +84,7 @@ func TestBuildMatchers(t *testing.T) {
 		// generateSeriesMetadata produces series with __name__, container, pod, region.
 		// __name__ is always skipped; container, pod and region each appear on all 3 series.
 		series := generateSeriesMetadata("http_requests_total", 3)
-		hints := &Hints{WithoutMatching: true}
+		hints := &Hints{}
 		expected := types.Matchers([]types.Matcher{
 			{Type: labels.MatchRegexp, Name: "container", Value: "querier|query-frontend|store-gateway"},
 			{Type: labels.MatchRegexp, Name: "pod", Value: "querier-0|query-frontend-1|store-gateway-2"},
@@ -97,7 +97,7 @@ func TestBuildMatchers(t *testing.T) {
 
 	t.Run("without matching with excluded label: excluded label does not appear in matchers", func(t *testing.T) {
 		series := generateSeriesMetadata("http_requests_total", 3)
-		hints := &Hints{WithoutMatching: true, Exclude: []string{"pod", "region"}}
+		hints := &Hints{Exclude: []string{"pod", "region"}}
 		expected := types.Matchers([]types.Matcher{
 			{Type: labels.MatchRegexp, Name: "container", Value: "querier|query-frontend|store-gateway"},
 		})
@@ -107,7 +107,7 @@ func TestBuildMatchers(t *testing.T) {
 	})
 
 	t.Run("without matching with empty series: returns nil", func(t *testing.T) {
-		hints := &Hints{WithoutMatching: true}
+		hints := &Hints{}
 		res := BuildMatchers(nil, hints)
 		require.Nil(t, res)
 	})

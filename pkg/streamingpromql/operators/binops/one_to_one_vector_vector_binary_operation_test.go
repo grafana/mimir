@@ -693,8 +693,8 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 }
 
 func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t *testing.T) {
-	// Verifies that without-style matchers are forwarded to the RHS both via explicit
-	// WithoutMatching hints (set by an up-to-date query-frontend) and via the fallback
+	// Verifies that exclude-style matchers are forwarded to the RHS both via explicit
+	// exclude hints (set by an up-to-date query-frontend) and via the fallback
 	// path (old query-frontend plans that predate hints).
 	testCases := map[string]struct {
 		vectorMatching       parser.VectorMatching
@@ -704,9 +704,9 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 		expectedRHSMatchers  types.Matchers
 		expectedOutputSeries []labels.Labels
 	}{
-		"without matching hints: RHS receives matchers for non-excluded LHS labels": {
+		"exclude hints: RHS receives matchers for non-excluded LHS labels": {
 			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo"}},
-			hints:          &Hints{WithoutMatching: true, Exclude: []string{"foo"}},
+			hints:          &Hints{Exclude: []string{"foo"}},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "foo", "bar", "region", "us-east"),
 			},

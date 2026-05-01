@@ -282,9 +282,9 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 		manySideMatchers = append(BuildMatchers(g.oneSideMetadata, g.hints), includeMatchers...)
 
 		sl := spanlogger.FromContext(ctx, g.logger)
-		if g.hints.WithoutMatching {
+		if g.hints.IsExcludeMatching() {
 			sl.DebugLog(
-				"msg", "binary operator passing without-derived matchers to many side",
+				"msg", "binary operator passing exclude-derived matchers to many side",
 				"excluded_labels", g.hints.Exclude,
 				"hint_matchers", len(manySideMatchers),
 				"ignored_matchers", len(ignored),
@@ -298,12 +298,15 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 			)
 		}
 	} else if !g.VectorMatching.On {
-		// Fallback for old query-frontend plans that don't set WithoutMatching hints.
+		// Fallback for old query-frontend plans that don't set exclude hints.
+		// During rolling upgrades an old query-frontend may send a plan without
+		// hints; the operator still produces correct results but may fetch more
+		// many-side series than necessary (performance-only regression, not correctness).
 		ignored := matchers
 		manySideMatchers = append(buildMatchersForWithout(g.oneSideMetadata, g.VectorMatching.MatchingLabels), includeMatchers...)
 		sl := spanlogger.FromContext(ctx, g.logger)
 		sl.DebugLog(
-			"msg", "binary operator passing without-derived matchers to many side (fallback)",
+			"msg", "binary operator passing exclude-derived matchers to many side (fallback)",
 			"excluded_labels", g.VectorMatching.MatchingLabels,
 			"hint_matchers", len(manySideMatchers),
 			"ignored_matchers", len(ignored),

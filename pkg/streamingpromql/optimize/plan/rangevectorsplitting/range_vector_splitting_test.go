@@ -372,7 +372,7 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	require.NotNil(t, plan)
 
 	expectedPlan := `
-		- BinaryExpression: LHS / RHS, hints (without ())
+		- BinaryExpression: LHS / RHS, hints (exclude ())
 			- LHS: SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
 				- FunctionCall: sum_over_time(...)
 					- ref#1 Duplicate
