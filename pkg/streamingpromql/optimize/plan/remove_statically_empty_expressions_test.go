@@ -273,6 +273,75 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
+
+		"empty result ANDed with non-empty result: returns empty result": {
+			expr: `EMPTY_RESULT and metric`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty result ANDed with empty result: returns empty result": {
+			expr: `metric and EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty result ANDed with non-empty result: stays as-is": {
+			expr:            `metric and other_metric`,
+			expectUnchanged: true,
+		},
+		"empty result ANDed with empty result: returns empty result": {
+			expr: `EMPTY_RESULT and EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+
+		"empty result ORed with non-empty result: returns non-empty side": {
+			expr: `EMPTY_RESULT or metric`,
+			expectedPlan: `
+				- VectorSelector: {__name__="metric"}
+			`,
+		},
+		"non-empty result ORed with empty result: returns non-empty side": {
+			expr: `metric or EMPTY_RESULT`,
+			expectedPlan: `
+				- VectorSelector: {__name__="metric"}
+			`,
+		},
+		"non-empty result ORed with non-empty result: stays as-is": {
+			expr:            `metric or other_metric`,
+			expectUnchanged: true,
+		},
+		"empty result ORed with empty result: returns empty result": {
+			expr: `EMPTY_RESULT or EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+
+		"empty result UNLESSed with non-empty result: returns empty result": {
+			expr: `EMPTY_RESULT unless metric`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty result UNLESSed with empty result: returns non-empty side": {
+			expr: `metric unless EMPTY_RESULT`,
+			expectedPlan: `
+				- VectorSelector: {__name__="metric"}
+			`,
+		},
+		"non-empty result UNLESSed with non-empty result: stays as-is": {
+			expr:            `metric unless other_metric`,
+			expectUnchanged: true,
+		},
+		"empty result UNLESSed with empty result: returns empty result": {
+			expr: `EMPTY_RESULT unless EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 	}
 
 	ctx := context.Background()
@@ -296,6 +365,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			testCase.expr = strings.ReplaceAll(testCase.expr, "CONSTANT", strconv.Itoa(constant))
+			testCase.expr = strings.ReplaceAll(testCase.expr, "EMPTY_RESULT", `some_metric{foo="bar", foo="not-bar"}`)
 
 			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, testCase.queryStart.Add(24*time.Hour), time.Minute)
 			expectedModified := 1
