@@ -136,14 +136,15 @@ func (w *Writer) starting(_ context.Context) error {
 		maxInflightProduceRequests = defaultMaxInflightProduceRequests
 	}
 
-	// The Writer does not use a default topic because the topic is set on each record individually,
-	// allowing writes to different topics (compartments).
-	client, err := NewKafkaWriterClient(w.kafkaCfg, maxInflightProduceRequests, w.logger, clientReg, WithDisableDefaultTopic())
+	// The producer implementation is selected by KafkaConfig.Backend. Topic
+	// is set on each record individually so the producer does not need a
+	// default topic configured up-front.
+	producer, err := newKafkaProducerForBackend(w.kafkaCfg, maxInflightProduceRequests, w.logger, clientReg)
 	if err != nil {
 		return err
 	}
 
-	w.client.Store(NewKafkaProducer(client, w.kafkaCfg.ProducerMaxBufferedBytes, clientReg))
+	w.client.Store(producer)
 	return nil
 }
 

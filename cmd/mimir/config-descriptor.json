@@ -8840,6 +8840,16 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "backend",
+              "required": false,
+              "desc": "The Kafka producer backend implementation. Supported values: kafka, warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": "kafka",
+              "fieldFlag": "ingest-storage.kafka.backend",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "address",
               "required": false,
               "desc": "The Kafka seed broker address, or a comma-separated list of seed broker addresses.",
@@ -8908,6 +8918,61 @@
               "fieldFlag": "ingest-storage.kafka.write-clients",
               "fieldType": "int",
               "fieldCategory": "deprecated"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_hedge_slow_multiplier",
+              "required": false,
+              "desc": "Hedge a Produce request when the primary agent's window-average latency exceeds this multiple of the cluster baseline. Only applies when ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingest-storage.kafka.warpstream-hedge-slow-multiplier",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_hedge_max_slow_fraction",
+              "required": false,
+              "desc": "Suppress hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.3,
+              "fieldFlag": "ingest-storage.kafka.warpstream-hedge-max-slow-fraction",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_hedge_faulty_threshold",
+              "required": false,
+              "desc": "Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.05,
+              "fieldFlag": "ingest-storage.kafka.warpstream-hedge-faulty-threshold",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_hedge_max_faulty_fraction",
+              "required": false,
+              "desc": "Suppress hedging when more than this fraction of agents are faulty (cluster-wide issue). Only applies when ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.3,
+              "fieldFlag": "ingest-storage.kafka.warpstream-hedge-max-faulty-fraction",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_hedge_min_delay",
+              "required": false,
+              "desc": "Floor on the dynamically-computed hedge delay. Only applies when ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingest-storage.kafka.warpstream-hedge-min-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",

@@ -568,7 +568,7 @@ func TestKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t 
 		recordsAcked := atomic.NewInt32(0)
 
 		for recordID := 0; recordID < int(produceRecordsTotal); recordID++ {
-			producer.Produce(ctx, &kgo.Record{
+			producer.client.Produce(ctx, &kgo.Record{
 				Key:       []byte(tenantID),
 				Value:     recordPayload,
 				Partition: int32(recordID % numPartitions), // Round robin across partitions.

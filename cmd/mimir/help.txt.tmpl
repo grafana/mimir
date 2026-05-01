@@ -409,6 +409,8 @@ Usage of ./cmd/mimir/mimir:
     	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
     	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
+  -ingest-storage.kafka.backend string
+    	The Kafka producer backend implementation. Supported values: kafka, warpstream. (default "kafka")
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.client-rack string
