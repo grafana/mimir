@@ -17,7 +17,10 @@ import (
 var crc32cTable = crc32.MakeTable(crc32.Castagnoli)
 
 // encBufPool pools scratch buffers for intermediate encoding steps to reduce
-// heap allocations on the produce hot path.
+// heap allocations on the produce hot path. It is package-level rather than
+// per-client because encode operations are stateless and sharing the pool
+// across client instances improves buffer reuse without introducing any
+// correctness concern.
 var encBufPool = sync.Pool{New: func() any {
 	b := make([]byte, 0, 128*1024)
 	return &b
@@ -193,4 +196,3 @@ func recordLength(r kmsg.Record) int32 {
 	}
 	return int32(l)
 }
-
