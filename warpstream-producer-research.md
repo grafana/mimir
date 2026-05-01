@@ -428,7 +428,7 @@ sequence is:
 
 ```
 linger flush → build ProduceRequest
-  → send to primary agentConn (async)
+  → produce to primary agent (async)
   → if no ack within hedgeDelay → send same ProduceRequest to secondary agentConn
   → first success fires all callbacks for that batch
 ```
@@ -793,7 +793,7 @@ tradeoffs: significantly more engineering effort with no meaningful benefit over
    in Mimir with no internal Mimir deps).
 2. **Component isolation** — each component has a narrow, interface-based dependency on its
    neighbours so it can be instantiated and tested independently.
-3. **Single testability seam** — the `Sender` interface is the only boundary between our logic
+3. **Single testability seam** — the `DirectProducer` interface is the only boundary between our logic
    and the real Kafka network. Every component above it can be fully tested with a `mockSender`
    and no real broker.
 4. **Follow Mimir patterns** — `promauto.With(reg)` for metrics, `RegisterFlagsWithPrefix` for
@@ -807,7 +807,7 @@ tradeoffs: significantly more engineering effort with no meaningful benefit over
 pkg/warpstreamclient/
 ├── client.go        WarpstreamClient — top-level, wires all components, ProduceSync entry point
 ├── config.go        Config struct + RegisterFlagsWithPrefix
-├── sender.go        Sender interface + KafkaSender (the only kgo.Client boundary)
+├── direct_producer.go        Sender interface + KafkaSender (the only kgo.Client boundary)
 ├── agentpool.go     AgentSelector interface + AgentPool (Metadata, primary/secondary selection)
 ├── linger.go        RecordBuffer (per-partition batching, timer, flush triggers)
 ├── hedger.go        Hedger (concurrent Sender calls, hedge-on-delay pattern)
@@ -819,7 +819,7 @@ Test files mirror the above; each component gets its own `_test.go`.
 
 ---
 
-### Component: `sender.go`
+### Component: `direct_producer.go`
 
 The single seam between custom logic and the franz-go network stack. **This is the only file
 that imports `kgo`.**
@@ -910,7 +910,7 @@ type mockAgentSelector struct {
 
 ### Component: `hedger.go`
 
-Implements the hedge-on-delay pattern purely in terms of `Sender`. No knowledge of franz-go
+Implements the hedge-on-delay pattern purely in terms of `DirectProducer`. No knowledge of franz-go
 internals, no Metadata, no connection management.
 
 ```go
@@ -918,12 +918,12 @@ internals, no Metadata, no connection management.
 // agent immediately and, if no response arrives within hedgeDelay, also sends to
 // the secondary. The first successful response wins.
 type Hedger struct {
-    sender     Sender
+    producer     DirectProducer
     hedgeDelay time.Duration
     metrics    *metrics
 }
 
-func NewHedger(sender Sender, hedgeDelay time.Duration, m *metrics) *Hedger
+func NewHedger(producer DirectProducer, hedgeDelay time.Duration, m *metrics) *Hedger
 
 func (h *Hedger) Send(
     ctx         context.Context,
@@ -1015,7 +1015,7 @@ type WarpstreamClient struct {
     pool    *AgentPool
     buffer  *RecordBuffer
     hedger  *Hedger
-    sender  *KafkaSender
+    producer  *KafkaDirectProducer
     metrics *metrics
     logger  log.Logger
 }
@@ -1035,7 +1035,7 @@ The `FlushFunc` passed to `RecordBuffer` closes over `hedger` and `pool`:
 flush := func(ctx context.Context, nodeID int32, records []*kgo.Record, done func(error)) {
     req := buildProduceRequest(topic, records, produceVersion)
     secondary := pool.Secondary(topic, partition)
-    err := hedger.Send(ctx, nodeID, secondary, req)
+    err := hedger.Produce(ctx, nodeID, secondary, req)
     done(err)
 }
 ```
@@ -1066,7 +1066,7 @@ func (w *warpstreamKafkaProducer) Close() { _ = w.c.Close() }
 ```
 pkg/warpstreamclient/
   client.go
-    ├── sender.go     → kgo.Client (franz-go)
+    ├── direct_producer.go     → kgo.Client (franz-go)
     ├── agentpool.go  → kgo.Client (franz-go) + AgentSelector interface
     ├── linger.go     → AgentSelector interface + FlushFunc
     ├── hedger.go     → Sender interface
@@ -1162,7 +1162,7 @@ func (p *WarpstreamProducer) ProduceSync(ctx, records []*Record) error {
     type result struct{ err error }
     ch := make(chan result, 2)
 
-    // Primary send
+    // Primary produce
     go func() {
         ch <- result{agents[0].produce(ctx, buildProduceReq(records))}
     }()
@@ -1510,7 +1510,7 @@ constructor, so dashboards and alerts need no changes for the shared metrics.
 | File | Contents |
 |------|----------|
 | `config.go` | `Config` struct + `RegisterFlagsWithPrefix` + `Validate` |
-| `sender.go` | `Sender` interface + `KafkaSender` (only kgo.Client boundary) |
+| `direct_producer.go` | `DirectProducer` interface + `KafkaSender` (only kgo.Client boundary) |
 | `agentpool.go` | `AgentSelector` interface + `AgentPool` + `selectSecondary` |
 | `linger.go` | `RecordBuffer` + `partitionBuf` + `FlushFunc` |
 | `hedger.go` | `Hedger` |
@@ -1562,4 +1562,4 @@ All open questions from initial research have been resolved:
 6. ✅ **Maturity**: Production-quality directly
 7. ✅ **Integration**: `kafkaProducer` interface extracted; backend selected via `-ingest-storage.kafka.backend`
 8. ✅ **Rack / node diversity**: Not achievable (Warpstream reports `"warpstream-fake-rack"`); secondary selection is agent-diverse by deterministic hash
-9. ✅ **Package isolation**: `pkg/warpstreamclient/` with zero Mimir internal imports; ingest package is the only consumer
+9. ✅ **Package isolation**: `pkg/warpstreamclient/` with zero Mimir internal imports in production code; test files may import `pkg/util/testkafka` for kfake-based integration tests; ingest package is the only production consumer

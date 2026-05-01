@@ -45,7 +45,11 @@ const crcOffset = 17
 // buildProduceRequest builds a ProduceRequest for a set of records belonging
 // to the same topic. Records may span multiple partitions; one RecordBatch is
 // built per partition and all are included in the single request.
-func buildProduceRequest(topic string, version int16, records []*kgo.Record) *kmsg.ProduceRequest {
+//
+// Both topic (string) and topicID (UUID) are populated so that the request is
+// valid regardless of which API version is ultimately negotiated by the
+// connection: v0-v12 use the topic name; v13+ use the topic UUID.
+func buildProduceRequest(topic string, topicID [16]byte, version int16, records []*kgo.Record) *kmsg.ProduceRequest {
 	byPartition := groupByPartition(records)
 
 	partitions := make([]kmsg.ProduceRequestTopicPartition, 0, len(byPartition))
@@ -60,7 +64,7 @@ func buildProduceRequest(topic string, version int16, records []*kgo.Record) *km
 	req.Version = version
 	req.Acks = -1 // all ISR
 	req.Topics = []kmsg.ProduceRequestTopic{
-		{Topic: topic, Partitions: partitions},
+		{Topic: topic, TopicID: topicID, Partitions: partitions},
 	}
 	return &req
 }

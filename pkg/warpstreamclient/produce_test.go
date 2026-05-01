@@ -45,7 +45,7 @@ func TestBuildProduceRequest(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			req := buildProduceRequest(tc.topic, 9, tc.records)
+			req := buildProduceRequest(tc.topic, [16]byte{}, 9, tc.records)
 
 			require.Len(t, req.Topics, 1)
 			assert.Equal(t, tc.topic, req.Topics[0].Topic)
@@ -87,7 +87,7 @@ func TestBuildProduceRequestRoundTrip(t *testing.T) {
 			},
 		}
 
-		req := buildProduceRequest("my-topic", 9, input)
+		req := buildProduceRequest("my-topic", [16]byte{}, 9, input)
 		require.Len(t, req.Topics[0].Partitions, 1)
 
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
@@ -113,7 +113,7 @@ func TestBuildProduceRequestRoundTrip(t *testing.T) {
 	t.Run("compressed output is used when shorter than raw", func(t *testing.T) {
 		// Highly compressible: long run of identical bytes.
 		value := make([]byte, 1024)
-		req := buildProduceRequest("t", 9, []*kgo.Record{
+		req := buildProduceRequest("t", [16]byte{}, 9, []*kgo.Record{
 			{Partition: 0, Value: value, Timestamp: time.Now()},
 		})
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
@@ -128,7 +128,7 @@ func TestBuildProduceRequestRoundTrip(t *testing.T) {
 		}
 		// Use already-compressed bytes as the value; Snappy of Snappy is always larger.
 		value := s2.EncodeSnappy(nil, src)
-		req := buildProduceRequest("t", 9, []*kgo.Record{
+		req := buildProduceRequest("t", [16]byte{}, 9, []*kgo.Record{
 			{Partition: 0, Value: value, Timestamp: time.Now()},
 		})
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
@@ -138,13 +138,13 @@ func TestBuildProduceRequestRoundTrip(t *testing.T) {
 
 func TestBuildProduceRequestBatchFields(t *testing.T) {
 	t.Run("RecordBatch magic is 2", func(t *testing.T) {
-		req := buildProduceRequest("t", 9, makeRecords(0, "v"))
+		req := buildProduceRequest("t", [16]byte{}, 9, makeRecords(0, "v"))
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
 		assert.Equal(t, int8(2), rb.Magic)
 	})
 
 	t.Run("producer fields indicate no idempotence", func(t *testing.T) {
-		req := buildProduceRequest("t", 9, makeRecords(0, "v"))
+		req := buildProduceRequest("t", [16]byte{}, 9, makeRecords(0, "v"))
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
 		assert.Equal(t, int64(-1), rb.ProducerID)
 		assert.Equal(t, int16(-1), rb.ProducerEpoch)
@@ -152,13 +152,13 @@ func TestBuildProduceRequestBatchFields(t *testing.T) {
 	})
 
 	t.Run("PartitionLeaderEpoch is -1", func(t *testing.T) {
-		req := buildProduceRequest("t", 9, makeRecords(0, "v"))
+		req := buildProduceRequest("t", [16]byte{}, 9, makeRecords(0, "v"))
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
 		assert.Equal(t, int32(-1), rb.PartitionLeaderEpoch)
 	})
 
 	t.Run("CRC is valid", func(t *testing.T) {
-		req := buildProduceRequest("t", 9, makeRecords(0, "v1", "v2"))
+		req := buildProduceRequest("t", [16]byte{}, 9, makeRecords(0, "v1", "v2"))
 		raw := req.Topics[0].Partitions[0].Records
 		// The CRC is over everything after the CRC field itself.
 		want := int32(crc32.Checksum(raw[crcOffset+4:], crc32cTable))
@@ -173,7 +173,7 @@ func TestBuildProduceRequestBatchFields(t *testing.T) {
 			{Partition: 0, Value: []byte("a"), Timestamp: t1},
 			{Partition: 0, Value: []byte("b"), Timestamp: t2},
 		}
-		req := buildProduceRequest("t", 9, records)
+		req := buildProduceRequest("t", [16]byte{}, 9, records)
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
 		assert.Equal(t, t1.UnixMilli(), rb.FirstTimestamp)
 		assert.Equal(t, t2.UnixMilli(), rb.MaxTimestamp)
@@ -217,7 +217,7 @@ func BenchmarkBuildProduceRequest(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for range b.N {
-		_ = buildProduceRequest("mimir-ingest", 9, records)
+		_ = buildProduceRequest("mimir-ingest", [16]byte{}, 9, records)
 	}
 }
 

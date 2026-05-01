@@ -10,7 +10,7 @@ Build a custom Warpstream-optimised Kafka producer for Grafana Mimir that implem
 hedging on top of franz-go's existing connection infrastructure
 (`kgo.Client.Broker(nodeID).RetriableRequest()`).
 
-**New package:** `pkg/warpstreamclient/` — zero Mimir internal imports.  
+**New package:** `pkg/warpstreamclient/` — zero Mimir internal imports in production code. Test files may import `pkg/util/testkafka` for kfake-based integration tests.  
 **Integration:** `pkg/storage/ingest/` — selects the backend via `-ingest-storage.kafka.backend`.
 
 ---
@@ -375,7 +375,7 @@ func TestConfigValidate(t *testing.T) {
 
 ---
 
-## Step 3 — `sender.go`: Sender interface and KafkaSender
+## Step 3 — `direct_producer.go`: Sender interface and KafkaSender
 
 ### Purpose
 
@@ -384,9 +384,9 @@ output of this step is `mockSender`, which all subsequent components use in thei
 
 ### Files
 
-- `pkg/warpstreamclient/sender.go` *(new)*
+- `pkg/warpstreamclient/direct_producer.go` *(new)*
 - `pkg/warpstreamclient/sender_test.go` *(new)*
-- `pkg/warpstreamclient/mock_sender_test.go` *(new)*
+- `pkg/warpstreamclient/mock_direct_producer_test.go` *(new)*
 
 ### What to implement
 
@@ -396,7 +396,7 @@ type Sender interface {
     Send(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
 }
 
-// KafkaSender implements Sender using kgo.Client.
+// KafkaSender implements DirectProducer using kgo.Client.
 // This is the only type in this package that depends on kgo.Client directly.
 type KafkaSender struct {
     client *kgo.Client
@@ -455,7 +455,7 @@ func TestMockSender(t *testing.T) {
             ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
             defer cancel()
             start := time.Now()
-            _, err := m.Send(ctx, tc.nodeID, &kmsg.ProduceRequest{})
+            _, err := m.Produce(ctx, tc.nodeID, &kmsg.ProduceRequest{})
             if tc.wantErr {
                 require.Error(t, err)
             } else {
@@ -771,7 +771,7 @@ func (t *LatencyTracker) Record(nodeID int32, latency time.Duration, err error) 
 ```go
 // Hedger wraps a Sender with dynamic latency-aware hedging.
 type Hedger struct {
-    sender  Sender
+    producer  DirectProducer
     tracker *LatencyTracker
     cfg     HedgerConfig
     metrics *metrics
@@ -784,7 +784,7 @@ type HedgerConfig struct {
     MinHedgeDelay   time.Duration // floor on the computed hedge delay
 }
 
-func NewHedger(sender Sender, tracker *LatencyTracker, cfg HedgerConfig, m *metrics) *Hedger
+func NewHedger(producer DirectProducer, tracker *LatencyTracker, cfg HedgerConfig, m *metrics) *Hedger
 
 // Send dispatches to primaryID and, when warranted, hedges to secondaryID.
 // secondaryID must be a valid NodeID; callers should only invoke with ok=true
@@ -803,12 +803,12 @@ func (h *Hedger) Send(ctx context.Context, primaryID, secondaryID int32, req *km
         took   time.Duration
         err    error
     }
-    // Buffer 2 so neither goroutine ever blocks on send.
+    // Buffer 2 so neither goroutine ever blocks on produce.
     ch := make(chan result, 2)
 
     start := time.Now()
     go func() {
-        err := h.sender.Send(ctx, primaryID, req)
+        err := h.producer.Produce(ctx, primaryID, req)
         ch <- result{nodeID: primaryID, took: time.Since(start), err: err}
     }()
 
@@ -830,7 +830,7 @@ func (h *Hedger) Send(ctx context.Context, primaryID, secondaryID int32, req *km
             // Primary failed before the hedge delay; still start the hedge.
             go func() {
                 s := time.Now()
-                err := h.sender.Send(ctx, secondaryID, req)
+                err := h.producer.Produce(ctx, secondaryID, req)
                 ch <- result{nodeID: secondaryID, took: time.Since(s), err: err}
             }()
             res2 := <-ch
@@ -843,7 +843,7 @@ func (h *Hedger) Send(ctx context.Context, primaryID, secondaryID int32, req *km
         // Hedge fires because primary did not respond in time.
         go func() {
             s := time.Now()
-            err := h.sender.Send(ctx, secondaryID, req)
+            err := h.producer.Produce(ctx, secondaryID, req)
             ch <- result{nodeID: secondaryID, took: time.Since(s), err: err}
         }()
     }
@@ -1244,9 +1244,9 @@ flush := func(ctx context.Context, nodeID int32, records []*kgo.Record, done fun
     go func() {
         var err error
         if hasSecondary {
-            err = c.hedger.Send(ctx, nodeID, secondaryID, req)
+            err = c.hedger.Produce(ctx, nodeID, secondaryID, req)
         } else {
-            err = sendWithTracking(ctx, c.sender, c.tracker, nodeID, req)
+            err = sendWithTracking(ctx, c.producer, c.tracker, nodeID, req)
         }
         done(err)
     }()
@@ -1300,7 +1300,7 @@ func TestWarpstreamClientProduceSync(t *testing.T) {
         "all records succeed": {
             records: makeRecords(0, "a", "b"), senderSetup: func(_ *mockSender) {},
         },
-        "send failure propagates to all records in the batch": {
+        "produce failure propagates to all records in the batch": {
             records: makeRecords(0, "a", "b"),
             senderSetup: func(m *mockSender) { m.errors[1] = errors.New("fail") },
             wantErrCount: 2,
