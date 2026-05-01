@@ -538,7 +538,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				}
 			}
 
-			responseMatrix, err := ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
+			responseMatrix, err := ingester_client.StreamingSeriesToMatrixForTests(0, 5, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, testData.expectedResponse.String(), responseMatrix.String())
 
@@ -700,7 +700,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 				} else {
 					require.NoError(t, err)
 
-					responseMatrix, err := ingester_client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
+					responseMatrix, err := ingester_client.StreamingSeriesToMatrixForTests(0, 10, resp.StreamingSeries)
 					require.NoError(t, err)
 
 					// Build expected response based on which partitions are queried.

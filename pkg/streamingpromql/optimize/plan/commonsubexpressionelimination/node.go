@@ -115,7 +115,7 @@ func (d *Duplicate) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (
 
 	if !timeRange.IsInstant && innerResultType == parser.ValueTypeMatrix {
 		// Range vector expression in a range query
-		return planning.QueryPlanV10, nil
+		return planning.QueryPlanV11, nil
 	}
 
 	return planning.QueryPlanVersionZero, nil

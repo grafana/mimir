@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var errMultipleMatchesOnManySide = errors.New("multiple matches for labels: grouping labels must ensure unique matches")
@@ -39,6 +41,8 @@ type GroupedVectorVectorBinaryOperation struct {
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
+	hints              *Hints
+	logger             log.Logger
 
 	evaluator       vectorVectorBinaryOperationEvaluator
 	remainingSeries []*groupedBinaryOperationOutputSeries
@@ -151,6 +155,8 @@ func NewGroupedVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	hints *Hints,
+	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -169,6 +175,8 @@ func NewGroupedVectorVectorBinaryOperation(
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
 		timeRange:          timeRange,
+		hints:              hints,
+		logger:             logger,
 	}
 
 	switch g.VectorMatching.Card {
@@ -244,8 +252,17 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
 
+	// Load the "one" side first: it is the smaller side, and once we have its metadata
+	// we can use it to build hint-based matchers for the "many" side.
+	//
+	// Labels in VectorMatching.Include come from the many side, so any outer matchers for
+	// those labels must not be forwarded to the one side: the one side won't have them and
+	// would be incorrectly over-filtered. Split them out and keep them to forward to the
+	// many side instead.
+	oneSideMatchers, includeMatchers := separateIncludeLabelMatchers(matchers, g.VectorMatching.Include)
+
 	var err error
-	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, matchers)
+	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, oneSideMatchers)
 	if err != nil {
 		return false, err
 	}
@@ -255,7 +272,25 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 		return false, nil
 	}
 
-	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, matchers)
+	// Use the "one" side series to narrow the data we need to fetch on the "many" side.
+	// When hints have been set by the optimization pass, build matchers from the "one" side
+	// metadata and merge them with any outer matchers for included labels (which belong to the
+	// many side). Otherwise fall back to the same outer matchers used for the "one" side.
+	manySideMatchers := matchers
+	if g.hints != nil {
+		ignored := matchers
+		manySideMatchers = append(BuildMatchers(g.oneSideMetadata, g.hints), includeMatchers...)
+
+		sl := spanlogger.FromContext(ctx, g.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing additional matchers to many side",
+			"fields", g.hints.Include,
+			"hint_matchers", len(manySideMatchers),
+			"ignored_matchers", len(ignored),
+		)
+	}
+
+	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, manySideMatchers)
 	if err != nil {
 		return false, err
 	}
@@ -756,6 +791,30 @@ func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantV
 	}
 
 	return merged, nil
+}
+
+// separateIncludeLabelMatchers partitions matchers into two groups: those whose label name
+// appears in includeLabels (extra labels sourced from the many side), and all others.
+// If includeLabels is empty or matchers is empty, the original slice is returned unchanged
+// and includeMatchers is nil.
+func separateIncludeLabelMatchers(matchers types.Matchers, includeLabels []string) (otherMatchers, includeMatchers types.Matchers) {
+	if len(matchers) == 0 || len(includeLabels) == 0 {
+		return matchers, nil
+	}
+
+	includeSet := make(map[string]struct{}, len(includeLabels))
+	for _, l := range includeLabels {
+		includeSet[l] = struct{}{}
+	}
+
+	for _, m := range matchers {
+		if _, ok := includeSet[m.Name]; ok {
+			includeMatchers = append(includeMatchers, m)
+		} else {
+			otherMatchers = append(otherMatchers, m)
+		}
+	}
+	return otherMatchers, includeMatchers
 }
 
 func (g *GroupedVectorVectorBinaryOperation) oneSideHandedness() string {

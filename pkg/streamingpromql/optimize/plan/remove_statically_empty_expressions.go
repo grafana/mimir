@@ -9,6 +9,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -20,7 +21,7 @@ import (
 // RemoveStaticallyEmptyExpressionsOptimizationPass replaces subexpressions that can be statically
 // determined to return no results with a NoOp node, avoiding unnecessary computation.
 //
-// Currently it detects the following pattern in both "and" operands:
+// It detects the following pattern in both "and" operands:
 //
 //	timestamp(<inner>) < <constant>   (or the symmetric form <constant> > timestamp(<inner>))
 //	timestamp(<inner>) <= <constant>  (or the symmetric form <constant> >= timestamp(<inner>))
@@ -41,6 +42,12 @@ import (
 //
 // For simplicity, the optimization pass does not descend into Subquery nodes, because the effective time range for
 // expressions inside a subquery differs from the outer query time range.
+//
+// It detects the following pattern in vector and matrix selectors:
+//
+//	metric{label1="example", label1="another"}
+//
+// This exact match selector is guaranteed to not match any results.
 type RemoveStaticallyEmptyExpressionsOptimizationPass struct {
 	attempts prometheus.Counter
 	modified prometheus.Counter
@@ -66,7 +73,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Name() string {
 }
 
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	if maximumSupportedQueryPlanVersion < planning.QueryPlanV9 {
+	if maximumSupportedQueryPlanVersion < planning.QueryPlanV10 {
 		// NoOp node is not supported by the downstream querier.
 		return plan, nil
 	}
@@ -102,6 +109,12 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		return nil, false, nil
 	}
 
+	// The info function expects an actual selector as its second argument so we can't replace it
+	// with a no-op node or operator even if the matchers would cause it to return no results.
+	if isInfoFunction(node) {
+		return nil, false, nil
+	}
+
 	modified := false
 
 	for idx := range node.ChildCount() {
@@ -119,7 +132,10 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		}
 	}
 
-	if empty, err := isAlwaysEmpty(node, params); err != nil {
+	if empty, matrix := isAlwaysEmptySelector(node); empty {
+		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{MatrixSelector: matrix}}
+		return noOp, true, nil
+	} else if empty, err := isAlwaysEmpty(node, params); err != nil {
 		return nil, false, err
 	} else if empty {
 		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
@@ -127,6 +143,29 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 	}
 
 	return nil, modified, nil
+}
+
+func isInfoFunction(node planning.Node) bool {
+	if funcNode, isFunctionCall := node.(*core.FunctionCall); isFunctionCall {
+		return funcNode.Function == functions.FUNCTION_INFO
+	}
+	return false
+}
+
+// isAlwaysEmptySelector returns true if a node is a selector and has matchers that can be
+// determined to produce an empty result and a boolean indicating if the selector is a matrix
+// selector or not.
+func isAlwaysEmptySelector(node planning.Node) (bool, bool) {
+	node = unwrap(node)
+
+	switch node := node.(type) {
+	case *core.MatrixSelector:
+		return hasConflictingEqualsMatchers(node.Matchers), true
+	case *core.VectorSelector:
+		return hasConflictingEqualsMatchers(node.Matchers), false
+	default:
+		return false, false
+	}
 }
 
 // isAlwaysEmpty returns true if node can be statically determined to produce an empty instant
@@ -142,6 +181,24 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, 
 	default:
 		return false, nil
 	}
+}
+
+func hasConflictingEqualsMatchers(matchers []*core.LabelMatcher) bool {
+	equals := make(map[string]string)
+
+	for _, m := range matchers {
+		if m.Type != labels.MatchEqual {
+			continue
+		}
+
+		if v, ok := equals[m.Name]; ok && m.Value != v {
+			return true
+		}
+
+		equals[m.Name] = m.Value
+	}
+
+	return false
 }
 
 func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning.QueryParameters) (bool, error) {

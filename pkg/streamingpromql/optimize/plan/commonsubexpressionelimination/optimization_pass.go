@@ -85,7 +85,7 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return nil, err
 	}
 
-	rangeQueryRangeVectorEliminationEnabled := e.rangeQueryRangeVectorEliminationEnabled && maximumSupportedQueryPlanVersion >= planning.QueryPlanV10
+	rangeQueryRangeVectorEliminationEnabled := e.rangeQueryRangeVectorEliminationEnabled && maximumSupportedQueryPlanVersion >= planning.QueryPlanV11
 	stats, err := e.applyDeduplicationToGroups(groups, 0, plan.Parameters.EnableDelayedNameRemoval, rangeQueryRangeVectorEliminationEnabled)
 	if err != nil {
 		return nil, err

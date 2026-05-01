@@ -9237,10 +9237,9 @@
               "required": false,
               "desc": "The record version that this producer sends.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 2,
               "fieldFlag": "ingest-storage.kafka.producer-record-version",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldType": "int"
             },
             {
               "kind": "field",
@@ -9328,7 +9327,7 @@
               "required": false,
               "desc": "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
               "fieldValue": null,
-              "fieldDefaultValue": 500,
+              "fieldDefaultValue": 200,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample",
               "fieldType": "int"
             }

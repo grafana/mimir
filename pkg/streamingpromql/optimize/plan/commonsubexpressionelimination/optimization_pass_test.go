@@ -1626,18 +1626,18 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEVersionGating(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		rangeQueryRangeVectorCSEEnabled := true
 
-		t.Run("range query, querier supports v10", func(t *testing.T) {
-			// Range vector CSE should be applied, and the plan version should be v10.
-			runTest(t, expr, rangeTimeRange, planning.QueryPlanV10, rangeQueryRangeVectorCSEEnabled, deduplicatedPlan, planning.QueryPlanV10)
+		t.Run("range query, querier supports v11", func(t *testing.T) {
+			// Range vector CSE should be applied, and the plan version should be v11.
+			runTest(t, expr, rangeTimeRange, planning.QueryPlanV11, rangeQueryRangeVectorCSEEnabled, deduplicatedPlan, planning.QueryPlanV11)
 		})
 
-		t.Run("range query, querier does not support v10", func(t *testing.T) {
-			// Range vector CSE should not be applied when the querier doesn't support v10, even if the flag is enabled.
+		t.Run("range query, querier does not support v11", func(t *testing.T) {
+			// Range vector CSE should not be applied when the querier doesn't support v11, even if the flag is enabled.
 			runTest(t, expr, rangeTimeRange, planning.QueryPlanV9, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
 		})
 
-		t.Run("instant query, querier does not support v10", func(t *testing.T) {
-			// Matrix selectors in instant queries are always deduplicated (they don't need v10).
+		t.Run("instant query, querier does not support v11", func(t *testing.T) {
+			// Matrix selectors in instant queries are always deduplicated (they don't need v11).
 			runTest(t, expr, instantTimeRange, planning.QueryPlanV9, rangeQueryRangeVectorCSEEnabled, deduplicatedPlan, planning.QueryPlanVersionZero)
 		})
 	})
@@ -1645,18 +1645,18 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEVersionGating(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		rangeQueryRangeVectorCSEEnabled := false
 
-		t.Run("range query, querier supports v10", func(t *testing.T) {
+		t.Run("range query, querier supports v11", func(t *testing.T) {
 			// Range vector CSE should not be applied.
-			runTest(t, expr, rangeTimeRange, planning.QueryPlanV10, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
+			runTest(t, expr, rangeTimeRange, planning.QueryPlanV11, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
 		})
 
-		t.Run("range query, querier does not support v10", func(t *testing.T) {
-			// Range vector CSE should not be applied when the querier doesn't support v10, even if the flag is enabled.
+		t.Run("range query, querier does not support v11", func(t *testing.T) {
+			// Range vector CSE should not be applied when the querier doesn't support v11, even if the flag is enabled.
 			runTest(t, expr, rangeTimeRange, planning.QueryPlanV9, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
 		})
 
-		t.Run("instant query, querier does not support v10", func(t *testing.T) {
-			// Matrix selectors in instant queries are always deduplicated (they don't need v10 or the flag enabled).
+		t.Run("instant query, querier does not support v11", func(t *testing.T) {
+			// Matrix selectors in instant queries are always deduplicated (they don't need v11 or the flag enabled).
 			runTest(t, expr, instantTimeRange, planning.QueryPlanV9, rangeQueryRangeVectorCSEEnabled, deduplicatedPlan, planning.QueryPlanVersionZero)
 		})
 	})

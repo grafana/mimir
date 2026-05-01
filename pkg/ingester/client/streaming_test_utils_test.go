@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package modelutil
+package client
 
 import (
 	"testing"
@@ -54,36 +54,7 @@ func TestMergeSampleSets(t *testing.T) {
 			expected: []model.SamplePair{sample1, sample2, sample3, sample4},
 		},
 	} {
-		samples := MergeSampleSets(c.samplesA, c.samplesB)
-		require.Equal(t, c.expected, samples)
-	}
-}
-
-func TestMergeNSampleSets(t *testing.T) {
-	now := model.Now()
-	sample1 := model.SamplePair{Timestamp: now, Value: 1}
-	sample2 := model.SamplePair{Timestamp: now.Add(1 * time.Second), Value: 2}
-	sample3 := model.SamplePair{Timestamp: now.Add(4 * time.Second), Value: 3}
-	sample4 := model.SamplePair{Timestamp: now.Add(8 * time.Second), Value: 7}
-
-	for _, c := range []struct {
-		sampleSets [][]model.SamplePair
-		expected   []model.SamplePair
-	}{
-		{
-			sampleSets: [][]model.SamplePair{{}, {}, {}},
-			expected:   []model.SamplePair{},
-		},
-		{
-			sampleSets: [][]model.SamplePair{
-				{sample1, sample2},
-				{sample2},
-				{sample1, sample3, sample4},
-			},
-			expected: []model.SamplePair{sample1, sample2, sample3, sample4},
-		},
-	} {
-		samples := MergeNSampleSets(c.sampleSets...)
+		samples := mergeSampleSets(c.samplesA, c.samplesB)
 		require.Equal(t, c.expected, samples)
 	}
 }
@@ -126,36 +97,7 @@ func TestMergeHistogramSets(t *testing.T) {
 			expected: []mimirpb.Histogram{sample1, sample2, sample3, sample4},
 		},
 	} {
-		samples := MergeHistogramSets(c.samplesA, c.samplesB)
-		require.Equal(t, c.expected, samples)
-	}
-}
-
-func TestMergeNHistogramSets(t *testing.T) {
-	now := model.Now()
-	sample1 := mimirpb.FromFloatHistogramToHistogramProto(int64(now), test.GenerateTestFloatHistogram(1))
-	sample2 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(1*time.Second)), test.GenerateTestHistogram(2))
-	sample3 := mimirpb.FromFloatHistogramToHistogramProto(int64(now.Add(4*time.Second)), test.GenerateTestFloatHistogram(3))
-	sample4 := mimirpb.FromHistogramToHistogramProto(int64(now.Add(8*time.Second)), test.GenerateTestHistogram(7))
-
-	for _, c := range []struct {
-		sampleSets [][]mimirpb.Histogram
-		expected   []mimirpb.Histogram
-	}{
-		{
-			sampleSets: [][]mimirpb.Histogram{{}, {}, {}},
-			expected:   []mimirpb.Histogram{},
-		},
-		{
-			sampleSets: [][]mimirpb.Histogram{
-				{sample1, sample2},
-				{sample2},
-				{sample1, sample3, sample4},
-			},
-			expected: []mimirpb.Histogram{sample1, sample2, sample3, sample4},
-		},
-	} {
-		samples := MergeNHistogramSets(c.sampleSets...)
+		samples := mergeHistogramSets(c.samplesA, c.samplesB)
 		require.Equal(t, c.expected, samples)
 	}
 }

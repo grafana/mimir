@@ -5454,9 +5454,9 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
-  # (experimental) The record version that this producer sends.
+  # The record version that this producer sends.
   # CLI flag: -ingest-storage.kafka.producer-record-version
-  [producer_record_version: <int> | default = 0]
+  [producer_record_version: <int> | default = 2]
 
   # The maximum amount of time a Kafka broker waits for some records before a
   # Fetch response is returned.
@@ -5511,7 +5511,7 @@ kafka:
   # setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than
   # 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
-  [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
+  [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 200]
 
 migration:
   # When both this option and ingest storage are enabled, distributors write to

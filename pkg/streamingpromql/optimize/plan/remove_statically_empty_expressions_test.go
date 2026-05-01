@@ -228,6 +228,51 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			queryStart:      time.Unix(10000, 0),
 			expectUnchanged: true,
 		},
+		"non-conflicting equals matchers: should not optimize": {
+			expr:            `metric{pod="foo", env="bar"}`,
+			queryStart:      time.UnixMilli(selectorThresholdMs),
+			expectUnchanged: true,
+		},
+		"non-equals matchers: should not optimize": {
+			expr:            `metric{pod=~"foo.+", pod!~".+bar"}`,
+			queryStart:      time.UnixMilli(selectorThresholdMs),
+			expectUnchanged: true,
+		},
+		"conflicting equals matchers in info function: should not optimize": {
+			expr:            `info(metric, {env="prod", env="dev"})`,
+			queryStart:      time.UnixMilli(selectorThresholdMs),
+			expectUnchanged: true,
+		},
+		"conflicting equals matchers vector: should optimize": {
+			expr:       `metric{pod="foo", pod="bar"}`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"conflicting equals matchers matrix: should optimize": {
+			expr:       `avg_over_time(metric{pod="foo", pod="bar"}[5m])`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: avg_over_time(...)
+						- NoOp: matrix
+			`,
+		},
+		"conflicting equals matchers on LHS of binary expression: should optimize": {
+			expr:       `metric{pod="foo", pod="bar"} and foo`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"conflicting equals matchers on RHS of binary expression: should optimize": {
+			expr:       `foo and metric{pod="foo", pod="bar"}`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 	}
 
 	ctx := context.Background()

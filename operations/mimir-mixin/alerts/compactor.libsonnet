@@ -154,9 +154,9 @@
           alert: $.alertName('CompactorBuildingSparseIndexFailed'),
           'for': '30m',
           expr: |||
-            (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_build_sparse_headers_failures_total[%(range_interval)s])) > 0)
+            (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_build_sparse_headers_failures_total[%(rate_interval)s])) > 0)
           ||| % $._config {
-            range_interval: $.alertRangeInterval(5),
+            rate_interval: $.rateInterval('5m'),
           },
           labels: {
             severity: 'warning',

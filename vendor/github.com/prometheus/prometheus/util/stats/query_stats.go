@@ -245,6 +245,15 @@ type QuerySamples struct {
 	// range query engine that reduce the actual work that happens.
 	TotalSamplesPerStep []int64
 
+	// SamplesRead is the number of samples read (I/O). For range-vector functions
+	// in range queries, only new points per step are counted; elsewhere it
+	// equals TotalSamples.
+	SamplesRead int64
+
+	// SamplesReadPerStep is the number of samples read per step. For
+	// range-vector functions, step 0 is the full window, later steps only new points.
+	SamplesReadPerStep []int64
+
 	EnablePerStepStats bool
 	StartTimestamp     int64
 	Interval           int64

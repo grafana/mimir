@@ -2346,6 +2346,14 @@ func (d *Distributor) updateReceivedMetrics(ctx context.Context, pushReq *Reques
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.
 // Return an error if any f fails for any of the input replicationSets.
 func forReplicationSets[R any](ctx context.Context, d *Distributor, replicationSets []ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (R, error)) ([]R, error) {
+	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
+	return forReplicationSetsWithQuorumConfig(ctx, d, replicationSets, quorumConfig, f)
+}
+
+// forReplicationSetsWithQuorumConfig runs f, in parallel, for all ingesters in the input replicationSets, using the provided quorum config.
+// It is expected that the provided quorumConfig matches the given replicationSets.
+// If you do not need to customize the quorum config, use forReplicationSets instead.
+func forReplicationSetsWithQuorumConfig[R any](ctx context.Context, d *Distributor, replicationSets []ring.ReplicationSet, quorumConfig ring.DoUntilQuorumConfig, f func(context.Context, ingester_client.IngesterClient) (R, error)) ([]R, error) {
 	wrappedF := func(ctx context.Context, ingester *ring.InstanceDesc) (R, error) {
 		client, err := d.ingesterPool.GetClientForInstance(*ingester)
 		if err != nil {
@@ -2359,8 +2367,6 @@ func forReplicationSets[R any](ctx context.Context, d *Distributor, replicationS
 	cleanup := func(_ R) {
 		// Nothing to do.
 	}
-
-	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 
 	return concurrency.ForEachJobMergeResults[ring.ReplicationSet, R](ctx, replicationSets, 0, func(ctx context.Context, set ring.ReplicationSet) ([]R, error) {
 		return ring.DoUntilQuorum(ctx, set, quorumConfig, wrappedF, cleanup)
@@ -2946,7 +2952,9 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 		return ignored{}, nil
 	}
 
-	_, err = forReplicationSets(ctx, d, replicationSets, ingesterQuery)
+	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
+	quorumConfig.IsTerminalError = validation.IsLimitError
+	_, err = forReplicationSetsWithQuorumConfig(ctx, d, replicationSets, quorumConfig, ingesterQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -2988,7 +2996,7 @@ func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int,
 	}
 }
 
-var ErrResponseTooLarge = errors.New("response too large")
+var ErrResponseTooLarge = validation.NewLimitError("response too large")
 
 func (r *activeSeriesResponse) add(series []*mimirpb.Metric, bucketCounts []uint64) error {
 
