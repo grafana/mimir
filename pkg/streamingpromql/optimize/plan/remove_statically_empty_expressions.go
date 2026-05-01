@@ -143,7 +143,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		return noOp, true, nil
 	}
 
-	if replacement, simplified := simplify(node, params); simplified {
+	if replacement, simplified := simplify(node); simplified {
 		return replacement, true, nil
 	}
 
@@ -340,7 +340,7 @@ func findConstant(node planning.Node) (*core.NumberLiteral, bool) {
 	return literal, ok
 }
 
-func simplify(node planning.Node, params *planning.QueryParameters) (planning.Node, bool) {
+func simplify(node planning.Node) (planning.Node, bool) {
 	switch node := node.(type) {
 	case *core.DeduplicateAndMerge:
 		// 'or' operations are wrapped in a DeduplicateAndMerge node.
