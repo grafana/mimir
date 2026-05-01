@@ -386,7 +386,24 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		return cmp.Compare(a.Start, b.Start)
 	})
 
-	// Merge any extents - potentially overlapping
+	// Merge any extents - potentially overlapping.
+	//
+	// We strip annotations from every extent being merged into the accumulator,
+	// keeping only the accumulator's annotations. This prevents annotation count
+	// snowball across repeated cache merge cycles:
+	//
+	// filterRecentCacheExtents trims sample data from the most recent window of
+	// a cached extent, but cannot trim its annotations (they are per-evaluation,
+	// not per-sample). On the next query the trimmed window is re-fetched from
+	// downstream, producing a fresh extent whose annotations cover that same
+	// window. A naive merge would sum the counts, double-counting the trimmed
+	// region. Repeating this inflates counts on every cycle.
+	//
+	// By always keeping only the accumulator's annotations (the first/largest
+	// extent after sorting), we avoid this. The current request's final response
+	// (built at the end of splitAndCacheMiddleware.Do) still merges annotations
+	// from both the cached extract and the fresh downstream response, so users
+	// see correct annotations for the current query.
 	accumulator, err := newAccumulator(extents[0])
 	if err != nil {
 		return nil, err
@@ -406,20 +423,26 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 			continue
 		}
 
-		if accumulator.End >= extents[i].End {
-			continue
-		}
-		accumulator.TraceId = otelTraceID(ctx)
-		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {
-			return nil, err
+			// Skip extents with corrupt/nil responses; the accumulator already
+			// covers this time range or will be extended by a later valid extent.
+			continue
 		}
-		merged, err := merger.MergeResponse(accumulator.Response, currentRes)
+
+		// Strip annotations from the current extent before merging to prevent
+		// count inflation. Only the accumulator's annotations are preserved.
+		accAnnotations := getResponseAnnotations(accumulator.Response)
+		merged, err := merger.MergeResponse(accumulator.Response, clearResponseAnnotations(currentRes))
 		if err != nil {
 			return nil, err
 		}
-		accumulator.Response = merged
+		accumulator.Response = setResponseAnnotations(merged, accAnnotations)
+
+		if accumulator.End < extents[i].End {
+			accumulator.TraceId = otelTraceID(ctx)
+			accumulator.End = extents[i].End
+		}
 
 		if accumulator.QueryTimestampMs > 0 && extents[i].QueryTimestampMs > 0 {
 			// Keep older (minimum) timestamp.
@@ -431,12 +454,65 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		}
 	}
 
-	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
+	mergedExtents, err = mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergedExtents, nil
 }
 
 type accumulator struct {
 	Response
 	Extent
+}
+
+// responseAnnotations holds the annotation fields from a PrometheusResponse.
+type responseAnnotations struct {
+	Warnings []mimirpb.AnnotationError
+	Infos    []mimirpb.AnnotationError
+}
+
+// getResponseAnnotations returns the annotations from a Response.
+func getResponseAnnotations(resp Response) responseAnnotations {
+	pr, ok := resp.GetPrometheusResponse()
+	if !ok {
+		return responseAnnotations{}
+	}
+	return responseAnnotations{
+		Warnings: pr.Warnings,
+		Infos:    pr.Infos,
+	}
+}
+
+// clearResponseAnnotations returns a copy of the Response with empty annotations.
+// The returned Response shares the underlying data with the original.
+func clearResponseAnnotations(resp Response) Response {
+	pr, ok := resp.GetPrometheusResponse()
+	if !ok {
+		return resp
+	}
+	return &PrometheusResponse{
+		Status:  pr.Status,
+		Data:    pr.Data,
+		Headers: pr.Headers,
+	}
+}
+
+// setResponseAnnotations returns a copy of the Response with the given annotations.
+// The returned Response shares the underlying data with the original.
+func setResponseAnnotations(resp Response, ann responseAnnotations) Response {
+	pr, ok := resp.GetPrometheusResponse()
+	if !ok {
+		return resp
+	}
+	return &PrometheusResponse{
+		Status:   pr.Status,
+		Data:     pr.Data,
+		Headers:  pr.Headers,
+		Warnings: ann.Warnings,
+		Infos:    ann.Infos,
+	}
 }
 
 func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {

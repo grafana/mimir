@@ -1548,7 +1548,7 @@ func TestMergeAPIResponses(t *testing.T) {
 							},
 						},
 					},
-					Warnings: []string{"dummy warning"},
+					Warnings: mimirpb.StringsToAnnotationErrors([]string{"dummy warning"}),
 				},
 				&PrometheusResponse{
 					Status: statusSuccess,
@@ -1564,7 +1564,7 @@ func TestMergeAPIResponses(t *testing.T) {
 							},
 						},
 					},
-					Infos: []string{"dummy info"},
+					Infos: mimirpb.StringsToAnnotationErrors([]string{"dummy info"}),
 				},
 			},
 			expected: &PrometheusResponse{
@@ -1583,8 +1583,8 @@ func TestMergeAPIResponses(t *testing.T) {
 						},
 					},
 				},
-				Warnings: []string{"dummy warning"},
-				Infos:    []string{"dummy info"},
+				Warnings: mimirpb.StringsToAnnotationErrors([]string{"dummy warning"}),
+				Infos:    mimirpb.StringsToAnnotationErrors([]string{"dummy info"}),
 			},
 		},
 	} {

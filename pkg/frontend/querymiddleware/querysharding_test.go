@@ -109,8 +109,28 @@ func approximatelyEqualsSamples(t *testing.T, a, b *PrometheusResponse) {
 // approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
 func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	approximatelyEqualsSamples(t, a, b)
-	require.ElementsMatch(t, a.Infos, b.Infos, "expected same info annotations")
-	require.ElementsMatch(t, a.Warnings, b.Warnings, "expected same warning annotations")
+	// Compare annotations by Type and Message only; merge-state fields (Count,
+	// MinTs, MaxTs, etc.) can legitimately differ between execution strategies
+	// (e.g. sharded vs non-sharded, spun-off subqueries vs direct evaluation).
+	require.ElementsMatch(t, annotationKeys(a.Infos), annotationKeys(b.Infos), "expected same info annotations")
+	require.ElementsMatch(t, annotationKeys(a.Warnings), annotationKeys(b.Warnings), "expected same warning annotations")
+}
+
+// annotationKeys extracts only the type (by oneof variant) and message from each AnnotationError
+// for comparison, ignoring merge-state fields that differ between execution strategies.
+func annotationKeys(aes []mimirpb.AnnotationError) []mimirpb.AnnotationError {
+	if aes == nil {
+		return nil
+	}
+	keys := make([]mimirpb.AnnotationError, len(aes))
+	for i, ae := range aes {
+		key := mimirpb.AnnotationError{Message: ae.Message}
+		if ae.GetHistogramQuantile() != nil {
+			key.Data = &mimirpb.AnnotationError_HistogramQuantile{}
+		}
+		keys[i] = key
+	}
+	return keys
 }
 
 func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string, tolerance float64) {
@@ -1259,8 +1279,10 @@ func TestQuerySharding_Annotations(t *testing.T) {
 				require.Equal(t, expected, actualSplit)
 
 				if template.isSharded {
-					// Remove position information from annotations generated with the unsharded query, to mirror what we expect from the sharded query.
+					// Remove position information from both sides: positions differ
+					// between the original and rewritten sharded queries.
 					removeAllAnnotationPositionInformation(expected)
+					removeAllAnnotationPositionInformation(actualSharded)
 				}
 
 				require.Equal(t, expected, actualSharded)
@@ -1766,12 +1788,12 @@ func (h *downstreamHandler) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 		qs = r.GetQuery()
 	}
 
-	warnings, infos := res.Warnings.AsStrings(qs, 0, 0)
-	if len(warnings) > 0 {
-		resp.Warnings = warnings
+	warningErrors, infoErrors := res.Warnings.AsErrorsSplit(qs, 0, 0)
+	if len(warningErrors) > 0 {
+		resp.Warnings = mimirpb.ErrorsToAnnotationErrors(warningErrors)
 	}
-	if len(infos) > 0 {
-		resp.Infos = infos
+	if len(infoErrors) > 0 {
+		resp.Infos = mimirpb.ErrorsToAnnotationErrors(infoErrors)
 	}
 	return resp, nil
 }

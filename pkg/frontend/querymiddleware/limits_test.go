@@ -1252,6 +1252,9 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			some_metric{foo="bar"} 0+1x50
 			some_other_metric{foo="bar", idx="0"} 0+1x50
 			some_other_metric{foo="bar", idx="1"} 0+1x50
+			some_histogram_bucket{le="0.5"} 0+2x50
+			some_histogram_bucket{le="1.0"} 0+1x50
+			some_histogram_bucket{le="+Inf"} 0+3x50
 	`)
 	t.Cleanup(func() { storage.Close() })
 
@@ -1321,8 +1324,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 						},
 					},
 				},
-				Warnings: []string{},
-				Infos:    []string{},
+				Warnings: nil,
+				Infos:    nil,
 			},
 		},
 
@@ -1344,8 +1347,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 						},
 					},
 				},
-				Warnings: []string{},
-				Infos:    []string{},
+				Warnings: nil,
+				Infos:    nil,
 			},
 		},
 
@@ -1363,8 +1366,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 						},
 					},
 				},
-				Warnings: []string{},
-				Infos:    []string{},
+				Warnings: nil,
+				Infos:    nil,
 			},
 			expectedSamplesProcessed: 1,
 		},
@@ -1386,8 +1389,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 						},
 					},
 				},
-				Warnings: []string{},
-				Infos:    []string{},
+				Warnings: nil,
+				Infos:    nil,
 			},
 		},
 
@@ -1396,20 +1399,35 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			expectedErr: apierror.New(apierror.TypeExec, `found duplicate series for the match group {foo="bar"} on the right side of the operation at timestamp 1970-01-01T00:00:03Z: {__name__="some_other_metric", foo="bar", idx="0"} and {__name__="some_other_metric", foo="bar", idx="1"}`),
 		},
 
-		"annotations": {
-			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), requestOptions, requestHints, ""),
-			expectedSamplesProcessed: 2,
+		"annotations with histogram quantile forced monotonicity": {
+			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_histogram_bucket[2s]))`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed: 6,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: model.ValVector.String(),
-					Result:     []SampleStream{},
+					Result: []SampleStream{
+						{
+							Labels:  []mimirpb.LabelAdapter{},
+							Samples: []mimirpb.Sample{{TimestampMs: 3000, Value: 0.07500000000000001}},
+						},
+					},
 				},
-				Warnings: []string{
-					`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`,
-				},
-				Infos: []string{
-					`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:30)`,
+				Infos: []mimirpb.AnnotationError{
+					{
+						Message:       `PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)`,
+						PositionLabel: "1:25",
+						Data: &mimirpb.AnnotationError_HistogramQuantile{
+							HistogramQuantile: &mimirpb.AnnotationHistogramQuantileForcedMonotonicityData{
+								Count:     0,
+								MinTs:     3000,
+								MaxTs:     3000,
+								MinBucket: 1,
+								MaxBucket: 1,
+								MaxDiff:   1,
+							},
+						},
+					},
 				},
 			},
 		},

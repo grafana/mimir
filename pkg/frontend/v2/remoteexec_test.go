@@ -997,6 +997,87 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 	require.ElementsMatch(t, []string{"info: you should know about this", "info: you should know about this too"}, infos)
 }
 
+// TestDecodeEvaluationCompletedMessage_MergesAnnotations verifies that when
+// two evaluation messages contain the same annotation (simulating split-by-time),
+// decoding and merging them produces a single annotation entry — not duplicates.
+func TestDecodeEvaluationCompletedMessage_MergesAnnotations(t *testing.T) {
+	// Two evaluation messages from split-by-time with the same annotation.
+	msg1 := &querierpb.EvaluateQueryResponseEvaluationCompleted{
+		Annotations: querierpb.Annotations{
+			Infos: []string{
+				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "my_metric"`,
+			},
+		},
+	}
+	msg2 := &querierpb.EvaluateQueryResponseEvaluationCompleted{
+		Annotations: querierpb.Annotations{
+			Infos: []string{
+				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "my_metric"`,
+			},
+		},
+	}
+
+	annos1, _ := decodeEvaluationCompletedMessage(msg1)
+	annos2, _ := decodeEvaluationCompletedMessage(msg2)
+
+	annos1.Merge(*annos2)
+
+	require.Len(t, *annos1, 1,
+		"expected annotations for the same metric to merge into a single entry")
+}
+
+// TestDecodeEvaluationCompletedMessage_PositionLabelPreserved verifies that
+// annotation position labels (e.g. "1:10") survive the full remote-execution
+// round-trip: querier annotation string → decodeEvaluationCompletedMessage →
+// MQE engine AsErrorsSplit(query) → ErrorsToAnnotationErrors → final string.
+//
+// This is a regression test for a bug where position info was lost (or showed
+// "1:1" instead of the correct value) because the typed string parsers
+// discarded the position suffix during reconstruction.
+func TestDecodeEvaluationCompletedMessage_PositionLabelPreserved(t *testing.T) {
+	// These are the annotation strings as the querier would produce them via
+	// AsStrings(originalExpression, 0, 0). They contain position suffixes.
+	query := `histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[5m]))`
+
+	msg := &querierpb.EvaluateQueryResponseEvaluationCompleted{
+		Annotations: querierpb.Annotations{
+			Warnings: []string{
+				// Generic warning with position — should pass through unchanged.
+				"PromQL warning: some generic warning (1:10)",
+			},
+			Infos: []string{
+				// histogramQuantileForcedMonotonicity annotation with position suffix.
+				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "http_requests" (1:20)`,
+			},
+		},
+	}
+
+	annos, _ := decodeEvaluationCompletedMessage(msg)
+
+	// Simulate what engineQueryRequestRoundTripperHandler.Do() does:
+	// AsErrorsSplit sets the query on all errors that support it, then
+	// ErrorsToAnnotationErrors extracts annotation data including position.
+	warningErrors, infoErrors := annos.AsErrorsSplit(query, 0, 0)
+
+	warningAEs := mimirpb.ErrorsToAnnotationErrors(warningErrors)
+	infoAEs := mimirpb.ErrorsToAnnotationErrors(infoErrors)
+
+	// Generic warning: position is in the Error() string itself (it's a
+	// stringAnnotation that doesn't implement annoError), so it doesn't get
+	// a PositionLabel — it's just part of the message text.
+	require.Len(t, warningAEs, 1)
+
+	// The histogramQuantileForcedMonotonicity annotation is a typed annotation —
+	// the position "(1:20)" is preserved in the PositionLabel field.
+	require.Len(t, infoAEs, 1)
+
+	// Verify the final string output includes the position.
+	infoStrings := mimirpb.AnnotationErrorsToStrings(infoAEs)
+	require.Len(t, infoStrings, 1)
+	require.Contains(t, infoStrings[0], "(1:20)",
+		"final annotation string should contain the original position suffix")
+}
+
 func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{

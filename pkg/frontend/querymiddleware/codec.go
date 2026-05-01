@@ -280,9 +280,14 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
 	promCloses := make([]func(), 0, len(responses))
-	promWarningsMap := make(map[string]struct{}, 0)
-	promInfosMap := make(map[string]struct{}, 0)
-	var present struct{}
+
+	// Use an AnnotationAccumulator for proper typed error merging across responses.
+	accumulator := NewAnnotationAccumulator()
+
+	// Collect pre-computed position labels from input annotations so we can
+	// restore them after the AnnotationAccumulator round-trip (which doesn't
+	// carry the query string needed to compute them).
+	positionLabels := map[string]string{} // message → position label
 
 	for _, res := range responses {
 		pr, ok := res.GetPrometheusResponse()
@@ -298,23 +303,42 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 		}
 
 		promResponses = append(promResponses, pr)
-		for _, warning := range pr.Warnings {
-			promWarningsMap[warning] = present
+
+		for _, ae := range pr.Warnings {
+			if ae.PositionLabel != "" {
+				positionLabels[ae.Message] = ae.PositionLabel
+			}
 		}
-		for _, info := range pr.Infos {
-			promInfosMap[info] = present
+		for _, ae := range pr.Infos {
+			if ae.PositionLabel != "" {
+				positionLabels[ae.Message] = ae.PositionLabel
+			}
 		}
+
+		// Collect typed annotation errors for proper merging.
+		accumulator.addAnnotationErrors(
+			mimirpb.AnnotationErrorsToErrors(pr.Warnings),
+			mimirpb.AnnotationErrorsToErrors(pr.Infos),
+		)
+
 		promCloses = append(promCloses, res.Close)
 	}
 
-	var promWarnings []string
-	for warning := range promWarningsMap {
-		promWarnings = append(promWarnings, warning)
-	}
+	mergedWarnings, mergedInfos := accumulator.getAll()
 
-	var promInfos []string
-	for info := range promInfosMap {
-		promInfos = append(promInfos, info)
+	mergedWarningProtos := mimirpb.ErrorsToAnnotationErrors(mergedWarnings)
+	mergedInfoProtos := mimirpb.ErrorsToAnnotationErrors(mergedInfos)
+
+	// Restore position labels that were lost during the accumulator round-trip.
+	for i := range mergedWarningProtos {
+		if mergedWarningProtos[i].PositionLabel == "" {
+			mergedWarningProtos[i].PositionLabel = positionLabels[mergedWarningProtos[i].Message]
+		}
+	}
+	for i := range mergedInfoProtos {
+		if mergedInfoProtos[i].PositionLabel == "" {
+			mergedInfoProtos[i].PositionLabel = positionLabels[mergedInfoProtos[i].Message]
+		}
 	}
 
 	// Merge the responses.
@@ -329,8 +353,8 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 				ResultType: model.ValMatrix.String(),
 				Result:     matrixMerge(promResponses),
 			},
-			Warnings: promWarnings,
-			Infos:    promInfos,
+			Warnings: mergedWarningProtos,
+			Infos:    mergedInfoProtos,
 		},
 		finalizer: func() {
 			for _, close := range promCloses {
@@ -974,6 +998,7 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 	}
 
 	start := time.Now()
+
 	resp, err := formatter.DecodeQueryResponse(buf)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
@@ -989,6 +1014,7 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 	for h, hv := range r.Header {
 		resp.Headers = append(resp.Headers, &PrometheusHeader{Name: h, Values: hv})
 	}
+
 	return resp, nil
 }
 

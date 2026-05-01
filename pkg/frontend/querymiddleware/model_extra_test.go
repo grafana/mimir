@@ -16,9 +16,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
@@ -379,6 +382,41 @@ func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedMinT, newReq.GetMinT())
 			require.Equal(t, tc.expectedMaxT, newReq.GetMaxT())
+		})
+	}
+}
+
+func TestAnnotationErrorJSONRoundTrip(t *testing.T) {
+	tests := map[string]struct {
+		input         mimirpb.AnnotationError
+		wantHistogram bool
+	}{
+		"generic": {
+			input:         mimirpb.AnnotationError{Message: "some warning"},
+			wantHistogram: false,
+		},
+		"histogramQuantileForcedMonotonicity": {
+			input:         mimirpb.ErrorsToAnnotationErrors([]error{annotations.NewHistogramQuantileForcedMonotonicityInfo("my_bucket", posrange.PositionRange{Start: 5, End: 20}, 1700000000000, 1.0, 100.0, 0.05)})[0],
+			wantHistogram: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			resp := &PrometheusResponse{
+				Status:   statusSuccess,
+				Warnings: []mimirpb.AnnotationError{tc.input},
+			}
+
+			encoded, err := json.Marshal(resp)
+			require.NoError(t, err)
+
+			var decoded PrometheusResponse
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+
+			require.Len(t, decoded.Warnings, 1)
+			assert.Equal(t, tc.wantHistogram, decoded.Warnings[0].GetHistogramQuantile() != nil, "annotation type should survive JSON round-trip")
+			assert.Equal(t, tc.input.Message, decoded.Warnings[0].Message)
 		})
 	}
 }

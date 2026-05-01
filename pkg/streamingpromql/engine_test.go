@@ -2282,15 +2282,11 @@ type annotationTestCase struct {
 	expectedWarningAnnotationsDelayedNameRemovalEnabled []string
 	expectedInfoAnnotationsDelayedNameRemovalEnabled    []string
 
-	// an alternate set of info annotations for Prometheus where it differs,
-	// including both instant and range queries.
+	// an alternate set of info annotations for range queries when the engines
+	// produce different output for instant vs range (e.g. different sample counts).
 	// if not set the test will fall back to expectedInfoAnnotations / expectedInfoAnnotationsDelayedNameRemovalEnabled
-	// This is only required temporarily until we fix merging annotations in MQE.
-	expectedInfoAnnotationsPrometheus                               []string
-	expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheus      []string
-	expectedInfoAnnotationsPrometheusRange                          []string
-	expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheusRange []string
-	skipComparingAnnotationsWithPrometheus                          bool
+	expectedInfoAnnotationsRange                          []string
+	expectedInfoAnnotationsDelayedNameRemovalEnabledRange []string
 
 	skipComparisonWithPrometheusReason string
 	instantEvaluationTimestamp         *time.Time
@@ -2299,24 +2295,14 @@ type annotationTestCase struct {
 func (a annotationTestCase) getExpectedInfoAnnotations(delayedNameRemovalEnabled bool, engineName, queryType string) []string {
 	isRangeQuery := queryType == "range"
 
-	// Prometheus engine may have specific annotations that differ from Mimir
-	if engineName == prometheusEngineName {
-		if delayedNameRemovalEnabled {
-			if isRangeQuery && a.expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheusRange != nil {
-				return a.expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheusRange
-			}
-			if !isRangeQuery && a.expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheus != nil {
-				return a.expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheus
-			}
+	if isRangeQuery {
+		if delayedNameRemovalEnabled && a.expectedInfoAnnotationsDelayedNameRemovalEnabledRange != nil {
+			return a.expectedInfoAnnotationsDelayedNameRemovalEnabledRange
 		}
-		if isRangeQuery && a.expectedInfoAnnotationsPrometheusRange != nil {
-			return a.expectedInfoAnnotationsPrometheusRange
-		}
-		if !isRangeQuery && a.expectedInfoAnnotationsPrometheus != nil {
-			return a.expectedInfoAnnotationsPrometheus
+		if a.expectedInfoAnnotationsRange != nil {
+			return a.expectedInfoAnnotationsRange
 		}
 	}
-
 	if delayedNameRemovalEnabled && a.expectedInfoAnnotationsDelayedNameRemovalEnabled != nil {
 		return a.expectedInfoAnnotationsDelayedNameRemovalEnabled
 	}
@@ -2421,7 +2407,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 						if len(results) == 2 {
 							// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
 							// or vice-versa where no result may be expected etc.
-							mqetest.RequireEqualResults(t, testCase.expr, results[0], results[1], testCase.skipComparingAnnotationsWithPrometheus)
+							mqetest.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
 						}
 					})
 				}
@@ -3300,15 +3286,12 @@ func TestHistogramAnnotations(t *testing.T) {
 			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:25)`},
 		},
 		"forced monotonicity info": {
-			data:                    mixedClassicHistograms,
-			expr:                    `histogram_quantile(0.5, series{host="d"})`,
-			expectedInfoAnnotations: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) (1:25)`},
-			expectedInfoAnnotationsDelayedNameRemovalEnabled:                []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series" (1:25)`},
-			expectedInfoAnnotationsPrometheus:                               []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile), from buckets 1 to +Inf, with a max diff of 1, over 1 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:01:00Z (1:25)`},
-			expectedInfoAnnotationsPrometheusRange:                          []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile), from buckets 1 to +Inf, with a max diff of 1, over 10 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:03:00Z (1:25)`},
-			expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheus:      []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series", from buckets 1 to +Inf, with a max diff of 1, over 1 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:01:00Z (1:25)`},
-			expectedInfoAnnotationsDelayedNameRemovalEnabledPrometheusRange: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series", from buckets 1 to +Inf, with a max diff of 1, over 10 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:03:00Z (1:25)`},
-			skipComparingAnnotationsWithPrometheus:                          true,
+			data:                         mixedClassicHistograms,
+			expr:                         `histogram_quantile(0.5, series{host="d"})`,
+			expectedInfoAnnotations:      []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile), from buckets 1 to +Inf, with a max diff of 1, over 1 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:01:00Z (1:25)`},
+			expectedInfoAnnotationsRange: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile), from buckets 1 to +Inf, with a max diff of 1, over 3 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:03:00Z (1:25)`},
+			expectedInfoAnnotationsDelayedNameRemovalEnabled:      []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series", from buckets 1 to +Inf, with a max diff of 1, over 1 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:01:00Z (1:25)`},
+			expectedInfoAnnotationsDelayedNameRemovalEnabledRange: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series", from buckets 1 to +Inf, with a max diff of 1, over 3 samples from 1970-01-01T00:01:00Z to 1970-01-01T00:03:00Z (1:25)`},
 		},
 		"both mixed classic+native histogram and invalid quantile warnings": {
 			data: mixedClassicHistograms,
