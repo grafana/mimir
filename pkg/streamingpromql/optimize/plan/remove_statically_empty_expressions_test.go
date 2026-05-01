@@ -190,13 +190,12 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expectUnchanged: true,
 		},
 		"nested and expressions: should optimize as far as possible": {
+			// The inner "and" has the timestamp filter → replaced with NoOp.
+			// The outer "or" then has NoOp as its LHS → simplified to just the RHS.
 			expr:       "(metric and timestamp(metric) < CONSTANT) or metric2",
 			queryStart: time.UnixMilli(selectorThresholdMs + 1),
 			expectedPlan: `
-				- DeduplicateAndMerge
-					- BinaryExpression: LHS or RHS
-						- LHS: NoOp
-						- RHS: VectorSelector: {__name__="metric2"}
+				- VectorSelector: {__name__="metric2"}
 			`,
 		},
 
