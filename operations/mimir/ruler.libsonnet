@@ -1,5 +1,34 @@
 {
   local container = $.core.v1.container,
+  local configMap = $.core.v1.configMap,
+  local deployment = $.apps.v1.deployment,
+  local volume = $.core.v1.volume,
+  local volumeMount = $.core.v1.volumeMount,
+
+  local hasLocalRules =
+    $._config.ruler_storage_backend == 'local' &&
+    std.length($._config.ruler_local_rules) > 0,
+
+  // Generate a list of rule file objects (key, tenant, filename).
+  // Each key is generated as "rule-N" where N is object` index to avoid restrictions on tenant ID characters in Kubernetes volume mounts.
+  local rulesPairs = std.mapWithIndex(
+    function(i, pair) { key: 'rule-' + i, tenant: pair[0], filename: pair[1] },
+    [
+      [tenant, filename]
+      for tenant in std.sort(std.objectFields($._config.ruler_local_rules))
+      for filename in std.sort(std.objectFields($._config.ruler_local_rules[tenant]))
+    ]
+  ),
+
+  local localRulesConfigMapData = {
+    [p.key]: $._config.ruler_local_rules[p.tenant][p.filename]
+    for p in rulesPairs
+  },
+
+  local localRulesVolumeItems = [
+    { key: p.key, path: p.tenant + '/' + p.filename }
+    for p in rulesPairs
+  ],
 
   ruler_args::
     $._config.commonConfig +
@@ -47,6 +76,12 @@
 
   ruler_node_affinity_matchers:: [],
 
+  ruler_local_rules_config_map:
+    if hasLocalRules then
+      configMap.new('ruler-local-rules') +
+      configMap.withData(localRulesConfigMapData)
+    else {},
+
   newRulerContainer(name, args, envVarMap={})::
     container.new(name, $._images.ruler) +
     container.withPorts($.util.defaultPorts) +
@@ -55,14 +90,17 @@
     $.util.resourcesRequests('1', '6Gi') +
     $.util.resourcesLimits('16', '16Gi') +
     $.util.readinessProbe +
-    $.tracing_env_mixin,
+    $.tracing_env_mixin +
+    (if hasLocalRules then
+       container.withVolumeMountsMixin([
+         volumeMount.new('ruler-local-rules', $._config.ruler_local_directory),
+       ])
+     else {}),
 
   ruler_container::
     if $._config.ruler_enabled then
       $.newRulerContainer('ruler', $.ruler_args, $.ruler_env_map)
     else {},
-
-  local deployment = $.apps.v1.deployment,
 
   ruler_termination_grace_period_seconds:: 600,
 
@@ -74,7 +112,13 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.ruler_termination_grace_period_seconds) +
     $.newMimirSpreadTopology(name, $._config.ruler_querier_topology_spread_max_skew) +
-    $.mimirVolumeMounts,
+    $.mimirVolumeMounts +
+    (if hasLocalRules then
+       deployment.mixin.spec.template.spec.withVolumesMixin([
+         volume.fromConfigMap('ruler-local-rules', 'ruler-local-rules') +
+         { configMap+: { items: localRulesVolumeItems } },
+       ])
+     else {}),
 
   ruler_deployment: if !$._config.ruler_enabled then null else
     $.newRulerDeployment('ruler', $.ruler_container, $.ruler_node_affinity_matchers),
