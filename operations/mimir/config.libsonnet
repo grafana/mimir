@@ -288,6 +288,31 @@
     ruler_storage_bucket_name: error 'must specify the ruler storage bucket name',
     ruler_local_directory: error 'you must specify the local directory for ruler storage',
 
+    // Map of tenant_id -> { rule_file_name: rule_group_yaml_string }.
+    // When ruler_storage_backend is 'local', automatically generates a ConfigMap named
+    // 'ruler-local-rules' and mounts it to the ruler pods.
+    //
+    // The rule files are mounted in the following directory structure:
+    //   <ruler_local_directory>/<tenant_id>/<rule_file_name>
+    //
+    // Note: ruler_local_directory must be an absolute path (e.g., /data/ruler-rules),
+    // not a relative path. This is intended for small rule sets (development/testing)
+    // as all rule files must fit within the Kubernetes ConfigMap size limit (~1 MiB).
+    //
+    // Example:
+    //   ruler_local_rules: {
+    //     tenant1: {
+    //       'rules.yaml': |||
+    //         groups:
+    //           - name: example
+    //             rules:
+    //               - record: job:http_requests:rate5m
+    //                 expr: sum by (job) (rate(http_requests_total[5m]))
+    //       |||,
+    //     },
+    //   },
+    ruler_local_rules: {},
+
     rulerStorageConfig:
       {
         [
