@@ -239,33 +239,32 @@ func initCachingBuckets(
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (indexHeaderBkt, chunksBkt objstore.Bucket, err error) {
-	// Init the metadata cache client and its corresponding bucket caching config.
-	// The client and initialized metadata caching config may be applied
-	// to the caching bucket clients for both the index-header and chunks.
-	metadataCache, cachingBucketConfig, err := tsdb.NewMetadataCachingBucketConfig(
-		"metadata-cache", cfg.BucketStore.MetadataCache, logger, reg,
-	)
+	// Metrics are shared across caching buckets as they have the same labels.
+	cachingBucketMetrics := bucketcache.NewCachingBucketMetrics(reg)
+
+	// Init the metadata cache client.
+	// The client may be shared across the index-header and chunks caching buckets.
+	metadataCache, err := tsdb.NewMetadataCacheClient(cfg.BucketStore.MetadataCache, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "create metadata cache")
 	}
 
-	// Metrics are shared across caching buckets as they have the same labels.
-	cachingBucketMetrics := bucketcache.NewCachingBucketMetrics(reg)
-
-	// Init index-header caching bucket with the memcached client from index cache, if enabled.
+	// Init index-header caching bucket; uses the memcached client for the index cache, if enabled.
 	indexHeaderBkt, err = tsdb.NewIndexHeaderCachingBucket(
-		metadataCache, cachingBucketConfig, indexCacheClient, cfg.BucketStore.IndexHeaderCache, bucketClient, logger, reg, cachingBucketMetrics,
+		metadataCache, cfg, indexCacheClient, bucketClient, logger, reg, cachingBucketMetrics,
 	)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "create index header caching bucket")
 	}
 
 	// Init the chunks cache.
-	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	chunksCacheClient, err := cache.CreateClient(
+		"chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg),
+	)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "chunks-cache")
 	}
-	chunksBkt, err = tsdb.NewChunksCachingBucket(metadataCache, cachingBucketConfig, chunksCacheClient, cfg.BucketStore.ChunksCache, bucketClient, logger, reg, cachingBucketMetrics)
+	chunksBkt, err = tsdb.NewChunksCachingBucket(metadataCache, cfg, chunksCacheClient, bucketClient, logger, reg, cachingBucketMetrics)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "create chunks caching bucket")
 	}
