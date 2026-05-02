@@ -375,208 +375,175 @@ func TestConfigValidate(t *testing.T) {
 
 ---
 
-## Step 3 — `direct_producer.go`: Sender interface and KafkaSender
+## Step 3 — `direct_producer.go`: DirectProducer interface and KafkaDirectProducer
 
 ### Purpose
 
 Define the single seam between custom logic and the franz-go network stack. The more important
-output of this step is `mockSender`, which all subsequent components use in their tests.
+output of this step is `mockDirectProducer`, which all subsequent components use in their tests.
 
 ### Files
 
 - `pkg/warpstreamclient/direct_producer.go` *(new)*
-- `pkg/warpstreamclient/sender_test.go` *(new)*
-- `pkg/warpstreamclient/mock_direct_producer_test.go` *(new)*
+- `pkg/warpstreamclient/direct_producer_test.go` *(new — includes `mockDirectProducer`)*
 
 ### What to implement
 
 ```go
-// Sender sends a ProduceRequest to a specific agent. Safe for concurrent use.
-type Sender interface {
-    Send(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
+// DirectProducer produces to a specific Warpstream agent by its Kafka NodeID.
+// Implementations must be safe for concurrent use.
+type DirectProducer interface {
+    Produce(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
 }
 
-// KafkaSender implements DirectProducer using kgo.Client.
+// KafkaDirectProducer implements DirectProducer using kgo.Client.Broker().RetriableRequest().
 // This is the only type in this package that depends on kgo.Client directly.
-type KafkaSender struct {
+type KafkaDirectProducer struct {
     client *kgo.Client
 }
 
-func NewKafkaSender(client *kgo.Client) *KafkaSender
-
-func (s *KafkaSender) Send(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
+func NewKafkaDirectProducer(client *kgo.Client) *KafkaDirectProducer
+func (s *KafkaDirectProducer) Produce(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
 ```
 
-`mockSender` (test-only, not exported):
+`mockDirectProducer` (test-only):
 ```go
-type mockSender struct {
-    mu    sync.Mutex
-    calls []mockSenderCall
-    // Per-nodeID behaviour; absent keys return a success response.
-    delays map[int32]time.Duration
-    errors map[int32]error
-}
-
-type mockSenderCall struct {
+type mockDirectProducerCall struct {
     nodeID int32
     req    *kmsg.ProduceRequest
+    err    error     // nil on success; ctx.Err() if cancelled
+    sentAt time.Time // for ordering assertions
 }
 
-func newMockSender() *mockSender
-func (m *mockSender) Send(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
-func (m *mockSender) recordedCalls() []mockSenderCall
+type mockDirectProducer struct {
+    mu      sync.Mutex
+    calls   []mockDirectProducerCall
+    delays  map[int32]time.Duration
+    errs    map[int32]error
+    blockCh map[int32]chan struct{}  // per-nodeID gate for deterministic ordering
+}
+
+func newMockDirectProducer() *mockDirectProducer
+func (m *mockDirectProducer) Produce(ctx, nodeID, req) (*kmsg.ProduceResponse, error)
+func (m *mockDirectProducer) recordedCalls() []mockDirectProducerCall
 ```
 
-### Test cases
+### Tests
 
-```go
-// Verify interface satisfaction at compile time — no broker required.
-func TestKafkaSenderImplementsSender(t *testing.T) {
-    var _ Sender = (*KafkaSender)(nil)
-}
-
-func TestMockSender(t *testing.T) {
-    tests := map[string]struct {
-        nodeID    int32
-        setup     func(*mockSender)
-        wantErr   bool
-        minDelay  time.Duration
-    }{
-        "default returns success":             {nodeID: 1, setup: func(_ *mockSender) {}},
-        "configured error is returned":        {nodeID: 2, setup: func(m *mockSender) { m.errors[2] = errors.New("x") }, wantErr: true},
-        "configured delay is honoured":        {nodeID: 3, setup: func(m *mockSender) { m.delays[3] = 20 * time.Millisecond }, minDelay: 20 * time.Millisecond},
-        "call is recorded":                   {nodeID: 4, setup: func(_ *mockSender) {}},
-        "context cancellation returns error": {nodeID: 5, setup: func(m *mockSender) { m.delays[5] = time.Hour }, wantErr: true},
-    }
-    for name, tc := range tests {
-        t.Run(name, func(t *testing.T) {
-            m := newMockSender()
-            tc.setup(m)
-            ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-            defer cancel()
-            start := time.Now()
-            _, err := m.Produce(ctx, tc.nodeID, &kmsg.ProduceRequest{})
-            if tc.wantErr {
-                require.Error(t, err)
-            } else {
-                require.NoError(t, err)
-                assert.GreaterOrEqual(t, time.Since(start), tc.minDelay)
-            }
-            assert.Len(t, m.recordedCalls(), 1)
-        })
-    }
-}
-```
+- `TestKafkaDirectProducerImplementsDirectProducer` — compile-time interface check.
+- `TestMockDirectProducer` — table-driven coverage of delay, error, context cancellation, recording.
+- `TestMockDirectProducerMultipleCalls` — multi-call ordering, concurrent races under `-race`,
+  block/release determinism.
+- `TestKafkaDirectProducerProduce` — kfake-based round-trip: produce a record and consume it back.
 
 ### Review focus
 
-- `mockSender` is race-safe under `-race`.
-- Context cancellation is respected inside the mock delay.
+- `mockDirectProducer` is race-safe under `-race`.
+- Context cancellation is respected inside the mock delay and during block-release waits.
 
 ---
 
-## Step 4 — `agentpool.go`: agent discovery and selection
+## Step 4 — `agentpool.go` + `partition_assignment.go`: agent discovery and selection
 
 ### Purpose
 
-Implement `AgentSelector` (interface), `AgentPool`, and the `selectSecondary` pure function.
-Key decisions: `Secondary()` returns `(int32, bool)` so callers can skip hedging when only one
-agent is available; secondary results are lazily cached so `selectSecondary` is not called on
-the hot path after the first request per partition.
+Two files with a single responsibility each:
+
+- **`agentpool.go`** — `AgentPool`: discovers agents via Kafka Metadata and produces a new
+  `DefaultPartitionAssignmentStrategy` snapshot on every `Refresh()`.
+- **`partition_assignment.go`** — `PartitionAssignmentStrategy` interface +
+  `DefaultPartitionAssignmentStrategy`: immutable selection logic on a fixed agent snapshot.
+
+Decoupling the two responsibilities means `DefaultPartitionAssignmentStrategy` has no locks on
+the hot path (uses `sync.Map` for write-once-read-many secondary caching) and can be tested
+without any network or Metadata involvement.
 
 ### Files
 
 - `pkg/warpstreamclient/agentpool.go` *(new)*
+- `pkg/warpstreamclient/partition_assignment.go` *(new)*
 - `pkg/warpstreamclient/agentpool_test.go` *(new)*
-- `pkg/warpstreamclient/mock_agent_selector_test.go` *(new)*
 
 ### What to implement
 
 ```go
-type topicPartition struct {
-    topic     string
-    partition int32
-}
+// partition_assignment.go
 
-// AgentSelector is the read interface consumed by RecordBuffer and Hedger.
-type AgentSelector interface {
-    // Primary returns the Kafka NodeID designated as partition leader by Metadata.
+// PartitionAssignmentStrategy selects the primary and secondary agent for a given partition.
+type PartitionAssignmentStrategy interface {
     Primary(topic string, partition int32) int32
-
-    // Secondary returns a deterministic alternate NodeID for hedging.
-    // Returns (0, false) when only one agent is available, indicating that
-    // hedging should be skipped entirely for this partition.
     Secondary(topic string, partition int32) (nodeID int32, ok bool)
-
-    // All returns all known agent NodeIDs in ascending order.
-    All() []int32
 }
 
-// AgentPool implements AgentSelector backed by live Kafka Metadata.
-type AgentPool struct {
-    client *kgo.Client
-    topic  string
-
-    mu             sync.RWMutex
-    agents         []int32                  // sorted ascending by NodeID
-    leaders        map[topicPartition]int32 // partition → primary NodeID
-    secondaryCache map[topicPartition]int32 // lazily populated; cleared on topology change
+// DefaultPartitionAssignmentStrategy implements PartitionAssignmentStrategy from an
+// immutable snapshot of the agent pool. Safe for concurrent use without explicit locking;
+// secondary results are cached in a sync.Map (write-once, read-many).
+// A new instance is created by AgentPool.Refresh() on every call.
+type DefaultPartitionAssignmentStrategy struct {
+    agents    []int32                  // sorted ascending, immutable
+    leaders   map[topicPartition]int32 // immutable
+    secondary sync.Map                 // topicPartition → int32 (noSecondary=-1 if unavailable)
 }
 
-func NewAgentPool(client *kgo.Client, topic string) *AgentPool
+func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPartition]int32) *DefaultPartitionAssignmentStrategy
+func (s *DefaultPartitionAssignmentStrategy) Primary(topic string, partition int32) int32
+func (s *DefaultPartitionAssignmentStrategy) Secondary(topic string, partition int32) (int32, bool)
 
-// Refresh fetches current Metadata and updates the agent list and leader map.
-// Returns the NodeIDs of agents that were present before and are absent now;
-// callers must purge these from any per-agent state (e.g. LatencyTracker).
-// The secondary cache is invalidated whenever the agent set changes.
-func (p *AgentPool) Refresh(ctx context.Context) (removed []int32, err error)
-
-func (p *AgentPool) Primary(topic string, partition int32) int32
-
-// Secondary returns a secondary NodeID for hedging. The result is cached
-// per (topic, partition) and recomputed only when the agent set changes.
-func (p *AgentPool) Secondary(topic string, partition int32) (int32, bool)
-
-func (p *AgentPool) All() []int32
-```
-
-```go
 // selectSecondary picks a secondary NodeID deterministically using xxhash(topic:partition)
-// over the sorted candidate list (all NodeIDs excluding primary).
-// Returns (0, false) when no secondary is available (single-agent cluster).
+// over the sorted candidate list (all agents minus primary). Alloc-free.
+// Returns (0, false) if no secondary is available.
 func selectSecondary(topic string, partition int32, primary int32, all []int32) (int32, bool)
 ```
 
-**`Secondary()` caching logic:**
-1. Acquire read lock; check `secondaryCache`. If hit, return.
-2. Release read lock; acquire write lock; recheck cache (double-check pattern).
-3. Compute via `selectSecondary`; store in cache; return.
+```go
+// agentpool.go
 
-**`Refresh()` invalidation:**
-Compare the incoming sorted NodeID set to `p.agents`. If different (agent added or replaced),
-clear `p.secondaryCache` before updating `p.agents`.
+// AgentPool discovers and maintains the current set of Warpstream agents.
+// Each Refresh produces a new DefaultPartitionAssignmentStrategy from the updated snapshot.
+type AgentPool struct {
+    client   *kgo.Client
+    topic    string
+    mu       sync.RWMutex
+    topicID  [16]byte
+    agents   []int32 // sorted ascending; used to detect removed agents
+    strategy atomic.Pointer[DefaultPartitionAssignmentStrategy]
+}
+
+func NewAgentPool(client *kgo.Client) *AgentPool
+
+// Refresh updates the agent pool via RequestCachedMetadata (avoids duplicate
+// network requests when kgo's cache is fresh). Returns removed NodeIDs.
+// Always creates a new DefaultPartitionAssignmentStrategy from the current snapshot.
+func (p *AgentPool) Refresh(ctx context.Context) (removed []int32, err error)
+
+// Strategy returns the PartitionAssignmentStrategy built from the last Refresh.
+func (p *AgentPool) Strategy() PartitionAssignmentStrategy
+
+// TopicID returns the UUID of the topic (required for Produce API v13+).
+func (p *AgentPool) TopicID(topic string) [16]byte
+```
+
+**Secondary caching (now in `DefaultPartitionAssignmentStrategy`):**
+`sync.Map` is used instead of `map+RWMutex` because each strategy is immutable: once a
+secondary is computed for a `(topic, partition)` key it never changes for that instance.
+`sync.Map` is optimal for this write-once, read-many access pattern and eliminates the
+double-check locking complexity that was previously in `AgentPool.Secondary()`.
 
 **Caching is required at production scale.**
 Warpstream clusters range from tens to thousands of agents (up to ~1 000 in the largest
-deployments). `selectSecondary` builds a candidate slice of `len(all) - 1` elements to
-exclude the primary; at 1 000 agents that is a ~4 KB heap allocation on every call. Without
-caching this allocation occurs on every produce flush for every partition — the hot path.
-With caching it occurs at most once per `(topic, partition)` pair after a topology change.
-The cache is not optional; remove it only if profiling demonstrates it is never populated
-(i.e. topology changes so frequently that every call is a miss, which contradicts the stable
-assignment strategy documented in the research).
+deployments). `selectSecondary` at 1 000 agents costs ~300 ns. Without caching this runs on
+every produce flush for every partition. The cache amortises this to one call per
+`(topic, partition)` per strategy instance (~10 s lifetime).
 
-**`mockAgentSelector`** (test-only):
+**`mockPartitionAssignmentStrategy`** (test-only, in `agentpool_test.go`):
 ```go
-type mockAgentSelector struct {
+type mockPartitionAssignmentStrategy struct {
     agents    []int32
     leaders   map[topicPartition]int32
     secondary map[topicPartition]int32 // optional override; falls back to selectSecondary
 }
-
-func (m *mockAgentSelector) Primary(topic string, partition int32) int32
-func (m *mockAgentSelector) Secondary(topic string, partition int32) (int32, bool)
-func (m *mockAgentSelector) All() []int32
+func (m *mockPartitionAssignmentStrategy) Primary(topic string, partition int32) int32
+func (m *mockPartitionAssignmentStrategy) Secondary(topic string, partition int32) (int32, bool)
 ```
 
 ### Test cases
@@ -788,7 +755,7 @@ func NewHedger(producer DirectProducer, tracker *LatencyTracker, cfg HedgerConfi
 
 // Send dispatches to primaryID and, when warranted, hedges to secondaryID.
 // secondaryID must be a valid NodeID; callers should only invoke with ok=true
-// from AgentSelector.Secondary.
+// from PartitionAssignmentStrategy.Secondary.
 func (h *Hedger) Send(ctx context.Context, primaryID, secondaryID int32, req *kmsg.ProduceRequest) error
 ```
 
@@ -1047,7 +1014,7 @@ type FlushFunc func(ctx context.Context, nodeID int32, records []*kgo.Record, do
 type RecordBuffer struct {
     linger        time.Duration
     maxBatchBytes int32
-    selector      AgentSelector
+    selector      PartitionAssignmentStrategy
     flush         FlushFunc
     metrics       *metrics
 
@@ -1064,7 +1031,7 @@ type partitionBuf struct {
     timer     *time.Timer
 }
 
-func NewRecordBuffer(linger time.Duration, maxBatchBytes int32, selector AgentSelector, flush FlushFunc, m *metrics) *RecordBuffer
+func NewRecordBuffer(linger time.Duration, maxBatchBytes int32, selector PartitionAssignmentStrategy, flush FlushFunc, m *metrics) *RecordBuffer
 
 // Add buffers records into the appropriate per-partition batch.
 // done is called exactly once when the batch containing these records is
@@ -1289,7 +1256,7 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 ```go
 // newTestableClient creates a WarpstreamClient with injected mock components.
 // Use this instead of NewWarpstreamClient in all unit tests.
-func newTestableClient(t *testing.T, sender Sender, selector AgentSelector) *WarpstreamClient
+func newTestableClient(t *testing.T, sender Sender, selector PartitionAssignmentStrategy) *WarpstreamClient
 
 func TestWarpstreamClientProduceSync(t *testing.T) {
     tests := map[string]struct {
@@ -1554,7 +1521,7 @@ function must return `(0, false)` without panicking. Add a guard at the top of t
 **`LatencyTracker.HedgeDecision` with one agent.** If only one agent is known, `slowFraction`
 is either 0% or 100%. The 100% case (one agent is slow) would suppress hedging even though
 there is a real problem. This is acceptable: with a single agent there is no secondary to
-hedge to, and `AgentSelector.Secondary()` would return `ok=false` anyway, preventing the
+hedge to, and `PartitionAssignmentStrategy.Secondary()` would return `ok=false` anyway, preventing the
 hedge from being triggered at all.
 
 ### Performance

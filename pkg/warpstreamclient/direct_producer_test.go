@@ -146,7 +146,7 @@ func TestMockDirectProducerMultipleCalls(t *testing.T) {
 	})
 }
 
-func TestMockSender(t *testing.T) {
+func TestMockDirectProducer(t *testing.T) {
 	tests := map[string]struct {
 		nodeID   int32
 		setup    func(*mockDirectProducer)

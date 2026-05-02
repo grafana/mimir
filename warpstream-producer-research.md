@@ -564,7 +564,7 @@ brokers := client.DiscoveredBrokers()   // all known agents
 // sort by NodeID for stable ordering, then apply consistent hash for secondary selection
 ```
 
-To get the partition-to-primary mapping, issue a `kmsg.MetadataRequest` via `client.Request()` (routes
+To get the partition-to-primary mapping, call `client.RequestCachedMetadata()` which serves from kgo's internal cache when fresh, and falls back to a real MetadataRequest only when stale. This avoids duplicate network requests when the kgo background refresh has already done it.
 to any broker) and parse `resp.Topics[0].Partitions[i].Leader` to get the primary NodeID per
 partition. This can be cached and refreshed on the same 10-second cadence as the current Mimir
 configuration.
@@ -807,10 +807,11 @@ tradeoffs: significantly more engineering effort with no meaningful benefit over
 pkg/warpstreamclient/
 ├── client.go        WarpstreamClient — top-level, wires all components, ProduceSync entry point
 ├── config.go        Config struct + RegisterFlagsWithPrefix
-├── direct_producer.go        Sender interface + KafkaSender (the only kgo.Client boundary)
-├── agentpool.go     AgentSelector interface + AgentPool (Metadata, primary/secondary selection)
+├── direct_producer.go        DirectProducer interface + KafkaDirectProducer (the only kgo.Client boundary)
+├── agentpool.go     AgentPool (Metadata refresh, builds DefaultPartitionAssignmentStrategy snapshots)
+├── partition_assignment.go   PartitionAssignmentStrategy interface + DefaultPartitionAssignmentStrategy (immutable selection)
 ├── linger.go        RecordBuffer (per-partition batching, timer, flush triggers)
-├── hedger.go        Hedger (concurrent Sender calls, hedge-on-delay pattern)
+├── hedger.go        Hedger (concurrent DirectProducer calls, hedge-on-delay pattern)
 ├── produce.go       buildProduceRequest + parseProduceResponse (pure functions)
 └── metrics.go       metrics struct (Prometheus counters / histograms)
 ```
@@ -822,89 +823,88 @@ Test files mirror the above; each component gets its own `_test.go`.
 ### Component: `direct_producer.go`
 
 The single seam between custom logic and the franz-go network stack. **This is the only file
-that imports `kgo`.**
+that imports `kgo.Client`.**
 
 ```go
-// Sender sends a ProduceRequest to a specific Warpstream agent by its Kafka NodeID.
+// DirectProducer produces to a specific Warpstream agent by its Kafka NodeID.
 // Implementations must be safe for concurrent use.
-type Sender interface {
-    Send(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
+type DirectProducer interface {
+    Produce(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
 }
 
-// KafkaSender implements Sender using kgo.Client.Broker().RetriableRequest().
-type KafkaSender struct{ client *kgo.Client }
+// KafkaDirectProducer implements DirectProducer using kgo.Client.Broker().RetriableRequest().
+type KafkaDirectProducer struct{ client *kgo.Client }
 
-func NewKafkaSender(client *kgo.Client) *KafkaSender
-
-func (s *KafkaSender) Send(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error) {
-    resp, err := s.client.Broker(int(nodeID)).RetriableRequest(ctx, req)
-    // ...
-}
+func NewKafkaDirectProducer(client *kgo.Client) *KafkaDirectProducer
+func (s *KafkaDirectProducer) Produce(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
 ```
 
-**Test mock:**
-```go
-type mockSender struct {
-    mu      sync.Mutex
-    calls   []senderCall            // recorded invocations for assertions
-    latency map[int32]time.Duration // per-nodeID artificial delay
-    errors  map[int32]error         // per-nodeID forced error
-}
-func (m *mockSender) Send(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
-```
-
-`mockSender` lets every component above `KafkaSender` be tested without a real Kafka connection.
+**Test mock** (`mockDirectProducer`): per-nodeID configurable delays, errors, and a per-nodeID
+block channel for deterministic ordering in hedger tests. Records timestamps and final error on
+each call so tests can assert ordering and outcomes without time-based flakiness.
 
 ---
 
-### Component: `agentpool.go`
+### Components: `agentpool.go` + `partition_assignment.go`
 
-Discovers agents from Metadata and provides deterministic primary/secondary selection.
+Two files with a single responsibility each:
+
+- **`agentpool.go`** — `AgentPool` is pure discovery: refreshes Metadata via the kgo.Client and
+  produces a new `DefaultPartitionAssignmentStrategy` snapshot on every `Refresh()`.
+- **`partition_assignment.go`** — `PartitionAssignmentStrategy` interface +
+  `DefaultPartitionAssignmentStrategy`: immutable selection logic on a fixed agent snapshot.
+  No locks on the hot path (uses `sync.Map` for write-once-read-many secondary caching).
 
 ```go
-// AgentSelector is the read interface consumed by RecordBuffer and Hedger.
-// Separating it from AgentPool keeps test dependencies minimal.
-type AgentSelector interface {
-    Primary(topic string, partition int32) int32    // NodeID of Metadata-designated leader
-    Secondary(topic string, partition int32) int32  // deterministic hedge target
-    All() []int32                                   // all known agent NodeIDs, sorted
+// partition_assignment.go
+
+// PartitionAssignmentStrategy selects the primary and secondary agent for a given partition.
+type PartitionAssignmentStrategy interface {
+    Primary(topic string, partition int32) int32
+    // Secondary returns (0, false) if no secondary is available.
+    Secondary(topic string, partition int32) (nodeID int32, ok bool)
 }
 
-// AgentPool implements AgentSelector. Refreshed periodically or on error.
+// DefaultPartitionAssignmentStrategy is immutable once created and safe for concurrent use.
+// A new instance is created by AgentPool.Refresh on every call.
+type DefaultPartitionAssignmentStrategy struct {
+    agents    []int32                  // sorted ascending, immutable
+    leaders   map[topicPartition]int32 // immutable
+    secondary sync.Map                 // topicPartition → int32 (noSecondary=-1 if unavailable)
+}
+
+// selectSecondary picks a secondary deterministically using xxhash(topic, partition)
+// over the sorted candidate list (all agents minus primary). Alloc-free walk.
+func selectSecondary(topic string, partition int32, primary int32, all []int32) (int32, bool)
+```
+
+```go
+// agentpool.go
+
 type AgentPool struct {
-    client  *kgo.Client
-    mu      sync.RWMutex
-    agents  []int32                  // sorted NodeIDs
-    leaders map[topicPartition]int32 // partition → primary NodeID from Metadata
+    client   *kgo.Client
+    topic    string
+    mu       sync.RWMutex
+    topicID  [16]byte
+    agents   []int32 // sorted, used to detect removed agents across refreshes
+    strategy atomic.Pointer[DefaultPartitionAssignmentStrategy]
 }
 
 func NewAgentPool(client *kgo.Client) *AgentPool
-func (p *AgentPool) Refresh(ctx context.Context) error
-func (p *AgentPool) Primary(topic string, partition int32) int32
-func (p *AgentPool) Secondary(topic string, partition int32) int32
+
+// Refresh uses kgo.Client.RequestCachedMetadata which serves from kgo's internal cache when
+// fresh (within MetadataMinAge), avoiding duplicate network requests. Returns removed NodeIDs
+// so callers can purge per-agent state (e.g. LatencyTracker). Always creates a new
+// DefaultPartitionAssignmentStrategy from the current snapshot.
+func (p *AgentPool) Refresh(ctx context.Context) (removed []int32, err error)
+
+func (p *AgentPool) Strategy() PartitionAssignmentStrategy
+func (p *AgentPool) TopicID(topic string) [16]byte
 func (p *AgentPool) All() []int32
 ```
 
-**Secondary selection** (pure function, trivially unit-testable):
-```go
-func selectSecondary(topic string, partition int32, primary int32, all []int32) int32 {
-    candidates := sortedWithout(all, primary)
-    if len(candidates) == 0 {
-        return primary
-    }
-    h := xxhash.Sum64String(topic + ":" + strconv.Itoa(int(partition)))
-    return candidates[h%uint64(len(candidates))]
-}
-```
-
-**Test mock:**
-```go
-type mockAgentSelector struct {
-    primary   map[topicPartition]int32
-    secondary map[topicPartition]int32
-    all       []int32
-}
-```
+A `mockPartitionAssignmentStrategy` test double will be added when the Hedger and RecordBuffer
+tests need it.
 
 ---
 
@@ -944,7 +944,7 @@ func (h *Hedger) Send(
 ### Component: `linger.go`
 
 Accumulates records per `(topic, partition)` and triggers flushes. Depends only on
-`AgentSelector` (interface) and a `FlushFunc` callback — no Kafka or network knowledge.
+`PartitionAssignmentStrategy` (interface) and a `FlushFunc` callback — no Kafka or network knowledge.
 
 ```go
 // FlushFunc is called when a batch for one agent is ready to send.
@@ -955,7 +955,7 @@ type FlushFunc func(ctx context.Context, nodeID int32, records []*kgo.Record, do
 type RecordBuffer struct {
     linger        time.Duration
     maxBatchBytes int32
-    selector      AgentSelector
+    selector      PartitionAssignmentStrategy
     flush         FlushFunc
     mu            sync.Mutex
     bufs          map[topicPartition]*partitionBuf
@@ -968,7 +968,7 @@ type partitionBuf struct {
     timer     *time.Timer
 }
 
-func NewRecordBuffer(linger time.Duration, maxBatchBytes int32, selector AgentSelector, flush FlushFunc) *RecordBuffer
+func NewRecordBuffer(linger time.Duration, maxBatchBytes int32, selector PartitionAssignmentStrategy, flush FlushFunc) *RecordBuffer
 
 // Add buffers records. If sync=true the batch flushes immediately (bypassing the
 // timer), same as franz-go's ProduceSync behaviour.
@@ -985,7 +985,7 @@ func (b *RecordBuffer) Close()
 | `sync=true` (ProduceSync caller) | Flush all affected partitions immediately |
 | `Close()` | Flush everything; block until all callbacks fired |
 
-**Test approach:** inject `mockAgentSelector` + a `FlushFunc` that immediately calls `done(nil)`.
+**Test approach:** inject `mockPartitionAssignmentStrategy` + a `FlushFunc` that immediately calls `done(nil)`.
 Verify batching, timer, and immediate-flush behaviour without any network calls.
 
 ---
@@ -1067,8 +1067,8 @@ func (w *warpstreamKafkaProducer) Close() { _ = w.c.Close() }
 pkg/warpstreamclient/
   client.go
     ├── direct_producer.go     → kgo.Client (franz-go)
-    ├── agentpool.go  → kgo.Client (franz-go) + AgentSelector interface
-    ├── linger.go     → AgentSelector interface + FlushFunc
+    ├── agentpool.go  → kgo.Client (franz-go) + PartitionAssignmentStrategy interface
+    ├── linger.go     → PartitionAssignmentStrategy interface + FlushFunc
     ├── hedger.go     → Sender interface
     ├── produce.go    → kmsg (franz-go) — pure functions
     └── metrics.go    → prometheus
@@ -1084,8 +1084,8 @@ pkg/storage/ingest/writer_client.go
 | `produce.go` | No | None |
 | `hedger.go` | No | `mockSender` |
 | `agentpool.go` | No (fake Metadata resp) | None |
-| `linger.go` | No | `mockAgentSelector` |
-| `client.go` integration | No | `mockSender` + `mockAgentSelector` |
+| `linger.go` | No | `mockPartitionAssignmentStrategy` |
+| `client.go` integration | No | `mockSender` + `mockPartitionAssignmentStrategy` |
 
 ---
 
@@ -1511,7 +1511,7 @@ constructor, so dashboards and alerts need no changes for the shared metrics.
 |------|----------|
 | `config.go` | `Config` struct + `RegisterFlagsWithPrefix` + `Validate` |
 | `direct_producer.go` | `DirectProducer` interface + `KafkaSender` (only kgo.Client boundary) |
-| `agentpool.go` | `AgentSelector` interface + `AgentPool` + `selectSecondary` |
+| `agentpool.go` | `PartitionAssignmentStrategy` interface + `AgentPool` + `selectSecondary` |
 | `linger.go` | `RecordBuffer` + `partitionBuf` + `FlushFunc` |
 | `hedger.go` | `Hedger` |
 | `produce.go` | `buildProduceRequest` + `parseProduceResponse` (pure functions) |

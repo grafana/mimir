@@ -181,13 +181,13 @@ func encodeRecord(dst []byte, r *kgo.Record, offsetDelta int32, firstTimestamp i
 		Value:            r.Value,
 		Headers:          headers,
 	}
-	rec.Length = recordLength(rec)
+	rec.Length = recordLength(&rec)
 	return rec.AppendTo(dst)
 }
 
 // recordLength computes the Length field for a kmsg.Record (byte count of everything
 // after the Length varint itself).
-func recordLength(r kmsg.Record) int32 {
+func recordLength(r *kmsg.Record) int32 {
 	l := 1 + // Attributes (int8, unused)
 		kbin.VarlongLen(r.TimestampDelta64) +
 		kbin.VarintLen(r.OffsetDelta) +
