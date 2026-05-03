@@ -32,7 +32,7 @@ const (
 var (
 	supportedIndexCacheBackends = []string{BackendInMemory, BackendMemcached}
 
-	ErrUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
+	errUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
 )
 
 type IndexCacheConfig struct {
@@ -54,7 +54,7 @@ func (cfg *IndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix str
 // Validate the config.
 func (cfg *IndexCacheConfig) Validate() error {
 	if !slices.Contains(supportedIndexCacheBackends, cfg.Backend) {
-		return ErrUnsupportedIndexCacheBackend
+		return errUnsupportedIndexCacheBackend
 	}
 
 	switch cfg.Backend {

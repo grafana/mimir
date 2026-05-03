@@ -147,7 +147,7 @@ func NewIndexCache(
 		// If the index cache uses a memcached backend, the same client may be re-used for another cache.
 		return indexMemcachedClient, indexCache, nil
 	default:
-		return nil, nil, errors.Wrap(ErrUnsupportedIndexCacheBackend, "create index cache")
+		return nil, nil, errors.Wrap(errUnsupportedIndexCacheBackend, "create index cache")
 	}
 }
 

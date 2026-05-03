@@ -34,7 +34,7 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 
 				return cfg
 			}(),
-			expected: ErrUnsupportedIndexCacheBackend,
+			expected: errUnsupportedIndexCacheBackend,
 		},
 		"no memcached addresses should fail": {
 			cfg: func() IndexCacheConfig {

@@ -203,12 +203,11 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	storeOpts := []BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache)}
 
 	const userID = "tenant"
-	ibkt := objstore.WithNoopInstr(bkt)
 
 	const maxGapBytes = mimir_tsdb.DefaultPartitionerMaxGapSize
 	store, err := NewBucketStore(
 		userID,
-		ibkt,
+		objstore.WithNoopInstr(bkt),
 		newTestBucketIndexMetadataReader(t, bkt, userID),
 		metaFetcher,
 		cfg.tempDir,

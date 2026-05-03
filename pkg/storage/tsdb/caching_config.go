@@ -177,9 +177,10 @@ func NewMetadataCachingBucket(
 }
 
 // NewCachingBucket creates a single caching bucket that handles metadata, index-header, and chunks caching.
-// The caching configs for index-header and chunks use different cache backends and non-overlapping
-// file matchers (isBlockIndexFile vs isTSDBChunkFile), so they can safely coexist in one CachingBucketConfig.
-// Metadata caching is shared across both use cases.
+//   - Index-header config matches isBlockIndexFile to cache GetRange calls.
+//   - Chunks config matches isTSDBChunkFile to cache GetRange calls.
+//   - Metadata caching is shared with across index-header and chunks caching buckets if enabled,
+//     otherwise each cache handles its own metadata storage.
 func NewCachingBucket(
 	metadataCache cache.Cache,
 	cfg BlocksStorageConfig,
@@ -214,7 +215,7 @@ func NewCachingBucket(
 		if cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems > 0 {
 			indexCacheClient, err = cache.WrapWithLRUCache(
 				indexCacheClient,
-				"index-header-cache",
+				"block-index-header-attributes-cache",
 				prometheus.WrapRegistererWithPrefix("cortex_", reg),
 				cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems,
 				cfg.BucketStore.IndexHeaderCache.SubrangeTTL,
