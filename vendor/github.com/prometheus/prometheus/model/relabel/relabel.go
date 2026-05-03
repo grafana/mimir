@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
@@ -196,11 +197,33 @@ type Regexp struct {
 	*regexp.Regexp
 }
 
+// compiledRegexCache memoizes compiled patterns across calls. The runtime-
+// config reload loop creates fresh Limits structs every poll cycle, each of
+// which re-runs Regexp.UnmarshalYAML for every metric_relabel_configs entry.
+// Without this cache, identical patterns are recompiled every reload (a
+// significant CPU cost in cells with thousands of tenants whose patterns are
+// templated by limits-operator). The cache key is the *anchored* pattern as
+// passed to regexp.Compile, so values returned by NewRegexp are byte-for-byte
+// equivalent to the uncached behavior.
+//
+// Memory: bounded only by the set of distinct patterns ever seen by this
+// process. In practice that set is small and grows slowly; if it doesn't, the
+// log of the cache size (exposed elsewhere) will reveal that.
+var compiledRegexCache sync.Map // map[string]*regexp.Regexp
+
 // NewRegexp creates a new anchored Regexp and returns an error if the
 // passed-in regular expression does not compile.
 func NewRegexp(s string) (Regexp, error) {
-	regex, err := regexp.Compile("^(?s:" + s + ")$")
-	return Regexp{Regexp: regex}, err
+	anchored := "^(?s:" + s + ")$"
+	if v, ok := compiledRegexCache.Load(anchored); ok {
+		return Regexp{Regexp: v.(*regexp.Regexp)}, nil
+	}
+	regex, err := regexp.Compile(anchored)
+	if err != nil {
+		return Regexp{}, err
+	}
+	actual, _ := compiledRegexCache.LoadOrStore(anchored, regex)
+	return Regexp{Regexp: actual.(*regexp.Regexp)}, nil
 }
 
 // MustNewRegexp works like NewRegexp, but panics if the regular expression does not compile.

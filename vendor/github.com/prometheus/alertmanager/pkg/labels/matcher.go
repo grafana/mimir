@@ -20,10 +20,21 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/prometheus/common/model"
 )
+
+// matcherRegexCache memoizes compiled patterns for regex-typed Matchers
+// (MatchRegexp, MatchNotRegexp) across calls. Active-series custom-tracker
+// configs and other places that build Matchers via UnmarshalYAML can re-run
+// NewMatcher repeatedly with the same pattern (most prominently on Mimir
+// runtime-config reloads); without this cache, every reload pays the
+// regexp.Compile cost again. The cache key is the *anchored* pattern as
+// passed to regexp.Compile, so the returned matcher is byte-for-byte
+// equivalent to the uncached behavior.
+var matcherRegexCache sync.Map // map[string]*regexp.Regexp
 
 // MatchType is an enum for label matching types.
 type MatchType int
