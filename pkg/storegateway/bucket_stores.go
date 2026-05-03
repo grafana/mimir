@@ -54,9 +54,9 @@ const (
 type BucketStores struct {
 	services.Service
 
-	logger log.Logger
-	cfg    tsdb.BlocksStorageConfig
-	limits *validation.Overrides
+	logger             log.Logger
+	cfg                tsdb.BlocksStorageConfig
+	limits             *validation.Overrides
 	bkt                objstore.Bucket
 	bucketStoreMetrics *BucketStoreMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics

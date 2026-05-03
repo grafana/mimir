@@ -219,7 +219,7 @@ func NewBucketStore(
 ) (*BucketStore, error) {
 	s := &BucketStore{
 		logger:                      log.NewNopLogger(),
-		bkt:                        bkt,
+		bkt:                         bkt,
 		bucketIndexMeta:             bucketIndexMeta,
 		fetcher:                     fetcher,
 		dir:                         dir,
