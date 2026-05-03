@@ -1233,6 +1233,11 @@ type filteringSeriesChunkRefsSetIterator struct {
 	stats    *safeQueryStats
 	from     iterator[seriesChunkRefsSet]
 	matchers []*labels.Matcher
+	// cache memoizes matcher.Matches(labelValue) across this iterator's
+	// stream so that a regex isn't re-evaluated against the same value once
+	// per series. Nil when no matcher benefits from caching (see
+	// pendingMatcherCache.match for nil-safety).
+	cache *pendingMatcherCache
 
 	current seriesChunkRefsSet
 }
@@ -1242,6 +1247,7 @@ func newFilteringSeriesChunkRefsSetIterator(matchers []*labels.Matcher, from ite
 		stats:    stats,
 		from:     from,
 		matchers: matchers,
+		cache:    newPendingMatcherCache(matchers),
 	}
 }
 
@@ -1256,7 +1262,7 @@ func (m *filteringSeriesChunkRefsSetIterator) Next() bool {
 	for _, series := range next.series {
 		matches := true
 		for _, matcher := range m.matchers {
-			if !matcher.Matches(series.lset.Get(matcher.Name)) {
+			if !m.cache.match(matcher, series.lset.Get(matcher.Name)) {
 				matches = false
 				break
 			}
