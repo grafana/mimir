@@ -5635,6 +5635,17 @@ bucket_store:
       [max_size_bytes: <int> | default = 1073741824]
 
   index_header_cache:
+    # Backend for index-header cache. If index-header cache is enabled and
+    # backend is empty, defaults to index cache backend. Supported values:
+    # memcached.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.backend
+    [backend: <string> | default = ""]
+
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # blocks-storage.bucket-store.index-header-cache
+    [memcached: <memcached>]
+
     # (experimental) Enable caching of reads for TSDB index-header sections from
     # object storage, utilizing the index-cache backend.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.enabled
@@ -6559,6 +6570,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`
+- `blocks-storage.bucket-store.index-header-cache`
 - `blocks-storage.bucket-store.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`

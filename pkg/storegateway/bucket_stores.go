@@ -115,12 +115,21 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, err
 	}
 
+	// Init index-header cache client.
+	// If index-header bucket cache is enabled and a separate backend is not provided, it uses the index-cache backend.
+	indexHeaderCacheClient, err := tsdb.NewIndexheaderCacheClient(cfg.BucketStore.IndexHeaderCache.BackendConfig, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+	if indexHeaderCacheClient == nil {
+		indexHeaderCacheClient = indexCacheClient
+	}
+
 	// Configure caching bucket to cover configured metadata, index-header, and chunks caching.
-	// Index-header caching uses index-cache backend.
 	// Both index-header and chunks caching share the metadata cache for object attributes.
 	cachingBktMetrics := bucketcache.NewCachingBucketMetrics(reg)
 	cachingBucket, err := tsdb.NewStoreCachingBucket(
-		metadataCache, cfg, indexCacheClient, chunksCacheClient, bucketClient, logger, reg, cachingBktMetrics,
+		metadataCache, cfg, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg, cachingBktMetrics,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")

@@ -65,6 +65,8 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 }
 
 type IndexHeaderCacheConfig struct {
+	cache.BackendConfig `yaml:",inline"  category:"experimental"`
+
 	Enabled       bool          `yaml:"enabled" category:"experimental"`
 	AttributesTTL time.Duration `yaml:"attributes_ttl" category:"experimental"`
 
@@ -75,6 +77,10 @@ type IndexHeaderCacheConfig struct {
 
 func (cfg *IndexHeaderCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable caching of reads for TSDB index-header sections from object storage, utilizing the index-cache backend.")
+
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for index-header cache. If index-header cache is enabled and backend is empty, defaults to index cache backend. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "How long to cache attributes of the block index as utilized by the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index cache backend.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual index-header subranges.")
 	f.IntVar(&cfg.SubRangeInMemoryMaxItems, prefix+"subrange-in-memory-max-items", 50000, "Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
@@ -99,6 +105,10 @@ func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
 	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 50000, "Maximum number of object attribute items to keep in a first-level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual chunks subranges.")
+}
+
+func (cfg *IndexHeaderCacheConfig) Validate() error {
+	return cfg.BackendConfig.Validate()
 }
 
 func (cfg *ChunksCacheConfig) Validate() error {
@@ -183,9 +193,21 @@ func NewChunksCacheClient(
 		name, cfg, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg),
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "chunks-cache")
+		return nil, errors.Wrapf(err, name)
 	}
 	return chunksCache, nil
+}
+
+func NewIndexheaderCacheClient(
+	cfg cache.BackendConfig, logger log.Logger, reg prometheus.Registerer) (indexHeaderCache cache.Cache, err error) {
+	const name = "index-header-cache"
+	indexHeaderCache, err = cache.CreateClient(
+		name, cfg, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg),
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, name)
+	}
+	return indexHeaderCache, nil
 }
 
 // NewStoreCachingBucket creates a single caching bucket that handles metadata, index-header, and chunks caching.
