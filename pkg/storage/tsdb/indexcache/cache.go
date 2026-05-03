@@ -140,7 +140,22 @@ func newMemcachedIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer 
 		return nil, errors.Wrap(err, "create index cache memcached client")
 	}
 
+	// Composition (innermost -> outermost):
+	//   memcached client -> dedup decorator -> optional L1 LRU -> RemoteIndexCache
+	// Dedup sits below the L1 so that L1 short-circuits hits without consulting the
+	// dedup map; only writes that get through L1 (i.e. genuine populates) reach dedup.
 	var indexCacheBackend cache.Cache = client
+	indexCacheBackend, err = newDedupSetAsyncCache(
+		indexCacheBackend,
+		"index-cache",
+		cfg.MemcachedSetAsyncDedupMaxItems,
+		cfg.MemcachedSetAsyncDedupWindow,
+		prometheus.WrapRegistererWithPrefix("cortex_", registerer),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "wrap memcached index cache with SetAsync dedup")
+	}
+
 	if cfg.MemcachedInMemoryMaxItems > 0 {
 		indexCacheBackend, err = cache.WrapWithLRUCache(
 			indexCacheBackend,

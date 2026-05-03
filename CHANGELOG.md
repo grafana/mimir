@@ -78,6 +78,7 @@
 * [ENHANCEMENT] Querier: Reduce memory consumption of queries samples for a single series are retrieved from multiple ingesters or store-gateways. #13806
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
 * [ENHANCEMENT] Store-gateway: Add an optional in-memory L1 LRU cache fronting the memcached index cache, controlled by `-blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items` and `-blocks-storage.bucket-store.index-cache.memcached-inmemory-ttl`. Disabled by default. Reduces memcached read load for hot index keys. #TBD
+* [ENHANCEMENT] Store-gateway: Add an optional soft deduplicator for memcached index-cache `SetAsync` calls, controlled by `-blocks-storage.bucket-store.index-cache.memcached-setasync-dedup-max-items` and `-blocks-storage.bucket-store.index-cache.memcached-setasync-dedup-window`. Disabled by default. Coalesces concurrent or near-simultaneous `SetAsync` calls for the same key, reducing memcached write load during overlapping query bursts. The new metric `cache_setasync_duplicates_dropped_total{name="index-cache"}` tracks the number of dropped duplicates. #TBD
 * [ENHANCEMENT] Ingester: the per-tenant postings for matchers cache is now stable. Use the following configuration options: #13101
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`

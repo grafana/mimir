@@ -103,6 +103,40 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 				return cfg
 			}(),
 		},
+		"negative memcached-setasync-dedup-max-items should fail": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedSetAsyncDedupMaxItems = -1
+				return cfg
+			}(),
+			expected: errInvalidMemcachedSetAsyncDedupMaxItems,
+		},
+		"zero memcached-setasync-dedup-window with dedup enabled should fail": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedSetAsyncDedupMaxItems = 100
+				cfg.MemcachedSetAsyncDedupWindow = 0
+				return cfg
+			}(),
+			expected: errInvalidMemcachedSetAsyncDedupWindow,
+		},
+		"L1 and dedup both enabled with valid config should pass": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedInMemoryMaxItems = 100
+				cfg.MemcachedSetAsyncDedupMaxItems = 1024
+				return cfg
+			}(),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -118,4 +152,12 @@ func TestIndexCacheConfig_MemcachedInMemoryDefaults(t *testing.T) {
 
 	assert.Equal(t, 0, cfg.MemcachedInMemoryMaxItems, "L1 cache should default to disabled")
 	assert.Equal(t, 24*time.Hour, cfg.MemcachedInMemoryTTL, "L1 cache TTL should default to 24h")
+}
+
+func TestIndexCacheConfig_MemcachedSetAsyncDedupDefaults(t *testing.T) {
+	cfg := IndexCacheConfig{}
+	flagext.DefaultValues(&cfg)
+
+	assert.Equal(t, 0, cfg.MemcachedSetAsyncDedupMaxItems, "SetAsync dedup should default to disabled")
+	assert.Equal(t, 5*time.Second, cfg.MemcachedSetAsyncDedupWindow, "SetAsync dedup window should default to 5s")
 }

@@ -33,9 +33,11 @@ const (
 var (
 	supportedIndexCacheBackends = []string{BackendInMemory, BackendMemcached}
 
-	errUnsupportedIndexCacheBackend     = errors.New("unsupported index cache backend")
-	errInvalidMemcachedInMemoryMaxItems = errors.New("memcached-inmemory-max-items must be >= 0")
-	errInvalidMemcachedInMemoryTTL      = errors.New("memcached-inmemory-ttl must be > 0 when memcached-inmemory-max-items > 0")
+	errUnsupportedIndexCacheBackend          = errors.New("unsupported index cache backend")
+	errInvalidMemcachedInMemoryMaxItems      = errors.New("memcached-inmemory-max-items must be >= 0")
+	errInvalidMemcachedInMemoryTTL           = errors.New("memcached-inmemory-ttl must be > 0 when memcached-inmemory-max-items > 0")
+	errInvalidMemcachedSetAsyncDedupMaxItems = errors.New("memcached-setasync-dedup-max-items must be >= 0")
+	errInvalidMemcachedSetAsyncDedupWindow   = errors.New("memcached-setasync-dedup-window must be > 0 when memcached-setasync-dedup-max-items > 0")
 )
 
 type IndexCacheConfig struct {
@@ -48,6 +50,14 @@ type IndexCacheConfig struct {
 	// 0 disables the L1 cache. Only applicable when Backend == BackendMemcached.
 	MemcachedInMemoryMaxItems int           `yaml:"memcached_inmemory_max_items" category:"advanced"`
 	MemcachedInMemoryTTL      time.Duration `yaml:"memcached_inmemory_ttl"       category:"advanced"`
+
+	// MemcachedSetAsyncDedupMaxItems and MemcachedSetAsyncDedupWindow configure an
+	// optional soft deduplicator for SetAsync calls that wraps the memcached backend.
+	// When two or more SetAsync calls happen for the same key within the window, only
+	// the first reaches memcached; the rest are dropped. Bounded memory via the LRU
+	// of recent keys. 0 disables. Only applicable when Backend == BackendMemcached.
+	MemcachedSetAsyncDedupMaxItems int           `yaml:"memcached_setasync_dedup_max_items" category:"advanced"`
+	MemcachedSetAsyncDedupWindow   time.Duration `yaml:"memcached_setasync_dedup_window"    category:"advanced"`
 }
 
 func (cfg *IndexCacheConfig) RegisterFlags(f *flag.FlagSet) {
@@ -75,6 +85,17 @@ func (cfg *IndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix str
 			"item kinds and overrides the per-entry TTL of the underlying memcached cache for L1 hits. Index cache "+
 			"content is keyed on immutable block IDs, so serving from L1 past the original memcached TTL is correct. "+
 			"Only applicable when the L1 cache is enabled.")
+
+	f.IntVar(&cfg.MemcachedSetAsyncDedupMaxItems, prefix+"memcached-setasync-dedup-max-items", 0,
+		"Maximum number of recently-stored cache keys to track for SetAsync deduplication. Concurrent or near-simultaneous "+
+			"SetAsync calls for the same key are coalesced for up to "+prefix+"memcached-setasync-dedup-window. "+
+			"0 to disable. Note: the dedup state is sharded across a fixed number of shards (currently 64) to reduce "+
+			"lock contention; under skewed key distribution a single shard may evict before the global capacity is "+
+			"reached, so size this above the naive estimate of unique keys per dedup window if dedup drops appear lower "+
+			"than expected. Only applicable when "+prefix+"backend=memcached.")
+	f.DurationVar(&cfg.MemcachedSetAsyncDedupWindow, prefix+"memcached-setasync-dedup-window", 5*time.Second,
+		"Window during which a previous SetAsync for the same key suppresses duplicate SetAsync calls. "+
+			"Only applicable when the SetAsync deduplicator is enabled.")
 }
 
 // Validate the config.
@@ -94,6 +115,12 @@ func (cfg *IndexCacheConfig) Validate() error {
 		}
 		if cfg.MemcachedInMemoryMaxItems > 0 && cfg.MemcachedInMemoryTTL <= 0 {
 			return errInvalidMemcachedInMemoryTTL
+		}
+		if cfg.MemcachedSetAsyncDedupMaxItems < 0 {
+			return errInvalidMemcachedSetAsyncDedupMaxItems
+		}
+		if cfg.MemcachedSetAsyncDedupMaxItems > 0 && cfg.MemcachedSetAsyncDedupWindow <= 0 {
+			return errInvalidMemcachedSetAsyncDedupWindow
 		}
 	case BackendInMemory:
 		// Validate sets defaults not exposed in config
