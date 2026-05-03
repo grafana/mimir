@@ -2415,6 +2415,28 @@
         },
         {
           "kind": "field",
+          "name": "store_gateway_load_aware_balancing",
+          "required": false,
+          "desc": "When true, replace the random load-balancing policy used to pick a store-gateway replica for each block with a power-of-two-choices selection biased by a per-instance EWMA-decayed pick counter. Dampens fan-out amplification on hot pods during multi-replica fan-out events. Counters are local to each querier replica and do not require any cooperation from store-gateways.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.store-gateway-load-aware-balancing",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "store_gateway_load_aware_pick_half_life",
+          "required": false,
+          "desc": "EWMA half-life applied to the per-instance pick counters used by load-aware balancing. A pick \"ages out\" of the load signal over this duration. Larger values smooth the signal across longer queries (less false load attribution from in-flight long queries that complete past the half-life) at the cost of slower reaction when a hot pod calms down. Only applicable when -querier.store-gateway-load-aware-balancing is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "querier.store-gateway-load-aware-pick-half-life",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "streaming_chunks_per_ingester_series_buffer_size",
           "required": false,
           "desc": "Number of series to buffer per ingester when streaming chunks from ingesters.",
@@ -10781,6 +10803,160 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_inmemory_max_items",
+                  "required": false,
+                  "desc": "Total max-items budget for the L1 in-memory LRU cache fronting the memcached index cache. The L1 is per-item-type internally; this flag is divided evenly across the six item types (postings, series-for-ref, expanded-postings, series-for-postings, label-names, label-values). For finer control, set the per-item-type blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-* flags directly — any positive per-type flag overrides this global distribution. 0 to disable the L1 entirely. Note: index cache items vary widely in size (a few hundred bytes to several KB depending on the cache type), so resident memory of the LRU is roughly this value multiplied by the average item size. Size accordingly. Only applicable when blocks-storage.bucket-store.index-cache.backend=memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_inmemory_ttl",
+                  "required": false,
+                  "desc": "TTL for items stored in the L1 in-memory LRU cache fronting memcached. The L1 TTL is uniform across all item kinds and overrides the per-entry TTL of the underlying memcached cache for L1 hits. Index cache content is keyed on immutable block IDs, so serving from L1 past the original memcached TTL is correct. Only applicable when the L1 cache is enabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 86400000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-inmemory-ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_inmemory_max_items_postings",
+                  "required": false,
+                  "desc": "Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-postings",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_inmemory_max_items_series_for_ref",
+                  "required": false,
+                  "desc": "Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-series-for-ref",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_inmemory_max_items_expanded_postings",
+                  "required": false,
+                  "desc": "Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-expanded-postings",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_inmemory_max_items_series_for_postings",
+                  "required": false,
+                  "desc": "Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-series-for-postings",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_inmemory_max_items_label_names",
+                  "required": false,
+                  "desc": "Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-label-names",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_inmemory_max_items_label_values",
+                  "required": false,
+                  "desc": "Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-label-values",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_setasync_dedup_max_items",
+                  "required": false,
+                  "desc": "Maximum number of recently-stored cache keys to track for SetAsync deduplication. Concurrent or near-simultaneous SetAsync calls for the same key are coalesced for up to blocks-storage.bucket-store.index-cache.memcached-setasync-dedup-window. 0 to disable. Note: the dedup state is sharded across a fixed number of shards (currently 64) to reduce lock contention; under skewed key distribution a single shard may evict before the global capacity is reached, so size this above the naive estimate of unique keys per dedup window if dedup drops appear lower than expected. Only applicable when blocks-storage.bucket-store.index-cache.backend=memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-setasync-dedup-max-items",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "memcached_setasync_dedup_window",
+                  "required": false,
+                  "desc": "Window during which a previous SetAsync for the same key suppresses duplicate SetAsync calls. Only applicable when the SetAsync deduplicator is enabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached-setasync-dedup-window",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "ttl_expanded_postings",
+                  "required": false,
+                  "desc": "TTL for cached ExpandedPostings entries (matcher-keyed). Lower this if matchers churn quickly to bias eviction toward more durable item types.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.ttl-expanded-postings",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "ttl_series_for_postings",
+                  "required": false,
+                  "desc": "TTL for cached SeriesForPostings entries (postings-key-keyed).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.ttl-series-for-postings",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "ttl_label_names",
+                  "required": false,
+                  "desc": "TTL for cached LabelNames entries (matcher-keyed).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.ttl-label-names",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "ttl_label_values",
+                  "required": false,
+                  "desc": "TTL for cached LabelValues entries (label name + matcher-keyed).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-cache.ttl-label-values",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -11492,9 +11668,9 @@
               "kind": "field",
               "name": "partitioner_max_gap_bytes",
               "required": false,
-              "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.",
+              "desc": "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Larger values consolidate more series into a single GET — fewer goroutines and less mutex contention on the hot loadSeries path under high fan-out — at the cost of fetching a small amount of unused bytes per merged range. Lower this for sparse access patterns or tight bandwidth budgets.",
               "fieldValue": null,
-              "fieldDefaultValue": 524288,
+              "fieldDefaultValue": 4194304,
               "fieldFlag": "blocks-storage.bucket-store.partitioner-max-gap-bytes",
               "fieldType": "int",
               "fieldCategory": "advanced"
@@ -11650,6 +11826,28 @@
               "fieldFlag": "blocks-storage.bucket-store.series-fetch-preference",
               "fieldType": "float",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "decoded_series_cache_max_items",
+              "required": false,
+              "desc": "Maximum number of decoded SeriesForRef entries (symbolized labels + chunk metas) to keep in an in-pod cache. Cache hits skip the per-series varint decode loop. Resident memory is roughly this value times average decoded entry size (a few hundred bytes per series). 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.decoded-series-cache-max-items",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "series_for_ref_disk_cache_max_bytes_per_block",
+              "required": false,
+              "desc": "Maximum size in bytes of the per-block on-disk SeriesForRef cache file. The file lives under the block's lazy-load directory and is removed when the block is removed. Survives memcached evictions and (when the dir is preserved across restarts) pod restarts; on open the file is replayed and any record failing its CRC32 check (for example a torn write from an unclean shutdown) is discarded along with everything past it, so a corrupted file degrades to a partial cache rather than serving wrong bytes. Once full, additional Set calls drop silently — the L1 / memcached layers still cover the entry. Per-pod resource cost is multiplicative with the loaded block count: each loaded block opens one file descriptor for this cache and holds an in-memory index map of roughly 50 bytes per cached entry. Size with loaded-block-count and pod fd/RSS budgets in mind. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.series-for-ref-disk-cache-max-bytes-per-block",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -16678,12 +16876,12 @@
             "User": null,
             "Host": "localhost:8080",
             "Path": "/alertmanager",
-            "RawPath": "",
-            "OmitHost": false,
-            "ForceQuery": false,
-            "RawQuery": "",
             "Fragment": "",
-            "RawFragment": ""
+            "RawQuery": "",
+            "RawPath": "",
+            "RawFragment": "",
+            "ForceQuery": false,
+            "OmitHost": false
           },
           "fieldFlag": "alertmanager.web.external-url",
           "fieldType": "url"
