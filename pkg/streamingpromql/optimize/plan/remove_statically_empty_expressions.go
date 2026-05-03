@@ -142,7 +142,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		return noOp, true, nil
 	}
 
-	if replacement, simplified := simplify(node); simplified {
+	if replacement := simplify(node); replacement != nil {
 		return replacement, true, nil
 	}
 
@@ -339,7 +339,8 @@ func findConstant(node planning.Node) (*core.NumberLiteral, bool) {
 	return literal, ok
 }
 
-func simplify(node planning.Node) (planning.Node, bool) {
+// simplify returns a simpler version of node, or nil if no simplification applies.
+func simplify(node planning.Node) planning.Node {
 	switch node := node.(type) {
 	case *core.DeduplicateAndMerge:
 		// 'or' operations are wrapped in a DeduplicateAndMerge node.
@@ -347,32 +348,32 @@ func simplify(node planning.Node) (planning.Node, bool) {
 
 		inner, isBinOp := node.Inner.(*core.BinaryExpression)
 		if !isBinOp || inner.Op != core.BINARY_LOR {
-			return nil, false
+			return nil
 		}
 
 		// empty OR RHS is equivalent to RHS.
 		if _, noOp := inner.LHS.(*core.NoOp); noOp {
-			return inner.RHS, true
+			return inner.RHS
 		}
 
 		// LHS or empty is equivalent to LHS.
 		if _, noOp := inner.RHS.(*core.NoOp); noOp {
-			return inner.LHS, true
+			return inner.LHS
 		}
 
 	case *core.BinaryExpression:
 		if node.Op != core.BINARY_LUNLESS {
-			return nil, false
+			return nil
 		}
 
 		// If the LHS is a no-op this means the whole expression is a no-op, and that is
 		// handled by isAlwaysEmptyBinaryExpression.
 		if _, noOp := node.RHS.(*core.NoOp); noOp {
-			return node.LHS, true
+			return node.LHS
 		}
 	}
 
-	return nil, false
+	return nil
 }
 
 // unwrap removes transparent wrapper nodes returning the innermost non-wrapper node.
