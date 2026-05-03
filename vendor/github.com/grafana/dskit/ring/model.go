@@ -75,12 +75,14 @@ func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state Instanc
 	}
 
 	d.Ingesters[id] = ingester
+	d.invalidateHash()
 	return ingester
 }
 
 // RemoveIngester removes the given ingester and all its tokens.
 func (d *Desc) RemoveIngester(id string) {
 	delete(d.Ingesters, id)
+	d.invalidateHash()
 }
 
 // ClaimTokens transfers all the tokens from one ingester to another,
@@ -100,6 +102,7 @@ func (d *Desc) ClaimTokens(from, to string) Tokens {
 	ing.Tokens = result
 	d.Ingesters[to] = ing
 
+	d.invalidateHash()
 	return result
 }
 
@@ -236,6 +239,12 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 	if other == nil {
 		return nil, nil
 	}
+
+	// Merge may mutate d.Ingesters in place (lines below). Invalidate the
+	// hash cache before any mutation so a concurrent reader sees a stale-
+	// missing entry rather than a stale-wrong one. Recomputed on next
+	// RingCompare.
+	d.invalidateHash()
 
 	normalizeIngestersMap(other)
 
@@ -466,6 +475,9 @@ func (d *Desc) RemoveTombstones(limit time.Time) (total, removed int) {
 			}
 		}
 	}
+	if removed > 0 {
+		d.invalidateHash()
+	}
 	return
 }
 
@@ -655,6 +667,22 @@ func (d *Desc) RingCompare(o *Desc) CompareResult {
 		return Different
 	}
 
+	// Hash short-circuit (see desc_hash.go). In steady-state gossip almost
+	// every comparison is between two structurally-identical Descs (same
+	// topology, possibly different timestamps/states). Computing two atomic
+	// loads against the precomputed digests is O(1) where the field walk
+	// below is O(N instances × M tokens). We fall through to the slow path
+	// on hash mismatch — xxhash64 collisions are negligible at this scale,
+	// but the slow walk preserves the original semantics with certainty.
+	ds, df := d.computeHashes()
+	os, of := o.computeHashes()
+	if ds == os {
+		if df == of {
+			return Equal
+		}
+		return EqualButStatesAndTimestamps
+	}
+
 	equalStatesAndTimestamps := true
 
 	for name, ing := range d.Ingesters {
@@ -714,6 +742,12 @@ func (d *Desc) setInstanceIDs() {
 		inst.Id = id
 		d.Ingesters[id] = inst
 	}
+	// setInstanceIDs writes the InstanceDesc.Id field, which RingCompare
+	// doesn't read directly — but it does write the map values, so any
+	// other field that *was* read by RingCompare and shared the same
+	// InstanceDesc would also be updated. Invalidate to be safe; the cost
+	// is one Map.Delete per call.
+	d.invalidateHash()
 }
 
 func GetOrCreateRingDesc(d interface{}) *Desc {
