@@ -227,7 +227,7 @@ func NewStoreCachingBucket(
 		if cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems > 0 {
 			indexCacheClient, err = cache.WrapWithLRUCache(
 				indexCacheClient,
-				"block-index-header-attributes-cache",
+				"block-index-header-cache",
 				prometheus.WrapRegistererWithPrefix("cortex_", reg),
 				cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems,
 				cfg.BucketStore.IndexHeaderCache.SubrangeTTL,
