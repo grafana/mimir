@@ -127,7 +127,6 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 			if err := node.ReplaceChild(idx, replacement); err != nil {
 				return nil, false, err
 			}
-			modified = true
 		}
 	}
 
