@@ -62,6 +62,8 @@ type Config struct {
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
 	PreferAvailabilityZones                        flagext.StringSliceCSV `yaml:"prefer_availability_zones" category:"experimental"`
+	StoreGatewayLoadAwareBalancing                 bool                   `yaml:"store_gateway_load_aware_balancing" category:"experimental"`
+	StoreGatewayLoadAwarePickHalfLife              time.Duration          `yaml:"store_gateway_load_aware_pick_half_life" category:"experimental"`
 	StreamingChunksPerIngesterSeriesBufferSize     uint64                 `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
 	StreamingChunksPerStoreGatewaySeriesBufferSize uint64                 `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
 	MinimizeIngesterRequests                       bool                   `yaml:"minimize_ingester_requests" category:"advanced"`
@@ -101,6 +103,17 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 	f.Var(&cfg.PreferAvailabilityZones, "querier.prefer-availability-zones", "Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.")
+	f.BoolVar(&cfg.StoreGatewayLoadAwareBalancing, "querier.store-gateway-load-aware-balancing", false,
+		"When true, replace the random load-balancing policy used to pick a store-gateway replica for each block "+
+			"with a power-of-two-choices selection biased by a per-instance EWMA-decayed pick counter. Dampens "+
+			"fan-out amplification on hot pods during multi-replica fan-out events. Counters are local to each "+
+			"querier replica and do not require any cooperation from store-gateways.")
+	f.DurationVar(&cfg.StoreGatewayLoadAwarePickHalfLife, "querier.store-gateway-load-aware-pick-half-life", 30*time.Second,
+		"EWMA half-life applied to the per-instance pick counters used by load-aware balancing. A pick "+
+			"\"ages out\" of the load signal over this duration. Larger values smooth the signal across longer "+
+			"queries (less false load attribution from in-flight long queries that complete past the half-life) "+
+			"at the cost of slower reaction when a hot pod calms down. Only applicable when "+
+			"-querier.store-gateway-load-aware-balancing is true.")
 
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlag, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
 	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")

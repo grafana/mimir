@@ -9,7 +9,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -356,7 +358,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, defaultLoadAwarePickHalfLife, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 			defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
@@ -427,7 +429,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 
 		limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 		reg := prometheus.NewPedanticRegistry()
-		s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), preferredZones, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+		s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, defaultLoadAwarePickHalfLife, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), preferredZones, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 		t.Cleanup(func() {
@@ -661,7 +663,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety(t *testing.T)
 	limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 
 	reg := prometheus.NewPedanticRegistry()
-	s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+	s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, defaultLoadAwarePickHalfLife, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 	t.Cleanup(func() {
@@ -802,7 +804,7 @@ func BenchmarkBlocksStoreReplicationSet_GetClientsFor(b *testing.B) {
 
 			// Create blocksStoreReplicationSet.
 			limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
-			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, dynRepl, nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, defaultLoadAwarePickHalfLife, dynRepl, nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(ctx, s))
 			b.Cleanup(func() {
@@ -840,4 +842,316 @@ func getStoreGatewayClientAddrs(clients map[BlocksStoreClient][]ulid.ULID) map[s
 		addrs[c.RemoteAddress()] = blockIDs
 	}
 	return addrs
+}
+
+// ------------------------------------------------------------------------------
+// Load-aware replica selection tests.
+//
+// These tests cover the loadAwareLoadBalancing strategy added to pickInstance.
+// They drive pickInstance directly (rather than going through GetClientsFor and a
+// real ring) to keep the tests fast and to make per-counter state observable.
+// pickInstance mutates set.Instances via rand.Shuffle and the preferred-zone reorder,
+// so each call below uses a fresh slice copied from the master template.
+// ------------------------------------------------------------------------------
+
+func cloneInstances(in []ring.InstanceDesc) []ring.InstanceDesc {
+	return slices.Clone(in)
+}
+
+func makeReplicationSet(instances []ring.InstanceDesc) ring.ReplicationSet {
+	return ring.ReplicationSet{Instances: cloneInstances(instances)}
+}
+
+// testHalfLife is a fixed half-life used by the loadCounter unit tests below.
+// Chosen large enough that the natural decay between successive in-test bumps is
+// negligible, so quick-bump tests can assert exact integer accumulation.
+const testHalfLife = 30 * time.Second
+
+func TestLoadCounter_FirstReadIsZero(t *testing.T) {
+	var c loadCounter
+	assert.Equal(t, 0.0, c.load(testHalfLife))
+}
+
+func TestLoadCounter_BumpAccumulates(t *testing.T) {
+	var c loadCounter
+	c.bump(testHalfLife)
+	c.bump(testHalfLife)
+	c.bump(testHalfLife)
+	assert.InDelta(t, 3.0, c.load(testHalfLife), 0.001, "three quick bumps should leave the counter near 3 (negligible decay)")
+}
+
+func TestLoadCounter_DecayHalvesAtOneHalfLife(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	var c loadCounter
+	c.lastTouch = base
+	c.value = 4.0
+	c.applyDecayLocked(base.Add(testHalfLife), testHalfLife)
+	assert.InDelta(t, 2.0, c.value, 0.001, "after one half-life, value must halve")
+
+	var c2 loadCounter
+	c2.lastTouch = base
+	c2.value = 4.0
+	c2.applyDecayLocked(base.Add(2*testHalfLife), testHalfLife)
+	assert.InDelta(t, 1.0, c2.value, 0.001, "after two half-lives, value must quarter")
+
+	// applyDecayLocked must update lastTouch so a subsequent decay-from-the-same-now
+	// is a no-op.
+	var c3 loadCounter
+	c3.lastTouch = base
+	c3.value = 4.0
+	c3.applyDecayLocked(base.Add(testHalfLife), testHalfLife)
+	c3.applyDecayLocked(base.Add(testHalfLife), testHalfLife) // same now → no further decay
+	assert.InDelta(t, 2.0, c3.value, 0.001)
+}
+
+func TestLoadCounter_DecayHonoursConfiguredHalfLife(t *testing.T) {
+	// A 60-second half-life means a 30-second elapsed gap leaves the value at
+	// roughly 4 * 2^(-30/60) ≈ 4 * 0.7071 ≈ 2.828. Pinning this guards against a
+	// regression that ignores the half-life parameter and falls back to the
+	// default const.
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var c loadCounter
+	c.lastTouch = base
+	c.value = 4.0
+	c.applyDecayLocked(base.Add(30*time.Second), 60*time.Second)
+	assert.InDelta(t, 2.828427, c.value, 0.001, "decay must scale with the supplied half-life, not a hard-coded const")
+}
+
+func TestLoadCounter_ConcurrentBumpsAreRaceFree(t *testing.T) {
+	// Run with -race; this exercises the per-counter mutex under contention. The
+	// final value isn't pinned (decay between bumps is timing-sensitive), only that
+	// no race is reported and the counter is positive.
+	var c loadCounter
+	var wg sync.WaitGroup
+	const goroutines, perGoroutine = 16, 200
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < perGoroutine; j++ {
+				c.bump(testHalfLife)
+				_ = c.load(testHalfLife)
+			}
+		}()
+	}
+	wg.Wait()
+	assert.Greater(t, c.load(testHalfLife), 0.0)
+}
+
+func TestPickInstance_LoadAwarePrefersLowerLoaded(t *testing.T) {
+	s := &blocksStoreReplicationSet{balancingStrategy: loadAwareLoadBalancing}
+	instances := []ring.InstanceDesc{
+		{Id: "a", Addr: "127.0.0.1", Zone: "z1"},
+		{Id: "b", Addr: "127.0.0.2", Zone: "z2"},
+	}
+	// Hammer b's counter so a is clearly the lower-loaded choice.
+	for i := 0; i < 100; i++ {
+		s.bumpInstance("127.0.0.2")
+	}
+	// With only two replicas, after rand.Shuffle the pair {first, second} always
+	// covers both; the load comparison must then deterministically pick a.
+	chosen := s.pickInstance(makeReplicationSet(instances), nil)
+	require.NotNil(t, chosen)
+	assert.Equal(t, "127.0.0.1", chosen.Addr)
+}
+
+func TestPickInstance_LoadAwareSingleInstance(t *testing.T) {
+	s := &blocksStoreReplicationSet{balancingStrategy: loadAwareLoadBalancing}
+	instances := []ring.InstanceDesc{
+		{Id: "solo", Addr: "127.0.0.1", Zone: "z1"},
+	}
+	chosen := s.pickInstance(makeReplicationSet(instances), nil)
+	require.NotNil(t, chosen)
+	assert.Equal(t, "127.0.0.1", chosen.Addr)
+}
+
+func TestPickInstance_LoadAwareSingleEligibleAfterExclude(t *testing.T) {
+	s := &blocksStoreReplicationSet{balancingStrategy: loadAwareLoadBalancing}
+	instances := []ring.InstanceDesc{
+		{Id: "a", Addr: "127.0.0.1", Zone: "z1"},
+		{Id: "b", Addr: "127.0.0.2", Zone: "z2"},
+	}
+	// Exclude one — the only eligible replica must be returned regardless of load.
+	for i := 0; i < 100; i++ {
+		s.bumpInstance("127.0.0.2")
+	}
+	chosen := s.pickInstance(makeReplicationSet(instances), []string{"127.0.0.1"})
+	require.NotNil(t, chosen)
+	assert.Equal(t, "127.0.0.2", chosen.Addr, "even a heavily-loaded replica must be picked when it is the only eligible one")
+}
+
+func TestPickInstance_LoadAwareEmptyAfterExclude(t *testing.T) {
+	s := &blocksStoreReplicationSet{balancingStrategy: loadAwareLoadBalancing}
+	instances := []ring.InstanceDesc{
+		{Id: "a", Addr: "127.0.0.1", Zone: "z1"},
+		{Id: "b", Addr: "127.0.0.2", Zone: "z2"},
+	}
+	chosen := s.pickInstance(makeReplicationSet(instances), []string{"127.0.0.1", "127.0.0.2"})
+	assert.Nil(t, chosen)
+}
+
+func TestPickInstance_LoadAwareSinglePreferredAlwaysWins(t *testing.T) {
+	// One preferred + two non-preferred. The preferred replica must be returned even
+	// when it's heavily loaded, because the load-aware path constrains the second
+	// sample to the preferred tier when the first lands there — and with only one
+	// preferred replica, there is no second.
+	s := &blocksStoreReplicationSet{
+		balancingStrategy: loadAwareLoadBalancing,
+		preferredZones:    []string{"preferred"},
+	}
+	instances := []ring.InstanceDesc{
+		{Id: "p", Addr: "127.0.0.1", Zone: "preferred"},
+		{Id: "n1", Addr: "127.0.0.2", Zone: "non-preferred"},
+		{Id: "n2", Addr: "127.0.0.3", Zone: "non-preferred"},
+	}
+	for i := 0; i < 100; i++ {
+		s.bumpInstance("127.0.0.1")
+	}
+	for i := 0; i < 50; i++ {
+		chosen := s.pickInstance(makeReplicationSet(instances), nil)
+		require.NotNil(t, chosen, "iter %d", i)
+		assert.Equal(t, "preferred", chosen.Zone, "iter %d: preferred zone must always win regardless of load", i)
+	}
+}
+
+func TestPickInstance_LoadAwareWithinPreferredTier(t *testing.T) {
+	// Two preferred + one non-preferred. The lower-loaded preferred replica must win.
+	s := &blocksStoreReplicationSet{
+		balancingStrategy: loadAwareLoadBalancing,
+		preferredZones:    []string{"preferred"},
+	}
+	instances := []ring.InstanceDesc{
+		{Id: "p1", Addr: "127.0.0.1", Zone: "preferred"},
+		{Id: "p2", Addr: "127.0.0.2", Zone: "preferred"},
+		{Id: "n1", Addr: "127.0.0.3", Zone: "non-preferred"},
+	}
+	// Bump p1 heavily so p2 is the lower-loaded preferred replica.
+	for i := 0; i < 100; i++ {
+		s.bumpInstance("127.0.0.1")
+	}
+	chosen := s.pickInstance(makeReplicationSet(instances), nil)
+	require.NotNil(t, chosen)
+	assert.Equal(t, "127.0.0.2", chosen.Addr, "lower-loaded preferred replica must win, never the non-preferred")
+	assert.Equal(t, "preferred", chosen.Zone)
+}
+
+func TestPickInstance_LoadAwareFallsToNonPreferredWhenAllPreferredExcluded(t *testing.T) {
+	// One preferred + two non-preferred, but the preferred replica is excluded. The
+	// load-aware path must fall through to the non-preferred tier and pick the
+	// lower-loaded replica there.
+	s := &blocksStoreReplicationSet{
+		balancingStrategy: loadAwareLoadBalancing,
+		preferredZones:    []string{"preferred"},
+	}
+	instances := []ring.InstanceDesc{
+		{Id: "p", Addr: "127.0.0.1", Zone: "preferred"},
+		{Id: "n1", Addr: "127.0.0.2", Zone: "non-preferred"},
+		{Id: "n2", Addr: "127.0.0.3", Zone: "non-preferred"},
+	}
+	// Bump n1 so n2 is the lower-loaded non-preferred replica.
+	for i := 0; i < 100; i++ {
+		s.bumpInstance("127.0.0.2")
+	}
+	chosen := s.pickInstance(makeReplicationSet(instances), []string{"127.0.0.1"})
+	require.NotNil(t, chosen)
+	assert.Equal(t, "127.0.0.3", chosen.Addr)
+	assert.Equal(t, "non-preferred", chosen.Zone)
+}
+
+func TestPickInstance_LoadAwareBumpsChosenCounter(t *testing.T) {
+	s := &blocksStoreReplicationSet{balancingStrategy: loadAwareLoadBalancing}
+	instances := []ring.InstanceDesc{
+		{Id: "a", Addr: "127.0.0.1", Zone: "z1"},
+	}
+	require.Equal(t, 0.0, s.instanceLoad("127.0.0.1"))
+	chosen := s.pickInstance(makeReplicationSet(instances), nil)
+	require.NotNil(t, chosen)
+	assert.InDelta(t, 1.0, s.instanceLoad("127.0.0.1"), 0.001, "chosen instance counter must be bumped exactly once")
+}
+
+func TestPickInstance_LoadAwareConcurrentPicksRaceFree(t *testing.T) {
+	// Run with -race; verifies that pickInstance + bumpInstance are safe under
+	// concurrent calls. Each goroutine clones the master so that pickInstance's
+	// in-place reorder of set.Instances doesn't race across goroutines.
+	s := &blocksStoreReplicationSet{balancingStrategy: loadAwareLoadBalancing}
+	master := []ring.InstanceDesc{
+		{Id: "a", Addr: "127.0.0.1", Zone: "z1"},
+		{Id: "b", Addr: "127.0.0.2", Zone: "z2"},
+		{Id: "c", Addr: "127.0.0.3", Zone: "z3"},
+	}
+	const goroutines, perGoroutine = 32, 200
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < perGoroutine; j++ {
+				inst := s.pickInstance(makeReplicationSet(master), nil)
+				if inst == nil {
+					t.Errorf("pickInstance returned nil with %d eligible instances", len(master))
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	// All three counters must be positive (load-aware picks distribute across the
+	// set over many iterations).
+	for _, addr := range []string{"127.0.0.1", "127.0.0.2", "127.0.0.3"} {
+		assert.Greaterf(t, s.instanceLoad(addr), 0.0, "%s should have picked at least once across %d concurrent picks", addr, goroutines*perGoroutine)
+	}
+}
+
+func TestPickInstance_RandomLoadBalancingDoesNotBumpCounters(t *testing.T) {
+	// The random-balancing path is the default; it must not touch the load-aware
+	// counters at all. This is a guard against accidental regressions where
+	// counters start being bumped under the random strategy.
+	s := &blocksStoreReplicationSet{balancingStrategy: randomLoadBalancing}
+	instances := []ring.InstanceDesc{
+		{Id: "a", Addr: "127.0.0.1", Zone: "z1"},
+		{Id: "b", Addr: "127.0.0.2", Zone: "z2"},
+	}
+	for i := 0; i < 50; i++ {
+		chosen := s.pickInstance(makeReplicationSet(instances), nil)
+		require.NotNil(t, chosen)
+	}
+	assert.Equal(t, 0.0, s.instanceLoad("127.0.0.1"))
+	assert.Equal(t, 0.0, s.instanceLoad("127.0.0.2"))
+}
+
+func TestPruneLoadCountersNotIn(t *testing.T) {
+	// Counters whose addresses are missing from the live-set are deleted; counters
+	// whose addresses ARE in the live-set are kept. The split-out helper accepts a
+	// pre-built live-set so the test doesn't need a real ring.
+	s := &blocksStoreReplicationSet{
+		balancingStrategy:     loadAwareLoadBalancing,
+		loadAwarePickHalfLife: defaultLoadAwarePickHalfLife,
+	}
+	// Bump a few addresses to populate the counter map.
+	for _, addr := range []string{"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4"} {
+		s.bumpInstance(addr)
+	}
+
+	// Live-set contains only two of the four addresses.
+	live := map[string]struct{}{
+		"127.0.0.1": {},
+		"127.0.0.3": {},
+	}
+	s.pruneLoadCountersNotIn(live)
+
+	// Live entries are kept (still have a positive counter).
+	assert.Greater(t, s.instanceLoad("127.0.0.1"), 0.0)
+	assert.Greater(t, s.instanceLoad("127.0.0.3"), 0.0)
+
+	// Dead entries are gone — instanceLoad returns 0 (its branch for missing keys).
+	assert.Equal(t, 0.0, s.instanceLoad("127.0.0.2"))
+	assert.Equal(t, 0.0, s.instanceLoad("127.0.0.4"))
+	// And confirm the underlying map no longer holds them.
+	_, ok := s.loadCounters.Load("127.0.0.2")
+	assert.False(t, ok)
+	_, ok = s.loadCounters.Load("127.0.0.4")
+	assert.False(t, ok)
 }

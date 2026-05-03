@@ -2501,6 +2501,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
+  -querier.store-gateway-load-aware-balancing
+    	[experimental] When true, replace the random load-balancing policy used to pick a store-gateway replica for each block with a power-of-two-choices selection biased by a per-instance EWMA-decayed pick counter. Dampens fan-out amplification on hot pods during multi-replica fan-out events. Counters are local to each querier replica and do not require any cooperation from store-gateways.
   -querier.streaming-chunks-per-ingester-buffer-size uint
     	Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.streaming-chunks-per-store-gateway-buffer-size uint

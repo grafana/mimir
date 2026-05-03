@@ -256,7 +256,11 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		)
 	}
 
-	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, querierCfg.StoreGatewayClient, logger, reg)
+	balancing := randomLoadBalancing
+	if querierCfg.StoreGatewayLoadAwareBalancing {
+		balancing = loadAwareLoadBalancing
+	}
+	stores, err = newBlocksStoreReplicationSet(storesRing, balancing, querierCfg.StoreGatewayLoadAwarePickHalfLife, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, querierCfg.StoreGatewayClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create store set")
 	}
