@@ -176,13 +176,15 @@ func NewMetadataCachingBucket(
 	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, metrics)
 }
 
-// NewIndexHeaderCachingBucket creates a caching bucket for bucket reads required by index-header code.
-// If metadataCache is non-nil, it re-uses the metadata cache for index-header object attributes.
-// If indexCacheClient is non-nil, it configures the index cache backend to cache index-header reads.
-func NewIndexHeaderCachingBucket(
+// NewCachingBucket creates a single caching bucket that handles metadata, index-header, and chunks caching.
+// The caching configs for index-header and chunks use different cache backends and non-overlapping
+// file matchers (isBlockIndexFile vs isTSDBChunkFile), so they can safely coexist in one CachingBucketConfig.
+// Metadata caching is shared across both use cases.
+func NewCachingBucket(
 	metadataCache cache.Cache,
 	cfg BlocksStorageConfig,
 	indexCacheClient cache.Cache,
+	chunksCache cache.Cache,
 	bkt objstore.Bucket,
 	logger log.Logger,
 	reg prometheus.Registerer,
@@ -209,7 +211,6 @@ func NewIndexHeaderCachingBucket(
 		if metadataCache != nil {
 			attributesCache = metadataCache
 		}
-		// If in-memory cache is enabled, wrap the index-header cache with the in-memory LRU cache.
 		if cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems > 0 {
 			indexCacheClient, err = cache.WrapWithLRUCache(
 				indexCacheClient,
@@ -235,41 +236,6 @@ func NewIndexHeaderCachingBucket(
 		)
 	}
 
-	if !cachingConfigured {
-		// Neither metadata nor index header bucket caching is configured.
-		return bkt, nil
-	}
-
-	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
-	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
-	// ID. This is still fine, as far as all other caching bucket implementations specify their
-	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, metrics)
-}
-
-// NewChunksCachingBucket creates a caching bucket for TSDB chunks.
-// If metadataCache is non-nil, it re-uses the metadata cache for chunks object attributes.
-// If chunksCache is non-nil, it configures the cache backend to cache chunk reads.
-func NewChunksCachingBucket(
-	metadataCache cache.Cache,
-	cfg BlocksStorageConfig,
-	chunksCache cache.Cache,
-	bkt objstore.Bucket,
-	logger log.Logger,
-	reg prometheus.Registerer,
-	metrics *bucketcache.CachingBucketMetrics,
-) (objstore.Bucket, error) {
-	var (
-		err               error
-		cachingConfigured = false
-		cachingBucketCfg  = bucketcache.NewCachingBucketConfig()
-	)
-
-	if metadataCache != nil {
-		cachingConfigured = true
-		cachingBucketCfg = configureMetadataCaching(metadataCache, cfg.BucketStore.MetadataCache, cachingBucketCfg)
-	}
-
 	if chunksCache != nil {
 		cachingConfigured = true
 		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger, tenant.NewMultiResolver())
@@ -280,7 +246,6 @@ func NewChunksCachingBucket(
 		if metadataCache != nil {
 			attributesCache = metadataCache
 		}
-		// If in-memory cache is enabled, wrap the attributes cache with the in-memory LRU cache.
 		if cfg.BucketStore.ChunksCache.AttributesInMemoryMaxItems > 0 {
 			attributesCache, err = cache.WrapWithLRUCache(
 				attributesCache, "chunks-attributes-cache",
@@ -306,7 +271,6 @@ func NewChunksCachingBucket(
 	}
 
 	if !cachingConfigured {
-		// Neither metadata nor chunks bucket caching is configured.
 		return bkt, nil
 	}
 

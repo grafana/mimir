@@ -123,22 +123,35 @@ type IndexCache interface {
 }
 
 // NewIndexCache creates a new index cache based on the input configuration.
-func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
+// Also returns the cache client if available for re-use by caller.
+func NewIndexCache(
+	cfg IndexCacheConfig, logger log.Logger, reg prometheus.Registerer,
+) (indexCacheClient cache.Cache, indexCache IndexCache, err error) {
 	switch cfg.Backend {
 	case BackendInMemory:
-		return NewInMemoryIndexCacheWithConfig(cfg.InMemory, registerer, logger)
-	case BackendMemcached:
-		client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
+		indexCache, err = NewInMemoryIndexCacheWithConfig(cfg.InMemory, reg, logger)
 		if err != nil {
-			return nil, errors.Wrap(err, "create index cache memcached client")
+			return nil, nil, errors.Wrap(err, "create index cache")
 		}
-		return NewMemcachedIndexCache(client, logger, registerer)
+		// The in-memory index cache implementation does not provide a compatible cache.Cache backend.
+		return nil, indexCache, nil
+	case BackendMemcached:
+		indexMemcachedClient, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "create index cache memcached client")
+		}
+		indexCache, err = newMemcachedIndexCache(indexMemcachedClient, logger, reg)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "create index cache")
+		}
+		// If the index cache uses a memcached backend, the same client may be re-used for another cache.
+		return indexMemcachedClient, indexCache, nil
 	default:
-		return nil, ErrUnsupportedIndexCacheBackend
+		return nil, nil, errors.Wrap(ErrUnsupportedIndexCacheBackend, "create index cache")
 	}
 }
 
-func NewMemcachedIndexCache(client *cache.MemcachedClient, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
+func newMemcachedIndexCache(client *cache.MemcachedClient, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
 	c, err := NewRemoteIndexCache(logger, client, registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create memcached-based index cache")

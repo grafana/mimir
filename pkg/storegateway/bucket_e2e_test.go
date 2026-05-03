@@ -209,7 +209,6 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	store, err := NewBucketStore(
 		userID,
 		ibkt,
-		ibkt,
 		newTestBucketIndexMetadataReader(t, bkt, userID),
 		metaFetcher,
 		cfg.tempDir,

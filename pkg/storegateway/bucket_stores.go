@@ -57,11 +57,7 @@ type BucketStores struct {
 	logger log.Logger
 	cfg    tsdb.BlocksStorageConfig
 	limits *validation.Overrides
-	// Bucket client for index-header reader access;
-	// separate from storeBkt to enable different in CachingBucket configuration.
-	indexHeaderBkt objstore.Bucket
-	// Bucket client for all other usage (bucket index, postings, series, chunks);
-	storeBkt           objstore.Bucket
+	bkt                objstore.Bucket
 	bucketStoreMetrics *BucketStoreMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
@@ -104,14 +100,12 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	// Init the index cache.
 	// indexCacheClient will be nil in the case of in-memory index-cache config.
-	indexCacheClient, indexCache, err := initIndexCache(cfg, logger, reg)
+	indexCacheClient, indexCache, err := indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg)
 	if err != nil {
 		return nil, err
 	}
 
-	// Init caching buckets with respective configs; one for index-header and one for all other bucket accesses.
-	// Handles nil indexCacheClient.
-	indexHeaderCachingBucket, chunksCachingBucket, err := initCachingBuckets(bucketClient, cfg, indexCacheClient, logger, reg)
+	cachingBucket, err := initCachingBucket(bucketClient, cfg, indexCacheClient, logger, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -143,8 +137,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		logger:             logger,
 		cfg:                cfg,
 		limits:             limits,
-		indexHeaderBkt:     indexHeaderCachingBucket,
-		storeBkt:           chunksCachingBucket,
+		bkt:                cachingBucket,
 		indexCache:         indexCache,
 		shardingStrategy:   shardingStrategy,
 		allowedTenants:     allowedTenants,
@@ -205,71 +198,28 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	return u, nil
 }
 
-func initIndexCache(
-	cfg tsdb.BlocksStorageConfig, logger log.Logger, reg prometheus.Registerer,
-) (indexCacheClient cache.Cache, indexCache indexcache.IndexCache, err error) {
-	switch cfg.BucketStore.IndexCache.Backend {
-	case indexcache.BackendInMemory:
-		indexCache, err = indexcache.NewInMemoryIndexCacheWithConfig(cfg.BucketStore.IndexCache.InMemory, reg, logger)
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "create index cache")
-		}
-		// The in-memory index cache implementation does not provide a compatible cache.Cache backend.
-		return nil, indexCache, nil
-	case indexcache.BackendMemcached:
-		indexMemcachedClient, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.BucketStore.IndexCache.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", reg))
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "create index cache memcached client")
-		}
-		indexCache, err = indexcache.NewMemcachedIndexCache(indexMemcachedClient, logger, reg)
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "create index cache")
-		}
-		// If the index cache uses a memcached backend, the same client can be used for the index-header bucket cache.
-		return indexMemcachedClient, indexCache, nil
-	default:
-		return nil, nil, errors.Wrap(indexcache.ErrUnsupportedIndexCacheBackend, "create index cache")
-	}
-}
-
-func initCachingBuckets(
+func initCachingBucket(
 	bucketClient objstore.Bucket,
 	cfg tsdb.BlocksStorageConfig,
 	indexCacheClient cache.Cache,
 	logger log.Logger,
 	reg prometheus.Registerer,
-) (indexHeaderBkt, chunksBkt objstore.Bucket, err error) {
-	// Metrics are shared across caching buckets as they have the same labels.
+) (objstore.Bucket, error) {
 	cachingBucketMetrics := bucketcache.NewCachingBucketMetrics(reg)
 
-	// Init the metadata cache client.
-	// The client may be shared across the index-header and chunks caching buckets.
 	metadataCache, err := tsdb.NewMetadataCacheClient(cfg.BucketStore.MetadataCache, logger, reg)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "create metadata cache")
+		return nil, errors.Wrap(err, "create metadata cache")
 	}
 
-	// Init index-header caching bucket; uses the memcached client for the index cache, if enabled.
-	indexHeaderBkt, err = tsdb.NewIndexHeaderCachingBucket(
-		metadataCache, cfg, indexCacheClient, bucketClient, logger, reg, cachingBucketMetrics,
-	)
-	if err != nil {
-		return nil, nil, errors.Wrapf(err, "create index header caching bucket")
-	}
-
-	// Init the chunks cache.
 	chunksCacheClient, err := cache.CreateClient(
 		"chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg),
 	)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "chunks-cache")
-	}
-	chunksBkt, err = tsdb.NewChunksCachingBucket(metadataCache, cfg, chunksCacheClient, bucketClient, logger, reg, cachingBucketMetrics)
-	if err != nil {
-		return nil, nil, errors.Wrapf(err, "create chunks caching bucket")
+		return nil, errors.Wrapf(err, "chunks-cache")
 	}
 
-	return indexHeaderBkt, chunksBkt, nil
+	return tsdb.NewCachingBucket(metadataCache, cfg, indexCacheClient, chunksCacheClient, bucketClient, logger, reg, cachingBucketMetrics)
 }
 
 func (u *BucketStores) stopBucketStores(error) error {
@@ -485,7 +435,7 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 // scanUsers in the bucket and return the list of found users, respecting any specifically
 // enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {
-	users, err := tsdb.ListUsers(ctx, u.storeBkt)
+	users, err := tsdb.ListUsers(ctx, u.bkt)
 	if err != nil {
 		return nil, err
 	}
@@ -597,8 +547,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 
 	level.Info(userLogger).Log("msg", "creating user bucket store")
 
-	userIndexHeaderBkt := bucket.NewUserBucketClient(userID, u.indexHeaderBkt, u.limits)
-	userStoreBkt := bucket.NewUserBucketClient(userID, u.storeBkt, u.limits)
+	userBkt := bucket.NewUserBucketClient(userID, u.bkt, u.limits)
 
 	fetcherReg := prometheus.NewRegistry()
 	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(fetcherReg, u.bucketStoreMetrics)
@@ -608,13 +557,13 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		NewShardingMetadataFilterAdapter(userID, u.shardingStrategy),
 		newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
 		// Use our own custom implementation.
-		NewIgnoreDeletionMarkFilter(userLogger, userStoreBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
+		NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
 		// The duplicate filter has been intentionally omitted because it could cause troubles with
 		// the consistency check done on the querier. The duplicate filter removes redundant blocks
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}
-	loader := NewBucketIndexLoader(userID, u.storeBkt, u.limits, u.logger)
+	loader := NewBucketIndexLoader(userID, u.bkt, u.limits, u.logger)
 	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, u.logger, fetcherMetrics, filters)
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
@@ -625,8 +574,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 
 	bs, err := NewBucketStore(
 		userID,
-		userIndexHeaderBkt,
-		userStoreBkt,
+		userBkt,
 		newBucketIndexMetadataReaderFromLoader(loader),
 		fetcher,
 		u.syncDirForUser(userID),

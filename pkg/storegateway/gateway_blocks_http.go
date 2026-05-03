@@ -83,7 +83,7 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	metasMap, deleteMarkerDetails, noCompactMarkerDetails, err := listblocks.LoadMetaFilesAndMarkers(req.Context(), g.stores.storeBkt, tenantID, showDeleted, time.Time{})
+	metasMap, deleteMarkerDetails, noCompactMarkerDetails, err := listblocks.LoadMetaFilesAndMarkers(req.Context(), g.stores.bkt, tenantID, showDeleted, time.Time{})
 	if err != nil {
 		util.WriteTextResponse(w, fmt.Sprintf("Failed to read block metadata: %s", err))
 		return

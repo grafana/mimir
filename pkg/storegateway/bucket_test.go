@@ -1535,7 +1535,6 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		st, err := NewBucketStore(
 			"test",
 			ibkt,
-			ibkt,
 			newTestBucketIndexMetadataReader(t, bkt, "test"),
 			f,
 			tmpDir,
@@ -1667,7 +1666,6 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 					// Create the bucket store.
 					store, err := NewBucketStore(
 						"tenant",
-						instrumentedBucket,
 						instrumentedBucket,
 						newTestBucketIndexMetadataReader(t, instrumentedBucket, "tenant"),
 						metaFetcher,
@@ -1843,8 +1841,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 	store := &BucketStore{
 		userID:          "test",
-		indexHeaderBkt:  objstore.WithNoopInstr(bkt),
-		storeBkt:        objstore.WithNoopInstr(bkt),
+		bkt:             objstore.WithNoopInstr(bkt),
 		bucketIndexMeta: newTestBucketIndexMetadataReader(t, bkt, "test"),
 		logger:          logger,
 		indexCache:      indexCache,
@@ -2007,7 +2004,6 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	store, err := NewBucketStore(
 		"test",
 		instrBkt,
-		instrBkt,
 		newTestBucketIndexMetadataReader(t, bkt, "test"),
 		fetcher,
 		tmpDir,
@@ -2065,7 +2061,6 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 
 	store, err := NewBucketStore(
 		"test",
-		instrBkt,
 		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "test"),
 		fetcher,
@@ -2139,7 +2134,6 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 
 	store, err := NewBucketStore(
 		"test",
-		instrBkt,
 		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "test"),
 		fetcher,
@@ -2219,7 +2213,6 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 
 	store, err := NewBucketStore(
 		"test",
-		instrBkt,
 		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "test"),
 		fetcher,
@@ -2347,7 +2340,6 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	store, err := NewBucketStore(
 		"tenant",
-		instrBkt,
 		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "tenant"),
 		fetcher,
@@ -2511,7 +2503,6 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 					store, err := NewBucketStore(
 						"tenant",
 						instrBkt,
-						instrBkt,
 						newTestBucketIndexMetadataReader(t, instrBkt, "tenant"),
 						fetcher,
 						tmpDir,
@@ -2631,7 +2622,6 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache)}, opts...)
 	store, err := NewBucketStore(
 		"tenant",
-		instrBkt,
 		instrBkt,
 		newTestBucketIndexMetadataReader(t, instrBkt, "tenant"),
 		fetcher,
