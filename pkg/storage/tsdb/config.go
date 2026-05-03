@@ -74,8 +74,14 @@ const (
 	DefaultPostingsForMatchersCacheMaxBytes = 100 * 1024 * 1024
 
 	// DefaultPartitionerMaxGapSize is the default max size - in bytes - of a gap for which the store-gateway
-	// partitioner aggregates together two bucket GET object requests.
-	DefaultPartitionerMaxGapSize = uint64(512 * 1024)
+	// partitioner aggregates together two bucket GET object requests. The 4 MiB value is chosen to
+	// consolidate more series into a single GET on cold-cache fan-out — fewer goroutines spawned by
+	// preloadSeries' errgroup, fewer slab allocations in loadSeries, and less mutex contention on
+	// bucketIndexLoadedSeries — at the cost of fetching a small amount of unused bytes per merged
+	// range. Cells with sparse access patterns or tight bandwidth budgets can lower this; cells
+	// serving high fan-out queries against hot blocks generally benefit from leaving it at or above
+	// the default.
+	DefaultPartitionerMaxGapSize = uint64(4 * 1024 * 1024)
 
 	// NewBlockDiscoveryDelayMultiplier is the factor used (multiplied with BucketStoreConfig.SyncInterval) to determine
 	// when querying a newly uploaded block is required.
@@ -496,7 +502,11 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 		"This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet.")
 	f.DurationVar(&cfg.IgnoreBlocksWithin, "blocks-storage.bucket-store.ignore-blocks-within", 10*time.Hour, "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.")
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
-	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
+	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize,
+		"Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. "+
+			"Larger values consolidate more series into a single GET — fewer goroutines and less mutex contention on the "+
+			"hot loadSeries path under high fan-out — at the cost of fetching a small amount of unused bytes per merged "+
+			"range. Lower this for sparse access patterns or tight bandwidth budgets.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytesChunks, "blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks", 0, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")

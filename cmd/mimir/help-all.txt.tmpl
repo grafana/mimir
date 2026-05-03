@@ -486,7 +486,19 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items int
-    	Maximum number of items to keep in a first-level in-memory LRU cache fronting the memcached index cache. Items are stored and fetched in-memory before hitting memcached. 0 to disable. Note: index cache items vary widely in size (a few hundred bytes to several KB depending on the cache type), so resident memory of the LRU is roughly this value multiplied by the average item size. Size accordingly. Note also: the underlying LRU implementation serializes all reads on a single per-pod mutex while it forwards misses to memcached, so during cold-cache scenarios (after restart, or large working-set shifts) reads can become bottlenecked on this mutex; the L1 is most beneficial for steady-state hit-heavy workloads. If cold-cache contention dominates, set this to 0. Only applicable when blocks-storage.bucket-store.index-cache.backend=memcached.
+    	Total max-items budget for the L1 in-memory LRU cache fronting the memcached index cache. The L1 is per-item-type internally; this flag is divided evenly across the six item types (postings, series-for-ref, expanded-postings, series-for-postings, label-names, label-values). For finer control, set the per-item-type blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-* flags directly — any positive per-type flag overrides this global distribution. 0 to disable the L1 entirely. Note: index cache items vary widely in size (a few hundred bytes to several KB depending on the cache type), so resident memory of the LRU is roughly this value multiplied by the average item size. Size accordingly. Only applicable when blocks-storage.bucket-store.index-cache.backend=memcached.
+  -blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-expanded-postings int
+    	[experimental] Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.
+  -blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-label-names int
+    	[experimental] Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.
+  -blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-label-values int
+    	[experimental] Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.
+  -blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-postings int
+    	[experimental] Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.
+  -blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-series-for-postings int
+    	[experimental] Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.
+  -blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items-series-for-ref int
+    	[experimental] Per-item-type budget for the L1 LRU. When any per-item-type flag is positive the L1 is sized from these flags directly and the global blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items knob is ignored. Item types whose per-type flag is left at 0 are not cached in the L1 and fall through to memcached.
   -blocks-storage.bucket-store.index-cache.memcached-inmemory-ttl duration
     	TTL for items stored in the L1 in-memory LRU cache fronting memcached. The L1 TTL is uniform across all item kinds and overrides the per-entry TTL of the underlying memcached cache for L1 hits. Index cache content is keyed on immutable block IDs, so serving from L1 past the original memcached TTL is correct. Only applicable when the L1 cache is enabled. (default 24h0m0s)
   -blocks-storage.bucket-store.index-cache.memcached-setasync-dedup-max-items int
@@ -529,6 +541,14 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-cache.ttl-expanded-postings duration
+    	TTL for cached ExpandedPostings entries (matcher-keyed). Lower this if matchers churn quickly to bias eviction toward more durable item types. (default 168h0m0s)
+  -blocks-storage.bucket-store.index-cache.ttl-label-names duration
+    	TTL for cached LabelNames entries (matcher-keyed). (default 168h0m0s)
+  -blocks-storage.bucket-store.index-cache.ttl-label-values duration
+    	TTL for cached LabelValues entries (label name + matcher-keyed). (default 168h0m0s)
+  -blocks-storage.bucket-store.index-cache.ttl-series-for-postings duration
+    	TTL for cached SeriesForPostings entries (postings-key-keyed). (default 168h0m0s)
   -blocks-storage.bucket-store.index-header.bucket-reader.enabled
     	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.
   -blocks-storage.bucket-store.index-header.bucket-reader.index-sections string
@@ -612,7 +632,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl duration
     	How long to cache list of tenants in the bucket. (default 15m0s)
   -blocks-storage.bucket-store.partitioner-max-gap-bytes uint
-    	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. (default 524288)
+    	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Larger values consolidate more series into a single GET — fewer goroutines and less mutex contention on the hot loadSeries path under high fan-out — at the cost of fetching a small amount of unused bytes per merged range. Lower this for sparse access patterns or tight bandwidth budgets. (default 4194304)
   -blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks uint
     	[experimental] Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks
   -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int

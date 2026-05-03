@@ -144,50 +144,11 @@ func TestCanonicalPostingsKey(t *testing.T) {
 	})
 }
 
-// TestRemoteIndexCacheWithL1LRU exercises the LRU wrapping path that newMemcachedIndexCache
-// applies when MemcachedInMemoryMaxItems > 0. The wiring inside newMemcachedIndexCache itself
-// requires a real memcached connection to construct, so this test mirrors the wrap order
-// (mock cache -> WrapWithLRUCache -> RemoteIndexCache) and asserts that fetches are served
-// from L1 without touching the inner cache after the L1 has been populated by Store.
-func TestRemoteIndexCacheWithL1LRU(t *testing.T) {
-	innerMock := newMockedRemoteCacheClient(nil)
-	l1Reg := prometheus.NewPedanticRegistry()
-
-	wrapped, err := cache.WrapWithLRUCache(innerMock, "index-cache", l1Reg, 100, time.Hour, log.NewNopLogger())
-	require.NoError(t, err)
-
-	rc, err := NewRemoteIndexCache(log.NewNopLogger(), wrapped, prometheus.NewPedanticRegistry())
-	require.NoError(t, err)
-
-	user := "tenant1"
-	blockID := ulid.MustNew(1, nil)
-	id := storage.SeriesRef(123)
-	value := []byte("series-bytes")
-
-	// Storing populates both L1 and the inner cache (the LRU wrapper writes through).
-	rc.StoreSeriesForRef(user, blockID, id, value, time.Hour)
-
-	ctx := context.Background()
-
-	// Two fetches for the same key — both should hit L1 and return the stored value.
-	hits1, misses1 := rc.FetchMultiSeriesForRefs(ctx, user, blockID, []storage.SeriesRef{id})
-	require.Empty(t, misses1)
-	require.Equal(t, value, hits1[id])
-
-	hits2, misses2 := rc.FetchMultiSeriesForRefs(ctx, user, blockID, []storage.SeriesRef{id})
-	require.Empty(t, misses2)
-	require.Equal(t, value, hits2[id])
-
-	// L1 metrics: 2 requests, 2 hits.
-	assert.Equal(t, 2.0, gatherCounter(t, l1Reg, "cache_memory_requests_total"))
-	assert.Equal(t, 2.0, gatherCounter(t, l1Reg, "cache_memory_hits_total"))
-}
-
 // TestRemoteIndexCacheWithoutL1 confirms behavior is unchanged when L1 is disabled —
 // the inner cache is used directly.
 func TestRemoteIndexCacheWithoutL1(t *testing.T) {
 	innerMock := newMockedRemoteCacheClient(nil)
-	rc, err := NewRemoteIndexCache(log.NewNopLogger(), innerMock, prometheus.NewPedanticRegistry())
+	rc, err := newRemoteIndexCacheForTest(log.NewNopLogger(), innerMock, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	user := "tenant1"
@@ -319,23 +280,35 @@ func (s *slowCache) GetMultiWithError(ctx context.Context, keys []string, opts .
 	return s.Cache.GetMultiWithError(ctx, keys, opts...)
 }
 
-// BenchmarkL1IndexCache_HitPath compares serving a hot key from the L1 LRU against
-// paying a simulated memcached round-trip on every read. The inner cache is wrapped
-// with a fixed-latency sleep so the benchmark surfaces the avoided round-trip cost
-// without needing an actual memcached server.
+// BenchmarkL1IndexCache_HitPath compares serving a hot key from the L1 (TypedLRUCache,
+// the wrapper Mimir actually uses in production) against paying a simulated memcached
+// round-trip on every read. The inner cache is wrapped with a fixed-latency sleep so
+// the benchmark surfaces the avoided round-trip cost without needing an actual
+// memcached server.
 //
-// The benchmark also exposes the per-pod LRU mutex contention noted in the
-// "*-memcached-inmemory-max-items" help text: under high parallelism, even L1 hits
-// serialize on the LRU mutex, so the with-l1 numbers will not scale linearly with
-// GOMAXPROCS — that's expected and is the documented limitation.
+// The benchmark also exposes the per-pod LRU mutex contention noted in the per-type
+// "*-memcached-inmemory-max-items-*" help text: even L1 hits serialize on the matching
+// per-type mutex, so the with-l1 numbers will not scale linearly with GOMAXPROCS — that's
+// expected. The per-type design splits contention across six mutexes (one per item type)
+// rather than one global, which is its main advantage over the legacy single-LRU design.
 func BenchmarkL1IndexCache_HitPath(b *testing.B) {
 	const fetchLatency = 100 * time.Microsecond
-	const hotKey = "hot-key"
+	// The key must carry one of the prefixes TypedLRUCache routes (P2:, S:, E2:, SP2:,
+	// LN:, LV2:); otherwise it bypasses L1 and the benchmark would always miss.
+	const hotKey = "P2:hot-key"
 	hotVal := []byte("v")
+	sizes := PerTypeLRUSizes{
+		Postings:          100,
+		SeriesForRef:      100,
+		ExpandedPostings:  100,
+		SeriesForPostings: 100,
+		LabelNames:        100,
+		LabelValues:       100,
+	}
 
 	b.Run("with-l1", func(b *testing.B) {
 		inner := &slowCache{Cache: newMockedRemoteCacheClient(nil), latency: fetchLatency}
-		l1, err := cache.WrapWithLRUCache(inner, "test", prometheus.NewPedanticRegistry(), 100, time.Hour, log.NewNopLogger())
+		l1, err := NewTypedLRUCache(inner, "test", prometheus.NewPedanticRegistry(), sizes, time.Hour, log.NewNopLogger())
 		require.NoError(b, err)
 
 		// Pre-populate L1 so every benchmark iteration is a hit.

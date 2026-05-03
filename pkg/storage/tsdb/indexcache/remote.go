@@ -40,16 +40,37 @@ type RemoteIndexCache struct {
 	logger log.Logger
 	remote cache.Cache
 
+	// Per-item-type TTLs for Store* methods that don't take a caller-supplied TTL.
+	// (StorePostings and StoreSeriesForRef receive a per-block TTL from the caller and
+	// thus aren't governed by these.) Always set explicitly via NewRemoteIndexCacheWithTTLs;
+	// production callers thread operator-configured values through the memcached backend
+	// factory.
+	ttlExpandedPostings  time.Duration
+	ttlSeriesForPostings time.Duration
+	ttlLabelNames        time.Duration
+	ttlLabelValues       time.Duration
+
 	// Metrics.
 	requests *prometheus.CounterVec
 	hits     *prometheus.CounterVec
 }
 
-// NewRemoteIndexCache makes a new RemoteIndexCache.
-func NewRemoteIndexCache(logger log.Logger, remote cache.Cache, reg prometheus.Registerer) (*RemoteIndexCache, error) {
+// NewRemoteIndexCacheWithTTLs makes a new RemoteIndexCache with operator-configured
+// per-item-type TTLs for the matcher-keyed item types. Item types whose Store* methods
+// take a caller-supplied TTL (Postings, SeriesForRef) are not governed by these.
+func NewRemoteIndexCacheWithTTLs(
+	logger log.Logger,
+	remote cache.Cache,
+	reg prometheus.Registerer,
+	ttlExpandedPostings, ttlSeriesForPostings, ttlLabelNames, ttlLabelValues time.Duration,
+) (*RemoteIndexCache, error) {
 	c := &RemoteIndexCache{
-		logger: logger,
-		remote: remote,
+		logger:               logger,
+		remote:               remote,
+		ttlExpandedPostings:  ttlExpandedPostings,
+		ttlSeriesForPostings: ttlSeriesForPostings,
+		ttlLabelNames:        ttlLabelNames,
+		ttlLabelValues:       ttlLabelValues,
 	}
 
 	c.requests = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -268,7 +289,7 @@ func seriesForRefCacheKey(userID string, blockID ulid.ULID, id storage.SeriesRef
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *RemoteIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
-	c.remote.SetAsync(expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy), v, defaultTTL)
+	c.remote.SetAsync(expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy), v, c.ttlExpandedPostings)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
@@ -283,7 +304,7 @@ func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatch
 
 // StoreSeriesForPostings stores a series set for the provided postings.
 func (c *RemoteIndexCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
-	c.remote.SetAsync(seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v, defaultTTL)
+	c.remote.SetAsync(seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v, c.ttlSeriesForPostings)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
@@ -304,7 +325,7 @@ func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding
 
 // StoreLabelNames stores the result of a LabelNames() call.
 func (c *RemoteIndexCache) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
-	c.remote.SetAsync(labelNamesCacheKey(userID, blockID, matchersKey), v, defaultTTL)
+	c.remote.SetAsync(labelNamesCacheKey(userID, blockID, matchersKey), v, c.ttlLabelNames)
 }
 
 // FetchLabelNames fetches the result of a LabelNames() call.
@@ -319,7 +340,7 @@ func labelNamesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatch
 
 // StoreLabelValues stores the result of a LabelValues() call.
 func (c *RemoteIndexCache) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
-	c.remote.SetAsync(labelValuesCacheKey(userID, blockID, labelName, matchersKey), v, defaultTTL)
+	c.remote.SetAsync(labelValuesCacheKey(userID, blockID, labelName, matchersKey), v, c.ttlLabelValues)
 }
 
 // FetchLabelValues fetches the result of a LabelValues() call.

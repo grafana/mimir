@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -30,6 +31,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
+
+// newRemoteIndexCacheForTest constructs a RemoteIndexCache with default TTLs across all
+// item types. Tests don't care about per-type TTL plumbing; production code uses
+// NewRemoteIndexCacheWithTTLs to thread operator-configured values through.
+func newRemoteIndexCacheForTest(logger log.Logger, remote cache.Cache, reg prometheus.Registerer) (*RemoteIndexCache, error) {
+	return NewRemoteIndexCacheWithTTLs(logger, remote, reg, defaultTTL, defaultTTL, defaultTTL, defaultTTL)
+}
 
 func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 	t.Parallel()
@@ -107,7 +115,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := newRemoteIndexCacheForTest(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -171,7 +179,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 		fetchLabels := benchCase.fetchLabels
 		b.Run(name, func(b *testing.B) {
 			client := newMockedRemoteCacheClient(nil)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := newRemoteIndexCacheForTest(log.NewNopLogger(), client, nil)
 			assert.NoError(b, err)
 
 			// Store the postings expected before running the benchmark.
@@ -274,7 +282,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := newRemoteIndexCacheForTest(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the series expected before running the test.
@@ -366,7 +374,7 @@ func TestRemoteIndexCache_FetchExpandedPostings(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := newRemoteIndexCacheForTest(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -470,7 +478,7 @@ func TestRemoteIndexCache_FetchSeriesForPostings(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := newRemoteIndexCacheForTest(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -561,7 +569,7 @@ func TestRemoteIndexCache_FetchLabelNames(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := newRemoteIndexCacheForTest(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -660,7 +668,7 @@ func TestRemoteIndexCache_FetchLabelValues(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+			c, err := newRemoteIndexCacheForTest(log.NewNopLogger(), client, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.

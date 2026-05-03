@@ -163,21 +163,34 @@ func newMemcachedIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer 
 		return nil, errors.Wrap(err, "wrap memcached index cache with SetAsync dedup")
 	}
 
-	if cfg.MemcachedInMemoryMaxItems > 0 {
-		indexCacheBackend, err = cache.WrapWithLRUCache(
+	// L1 wrapping. Always uses the per-item-type LRU (TypedLRUCache) so a hot working
+	// set in one item type can't evict unrelated entries. Sizing is taken from the
+	// per-type flags directly when at least one is set; otherwise, the legacy
+	// MemcachedInMemoryMaxItems flag is treated as a "give me an L1 of this total
+	// size" convenience and the budget is divided evenly across the six item types.
+	if sizes := cfg.effectivePerTypeMaxItems(); sizes.AnyEnabled() {
+		indexCacheBackend, err = NewTypedLRUCache(
 			indexCacheBackend,
 			"index-cache",
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer),
-			cfg.MemcachedInMemoryMaxItems,
+			sizes,
 			cfg.MemcachedInMemoryTTL,
 			logger,
 		)
 		if err != nil {
-			return nil, errors.Wrap(err, "wrap memcached index cache with in-memory LRU")
+			return nil, errors.Wrap(err, "wrap memcached index cache with per-item-type LRU")
 		}
 	}
 
-	c, err := NewRemoteIndexCache(logger, indexCacheBackend, registerer)
+	c, err := NewRemoteIndexCacheWithTTLs(
+		logger,
+		indexCacheBackend,
+		registerer,
+		cfg.TTLExpandedPostings,
+		cfg.TTLSeriesForPostings,
+		cfg.TTLLabelNames,
+		cfg.TTLLabelValues,
+	)
 	if err != nil {
 		return nil, errors.Wrap(err, "create memcached-based index cache")
 	}

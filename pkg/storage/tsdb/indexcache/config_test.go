@@ -92,6 +92,18 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 			}(),
 			expected: errInvalidMemcachedInMemoryTTL,
 		},
+		"zero memcached-inmemory-ttl with per-type L1 enabled should fail": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedInMemoryMaxItemsSeriesForRef = 1000
+				cfg.MemcachedInMemoryTTL = 0
+				return cfg
+			}(),
+			expected: errInvalidMemcachedInMemoryTTL,
+		},
 		"zero memcached-inmemory-ttl with L1 disabled should pass": {
 			cfg: func() IndexCacheConfig {
 				cfg := IndexCacheConfig{}
@@ -137,6 +149,44 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 				return cfg
 			}(),
 		},
+		"dedup window equal to a per-type TTL should fail": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedSetAsyncDedupMaxItems = 1024
+				cfg.MemcachedSetAsyncDedupWindow = 5 * time.Second
+				cfg.TTLLabelValues = 5 * time.Second
+				return cfg
+			}(),
+			expected: errInvalidMemcachedSetAsyncDedupWindowExceedsTTL,
+		},
+		"dedup window greater than a per-type TTL should fail": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedSetAsyncDedupMaxItems = 1024
+				cfg.MemcachedSetAsyncDedupWindow = 10 * time.Second
+				cfg.TTLExpandedPostings = 1 * time.Second
+				return cfg
+			}(),
+			expected: errInvalidMemcachedSetAsyncDedupWindowExceedsTTL,
+		},
+		"dedup disabled with window > a TTL should pass (validator only fires when dedup is on)": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedSetAsyncDedupMaxItems = 0
+				cfg.MemcachedSetAsyncDedupWindow = 10 * time.Second
+				cfg.TTLLabelValues = 1 * time.Second
+				return cfg
+			}(),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -144,6 +194,53 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 			assert.Equal(t, testData.expected, testData.cfg.Validate())
 		})
 	}
+}
+
+func TestIndexCacheConfig_EffectivePerTypeMaxItems(t *testing.T) {
+	t.Run("L1 disabled when no flag is set", func(t *testing.T) {
+		cfg := IndexCacheConfig{}
+		flagext.DefaultValues(&cfg)
+		assert.False(t, cfg.effectivePerTypeMaxItems().AnyEnabled())
+	})
+
+	t.Run("global flag distributes evenly across all types", func(t *testing.T) {
+		cfg := IndexCacheConfig{}
+		flagext.DefaultValues(&cfg)
+		cfg.MemcachedInMemoryMaxItems = 600
+		sizes := cfg.effectivePerTypeMaxItems()
+		assert.Equal(t, 100, sizes.Postings)
+		assert.Equal(t, 100, sizes.SeriesForRef)
+		assert.Equal(t, 100, sizes.ExpandedPostings)
+		assert.Equal(t, 100, sizes.SeriesForPostings)
+		assert.Equal(t, 100, sizes.LabelNames)
+		assert.Equal(t, 100, sizes.LabelValues)
+	})
+
+	t.Run("global flag rounds up to ensure every type has at least one slot", func(t *testing.T) {
+		// 1 / 6 == 0 with truncating division would disable all types; the rounded-
+		// up division gives every type a single slot instead.
+		cfg := IndexCacheConfig{}
+		flagext.DefaultValues(&cfg)
+		cfg.MemcachedInMemoryMaxItems = 1
+		sizes := cfg.effectivePerTypeMaxItems()
+		assert.True(t, sizes.AnyEnabled())
+		assert.Equal(t, 1, sizes.Postings)
+	})
+
+	t.Run("per-type flag overrides global", func(t *testing.T) {
+		cfg := IndexCacheConfig{}
+		flagext.DefaultValues(&cfg)
+		cfg.MemcachedInMemoryMaxItems = 600
+		cfg.MemcachedInMemoryMaxItemsSeriesForRef = 5000
+		sizes := cfg.effectivePerTypeMaxItems()
+		// Per-type wins entirely — the global is ignored.
+		assert.Equal(t, 5000, sizes.SeriesForRef)
+		// Other types fall back to their per-type values (zero), NOT the global
+		// distribution. This is intentional: setting any per-type flag is the
+		// signal that the operator wants explicit per-type control.
+		assert.Equal(t, 0, sizes.Postings)
+		assert.Equal(t, 0, sizes.LabelNames)
+	})
 }
 
 func TestIndexCacheConfig_MemcachedInMemoryDefaults(t *testing.T) {
