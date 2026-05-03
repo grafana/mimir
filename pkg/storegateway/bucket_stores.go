@@ -17,7 +17,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
@@ -99,29 +98,33 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	var err error
 
 	// Init metadata cache.
-	metadataCache, err := tsdb.NewMetadataCacheClient(cfg.BucketStore.MetadataCache, logger, reg)
+	metadataCache, err := tsdb.NewMetadataCacheClient(cfg.BucketStore.MetadataCache.BackendConfig, logger, reg)
 	if err != nil {
 		return nil, err
 	}
 
-	// Init index cache; indexCacheClient will be nil in the case of in-memory index-cache config.
+	// Init index cache.
 	indexCacheClient, indexCache, err := indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg)
 	if err != nil {
 		return nil, err
 	}
 
 	// Init chunks cache.
-	chunksCacheClient, err := cache.CreateClient(
-		"chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg),
-	)
+	chunksCacheClient, err := tsdb.NewChunksCacheClient(cfg.BucketStore.ChunksCache.BackendConfig, logger, reg)
 	if err != nil {
-		return nil, errors.Wrapf(err, "chunks-cache")
+		return nil, err
 	}
 
+	// Configure caching bucket to cover configured metadata, index-header, and chunks caching.
+	// Index-header caching uses index-cache backend.
+	// Both index-header and chunks caching share the metadata cache for object attributes.
 	cachingBktMetrics := bucketcache.NewCachingBucketMetrics(reg)
-	cachingBucket, err := tsdb.NewCachingBucket(
+	cachingBucket, err := tsdb.NewStoreCachingBucket(
 		metadataCache, cfg, indexCacheClient, chunksCacheClient, bucketClient, logger, reg, cachingBktMetrics,
 	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "create caching bucket")
+	}
 
 	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
 

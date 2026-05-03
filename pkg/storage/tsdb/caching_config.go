@@ -111,10 +111,10 @@ func (cfg *MetadataCacheConfig) Validate() error {
 
 // NewMetadataCacheClient returns a configured cache client, or nil if configured backend is in-memory.
 func NewMetadataCacheClient(
-	cfg MetadataCacheConfig, logger log.Logger, reg prometheus.Registerer,
+	cfg cache.BackendConfig, logger log.Logger, reg prometheus.Registerer,
 ) (metadataCache cache.Cache, err error) {
 	const name = "metadata-cache"
-	metadataCache, err = cache.CreateClient(name, cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	metadataCache, err = cache.CreateClient(name, cfg, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
@@ -157,7 +157,7 @@ func NewMetadataCachingBucket(
 	reg prometheus.Registerer,
 	metrics *bucketcache.CachingBucketMetrics,
 ) (objstore.Bucket, error) {
-	metadataCache, err := NewMetadataCacheClient(metadataCfg, logger, reg)
+	metadataCache, err := NewMetadataCacheClient(metadataCfg.BackendConfig, logger, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -176,12 +176,24 @@ func NewMetadataCachingBucket(
 	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, metrics)
 }
 
-// NewCachingBucket creates a single caching bucket that handles metadata, index-header, and chunks caching.
+func NewChunksCacheClient(
+	cfg cache.BackendConfig, logger log.Logger, reg prometheus.Registerer) (chunksCache cache.Cache, err error) {
+	const name = "chunks-cache"
+	chunksCache, err = cache.CreateClient(
+		name, cfg, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg),
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "chunks-cache")
+	}
+	return chunksCache, nil
+}
+
+// NewStoreCachingBucket creates a single caching bucket that handles metadata, index-header, and chunks caching.
 //   - Index-header config matches isBlockIndexFile to cache GetRange calls.
 //   - Chunks config matches isTSDBChunkFile to cache GetRange calls.
 //   - Metadata caching is shared with across index-header and chunks caching buckets if enabled,
 //     otherwise each cache handles its own metadata storage.
-func NewCachingBucket(
+func NewStoreCachingBucket(
 	metadataCache cache.Cache,
 	cfg BlocksStorageConfig,
 	indexCacheClient cache.Cache,
