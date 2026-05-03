@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"bufio"
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/binary"
@@ -20,7 +21,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -108,7 +108,7 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 
 	res, err := singleflightFetchOrCompute[expandedPostingsResult](
 		ctx,
-		&r.block.expandedPostingsSF,
+		&r.block.sf,
 		sfKey,
 		func(fetchCtx context.Context) (expandedPostingsResult, bool) {
 			refs, pendingMatchers, ok := r.fetchCachedExpandedPostings(fetchCtx, r.block.userID, key, stats)
@@ -651,16 +651,19 @@ var seriesOffsetReaders = &sync.Pool{New: func() any {
 func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
 	defer r.recordLoadSeriesStats(stats, refetch, len(ids), start, end, time.Now())
 
-	reader, err := r.block.indexRangeReader(ctx, int64(start), int64(end-start))
+	// Coalesce concurrent identical (block, off, length) reads via singleflight so
+	// fan-out queries hitting the same hot block share a single object-storage GET.
+	// The shared []byte is read-only by all callers; series bytes are copied out into
+	// the slab pool below.
+	rangeBytes, err := r.block.readIndexRangeSF(ctx, int64(start), int64(end-start))
 	if err != nil {
 		return errors.Wrap(err, "read series range")
 	}
-	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "loadSeries close range reader")
 
 	offsetReader := seriesOffsetReaders.Get().(*offsetTrackingReader)
 	defer seriesOffsetReaders.Put(offsetReader)
 
-	offsetReader.Reset(start, reader)
+	offsetReader.Reset(start, bytes.NewReader(rangeBytes))
 	defer offsetReader.Release()
 
 	// Use a slab pool to reduce allocations by sharding one large slice of bytes instead of allocating each series' bytes separately.
@@ -670,6 +673,16 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	// Use a different TTL for these series based on the duration of the block. Use a shorter TTL for blocks that
 	// are going to be compacted and deleted shortly anyway.
 	cacheTTL := indexcache.BlockTTL(r.block.meta)
+
+	// Accumulate decoded series bytes in a map and write them to the index cache in a
+	// single StoreMultiSeriesForRef at the end of the partition. This replaces what would
+	// otherwise be one cache SetAsync call per series — a measurable hotspot on store-
+	// gateway pods serving high-fan-out queries against cold blocks (the dskit
+	// MemcachedClient SetAsync path acquires a shared mutex per call). With typical
+	// partitions of up to maxSeriesPerBatch (default 5000) series, this collapses
+	// thousands of per-key invocations into one batched SetMultiAsync that also threads
+	// through the SetAsync dedup decorator.
+	toCache := make(map[storage.SeriesRef][]byte, len(ids))
 
 	for i, id := range ids {
 		// We iterate the series in order assuming they are sorted.
@@ -689,15 +702,23 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 			}
 
 			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", seriesSize, "max_series_size", tsdb.MaxSeriesSize)
-			// Inefficient, but should be rare.
+			// Inefficient, but should be rare. Flush whatever we successfully read so
+			// far before recursing — those entries are valid to cache and discarding
+			// them on a partial-batch refetch would be wasteful.
+			if len(toCache) > 0 {
+				r.block.indexCache.StoreMultiSeriesForRef(r.block.userID, r.block.meta.ULID, toCache, cacheTTL)
+			}
 			// Fetch plus to get the size of next one if exists.
 			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+binary.MaxVarintLen64+seriesSize+1, loaded, stats)
 		} else if err != nil {
 			return errors.Wrapf(err, "fetching series %d from block %s", id, r.block.meta.ULID)
 		}
 		loaded.addSeries(id, seriesBytes)
+		toCache[id] = seriesBytes
+	}
 
-		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes, cacheTTL)
+	if len(toCache) > 0 {
+		r.block.indexCache.StoreMultiSeriesForRef(r.block.userID, r.block.meta.ULID, toCache, cacheTTL)
 	}
 	return nil
 }

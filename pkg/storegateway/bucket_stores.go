@@ -68,6 +68,10 @@ type BucketStores struct {
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
 
+	// Decoded series cache shared across all tenants. nil when disabled.
+	// Block IDs are unique across users so a single shared cache is correct.
+	decodedSeriesCache *decodedSeriesCache
+
 	// partitioners shared across all tenants.
 	partitioners blockPartitioners
 
@@ -152,6 +156,14 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 			MaxBackoff: 10 * time.Second,
 			MaxRetries: 3,
 		},
+	}
+
+	// Initialize the in-pod decoded SeriesForRef cache. It is shared across tenants;
+	// keys are (block, ref) so cross-tenant collisions are impossible (block IDs are
+	// unique). nil when disabled.
+	u.decodedSeriesCache, err = newDecodedSeriesCache(cfg.BucketStore.DecodedSeriesCacheMaxItems, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "create decoded series cache")
 	}
 
 	// Register metrics.
@@ -544,6 +556,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
+		WithDecodedSeriesCache(u.decodedSeriesCache),
 	}
 
 	bs, err := NewBucketStore(

@@ -311,6 +311,45 @@ func TestSingleflightKey(t *testing.T) {
 		b := singleflightKey("a", "b|c")
 		assert.NotEqual(t, a, b, "previously-colliding inputs must now produce different keys")
 	})
+
+	t.Run("no collision with indexRangeSingleflightKey output", func(t *testing.T) {
+		// After consolidating four singleflight.Group fields into one shared b.sf
+		// (see bucketBlock), both singleflightKey and indexRangeSingleflightKey
+		// write into the same group. The bucketBlock struct doc claims their
+		// outputs are "unambiguously distinguishable"; this test pins that down
+		// so a future change to either format that breaks the disambiguation
+		// fails here rather than producing silent cross-format hits.
+		//
+		// The disambiguation rests on a structural invariant:
+		// indexRangeSingleflightKey emits a 32-character all-hex string (never
+		// any non-hex bytes), while singleflightKey always inserts a NULL byte
+		// between its length prefix and the (prefix+suffix) body. So the two
+		// formats partition the byte universe by "contains NULL".
+		const hexLike = "0123456789abcdef0123456789abcdef"
+		require.Len(t, hexLike, 32)
+
+		// Adversarial pairs: indexRangeSingleflightKey output vs singleflightKey
+		// outputs constructed to be as visually similar as possible.
+		ranged := []string{
+			indexRangeSingleflightKey(0, 0),
+			indexRangeSingleflightKey(1<<62, 1<<62),
+			indexRangeSingleflightKey(-1, -1), // worst case: all-f hex
+		}
+		matched := []string{
+			singleflightKey("", hexLike),
+			singleflightKey(hexLike[:16], hexLike[16:]),
+			singleflightKey("0", hexLike[1:]),
+		}
+		for _, r := range ranged {
+			assert.NotContains(t, r, "\x00", "indexRangeSingleflightKey must never contain a NULL byte (the discriminator)")
+			for _, m := range matched {
+				assert.NotEqual(t, r, m, "singleflightKey and indexRangeSingleflightKey outputs must not collide")
+			}
+		}
+		for _, m := range matched {
+			assert.Contains(t, m, "\x00", "singleflightKey must always contain a NULL byte separator")
+		}
+	})
 }
 
 // BenchmarkSingleflightFetchOrCompute measures the singleflight coalescing benefit

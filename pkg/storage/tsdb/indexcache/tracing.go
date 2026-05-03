@@ -53,6 +53,10 @@ func (t *TracingIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, 
 	t.c.StoreSeriesForRef(userID, blockID, id, v, ttl)
 }
 
+func (t *TracingIndexCache) StoreMultiSeriesForRef(userID string, blockID ulid.ULID, items map[storage.SeriesRef][]byte, ttl time.Duration) {
+	t.c.StoreMultiSeriesForRef(userID, blockID, items, ttl)
+}
+
 func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	t0 := time.Now()
 	hits, misses = t.c.FetchMultiSeriesForRefs(ctx, userID, blockID, ids)

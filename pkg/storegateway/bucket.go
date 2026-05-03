@@ -131,6 +131,11 @@ type BucketStore struct {
 
 	// postingsStrategy is a strategy shared among all tenants.
 	postingsStrategy postingsSelectionStrategy
+
+	// decodedSeriesCache holds decoded SeriesForRef entries (symbolized labels + chunk
+	// metas). Optional: nil when disabled. Cache hits skip the per-series varint decode
+	// loop on the hot Series-RPC path. Shared across all blocks owned by this store.
+	decodedSeriesCache *decodedSeriesCache
 }
 
 type noopCache struct{}
@@ -141,6 +146,8 @@ func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, ke
 }
 
 func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte, time.Duration) {}
+func (noopCache) StoreMultiSeriesForRef(string, ulid.ULID, map[storage.SeriesRef][]byte, time.Duration) {
+}
 func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
 	return map[storage.SeriesRef][]byte{}, ids
 }
@@ -184,6 +191,14 @@ func WithLogger(logger log.Logger) BucketStoreOption {
 func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.indexCache = cache
+	}
+}
+
+// WithDecodedSeriesCache sets the in-pod decoded SeriesForRef cache. nil disables it
+// (the default). Shared across tenants; the cache itself is concurrency-safe.
+func WithDecodedSeriesCache(c *decodedSeriesCache) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.decodedSeriesCache = c
 	}
 }
 
@@ -498,6 +513,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 		s.indexCache,
 		indexHeaderReader,
 		s.partitioners,
+		s.decodedSeriesCache,
 	)
 	if err != nil {
 		return errors.Wrap(err, "new bucket block")
@@ -1407,7 +1423,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 
 	return singleflightFetchOrCompute[[]string](
 		ctx,
-		&indexr.block.labelNamesSF,
+		&indexr.block.sf,
 		string(matchersKey),
 		func(fetchCtx context.Context) ([]string, bool) {
 			return fetchCachedLabelNames(fetchCtx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, logger)
@@ -1642,7 +1658,7 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 
 	return singleflightFetchOrCompute[[]string](
 		ctx,
-		&b.labelValuesSF,
+		&b.sf,
 		sfKey,
 		func(fetchCtx context.Context) ([]string, bool) {
 			return fetchCachedLabelValues(fetchCtx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, logger)
@@ -2027,13 +2043,14 @@ func (m *bucketBlockStats) SizeBytes() int64 {
 // bucketBlock represents a block that is located in a bucket. It holds intermediate
 // state for the block on local disk.
 type bucketBlock struct {
-	userID     string
-	logger     log.Logger
-	metrics    *BucketStoreMetrics
-	bkt        objstore.BucketReader
-	meta       *block.Meta
-	dir        string
-	indexCache indexcache.IndexCache
+	userID             string
+	logger             log.Logger
+	metrics            *BucketStoreMetrics
+	bkt                objstore.BucketReader
+	meta               *block.Meta
+	dir                string
+	indexCache         indexcache.IndexCache
+	decodedSeriesCache *decodedSeriesCache
 
 	indexHeaderReader indexheader.Reader
 	pendingReaders    sync.WaitGroup
@@ -2051,12 +2068,13 @@ type bucketBlock struct {
 	// which contains the block's metadata in the bucket.
 	blockStats bucketBlockStats
 
-	// Singleflight groups coalesce concurrent compute+store work for cache misses.
-	// They replace the prior sync.Map-based ad-hoc dedup for ExpandedPostings and add
-	// the same protection to LabelNames and LabelValues. See singleflightFetchOrCompute.
-	expandedPostingsSF singleflight.Group
-	labelNamesSF       singleflight.Group
-	labelValuesSF      singleflight.Group
+	// sf is the per-block singleflight.Group shared by every singleflight path on
+	// this block: ExpandedPostings, LabelNames, LabelValues, and the byte-range
+	// fetch behind preloadSeriesForRef. Each call site builds keys via either
+	// singleflightKey (length-prefixed prefix + suffix) or indexRangeSingleflightKey
+	// (fixed-width hex over off+length), and the two key forms are unambiguously
+	// distinguishable, so a single shared group is safe across all four paths.
+	sf singleflight.Group
 
 	// Indicates whether the block was queried.
 	queried atomic.Bool
@@ -2073,17 +2091,19 @@ func newBucketBlock(
 	indexCache indexcache.IndexCache,
 	indexHeadReader indexheader.Reader,
 	p blockPartitioners,
+	decodedSeriesCache *decodedSeriesCache,
 ) (b *bucketBlock, err error) {
 	b = &bucketBlock{
-		userID:            userID,
-		logger:            logger,
-		metrics:           metrics,
-		bkt:               bkt,
-		indexCache:        indexCache,
-		dir:               dir,
-		partitioners:      p,
-		meta:              meta,
-		indexHeaderReader: indexHeadReader,
+		userID:             userID,
+		logger:             logger,
+		metrics:            metrics,
+		bkt:                bkt,
+		indexCache:         indexCache,
+		decodedSeriesCache: decodedSeriesCache,
+		dir:                dir,
+		partitioners:       p,
+		meta:               meta,
+		indexHeaderReader:  indexHeadReader,
 		// Inject the block ID as a label to allow to match blocks by ID.
 		blockLabels: labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
 	}
@@ -2142,6 +2162,55 @@ func (b *bucketBlock) readIndexRange(ctx context.Context, off, length int64) ([]
 		return nil, errors.Wrap(err, "read range")
 	}
 	return buf.Bytes(), nil
+}
+
+// readIndexRangeSF reads an index byte range with singleflight coalescing. Concurrent
+// callers requesting the same (off, length) share one object-storage GET; followers
+// receive the leader's []byte verbatim and may safely read it concurrently (read-only).
+//
+// Decoded series bytes are copied out into the loadSeries slab pool, so the shared
+// range buffer is GC-eligible once all callers finish their iteration. The leader runs
+// on a derived context (context.WithoutCancel + bounded timeout) so that a follower
+// whose own request is cancelled cannot tear down an in-flight fetch that other
+// followers are still waiting on.
+//
+// Block-lifetime asymmetry vs the ExpandedPostings/LabelNames/LabelValues
+// singleflights: those compute closures touch block-local state (indexHeaderReader,
+// per-block refcounts, on-disk index-header files) and therefore reserve a refcount
+// via b.reserveReader inside the closure. The compute here only touches b.bkt — the
+// bucket reader, which is owned by BucketStores and outlives any single block close
+// — so a concurrent block close cannot tear down anything the leader is using and we
+// deliberately omit the refcount. Any future change that adds block-local state to
+// readIndexRange (for example caching range bytes in a per-block buffer) must add a
+// matching b.reserveReader and a regression test parallel to bucket_test.go's
+// "block close waits for in-flight singleflight compute".
+func (b *bucketBlock) readIndexRangeSF(ctx context.Context, off, length int64) ([]byte, error) {
+	return singleflightFetchOrCompute[[]byte](
+		ctx,
+		&b.sf,
+		indexRangeSingleflightKey(off, length),
+		// No upstream cache for raw byte ranges; always fall through to the compute.
+		func(context.Context) ([]byte, bool) { return nil, false },
+		func(sfCtx context.Context) ([]byte, error) {
+			return b.readIndexRange(sfCtx, off, length)
+		},
+	)
+}
+
+// indexRangeSingleflightKey builds a fixed-width key from (off, length). Both fields
+// are signed int64 byte offsets; we encode them into a 32-byte hex string to avoid any
+// chance of collision between different (off, length) pairs sharing the same string.
+func indexRangeSingleflightKey(off, length int64) string {
+	var buf [32]byte
+	const hex = "0123456789abcdef"
+	u1, u2 := uint64(off), uint64(length)
+	for i := 15; i >= 0; i-- {
+		buf[i] = hex[u1&0xf]
+		u1 >>= 4
+		buf[16+i] = hex[u2&0xf]
+		u2 >>= 4
+	}
+	return string(buf[:])
 }
 
 func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length int64) (io.ReadCloser, error) {

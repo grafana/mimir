@@ -272,6 +272,15 @@ func (c *InMemoryIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID,
 	c.set(cacheKeySeriesForRef{userID, blockID, id}, v)
 }
 
+// StoreMultiSeriesForRef stores multiple series in a single call. The in-memory
+// implementation has no batched-set primitive, so this is a simple loop; the value of the
+// API is realized by the remote (memcached) backend.
+func (c *InMemoryIndexCache) StoreMultiSeriesForRef(userID string, blockID ulid.ULID, items map[storage.SeriesRef][]byte, _ time.Duration) {
+	for id, v := range items {
+		c.set(cacheKeySeriesForRef{userID, blockID, id}, v)
+	}
+}
+
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
 func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {

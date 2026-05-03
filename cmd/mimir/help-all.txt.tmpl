@@ -473,6 +473,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
     	TTL for caching individual chunks subranges. (default 24h0m0s)
+  -blocks-storage.bucket-store.decoded-series-cache-max-items int
+    	[experimental] Maximum number of decoded SeriesForRef entries (symbolized labels + chunk metas) to keep in an in-pod cache. Cache hits skip the per-series varint decode loop. Resident memory is roughly this value times average decoded entry size (a few hundred bytes per series). 0 to disable.
   -blocks-storage.bucket-store.ignore-blocks-within duration
     	Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter. (default 10h0m0s)
   -blocks-storage.bucket-store.ignore-deletion-marks-delay duration

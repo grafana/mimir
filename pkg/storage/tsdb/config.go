@@ -467,6 +467,11 @@ type BucketStoreConfig struct {
 
 	StreamingBatchSize    int     `yaml:"streaming_series_batch_size" category:"advanced"`
 	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
+
+	// DecodedSeriesCacheMaxItems bounds the in-pod cache of decoded SeriesForRef entries
+	// (symbolized labels + chunk metas). When set, cache hits skip the per-series varint
+	// decode loop entirely. 0 disables the cache.
+	DecodedSeriesCacheMaxItems int `yaml:"decoded_series_cache_max_items" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -495,6 +500,11 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.PartitionerMaxGapBytesChunks, "blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks", 0, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")
+	f.IntVar(&cfg.DecodedSeriesCacheMaxItems, "blocks-storage.bucket-store.decoded-series-cache-max-items", 0,
+		"Maximum number of decoded SeriesForRef entries (symbolized labels + chunk metas) "+
+			"to keep in an in-pod cache. Cache hits skip the per-series varint decode loop. "+
+			"Resident memory is roughly this value times average decoded entry size (a few "+
+			"hundred bytes per series). 0 to disable.")
 }
 
 // Validate the config.

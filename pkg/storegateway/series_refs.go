@@ -1116,9 +1116,49 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
 func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) ([]symbolizedLabel, []chunks.Meta, error) {
-	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.strategy.isNoChunkRefsOnEntireBlock(), stats, lsetPool)
+	skipChunks := s.strategy.isNoChunkRefsOnEntireBlock()
+
+	// Fast path: in-pod decoded SeriesForRef cache. Hits skip the per-series varint
+	// decode loop entirely. The cache stores deep copies; populate output buffers from
+	// those copies. nil-check is the cheapest disable: when the cache is off we just
+	// fall through to the existing decode path with no overhead beyond a load + branch.
+	// Cached entries always have at least one chunk (Set is gated below) so we don't
+	// need to handle a "no chunks" return here.
+	if cache := s.indexr.block.decodedSeriesCache; cache != nil {
+		if entry, ok := cache.Get(s.blockID, ref); ok {
+			if !skipChunks {
+				s.chunkMetasBuffer = append(s.chunkMetasBuffer[:0], entry.chunks...)
+			} else {
+				s.chunkMetasBuffer = s.chunkMetasBuffer[:0]
+			}
+			lset := lsetPool.Get(len(entry.labels))[:0]
+			lset = append(lset, entry.labels...)
+			stats.seriesProcessed++
+			stats.seriesProcessedSizeSum += entry.encodedByteSize
+			return lset, s.chunkMetasBuffer, nil
+		}
+	}
+
+	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, skipChunks, stats, lsetPool)
 	if !ok || err != nil {
 		return nil, nil, errors.Wrap(err, "loadSeries")
+	}
+
+	// Populate cache only when we performed a full decode (skipChunks=false) so a
+	// later skipChunks=false hit gets the full chunk list back. skipChunks=true paths
+	// don't read all chunks, so caching their result would be incorrect for full-decode
+	// callers. Storing requires deep copies of both slices: lbls came from the slab
+	// pool and s.chunkMetasBuffer is reused across iterations.
+	if cache := s.indexr.block.decodedSeriesCache; cache != nil && !skipChunks {
+		entryLabels := make([]symbolizedLabel, len(lbls))
+		copy(entryLabels, lbls)
+		entryChunks := make([]chunks.Meta, len(s.chunkMetasBuffer))
+		copy(entryChunks, s.chunkMetasBuffer)
+		cache.Set(s.blockID, ref, decodedSeriesEntry{
+			labels:          entryLabels,
+			chunks:          entryChunks,
+			encodedByteSize: len(loadedSeries.series[ref]),
+		})
 	}
 
 	return lbls, s.chunkMetasBuffer, nil

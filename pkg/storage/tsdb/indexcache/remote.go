@@ -193,6 +193,21 @@ func (c *RemoteIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, i
 	c.remote.SetAsync(seriesForRefCacheKey(userID, blockID, id), v, ttl)
 }
 
+// StoreMultiSeriesForRef stores multiple series in a single SetMultiAsync call. This batches
+// what would otherwise be N SetAsync invocations under the dskit MemcachedClient mutex and
+// also passes through the SetAsync dedup decorator's bulk path, so duplicate keys within
+// the dedup window are dropped before reaching memcached.
+func (c *RemoteIndexCache) StoreMultiSeriesForRef(userID string, blockID ulid.ULID, items map[storage.SeriesRef][]byte, ttl time.Duration) {
+	if len(items) == 0 {
+		return
+	}
+	keyed := make(map[string][]byte, len(items))
+	for id, v := range items {
+		keyed[seriesForRefCacheKey(userID, blockID, id)] = v
+	}
+	c.remote.SetMultiAsync(keyed, ttl)
+}
+
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
 // In case of error, it logs and return an empty cache hits map.

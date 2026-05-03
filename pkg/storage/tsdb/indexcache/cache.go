@@ -95,6 +95,13 @@ type IndexCache interface {
 	// StoreSeriesForRef stores a single series.
 	StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte, ttl time.Duration)
 
+	// StoreMultiSeriesForRef stores multiple series in a single call. Implementations backed
+	// by an async cache client should issue one batched write rather than one per series, so
+	// callers populating a partition (potentially thousands of series) avoid per-key client
+	// overhead and mutex contention. items is keyed by SeriesRef; all entries share the
+	// same blockID and ttl.
+	StoreMultiSeriesForRef(userID string, blockID ulid.ULID, items map[storage.SeriesRef][]byte, ttl time.Duration)
+
 	// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 	// and returns a map containing cache hits, along with a list of missing IDs.
 	// The order of the returned misses should be the same as their relative order in the provided ids.

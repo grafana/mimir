@@ -55,7 +55,10 @@ const singleflightLeaderTimeout = 5 * time.Minute
 // caller computing against a refcounted block must acquire its own refcount inside
 // computeAndStore rather than relying on the originating caller's refcount.
 //
-// Both fetch invocations must be cheap.
+// Both fetch invocations must be cheap, or a deliberate no-op closure when the
+// caller has no upstream cache to consult — readIndexRangeSF does this for
+// byte-range fetches, where the only thing the helper provides is the
+// concurrent-coalescing and leader-timeout error wrapping.
 func singleflightFetchOrCompute[T any](
 	ctx context.Context,
 	sf *singleflight.Group,
