@@ -77,6 +77,7 @@
 * [ENHANCEMENT] Compactor, Store-gateway: Remove experimental setting `-compactor.upload-sparse-index-headers` and always upload sparse index-headers. This improves lazy loading performance in the store-gateway. #13089 #13882
 * [ENHANCEMENT] Querier: Reduce memory consumption of queries samples for a single series are retrieved from multiple ingesters or store-gateways. #13806
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
+* [ENHANCEMENT] Store-gateway: Add an optional in-memory L1 LRU cache fronting the memcached index cache, controlled by `-blocks-storage.bucket-store.index-cache.memcached-inmemory-max-items` and `-blocks-storage.bucket-store.index-cache.memcached-inmemory-ttl`. Disabled by default. Reduces memcached read load for hot index keys. #TBD
 * [ENHANCEMENT] Ingester: the per-tenant postings for matchers cache is now stable. Use the following configuration options: #13101
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`

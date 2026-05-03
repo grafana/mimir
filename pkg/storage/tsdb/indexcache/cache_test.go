@@ -6,16 +6,22 @@
 package indexcache
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -138,6 +144,84 @@ func TestCanonicalPostingsKey(t *testing.T) {
 	})
 }
 
+// TestRemoteIndexCacheWithL1LRU exercises the LRU wrapping path that newMemcachedIndexCache
+// applies when MemcachedInMemoryMaxItems > 0. The wiring inside newMemcachedIndexCache itself
+// requires a real memcached connection to construct, so this test mirrors the wrap order
+// (mock cache -> WrapWithLRUCache -> RemoteIndexCache) and asserts that fetches are served
+// from L1 without touching the inner cache after the L1 has been populated by Store.
+func TestRemoteIndexCacheWithL1LRU(t *testing.T) {
+	innerMock := newMockedRemoteCacheClient(nil)
+	l1Reg := prometheus.NewPedanticRegistry()
+
+	wrapped, err := cache.WrapWithLRUCache(innerMock, "index-cache", l1Reg, 100, time.Hour, log.NewNopLogger())
+	require.NoError(t, err)
+
+	rc, err := NewRemoteIndexCache(log.NewNopLogger(), wrapped, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	user := "tenant1"
+	blockID := ulid.MustNew(1, nil)
+	id := storage.SeriesRef(123)
+	value := []byte("series-bytes")
+
+	// Storing populates both L1 and the inner cache (the LRU wrapper writes through).
+	rc.StoreSeriesForRef(user, blockID, id, value, time.Hour)
+
+	ctx := context.Background()
+
+	// Two fetches for the same key — both should hit L1 and return the stored value.
+	hits1, misses1 := rc.FetchMultiSeriesForRefs(ctx, user, blockID, []storage.SeriesRef{id})
+	require.Empty(t, misses1)
+	require.Equal(t, value, hits1[id])
+
+	hits2, misses2 := rc.FetchMultiSeriesForRefs(ctx, user, blockID, []storage.SeriesRef{id})
+	require.Empty(t, misses2)
+	require.Equal(t, value, hits2[id])
+
+	// L1 metrics: 2 requests, 2 hits.
+	assert.Equal(t, 2.0, gatherCounter(t, l1Reg, "cache_memory_requests_total"))
+	assert.Equal(t, 2.0, gatherCounter(t, l1Reg, "cache_memory_hits_total"))
+}
+
+// TestRemoteIndexCacheWithoutL1 confirms behavior is unchanged when L1 is disabled —
+// the inner cache is used directly.
+func TestRemoteIndexCacheWithoutL1(t *testing.T) {
+	innerMock := newMockedRemoteCacheClient(nil)
+	rc, err := NewRemoteIndexCache(log.NewNopLogger(), innerMock, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	user := "tenant1"
+	blockID := ulid.MustNew(1, nil)
+	id := storage.SeriesRef(123)
+	value := []byte("series-bytes")
+
+	rc.StoreSeriesForRef(user, blockID, id, value, time.Hour)
+
+	hits, misses := rc.FetchMultiSeriesForRefs(context.Background(), user, blockID, []storage.SeriesRef{id})
+	require.Empty(t, misses)
+	require.Equal(t, value, hits[id])
+}
+
+// gatherCounter sums all sample values for a counter metric across all label sets.
+func gatherCounter(t *testing.T, g prometheus.Gatherer, name string) float64 {
+	t.Helper()
+	mfs, err := g.Gather()
+	require.NoError(t, err)
+	for _, mf := range mfs {
+		if mf.GetName() != name {
+			continue
+		}
+		var sum float64
+		for _, m := range mf.GetMetric() {
+			if c := m.GetCounter(); c != nil {
+				sum += c.GetValue()
+			}
+		}
+		return sum
+	}
+	return 0
+}
+
 func TestBlockTTL(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -218,4 +302,64 @@ func TestBlockTTL(t *testing.T) {
 			assert.Equal(t, tt.ttl, ttl)
 		})
 	}
+}
+
+// slowCache wraps a cache.Cache and adds a fixed sleep to GetMultiWithError, used
+// only by BenchmarkL1IndexCache_HitPath to simulate the per-call cost of a real
+// memcached round-trip without needing a real backend.
+type slowCache struct {
+	cache.Cache
+	latency time.Duration
+}
+
+func (s *slowCache) GetMultiWithError(ctx context.Context, keys []string, opts ...cache.Option) (map[string][]byte, error) {
+	if s.latency > 0 {
+		time.Sleep(s.latency)
+	}
+	return s.Cache.GetMultiWithError(ctx, keys, opts...)
+}
+
+// BenchmarkL1IndexCache_HitPath compares serving a hot key from the L1 LRU against
+// paying a simulated memcached round-trip on every read. The inner cache is wrapped
+// with a fixed-latency sleep so the benchmark surfaces the avoided round-trip cost
+// without needing an actual memcached server.
+//
+// The benchmark also exposes the per-pod LRU mutex contention noted in the
+// "*-memcached-inmemory-max-items" help text: under high parallelism, even L1 hits
+// serialize on the LRU mutex, so the with-l1 numbers will not scale linearly with
+// GOMAXPROCS — that's expected and is the documented limitation.
+func BenchmarkL1IndexCache_HitPath(b *testing.B) {
+	const fetchLatency = 100 * time.Microsecond
+	const hotKey = "hot-key"
+	hotVal := []byte("v")
+
+	b.Run("with-l1", func(b *testing.B) {
+		inner := &slowCache{Cache: newMockedRemoteCacheClient(nil), latency: fetchLatency}
+		l1, err := cache.WrapWithLRUCache(inner, "test", prometheus.NewPedanticRegistry(), 100, time.Hour, log.NewNopLogger())
+		require.NoError(b, err)
+
+		// Pre-populate L1 so every benchmark iteration is a hit.
+		l1.SetAsync(hotKey, hotVal, time.Hour)
+
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			keys := []string{hotKey}
+			for pb.Next() {
+				_, _ = l1.GetMultiWithError(context.Background(), keys)
+			}
+		})
+	})
+
+	b.Run("without-l1", func(b *testing.B) {
+		inner := &slowCache{Cache: newMockedRemoteCacheClient(nil), latency: fetchLatency}
+		inner.SetAsync(hotKey, hotVal, time.Hour)
+
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			keys := []string{hotKey}
+			for pb.Next() {
+				_, _ = inner.GetMultiWithError(context.Background(), keys)
+			}
+		})
+	})
 }

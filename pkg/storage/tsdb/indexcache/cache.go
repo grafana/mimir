@@ -128,19 +128,34 @@ func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheu
 	case BackendInMemory:
 		return NewInMemoryIndexCacheWithConfig(cfg.InMemory, registerer, logger)
 	case BackendMemcached:
-		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
+		return newMemcachedIndexCache(cfg, logger, registerer)
 	default:
 		return nil, errUnsupportedIndexCacheBackend
 	}
 }
 
-func newMemcachedIndexCache(cfg cache.MemcachedClientConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
-	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
+func newMemcachedIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
+	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "create index cache memcached client")
 	}
 
-	c, err := NewRemoteIndexCache(logger, client, registerer)
+	var indexCacheBackend cache.Cache = client
+	if cfg.MemcachedInMemoryMaxItems > 0 {
+		indexCacheBackend, err = cache.WrapWithLRUCache(
+			indexCacheBackend,
+			"index-cache",
+			prometheus.WrapRegistererWithPrefix("cortex_", registerer),
+			cfg.MemcachedInMemoryMaxItems,
+			cfg.MemcachedInMemoryTTL,
+			logger,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "wrap memcached index cache with in-memory LRU")
+		}
+	}
+
+	c, err := NewRemoteIndexCache(logger, indexCacheBackend, registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create memcached-based index cache")
 	}

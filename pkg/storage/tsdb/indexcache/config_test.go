@@ -7,6 +7,7 @@ package indexcache
 
 import (
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
@@ -68,6 +69,40 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 				return cfg
 			}(),
 		},
+		"negative memcached-inmemory-max-items should fail": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedInMemoryMaxItems = -1
+				return cfg
+			}(),
+			expected: errInvalidMemcachedInMemoryMaxItems,
+		},
+		"zero memcached-inmemory-ttl with L1 enabled should fail": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedInMemoryMaxItems = 100
+				cfg.MemcachedInMemoryTTL = 0
+				return cfg
+			}(),
+			expected: errInvalidMemcachedInMemoryTTL,
+		},
+		"zero memcached-inmemory-ttl with L1 disabled should pass": {
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.Backend = BackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+				cfg.MemcachedInMemoryMaxItems = 0
+				cfg.MemcachedInMemoryTTL = 0
+				return cfg
+			}(),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -75,4 +110,12 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 			assert.Equal(t, testData.expected, testData.cfg.Validate())
 		})
 	}
+}
+
+func TestIndexCacheConfig_MemcachedInMemoryDefaults(t *testing.T) {
+	cfg := IndexCacheConfig{}
+	flagext.DefaultValues(&cfg)
+
+	assert.Equal(t, 0, cfg.MemcachedInMemoryMaxItems, "L1 cache should default to disabled")
+	assert.Equal(t, 24*time.Hour, cfg.MemcachedInMemoryTTL, "L1 cache TTL should default to 24h")
 }
