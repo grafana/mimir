@@ -38,6 +38,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -1396,11 +1397,39 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	}, nil
 }
 
+// blockLabelNames returns the label names matching matchers for one block. The
+// returned slice is shared across concurrent followers in the singleflight group;
+// callers must not mutate it (sort/filter in place, etc.). All current call sites
+// only read or append into a parent [][]string and then merge via util.MergeSlices,
+// which never mutates inputs.
 func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []*labels.Matcher, seriesLimiter SeriesLimiter, seriesPerBatch int, logger log.Logger, stats *safeQueryStats) ([]string, error) {
-	names, ok := fetchCachedLabelNames(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, logger)
-	if ok {
-		return names, nil
+	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
+
+	return singleflightFetchOrCompute[[]string](
+		ctx,
+		&indexr.block.labelNamesSF,
+		string(matchersKey),
+		func(fetchCtx context.Context) ([]string, bool) {
+			return fetchCachedLabelNames(fetchCtx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, logger)
+		},
+		func(computeCtx context.Context) ([]string, error) {
+			return computeAndCacheLabelNames(computeCtx, indexr, matchers, seriesLimiter, seriesPerBatch, logger, stats)
+		},
+	)
+}
+
+// computeAndCacheLabelNames performs the expensive work of computing label names for a
+// matcher set and writing the result to the index cache. It is invoked from within the
+// singleflight group in blockLabelNames, so concurrent identical queries share one run.
+//
+// The singleflight goroutine outlives the originating caller's context, so the caller's
+// indexReader() refcount alone cannot keep the block alive for our compute. We hold our
+// own refcount via reserveReader; a concurrent block close is observed as errBlockClosed.
+func computeAndCacheLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []*labels.Matcher, seriesLimiter SeriesLimiter, seriesPerBatch int, logger log.Logger, stats *safeQueryStats) ([]string, error) {
+	if !indexr.block.reserveReader() {
+		return nil, errBlockClosed
 	}
+	defer indexr.block.pendingReaders.Done()
 
 	if len(matchers) == 0 {
 		// Do it via index reader to have pending reader registered correctly.
@@ -1448,7 +1477,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		return nil, errors.Wrap(seriesSet.Err(), "iterate series")
 	}
 
-	names = make([]string, 0, len(labelNames))
+	names := make([]string, 0, len(labelNames))
 	for n := range labelNames {
 		names = append(names, n)
 	}
@@ -1603,11 +1632,39 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 //
 // Notice that when no matchers are provided, the list of matched postings is AllPostings,
 // so we could also intersect those with each label's postings being each one non-empty and leading to the same result.
+//
+// The returned slice is shared across concurrent followers in the singleflight group;
+// callers must not mutate it. Current call sites only append into a parent [][]string
+// and merge via util.MergeSlices, which never mutates inputs.
 func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy postingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
-	values, ok := fetchCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, logger)
-	if ok {
-		return values, nil
+	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
+	sfKey := singleflightKey(labelName, string(matchersKey))
+
+	return singleflightFetchOrCompute[[]string](
+		ctx,
+		&b.labelValuesSF,
+		sfKey,
+		func(fetchCtx context.Context) ([]string, bool) {
+			return fetchCachedLabelValues(fetchCtx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, logger)
+		},
+		func(computeCtx context.Context) ([]string, error) {
+			return computeAndCacheLabelValues(computeCtx, b, postingsStrategy, maxSeriesPerBatch, labelName, matchers, logger, stats)
+		},
+	)
+}
+
+// computeAndCacheLabelValues performs the expensive work of computing label values for a
+// (labelName, matcher set) pair and writing the result to the index cache. It is invoked
+// from within the singleflight group in blockLabelValues.
+//
+// The singleflight goroutine outlives the originating caller's context, so the caller's
+// indexReader() refcount alone cannot keep the block alive for our compute. We hold our
+// own refcount via reserveReader; a concurrent block close is observed as errBlockClosed.
+func computeAndCacheLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy postingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
+	if !b.reserveReader() {
+		return nil, errBlockClosed
 	}
+	defer b.pendingReaders.Done()
 
 	// TODO: if matchers contains labelName, we could use it to filter out label values here.
 	allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, "", nil)
@@ -1616,7 +1673,7 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	}
 
 	if len(matchers) == 0 {
-		values = extractLabelValues(allValuesPostingOffsets)
+		values := extractLabelValues(allValuesPostingOffsets)
 		storeCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, values, logger)
 		return values, nil
 	}
@@ -1631,6 +1688,8 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded postings")
 	}
+
+	var values []string
 	if len(pendingMatchers) > 0 || strategy.preferSeriesToPostings(matchersPostings) {
 		values, err = labelValuesFromSeries(ctx, labelName, maxSeriesPerBatch, pendingMatchers, postingsAndSeriesReader, b, matchersPostings, stats)
 	} else {
@@ -1992,7 +2051,12 @@ type bucketBlock struct {
 	// which contains the block's metadata in the bucket.
 	blockStats bucketBlockStats
 
-	expandedPostingsPromises sync.Map
+	// Singleflight groups coalesce concurrent compute+store work for cache misses.
+	// They replace the prior sync.Map-based ad-hoc dedup for ExpandedPostings and add
+	// the same protection to LabelNames and LabelValues. See singleflightFetchOrCompute.
+	expandedPostingsSF singleflight.Group
+	labelNamesSF       singleflight.Group
+	labelValuesSF      singleflight.Group
 
 	// Indicates whether the block was queried.
 	queried atomic.Bool
@@ -2097,6 +2161,32 @@ func (b *bucketBlock) indexReader(postingsStrategy postingsSelectionStrategy) *b
 func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
 	b.pendingReaders.Add(1)
 	return newBucketChunkReader(ctx, b)
+}
+
+// errBlockClosed is returned by per-block compute paths (such as singleflight leaders)
+// when the bucketBlock has been closed concurrently with the in-flight work. It is a
+// transient condition: callers typically observe it as a query error and the user can
+// retry. It is distinguished from context.Canceled so callers can tell apart "block
+// went away" from "request was cancelled".
+var errBlockClosed = errors.New("bucket block closed during in-flight operation")
+
+// reserveReader atomically checks the block's closed state and bumps pendingReaders if
+// the block is still open. It returns false when the block has been (or is being)
+// closed, in which case the caller must not access any resources owned by the block.
+//
+// Use this when adding a refcount on the block from a code path that already proved
+// the block was open earlier (e.g., a singleflight goroutine that continues past the
+// originating caller's context cancellation). The originating caller should still
+// register its own refcount via indexReader(); reserveReader is for additional,
+// decoupled lifetimes.
+func (b *bucketBlock) reserveReader() bool {
+	b.closedMtx.RLock()
+	defer b.closedMtx.RUnlock()
+	if b.closed {
+		return false
+	}
+	b.pendingReaders.Add(1)
+	return true
 }
 
 // matchLabels verifies whether the block matches the given matchers.

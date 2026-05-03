@@ -41,10 +41,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// expandedPostingsPromise is the promise returned by bucketIndexReader.expandedPostingsPromise.
-// The second return value indicates whether the returned data comes from the cache.
-type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, []*labels.Matcher, bool, error)
-
 // bucketIndexReader is a custom index reader (not conforming index.Reader interface) that reads index that is stored in
 // object storage without having to fully download it.
 type bucketIndexReader struct {
@@ -68,6 +64,15 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 	return r
 }
 
+// expandedPostingsResult is the value carried through the singleflight group for ExpandedPostings.
+// The cached field travels with the result so the originating caller's deferred span hook
+// can record it without sharing a variable with the singleflight goroutine.
+type expandedPostingsResult struct {
+	refs            []storage.SeriesRef
+	pendingMatchers []*labels.Matcher
+	cached          bool
+}
+
 // ExpandedPostings returns postings in expanded list instead of index.Postings.
 // This is because we need to have them buffered anyway to perform efficient lookup
 // on object storage. The returned postings are sorted.
@@ -79,18 +84,17 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 // Reminder: A posting is a reference (represented as a uint64) to a series, which points to the first
 // byte of a series in the index for a given block of data. Postings can be fetched by
 // single label name=value.
+//
+// Concurrent calls with the same matcher set are coalesced via a singleflight group on
+// the bucketBlock, so 8 concurrent identical queries result in a single compute+store.
+// The leader's compute runs to completion regardless of any individual caller's context.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
-	var (
-		loaded  bool
-		cached  bool
-		promise expandedPostingsPromise
-	)
+	var cached bool
 	ctx, span := tracer.Start(ctx, "ExpandedPostings()")
 	defer func() {
 		span.SetAttributes(
 			attribute.Int("returned postings", len(returnRefs)),
 			attribute.Bool("cached", cached),
-			attribute.Bool("promise_loaded", loaded),
 			attribute.Stringer("block_id", r.block.meta.ULID),
 		)
 		if returnErr != nil {
@@ -98,65 +102,49 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 		}
 		span.End()
 	}()
-	promise, loaded = r.expandedPostingsPromise(ctx, ms, stats)
-	returnRefs, pendingMatchers, cached, returnErr = promise(ctx)
-	return returnRefs, pendingMatchers, returnErr
-}
-
-// expandedPostingsPromise provides a promise for the execution of expandedPostings method.
-// First call to this method will be blocking until the expandedPostings are calculated.
-// While first call is blocking, concurrent calls with same matchers will return a promise for the same results, without recalculating them.
-// The second value returned by this function is set to true when this call just loaded a promise created by another goroutine.
-// The promise returned by this function returns a bool value fromCache, set to true when data was loaded from cache.
-// TODO: if promise creator's context is canceled, the entire promise will fail, even if there are more callers waiting for the results
-// TODO: https://github.com/grafana/mimir/issues/331
-func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (promise expandedPostingsPromise, loaded bool) {
-	var (
-		refs            []storage.SeriesRef
-		pendingMatchers []*labels.Matcher
-		err             error
-		done            = make(chan struct{})
-		cached          bool
-	)
-
-	promise = func(ctx context.Context) ([]storage.SeriesRef, []*labels.Matcher, bool, error) {
-		select {
-		case <-ctx.Done():
-			return nil, nil, false, ctx.Err()
-		case <-done:
-		}
-
-		if err != nil {
-			return nil, nil, false, err
-		}
-
-		// We must make a copy of refs to return, because caller can modify the postings slice in place.
-		refsCopy := make([]storage.SeriesRef, len(refs))
-		copy(refsCopy, refs)
-
-		return refsCopy, pendingMatchers, cached, nil
-	}
 
 	key := indexcache.CanonicalLabelMatchersKey(ms)
+	sfKey := singleflightKey(r.postingsStrategy.name(), string(key))
 
-	var loadedPromise interface{}
-	loadedPromise, loaded = r.block.expandedPostingsPromises.LoadOrStore(key, promise)
-	if loaded {
-		return loadedPromise.(expandedPostingsPromise), true
-	}
-	defer close(done)
-	defer r.block.expandedPostingsPromises.Delete(key)
+	res, err := singleflightFetchOrCompute[expandedPostingsResult](
+		ctx,
+		&r.block.expandedPostingsSF,
+		sfKey,
+		func(fetchCtx context.Context) (expandedPostingsResult, bool) {
+			refs, pendingMatchers, ok := r.fetchCachedExpandedPostings(fetchCtx, r.block.userID, key, stats)
+			if !ok {
+				return expandedPostingsResult{}, false
+			}
+			return expandedPostingsResult{refs: refs, pendingMatchers: pendingMatchers, cached: true}, true
+		},
+		func(computeCtx context.Context) (expandedPostingsResult, error) {
+			// The singleflight goroutine outlives the originating caller's context, so
+			// the caller's indexReader() refcount alone cannot keep the block alive for
+			// our compute. Hold our own refcount; a concurrent block close is observed
+			// as errBlockClosed.
+			if !r.block.reserveReader() {
+				return expandedPostingsResult{}, errBlockClosed
+			}
+			defer r.block.pendingReaders.Done()
 
-	refs, pendingMatchers, cached = r.fetchCachedExpandedPostings(ctx, r.block.userID, key, stats)
-	if cached {
-		return promise, false
-	}
-	refs, pendingMatchers, err = r.expandedPostings(ctx, ms, stats)
+			refs, pendingMatchers, computeErr := r.expandedPostings(computeCtx, ms, stats)
+			if computeErr != nil {
+				return expandedPostingsResult{}, computeErr
+			}
+			r.cacheExpandedPostings(r.block.userID, key, refs, pendingMatchers)
+			return expandedPostingsResult{refs: refs, pendingMatchers: pendingMatchers}, nil
+		},
+	)
 	if err != nil {
-		return promise, false
+		return nil, nil, err
 	}
-	r.cacheExpandedPostings(r.block.userID, key, refs, pendingMatchers)
-	return promise, false
+	cached = res.cached
+
+	// We must copy refs because the caller can modify the postings slice in place; the
+	// underlying slice may be shared with other singleflight followers.
+	refsCopy := make([]storage.SeriesRef, len(res.refs))
+	copy(refsCopy, res.refs)
+	return refsCopy, res.pendingMatchers, nil
 }
 
 func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef, pendingMatchers []*labels.Matcher) {

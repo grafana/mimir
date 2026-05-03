@@ -997,6 +997,144 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		assert.Empty(t, pendingMatchers)
 		assert.Equal(t, refsWithoutPendingMatchers, refsWithPendingMatchers)
 	})
+
+	// Validates the bug fix from the prior expandedPostingsPromise TODO: when the
+	// leader's caller cancels its context, followers must still receive the result
+	// rather than failing with the leader's context.Canceled. The singleflight-based
+	// implementation runs the leader's compute on context.Background, decoupling its
+	// lifetime from the caller that originated it.
+	t.Run("leader context cancellation does not poison followers", func(t *testing.T) {
+		releaseLeader := make(chan struct{})
+		labelValuesEntered := make(chan struct{}, 1)
+
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: func(_ string) error {
+				select {
+				case labelValuesEntered <- struct{}{}:
+				default:
+				}
+				<-releaseLeader
+				return nil
+			},
+		}
+
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+
+		// Leader: cancellable context. We will cancel it before the compute returns.
+		leaderCtx, cancelLeader := context.WithCancel(context.Background())
+		var (
+			leaderRefs   []storage.SeriesRef
+			leaderErr    error
+			leaderDone   = make(chan struct{})
+			followerRefs []storage.SeriesRef
+			followerErr  error
+			followerDone = make(chan struct{})
+		)
+		go func() {
+			defer close(leaderDone)
+			indexr := b.indexReader(selectAllStrategy{})
+			defer indexr.Close()
+			leaderRefs, _, leaderErr = indexr.ExpandedPostings(leaderCtx, matchers, newSafeQueryStats())
+		}()
+
+		// Wait for the leader to be inside the compute (LabelValues mock fired).
+		<-labelValuesEntered
+
+		// Follower joins the singleflight. It uses Background so it won't bail.
+		go func() {
+			defer close(followerDone)
+			indexr := b.indexReader(selectAllStrategy{})
+			defer indexr.Close()
+			followerRefs, _, followerErr = indexr.ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+		}()
+
+		// Give the follower a moment to enter the singleflight before we cancel.
+		time.Sleep(50 * time.Millisecond)
+		cancelLeader()
+
+		// Release the in-flight compute.
+		close(releaseLeader)
+
+		<-leaderDone
+		<-followerDone
+
+		// Leader returned with its context cancelled — but the follower must have received
+		// the genuine result, NOT context.Canceled. This is the key behavioral guarantee
+		// the singleflight version provides over the prior promise pattern.
+		require.NoError(t, followerErr, "follower must not be poisoned by leader's context cancel")
+		require.Equal(t, series, len(followerRefs), "follower must receive the full result")
+
+		// The leader itself sees ctx.Canceled because its outer select fires on its
+		// own context (the compute did still run to completion in the background).
+		_ = leaderErr
+		_ = leaderRefs
+	})
+
+	// Validates the lifetime guarantee that the singleflight goroutine keeps the block
+	// alive until its compute finishes. Without this guarantee, b.Close() can race with
+	// in-flight access to the block's indexHeaderReader and underlying mmap'd files.
+	t.Run("block close waits for in-flight singleflight compute", func(t *testing.T) {
+		releaseCompute := make(chan struct{})
+		computeEntered := make(chan struct{}, 1)
+
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: func(_ string) error {
+				select {
+				case computeEntered <- struct{}{}:
+				default:
+				}
+				<-releaseCompute
+				return nil
+			},
+		}
+
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+
+		callerCtx, cancelCaller := context.WithCancel(context.Background())
+		callerDone := make(chan struct{})
+		go func() {
+			defer close(callerDone)
+			indexr := b.indexReader(selectAllStrategy{})
+			defer indexr.Close()
+			_, _, _ = indexr.ExpandedPostings(callerCtx, matchers, newSafeQueryStats())
+		}()
+
+		// Wait until the compute is inside the indexHeaderReader (the SF goroutine
+		// is now holding its own reserveReader refcount).
+		<-computeEntered
+
+		// Cancel the caller's context and wait for the caller to return so its
+		// indexr.Close() runs (releasing the caller's refcount).
+		cancelCaller()
+		<-callerDone
+
+		// b.Close() must block here until the SF compute releases its refcount.
+		// Without the lifetime fix, Close() returns immediately and the subsequent
+		// indexHeaderReader.Close() races the SF compute.
+		closeDone := make(chan error, 1)
+		go func() { closeDone <- b.Close() }()
+
+		select {
+		case <-closeDone:
+			t.Fatal("b.Close returned before singleflight compute finished — block lifetime not held by reserveReader")
+		case <-time.After(50 * time.Millisecond):
+			// Expected: Close is blocked on pendingReaders.Wait.
+		}
+
+		// Release the in-flight compute. b.Close() should now complete.
+		close(releaseCompute)
+
+		select {
+		case err := <-closeDone:
+			require.NoError(t, err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("b.Close did not complete after compute finished")
+		}
+	})
 }
 
 func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
