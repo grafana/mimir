@@ -96,7 +96,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 		},
 	}
 
-	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, blockPartitioners{}, nil)
+	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, blockPartitioners{}, nil, 0, nil)
 	assert.NoError(t, err)
 
 	cases := []struct {
@@ -238,16 +238,30 @@ func TestBucketBlockSet_remove(t *testing.T) {
 func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 
+	// Attach a per-block disk cache so we can assert that populates flow through to
+	// disk on the refetch path as well as the end-of-partition flush.
+	diskCacheDir := t.TempDir()
+	diskCacheReg := prometheus.NewPedanticRegistry()
+	diskCache, err := openSeriesForRefDiskCache(
+		filepath.Join(diskCacheDir, seriesForRefDiskCacheFilename),
+		1<<20,
+		newSeriesForRefDiskCacheMetrics(diskCacheReg),
+		log.NewNopLogger(),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = diskCache.Close() })
+
 	b := &bucketBlock{
 		meta: &block.Meta{
 			BlockMeta: tsdb.BlockMeta{
 				ULID: ulid.MustNew(1, nil),
 			},
 		},
-		bkt:        bkt,
-		logger:     log.NewNopLogger(),
-		metrics:    NewBucketStoreMetrics(nil),
-		indexCache: noopCache{},
+		bkt:                   bkt,
+		logger:                log.NewNopLogger(),
+		metrics:               NewBucketStoreMetrics(nil),
+		indexCache:            noopCache{},
+		seriesForRefDiskCache: diskCache,
 	}
 
 	buf := encoding.Encbuf{}
@@ -276,7 +290,29 @@ func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 	}, loaded.series)
 	assert.Equal(t, 0, stats.export().seriesRefetches)
 
-	// Success with 2 refetches.
+	// All three series must have flowed through to the disk cache, even though the
+	// fetch fit in a single pass (no refetch).
+	for _, ref := range []storage.SeriesRef{2, 13, 24} {
+		got, ok := diskCache.Get(ref, nil)
+		require.Truef(t, ok, "ref %d should be in disk cache after no-refetch loadSeries", ref)
+		require.Equal(t, loaded.series[ref], got)
+	}
+
+	// Success with 2 refetches. The disk cache already holds all three from the
+	// previous call, so we open a fresh disk cache to check that the refetch path
+	// itself populates disk for the partition prefix decoded before the refetch
+	// trigger (without this, the prefix would only reach memcached).
+	refetchDiskCacheDir := t.TempDir()
+	refetchDiskCache, err := openSeriesForRefDiskCache(
+		filepath.Join(refetchDiskCacheDir, seriesForRefDiskCacheFilename),
+		1<<20,
+		newSeriesForRefDiskCacheMetrics(prometheus.NewPedanticRegistry()),
+		log.NewNopLogger(),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = refetchDiskCache.Close() })
+	b.seriesForRefDiskCache = refetchDiskCache
+
 	loaded = newBucketIndexLoadedSeries()
 	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15, loaded, stats))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
@@ -285,6 +321,18 @@ func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 		24: []byte("cccccccccc"),
 	}, loaded.series)
 	assert.Equal(t, 2, stats.export().seriesRefetches)
+
+	// Every successfully-loaded series must be in the per-block disk cache,
+	// regardless of which refetch generation actually decoded it.
+	for _, ref := range []storage.SeriesRef{2, 13, 24} {
+		got, ok := refetchDiskCache.Get(ref, nil)
+		require.Truef(t, ok, "ref %d should be in disk cache after refetch loadSeries", ref)
+		require.Equal(t, loaded.series[ref], got)
+	}
+
+	// Restore the original disk cache so subsequent assertions don't observe leakage
+	// from the refetch fixture.
+	b.seriesForRefDiskCache = diskCache
 
 	// Success with refetch on first element.
 	loaded = newBucketIndexLoadedSeries()

@@ -628,6 +628,27 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 		loaded.addSeries(id, b)
 	}
 
+	// Per-block on-disk SeriesForRef cache, when configured. Sits between memcached
+	// and object storage: hits avoid the GetRange entirely. We only consult it for
+	// IDs that missed memcached. Misses fall through to the partitioner below.
+	//
+	// Note: stillMissing must be a fresh allocation, never an in-place rewrite of
+	// ids[:0]. When memcached is all-miss, RemoteIndexCache.FetchMultiSeriesForRefs
+	// returns the input slice verbatim — so ids aliases the caller's postings slice.
+	// An in-place filter would corrupt the caller's view, leading to missing series
+	// and duplicated lookups on the disk-hit path.
+	if disk := r.block.seriesForRefDiskCache; disk != nil && len(ids) > 0 {
+		stillMissing := make([]storage.SeriesRef, 0, len(ids))
+		for _, id := range ids {
+			if data, ok := disk.Get(id, nil); ok {
+				loaded.addSeries(id, data)
+			} else {
+				stillMissing = append(stillMissing, id)
+			}
+		}
+		ids = stillMissing
+	}
+
 	parts := r.block.partitioners.series.Partition(len(ids), func(i int) (start, end uint64) {
 		return uint64(ids[i]), uint64(ids[i] + tsdb.MaxSeriesSize)
 	})
@@ -704,9 +725,12 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "series_id", id, "series_length", seriesSize, "max_series_size", tsdb.MaxSeriesSize)
 			// Inefficient, but should be rare. Flush whatever we successfully read so
 			// far before recursing — those entries are valid to cache and discarding
-			// them on a partial-batch refetch would be wasteful.
+			// them on a partial-batch refetch would be wasteful. The recursive call
+			// only sees ids[i:], so any disk-cache populate for the prefix [0:i] must
+			// happen here; we cannot rely on the recursion's own end-of-partition flush.
 			if len(toCache) > 0 {
 				r.block.indexCache.StoreMultiSeriesForRef(r.block.userID, r.block.meta.ULID, toCache, cacheTTL)
+				r.populateDiskCacheForRefs(toCache)
 			}
 			// Fetch plus to get the size of next one if exists.
 			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+binary.MaxVarintLen64+seriesSize+1, loaded, stats)
@@ -719,8 +743,28 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 
 	if len(toCache) > 0 {
 		r.block.indexCache.StoreMultiSeriesForRef(r.block.userID, r.block.meta.ULID, toCache, cacheTTL)
+		r.populateDiskCacheForRefs(toCache)
 	}
 	return nil
+}
+
+// populateDiskCacheForRefs writes any successfully-decoded SeriesForRef bytes to
+// the per-block on-disk cache. No-op when the disk cache is disabled.
+//
+// errDiskCacheFull is the expected steady-state signal once the per-block budget
+// is exhausted and is recorded by the disk cache's "full" metric; per-call I/O
+// errors are recorded by the disk cache's "store_errors" metric and produce a
+// once-per-block warn log via errLogOnce. We therefore intentionally drop the
+// error here — both classes are best-effort signals and the L1 / memcached layers
+// remain authoritative for cache coverage.
+func (r *bucketIndexReader) populateDiskCacheForRefs(toCache map[storage.SeriesRef][]byte) {
+	disk := r.block.seriesForRefDiskCache
+	if disk == nil {
+		return
+	}
+	for id, data := range toCache {
+		_ = disk.Set(id, data)
+	}
 }
 
 func (r *bucketIndexReader) recordLoadSeriesStats(stats *safeQueryStats, refetch bool, numSeries int, start, end uint64, loadStartTime time.Time) {

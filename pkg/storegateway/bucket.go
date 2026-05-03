@@ -3,6 +3,30 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
 
+// Cache hierarchy seen by the store-gateway when serving SeriesForRef and matcher-keyed
+// index entries (postings, expanded postings, label names, label values). Each layer is
+// optional and gated by its own flag; layers are checked in this order on a read miss
+// and populated in the reverse order on a fresh decode:
+//
+//	decodedSeriesCache  in-pod, decoded form, shared across tenants. Hits skip the per-
+//	                    series varint decode loop. Bounded by item count
+//	                    (-blocks-storage.bucket-store.decoded-series-cache-max-items).
+//	                    Off by default. SeriesForRef only.
+//	seriesForRefDiskCache  per-block on-disk file (CRC-checked). Survives memcached
+//	                    evictions and clean restarts. Bounded by per-block bytes
+//	                    (-blocks-storage.bucket-store.series-for-ref-disk-cache-max-bytes-per-block).
+//	                    Off by default. SeriesForRef only.
+//	indexCache         the IndexCache interface — for memcached deployments composes
+//	                    RemoteIndexCache → TypedLRUCache (or a single global LRU) →
+//	                    dedupSetAsyncCache → memcached client. See newMemcachedIndexCache
+//	                    in pkg/storage/tsdb/indexcache/cache.go for the wire-up of those
+//	                    sub-layers and the order in which a Get/Set traverses them.
+//	                    Carries every cached item type.
+//	object storage     authoritative.
+//
+// Singleflight groups (bucketBlock.sf) coalesce concurrent compute paths that would
+// otherwise hit object storage redundantly: ExpandedPostings, LabelNames, LabelValues,
+// and the byte-range fetch behind preloadSeriesForRef.
 package storegateway
 
 import (
@@ -136,6 +160,12 @@ type BucketStore struct {
 	// metas). Optional: nil when disabled. Cache hits skip the per-series varint decode
 	// loop on the hot Series-RPC path. Shared across all blocks owned by this store.
 	decodedSeriesCache *decodedSeriesCache
+
+	// seriesForRefDiskCacheBytes / seriesForRefDiskCacheMetrics carry the per-block
+	// on-disk SeriesForRef cache configuration. When seriesForRefDiskCacheBytes is 0
+	// the disk cache is disabled and bucketBlock will not open a file.
+	seriesForRefDiskCacheBytes   int64
+	seriesForRefDiskCacheMetrics *seriesForRefDiskCacheMetrics
 }
 
 type noopCache struct{}
@@ -199,6 +229,18 @@ func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 func WithDecodedSeriesCache(c *decodedSeriesCache) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.decodedSeriesCache = c
+	}
+}
+
+// WithSeriesForRefDiskCache configures the per-block on-disk SeriesForRef cache.
+// maxBytesPerBlock 0 disables. metrics may be nil only when the cache is disabled
+// (maxBytesPerBlock == 0); the bucketBlock constructor checks both fields together
+// and skips the cache when either is missing, so a (max>0, metrics==nil) call here
+// is silently equivalent to disabling the cache.
+func WithSeriesForRefDiskCache(maxBytesPerBlock int64, metrics *seriesForRefDiskCacheMetrics) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.seriesForRefDiskCacheBytes = maxBytesPerBlock
+		s.seriesForRefDiskCacheMetrics = metrics
 	}
 }
 
@@ -514,6 +556,8 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 		indexHeaderReader,
 		s.partitioners,
 		s.decodedSeriesCache,
+		s.seriesForRefDiskCacheBytes,
+		s.seriesForRefDiskCacheMetrics,
 	)
 	if err != nil {
 		return errors.Wrap(err, "new bucket block")
@@ -2042,15 +2086,36 @@ func (m *bucketBlockStats) SizeBytes() int64 {
 
 // bucketBlock represents a block that is located in a bucket. It holds intermediate
 // state for the block on local disk.
+//
+// Cache field ownership:
+//
+//	indexCache             — borrowed; backed by BucketStores. Never closed by the
+//	                         block; the BucketStores tears it down at shutdown.
+//	decodedSeriesCache     — borrowed; shared on BucketStores across all blocks.
+//	                         Cross-block keys are unique by (block ULID, ref) so the
+//	                         shared cache cannot return another block's entries.
+//	seriesForRefDiskCache  — owned; per-block on-disk file under this block's dir.
+//	                         bucketBlock.Close() must close the file. The file is
+//	                         then unlinked when the block dir is removed.
+//	sf                     — owned per-block singleflight.Group, shared across the
+//	                         four singleflight paths (ExpandedPostings, LabelNames,
+//	                         LabelValues, byte-range fetch). Each call site builds a
+//	                         distinct key class so they cannot collide. Lifetime
+//	                         tracks the block's; no explicit close is needed —
+//	                         in-flight goroutines self-terminate when their compute
+//	                         returns. ExpandedPostings/LabelNames/LabelValues take a
+//	                         pendingReaders refcount via reserveReader; the byte-range
+//	                         path intentionally does not (see readIndexRangeSF for why).
 type bucketBlock struct {
-	userID             string
-	logger             log.Logger
-	metrics            *BucketStoreMetrics
-	bkt                objstore.BucketReader
-	meta               *block.Meta
-	dir                string
-	indexCache         indexcache.IndexCache
-	decodedSeriesCache *decodedSeriesCache
+	userID                string
+	logger                log.Logger
+	metrics               *BucketStoreMetrics
+	bkt                   objstore.BucketReader
+	meta                  *block.Meta
+	dir                   string
+	indexCache            indexcache.IndexCache
+	decodedSeriesCache    *decodedSeriesCache
+	seriesForRefDiskCache *seriesForRefDiskCache
 
 	indexHeaderReader indexheader.Reader
 	pendingReaders    sync.WaitGroup
@@ -2092,6 +2157,8 @@ func newBucketBlock(
 	indexHeadReader indexheader.Reader,
 	p blockPartitioners,
 	decodedSeriesCache *decodedSeriesCache,
+	seriesForRefDiskCacheMaxBytes int64,
+	seriesForRefDiskCacheMetrics *seriesForRefDiskCacheMetrics,
 ) (b *bucketBlock, err error) {
 	b = &bucketBlock{
 		userID:             userID,
@@ -2106,6 +2173,22 @@ func newBucketBlock(
 		indexHeaderReader:  indexHeadReader,
 		// Inject the block ID as a label to allow to match blocks by ID.
 		blockLabels: labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
+	}
+
+	// Open the per-block on-disk SeriesForRef cache when configured. Failure to open
+	// is non-fatal — block load proceeds without the cache and we log a warning.
+	if seriesForRefDiskCacheMaxBytes > 0 && seriesForRefDiskCacheMetrics != nil {
+		diskCache, derr := openSeriesForRefDiskCache(
+			path.Join(dir, seriesForRefDiskCacheFilename),
+			seriesForRefDiskCacheMaxBytes,
+			seriesForRefDiskCacheMetrics,
+			log.With(logger, "component", "series-for-ref-disk-cache", "block", meta.ULID.String()),
+		)
+		if derr != nil {
+			level.Warn(logger).Log("msg", "failed to open SeriesForRef disk cache; continuing without it", "err", derr, "block", meta.ULID)
+		} else {
+			b.seriesForRefDiskCache = diskCache
+		}
 	}
 
 	b.blockStats.Files, err = collectBucketBlockFileStats(dir)
@@ -2298,6 +2381,12 @@ func (b *bucketBlock) Close() error {
 
 	b.pendingReaders.Wait()
 
+	if b.seriesForRefDiskCache != nil {
+		// Close errors here are non-fatal; the file was opened with O_RDWR and any
+		// pending writes have been flushed by WriteAt. Log via the index-header path
+		// would mix concerns; let the multierror in BucketStore handle it.
+		_ = b.seriesForRefDiskCache.Close()
+	}
 	return b.indexHeaderReader.Close()
 }
 

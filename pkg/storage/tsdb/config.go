@@ -478,6 +478,15 @@ type BucketStoreConfig struct {
 	// (symbolized labels + chunk metas). When set, cache hits skip the per-series varint
 	// decode loop entirely. 0 disables the cache.
 	DecodedSeriesCacheMaxItems int `yaml:"decoded_series_cache_max_items" category:"experimental"`
+
+	// SeriesForRefDiskCacheMaxBytesPerBlock bounds the per-block on-disk SeriesForRef
+	// cache file (one file per block under the block's lazy-load directory). When set
+	// to a positive value, store-gateway populates this cache after every memcached miss
+	// and consults it before going to object storage on subsequent fan-outs. The cache
+	// survives memcached evictions and (because the file is preserved in the per-block
+	// dir) pod restarts. The natural eviction unit is the block itself: when the
+	// BucketStore removes a block the entire dir (and this file) is deleted. 0 disables.
+	SeriesForRefDiskCacheMaxBytesPerBlock int64 `yaml:"series_for_ref_disk_cache_max_bytes_per_block" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -515,6 +524,18 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 			"to keep in an in-pod cache. Cache hits skip the per-series varint decode loop. "+
 			"Resident memory is roughly this value times average decoded entry size (a few "+
 			"hundred bytes per series). 0 to disable.")
+	f.Int64Var(&cfg.SeriesForRefDiskCacheMaxBytesPerBlock, "blocks-storage.bucket-store.series-for-ref-disk-cache-max-bytes-per-block", 0,
+		"Maximum size in bytes of the per-block on-disk SeriesForRef cache file. The file lives "+
+			"under the block's lazy-load directory and is removed when the block is removed. "+
+			"Survives memcached evictions and (when the dir is preserved across restarts) pod "+
+			"restarts; on open the file is replayed and any record failing its CRC32 check (for "+
+			"example a torn write from an unclean shutdown) is discarded along with everything "+
+			"past it, so a corrupted file degrades to a partial cache rather than serving wrong "+
+			"bytes. Once full, additional Set calls drop silently — the L1 / memcached layers "+
+			"still cover the entry. Per-pod resource cost is multiplicative with the loaded "+
+			"block count: each loaded block opens one file descriptor for this cache and holds "+
+			"an in-memory index map of roughly 50 bytes per cached entry. Size with "+
+			"loaded-block-count and pod fd/RSS budgets in mind. 0 to disable.")
 }
 
 // Validate the config.

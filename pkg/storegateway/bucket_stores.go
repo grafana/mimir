@@ -72,6 +72,12 @@ type BucketStores struct {
 	// Block IDs are unique across users so a single shared cache is correct.
 	decodedSeriesCache *decodedSeriesCache
 
+	// Disk-cache metrics shared across all per-block on-disk SeriesForRef caches.
+	// nil when the disk cache is disabled. We hold a single set on the BucketStores
+	// so we don't re-register a per-block label cardinality bomb.
+	seriesForRefDiskCacheMetrics *seriesForRefDiskCacheMetrics
+	seriesForRefDiskCacheBytes   int64 // 0 disables
+
 	// partitioners shared across all tenants.
 	partitioners blockPartitioners
 
@@ -164,6 +170,13 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	u.decodedSeriesCache, err = newDecodedSeriesCache(cfg.BucketStore.DecodedSeriesCacheMaxItems, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "create decoded series cache")
+	}
+
+	// Per-block on-disk SeriesForRef cache configuration. The file is opened
+	// per-bucketBlock; we only carry the budget and a shared metrics holder here.
+	if cfg.BucketStore.SeriesForRefDiskCacheMaxBytesPerBlock > 0 {
+		u.seriesForRefDiskCacheBytes = cfg.BucketStore.SeriesForRefDiskCacheMaxBytesPerBlock
+		u.seriesForRefDiskCacheMetrics = newSeriesForRefDiskCacheMetrics(reg)
 	}
 
 	// Register metrics.
@@ -557,6 +570,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithQueryGate(u.queryGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
 		WithDecodedSeriesCache(u.decodedSeriesCache),
+		WithSeriesForRefDiskCache(u.seriesForRefDiskCacheBytes, u.seriesForRefDiskCacheMetrics),
 	}
 
 	bs, err := NewBucketStore(

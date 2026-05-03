@@ -639,6 +639,8 @@ Usage of ./cmd/mimir/mimir:
     	Controls what is the ratio of postings offsets that the store will hold in memory. (default 32)
   -blocks-storage.bucket-store.series-fetch-preference float
     	This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see "Mimir / Queries" dashboard) or API calls to the object store. Must be a positive floating point number. (default 0.75)
+  -blocks-storage.bucket-store.series-for-ref-disk-cache-max-bytes-per-block int
+    	[experimental] Maximum size in bytes of the per-block on-disk SeriesForRef cache file. The file lives under the block's lazy-load directory and is removed when the block is removed. Survives memcached evictions and (when the dir is preserved across restarts) pod restarts; on open the file is replayed and any record failing its CRC32 check (for example a torn write from an unclean shutdown) is discarded along with everything past it, so a corrupted file degrades to a partial cache rather than serving wrong bytes. Once full, additional Set calls drop silently — the L1 / memcached layers still cover the entry. 0 to disable.
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
   -blocks-storage.bucket-store.sync-dir string
