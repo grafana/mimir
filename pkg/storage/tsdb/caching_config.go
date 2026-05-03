@@ -218,7 +218,7 @@ func NewIndexheaderCacheClient(
 func NewStoreCachingBucket(
 	metadataCache cache.Cache,
 	cfg BlocksStorageConfig,
-	indexCacheClient cache.Cache,
+	indexHeaderCacheClient cache.Cache,
 	chunksCache cache.Cache,
 	bkt objstore.Bucket,
 	logger log.Logger,
@@ -236,19 +236,19 @@ func NewStoreCachingBucket(
 		cachingBucketCfg = configureMetadataCaching(metadataCache, cfg.BucketStore.MetadataCache, cachingBucketCfg)
 	}
 
-	if indexCacheClient != nil && cfg.BucketStore.IndexHeaderCache.Enabled {
+	if indexHeaderCacheClient != nil && cfg.BucketStore.IndexHeaderCache.Enabled {
 		cachingConfigured = true
-		indexCacheClient = cache.NewSpanlessTracingCache(indexCacheClient, logger, tenant.NewMultiResolver())
+		indexHeaderCacheClient = cache.NewSpanlessTracingCache(indexHeaderCacheClient, logger, tenant.NewMultiResolver())
 
 		// GetRange caching requires object attributes for calculating subranges.
 		// Use the metadata cache for attributes if enabled, otherwise fallback to index cache.
-		attributesCache := indexCacheClient
+		attributesCache := indexHeaderCacheClient
 		if metadataCache != nil {
 			attributesCache = metadataCache
 		}
 		if cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems > 0 {
-			indexCacheClient, err = cache.WrapWithLRUCache(
-				indexCacheClient,
+			indexHeaderCacheClient, err = cache.WrapWithLRUCache(
+				indexHeaderCacheClient,
 				"block-index-header-cache",
 				prometheus.WrapRegistererWithPrefix("cortex_", reg),
 				cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems,
@@ -261,7 +261,7 @@ func NewStoreCachingBucket(
 		}
 		cachingBucketCfg.CacheGetRange(
 			"block-index-header",
-			indexCacheClient,
+			indexHeaderCacheClient,
 			isBlockIndexFile,
 			subrangeSize,
 			attributesCache,
