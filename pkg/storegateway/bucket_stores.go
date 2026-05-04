@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -127,9 +126,8 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	// Configure caching bucket to cover configured metadata, index-header, and chunks caching.
 	// Both index-header and chunks caching share the metadata cache for object attributes.
-	cachingBktMetrics := bucketcache.NewCachingBucketMetrics(reg)
 	cachingBucket, err := tsdb.NewStoreCachingBucket(
-		metadataCache, cfg, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg, cachingBktMetrics,
+		metadataCache, cfg, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")

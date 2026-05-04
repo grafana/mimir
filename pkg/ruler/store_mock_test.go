@@ -57,7 +57,7 @@ func newInMemoryRuleStore(t *testing.T) (*cache.InstrumentedMockCache, *bucketcl
 	cfg.CacheIter("iter", mockCache, isNotTenantsDir, time.Minute, &bucketcache.JSONIterCodec{})
 	cfg.CacheGet("rules", mockCache, isRuleGroup, 1024^2, time.Minute, time.Minute, time.Minute)
 
-	cachingBkt, err := bucketcache.NewCachingBucket("rules", bkt, cfg, log.NewNopLogger(), bucketcache.NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
+	cachingBkt, err := bucketcache.NewCachingBucket("rules", bkt, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	return mockCache, bucketclient.NewBucketRuleStore(cachingBkt, nil, log.NewNopLogger())

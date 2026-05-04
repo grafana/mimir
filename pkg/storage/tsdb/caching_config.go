@@ -175,7 +175,6 @@ func NewMetadataCachingBucket(
 		return bkt, nil
 	}
 
-	metrics := bucketcache.NewCachingBucketMetrics(reg)
 	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
 	cachingBucketCfg = configureMetadataCaching(metadataCache, metadataCfg, cachingBucketCfg)
 
@@ -183,7 +182,7 @@ func NewMetadataCachingBucket(
 	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
 	// ID. This is still fine, as far as all other caching bucket implementations specify their
 	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, metrics)
+	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, reg)
 }
 
 func NewChunksCacheClient(
@@ -223,7 +222,6 @@ func NewStoreCachingBucket(
 	bkt objstore.Bucket,
 	logger log.Logger,
 	reg prometheus.Registerer,
-	metrics *bucketcache.CachingBucketMetrics,
 ) (objstore.Bucket, error) {
 	var (
 		err               error
@@ -313,7 +311,7 @@ func NewStoreCachingBucket(
 	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
 	// ID. This is still fine, as far as all other caching bucket implementations specify their
 	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, metrics)
+	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, reg)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)

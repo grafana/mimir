@@ -463,7 +463,7 @@ func TestCachingAndInvalidation(t *testing.T) {
 		cacheCfg := bucketcache.NewCachingBucketConfig()
 		cacheCfg.CacheIter("rule-iter", mockCache, matchAll, time.Minute, iterCodec)
 		cacheCfg.CacheGet("rule-groups", mockCache, matchAll, 1024^2, time.Minute, time.Minute, time.Minute)
-		cacheClient, err := bucketcache.NewCachingBucket("rule-store", baseClient, cacheCfg, log.NewNopLogger(), bucketcache.NewCachingBucketMetrics(prometheus.NewPedanticRegistry()))
+		cacheClient, err := bucketcache.NewCachingBucket("rule-store", baseClient, cacheCfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 
 		ruleStore := NewBucketRuleStore(cacheClient, nil, log.NewNopLogger())
