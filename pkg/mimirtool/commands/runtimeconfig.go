@@ -43,7 +43,7 @@ func (c *RuntimeConfigCommand) validate(*kingpin.ParseContext) error {
 		return err
 	}
 
-	serv, err := mimir.NewRuntimeManager(&mimirCfg, "mimirtool-runtime-config", nil, nil, log.NewNopLogger())
+	serv, err := mimir.NewRuntimeManager(&mimirCfg, "mimirtool-runtime-config", nil, log.NewNopLogger())
 	if err != nil {
 		return fmt.Errorf("create runtime config service: %w", err)
 	}

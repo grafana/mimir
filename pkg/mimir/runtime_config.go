@@ -205,9 +205,8 @@ func runtimeConfigHandler(runtimeCfgManager *runtimeconfig.Manager, defaultLimit
 
 // NewRuntimeManager returns a runtimeconfig.Manager, a services.Service that must be explicitly started to perform any work.
 // cfg is initialized as necessary, before being passed to runtimeconfig.New.
-// roundTripperReg is an optional registerer for round tripper metrics; it must not have any prefix applied (unlike reg,
-// which is typically wrapped with "cortex_"). If nil, roundTripperReg falls back to reg.
-func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, roundTripperReg prometheus.Registerer, logger log.Logger) (*runtimeconfig.Manager, error) {
+// reg must not have any prefix applied; the "cortex_" prefix is added internally where needed.
+func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logger log.Logger) (*runtimeconfig.Manager, error) {
 	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
 	cfg.RuntimeConfig.Loader = loader.load
 
@@ -215,10 +214,7 @@ func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, roun
 	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Ingester.DefaultLimits)
 	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Distributor.DefaultLimits)
-	if roundTripperReg == nil {
-		roundTripperReg = reg
-	}
-	return runtimeconfig.New(cfg.RuntimeConfig, name, reg, runtimeConfigHTTPRoundTripper(cfg, roundTripperReg, logger), logger)
+	return runtimeconfig.New(cfg.RuntimeConfig, name, prometheus.WrapRegistererWithPrefix("cortex_", reg), runtimeConfigHTTPRoundTripper(cfg, reg, logger), logger)
 }
 
 func runtimeConfigHTTPRoundTripper(cfg *Config, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
