@@ -48,16 +48,17 @@ message Stats {
   uint64 samples_processed = 11;
   // The number of subqueries that were spun off as actual range queries in order to execute the full query
   uint32 spun_off_subqueries = 12;
-  // SamplesProcessedPerStep represents the number of samples scanned per step timestamp while evaluating a query.
-  repeated StepStat samples_processed_per_step = 13 [(gogoproto.nullable) = false];
+  reserved 13; // samples_processed_per_step
   // The number of remote execution requests that were made while evaluating a query.
   uint32 remote_execution_request_count = 14;
   // The number of range vectors that were split in the query.
   uint32 split_range_vectors = 15;
-}
-
-// StepStat represents a sample count at a specific timestamp
-message StepStat {
-  int64 timestamp = 1; // Unix timestamp in milliseconds
-  int64 value = 2; // Number of samples at this timestamp
+  // EquivalentSamplesRead is the number of samples that would have been read from storage for this request
+  // if no caching or other optimizations were applied to the request.
+  uint64 equivalent_samples_read = 16;
+  // PhysicalSamplesRead is the number of samples that were read from storage for this request.
+  // Samples that were read from a cache are not included.
+  // Samples that were read once but used multiple times (eg. in duplicated expressions)
+  // count only once per request, not once per use.
+  uint64 physical_samples_read = 17;
 }

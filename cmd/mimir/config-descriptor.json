@@ -2605,6 +2605,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_range_query_range_vector_common_subexpression_elimination",
+              "required": false,
+              "desc": "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_narrow_binary_selectors",
               "required": false,
               "desc": "Enable generating selectors for one side of a binary expression based on results from the other side.",
@@ -7104,7 +7115,7 @@
           "kind": "field",
           "name": "promote_otel_resource_attributes",
           "required": false,
-          "desc": "Optionally specify OTel resource attributes to promote to labels.",
+          "desc": "Optionally specify a comma-separated list of OTel resource attributes to promote to labels. E.g. 'k8s.cluster.name,host.name,cloud.region'",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "distributor.otel-promote-resource-attributes",

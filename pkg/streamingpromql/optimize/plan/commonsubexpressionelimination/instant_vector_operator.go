@@ -374,7 +374,7 @@ func (b *InstantVectorDuplicationBuffer) QueryStats(ctx context.Context, consume
 			stats.Close()
 
 			level.Warn(b.logger).Log("msg", "InstantVectorDuplicationBuffer expected subset statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
-			return types.NewOperatorEvaluationStats(b.timeRange, b.MemoryConsumptionTracker, 0)
+			return types.NewOperatorEvaluationStats(ctx, b.timeRange, b.MemoryConsumptionTracker, 0)
 		}
 
 		stats.UseSubset(consumer.subset.subsetIndex)

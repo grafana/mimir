@@ -1155,7 +1155,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.True(t, ok, fmt.Sprintf("expected error to be a status error, but got: %T", err))
 			}
 
-			m, err := client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
+			m, err := client.StreamingSeriesToMatrixForTests(0, 10, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedResponse.String(), m.String())
 
@@ -3242,7 +3242,9 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 		ingesterStateByZone map[string]ingesterZoneState
 		ingesterDataByZone  map[string][]*mimirpb.WriteRequest
 		shardSize           int
-		limits              *validation.Limits
+		// limitsFn must return a fresh *validation.Limits per call: prepare mutates
+		// fields on it, and parallel sub-tests sharing the same pointer would race.
+		limitsFn            func() *validation.Limits
 		expectedSeriesCount int
 		expectedErr         error
 	}{
@@ -3582,11 +3584,11 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
 				},
 			},
-			limits: func() *validation.Limits {
+			limitsFn: func() *validation.Limits {
 				limits := prepareDefaultLimits()
 				limits.ActiveSeriesResultsMaxSizeBytes = 1
 				return limits
-			}(),
+			},
 			expectedErr: ErrResponseTooLarge,
 		},
 	}
@@ -3608,8 +3610,8 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
 					}
-					if testData.limits != nil {
-						cfg.limits = testData.limits
+					if testData.limitsFn != nil {
+						cfg.limits = testData.limitsFn()
 					}
 
 					// Create distributor.

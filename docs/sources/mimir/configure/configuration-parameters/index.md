@@ -1966,6 +1966,12 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
   [enable_subset_selector_elimination: <boolean> | default = false]
 
+  # (experimental) Enable deduplication of range vector selectors in range
+  # queries as part of common subexpression elimination. Requires common
+  # subexpression elimination to be enabled.
+  # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
+  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
+
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
   # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
@@ -5077,8 +5083,9 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
 [otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
 
-# (experimental) Optionally specify OTel resource attributes to promote to
-# labels.
+# (experimental) Optionally specify a comma-separated list of OTel resource
+# attributes to promote to labels. E.g.
+# 'k8s.cluster.name,host.name,cloud.region'
 # CLI flag: -distributor.otel-promote-resource-attributes
 [promote_otel_resource_attributes: <string> | default = ""]
 

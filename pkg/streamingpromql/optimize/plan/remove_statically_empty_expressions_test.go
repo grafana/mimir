@@ -190,13 +190,12 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expectUnchanged: true,
 		},
 		"nested and expressions: should optimize as far as possible": {
+			// The inner "and" has the timestamp filter → replaced with NoOp.
+			// The outer "or" then has NoOp as its LHS → simplified to just the RHS.
 			expr:       "(metric and timestamp(metric) < CONSTANT) or metric2",
 			queryStart: time.UnixMilli(selectorThresholdMs + 1),
 			expectedPlan: `
-				- DeduplicateAndMerge
-					- BinaryExpression: LHS or RHS
-						- LHS: NoOp
-						- RHS: VectorSelector: {__name__="metric2"}
+				- VectorSelector: {__name__="metric2"}
 			`,
 		},
 
@@ -273,6 +272,75 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
+
+		"empty result ANDed with non-empty result: returns empty result": {
+			expr: `EMPTY_RESULT and metric`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty result ANDed with empty result: returns empty result": {
+			expr: `metric and EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty result ANDed with non-empty result: stays as-is": {
+			expr:            `metric and other_metric`,
+			expectUnchanged: true,
+		},
+		"empty result ANDed with empty result: returns empty result": {
+			expr: `EMPTY_RESULT and EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+
+		"empty result ORed with non-empty result: returns non-empty side": {
+			expr: `EMPTY_RESULT or metric`,
+			expectedPlan: `
+				- VectorSelector: {__name__="metric"}
+			`,
+		},
+		"non-empty result ORed with empty result: returns non-empty side": {
+			expr: `metric or EMPTY_RESULT`,
+			expectedPlan: `
+				- VectorSelector: {__name__="metric"}
+			`,
+		},
+		"non-empty result ORed with non-empty result: stays as-is": {
+			expr:            `metric or other_metric`,
+			expectUnchanged: true,
+		},
+		"empty result ORed with empty result: returns empty result": {
+			expr: `EMPTY_RESULT or EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+
+		"empty result UNLESSed with non-empty result: returns empty result": {
+			expr: `EMPTY_RESULT unless metric`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty result UNLESSed with empty result: returns non-empty side": {
+			expr: `metric unless EMPTY_RESULT`,
+			expectedPlan: `
+				- VectorSelector: {__name__="metric"}
+			`,
+		},
+		"non-empty result UNLESSed with non-empty result: stays as-is": {
+			expr:            `metric unless other_metric`,
+			expectUnchanged: true,
+		},
+		"empty result UNLESSed with empty result: returns empty result": {
+			expr: `EMPTY_RESULT unless EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 	}
 
 	ctx := context.Background()
@@ -296,6 +364,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			testCase.expr = strings.ReplaceAll(testCase.expr, "CONSTANT", strconv.Itoa(constant))
+			testCase.expr = strings.ReplaceAll(testCase.expr, "EMPTY_RESULT", `some_metric{foo="bar", foo="not-bar"}`)
 
 			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, testCase.queryStart.Add(24*time.Hour), time.Minute)
 			expectedModified := 1

@@ -27,7 +27,6 @@ func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotati
 		// We need to remove the samples processed from the remote stats before merging them into the local stats, as we already added them to MQE's queryStats above.
 		// MQE's queryStats will be added to the local stats in engineQueryRequestRoundTripperHandler.Do when the query completes.
 		remoteStats.SamplesProcessed = 0
-		remoteStats.SamplesProcessedPerStep = nil
 		localStats.Merge(&stats.SafeStats{Stats: remoteStats})
 	}
 

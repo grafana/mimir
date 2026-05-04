@@ -141,8 +141,12 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 		return nil, errors.New("cannot enable subset selector elimination without common subexpression elimination")
 	}
 
+	if opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination && !opts.EnableCommonSubexpressionElimination {
+		return nil, errors.New("cannot enable range query range vector common subexpression elimination without common subexpression elimination")
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableMultiAggregation {
