@@ -88,7 +88,7 @@ func (t *DataLabelSelector) ExpressionPosition() (posrange.PositionRange, error)
 }
 
 func (t *DataLabelSelector) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (planning.QueryPlanVersion, error) {
-	return planning.QueryPlanV10, nil
+	return planning.QueryPlanV11, nil
 }
 
 func MaterializeTargetInfoSelector(t *DataLabelSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
