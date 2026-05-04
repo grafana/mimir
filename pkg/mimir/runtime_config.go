@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.yaml.in/yaml/v3"
@@ -212,5 +213,15 @@ func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logg
 	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Ingester.DefaultLimits)
 	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Distributor.DefaultLimits)
-	return runtimeconfig.New(cfg.RuntimeConfig, name, reg, logger)
+	return runtimeconfig.New(cfg.RuntimeConfig, name, reg, runtimeConfigHTTPRoundTripper(cfg, reg, logger), logger)
+}
+
+func runtimeConfigHTTPRoundTripper(cfg *Config, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
+	label := cfg.RuntimeConfigClient.ClusterValidation.Label
+	if label == "" {
+		return http.DefaultTransport
+	}
+	invalidClusterValidations := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "runtime-config", util.HTTPProtocol)
+	reporter := util.NewInvalidClusterValidationReporter(label, invalidClusterValidations, logger)
+	return middleware.ClusterValidationRoundTripper(label, reporter, http.DefaultTransport)
 }

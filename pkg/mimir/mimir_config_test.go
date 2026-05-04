@@ -341,4 +341,5 @@ func checkAllClusterValidationLabels(t *testing.T, cfg customExtendedConfig, exp
 	require.Equal(t, expectedValue, cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
 	require.Equal(t, expectedValue, cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
 	require.Equal(t, expectedValue, cfg.MimirConfig.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.RuntimeConfigClient.ClusterValidation.Label)
 }
