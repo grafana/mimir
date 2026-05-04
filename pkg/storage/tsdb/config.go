@@ -520,6 +520,9 @@ func (cfg *BucketStoreConfig) Validate() error {
 	if err := cfg.ChunksCache.Validate(); err != nil {
 		return errors.Wrap(err, "chunks-cache configuration")
 	}
+	if err := cfg.IndexHeaderCache.Validate(); err != nil {
+		return errors.Wrap(err, "index-header-cache configuration")
+	}
 	if err := cfg.MetadataCache.Validate(); err != nil {
 		return errors.Wrap(err, "metadata-cache configuration")
 	}
