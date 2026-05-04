@@ -1546,6 +1546,90 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
+
+		"info function with no data label selectors": {
+			expr:      `info(metric)`,
+			timeRange: instantQuery,
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                instantQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
+				RootNode:                 1,
+				Version:                  planning.QueryPlanVersionZero,
+				EnableDelayedNameRemoval: false,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric"},
+							},
+							ExpressionPosition:     core.PositionRange{Start: 5, End: 11},
+							ReturnSampleTimestamps: false,
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_INFO,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 12},
+						}),
+						Type:           "FunctionCall",
+						Description:    `info(...)`,
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"info function with data label selectors": {
+			expr:      `info(metric, {__name__="svc_info"})`,
+			timeRange: instantQuery,
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                instantQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
+				RootNode:                 2,
+				Version:                  planning.QueryPlanV11,
+				EnableDelayedNameRemoval: false,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric"},
+							},
+							ExpressionPosition:     core.PositionRange{Start: 5, End: 11},
+							ReturnSampleTimestamps: false,
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_TARGET_INFO_SELECTOR,
+						Details: marshalDetails(&core.DataLabelSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "svc_info"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 13, End: 34},
+						}),
+						Type:        "DataLabelSelector",
+						Description: `{__name__="svc_info"}, return sample timestamps preserving histograms`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_INFO,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 35},
+						}),
+						Type:           "FunctionCall",
+						Description:    `info(...)`,
+						Children:       []int64{0, 1},
+						ChildrenLabels: []string{"param 0", "param 1"},
+					},
+				},
+			},
+		},
 	}
 
 	ctx := context.Background()
