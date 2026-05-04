@@ -528,6 +528,7 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 		statsValue("response_time", queryResponseTime),
 		statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()),
 		statsValue("samples_processed", stats.GetSamplesProcessed()),
+		statsValue("equivalent_samples_read", stats.GetEquivalentSamplesRead()),
 	}
 }
 
@@ -554,6 +555,7 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		statsValue(shardedQueries, stats.LoadShardedQueries()),
 		statsValue(splitQueries, stats.LoadSplitQueries()),
 		statsValue(remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount()),
+		statsValue("physical_samples_read", stats.LoadPhysicalSamplesRead()), // The "equivalent samples read" count is added in getQueryStats above.
 	}
 
 	if contentLengthBytes >= 0 {

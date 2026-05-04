@@ -336,6 +336,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "bytes_processed;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "samples_processed;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "equivalent_samples_read;val=0")
+				assert.NotContains(t, headers.Get(ServiceTimingHeaderName), "physical_samples_read")
 			},
 		},
 		{
@@ -376,6 +378,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "equivalent_samples_read;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "physical_samples_read;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "equivalent_samples_read;val=0")
 			},
 		},
 		{
