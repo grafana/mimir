@@ -297,21 +297,14 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 				"ignored_matchers", len(ignored),
 			)
 		}
-	} else if !g.VectorMatching.On {
-		// Fallback for old query-frontend plans that don't set exclude hints.
-		// During rolling upgrades an old query-frontend may send a plan without
-		// hints; the operator still produces correct results but may fetch more
-		// many-side series than necessary (performance-only regression, not correctness).
-		ignored := matchers
-		manySideMatchers = append(buildMatchersForWithout(g.oneSideMetadata, g.VectorMatching.MatchingLabels), includeMatchers...)
-		sl := spanlogger.FromContext(ctx, g.logger)
-		sl.DebugLog(
-			"msg", "binary operator passing exclude-derived matchers to many side (fallback)",
-			"excluded_labels", g.VectorMatching.MatchingLabels,
-			"hint_matchers", len(manySideMatchers),
-			"ignored_matchers", len(ignored),
-		)
 	}
+	// Note: when hints are nil (e.g. during rolling upgrades with an old query-frontend),
+	// we intentionally do NOT fall back to building exclude-derived matchers from
+	// VectorMatching.MatchingLabels. The operator does not have visibility into which
+	// labels are synthesized by label_replace/label_join in the query subtree, so
+	// generating matchers for those labels would incorrectly filter out many-side series
+	// whose raw storage data does not contain the synthesized label. Old plans without
+	// hints will simply not benefit from many-side narrowing — a performance-only regression.
 
 	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, manySideMatchers)
 	if err != nil {

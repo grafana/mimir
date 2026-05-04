@@ -122,19 +122,14 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 				"hint_matchers", len(rhsMatchers),
 			)
 		}
-	} else if !a.VectorMatching.On {
-		// Fallback for old query-frontend plans that don't set exclude hints.
-		// During rolling upgrades an old query-frontend may send a plan without
-		// hints; the operator still produces correct results but may fetch more
-		// RHS series than necessary (performance-only regression, not correctness).
-		rhsMatchers = buildMatchersForWithout(leftMetadata, a.VectorMatching.MatchingLabels)
-		sl := spanlogger.FromContext(ctx, a.logger)
-		sl.DebugLog(
-			"msg", "binary operator passing exclude-derived matchers to RHS (fallback)",
-			"excluded_labels", a.VectorMatching.MatchingLabels,
-			"hint_matchers", len(rhsMatchers),
-		)
 	}
+	// Note: when hints are nil (e.g. during rolling upgrades with an old query-frontend),
+	// we intentionally do NOT fall back to building exclude-derived matchers from
+	// VectorMatching.MatchingLabels. The operator does not have visibility into which
+	// labels are synthesized by label_replace/label_join in the query subtree, so
+	// generating matchers for those labels would incorrectly filter out RHS series whose
+	// raw storage data does not contain the synthesized label. Old plans without hints
+	// will simply not benefit from RHS narrowing — a performance-only regression.
 	rightMetadata, err := a.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {
 		return nil, err

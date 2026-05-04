@@ -693,9 +693,10 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 }
 
 func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t *testing.T) {
-	// Verifies that exclude-style matchers are forwarded to the RHS both via explicit
-	// exclude hints (set by an up-to-date query-frontend) and via the fallback
-	// path (old query-frontend plans that predate hints).
+	// Verifies that exclude-style matchers are forwarded to the RHS via explicit
+	// exclude hints (set by an up-to-date query-frontend). When hints are nil
+	// (old query-frontend plans), no matchers are generated to avoid incorrect
+	// filtering of labels synthesized by label_replace/label_join.
 	testCases := map[string]struct {
 		vectorMatching       parser.VectorMatching
 		hints                *Hints
@@ -782,7 +783,7 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 				labels.FromStrings("env", "prod", "region", "us-east"),
 			},
 		},
-		"fallback (nil hints, !On): RHS receives without-derived matchers": {
+		"nil hints with !On matching: RHS receives nil matchers (no fallback)": {
 			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo"}},
 			hints:          nil,
 			leftSeries: []labels.Labels{
@@ -790,12 +791,9 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "foo", "x", "region", "us-east"),
-				labels.FromStrings("env", "staging", "foo", "y", "region", "eu-west"), // filtered by env hint
+				labels.FromStrings("env", "staging", "foo", "y", "region", "eu-west"),
 			},
-			expectedRHSMatchers: types.Matchers{
-				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
-				{Type: labels.MatchRegexp, Name: "region", Value: "us-east"},
-			},
+			expectedRHSMatchers: nil,
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "region", "us-east"),
 			},

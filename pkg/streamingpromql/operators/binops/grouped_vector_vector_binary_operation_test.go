@@ -879,9 +879,10 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 }
 
 func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySide(t *testing.T) {
-	// Verifies that exclude-style matchers are forwarded to the many side both via explicit
-	// exclude hints (set by an up-to-date query-frontend) and via the fallback
-	// path (old query-frontend plans that predate hints).
+	// Verifies that exclude-style matchers are forwarded to the many side via explicit
+	// exclude hints (set by an up-to-date query-frontend). When hints are nil (old
+	// query-frontend plans), no matchers are generated to avoid incorrect filtering
+	// of labels synthesized by label_replace/label_join.
 	testCases := map[string]struct {
 		card           parser.VectorMatchCardinality
 		vectorMatching parser.VectorMatching
@@ -1018,7 +1019,7 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
 			},
 		},
-		"group_left fallback (nil hints, !On): left (many) side receives without-derived matchers": {
+		"group_left nil hints (!On): left (many) side receives nil matchers (no fallback)": {
 			card:           parser.CardManyToOne,
 			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}},
 			hints:          nil,
@@ -1030,11 +1031,9 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 				labels.FromStrings("env", "prod"),
 			},
 			expectedRightMatchers: nil,
-			expectedLeftMatchers: types.Matchers{
-				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
-			},
+			expectedLeftMatchers:  nil,
 		},
-		"group_right fallback (nil hints, !On): right (many) side receives without-derived matchers": {
+		"group_right nil hints (!On): right (many) side receives nil matchers (no fallback)": {
 			card:           parser.CardOneToMany,
 			vectorMatching: parser.VectorMatching{Card: parser.CardOneToMany, On: false, MatchingLabels: []string{}},
 			hints:          nil,
@@ -1045,9 +1044,45 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 				labels.FromStrings("env", "prod", "pod", "1"),
 				labels.FromStrings("env", "staging", "pod", "2"),
 			},
+			expectedLeftMatchers:  nil,
+			expectedRightMatchers: nil,
+		},
+		"group_left on matching with include hints: many side receives include-derived matchers": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: true, MatchingLabels: []string{"env"}, Include: []string{"region"}},
+			hints:          &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+				labels.FromStrings("env", "prod", "region", "eu"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging"), // filtered by env hint
+			},
+			// one side (right) gets nil outer matchers
+			expectedRightMatchers: nil,
+			// many side (left) gets include-derived matcher for env from one-side (right) metadata
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
+			},
+		},
+		"group_right on matching with include hints: many side receives include-derived matchers": {
+			card:           parser.CardOneToMany,
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToMany, On: true, MatchingLabels: []string{"env"}, Include: []string{"region"}},
+			hints:          &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging"), // filtered by env hint
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+				labels.FromStrings("env", "prod", "region", "eu"),
+			},
+			// one side (left) gets nil matchers
 			expectedLeftMatchers: nil,
+			// many side (right) gets include-derived matcher for env from one-side (left) metadata
 			expectedRightMatchers: types.Matchers{
-				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
 			},
 		},
 	}
