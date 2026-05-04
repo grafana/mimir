@@ -79,6 +79,7 @@
 * [ENHANCEMENT] Querier: Reduce memory consumption of queries samples for a single series are retrieved from multiple ingesters or store-gateways. #13806
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
 * [ENHANCEMENT] Ingester: the per-tenant postings for matchers cache is now stable. Use the following configuration options: #13101
+* [ENHANCEMENT] Ingester, Store-gateway: add new internal `SearchLabelNames` and `SearchLabelValues` gRPC RPCs that stream label-name and label-value results with relevance scoring. Wire shape mirrors the user-facing contract from Prometheus's forthcoming search API. Reachable but currently unused by Mimir; user-visible HTTP endpoints arrive in a follow-up PR. #15220
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
   * `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
