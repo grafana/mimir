@@ -62,7 +62,7 @@
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
 * [FEATURE] Ingest storage: Add `-ingest-storage.ingestion-partition-tenant-write-shard-size` to limit the number of partitions used for writes independently from reads, allowing safely reducing the shard size without losing query coverage during the migration. #14780
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645 #14677 #14788 #15173
-* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839 #14952 #15035 #15045
+* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839 #14952 #15035 #15045 #15220
 * [FEATURE] Compactor: Add `-compactor.ooo-split-and-merge-shards` per-tenant limit to allow a separate shard count for blocks with the out-of-order external label. #14704
 * [FEATURE] Distributor: add experimental support for controlling OTLP metric name suffix addition and translation strategy via `X-Mimir-OTLP-AddSuffixes` and `X-Mimir-OTLP-TranslationStrategy` request headers on the OTLP push path, gated by `-api.otlp-translation-headers-enabled` (off by default). #14782
 * [ENHANCEMENT] Ingest storage: Default to the more efficient `-ingest-storage.kafka.producer-record-version=2` based on Remote-Write 2.0, which reduces Kafka record size and improves write throughput. #15185
@@ -204,6 +204,7 @@
 * [ENHANCEMENT] MQE: Enable narrow selectors optimisation and hints passing for `and`/`unless` binary operation. #15096
 * [ENHANCEMENT] MQE: Add support for common subexpression elimination and subset selector elimination of range vector selectors in range queries. Enable with `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination=true`. #15127
 * [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in one-to-many and many-to-one binary operations (eg. `group_left` and `group_right`). #15137
+* [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
 * [BUGFIX] Alertmanager: Skip empty/zero config. #15184
 * [BUGFIX] Tracing: Respect `OTEL_TRACES_SAMPLER` and `OTEL_TRACES_SAMPLER_ARG` environment variables in `NewOTelFromEnv()`. Previously, the sampler was always hardcoded to `AlwaysSample()` when no Jaeger remote sampler was configured, making it impossible to control trace volume through standard OpenTelemetry configuration. #15128
 * [BUGFIX] API: Scope activity tracking middleware to query routes only, preventing it from rejecting write requests that have an unexpected `Content-Type` header with HTTP 500. #15129
@@ -284,6 +285,10 @@
 * [BUGFIX] Query-frontend: Fix bugs with matcher propagation for binary operations where it was not being properly applied within nested expressions and also wrongly propagating internal label matchers. #15110
 * [BUGFIX] Distributor: Cancel DoUntilQuorum in cardinality analysis API when active_series_results_max_size_bytes is breached. #15177
 * [BUGFIX] MQE: Fix issue where queries with step-invariant range vector expressions (eg. `quantile_over_time(scalar(arg), metric[5m] @ 1000)`) could return incorrect results. #15192
+* [BUGFIX] MQE: Fix `info()` function not enriching series when inner series are missing one identifying label (instance/job) but matching info series exist. #14832
+* [BUGFIX] MQE: Fix `info()` function only retaining one matcher when multiple data label matchers target the same label name. #14832
+* [BUGFIX] MQE: Fix `info()` function silently overwriting conflicting labels from different info metrics instead of returning an error. #14832
+* [BUGFIX] MQE: Fix `info()` function incorrectly grouping labels from replaced info series at the same evaluation timestamp due to lookback. #14832
 
 ### Mixin
 
@@ -357,6 +362,7 @@
 * [BUGFIX] Dashboards: Fix issue where the MQE-related dashboard panels on the Queries dashboard would show data from both queriers and query-frontends, instead of just queriers. #14029
 * [BUGFIX] Alerts: Fix alert definitions with short range vector selectors that did not respect the configured `base_alerts_range_interval_minutes`. #15083
 * [BUGFIX] Dashboards: Fix mixin build failure when `singleBinary` is `true`. #15108
+* [BUGFIX] Alerts: Fix alert for store-gateway object storage operation failures to alert based on percentage of failed operations, not raw number of them. #15196
 
 ### Jsonnet
 

@@ -7115,7 +7115,7 @@
           "kind": "field",
           "name": "promote_otel_resource_attributes",
           "required": false,
-          "desc": "Optionally specify OTel resource attributes to promote to labels.",
+          "desc": "Optionally specify a comma-separated list of OTel resource attributes to promote to labels. E.g. 'k8s.cluster.name,host.name,cloud.region'",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "distributor.otel-promote-resource-attributes",

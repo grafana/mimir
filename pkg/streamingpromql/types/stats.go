@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
@@ -49,6 +50,7 @@ func EquivalentFloatSampleCount(h *histogram.FloatHistogram) int64 {
 type OperatorEvaluationStats struct {
 	timeRange                QueryTimeRange
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	queryStats               *stats.SafeStats
 
 	allSeries *subsetStats
 	subsets   []*subsetStats
@@ -58,7 +60,11 @@ type OperatorEvaluationStats struct {
 //
 // subsetCount is the number of subsets to track. It is the caller's responsibility to track
 // which subset is which.
-func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
+func NewOperatorEvaluationStats(ctx context.Context, timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
+	return NewOperatorEvaluationStatsWithQueryStats(timeRange, memoryConsumptionTracker, stats.FromContext(ctx), subsetCount)
+}
+
+func NewOperatorEvaluationStatsWithQueryStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, queryStats *stats.SafeStats, subsetCount int) (*OperatorEvaluationStats, error) {
 	allSeries, err := newSubsetStats(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -67,6 +73,7 @@ func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTrack
 	stats := &OperatorEvaluationStats{
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
+		queryStats:               queryStats,
 
 		allSeries: allSeries,
 	}
@@ -97,6 +104,8 @@ func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTrack
 //
 // matchesSubsets must be a bitmap with a value for each subset tracked by this instance. true indicates the samples
 // should be added to the corresponding subset.
+//
+// The samples are also recorded in the number of physical samples read in the overall query stats.
 func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64, matchesSubsets []bool) {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
@@ -105,6 +114,7 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 	pointIdx := s.timeRange.PointIndex(stepT)
 
 	s.allSeries.Add(pointIdx, sampleCount, sampleCount)
+	s.queryStats.AddPhysicalSamplesRead(uint64(sampleCount))
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {
@@ -123,6 +133,8 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 //
 // matchesSubsets must be a bitmap with a value for each subset tracked by this instance. true indicates the samples
 // should be added to the corresponding subset.
+//
+// The samples are also recorded in the number of physical samples read in the overall query stats.
 func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, matchesSubsets []bool) {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
@@ -139,6 +151,7 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 	newSamplesRead := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
 
 	s.allSeries.Add(pointIdx, samplesProcessed, newSamplesRead)
+	s.queryStats.AddPhysicalSamplesRead(uint64(newSamplesRead))
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {
@@ -179,7 +192,7 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 }
 
 func (s *OperatorEvaluationStats) newEmptyInstanceWithSameSubsets(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
-	return NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker, len(s.subsets))
+	return NewOperatorEvaluationStatsWithQueryStats(timeRange, s.memoryConsumptionTracker, s.queryStats, len(s.subsets))
 }
 
 // Clone returns a copy of this OperatorEvaluationStats instance, including any subset definitions and their data.
@@ -345,7 +358,7 @@ func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
 	return encoded
 }
 
-func (e *EncodedOperatorEvaluationStats) Decode(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
 	allSeries, err := e.AllSeries.decode(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -354,6 +367,7 @@ func (e *EncodedOperatorEvaluationStats) Decode(timeRange QueryTimeRange, memory
 	decoded := &OperatorEvaluationStats{
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
+		queryStats:               stats.FromContext(ctx),
 		allSeries:                allSeries,
 	}
 

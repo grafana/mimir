@@ -5083,8 +5083,9 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
 [otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
 
-# (experimental) Optionally specify OTel resource attributes to promote to
-# labels.
+# (experimental) Optionally specify a comma-separated list of OTel resource
+# attributes to promote to labels. E.g.
+# 'k8s.cluster.name,host.name,cloud.region'
 # CLI flag: -distributor.otel-promote-resource-attributes
 [promote_otel_resource_attributes: <string> | default = ""]
 

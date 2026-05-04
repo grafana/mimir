@@ -262,7 +262,11 @@ groups:
             message: GEM store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstoregatewaytoomanyfailedoperations
           expr: |
-            sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
+            (
+                sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m]))
+                /
+                sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operations_total{component="store-gateway"}[1m]))
+            ) >= 0.01
           for: 5m
           labels:
             severity: warning
