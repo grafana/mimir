@@ -1939,7 +1939,7 @@ How it **works**:
 
 - Ingester connects to Kafka brokers and reads records from it. Records contain write requests committed by distributors.
 - When ingester fails to read more records from Kafka due to error, ingester logs such error.
-- This can be normal if Kafka brokers are restarting, however if read errors continue for some time, alert is raised.
+- If read errors continue for some time, alert is raised. Note that transient errors during Kafka broker restarts or rollouts may trigger this alert.
 
 How to **investigate**:
 

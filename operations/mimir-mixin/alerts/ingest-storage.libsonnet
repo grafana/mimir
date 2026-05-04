@@ -90,10 +90,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '5m',
 
           // Metric used by this alert is reported by Kafka client on read errors from connection to Kafka.
-          // We use node_id to only alert if problems to the same Kafka node are repeating.
-          // If problems are for different nodes (eg. during rollout), that is not a problem, and we don't need to trigger alert.
+          // The node_id label has been removed from broker-level metrics to reduce cardinality.
+          // This alert will now trigger on any sustained read errors, regardless of which broker is affected.
           expr: |||
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[%(range)s]))
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_read_errors_total[%(range)s]))
             > 0
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
