@@ -227,8 +227,11 @@ func (c *KafkaProducer) updateMetricsLoop() {
 // ProduceSync produces records to Kafka and returns once all records have been successfully committed,
 // or an error occurred.
 //
-// This function honors the configure max buffered bytes and refuse to produce a record, returning kgo.ErrMaxBuffered,
-// if the configured limit is reached.
+// This function honors the configured max buffered bytes: if the whole batch would not fit in the
+// remaining buffer space, none of the records are produced and every result is set to kgo.ErrMaxBuffered.
+// The admission is all-or-nothing per call (rather than per record) so that a partial in-buffer
+// acceptance does not turn into a wasted full retry from the caller, which fails the whole batch on
+// any error.
 //
 // On context cancellation/timeout after records have been handed to the Kafka client, the returned
 // results carry per-record errors but the Record on each result is a synthetic value with only the
