@@ -5667,7 +5667,7 @@ bucket_store:
     # in-memory before hitting the cache backend. 0 to disable the in-memory
     # cache.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items
-    [subrange_in_memory_max_items: <int> | default = 50000]
+    [subrange_in_memory_max_items: <int> | default = 100000]
 
     # (experimental) Maximum number of sub-GetRange requests that a single
     # GetRange request can be split into when fetching index-header sections.

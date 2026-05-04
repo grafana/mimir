@@ -83,7 +83,7 @@ func (cfg *IndexHeaderCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, pref
 
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "How long to cache attributes of the block index as utilized by the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index cache backend.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual index-header subranges.")
-	f.IntVar(&cfg.SubRangeInMemoryMaxItems, prefix+"subrange-in-memory-max-items", 50000, "Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
+	f.IntVar(&cfg.SubRangeInMemoryMaxItems, prefix+"subrange-in-memory-max-items", 100000, "Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
 	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header sections. Zero or negative value = unlimited number of sub-requests.")
 }
 
