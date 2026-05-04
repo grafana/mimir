@@ -435,6 +435,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	if localStats := stats.FromContext(ctx); localStats != nil {
 		engineStats := q.Stats()
 		localStats.AddSamplesProcessed(uint64(engineStats.Samples.TotalSamples))
+		localStats.AddEquivalentSamplesRead(uint64(engineStats.Samples.SamplesRead))
 	}
 
 	resp = &PrometheusResponseWithFinalizer{

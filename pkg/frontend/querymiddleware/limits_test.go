@@ -1295,14 +1295,18 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		req                      MetricsQueryRequest
-		expectedResponse         Response
-		expectedErr              error
-		expectedSamplesProcessed uint64
+		req                           MetricsQueryRequest
+		expectedResponse              Response
+		expectedErr                   error
+		expectedSamplesProcessed      uint64
+		expectedEquivalentSamplesRead uint64
+		expectedPhysicalSamplesRead   uint64
 	}{
 		"range query": {
-			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
-			expectedSamplesProcessed: 4,
+			req:                           NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed:      4,
+			expectedPhysicalSamplesRead:   4,
+			expectedEquivalentSamplesRead: 4,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1327,8 +1331,10 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"instant query": {
-			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
-			expectedSamplesProcessed: 1,
+			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed:      1,
+			expectedPhysicalSamplesRead:   1,
+			expectedEquivalentSamplesRead: 1,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1366,7 +1372,9 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				Warnings: []string{},
 				Infos:    []string{},
 			},
-			expectedSamplesProcessed: 1,
+			expectedSamplesProcessed:      1,
+			expectedEquivalentSamplesRead: 1,
+			expectedPhysicalSamplesRead:   1,
 		},
 
 		"string result": {
@@ -1397,8 +1405,10 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"annotations": {
-			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), requestOptions, requestHints, ""),
-			expectedSamplesProcessed: 2,
+			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed:      2,
+			expectedEquivalentSamplesRead: 2,
+			expectedPhysicalSamplesRead:   2,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1441,6 +1451,10 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			responseWithFinalizer.Close()
 
 			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
+			require.Equal(t, testCase.expectedPhysicalSamplesRead, stats.PhysicalSamplesRead)
+			require.Zero(t, stats.EquivalentSamplesRead, "this test is outdated and needs to be updated given https://github.com/grafana/mimir/pull/14838 seems to have been merged")
+			// Once https://github.com/grafana/mimir/pull/14838 has been merged, remove the assertion above and replace it with:
+			//  require.Equal(t, testCase.expectedEquivalentSamplesRead, stats.EquivalentSamplesRead)
 
 			if responseWithFinalizer.Data.ResultType == model.ValString.String() {
 				// We can't perform the assertions below for string results because it doesn't select any data,
