@@ -27,7 +27,7 @@ func (t *DataLabelSelector) Details() proto.Message {
 }
 
 func (t *DataLabelSelector) NodeType() planning.NodeType {
-	return planning.NODE_TYPE_TARGET_INFO_SELECTOR
+	return planning.NODE_TYPE_DATA_LABEL_SELECTOR
 }
 
 func (t *DataLabelSelector) Child(idx int) planning.Node {
@@ -91,7 +91,7 @@ func (t *DataLabelSelector) MinimumRequiredPlanVersion(timeRange types.QueryTime
 	return planning.QueryPlanV11, nil
 }
 
-func MaterializeTargetInfoSelector(t *DataLabelSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeDataLabelSelector(t *DataLabelSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,

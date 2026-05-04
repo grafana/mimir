@@ -1606,7 +1606,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Description: `{__name__="metric"}`,
 					},
 					{
-						NodeType: planning.NODE_TYPE_TARGET_INFO_SELECTOR,
+						NodeType: planning.NODE_TYPE_DATA_LABEL_SELECTOR,
 						Details: marshalDetails(&core.DataLabelSelectorDetails{
 							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "svc_info"},
