@@ -34,6 +34,10 @@ type mockDirectProducer struct {
 	delays  map[int32]time.Duration
 	errs    map[int32]error
 	blockCh map[int32]chan struct{}
+
+	// respFn synthesises the success response for a given (nodeID, req).
+	// If nil, an empty *kmsg.ProduceResponse is returned on success.
+	respFn func(nodeID int32, req *kmsg.ProduceRequest) *kmsg.ProduceResponse
 }
 
 func newMockDirectProducer() *mockDirectProducer {
@@ -71,6 +75,9 @@ func (m *mockDirectProducer) Produce(ctx context.Context, nodeID int32, req *kms
 	if err != nil {
 		return nil, err
 	}
+	if m.respFn != nil {
+		return m.respFn(nodeID, req), nil
+	}
 	return kmsg.NewPtrProduceResponse(), nil
 }
 
@@ -88,13 +95,24 @@ func (m *mockDirectProducer) recordedCalls() []mockDirectProducerCall {
 	return out
 }
 
+// recordedCallNodeIDs returns the nodeID of every recorded call, in order.
+func (m *mockDirectProducer) recordedCallNodeIDs() []int32 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]int32, len(m.calls))
+	for i, c := range m.calls {
+		out[i] = c.nodeID
+	}
+	return out
+}
+
 // KafkaDirectProducer requires a live broker; this compile-time check is the only
 // test that can run without one.
-func TestKafkaDirectProducerImplementsDirectProducer(t *testing.T) {
+func TestKafkaDirectProducer_ImplementsDirectProducer(t *testing.T) {
 	var _ DirectProducer = (*KafkaDirectProducer)(nil)
 }
 
-func TestMockDirectProducerMultipleCalls(t *testing.T) {
+func TestMockDirectProducer_MultipleCalls(t *testing.T) {
 	t.Run("calls are recorded in order across multiple produces", func(t *testing.T) {
 		m := newMockDirectProducer()
 		ctx := context.Background()
@@ -200,7 +218,7 @@ func TestMockDirectProducer(t *testing.T) {
 	}
 }
 
-func TestKafkaDirectProducerProduce(t *testing.T) {
+func TestKafkaDirectProducer_Produce(t *testing.T) {
 	const (
 		topicName     = "test-topic"
 		numPartitions = int32(1)

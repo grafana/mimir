@@ -26,11 +26,11 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 	return &metrics{
 		hedgeAttemptsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "hedge_attempts_total",
-			Help: "Total number of produce requests for which a hedge was sent to a secondary agent.",
+			Help: "Total number of produce requests for which a fanout to per-partition secondaries was dispatched. Includes both latency-triggered hedges (primary still in flight) and primary-failure retries.",
 		}),
 		hedgeWinsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "hedge_wins_total",
-			Help: "Total number of produce requests where the secondary agent responded before the primary.",
+			Help: "Total number of produce requests where the per-partition secondary fanout produced the winning response. Includes both races where the secondaries beat the primary and retries where the primary had already failed.",
 		}),
 		hedgeAttemptsSuppressedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "hedge_attempts_suppressed_total",

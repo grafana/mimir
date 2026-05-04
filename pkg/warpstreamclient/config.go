@@ -30,12 +30,8 @@ type Config struct {
 	MaxBatchBytes    int32
 	MaxBufferedBytes int64
 
-	// HedgeMinSamples is the number of produce samples per agent required before
-	// dynamic hedging activates.
-	HedgeMinSamples int
-
-	// HedgeSlowMultiplier triggers hedging when an agent's EMA latency exceeds
-	// the cluster baseline multiplied by this value. Must be >= 1.
+	// HedgeSlowMultiplier triggers hedging when an agent's window-average
+	// latency exceeds the cluster baseline multiplied by this value. Must be >= 1.
 	HedgeSlowMultiplier float64
 
 	// HedgeMaxSlowFraction suppresses hedging when the fraction of slow agents
@@ -66,9 +62,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Linger < 0 {
 		return errors.New("linger must be non-negative")
-	}
-	if c.HedgeMinSamples < 0 {
-		return errors.New("hedge min samples must be non-negative")
 	}
 	if c.TLSEnabled && c.TLSConfig == nil {
 		return errors.New("TLS config must be set when TLS is enabled")

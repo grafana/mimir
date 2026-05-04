@@ -27,11 +27,11 @@ func TestNewMetrics(t *testing.T) {
 		m.produceRequestsFailedTotal.WithLabelValues("timeout").Inc()
 
 		require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP hedge_attempts_total Total number of produce requests for which a hedge was sent to a secondary agent.
+			# HELP hedge_attempts_total Total number of produce requests for which a fanout to per-partition secondaries was dispatched. Includes both latency-triggered hedges (primary still in flight) and primary-failure retries.
 			# TYPE hedge_attempts_total counter
 			hedge_attempts_total 1
 
-			# HELP hedge_wins_total Total number of produce requests where the secondary agent responded before the primary.
+			# HELP hedge_wins_total Total number of produce requests where the per-partition secondary fanout produced the winning response. Includes both races where the secondaries beat the primary and retries where the primary had already failed.
 			# TYPE hedge_wins_total counter
 			hedge_wins_total 1
 

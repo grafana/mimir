@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConfigValidate(t *testing.T) {
+func TestConfig_Validate(t *testing.T) {
 	validBase := Config{
 		Address:              []string{"localhost:9092"},
 		Topic:                "mimir-ingest",
@@ -65,10 +65,6 @@ func TestConfigValidate(t *testing.T) {
 			mutate:     func(c *Config) { c.Linger = -1 },
 			wantErrMsg: "linger must be non-negative",
 		},
-		"negative hedge min samples": {
-			mutate:     func(c *Config) { c.HedgeMinSamples = -1 },
-			wantErrMsg: "hedge min samples must be non-negative",
-		},
 		"TLS enabled without TLS config": {
 			mutate:     func(c *Config) { c.TLSEnabled = true; c.TLSConfig = nil },
 			wantErrMsg: "TLS config must be set when TLS is enabled",
@@ -94,9 +90,6 @@ func TestConfigValidate(t *testing.T) {
 		},
 		"zero linger is valid": {
 			mutate: func(c *Config) { c.Linger = 0 },
-		},
-		"zero hedge min samples is valid": {
-			mutate: func(c *Config) { c.HedgeMinSamples = 0 },
 		},
 		"TLS enabled with TLS config is valid": {
 			mutate: func(c *Config) { c.TLSEnabled = true; c.TLSConfig = &tls.Config{} },

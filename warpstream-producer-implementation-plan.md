@@ -647,346 +647,328 @@ func BenchmarkAgentPoolSecondary_Cached(b *testing.B) {
 
 ---
 
-## Step 5 — `hedger.go`: dynamic latency-aware hedging
+## Step 5 — Stats tracker, tracking producer, and hedger
 
 ### Purpose
 
-Implement `LatencyTracker` and `Hedger`. Hedging is triggered only when an agent is
-significantly slower than the cluster baseline AND fewer than `MaxSlowFraction` of all agents
-are slow — preventing the hedger from amplifying load during a cluster-wide or object-storage
-latency spike.
+Implement the latency- and error-aware speculative hedging layer. The work is split across
+four small, composable units rather than the originally-planned single `hedger.go`:
+
+- **`AgentStatsTracker`** — a sliding-window per-agent / cluster-wide stats tracker. Records
+  the outcome of every Produce request (latency + error) and answers the questions
+  "is this agent unhealthy?" and "is the cluster as a whole unhealthy?".
+- **`CachedAgentStatsTracker`** — wraps an `AgentStatsTracker` and caches `ClusterStats` for a
+  short TTL. The cluster gather is O(agents) on every call; the cache reduces that to one gather
+  per TTL window. `AgentStats` and `TrackAgentRequest` forward live.
+- **`TrackingProducer`** — a `DirectProducer` decorator that records every call's outcome into
+  the tracker. By living between the `Hedger` and the network leaf, every leg the hedger
+  dispatches (primary, fanout sub-leg, abandoned race loser) is observed exactly once, without
+  the hedger needing to know about the tracker for write purposes.
+- **`Hedger`** — the orchestrator. Implements `DirectProducer`, decides per-call whether to
+  speculatively hedge, splits failed/slow requests across per-partition secondaries, and races
+  the legs.
+
+Hedging is suppressed in three cases: when the primary's stats are not yet representative
+(bucket-spread quorum), when the cluster as a whole has a widespread slow- or fault-rate issue
+(amplifying load would make it worse), or when the primary is healthy on both axes.
 
 ### Files
 
+- `pkg/warpstreamclient/agent_stats_tracker.go` *(new)*
+- `pkg/warpstreamclient/agent_stats_tracker_test.go` *(new)*
+- `pkg/warpstreamclient/cached_agent_stats_tracker.go` *(new)*
+- `pkg/warpstreamclient/cached_agent_stats_tracker_test.go` *(new)*
+- `pkg/warpstreamclient/tracking_producer.go` *(new)*
+- `pkg/warpstreamclient/tracking_producer_test.go` *(new)*
+- `pkg/warpstreamclient/produce_split_merge.go` *(new — split/merge helpers consumed by the Hedger)*
+- `pkg/warpstreamclient/produce_split_merge_test.go` *(new)*
 - `pkg/warpstreamclient/hedger.go` *(new)*
 - `pkg/warpstreamclient/hedger_test.go` *(new)*
 
-### LatencyTracker
+### `AgentStatsTracker` interface
 
 ```go
-// agentStats tracks an exponential moving average of produce latency for one agent.
-// Fields are updated and read via atomic operations to avoid mutex contention on the hot path.
-type agentStats struct {
-    emaUs   atomic.Int64 // EMA of latency in microseconds; (10*sample + 90*prev)/100
-    samples atomic.Int64 // total samples observed
+// AgentStatsTracker is implemented by components that track per-agent and
+// cluster-wide request stats (latency and error rate).
+type AgentStatsTracker interface {
+    // TrackAgentRequest records the outcome of one request for nodeID. Errored
+    // requests contribute only to the error rate; the latency stat is computed
+    // from successful requests only. context.Canceled is ignored (caller
+    // intent, not agent health). context.DeadlineExceeded is treated as a
+    // genuine error (agent or network was too slow).
+    TrackAgentRequest(now time.Time, nodeID int32, latency time.Duration, err error)
+
+    // PurgeAgents removes all tracked state for the given NodeIDs. Called by
+    // AgentPool.Refresh when agents leave the cluster.
+    PurgeAgents(nodeIDs []int32)
+
+    // AgentStats returns the agent's stats over the current observation
+    // window. Returns false when the agent has not yet collected requests
+    // spread across enough time buckets to be representative.
+    AgentStats(now time.Time, nodeID int32) (AgentStats, bool)
+
+    // ClusterStats returns the cluster-wide stats view. slowMultiplier scales
+    // the baseline latency into the slow threshold; faultyThreshold is the
+    // absolute error-rate threshold above which an agent is considered
+    // faulty. Returns false when fewer than a quorum of qualifying agents
+    // have reported data.
+    ClusterStats(now time.Time, slowMultiplier, faultyThreshold float64) (ClusterStats, bool)
 }
 
-// LatencyTracker maintains per-agent produce latency statistics.
-type LatencyTracker struct {
-    mu    sync.RWMutex
-    stats map[int32]*agentStats // nodeID → stats; entries added lazily
-    alpha int64                 // EMA smoothing factor * 100 (e.g. 10 = 0.10)
+// AgentStats summarises one agent's observations over the current window.
+type AgentStats struct {
+    Latency      time.Duration // average over successful requests
+    ErrorRate    float64       // raw faulty/total ratio
+    RequestCount int64         // total requests in window — caller can gate small-sample noise
 }
 
-func newLatencyTracker(alpha float64) *LatencyTracker
-
-// Record updates the EMA for nodeID with the observed latency.
-// err != nil contributes a penalty latency instead of the observed duration.
-func (t *LatencyTracker) Record(nodeID int32, latency time.Duration, err error)
-
-// Purge removes stats entries for the given NodeIDs. Call this whenever
-// AgentPool.Refresh reports that agents have left the cluster, so that
-// stale entries do not skew the baseline used by HedgeDecision.
-func (t *LatencyTracker) Purge(nodeIDs []int32)
-
-// HedgeDecision returns the hedge delay for primaryID given the cluster state.
-// Returns (0, false) in any of these cases:
-//   - primaryID has fewer than minSamples observations (warmup)
-//   - fewer than half the agents have been observed (not enough cluster data)
-//   - primary latency does not exceed baseline * slowMultiplier
-//   - the fraction of slow agents exceeds maxSlowFraction (widespread issue)
-func (t *LatencyTracker) HedgeDecision(
-    primaryID        int32,
-    minSamples       int,
-    slowMultiplier   float64,
-    maxSlowFraction  float64,
-) (delay time.Duration, shouldHedge bool)
-```
-
-**EMA update** (lock-free with CAS):
-```go
-func (t *LatencyTracker) Record(nodeID int32, latency time.Duration, err error) {
-    us := latency.Microseconds()
-    if err != nil {
-        us = penaltyLatencyUs // configurable constant, e.g. 10x the initial baseline
-    }
-    stats := t.getOrCreate(nodeID)
-    for {
-        old := stats.emaUs.Load()
-        // integer EMA: (alpha*sample + (100-alpha)*old) / 100
-        newVal := (t.alpha*us + (100-t.alpha)*old) / 100
-        if stats.emaUs.CompareAndSwap(old, newVal) {
-            break
-        }
-    }
-    stats.samples.Add(1)
+// ClusterStats summarises cluster-wide stats. SlowContributorsCount and
+// FaultyContributorsCount are exposed so callers can scale fraction-based
+// decisions to cluster size.
+type ClusterStats struct {
+    BaselineLatency         time.Duration
+    SlowThreshold           time.Duration
+    SlowFraction            float64
+    SlowContributorsCount   int64
+    BaselineErrorRate       float64
+    FaultyThreshold         float64
+    FaultyFraction          float64
+    FaultyContributorsCount int64
 }
 ```
 
-**HedgeDecision algorithm:**
-1. Acquire read lock; read all agent EMA values.
-2. Compute `baseline` as the median EMA across all agents with `samples >= minSamples/2`.
-3. If fewer than half the known agents have enough samples, return `(0, false)`.
-4. Count agents with `ema > baseline * slowMultiplier`; compute `slowFraction`.
-5. If `slowFraction > maxSlowFraction`, return `(0, false)` — widespread issue.
-6. If `primaryEMA <= baseline * slowMultiplier`, return `(0, false)` — primary is healthy.
-7. Set `delay = max(baseline * 1.2, minHedgeDelay)` (dynamic, derived from observed latency).
-8. Return `(delay, true)`.
+### `AverageAgentStatsTracker` (default implementation)
 
-### Hedger
+A bucketed sliding window: 6 × 10s buckets per agent (60s total observation), wall-clock-aligned
+ring rotation. Each bucket stores `successfulLatencySumMs`, `successfulLatencyCount`, and
+`faultyCount`. The two reliability gates owned by the tracker are:
+
+- **Bucket-spread quorum** (`minFilledBuckets = 3`): an agent's stats are only released once
+  its requests cover at least 3 distinct 10s buckets. Prevents a single burst from being
+  treated as "representative".
+- **Cluster quorum**: `ClusterStats` returns `(_, false)` if fewer than half of all agents
+  with data pass the bucket-spread quorum.
+
+For the cluster *error-rate* signal a per-call request-count floor is derived from
+`faultyThreshold` (`errorRateMinRequests = ceil(1/threshold)`): low-volume agents are excluded
+from both numerator and denominator of `FaultyFraction` so their 1/N quantisation noise can't
+pretend to be a fleet-wide event. `AgentStats` itself reports raw `ErrorRate` plus
+`RequestCount`; callers gate noise themselves.
+
+### `CachedAgentStatsTracker`
+
+Caches `ClusterStats` keyed by `(slowMultiplier, faultyThreshold)` for a configurable TTL.
+`AgentStats` and `TrackAgentRequest` forward live. `PurgeAgents` invalidates the cache so
+purged agents don't linger for up to a TTL. A "no-quorum" sentinel is also cached so the
+gather isn't re-run on every miss when the cluster is below quorum.
+
+### `TrackingProducer`
 
 ```go
-// Hedger wraps a Sender with dynamic latency-aware hedging.
-type Hedger struct {
-    producer  DirectProducer
-    tracker *LatencyTracker
-    cfg     HedgerConfig
-    metrics *metrics
+// TrackingProducer is a DirectProducer decorator that records the outcome of
+// every Produce call into an AgentStatsTracker. Sits between the Hedger and
+// the network-leaf DirectProducer so every leg the hedger dispatches —
+// primary, hedge, fanout sub-leg, abandoned race loser — is observed exactly
+// once.
+type TrackingProducer struct {
+    inner   DirectProducer
+    tracker AgentStatsTracker
 }
 
-type HedgerConfig struct {
-    MinSamples      int
-    SlowMultiplier  float64
-    MaxSlowFraction float64
-    MinHedgeDelay   time.Duration // floor on the computed hedge delay
-}
-
-func NewHedger(producer DirectProducer, tracker *LatencyTracker, cfg HedgerConfig, m *metrics) *Hedger
-
-// Send dispatches to primaryID and, when warranted, hedges to secondaryID.
-// secondaryID must be a valid NodeID; callers should only invoke with ok=true
-// from PartitionAssignmentStrategy.Secondary.
-func (h *Hedger) Send(ctx context.Context, primaryID, secondaryID int32, req *kmsg.ProduceRequest) error
-```
-
-**`Send` implementation:**
-```go
-func (h *Hedger) Send(ctx context.Context, primaryID, secondaryID int32, req *kmsg.ProduceRequest) error {
-    delay, hedge := h.tracker.HedgeDecision(primaryID, h.cfg.MinSamples,
-        h.cfg.SlowMultiplier, h.cfg.MaxSlowFraction)
-
-    type result struct {
-        nodeID int32
-        took   time.Duration
-        err    error
-    }
-    // Buffer 2 so neither goroutine ever blocks on produce.
-    ch := make(chan result, 2)
-
+func (p *TrackingProducer) Produce(ctx context.Context, nodeID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error) {
     start := time.Now()
-    go func() {
-        err := h.producer.Produce(ctx, primaryID, req)
-        ch <- result{nodeID: primaryID, took: time.Since(start), err: err}
-    }()
-
-    if !hedge {
-        res := <-ch
-        h.tracker.Record(res.nodeID, res.took, res.err)
-        return res.err
-    }
-
-    h.metrics.hedgeAttemptsTotal.Inc()
-    timer := time.NewTimer(delay)
-    defer timer.Stop()
-
-    select {
-    case res := <-ch:
-        // Primary responded before hedge fired.
-        h.tracker.Record(res.nodeID, res.took, res.err)
-        if res.err != nil {
-            // Primary failed before the hedge delay; still start the hedge.
-            go func() {
-                s := time.Now()
-                err := h.producer.Produce(ctx, secondaryID, req)
-                ch <- result{nodeID: secondaryID, took: time.Since(s), err: err}
-            }()
-            res2 := <-ch
-            h.tracker.Record(res2.nodeID, res2.took, res2.err)
-            return res2.err
-        }
-        return nil
-
-    case <-timer.C:
-        // Hedge fires because primary did not respond in time.
-        go func() {
-            s := time.Now()
-            err := h.producer.Produce(ctx, secondaryID, req)
-            ch <- result{nodeID: secondaryID, took: time.Since(s), err: err}
-        }()
-    }
-
-    // Accept the first success; record both outcomes.
-    res1 := <-ch
-    h.tracker.Record(res1.nodeID, res1.took, res1.err)
-    if res1.err == nil {
-        if res1.nodeID == secondaryID {
-            h.metrics.hedgeWinsTotal.Inc()
-        }
-        return nil
-    }
-    res2 := <-ch
-    h.tracker.Record(res2.nodeID, res2.took, res2.err)
-    return res2.err
+    resp, err := p.inner.Produce(ctx, nodeID, req)
+    p.tracker.TrackAgentRequest(time.Now(), nodeID, time.Since(start), err)
+    return resp, err
 }
 ```
+
+The Hedger does **not** call `TrackAgentRequest` itself — it only consumes the read side
+(`AgentStats` / `ClusterStats`) for the hedge decision. Production wiring is
+`Hedger(TrackingProducer(KafkaDirectProducer))`.
+
+### `produce_split_merge.go`
+
+Two pure functions consumed by the Hedger's fanout path:
+
+```go
+// splitProduceRequestToSecondaryAgents groups the partitions of req by their
+// per-partition secondary. All-or-nothing: if any partition lacks a designated
+// secondary the function returns an error and no map (the caller surfaces the
+// upstream primary error instead).
+func splitProduceRequestToSecondaryAgents(req *kmsg.ProduceRequest, strategy PartitionAssignmentStrategy) (map[int32]*kmsg.ProduceRequest, error)
+
+// mergeProduceResponses concatenates per-partition entries from disjoint
+// sub-responses into a single response. Version is taken from the first
+// non-nil sub-response; ThrottleMillis is the max across sub-responses (the
+// agent that asked the client to back off the most wins).
+func mergeProduceResponses(resps []*kmsg.ProduceResponse) *kmsg.ProduceResponse
+```
+
+### `Hedger`
+
+```go
+type HedgerConfig struct {
+    SlowMultiplier    float64       // primary is "slow" when latency > baseline * SlowMultiplier
+    MaxSlowFraction   float64       // suppress hedging when more than this fraction of agents are slow
+    FaultyThreshold   float64       // primary is "faulty" when ErrorRate exceeds this
+    MaxFaultyFraction float64       // suppress hedging when more than this fraction of agents are faulty
+    MinHedgeDelay     time.Duration // floor on the dynamically-computed hedge delay (otherwise = baseline)
+}
+
+// Hedger implements DirectProducer; composes with other DirectProducer
+// decorators. Per-leg observations must be recorded by a tracking decorator
+// inside `inner` (Hedger does not write to the tracker directly).
+type Hedger struct {
+    inner    DirectProducer
+    tracker  AgentStatsTracker
+    strategy PartitionAssignmentStrategy
+    cfg      HedgerConfig
+    metrics  *metrics
+}
+
+func NewHedger(inner DirectProducer, tracker AgentStatsTracker, strategy PartitionAssignmentStrategy, cfg HedgerConfig, m *metrics) *Hedger
+
+// Implements DirectProducer.
+func (h *Hedger) Produce(ctx context.Context, primaryID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
+```
+
+**Triggers for the secondary leg:**
+
+| Primary behaviour              | Hedge decision | Outcome |
+|--------------------------------|----------------|---------|
+| Returns success before timer   | hedge          | Return primary; fanout never starts. |
+| Returns success                | no-hedge       | Return primary. |
+| Times out at hedge delay       | hedge          | Race primary vs. fanout. First success wins. |
+| Returns error                  | hedge or no    | Fanout retry (unconditional). |
+
+Hedging is therefore both an *anticipation* (timer-driven race) and an *unconditional retry on
+primary failure*. The fanout is all-or-nothing: any sub-request error fails the whole fanout.
+
+**`shouldHedge` decision** (read-only against tracker):
+1. `AgentStats(now, primaryID)` — false → no hedge.
+2. `ClusterStats(now, SlowMultiplier, FaultyThreshold)` — false → no hedge.
+3. `primarySlow = primary.Latency > cluster.SlowThreshold`.
+4. `primaryFaulty = RequestCount >= ceil(1/FaultyThreshold) && ErrorRate > cluster.FaultyThreshold`.
+5. If `!primarySlow && !primaryFaulty` → no hedge.
+6. **Scale-aware fraction floor**: each fraction gate is compared against
+   `max(configured, 1/contributors)` so a single bad agent never trips suppression regardless
+   of cluster size. At large N the configured fraction dominates; at small N the floor opens
+   the gate. Implemented in `maxFractionFloor(configured, contributors)`.
+7. `SlowFraction > maxFractionFloor(MaxSlowFraction, SlowContributorsCount)` → no hedge.
+8. `FaultyFraction > maxFractionFloor(MaxFaultyFraction, FaultyContributorsCount)` → no hedge.
+9. `delay = max(BaselineLatency, MinHedgeDelay)`; return `(delay, true)`.
+
+**`fanoutToSecondaryAgents`** (used for both timer-fired races and primary-failure retries):
+1. `splitProduceRequestToSecondaryAgents` — on error, wait for primary and return its
+   outcome alone.
+2. Increment `hedgeAttemptsTotal`. Spawn one goroutine per secondary ID, all writing into a
+   single buffered `secondaryCh`.
+3. Loop selecting on `primaryCh` and `secondaryCh` until both have errored:
+   - Any leg success → return that response (increment `hedgeWinsTotal` on a fanout success).
+   - First sub-leg error fails the fanout (all-or-nothing).
+4. If both legs fail, return only the primary's error (the fanout error is discarded —
+   primary is the source of truth; the secondary's error is observable via
+   `TrackingProducer` per-agent metrics).
+
+**Internal type:**
+
+```go
+// directProduceResult carries the outcome of a single inner.Produce call
+// through the channels the orchestration uses internally. Used for both
+// "primary leg" and "fanout sub-leg" outcomes.
+type directProduceResult struct {
+    resp *kmsg.ProduceResponse
+    err  error
+}
+```
+
+The "primary already failed" path uses a small helper `bufferedPrimary(primary)` that
+preloads a 1-buffered channel so `fanoutToSecondaryAgents` can take a uniform `primaryCh`
+parameter regardless of whether the primary is still in flight or already errored.
 
 ### Test cases
 
-```go
-func TestLatencyTrackerHedgeDecision(t *testing.T) {
-    tests := map[string]struct {
-        // Per-agent (latency, sample count) pairs
-        agentStats     map[int32]struct{ emaUs, samples int64 }
-        primaryID      int32
-        slowMultiplier float64
-        maxSlowFraction float64
-        minSamples     int
-        wantHedge      bool
-    }{
-        "not enough samples: no hedge": {
-            agentStats: map[int32]struct{ emaUs, samples int64 }{1: {100, 2}},
-            primaryID: 1, minSamples: 10, wantHedge: false,
-        },
-        "primary healthy: no hedge": {
-            agentStats: map[int32]struct{ emaUs, samples int64 }{
-                1: {100, 20}, 2: {105, 20}, 3: {95, 20}, // all ~100us
-            },
-            primaryID: 1, slowMultiplier: 2.0, maxSlowFraction: 0.3, minSamples: 10,
-            wantHedge: false,
-        },
-        "primary slow, others healthy: hedge triggered": {
-            agentStats: map[int32]struct{ emaUs, samples int64 }{
-                1: {500, 20}, 2: {100, 20}, 3: {95, 20}, // 1 is slow
-            },
-            primaryID: 1, slowMultiplier: 2.0, maxSlowFraction: 0.3, minSamples: 10,
-            wantHedge: true,
-        },
-        "widespread slowness: no hedge": {
-            agentStats: map[int32]struct{ emaUs, samples int64 }{
-                1: {500, 20}, 2: {490, 20}, 3: {510, 20}, // all slow
-            },
-            primaryID: 1, slowMultiplier: 2.0, maxSlowFraction: 0.3, minSamples: 10,
-            wantHedge: false,
-        },
-    }
-    for name, tc := range tests {
-        t.Run(name, func(t *testing.T) { ... })
-    }
-}
+`AverageAgentStatsTracker`:
+- `TrackAgentRequest` — successful and faulty requests update the right buckets;
+  `context.Canceled` is ignored; `context.DeadlineExceeded` counts as faulty; concurrent
+  rotation across bucket boundaries is race-safe.
+- `AgentStats` — returns false before bucket-spread quorum; reports raw `ErrorRate` plus
+  `RequestCount`; computes per-agent average latency over the window.
+- `ClusterStats` — bucket-spread quorum; cluster quorum (≥ ½ observed agents must qualify);
+  `BaselineLatency` is per-agent mean; `BaselineErrorRate` is request-weighted; low-volume
+  agents excluded from `FaultyFraction` numerator and denominator.
+- `PurgeAgents` — removes per-agent entries; subsequent `AgentStats` returns false.
 
-func TestLatencyTrackerPurge(t *testing.T) {
-    tests := map[string]struct {
-        recordNodeIDs []int32         // agents to record stats for
-        purgeNodeIDs  []int32         // agents to purge
-        wantRemaining []int32         // agents whose stats should still exist
-    }{
-        "purge single removed agent": {
-            recordNodeIDs: []int32{1, 2, 3},
-            purgeNodeIDs:  []int32{2},
-            wantRemaining: []int32{1, 3},
-        },
-        "purge multiple agents": {
-            recordNodeIDs: []int32{1, 2, 3, 4},
-            purgeNodeIDs:  []int32{1, 3},
-            wantRemaining: []int32{2, 4},
-        },
-        "purge unknown nodeID is a no-op": {
-            recordNodeIDs: []int32{1},
-            purgeNodeIDs:  []int32{99},
-            wantRemaining: []int32{1},
-        },
-        "purge all agents": {
-            recordNodeIDs: []int32{1, 2},
-            purgeNodeIDs:  []int32{1, 2},
-            wantRemaining: []int32{},
-        },
-    }
-    for name, tc := range tests {
-        t.Run(name, func(t *testing.T) {
-            tr := newLatencyTracker(0.1)
-            for _, id := range tc.recordNodeIDs {
-                tr.Record(id, time.Millisecond, nil)
-            }
-            tr.Purge(tc.purgeNodeIDs)
-            // verify only wantRemaining NodeIDs still have entries
-            // and that HedgeDecision no longer considers purged agents
-        })
-    }
-}
+`CachedAgentStatsTracker`:
+- `AgentStats` is not cached (forwards live).
+- `ClusterStats` caches by `(slowMultiplier, faultyThreshold)` within TTL; refreshes after TTL.
+- No-quorum sentinel: keeps returning `(_, false)` until TTL elapses, even after the inner
+  tracker would now satisfy quorum.
+- `PurgeAgents` invalidates the cache.
 
-// Verify that a purged agent's elevated latency no longer skews the baseline.
-func TestLatencyTrackerPurgeDoesNotSkewBaseline(t *testing.T) {
-    t.Run("stale dead-agent entry removed from baseline computation", func(t *testing.T) {
-        tr := newLatencyTracker(0.1)
-        // Two healthy agents at 100µs, one slow dead agent at 10000µs.
-        tr.Record(1, 100*time.Microsecond, nil) // healthy
-        tr.Record(2, 100*time.Microsecond, nil) // healthy
-        tr.Record(3, 10*time.Millisecond, nil)  // slow — will be purged
-        for range 20 {                           // reach minSamples
-            tr.Record(1, 100*time.Microsecond, nil)
-            tr.Record(2, 100*time.Microsecond, nil)
-            tr.Record(3, 10*time.Millisecond, nil)
-        }
-        // Before purge: dead agent skews baseline; hedge for agent 1 suppressed
-        // because the slow fraction (1/3 = 33%) may exceed maxSlowFraction.
-        // After purge: baseline returns to ~100µs; healthy agents no longer
-        // affected by the stale entry.
-        tr.Purge([]int32{3})
-        _, hedge := tr.HedgeDecision(1, 10, 2.0, 0.3)
-        assert.False(t, hedge, "healthy primary should not be hedged after purge")
-    })
-}
+`TrackingProducer`:
+- Records latency and nil error on success; records error on failure; forwards inner
+  response unchanged.
 
-func TestHedgerSend(t *testing.T) {
-    tests := map[string]struct {
-        shouldHedge    bool // controls mockTracker output
-        hedgeDelay     time.Duration
-        primaryLatency time.Duration
-        primaryErr     error
-        secondaryErr   error
-        wantErr        bool
-        wantCallCount  int
-    }{
-        "no hedge decision: only primary called":                {shouldHedge: false, wantCallCount: 1},
-        "hedge: primary slow, secondary wins":                  {shouldHedge: true, hedgeDelay: 10*time.Millisecond, primaryLatency: 100*time.Millisecond, wantCallCount: 2},
-        "hedge: primary fails early, secondary succeeds":       {shouldHedge: true, hedgeDelay: 50*time.Millisecond, primaryErr: errors.New("x"), wantCallCount: 2},
-        "hedge: both fail, returns error":                      {shouldHedge: true, primaryErr: errors.New("a"), secondaryErr: errors.New("b"), wantErr: true, wantCallCount: 2},
-        "hedge: secondary wins, hedgeWins metric incremented":  {shouldHedge: true, hedgeDelay: 10*time.Millisecond, primaryLatency: 100*time.Millisecond, wantCallCount: 2},
-    }
-    for name, tc := range tests {
-        t.Run(name, func(t *testing.T) { ... })
-    }
-}
-```
+`splitProduceRequestToSecondaryAgents`:
+- Groups partitions by per-partition secondary; returns one sub-request per unique secondary.
+- A partition without a designated secondary fails the whole split with an error.
+- An empty input (no topics / no partitions) fails the split — guards against a deadlock in
+  the fanout select-loop where no sub-leg goroutines would be spawned.
+- Preserves top-level fields (`Version`, `Acks`, `TimeoutMillis`, `TopicID`).
+- Multi-topic split correctly groups across topics.
+
+`mergeProduceResponses`:
+- Concatenates per-topic partitions across sub-responses.
+- Spans multiple topics in the merged result.
+- `ThrottleMillis` is the max across sub-responses.
+- Nil sub-responses are skipped.
+- Empty input returns an empty response (Version=0).
+
+`Hedger.Produce`:
+- No hedge decision (healthy cluster): only primary is called.
+- Primary slow + healthy secondaries: hedge fires, secondary wins the race.
+- Primary fails before hedge timer: per-partition fanout retry succeeds.
+- Hedge timer fires and secondary wins: `hedgeAttemptsTotal` and `hedgeWinsTotal` both
+  incremented.
+- Hedge decided but primary wins before timer: no `hedgeAttemptsTotal` increment.
+- Multi-partition primary error: fanout splits across per-partition secondaries; merged
+  response contains all partitions.
+- Single-agent cluster (no secondaries available): primary error propagates unchanged.
+- Both legs fail: returns only the primary error; the fanout error is discarded.
+
+`maxFractionFloor`:
+- Single contributor → floor at 1.0; configured value is irrelevant.
+- Two contributors → floor at 0.5 (a single bad agent never trips suppression).
+- Large cluster → configured fraction dominates (1/N ≪ configured).
+- Configured higher than 1/N → configured wins.
+- Zero contributors → returns configured (no signal to scale against).
 
 ### Benchmarks
 
 ```go
-func BenchmarkLatencyTrackerRecord(b *testing.B) {
-    t := newLatencyTracker(0.1)
-    b.ReportAllocs()
-    for i := range b.N {
-        t.Record(int32(i%8), 1*time.Millisecond, nil)
-    }
-}
-
-func BenchmarkLatencyTrackerHedgeDecision(b *testing.B) {
-    t := newPopulatedTracker(8, 100*time.Microsecond) // 8 agents, all healthy
-    b.ResetTimer()
-    b.ReportAllocs()
-    for range b.N {
-        _, _ = t.HedgeDecision(1, 10, 2.0, 0.3)
-    }
+func BenchmarkAverageAgentStatsTracker_TrackAgentRequest(b *testing.B) { ... }
+func BenchmarkCachedAgentStatsTracker_ClusterStats(b *testing.B) {
+    // Scenarios: agents=10, 100, 1000.
+    // Cache warm — measures the steady-state hit path.
 }
 ```
 
 ### Review focus
 
-- CAS retry loop is bounded in practice (low contention per agent).
-- `HedgeDecision` does not allocate on the fast path (primary healthy case).
-- Goroutine for the hedge send always completes — no leak even when primary wins first.
-- The `penaltyLatencyUs` constant is documented and configurable.
-- Widespread-issue detection genuinely prevents load doubling during S3 outages.
+- Bucket-spread quorum and cluster quorum gates produce stable behaviour as agents come and
+  go (`PurgeAgents` invalidates promptly; ring rotation is wall-clock-aligned).
+- `Hedger` does not call `TrackAgentRequest` itself — the `TrackingProducer` decorator is the
+  single source of per-leg observations, including legs whose results the Hedger races and
+  discards.
+- The fanout select loop exits cleanly: secondary sub-leg goroutines write to a buffered
+  channel sized to the number of sub-legs, so abandoned sub-legs don't block (and their
+  observations are still recorded by `TrackingProducer`).
+- Scale-aware fraction floor (`maxFractionFloor`) prevents pathological 2-agent / 1-faulty
+  suppression while preserving production semantics in large clusters.
+- `hedgeAttemptsTotal` / `hedgeWinsTotal` semantics cover both hedge-timer races and
+  primary-failure retries (documented in `metrics.go`).
 
 ---
 

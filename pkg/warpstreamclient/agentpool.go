@@ -52,7 +52,7 @@ func NewAgentPool(client *kgo.Client) *AgentPool {
 // Refresh must not be called concurrently from multiple goroutines.
 //
 // Returns the NodeIDs of agents that were present before and are now absent;
-// callers must purge these from any per-agent state (e.g. LatencyTracker).
+// callers must purge these from any per-agent state (e.g. AgentStatsTracker).
 // A new DefaultPartitionAssignmentStrategy is always created from the updated snapshot.
 func (p *AgentPool) Refresh(ctx context.Context) (removed []int32, err error) {
 	// Topics=nil requests metadata for every topic in the cluster.

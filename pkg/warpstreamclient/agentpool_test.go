@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
-func TestAgentPoolRefresh(t *testing.T) {
+func TestAgentPool_Refresh(t *testing.T) {
 	const (
 		topicName     = "test-topic"
 		numPartitions = int32(3)
@@ -74,7 +74,7 @@ func TestAgentPoolRefresh(t *testing.T) {
 	})
 }
 
-func TestAgentPoolStrategyBeforeRefresh(t *testing.T) {
+func TestAgentPool_StrategyBeforeRefresh(t *testing.T) {
 	t.Run("Strategy returns a non-nil empty strategy before first Refresh", func(t *testing.T) {
 		pool := NewAgentPool(nil)
 		s := pool.Strategy()
@@ -90,7 +90,7 @@ func TestAgentPoolStrategyBeforeRefresh(t *testing.T) {
 	})
 }
 
-func TestAgentPoolRefreshMultiTopic(t *testing.T) {
+func TestAgentPool_RefreshMultiTopic(t *testing.T) {
 	const (
 		topicA        = "topic-a"
 		topicB        = "topic-b"
@@ -224,7 +224,7 @@ func TestBuildLeadersAndTopicIDs(t *testing.T) {
 		"topic with non-zero error code: previous UUID preserved": {
 			respTopics: []kmsg.MetadataResponseTopic{{
 				Topic:      stringPtr("a"),
-				ErrorCode:  5, // LEADER_NOT_AVAILABLE
+				ErrorCode:  5,          // LEADER_NOT_AVAILABLE
 				TopicID:    [16]byte{}, // brokers often return zero UUID alongside the error
 				Partitions: nil,
 			}},
@@ -234,8 +234,8 @@ func TestBuildLeadersAndTopicIDs(t *testing.T) {
 		},
 		"all leaders unknown: empty leader map but UUID still picked up": {
 			respTopics: []kmsg.MetadataResponseTopic{{
-				Topic:   stringPtr("a"),
-				TopicID: idA,
+				Topic:      stringPtr("a"),
+				TopicID:    idA,
 				Partitions: []kmsg.MetadataResponseTopicPartition{{Partition: 0, Leader: 99}},
 			}},
 			wantLeaders:  map[topicPartition]int32{},
@@ -290,7 +290,7 @@ func TestDiffRemovedAgents(t *testing.T) {
 	}
 }
 
-func TestAgentPoolStrategyConcurrent(t *testing.T) {
+func TestAgentPool_StrategyConcurrent(t *testing.T) {
 	const (
 		topicName     = "test-topic"
 		numPartitions = int32(4)

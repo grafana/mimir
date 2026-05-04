@@ -65,7 +65,7 @@ func TestBuildProduceRequest(t *testing.T) {
 	}
 }
 
-func TestBuildProduceRequestRoundTrip(t *testing.T) {
+func TestBuildProduceRequest_RoundTrip(t *testing.T) {
 	t.Run("key, value, headers and timestamps survive encoding", func(t *testing.T) {
 		ts := time.Now().Truncate(time.Millisecond)
 		input := []*kgo.Record{
@@ -136,7 +136,7 @@ func TestBuildProduceRequestRoundTrip(t *testing.T) {
 	})
 }
 
-func TestBuildProduceRequestBatchFields(t *testing.T) {
+func TestBuildProduceRequest_BatchFields(t *testing.T) {
 	t.Run("RecordBatch magic is 2", func(t *testing.T) {
 		req := buildProduceRequest("t", [16]byte{}, 9, makeRecords(0, "v"))
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)

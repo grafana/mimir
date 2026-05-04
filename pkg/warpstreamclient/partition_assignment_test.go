@@ -52,7 +52,7 @@ func TestSelectSecondary(t *testing.T) {
 	}
 }
 
-func TestSelectSecondaryNeverReturnsPrimary(t *testing.T) {
+func TestSelectSecondary_NeverReturnsPrimary(t *testing.T) {
 	agents := []int32{1, 2, 3, 4, 5}
 	for _, primary := range agents {
 		for part := int32(0); part < 50; part++ {
@@ -65,7 +65,7 @@ func TestSelectSecondaryNeverReturnsPrimary(t *testing.T) {
 	}
 }
 
-func TestSelectSecondaryNodeIDZeroIsValid(t *testing.T) {
+func TestSelectSecondary_NodeIDZeroIsValid(t *testing.T) {
 	t.Run("NodeID 0 can be the secondary", func(t *testing.T) {
 		all := []int32{0, 1}
 		nodeID, ok := selectSecondary("t", 0, 1, all)
@@ -81,7 +81,7 @@ func TestSelectSecondaryNodeIDZeroIsValid(t *testing.T) {
 	})
 }
 
-func TestDefaultPartitionAssignmentStrategySecondary(t *testing.T) {
+func TestDefaultPartitionAssignmentStrategy_Secondary(t *testing.T) {
 	agents := []int32{1, 2, 3}
 	leaders := map[topicPartition]int32{
 		{topic: "t", partition: 0}: 1,
@@ -168,4 +168,28 @@ func makeNodeIDs(n int) []int32 {
 		ids[i] = int32(i + 1)
 	}
 	return ids
+}
+
+// partitionKey identifies a (topic, partition) pair. Used as a map key by
+// the test mocks below.
+type partitionKey struct {
+	topic     string
+	partition int32
+}
+
+// mockPartitionAssignmentStrategy returns deterministic primary/secondary
+// mappings for tests. Either map can be left nil if the test does not need
+// that lookup direction.
+type mockPartitionAssignmentStrategy struct {
+	primary   map[partitionKey]int32
+	secondary map[partitionKey]int32
+}
+
+func (s *mockPartitionAssignmentStrategy) Primary(topic string, partition int32) int32 {
+	return s.primary[partitionKey{topic, partition}]
+}
+
+func (s *mockPartitionAssignmentStrategy) Secondary(topic string, partition int32) (int32, bool) {
+	id, ok := s.secondary[partitionKey{topic, partition}]
+	return id, ok
 }

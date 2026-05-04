@@ -908,36 +908,80 @@ tests need it.
 
 ---
 
-### Component: `hedger.go`
+### Components: stats tracker + tracking producer + hedger
 
-Implements the hedge-on-delay pattern purely in terms of `DirectProducer`. No knowledge of franz-go
-internals, no Metadata, no connection management.
+The hedging layer is split across four small composable units rather than a single `hedger.go`
+(see Section 11 for full architecture):
+
+- **`agent_stats_tracker.go`** — `AgentStatsTracker` interface (`TrackAgentRequest`,
+  `PurgeAgents`, `AgentStats(now, nodeID)`, `ClusterStats(now, slowMultiplier, faultyThreshold)`),
+  with `AverageAgentStatsTracker` as the default bucketed sliding-window implementation
+  (6 × 10s buckets). Exposes `AgentStats { Latency, ErrorRate, RequestCount }` and
+  `ClusterStats { BaselineLatency, SlowThreshold, SlowFraction, SlowContributorsCount,
+  BaselineErrorRate, FaultyThreshold, FaultyFraction, FaultyContributorsCount }`.
+- **`cached_agent_stats_tracker.go`** — caches `ClusterStats` by
+  `(slowMultiplier, faultyThreshold)` for a short TTL (avoids re-running the O(agents) gather
+  on every call). `AgentStats` and `TrackAgentRequest` forward live; `PurgeAgents` invalidates
+  the cache.
+- **`tracking_producer.go`** — a `DirectProducer` decorator that records every Produce call's
+  outcome into the tracker. Wired between the Hedger and the network leaf
+  (`Hedger(TrackingProducer(KafkaDirectProducer))`) so every leg the hedger dispatches —
+  primary, hedge, fanout sub-leg, abandoned race loser — is observed exactly once. The Hedger
+  does not write to the tracker itself.
+- **`hedger.go`** — orchestrator. Implements `DirectProducer`. Decides per-call whether to
+  speculatively hedge (`shouldHedge`), and on failure or hedge-timer expiry fans the request
+  out across per-partition secondaries (`fanoutToSecondaryAgents`). The fanout is
+  all-or-nothing.
+- **`produce_split_merge.go`** — pure helpers consumed by the Hedger:
+  `splitProduceRequestToSecondaryAgents` (groups partitions by per-partition secondary,
+  errors out if any partition lacks one) and `mergeProduceResponses` (concatenates per-topic
+  partitions; `ThrottleMillis` is the max).
+
+Notable design properties:
+
+- **Read/write split**: the Hedger reads `AgentStats`/`ClusterStats` for the hedge decision;
+  the `TrackingProducer` writes per-leg observations. The two roles live at different layers.
+- **Scale-aware fraction floor**: `MaxSlowFraction` and `MaxFaultyFraction` are compared
+  against `max(configured, 1/contributors)` via `maxFractionFloor`, so a single bad agent
+  never trips suppression regardless of cluster size. At large N the configured value
+  dominates; at small N (e.g. 2 agents, 1 faulty → fraction 0.5) the floor opens the gate so
+  hedging to the only healthy agent isn't blocked.
+- **Fanout result handling**: any sub-leg success returns immediately; if both primary and
+  fanout fail only the primary's error is returned (the fanout error is discarded — primary
+  is the source of truth, the secondary's error is observable via `TrackingProducer`
+  per-agent metrics).
 
 ```go
-// Hedger wraps a Sender to add the hedge-on-delay pattern: sends to the primary
-// agent immediately and, if no response arrives within hedgeDelay, also sends to
-// the secondary. The first successful response wins.
 type Hedger struct {
-    producer     DirectProducer
-    hedgeDelay time.Duration
-    metrics    *metrics
+    inner    DirectProducer
+    tracker  AgentStatsTracker
+    strategy PartitionAssignmentStrategy
+    cfg      HedgerConfig
+    metrics  *metrics
 }
 
-func NewHedger(producer DirectProducer, hedgeDelay time.Duration, m *metrics) *Hedger
+type HedgerConfig struct {
+    SlowMultiplier    float64
+    MaxSlowFraction   float64
+    FaultyThreshold   float64
+    MaxFaultyFraction float64
+    MinHedgeDelay     time.Duration
+}
 
-func (h *Hedger) Send(
-    ctx         context.Context,
-    primaryID   int32,
-    secondaryID int32,
-    req         *kmsg.ProduceRequest,
-) error
+func NewHedger(inner DirectProducer, tracker AgentStatsTracker, strategy PartitionAssignmentStrategy, cfg HedgerConfig, m *metrics) *Hedger
+
+func (h *Hedger) Produce(ctx context.Context, primaryID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error)
 ```
 
-**Test cases (all with `mockSender`):**
-- Fast primary → hedge goroutine never starts
-- Primary slower than `hedgeDelay` → hedge fires, secondary wins
-- Primary fails immediately → hedge fires early (fail-fast)
-- Both fail → primary's error returned
+**Test cases (all with `mockDirectProducer` + `mockPartitionAssignmentStrategy`):**
+- No hedge decision → only primary called.
+- Primary slow + healthy secondaries → hedge fires; secondary wins the race.
+- Primary fails before hedge timer → per-partition fanout retry succeeds.
+- Hedge timer fires + secondary wins → `hedgeAttemptsTotal` and `hedgeWinsTotal` incremented.
+- Hedge decided but primary wins before timer → no `hedgeAttemptsTotal` increment.
+- Multi-partition primary error → fanout splits across per-partition secondaries; merged response.
+- Single-agent cluster (no secondaries) → primary error propagates unchanged.
+- Both legs fail → returns only the primary error.
 
 ---
 
