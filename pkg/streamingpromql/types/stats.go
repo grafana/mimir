@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
@@ -49,6 +50,7 @@ func EquivalentFloatSampleCount(h *histogram.FloatHistogram) int64 {
 type OperatorEvaluationStats struct {
 	timeRange                QueryTimeRange
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	queryStats               *stats.SafeStats
 
 	allSeries *subsetStats
 	subsets   []*subsetStats
@@ -58,7 +60,11 @@ type OperatorEvaluationStats struct {
 //
 // subsetCount is the number of subsets to track. It is the caller's responsibility to track
 // which subset is which.
-func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
+func NewOperatorEvaluationStats(ctx context.Context, timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, subsetCount int) (*OperatorEvaluationStats, error) {
+	return NewOperatorEvaluationStatsWithQueryStats(timeRange, memoryConsumptionTracker, stats.FromContext(ctx), subsetCount)
+}
+
+func NewOperatorEvaluationStatsWithQueryStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, queryStats *stats.SafeStats, subsetCount int) (*OperatorEvaluationStats, error) {
 	allSeries, err := newSubsetStats(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -67,6 +73,7 @@ func NewOperatorEvaluationStats(timeRange QueryTimeRange, memoryConsumptionTrack
 	stats := &OperatorEvaluationStats{
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
+		queryStats:               queryStats,
 
 		allSeries: allSeries,
 	}
@@ -179,7 +186,7 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 }
 
 func (s *OperatorEvaluationStats) newEmptyInstanceWithSameSubsets(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
-	return NewOperatorEvaluationStats(timeRange, s.memoryConsumptionTracker, len(s.subsets))
+	return NewOperatorEvaluationStatsWithQueryStats(timeRange, s.memoryConsumptionTracker, s.queryStats, len(s.subsets))
 }
 
 // Clone returns a copy of this OperatorEvaluationStats instance, including any subset definitions and their data.
@@ -345,7 +352,7 @@ func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
 	return encoded
 }
 
-func (e *EncodedOperatorEvaluationStats) Decode(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
 	allSeries, err := e.AllSeries.decode(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -354,6 +361,7 @@ func (e *EncodedOperatorEvaluationStats) Decode(timeRange QueryTimeRange, memory
 	decoded := &OperatorEvaluationStats{
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
+		queryStats:               stats.FromContext(ctx),
 		allSeries:                allSeries,
 	}
 

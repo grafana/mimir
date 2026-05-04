@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
@@ -24,7 +25,7 @@ func TestOperatorEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 	require.NoError(t, err)
 
 	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -79,7 +80,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+			stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 			require.NoError(t, err)
 
 			samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -154,7 +155,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHis
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 	require.NoError(t, err)
 
 	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -185,7 +186,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_InstantQuery
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 	require.NoError(t, err)
 
 	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
@@ -218,7 +219,7 @@ func TestOperatorEvaluationStats_Subsets_TrackSampleForInstantVectorSelector(t *
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 2)
+	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 2)
 	require.NoError(t, err)
 	require.Len(t, stats.subsets, 2)
 
@@ -269,7 +270,7 @@ func TestOperatorEvaluationStats_Subsets_TrackSamplesForRangeVectorSelector(t *t
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 1)
+	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
 	require.NoError(t, err)
 
 	floats := NewFPointRingBuffer(memoryConsumptionTracker)
@@ -338,9 +339,9 @@ func TestOperatorEvaluationStats_Add(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	s1, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+	s1, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 	require.NoError(t, err)
-	s2, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+	s2, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 	require.NoError(t, err)
 
 	s1.allSeries.samplesProcessedPerStep[0] = 10
@@ -380,9 +381,9 @@ func TestOperatorEvaluationStats_Add_DifferentTimeRanges(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	s1, err := NewOperatorEvaluationStats(timeRange1, memoryConsumptionTracker, 0)
+	s1, err := NewOperatorEvaluationStats(ctx, timeRange1, memoryConsumptionTracker, 0)
 	require.NoError(t, err)
-	s2, err := NewOperatorEvaluationStats(timeRange2, memoryConsumptionTracker, 0)
+	s2, err := NewOperatorEvaluationStats(ctx, timeRange2, memoryConsumptionTracker, 0)
 	require.NoError(t, err)
 
 	require.EqualError(t, s1.Add(s2), "cannot add OperatorEvaluationStats with different time ranges")
@@ -401,9 +402,9 @@ func TestOperatorEvaluationStats_Add_WithSubsets(t *testing.T) {
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	t.Run("receiver has subsets, other does not", func(t *testing.T) {
-		withSubsets, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 1)
+		withSubsets, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
 		require.NoError(t, err)
-		withoutSubsets, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+		withoutSubsets, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 		require.NoError(t, err)
 
 		withSubsets.allSeries.samplesProcessedPerStep[0] = 10
@@ -433,9 +434,9 @@ func TestOperatorEvaluationStats_Add_WithSubsets(t *testing.T) {
 	})
 
 	t.Run("receiver has no subsets, other does", func(t *testing.T) {
-		withoutSubsets, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+		withoutSubsets, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 		require.NoError(t, err)
-		withSubsets, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 1)
+		withSubsets, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
 		require.NoError(t, err)
 
 		withoutSubsets.allSeries.samplesProcessedPerStep[0] = 10
@@ -459,9 +460,9 @@ func TestOperatorEvaluationStats_Add_WithSubsets(t *testing.T) {
 	})
 
 	t.Run("both have subsets returns error", func(t *testing.T) {
-		s1, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 1)
+		s1, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
 		require.NoError(t, err)
-		s2, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 1)
+		s2, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
 		require.NoError(t, err)
 
 		require.EqualError(t, s1.Add(s2), "cannot add two OperatorEvaluationStats instances that both have subsets")
@@ -479,10 +480,10 @@ func TestOperatorEvaluationStats_Clone(t *testing.T) {
 	end := start.Add(2 * step)
 	timeRange := NewRangeQueryTimeRange(start, end, step)
 
-	ctx := context.Background()
+	stats, ctx := stats.ContextWithEmptyStats(context.Background())
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	original, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+	original, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 	require.NoError(t, err)
 
 	original.allSeries.samplesProcessedPerStep[0] = 10
@@ -499,6 +500,7 @@ func TestOperatorEvaluationStats_Clone(t *testing.T) {
 	require.Equal(t, original.allSeries.samplesProcessedPerStep, clone.allSeries.samplesProcessedPerStep)
 	require.Equal(t, original.allSeries.newSamplesReadPerStep, clone.allSeries.newSamplesReadPerStep)
 	require.Equal(t, original.timeRange, clone.timeRange)
+	require.Equal(t, stats, clone.queryStats)
 
 	// Modifying the clone should not affect the original.
 	clone.allSeries.samplesProcessedPerStep[0] = 99
@@ -520,7 +522,7 @@ func TestOperatorEvaluationStats_Clone_WithSubsets(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	original, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 1)
+	original, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
 	require.NoError(t, err)
 
 	original.allSeries.samplesProcessedPerStep[0] = 10
@@ -563,7 +565,7 @@ func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {
 	newSamplesReadAt := func(t int) int64 { return int64(5 + t*10) }
 
 	createInnerStats := func(t *testing.T) *OperatorEvaluationStats {
-		inner, err := NewOperatorEvaluationStats(innerTimeRange, memoryConsumptionTracker, 0)
+		inner, err := NewOperatorEvaluationStats(ctx, innerTimeRange, memoryConsumptionTracker, 0)
 		require.NoError(t, err)
 
 		for i := range innerTimeRange.StepCount {
@@ -821,7 +823,7 @@ func TestOperatorEvaluationStats_ComputeForSubquery_WithSubsets(t *testing.T) {
 	subsetNewSamplesReadAt := func(t int) int64 { return int64(1 + t*2) }
 
 	createInnerStats := func(t *testing.T) *OperatorEvaluationStats {
-		inner, err := NewOperatorEvaluationStats(innerTimeRange, memoryConsumptionTracker, 1)
+		inner, err := NewOperatorEvaluationStats(ctx, innerTimeRange, memoryConsumptionTracker, 1)
 		require.NoError(t, err)
 
 		for i := range innerTimeRange.StepCount {
@@ -891,7 +893,7 @@ func TestOperatorEvaluationStats_ExtendStepInvariant(t *testing.T) {
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	// Create a set of stats corresponding to the single evaluated step.
-	stepInvariant, err := NewOperatorEvaluationStats(NewInstantQueryTimeRange(timestamp.Time(10000)), memoryConsumptionTracker, 0)
+	stepInvariant, err := NewOperatorEvaluationStats(ctx, NewInstantQueryTimeRange(timestamp.Time(10000)), memoryConsumptionTracker, 0)
 	require.NoError(t, err)
 
 	stepInvariant.allSeries.samplesProcessedPerStep[0] = 100
@@ -918,7 +920,7 @@ func TestOperatorEvaluationStats_ExtendStepInvariant_WithSubsets(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	stepInvariant, err := NewOperatorEvaluationStats(NewInstantQueryTimeRange(timestamp.Time(10000)), memoryConsumptionTracker, 1)
+	stepInvariant, err := NewOperatorEvaluationStats(ctx, NewInstantQueryTimeRange(timestamp.Time(10000)), memoryConsumptionTracker, 1)
 	require.NoError(t, err)
 
 	stepInvariant.allSeries.samplesProcessedPerStep[0] = 100
@@ -948,10 +950,10 @@ func TestOperatorEvaluationStats_ExtendStepInvariant_WithSubsets(t *testing.T) {
 }
 
 func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
-	testCases := map[string]func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats{
-		"instant query, no subsets": func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
+	testCases := map[string]func(t *testing.T, ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats{
+		"instant query, no subsets": func(t *testing.T, ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
 			timeRange := NewInstantQueryTimeRange(timestamp.Time(1000))
-			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+			stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 			require.NoError(t, err)
 
 			stats.allSeries.samplesProcessedPerStep[0] = 100
@@ -960,9 +962,9 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 
 			return stats
 		},
-		"instant query, with subsets": func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
+		"instant query, with subsets": func(t *testing.T, ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
 			timeRange := NewInstantQueryTimeRange(timestamp.Time(1000))
-			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 2)
+			stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 2)
 			require.NoError(t, err)
 
 			stats.allSeries.samplesProcessedPerStep[0] = 100
@@ -975,10 +977,10 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 
 			return stats
 		},
-		"range query, no subsets": func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
+		"range query, no subsets": func(t *testing.T, ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
 			startT := timestamp.Time(1000)
 			timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second)
-			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 0)
+			stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 			require.NoError(t, err)
 
 			stats.allSeries.samplesProcessedPerStep[0] = 100
@@ -991,10 +993,10 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 
 			return stats
 		},
-		"range query, with subsets": func(t *testing.T, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
+		"range query, with subsets": func(t *testing.T, ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *OperatorEvaluationStats {
 			startT := timestamp.Time(1000)
 			timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second)
-			stats, err := NewOperatorEvaluationStats(timeRange, memoryConsumptionTracker, 2)
+			stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 2)
 			require.NoError(t, err)
 
 			stats.allSeries.samplesProcessedPerStep[0] = 100
@@ -1024,8 +1026,9 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 
 	for name, factory := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
-			original := factory(t, memoryConsumptionTracker)
+			stats, ctx := stats.ContextWithEmptyStats(context.Background())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			original := factory(t, ctx, memoryConsumptionTracker)
 
 			encodedBytes, err := original.Encode().Marshal()
 			require.NoError(t, err)
@@ -1033,9 +1036,10 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 			require.NoError(t, encoded.Unmarshal(encodedBytes))
 
 			memoryConsumptionBeforeDecoding := memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes()
-			decoded, err := encoded.Decode(original.timeRange, memoryConsumptionTracker)
+			decoded, err := encoded.Decode(ctx, original.timeRange, memoryConsumptionTracker)
 			require.NoError(t, err)
 			require.Equal(t, original, decoded)
+			require.Equal(t, stats, decoded.queryStats)
 
 			require.Greater(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionBeforeDecoding, "decoding a stats instance should increase the memory consumption estimate")
 
@@ -1103,11 +1107,12 @@ func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			startT := timestamp.Time(1000)
 			timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second) // 3 steps
 
-			_, err := testCase.encoded.Decode(timeRange, memoryConsumptionTracker)
+			_, err := testCase.encoded.Decode(ctx, timeRange, memoryConsumptionTracker)
 			require.EqualError(t, err, testCase.expectedError)
 		})
 	}
