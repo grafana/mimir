@@ -253,7 +253,7 @@ func TestKafkaDirectProducer_Produce(t *testing.T) {
 		Value:     []byte("test-value"),
 		Timestamp: time.Now(),
 	}}
-	req := buildProduceRequest(topicName, topicID, 9, records)
+	req := buildProduceRequest(9, topicName, topicID, records)
 
 	resp, err := producer.Produce(context.Background(), brokerNodeID, req)
 	require.NoError(t, err)

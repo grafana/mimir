@@ -12,14 +12,19 @@ import (
 
 func TestConfig_Validate(t *testing.T) {
 	validBase := Config{
-		Address:              []string{"localhost:9092"},
-		Topic:                "mimir-ingest",
-		DialTimeout:          2 * time.Second,
-		WriteTimeout:         10 * time.Second,
-		MaxBatchBytes:        16_000_000,
-		MaxBufferedBytes:     1 << 30,
-		HedgeSlowMultiplier:  2.0,
-		HedgeMaxSlowFraction: 0.3,
+		Address:                 []string{"localhost:9092"},
+		Topic:                   "mimir-ingest",
+		DialTimeout:             2 * time.Second,
+		WriteTimeout:            10 * time.Second,
+		MaxBatchBytes:           16_000_000,
+		MaxBufferedBytes:        1 << 30,
+		HedgeSlowMultiplier:     2.0,
+		HedgeMaxSlowFraction:    0.3,
+		HedgeFaultyThreshold:    0.05,
+		HedgeMaxFaultyFraction:  0.3,
+		HedgeMinDelay:           10 * time.Millisecond,
+		ClusterStatsTTL:         time.Second,
+		MetadataRefreshInterval: 10 * time.Second,
 	}
 
 	tests := map[string]struct {

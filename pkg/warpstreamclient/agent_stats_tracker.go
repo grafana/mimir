@@ -150,8 +150,8 @@ type AverageAgentStatsTracker struct {
 	stats   map[int32]*averageAgentStats // nodeID → stats; entries added lazily on first TrackAgentRequest
 }
 
-// newAverageAgentStatsTracker returns a tracker with no recorded stats.
-func newAverageAgentStatsTracker() *AverageAgentStatsTracker {
+// NewAverageAgentStatsTracker returns a tracker with no recorded stats.
+func NewAverageAgentStatsTracker() *AverageAgentStatsTracker {
 	return &AverageAgentStatsTracker{
 		stats: make(map[int32]*averageAgentStats),
 	}

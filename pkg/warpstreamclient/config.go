@@ -38,6 +38,28 @@ type Config struct {
 	// exceeds this value, indicating a cluster-wide issue rather than a single
 	// slow agent.
 	HedgeMaxSlowFraction float64
+
+	// HedgeFaultyThreshold marks an agent as "faulty" when its observed error
+	// rate over the window exceeds this value (in [0, 1]).
+	HedgeFaultyThreshold float64
+
+	// HedgeMaxFaultyFraction suppresses hedging when the fraction of faulty
+	// agents exceeds this value, indicating a cluster-wide issue rather than a
+	// single faulty agent.
+	HedgeMaxFaultyFraction float64
+
+	// HedgeMinDelay is the floor on the dynamically computed hedge delay (the
+	// hedge fires after max(cluster baseline latency, HedgeMinDelay)).
+	HedgeMinDelay time.Duration
+
+	// ClusterStatsTTL is how long a cluster-wide stats snapshot is reused
+	// before being recomputed. Per-agent stats are not cached.
+	ClusterStatsTTL time.Duration
+
+	// MetadataRefreshInterval is how often the AgentPool is refreshed in the
+	// background. Each refresh updates the partition assignment strategy and
+	// purges agent-stats entries for agents that have left the cluster.
+	MetadataRefreshInterval time.Duration
 }
 
 // Validate returns an error if the config is invalid.
@@ -71,6 +93,21 @@ func (c *Config) Validate() error {
 	}
 	if c.HedgeMaxSlowFraction < 0 || c.HedgeMaxSlowFraction > 1 {
 		return errors.New("hedge max slow fraction must be between 0 and 1")
+	}
+	if c.HedgeFaultyThreshold < 0 || c.HedgeFaultyThreshold > 1 {
+		return errors.New("hedge faulty threshold must be between 0 and 1")
+	}
+	if c.HedgeMaxFaultyFraction < 0 || c.HedgeMaxFaultyFraction > 1 {
+		return errors.New("hedge max faulty fraction must be between 0 and 1")
+	}
+	if c.HedgeMinDelay < 0 {
+		return errors.New("hedge min delay must be non-negative")
+	}
+	if c.ClusterStatsTTL <= 0 {
+		return errors.New("cluster stats TTL must be positive")
+	}
+	if c.MetadataRefreshInterval <= 0 {
+		return errors.New("metadata refresh interval must be positive")
 	}
 	return nil
 }

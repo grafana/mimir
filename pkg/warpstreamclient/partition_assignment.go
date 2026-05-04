@@ -27,6 +27,31 @@ type PartitionAssignmentStrategy interface {
 	Secondary(topic string, partition int32) (nodeID int32, ok bool)
 }
 
+// LazyPartitionAssignmentStrategy is a PartitionAssignmentStrategy that
+// resolves to an underlying strategy via a caller-supplied function on every
+// call. Useful for wiring a long-lived consumer (e.g. Hedger) to a strategy
+// that is replaced on metadata refresh: the function returns the latest
+// snapshot without the consumer needing to be re-wired.
+type LazyPartitionAssignmentStrategy struct {
+	resolve func() PartitionAssignmentStrategy
+}
+
+// NewLazyPartitionAssignmentStrategy returns a strategy that calls resolve on
+// every Primary/Secondary lookup.
+func NewLazyPartitionAssignmentStrategy(resolve func() PartitionAssignmentStrategy) *LazyPartitionAssignmentStrategy {
+	return &LazyPartitionAssignmentStrategy{resolve: resolve}
+}
+
+// Primary implements PartitionAssignmentStrategy.
+func (l *LazyPartitionAssignmentStrategy) Primary(topic string, partition int32) (int32, bool) {
+	return l.resolve().Primary(topic, partition)
+}
+
+// Secondary implements PartitionAssignmentStrategy.
+func (l *LazyPartitionAssignmentStrategy) Secondary(topic string, partition int32) (int32, bool) {
+	return l.resolve().Secondary(topic, partition)
+}
+
 // DefaultPartitionAssignmentStrategy implements PartitionAssignmentStrategy from an
 // immutable snapshot of the agent pool. Both the leader map and the secondary map
 // are precomputed in the constructor so reads are alloc-free and lock-free.

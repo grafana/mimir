@@ -91,10 +91,11 @@ func (p *AgentPool) Strategy() PartitionAssignmentStrategy {
 }
 
 // TopicID returns the UUID of the given topic as reported by the last Metadata refresh.
-// Returns the zero UUID for topics that did not exist in the cluster at the last refresh.
-// Required for Produce API v13+, which addresses topics by UUID rather than name.
-func (p *AgentPool) TopicID(topic string) [16]byte {
-	return p.state.Load().topicIDs[topic]
+// Returns ok=false for topics that did not exist in the cluster at the last refresh.
+// The UUID is required for Produce API v13+, which addresses topics by UUID rather than name.
+func (p *AgentPool) TopicID(topic string) ([16]byte, bool) {
+	id, ok := p.state.Load().topicIDs[topic]
+	return id, ok
 }
 
 // buildLeadersAndTopicIDs extracts the leader map and topic UUIDs from a Metadata

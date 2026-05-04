@@ -31,7 +31,7 @@ func TestHedger_Produce(t *testing.T) {
 	// Seed against the real current time so the Hedger's internal
 	// time.Now() lands within the seeded observation window.
 	healthyTracker := func() *AverageAgentStatsTracker {
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 		nowNs := time.Now().UnixNano()
 		for _, id := range []int32{primaryID, secondaryID, 3, 4} {
 			seedFullWindow(tr, id, nowNs, 20, 1, 0)
@@ -286,4 +286,3 @@ func TestMaxFractionFloor(t *testing.T) {
 		})
 	}
 }
-

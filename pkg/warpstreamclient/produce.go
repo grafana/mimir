@@ -4,6 +4,7 @@ package warpstreamclient
 
 import (
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"sync"
 
@@ -42,31 +43,40 @@ const batchFixedFieldsAfterLength = 49
 // FirstOffset(8) + Length(4) + PartitionLeaderEpoch(4) + Magic(1) = 17.
 const crcOffset = 17
 
-// buildProduceRequest builds a ProduceRequest for a set of records belonging
-// to the same topic. Records may span multiple partitions; one RecordBatch is
-// built per partition and all are included in the single request.
-//
-// Both topic (string) and topicID (UUID) are populated so that the request is
-// valid regardless of which API version is ultimately negotiated by the
-// connection: v0-v12 use the topic name; v13+ use the topic UUID.
-func buildProduceRequest(topic string, topicID [16]byte, version int16, records []*kgo.Record) *kmsg.ProduceRequest {
-	byPartition := groupByPartition(records)
-
-	partitions := make([]kmsg.ProduceRequestTopicPartition, 0, len(byPartition))
-	for partition, recs := range byPartition {
-		partitions = append(partitions, kmsg.ProduceRequestTopicPartition{
-			Partition: partition,
-			Records:   encodeBatch(recs),
-		})
+// buildMultiTopicProduceRequest builds a ProduceRequest covering records that
+// may span multiple topics. topicID maps a topic name to its UUID, returning
+// ok=false when the topic is unknown to the caller; an unknown topic fails
+// the build with an error. Both topic name and UUID are populated per topic
+// so the request is valid across the v0-v12 / v13+ API divide.
+func buildMultiTopicProduceRequest(version int16, topicID func(string) ([16]byte, bool), records []*kgo.Record) (*kmsg.ProduceRequest, error) {
+	byTopic := make(map[string][]*kgo.Record)
+	for _, r := range records {
+		byTopic[r.Topic] = append(byTopic[r.Topic], r)
 	}
 
 	req := kmsg.NewProduceRequest()
 	req.Version = version
 	req.Acks = -1 // all ISR
-	req.Topics = []kmsg.ProduceRequestTopic{
-		{Topic: topic, TopicID: topicID, Partitions: partitions},
+	for topic, topicRecords := range byTopic {
+		id, ok := topicID(topic)
+		if !ok {
+			return nil, fmt.Errorf("topic %q not known", topic)
+		}
+		byPartition := groupByPartition(topicRecords)
+		partitions := make([]kmsg.ProduceRequestTopicPartition, 0, len(byPartition))
+		for partition, recs := range byPartition {
+			partitions = append(partitions, kmsg.ProduceRequestTopicPartition{
+				Partition: partition,
+				Records:   encodeBatch(recs),
+			})
+		}
+		req.Topics = append(req.Topics, kmsg.ProduceRequestTopic{
+			Topic:      topic,
+			TopicID:    id,
+			Partitions: partitions,
+		})
 	}
-	return &req
+	return &req, nil
 }
 
 // groupByPartition groups records by their partition field.

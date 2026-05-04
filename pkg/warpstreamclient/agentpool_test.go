@@ -38,7 +38,9 @@ func TestAgentPool_Refresh(t *testing.T) {
 	t.Run("topic ID is populated after refresh", func(t *testing.T) {
 		_, err := pool.Refresh(context.Background())
 		require.NoError(t, err)
-		assert.NotEqual(t, [16]byte{}, pool.TopicID(topicName))
+		id, ok := pool.TopicID(topicName)
+		require.True(t, ok)
+		assert.NotEqual(t, [16]byte{}, id)
 	})
 
 	t.Run("Strategy.Primary returns a non-zero leader for each partition", func(t *testing.T) {
@@ -68,10 +70,11 @@ func TestAgentPool_Refresh(t *testing.T) {
 		assert.NotSame(t, s1, s2)
 	})
 
-	t.Run("TopicID returns zero for an unknown topic", func(t *testing.T) {
+	t.Run("TopicID returns ok=false for an unknown topic", func(t *testing.T) {
 		_, err := pool.Refresh(context.Background())
 		require.NoError(t, err)
-		assert.Equal(t, [16]byte{}, pool.TopicID("does-not-exist"))
+		_, ok := pool.TopicID("does-not-exist")
+		assert.False(t, ok)
 	})
 }
 
@@ -86,9 +89,10 @@ func TestAgentPool_StrategyBeforeRefresh(t *testing.T) {
 		assert.False(t, ok)
 	})
 
-	t.Run("TopicID returns zero before first Refresh", func(t *testing.T) {
+	t.Run("TopicID returns ok=false before first Refresh", func(t *testing.T) {
 		pool := NewAgentPool(nil)
-		assert.Equal(t, [16]byte{}, pool.TopicID("topic"))
+		_, ok := pool.TopicID("topic")
+		assert.False(t, ok)
 	})
 }
 
@@ -129,8 +133,10 @@ func TestAgentPool_RefreshMultiTopic(t *testing.T) {
 		_, err := pool.Refresh(context.Background())
 		require.NoError(t, err)
 
-		idA := pool.TopicID(topicA)
-		idB := pool.TopicID(topicB)
+		idA, okA := pool.TopicID(topicA)
+		idB, okB := pool.TopicID(topicB)
+		require.True(t, okA)
+		require.True(t, okB)
 		assert.NotEqual(t, [16]byte{}, idA)
 		assert.NotEqual(t, [16]byte{}, idB)
 		assert.NotEqual(t, idA, idB)
@@ -149,7 +155,8 @@ func TestAgentPool_RefreshMultiTopic(t *testing.T) {
 	t.Run("topics deleted from the cluster are evicted from the snapshot", func(t *testing.T) {
 		_, err := pool.Refresh(context.Background())
 		require.NoError(t, err)
-		require.NotEqual(t, [16]byte{}, pool.TopicID(topicB))
+		_, ok := pool.TopicID(topicB)
+		require.True(t, ok)
 
 		deleteReq := kmsg.NewPtrDeleteTopicsRequest()
 		deleteReq.TopicNames = []string{topicB}
@@ -163,8 +170,10 @@ func TestAgentPool_RefreshMultiTopic(t *testing.T) {
 
 		_, err = pool.Refresh(context.Background())
 		require.NoError(t, err)
-		assert.Equal(t, [16]byte{}, pool.TopicID(topicB), "deleted topic must be evicted")
-		assert.NotEqual(t, [16]byte{}, pool.TopicID(topicA), "remaining topic must still be tracked")
+		_, okB := pool.TopicID(topicB)
+		assert.False(t, okB, "deleted topic must be evicted")
+		_, okA := pool.TopicID(topicA)
+		assert.True(t, okA, "remaining topic must still be tracked")
 	})
 }
 

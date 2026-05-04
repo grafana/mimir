@@ -55,7 +55,7 @@ func seedSingleBucket(tr *AverageAgentStatsTracker, nodeID int32, nowNs, success
 func TestAverageAgentStatsTracker_TrackAgentRequest(t *testing.T) {
 	t.Run("first successful request lands in the current bucket", func(t *testing.T) {
 		now := time.Unix(123, 0)
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		tr.TrackAgentRequest(now, 1, 5*time.Millisecond, nil)
 
@@ -69,7 +69,7 @@ func TestAverageAgentStatsTracker_TrackAgentRequest(t *testing.T) {
 
 	t.Run("successful requests in the same bucket accumulate", func(t *testing.T) {
 		now := time.Unix(123, 0)
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		for range 10 {
 			tr.TrackAgentRequest(now, 1, time.Millisecond, nil)
@@ -84,7 +84,7 @@ func TestAverageAgentStatsTracker_TrackAgentRequest(t *testing.T) {
 
 	t.Run("requests distributed across buckets fill multiple slots", func(t *testing.T) {
 		now := time.Unix(0, 0)
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		for range numStatsBuckets {
 			tr.TrackAgentRequest(now, 1, time.Millisecond, nil)
@@ -101,7 +101,7 @@ func TestAverageAgentStatsTracker_TrackAgentRequest(t *testing.T) {
 
 	t.Run("buckets older than the window are ignored", func(t *testing.T) {
 		now := time.Unix(0, 0)
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		tr.TrackAgentRequest(now, 1, time.Millisecond, nil)
 		now = now.Add(time.Hour)
@@ -115,7 +115,7 @@ func TestAverageAgentStatsTracker_TrackAgentRequest(t *testing.T) {
 
 	t.Run("errored requests count toward totalRequestsCount only, not toward latency", func(t *testing.T) {
 		now := time.Unix(0, 0)
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		// 3 successful requests at 10ms, then 2 errors.
 		for range 3 {
@@ -134,7 +134,7 @@ func TestAverageAgentStatsTracker_TrackAgentRequest(t *testing.T) {
 
 	t.Run("context-cancelled calls are not recorded", func(t *testing.T) {
 		now := time.Unix(0, 0)
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		// One real success to make the bucket non-empty.
 		tr.TrackAgentRequest(now, 1, time.Millisecond, nil)
@@ -153,7 +153,7 @@ func TestAverageAgentStatsTracker_TrackAgentRequest(t *testing.T) {
 
 	t.Run("deadline-exceeded calls count as faulty", func(t *testing.T) {
 		now := time.Unix(0, 0)
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		// Two successes plus three deadline-exceeded calls (one wrapped).
 		// Deadlines reflect real agent/network slowness and must show up
@@ -175,7 +175,7 @@ func TestAverageAgentStatsTracker_TrackAgentRequest(t *testing.T) {
 
 	t.Run("rotation overwrites stale ring slots without leaking old data", func(t *testing.T) {
 		now := time.Unix(0, 0)
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		for range 10 {
 			tr.TrackAgentRequest(now, 1, time.Millisecond, nil)
@@ -216,7 +216,7 @@ func TestAverageAgentStatsTracker_PurgeAgents(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			tr := newAverageAgentStatsTracker()
+			tr := NewAverageAgentStatsTracker()
 			now := time.Now()
 			for _, id := range tc.recordNodeIDs {
 				tr.TrackAgentRequest(now, id, time.Millisecond, nil)
@@ -234,7 +234,7 @@ func TestAverageAgentStatsTracker_PurgeAgents(t *testing.T) {
 
 func TestAverageAgentStatsTracker_AgentStats(t *testing.T) {
 	now := time.Unix(3600, 0)
-	tr := newAverageAgentStatsTracker()
+	tr := NewAverageAgentStatsTracker()
 	nowNs := now.UnixNano()
 
 	t.Run("requests concentrated in too few buckets return no stats", func(t *testing.T) {
@@ -287,7 +287,7 @@ func TestAverageAgentStatsTracker_AgentStats(t *testing.T) {
 
 func TestAverageAgentStatsTracker_ClusterStats(t *testing.T) {
 	now := time.Unix(3600, 0)
-	tr := newAverageAgentStatsTracker()
+	tr := NewAverageAgentStatsTracker()
 	nowNs := now.UnixNano()
 
 	t.Run("no agents returns no stats", func(t *testing.T) {
@@ -313,7 +313,7 @@ func TestAverageAgentStatsTracker_ClusterStats(t *testing.T) {
 	})
 
 	t.Run("an outlier shows up in SlowFraction", func(t *testing.T) {
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 		// 6 healthy + 1 outlier on latency.
 		for id := int32(1); id <= 6; id++ {
 			seedFullWindow(tr, id, nowNs, 20, 10, 0)
@@ -327,7 +327,7 @@ func TestAverageAgentStatsTracker_ClusterStats(t *testing.T) {
 	})
 
 	t.Run("FaultyFraction reflects agents above the absolute threshold", func(t *testing.T) {
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 		// 6 agents at 0 % errors, 1 agent at 50 % errors.
 		for id := int32(1); id <= 6; id++ {
 			seedFullWindow(tr, id, nowNs, 20, 10, 0)
@@ -343,7 +343,7 @@ func TestAverageAgentStatsTracker_ClusterStats(t *testing.T) {
 	})
 
 	t.Run("all-error agent contributes to FaultyFraction but not to BaselineLatency", func(t *testing.T) {
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 		seedFullWindow(tr, 1, nowNs, 20, 10, 0)
 		seedFullWindow(tr, 2, nowNs, 20, 10, 0)
 		seedFullWindow(tr, 3, nowNs, 0, 0, 20) // all errors
@@ -375,7 +375,7 @@ func TestAverageAgentStatsTracker_Scenarios(t *testing.T) {
 
 	t.Run("idle then burst: stale data ages out, new burst is not enough to mark slow", func(t *testing.T) {
 		past := now.Add(-30 * time.Minute)
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		seedFullWindow(tr, primaryID, past.UnixNano(), 20, 1, 0)
 		seedFullWindow(tr, 2, nowNs, 20, 1, 0)
@@ -390,7 +390,7 @@ func TestAverageAgentStatsTracker_Scenarios(t *testing.T) {
 	})
 
 	t.Run("high-throughput burst masquerading as long observation: spread gate blocks", func(t *testing.T) {
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		seedFullWindow(tr, 2, nowNs, 20, 1, 0)
 		seedFullWindow(tr, 3, nowNs, 20, 1, 0)
@@ -401,7 +401,7 @@ func TestAverageAgentStatsTracker_Scenarios(t *testing.T) {
 	})
 
 	t.Run("sustained slowness across the window: ClusterStats reports primary as slow", func(t *testing.T) {
-		tr := newAverageAgentStatsTracker()
+		tr := NewAverageAgentStatsTracker()
 
 		seedFullWindow(tr, 2, nowNs, 20, 1, 0)
 		seedFullWindow(tr, 3, nowNs, 20, 1, 0)
@@ -416,7 +416,7 @@ func TestAverageAgentStatsTracker_Scenarios(t *testing.T) {
 }
 
 func TestAverageAgentStatsTracker_PurgeAgentsConcurrentWithTrackAgentRequest(t *testing.T) {
-	tr := newAverageAgentStatsTracker()
+	tr := NewAverageAgentStatsTracker()
 	now := time.Now()
 	for id := int32(0); id < 8; id++ {
 		tr.TrackAgentRequest(now, id, time.Millisecond, nil)
@@ -450,7 +450,7 @@ func TestAverageAgentStatsTracker_PurgeAgentsConcurrentWithTrackAgentRequest(t *
 // path under -race. An atomic-int64 clock is used here so writers and the
 // time-advancer can race on a single shared "now" without locking.
 func TestAverageAgentStatsTracker_ConcurrentRotation(t *testing.T) {
-	tr := newAverageAgentStatsTracker()
+	tr := NewAverageAgentStatsTracker()
 	var nowNs atomic.Int64
 	nowNs.Store(time.Unix(3600, 0).UnixNano())
 	now := func() time.Time { return time.Unix(0, nowNs.Load()) }
@@ -491,7 +491,7 @@ func TestAverageAgentStatsTracker_ConcurrentRotation(t *testing.T) {
 }
 
 func BenchmarkAverageAgentStatsTracker_TrackAgentRequest(b *testing.B) {
-	tr := newAverageAgentStatsTracker()
+	tr := NewAverageAgentStatsTracker()
 	b.ReportAllocs()
 	for i := range b.N {
 		tr.TrackAgentRequest(time.Now(), int32(i%8), time.Millisecond, nil)
@@ -502,7 +502,7 @@ func BenchmarkAverageAgentStatsTracker_ClusterStats(b *testing.B) {
 	for _, n := range []int{10, 100, 1000} {
 		b.Run(b.Name()+"/agents="+strconv.Itoa(n), func(b *testing.B) {
 			now := time.Unix(0, 0).Add(time.Duration(numStatsBuckets-1) * bucketDuration)
-			tr := newAverageAgentStatsTracker()
+			tr := NewAverageAgentStatsTracker()
 			nowNs := now.UnixNano()
 
 			for i := range n {

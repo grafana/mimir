@@ -16,53 +16,18 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-func TestBuildProduceRequest(t *testing.T) {
-	tests := map[string]struct {
-		topic      string
-		records    []*kgo.Record
-		wantCounts map[int32]int // partition → expected record count
-	}{
-		"single record, single partition": {
-			topic:      "t",
-			records:    makeRecords(0, "v1"),
-			wantCounts: map[int32]int{0: 1},
-		},
-		"multiple records, single partition": {
-			topic:      "t",
-			records:    makeRecords(0, "v1", "v2", "v3"),
-			wantCounts: map[int32]int{0: 3},
-		},
-		"records across two partitions": {
-			topic:      "t",
-			records:    append(makeRecords(0, "a"), makeRecords(1, "b", "c")...),
-			wantCounts: map[int32]int{0: 1, 1: 2},
-		},
-		"records across three partitions": {
-			topic:      "t",
-			records:    append(makeRecords(2, "z"), append(makeRecords(0, "a"), makeRecords(1, "b")...)...),
-			wantCounts: map[int32]int{0: 1, 1: 1, 2: 1},
-		},
+// buildProduceRequest is a test-only helper that builds a single-topic
+// ProduceRequest. Tests don't always populate r.Topic on the records they
+// construct, so we set it here before delegating to the multi-topic builder.
+// Mutation is safe: tests own the records they pass in.
+func buildProduceRequest(version int16, topic string, topicID [16]byte, records []*kgo.Record) *kmsg.ProduceRequest {
+	for _, r := range records {
+		r.Topic = topic
 	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			req := buildProduceRequest(tc.topic, [16]byte{}, 9, tc.records)
-
-			require.Len(t, req.Topics, 1)
-			assert.Equal(t, tc.topic, req.Topics[0].Topic)
-			assert.Equal(t, int16(-1), req.Acks)
-			assert.Nil(t, req.TransactionID)
-
-			partitions := req.Topics[0].Partitions
-			require.Len(t, partitions, len(tc.wantCounts))
-
-			for _, p := range partitions {
-				want, ok := tc.wantCounts[p.Partition]
-				require.True(t, ok, "unexpected partition %d in response", p.Partition)
-				rb := decodeRecordBatch(t, p.Records)
-				assert.Equal(t, want, int(rb.NumRecords), "partition %d", p.Partition)
-			}
-		})
-	}
+	resolveTopicID := func(string) ([16]byte, bool) { return topicID, true }
+	// The resolver always returns ok=true, so the error path is unreachable.
+	req, _ := buildMultiTopicProduceRequest(version, resolveTopicID, records)
+	return req
 }
 
 func TestBuildProduceRequest_RoundTrip(t *testing.T) {
@@ -87,7 +52,7 @@ func TestBuildProduceRequest_RoundTrip(t *testing.T) {
 			},
 		}
 
-		req := buildProduceRequest("my-topic", [16]byte{}, 9, input)
+		req := buildProduceRequest(9, "my-topic", [16]byte{}, input)
 		require.Len(t, req.Topics[0].Partitions, 1)
 
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
@@ -113,7 +78,7 @@ func TestBuildProduceRequest_RoundTrip(t *testing.T) {
 	t.Run("compressed output is used when shorter than raw", func(t *testing.T) {
 		// Highly compressible: long run of identical bytes.
 		value := make([]byte, 1024)
-		req := buildProduceRequest("t", [16]byte{}, 9, []*kgo.Record{
+		req := buildProduceRequest(9, "t", [16]byte{}, []*kgo.Record{
 			{Partition: 0, Value: value, Timestamp: time.Now()},
 		})
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
@@ -128,7 +93,7 @@ func TestBuildProduceRequest_RoundTrip(t *testing.T) {
 		}
 		// Use already-compressed bytes as the value; Snappy of Snappy is always larger.
 		value := s2.EncodeSnappy(nil, src)
-		req := buildProduceRequest("t", [16]byte{}, 9, []*kgo.Record{
+		req := buildProduceRequest(9, "t", [16]byte{}, []*kgo.Record{
 			{Partition: 0, Value: value, Timestamp: time.Now()},
 		})
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
@@ -138,13 +103,13 @@ func TestBuildProduceRequest_RoundTrip(t *testing.T) {
 
 func TestBuildProduceRequest_BatchFields(t *testing.T) {
 	t.Run("RecordBatch magic is 2", func(t *testing.T) {
-		req := buildProduceRequest("t", [16]byte{}, 9, makeRecords(0, "v"))
+		req := buildProduceRequest(9, "t", [16]byte{}, makeRecords(0, "v"))
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
 		assert.Equal(t, int8(2), rb.Magic)
 	})
 
 	t.Run("producer fields indicate no idempotence", func(t *testing.T) {
-		req := buildProduceRequest("t", [16]byte{}, 9, makeRecords(0, "v"))
+		req := buildProduceRequest(9, "t", [16]byte{}, makeRecords(0, "v"))
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
 		assert.Equal(t, int64(-1), rb.ProducerID)
 		assert.Equal(t, int16(-1), rb.ProducerEpoch)
@@ -152,13 +117,13 @@ func TestBuildProduceRequest_BatchFields(t *testing.T) {
 	})
 
 	t.Run("PartitionLeaderEpoch is -1", func(t *testing.T) {
-		req := buildProduceRequest("t", [16]byte{}, 9, makeRecords(0, "v"))
+		req := buildProduceRequest(9, "t", [16]byte{}, makeRecords(0, "v"))
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
 		assert.Equal(t, int32(-1), rb.PartitionLeaderEpoch)
 	})
 
 	t.Run("CRC is valid", func(t *testing.T) {
-		req := buildProduceRequest("t", [16]byte{}, 9, makeRecords(0, "v1", "v2"))
+		req := buildProduceRequest(9, "t", [16]byte{}, makeRecords(0, "v1", "v2"))
 		raw := req.Topics[0].Partitions[0].Records
 		// The CRC is over everything after the CRC field itself.
 		want := int32(crc32.Checksum(raw[crcOffset+4:], crc32cTable))
@@ -173,10 +138,88 @@ func TestBuildProduceRequest_BatchFields(t *testing.T) {
 			{Partition: 0, Value: []byte("a"), Timestamp: t1},
 			{Partition: 0, Value: []byte("b"), Timestamp: t2},
 		}
-		req := buildProduceRequest("t", [16]byte{}, 9, records)
+		req := buildProduceRequest(9, "t", [16]byte{}, records)
 		rb := decodeRecordBatch(t, req.Topics[0].Partitions[0].Records)
 		assert.Equal(t, t1.UnixMilli(), rb.FirstTimestamp)
 		assert.Equal(t, t2.UnixMilli(), rb.MaxTimestamp)
+	})
+}
+
+func TestBuildMultiTopicProduceRequest(t *testing.T) {
+	makeRecord := func(topic string, partition int32, value string) *kgo.Record {
+		return &kgo.Record{Topic: topic, Partition: partition, Value: []byte(value), Timestamp: time.Now()}
+	}
+
+	t.Run("groups records by topic and by partition", func(t *testing.T) {
+		records := []*kgo.Record{
+			makeRecord("a", 0, "a0-1"),
+			makeRecord("a", 0, "a0-2"),
+			makeRecord("a", 1, "a1"),
+			makeRecord("b", 0, "b0"),
+		}
+		idA := [16]byte{0xaa}
+		idB := [16]byte{0xbb}
+		resolve := func(topic string) ([16]byte, bool) {
+			switch topic {
+			case "a":
+				return idA, true
+			case "b":
+				return idB, true
+			}
+			return [16]byte{}, false
+		}
+
+		req, err := buildMultiTopicProduceRequest(11, resolve, records)
+		require.NoError(t, err)
+		require.NotNil(t, req)
+		require.Equal(t, int16(11), req.Version)
+		require.Equal(t, int16(-1), req.Acks)
+		require.Len(t, req.Topics, 2)
+
+		topics := map[string]kmsg.ProduceRequestTopic{}
+		for _, t := range req.Topics {
+			topics[t.Topic] = t
+		}
+		require.Equal(t, idA, topics["a"].TopicID)
+		require.Equal(t, idB, topics["b"].TopicID)
+		assert.Len(t, topics["a"].Partitions, 2, "topic a has two partitions")
+		assert.Len(t, topics["b"].Partitions, 1, "topic b has one partition")
+	})
+
+	t.Run("populates the requested API version and acks", func(t *testing.T) {
+		records := []*kgo.Record{makeRecord("t", 0, "v")}
+		resolve := func(string) ([16]byte, bool) { return [16]byte{}, true }
+
+		req, err := buildMultiTopicProduceRequest(13, resolve, records)
+		require.NoError(t, err)
+		assert.Equal(t, int16(13), req.Version)
+		assert.Equal(t, int16(-1), req.Acks)
+	})
+
+	t.Run("returns an error when a topic is unknown", func(t *testing.T) {
+		records := []*kgo.Record{
+			makeRecord("known", 0, "v1"),
+			makeRecord("unknown", 0, "v2"),
+		}
+		resolve := func(topic string) ([16]byte, bool) {
+			if topic == "known" {
+				return [16]byte{0x01}, true
+			}
+			return [16]byte{}, false
+		}
+
+		req, err := buildMultiTopicProduceRequest(11, resolve, records)
+		require.Error(t, err)
+		assert.Nil(t, req)
+		assert.ErrorContains(t, err, "unknown")
+	})
+
+	t.Run("empty records: returns a request with no topics", func(t *testing.T) {
+		resolve := func(string) ([16]byte, bool) { return [16]byte{}, true }
+		req, err := buildMultiTopicProduceRequest(11, resolve, nil)
+		require.NoError(t, err)
+		require.NotNil(t, req)
+		assert.Empty(t, req.Topics)
 	})
 }
 
@@ -217,7 +260,7 @@ func BenchmarkBuildProduceRequest(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for range b.N {
-		_ = buildProduceRequest("mimir-ingest", [16]byte{}, 9, records)
+		_ = buildProduceRequest(9, "mimir-ingest", [16]byte{}, records)
 	}
 }
 

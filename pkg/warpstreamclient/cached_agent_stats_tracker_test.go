@@ -14,7 +14,7 @@ import (
 func TestCachedAgentStatsTracker_AgentStats(t *testing.T) {
 	t.Run("is not cached", func(t *testing.T) {
 		now := time.Unix(3600, 0)
-		inner := newAverageAgentStatsTracker()
+		inner := NewAverageAgentStatsTracker()
 		// Long TTL — if AgentStats were cached, the second call below
 		// would return the old value rather than reflecting the mutation.
 		w := NewCachedAgentStatsTracker(inner, time.Hour)
@@ -36,7 +36,7 @@ func TestCachedAgentStatsTracker_AgentStats(t *testing.T) {
 func TestCachedAgentStatsTracker_ClusterStats(t *testing.T) {
 	t.Run("caches the gather within TTL and refreshes after it elapses", func(t *testing.T) {
 		now := time.Unix(3600, 0)
-		inner := newAverageAgentStatsTracker()
+		inner := NewAverageAgentStatsTracker()
 		w := NewCachedAgentStatsTracker(inner, time.Second)
 		nowNs := now.UnixNano()
 
@@ -63,7 +63,7 @@ func TestCachedAgentStatsTracker_ClusterStats(t *testing.T) {
 
 	t.Run("no-quorum sentinel keeps returning no stats until TTL elapses", func(t *testing.T) {
 		now := time.Unix(3600, 0)
-		inner := newAverageAgentStatsTracker()
+		inner := NewAverageAgentStatsTracker()
 		w := NewCachedAgentStatsTracker(inner, time.Second)
 
 		// First call: no qualifying agents yet, returns no stats and
@@ -90,7 +90,7 @@ func TestCachedAgentStatsTracker_ClusterStats(t *testing.T) {
 func TestCachedAgentStatsTracker_PurgeAgents(t *testing.T) {
 	t.Run("should invalidate cache", func(t *testing.T) {
 		now := time.Unix(3600, 0)
-		inner := newAverageAgentStatsTracker()
+		inner := NewAverageAgentStatsTracker()
 		w := NewCachedAgentStatsTracker(inner, time.Hour) // long TTL — must rely on Purge invalidation
 		nowNs := now.UnixNano()
 
@@ -117,7 +117,7 @@ func BenchmarkCachedAgentStatsTracker_ClusterStats(b *testing.B) {
 	for _, n := range []int{10, 100, 1000} {
 		b.Run(b.Name()+"/agents="+strconv.Itoa(n), func(b *testing.B) {
 			now := time.Unix(0, 0).Add(time.Duration(numStatsBuckets-1) * bucketDuration)
-			inner := newAverageAgentStatsTracker()
+			inner := NewAverageAgentStatsTracker()
 			w := NewCachedAgentStatsTracker(inner, time.Second)
 			nowNs := now.UnixNano()
 
