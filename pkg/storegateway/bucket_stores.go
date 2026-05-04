@@ -408,7 +408,6 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 }
 
 // SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
-// Full implementation arrives in the next task.
 func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
 	userID := getUserIDFromGRPCContext(srv.Context())
 	if userID == "" {
@@ -424,7 +423,6 @@ func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, sr
 }
 
 // SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
-// Full implementation arrives in the next task.
 func (u *BucketStores) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
 	userID := getUserIDFromGRPCContext(srv.Context())
 	if userID == "" {
