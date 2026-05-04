@@ -300,7 +300,7 @@ overrides:
 	require.NoError(t, cfg.RuntimeConfig.LoadPath.Set(runtimeConfigFile))
 	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
 
-	manager, err := NewRuntimeManager(&cfg, "test", nil, log.NewNopLogger())
+	manager, err := NewRuntimeManager(&cfg, "test", nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 	t.Cleanup(func() {
@@ -336,7 +336,7 @@ overrides: {}
 		require.NoError(t, cfg.RuntimeConfig.LoadPath.Set(srv.URL))
 		validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
 
-		manager, err := NewRuntimeManager(&cfg, "test", nil, log.NewNopLogger())
+		manager, err := NewRuntimeManager(&cfg, "test", nil, nil, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
@@ -357,7 +357,7 @@ overrides: {}
 		require.NoError(t, cfg.RuntimeConfig.LoadPath.Set(srv.URL))
 		validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
 
-		manager, err := NewRuntimeManager(&cfg, "test", nil, log.NewNopLogger())
+		manager, err := NewRuntimeManager(&cfg, "test", nil, nil, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
 		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
