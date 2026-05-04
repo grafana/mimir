@@ -227,7 +227,7 @@ func (c *KafkaProducer) updateMetricsLoop() {
 // ProduceSync produces records to Kafka and returns once all records have been successfully committed,
 // or an error occurred.
 //
-// This function honors the configure max buffered bytes and refuse to produce a record, returnin kgo.ErrMaxBuffered,
+// This function honors the configure max buffered bytes and refuse to produce a record, returning kgo.ErrMaxBuffered,
 // if the configured limit is reached.
 //
 // On context cancellation/timeout after records have been handed to the Kafka client, the returned
@@ -263,6 +263,29 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		// Records haven't been handed to the Kafka client yet, so the input record pointers are
 		// still safe to expose on the results.
 		return newFailedProduceResultsFromRecords(records, errors.Wrap(context.Cause(ctx), "skipped producing Kafka records because context is already done"))
+	}
+
+	c.produceRecordsEnqueuedTotal.Add(float64(len(records)))
+
+	// Reserve buffer space for the whole batch up front. If the reservation would exceed the configured
+	// limit, refund it and reject every record with kgo.ErrMaxBuffered. This makes admission all-or-nothing
+	// per call: callers retry the whole request on failure, so a partial in-buffer acceptance is wasted work.
+	if c.maxBufferedBytes > 0 {
+		var batchBytes int64
+		for _, record := range records {
+			batchBytes += int64(len(record.Value))
+		}
+
+		if c.bufferedBytes.Add(batchBytes) > c.maxBufferedBytes {
+			c.bufferedBytes.Add(-batchBytes)
+			c.produceRecordsFailedTotal.WithLabelValues(produceErrReason(kgo.ErrMaxBuffered)).Add(float64(len(records)))
+
+			rejected := make(kgo.ProduceResults, len(records))
+			for i, record := range records {
+				rejected[i] = kgo.ProduceResult{Record: record, Err: kgo.ErrMaxBuffered}
+			}
+			return rejected
+		}
 	}
 
 	// Snapshot each record's partition before handing the records off to the Kafka client.
@@ -301,15 +324,8 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	// data point when we troubleshoot high production latencies.
 	{
 		enqueueStartTime := time.Now()
-		c.produceRecordsEnqueuedTotal.Add(float64(len(records)))
 
 		for _, record := range records {
-			// Fast fail if the Kafka client buffer is full. Buffered bytes counter is decreased onProducerDone().
-			if c.maxBufferedBytes > 0 && c.bufferedBytes.Add(int64(len(record.Value))) > c.maxBufferedBytes {
-				onProduceDone(record, kgo.ErrMaxBuffered)
-				continue
-			}
-
 			// We use a new context to avoid that other Produce() may be cancelled when this call's context is
 			// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
 			// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
