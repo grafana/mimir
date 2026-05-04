@@ -197,7 +197,7 @@ func NewChunksCacheClient(
 	return chunksCache, nil
 }
 
-func NewIndexheaderCacheClient(
+func NewIndexHeaderCacheClient(
 	cfg cache.BackendConfig, logger log.Logger, reg prometheus.Registerer) (indexHeaderCache cache.Cache, err error) {
 	const name = "index-header-cache"
 	indexHeaderCache, err = cache.CreateClient(
@@ -210,13 +210,15 @@ func NewIndexheaderCacheClient(
 }
 
 // NewStoreCachingBucket creates a single caching bucket that handles metadata, index-header, and chunks caching.
+// Cache clients may be passed as nil to disable the corresponding bucket cache.
+//
 //   - Index-header config matches isBlockIndexFile to cache GetRange calls.
 //   - Chunks config matches isTSDBChunkFile to cache GetRange calls.
 //   - Metadata caching is shared with across index-header and chunks caching buckets if enabled,
 //     otherwise each cache handles its own metadata storage.
 func NewStoreCachingBucket(
-	metadataCache cache.Cache,
 	cfg BlocksStorageConfig,
+	metadataCache cache.Cache,
 	indexHeaderCacheClient cache.Cache,
 	chunksCache cache.Cache,
 	bkt objstore.Bucket,

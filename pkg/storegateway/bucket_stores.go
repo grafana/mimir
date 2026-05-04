@@ -96,39 +96,30 @@ type BucketStores struct {
 func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	var err error
 
-	// Init metadata cache.
+	// Init index cache.
+	_, indexCache, err := indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+	// Init metadata cache client.
 	metadataCache, err := tsdb.NewMetadataCacheClient(cfg.BucketStore.MetadataCache.BackendConfig, logger, reg)
 	if err != nil {
 		return nil, err
 	}
-
-	// Init index cache.
-	indexCacheClient, indexCache, err := indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg)
-	if err != nil {
-		return nil, err
-	}
-
-	// Init chunks cache.
+	// Init chunks cache client.
 	chunksCacheClient, err := tsdb.NewChunksCacheClient(cfg.BucketStore.ChunksCache.BackendConfig, logger, reg)
 	if err != nil {
 		return nil, err
 	}
-
 	// Init index-header cache client.
-	// If index-header bucket cache is enabled and a separate backend is not provided, it uses the index-cache backend.
-	indexHeaderCacheClient, err := tsdb.NewIndexheaderCacheClient(cfg.BucketStore.IndexHeaderCache.BackendConfig, logger, reg)
+	indexHeaderCacheClient, err := tsdb.NewIndexHeaderCacheClient(cfg.BucketStore.IndexHeaderCache.BackendConfig, logger, reg)
 	if err != nil {
 		return nil, err
 	}
-	if cfg.BucketStore.IndexHeaderCache.Enabled && indexHeaderCacheClient == nil {
-		indexHeaderCacheClient = indexCacheClient
-	}
 
 	// Configure caching bucket to cover configured metadata, index-header, and chunks caching.
-	// Both index-header and chunks caching share the metadata cache for object attributes.
-	cachingBucket, err := tsdb.NewStoreCachingBucket(
-		metadataCache, cfg, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg,
-	)
+	// Bucket caches for index-header and chunks share the metadata cache for object attributes.
+	cachingBucket, err := tsdb.NewStoreCachingBucket(cfg, metadataCache, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
