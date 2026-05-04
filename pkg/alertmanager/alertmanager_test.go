@@ -253,9 +253,6 @@ route:
 // is exactly the goroutine class this test must catch when leaked.
 func TestApplyConfigStopRace_NoInhibitorLeak(t *testing.T) {
 	utiltest.VerifyNoLeak(t,
-		// This package's init() function statically starts a singleton goroutine
-		// that runs forever — keep ignoring it.
-		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
 		// Dispatcher.Stop signals cancellation but doesn't synchronously wait for
 		// every spawned goroutine to return; in addition, this test deliberately
 		// races ApplyConfig with Stop, and a Stop that wins the race against the

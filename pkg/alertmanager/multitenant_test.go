@@ -280,8 +280,6 @@ templates:
 
 func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	utiltest.VerifyNoLeak(t,
-		// This package's init() function statically starts a singleton goroutine that runs forever.
-		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
 		// Upstream alertmanager's Inhibitor.Stop() and Dispatcher.Stop() signal
 		// cancellation but don't fully wait for all spawned goroutines to return.
 		// These goroutines exit eventually, but may still be draining when goleak
