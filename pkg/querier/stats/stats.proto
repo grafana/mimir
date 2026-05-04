@@ -54,9 +54,3 @@ message Stats {
   // The number of range vectors that were split in the query.
   uint32 split_range_vectors = 15;
 }
-
-// StepStat represents a sample count at a specific timestamp
-message StepStat {
-  int64 timestamp = 1; // Unix timestamp in milliseconds
-  int64 value = 2; // Number of samples at this timestamp
-}

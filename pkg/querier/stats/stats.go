@@ -7,7 +7,6 @@ package stats
 
 import (
 	"context"
-	"sync"
 	"sync/atomic" //lint:ignore faillint we can't use go.uber.org/atomic with a protobuf struct without wrapping it.
 	"time"
 
@@ -46,7 +45,6 @@ func IsEnabled(ctx context.Context) bool {
 // SafeStats is a concurrent safe wrapper around the Stats struct.
 type SafeStats struct {
 	Stats
-	mx sync.Mutex
 }
 
 // AddWallTime adds some time to the counter.
