@@ -778,7 +778,7 @@
   "blocks-storage.bucket-store.index-header-cache.memcached.tls-min-version": "",
   "blocks-storage.bucket-store.index-header-cache.attributes-ttl": 604800000000000,
   "blocks-storage.bucket-store.index-header-cache.subrange-ttl": 86400000000000,
-  "blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items": 50000,
+  "blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items": 100000,
   "blocks-storage.bucket-store.index-header-cache.max-get-range-requests": 3,
   "blocks-storage.bucket-store.chunks-cache.backend": "",
   "blocks-storage.bucket-store.chunks-cache.memcached.addresses": "",

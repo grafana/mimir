@@ -564,7 +564,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
   -blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items int
-    	[experimental] Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
+    	[experimental] Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 100000)
   -blocks-storage.bucket-store.index-header-cache.subrange-ttl duration
     	[experimental] TTL for caching individual index-header subranges. (default 24h0m0s)
   -blocks-storage.bucket-store.index-header.bucket-reader.enabled

@@ -11046,7 +11046,7 @@
                   "required": false,
                   "desc": "Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 50000,
+                  "fieldDefaultValue": 100000,
                   "fieldFlag": "blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items",
                   "fieldType": "int",
                   "fieldCategory": "experimental"
