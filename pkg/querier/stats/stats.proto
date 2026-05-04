@@ -53,4 +53,12 @@ message Stats {
   uint32 remote_execution_request_count = 14;
   // The number of range vectors that were split in the query.
   uint32 split_range_vectors = 15;
+  // EquivalentSamplesRead is the number of samples that would have been read from storage for this request
+  // if no caching or other optimizations were applied to the request.
+  uint64 equivalent_samples_read = 16;
+  // PhysicalSamplesRead is the number of samples that were read from storage for this request.
+  // Samples that were read from a cache are not included.
+  // Samples that were read once but used multiple times (eg. in duplicated expressions)
+  // count only once per request, not once per use.
+  uint64 physical_samples_read = 17;
 }

@@ -167,6 +167,40 @@ func TestStats_AddRemoteExecutionRequests(t *testing.T) {
 	})
 }
 
+func TestStats_EquivalentSamplesRead(t *testing.T) {
+	t.Run("add and load equivalent samples read", func(t *testing.T) {
+		stats, _ := ContextWithEmptyStats(context.Background())
+		stats.AddEquivalentSamplesRead(10)
+		stats.AddEquivalentSamplesRead(20)
+
+		assert.Equal(t, uint64(30), stats.LoadEquivalentSamplesRead())
+	})
+
+	t.Run("add and load equivalent samples read nil receiver", func(t *testing.T) {
+		var stats *SafeStats
+		stats.AddEquivalentSamplesRead(10)
+
+		assert.Equal(t, uint64(0), stats.LoadEquivalentSamplesRead())
+	})
+}
+
+func TestStats_PhysicalSamplesRead(t *testing.T) {
+	t.Run("add and load physical samples read", func(t *testing.T) {
+		stats, _ := ContextWithEmptyStats(context.Background())
+		stats.AddPhysicalSamplesRead(10)
+		stats.AddPhysicalSamplesRead(20)
+
+		assert.Equal(t, uint64(30), stats.LoadPhysicalSamplesRead())
+	})
+
+	t.Run("add and load physical samples read nil receiver", func(t *testing.T) {
+		var stats *SafeStats
+		stats.AddPhysicalSamplesRead(10)
+
+		assert.Equal(t, uint64(0), stats.LoadPhysicalSamplesRead())
+	})
+}
+
 func TestStats_Merge(t *testing.T) {
 	t.Run("merge two stats objects", func(t *testing.T) {
 		stats1 := &SafeStats{}
@@ -179,6 +213,8 @@ func TestStats_Merge(t *testing.T) {
 		stats1.AddQueueTime(5 * time.Second)
 		stats1.AddSamplesProcessed(10)
 		stats1.AddRemoteExecutionRequests(12)
+		stats1.AddEquivalentSamplesRead(13)
+		stats1.AddPhysicalSamplesRead(14)
 
 		stats2 := &SafeStats{}
 		stats2.AddWallTime(time.Second)
@@ -190,6 +226,8 @@ func TestStats_Merge(t *testing.T) {
 		stats2.AddQueueTime(10 * time.Second)
 		stats2.AddSamplesProcessed(20)
 		stats2.AddRemoteExecutionRequests(14)
+		stats2.AddEquivalentSamplesRead(15)
+		stats2.AddPhysicalSamplesRead(16)
 
 		stats1.Merge(stats2)
 
@@ -202,6 +240,8 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, 15*time.Second, stats1.LoadQueueTime())
 		assert.Equal(t, uint64(30), stats1.LoadSamplesProcessed())
 		assert.Equal(t, uint32(26), stats1.LoadRemoteExecutionRequestCount())
+		assert.Equal(t, uint64(28), stats1.LoadEquivalentSamplesRead())
+		assert.Equal(t, uint64(30), stats1.LoadPhysicalSamplesRead())
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
@@ -219,6 +259,8 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, time.Duration(0), stats1.LoadQueueTime())
 		assert.Equal(t, uint64(0), stats1.LoadSamplesProcessed())
 		assert.Equal(t, uint32(0), stats1.LoadRemoteExecutionRequestCount())
+		assert.Equal(t, uint64(0), stats1.LoadEquivalentSamplesRead())
+		assert.Equal(t, uint64(0), stats1.LoadPhysicalSamplesRead())
 	})
 }
 
@@ -236,6 +278,8 @@ func TestStats_Copy(t *testing.T) {
 			QueueTime:                   9,
 			SamplesProcessed:            10,
 			RemoteExecutionRequestCount: 12,
+			EquivalentSamplesRead:       13,
+			PhysicalSamplesRead:         14,
 		},
 	}
 	s2 := s1.Copy()
@@ -270,6 +314,8 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 		child.AddQueueTime(200 * time.Millisecond)
 		child.AddSamplesProcessed(uint64(100))
 		child.AddRemoteExecutionRequests(12)
+		child.AddEquivalentSamplesRead(13)
+		child.AddPhysicalSamplesRead(14)
 
 		childStats[i] = child
 	}
@@ -308,6 +354,8 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 	expectedQueueTime := time.Duration(numChildren) * 200 * time.Millisecond
 	expectedSamplesProcessed := uint64(numChildren * 100)
 	expectedRemoteExecutionRequestCount := uint32(numChildren * 12)
+	expectedEquivalentSamplesRead := uint64(numChildren * 13)
+	expectedPhysicalSamplesRead := uint64(numChildren * 14)
 
 	// Verify all values match expected totals
 	assert.Equal(t, expectedWallTime, parentStats.LoadWallTime(), "WallTime should be sum of all children")
@@ -319,4 +367,6 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 	assert.Equal(t, expectedQueueTime, parentStats.LoadQueueTime(), "QueueTime should be sum of all children")
 	assert.Equal(t, expectedSamplesProcessed, parentStats.LoadSamplesProcessed(), "SamplesProcessed should be sum of all children")
 	assert.Equal(t, expectedRemoteExecutionRequestCount, parentStats.LoadRemoteExecutionRequestCount(), "RemoteExecutionRequestCount should be sum of all children")
+	assert.Equal(t, expectedEquivalentSamplesRead, parentStats.LoadEquivalentSamplesRead(), "EquivalentSamplesRead should be sum of all children")
+	assert.Equal(t, expectedPhysicalSamplesRead, parentStats.LoadPhysicalSamplesRead(), "PhysicalSamplesRead should be sum of all children")
 }

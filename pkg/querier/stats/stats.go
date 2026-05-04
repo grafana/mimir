@@ -267,6 +267,38 @@ func (s *SafeStats) LoadSplitRangeVectors() uint32 {
 	return atomic.LoadUint32(&s.SplitRangeVectors)
 }
 
+func (s *SafeStats) AddEquivalentSamplesRead(c uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.EquivalentSamplesRead, c)
+}
+
+func (s *SafeStats) LoadEquivalentSamplesRead() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.EquivalentSamplesRead)
+}
+
+func (s *SafeStats) AddPhysicalSamplesRead(c uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.PhysicalSamplesRead, c)
+}
+
+func (s *SafeStats) LoadPhysicalSamplesRead() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.PhysicalSamplesRead)
+}
+
 // Merge the provided Stats into this one.
 func (s *SafeStats) Merge(other *SafeStats) {
 	if s == nil || other == nil {
@@ -286,6 +318,8 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddSpunOffSubqueries(other.LoadSpunOffSubqueries())
 	s.AddRemoteExecutionRequests(other.LoadRemoteExecutionRequestCount())
 	s.AddSplitRangeVectors(other.LoadSplitRangeVectors())
+	s.AddEquivalentSamplesRead(other.LoadEquivalentSamplesRead())
+	s.AddPhysicalSamplesRead(other.LoadPhysicalSamplesRead())
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment
