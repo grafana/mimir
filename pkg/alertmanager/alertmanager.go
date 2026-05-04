@@ -135,6 +135,14 @@ type Alertmanager struct {
 	configHashMetric prometheus.Gauge
 
 	rateLimitedNotifications *prometheus.CounterVec
+
+	// stopMu serializes ApplyConfig's "decide whether to launch the inhibitor + launch +
+	// wait for it to register its cancel func" with Stop's "set stopped". Without this,
+	// a Stop that races past ApplyConfig's load-barrier select can call inhibitor.Stop()
+	// before ApplyConfig has launched the inhibitor goroutine, then ApplyConfig launches
+	// it with no live cancel hook, and the goroutine leaks.
+	stopMu  sync.Mutex
+	stopped bool
 }
 
 // State helps with replication and synchronization of notifications and silences across several alertmanager replicas.
@@ -328,6 +336,15 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 
 	am.api.Update(conf, func(_ context.Context, _ model.LabelSet) {})
 
+	// Hold stopMu across the field mutations so that Stop, which reads these
+	// same fields under stopMu, can't race with us. If Stop has already run,
+	// bail out here without disturbing the existing inhibitor/dispatcher.
+	am.stopMu.Lock()
+	if am.stopped {
+		am.stopMu.Unlock()
+		return nil
+	}
+
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
 		am.inhibitor.Stop()
@@ -387,7 +404,13 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 	// reflects the new config even if we bail out on a concurrent shutdown.
 	am.configHashMetric.Set(md5HashAsMetricValue([]byte(rawCfg)))
 
-	go am.dispatcher.Run(time.Now())
+	dispatcher := am.dispatcher
+	go dispatcher.Run(time.Now())
+	// Release stopMu before the load barrier below: Stop's dispatcher.Stop is
+	// what closes d.loaded (or sets state to Stopped), so blocking the barrier
+	// while Stop is waiting for stopMu would deadlock.
+	am.stopMu.Unlock()
+
 	// Wait for the dispatcher to finish initial loading before returning. Without
 	// this barrier, a concurrent Stop() can race with Run() in two ways: Stop's
 	// WaitGroup.Wait may return before Run has called finished.Add(1), and Stop's
@@ -395,28 +418,50 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 	// d.loaded channel is closed after both happen, so waiting on it provides the
 	// necessary happens-before relationship. We also unblock on maintenanceStop in
 	// case Stop() runs concurrently and flips the dispatcher state to Stopped before
-	// Run's CAS, in which case Run returns early without closing d.loaded. In that
-	// case we bail out of ApplyConfig: starting the inhibitor on a torn-down
-	// Alertmanager would leak its goroutines (Stop ran before Run, so the inhibitor's
-	// cancel func wasn't yet set when Stop tried to call it).
+	// Run's CAS, in which case Run returns early without closing d.loaded.
 	select {
-	case <-am.dispatcher.LoadingDone():
+	case <-dispatcher.LoadingDone():
 	case <-am.maintenanceStop:
 		return nil
 	}
-	go am.inhibitor.Run()
+
+	// Re-take stopMu to launch the inhibitor. A concurrent Stop that arrives
+	// here will either set stopped=true before us (we bail out without launching)
+	// or wait for our WaitForLoading below — by which time the inhibitor's Run
+	// has set ih.cancel, so a subsequent inhibitor.Stop can actually cancel it.
+	// Without this serialization, the select above can fire LoadingDone even when
+	// Stop also raced past it, and we'd start an inhibitor goroutine with no
+	// live cancel hook — it would leak.
+	am.stopMu.Lock()
+	defer am.stopMu.Unlock()
+	if am.stopped {
+		return nil
+	}
+	inhibitor := am.inhibitor
+	go inhibitor.Run()
+	inhibitor.WaitForLoading()
 
 	return nil
 }
 
 // Stop stops the Alertmanager.
 func (am *Alertmanager) Stop() {
-	if am.inhibitor != nil {
-		am.inhibitor.Stop()
+	// Mark stopped and capture the inhibitor/dispatcher under stopMu so we don't
+	// race with ApplyConfig's writes to those fields. A concurrent ApplyConfig
+	// that has passed the dispatcher load-barrier will see stopped=true and bail
+	// out instead of starting an inhibitor whose cancel hook would leak.
+	am.stopMu.Lock()
+	am.stopped = true
+	inhibitor := am.inhibitor
+	dispatcher := am.dispatcher
+	am.stopMu.Unlock()
+
+	if inhibitor != nil {
+		inhibitor.Stop()
 	}
 
-	if am.dispatcher != nil {
-		am.dispatcher.Stop()
+	if dispatcher != nil {
+		dispatcher.Stop()
 	}
 
 	am.persister.StopAsync()

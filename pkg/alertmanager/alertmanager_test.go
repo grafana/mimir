@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,10 +27,12 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	googleproto "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {
@@ -235,6 +238,83 @@ route:
 		// Ensure that the dispatcher component emits logs with a "true" insight key,
 		// identifying these logs to be exposed to end users via the usage insights system.
 	})
+}
+
+// TestApplyConfigStopRace_NoInhibitorLeak guards against a regression where
+// ApplyConfig's dispatcher-load barrier could fall through to launching the
+// inhibitor goroutine even when a concurrent Stop had already torn the
+// alertmanager down — leaving the inhibitor with no live cancel hook and
+// leaking it forever.
+//
+// The race window is microseconds wide, so we run the ApplyConfig+Stop pair
+// many times to give the scheduler a realistic chance of exercising it.
+// Crucially, we do NOT add `goleak.IgnoreTopFunction(".../inhibit.(*Inhibitor).run")`
+// here (unlike TestMultitenantAlertmanager_loadAndSyncConfigs), because that
+// is exactly the goroutine class this test must catch when leaked.
+func TestApplyConfigStopRace_NoInhibitorLeak(t *testing.T) {
+	utiltest.VerifyNoLeak(t,
+		// This package's init() function statically starts a singleton goroutine
+		// that runs forever — keep ignoring it.
+		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+		// Dispatcher.Stop signals cancellation but doesn't synchronously wait for
+		// every spawned goroutine to return; in addition, this test deliberately
+		// races ApplyConfig with Stop, and a Stop that wins the race against the
+		// FIRST ApplyConfig sees am.dispatcher==nil and never calls dispatcher.Stop
+		// on the dispatcher that ApplyConfig subsequently launches — that is a
+		// separate, pre-existing leak (not the one this test is guarding against).
+		// We deliberately do NOT ignore inhibit.(*Inhibitor).run here — that IS
+		// the goroutine class this test must catch when leaked.
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*Dispatcher).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*Dispatcher).run.func1"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*Dispatcher).run.func2"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*Dispatcher).run.func3"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*aggrGroup).run"),
+	)
+
+	cfgRaw := `receivers:
+- name: 'prod'
+
+route:
+  group_by: ['alertname']
+  group_wait: 10ms
+  group_interval: 10ms
+  receiver: 'prod'`
+
+	cfg, err := config.Load(cfgRaw)
+	require.NoError(t, err)
+
+	const iterations = 50
+	for i := 0; i < iterations; i++ {
+		am, err := New(&Config{
+			UserID:            "test",
+			Logger:            log.NewNopLogger(),
+			Limits:            &mockAlertManagerLimits{},
+			Features:          featurecontrol.NoopFlags{},
+			TenantDataDir:     t.TempDir(),
+			ExternalURL:       &url.URL{Path: "/am"},
+			ShardingEnabled:   true,
+			Store:             prepareInMemoryAlertStore(),
+			Replicator:        &stubReplicator{},
+			ReplicationFactor: 1,
+			PersisterConfig:   PersisterConfig{Interval: time.Hour},
+		}, prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			// ApplyConfig can return either nil (the happy path) or nil after
+			// bailing out on a concurrent Stop. Both are fine; we only care
+			// that no inhibitor goroutine is left running.
+			_ = am.ApplyConfig(cfg, nil, cfgRaw)
+		}()
+		go func() {
+			defer wg.Done()
+			am.StopAndWait()
+		}()
+		wg.Wait()
+	}
 }
 
 var (
