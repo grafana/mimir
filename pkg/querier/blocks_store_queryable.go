@@ -44,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
@@ -218,7 +217,6 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		bucketClient,
 		logger,
 		querierReg,
-		bucketcache.NewCachingBucketMetrics(querierReg),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create caching bucket")

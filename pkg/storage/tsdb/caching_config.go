@@ -165,7 +165,6 @@ func NewMetadataCachingBucket(
 	bkt objstore.Bucket,
 	logger log.Logger,
 	reg prometheus.Registerer,
-	metrics *bucketcache.CachingBucketMetrics,
 ) (objstore.Bucket, error) {
 	metadataCache, err := NewMetadataCacheClient(metadataCfg.BackendConfig, logger, reg)
 	if err != nil {
@@ -176,6 +175,7 @@ func NewMetadataCachingBucket(
 		return bkt, nil
 	}
 
+	metrics := bucketcache.NewCachingBucketMetrics(reg)
 	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
 	cachingBucketCfg = configureMetadataCaching(metadataCache, metadataCfg, cachingBucketCfg)
 

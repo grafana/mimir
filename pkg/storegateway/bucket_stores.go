@@ -121,7 +121,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	if err != nil {
 		return nil, err
 	}
-	if indexHeaderCacheClient == nil {
+	if cfg.BucketStore.IndexHeaderCache.Enabled && indexHeaderCacheClient == nil {
 		indexHeaderCacheClient = indexCacheClient
 	}
 
