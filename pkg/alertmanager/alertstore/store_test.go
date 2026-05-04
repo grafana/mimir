@@ -22,8 +22,8 @@ import (
 
 func TestAlertStore_ListAllUsers(t *testing.T) {
 	ctx := context.Background()
-	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
-	user2Cfg := alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
+	user1Cfg := &alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
+	user2Cfg := &alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
 
 	bucket := objstore.NewInMemBucket()
 	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
@@ -51,8 +51,8 @@ func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
-	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
-	user2Cfg := alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
+	user1Cfg := &alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
+	user2Cfg := &alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
 
 	// The user has no config.
 	{
@@ -67,11 +67,11 @@ func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 
 		config, err := store.GetAlertConfig(ctx, "user-1")
 		require.NoError(t, err)
-		assert.Equal(t, user1Cfg, config)
+		assertConfigEqual(t, user1Cfg, config)
 
 		config, err = store.GetAlertConfig(ctx, "user-2")
 		require.NoError(t, err)
-		assert.Equal(t, user2Cfg, config)
+		assertConfigEqual(t, user2Cfg, config)
 
 		// Ensure the config is stored at the expected location. Without this check
 		// we have no guarantee that the objects are stored at the expected location.
@@ -90,7 +90,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
-	userCfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
+	userCfg := &alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
 
 	// The storage is empty.
 	{
@@ -107,7 +107,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
-		assert.Equal(t, userCfg, configs["user-1"])
+		assertConfigEqual(t, userCfg, configs["user-1"])
 	}
 }
 
@@ -116,8 +116,8 @@ func TestAlertStore_DeleteAlertConfig(t *testing.T) {
 	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
-	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
-	user2Cfg := alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
+	user1Cfg := &alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
+	user2Cfg := &alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
 
 	// Upload the config for 2 users.
 	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
@@ -126,11 +126,11 @@ func TestAlertStore_DeleteAlertConfig(t *testing.T) {
 	// Ensure the config has been correctly uploaded.
 	config, err := store.GetAlertConfig(ctx, "user-1")
 	require.NoError(t, err)
-	assert.Equal(t, user1Cfg, config)
+	assertConfigEqual(t, user1Cfg, config)
 
 	config, err = store.GetAlertConfig(ctx, "user-2")
 	require.NoError(t, err)
-	assert.Equal(t, user2Cfg, config)
+	assertConfigEqual(t, user2Cfg, config)
 
 	// Delete the config for user-1.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user-1"))
@@ -141,14 +141,14 @@ func TestAlertStore_DeleteAlertConfig(t *testing.T) {
 
 	config, err = store.GetAlertConfig(ctx, "user-2")
 	require.NoError(t, err)
-	assert.Equal(t, user2Cfg, config)
+	assertConfigEqual(t, user2Cfg, config)
 
 	// Delete again (should be idempotent).
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user-1"))
 }
 
-func makeTestFullState(content string) alertspb.FullStateDesc {
-	return alertspb.FullStateDesc{
+func makeTestFullState(content string) *alertspb.FullStateDesc {
+	return &alertspb.FullStateDesc{
 		State: &clusterpb.FullState{
 			Parts: []*clusterpb.Part{
 				{
@@ -161,9 +161,16 @@ func makeTestFullState(content string) alertspb.FullStateDesc {
 }
 
 // assertFullStateEqual compares FullStateDesc values, accounting for proto internal caches.
-func assertFullStateEqual(t *testing.T, expected, actual alertspb.FullStateDesc) {
+func assertFullStateEqual(t *testing.T, expected, actual *alertspb.FullStateDesc) {
 	t.Helper()
 	require.True(t, proto.Equal(expected.State, actual.State), "FullState mismatch:\nexpected: %v\nactual:   %v", expected.State, actual.State)
+}
+
+// assertConfigEqual compares AlertConfigDesc values via proto.Equal so that v2-proto
+// internal state (sizeCache, MessageState) doesn't cause spurious diffs.
+func assertConfigEqual(t *testing.T, expected, actual *alertspb.AlertConfigDesc) {
+	t.Helper()
+	require.True(t, proto.Equal(expected, actual), "AlertConfigDesc mismatch:\nexpected: %v\nactual:   %v", expected, actual)
 }
 
 func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {

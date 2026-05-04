@@ -124,7 +124,7 @@ func TestStore_FullState(t *testing.T) {
 
 	// Any attempt to write the store fails.
 
-	err = store.SetFullState(ctx, "user-1", alertspb.FullStateDesc{})
+	err = store.SetFullState(ctx, "user-1", &alertspb.FullStateDesc{})
 	require.ErrorIs(t, err, errState)
 
 	err = store.DeleteFullState(ctx, "user-1")

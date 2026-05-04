@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -62,7 +63,7 @@ func uploadAlertmanagerConfig(minio *e2e.HTTPService, bucket, user, config strin
 		Templates: []*alertspb.TemplateDesc{},
 	}
 
-	d, err := desc.Marshal()
+	d, err := proto.Marshal(&desc)
 	if err != nil {
 		return err
 	}
@@ -493,7 +494,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 					Templates: []*alertspb.TemplateDesc{},
 				}
 
-				d, err := desc.Marshal()
+				d, err := proto.Marshal(&desc)
 				require.NoError(t, err)
 				err = client.Upload(context.Background(), fmt.Sprintf("/alerts/%s", user), bytes.NewReader(d))
 				require.NoError(t, err)
@@ -833,7 +834,7 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 					Templates: []*alertspb.TemplateDesc{},
 				}
 
-				d, err := desc.Marshal()
+				d, err := proto.Marshal(&desc)
 				require.NoError(t, err)
 				err = client.Upload(context.Background(), fmt.Sprintf("/alerts/%s", user), bytes.NewReader(d))
 				require.NoError(t, err)

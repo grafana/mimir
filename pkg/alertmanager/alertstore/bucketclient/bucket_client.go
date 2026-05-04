@@ -14,10 +14,10 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/runutil"
 	"github.com/thanos-io/objstore"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -78,18 +78,16 @@ func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
 }
 
 // GetAlertConfigs implements alertstore.AlertStore.
-func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDesc, error) {
+func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]*alertspb.AlertConfigDesc, error) {
 	var (
 		cfgsMx = sync.Mutex{}
-		cfgs   = make(map[string]alertspb.AlertConfigDesc, len(userIDs))
+		cfgs   = make(map[string]*alertspb.AlertConfigDesc, len(userIDs))
 	)
 
 	err := concurrency.ForEachJob(ctx, len(userIDs), fetchConcurrency, func(ctx context.Context, idx int) error {
 		userID := userIDs[idx]
-		var err error
-		var cfg alertspb.AlertConfigDesc
 
-		cfg, err = s.getAlertConfig(ctx, userID)
+		cfg, err := s.getAlertConfig(ctx, userID)
 		if s.alertsBucket.IsObjNotFoundErr(err) {
 			return nil
 		} else if err != nil {
@@ -107,7 +105,7 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 }
 
 // GetAlertConfig implements alertstore.AlertStore.
-func (s *BucketAlertStore) GetAlertConfig(ctx context.Context, userID string) (alertspb.AlertConfigDesc, error) {
+func (s *BucketAlertStore) GetAlertConfig(ctx context.Context, userID string) (*alertspb.AlertConfigDesc, error) {
 	cfg, err := s.getAlertConfig(ctx, userID)
 	if s.alertsBucket.IsObjNotFoundErr(err) {
 		return cfg, alertspb.ErrNotFound
@@ -117,8 +115,8 @@ func (s *BucketAlertStore) GetAlertConfig(ctx context.Context, userID string) (a
 }
 
 // SetAlertConfig implements alertstore.AlertStore.
-func (s *BucketAlertStore) SetAlertConfig(ctx context.Context, cfg alertspb.AlertConfigDesc) error {
-	cfgBytes, err := cfg.Marshal()
+func (s *BucketAlertStore) SetAlertConfig(ctx context.Context, cfg *alertspb.AlertConfigDesc) error {
+	cfgBytes, err := proto.Marshal(cfg)
 	if err != nil {
 		return err
 	}
@@ -150,11 +148,11 @@ func (s *BucketAlertStore) ListUsersWithFullState(ctx context.Context) ([]string
 }
 
 // GetFullState implements alertstore.AlertStore.
-func (s *BucketAlertStore) GetFullState(ctx context.Context, userID string) (alertspb.FullStateDesc, error) {
+func (s *BucketAlertStore) GetFullState(ctx context.Context, userID string) (*alertspb.FullStateDesc, error) {
 	bkt := s.getAlertmanagerUserBucket(userID)
-	fs := alertspb.FullStateDesc{}
+	fs := &alertspb.FullStateDesc{}
 
-	err := s.get(ctx, bkt, fullStateName, &fs)
+	err := s.get(ctx, bkt, fullStateName, fs)
 	if s.amBucket.IsObjNotFoundErr(err) {
 		return fs, alertspb.ErrNotFound
 	}
@@ -163,10 +161,10 @@ func (s *BucketAlertStore) GetFullState(ctx context.Context, userID string) (ale
 }
 
 // SetFullState implements alertstore.AlertStore.
-func (s *BucketAlertStore) SetFullState(ctx context.Context, userID string, fs alertspb.FullStateDesc) error {
+func (s *BucketAlertStore) SetFullState(ctx context.Context, userID string, fs *alertspb.FullStateDesc) error {
 	bkt := s.getAlertmanagerUserBucket(userID)
 
-	fsBytes, err := fs.Marshal()
+	fsBytes, err := proto.Marshal(fs)
 	if err != nil {
 		return err
 	}
@@ -185,9 +183,9 @@ func (s *BucketAlertStore) DeleteFullState(ctx context.Context, userID string) e
 	return err
 }
 
-func (s *BucketAlertStore) getAlertConfig(ctx context.Context, userID string) (alertspb.AlertConfigDesc, error) {
-	config := alertspb.AlertConfigDesc{}
-	err := s.get(ctx, s.getUserBucket(userID), userID, &config)
+func (s *BucketAlertStore) getAlertConfig(ctx context.Context, userID string) (*alertspb.AlertConfigDesc, error) {
+	config := &alertspb.AlertConfigDesc{}
+	err := s.get(ctx, s.getUserBucket(userID), userID, config)
 	return config, err
 }
 

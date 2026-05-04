@@ -26,13 +26,13 @@ type AlertStore interface {
 	// GetAlertConfigs loads and returns the alertmanager configuration for given users.
 	// If any of the provided users has no configuration, then this function does not return an
 	// error but the returned configs will not include the missing users.
-	GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDesc, error)
+	GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]*alertspb.AlertConfigDesc, error)
 
 	// GetAlertConfig loads and returns the alertmanager configuration for the given user.
-	GetAlertConfig(ctx context.Context, user string) (alertspb.AlertConfigDesc, error)
+	GetAlertConfig(ctx context.Context, user string) (*alertspb.AlertConfigDesc, error)
 
 	// SetAlertConfig stores the alertmanager configuration for a user.
-	SetAlertConfig(ctx context.Context, cfg alertspb.AlertConfigDesc) error
+	SetAlertConfig(ctx context.Context, cfg *alertspb.AlertConfigDesc) error
 
 	// DeleteAlertConfig deletes the alertmanager configuration for a user.
 	// If configuration for the user doesn't exist, no error is reported.
@@ -42,10 +42,10 @@ type AlertStore interface {
 	ListUsersWithFullState(ctx context.Context) ([]string, error)
 
 	// GetFullState loads and returns the alertmanager state for the given user.
-	GetFullState(ctx context.Context, user string) (alertspb.FullStateDesc, error)
+	GetFullState(ctx context.Context, user string) (*alertspb.FullStateDesc, error)
 
 	// SetFullState stores the alertmanager state for the given user.
-	SetFullState(ctx context.Context, user string, fs alertspb.FullStateDesc) error
+	SetFullState(ctx context.Context, user string, fs *alertspb.FullStateDesc) error
 
 	// DeleteFullState deletes the alertmanager state for an user.
 	// If state for the user doesn't exist, no error is reported.

@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -52,7 +53,7 @@ func (f *fakePersistableState) WaitReady(context.Context) error {
 
 type fakeStoreWrite struct {
 	user string
-	desc alertspb.FullStateDesc
+	desc *alertspb.FullStateDesc
 }
 
 type fakeStore struct {
@@ -62,7 +63,7 @@ type fakeStore struct {
 	writes    []fakeStoreWrite
 }
 
-func (f *fakeStore) SetFullState(_ context.Context, user string, desc alertspb.FullStateDesc) error {
+func (f *fakeStore) SetFullState(_ context.Context, user string, desc *alertspb.FullStateDesc) error {
 	f.writesMtx.Lock()
 	defer f.writesMtx.Unlock()
 	f.writes = append(f.writes, fakeStoreWrite{user, desc})
@@ -130,12 +131,12 @@ func TestStatePersister_Position0ShouldWrite(t *testing.T) {
 			return len(storeWrites) == 1
 		}, 5*time.Second, 100*time.Millisecond)
 
-		expectedDesc := alertspb.FullStateDesc{
+		expectedDesc := &alertspb.FullStateDesc{
 			State: makeTestFullState(),
 		}
 
 		assert.Equal(t, userID, storeWrites[0].user)
-		assert.Equal(t, expectedDesc, storeWrites[0].desc)
+		assert.Truef(t, proto.Equal(expectedDesc, storeWrites[0].desc), "FullStateDesc mismatch: expected %v, got %v", expectedDesc, storeWrites[0].desc)
 	}
 }
 

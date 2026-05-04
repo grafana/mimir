@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -94,23 +95,23 @@ func (f *fakeReplicator) ReadFullStateForUser(ctx context.Context, userID string
 type fakeAlertStore struct {
 	alertstore.AlertStore
 
-	states map[string]alertspb.FullStateDesc
+	states map[string]*alertspb.FullStateDesc
 }
 
 func newFakeAlertStore() *fakeAlertStore {
 	return &fakeAlertStore{
-		states: make(map[string]alertspb.FullStateDesc),
+		states: make(map[string]*alertspb.FullStateDesc),
 	}
 }
 
-func (f *fakeAlertStore) GetFullState(_ context.Context, user string) (alertspb.FullStateDesc, error) {
+func (f *fakeAlertStore) GetFullState(_ context.Context, user string) (*alertspb.FullStateDesc, error) {
 	if result, ok := f.states[user]; ok {
 		return result, nil
 	}
-	return alertspb.FullStateDesc{}, alertspb.ErrNotFound
+	return nil, alertspb.ErrNotFound
 }
 
-func (f *fakeAlertStore) SetFullState(_ context.Context, user string, state alertspb.FullStateDesc) error {
+func (f *fakeAlertStore) SetFullState(_ context.Context, user string, state *alertspb.FullStateDesc) error {
 	f.states[user] = state
 	return nil
 }
@@ -147,7 +148,7 @@ func TestStateReplication(t *testing.T) {
 
 			store := newFakeAlertStore()
 			for user, part := range tt.storeResults {
-				require.NoError(t, store.SetFullState(context.Background(), user, alertspb.FullStateDesc{
+				require.NoError(t, store.SetFullState(context.Background(), user, &alertspb.FullStateDesc{
 					State: &clusterpb.FullState{Parts: []*clusterpb.Part{part}},
 				}))
 			}
@@ -175,7 +176,7 @@ func TestStateReplication(t *testing.T) {
 			ch := s.AddState("nflog", &fakeState{}, reg)
 
 			part := tt.message
-			d, err := part.Marshal()
+			d, err := proto.Marshal(part)
 			require.NoError(t, err)
 			ch.Broadcast(d)
 
@@ -221,7 +222,7 @@ func TestStateReplication_Settle(t *testing.T) {
 		name                         string
 		replicationFactor            int
 		read                         readStateResult
-		storeStates                  map[string]alertspb.FullStateDesc
+		storeStates                  map[string]*alertspb.FullStateDesc
 		results                      map[string][][]byte
 		fetchReplicaStateFailedTotal int
 	}{
@@ -296,7 +297,7 @@ func TestStateReplication_Settle(t *testing.T) {
 			name:              "when reading from replicas fails, state is read from storage.",
 			replicationFactor: 3,
 			read:              readStateResult{err: errors.New("Read Error 1")},
-			storeStates: map[string]alertspb.FullStateDesc{
+			storeStates: map[string]*alertspb.FullStateDesc{
 				"user-1": {
 					State: &clusterpb.FullState{
 						Parts: []*clusterpb.Part{{Key: "key1", Data: []byte("Datum1")}},
@@ -313,7 +314,7 @@ func TestStateReplication_Settle(t *testing.T) {
 			name:              "when reading from replicas and from storage fails, still become ready.",
 			replicationFactor: 3,
 			read:              readStateResult{err: errors.New("Read Error 1")},
-			storeStates:       map[string]alertspb.FullStateDesc{},
+			storeStates:       map[string]*alertspb.FullStateDesc{},
 			results: map[string][][]byte{
 				"key1": nil,
 				"key2": nil,
@@ -324,7 +325,7 @@ func TestStateReplication_Settle(t *testing.T) {
 			name:              "when user not found in all replicas and storage, read not counted as failure and still become ready.",
 			replicationFactor: 3,
 			read:              readStateResult{err: errAllReplicasUserNotFound},
-			storeStates:       map[string]alertspb.FullStateDesc{},
+			storeStates:       map[string]*alertspb.FullStateDesc{},
 			results: map[string][][]byte{
 				"key1": nil,
 				"key2": nil,
