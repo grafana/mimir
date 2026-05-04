@@ -92,13 +92,15 @@ type Handler struct {
 	roundTripper http.RoundTripper
 
 	// Metrics.
-	querySeconds          *prometheus.CounterVec
-	querySeries           *prometheus.CounterVec
-	queryChunkBytes       *prometheus.CounterVec
-	queryChunks           *prometheus.CounterVec
-	queryIndexBytes       *prometheus.CounterVec
-	querySamplesProcessed *prometheus.CounterVec
-	activeUsers           *util.ActiveUsersCleanupService
+	querySeconds               *prometheus.CounterVec
+	querySeries                *prometheus.CounterVec
+	queryChunkBytes            *prometheus.CounterVec
+	queryChunks                *prometheus.CounterVec
+	queryIndexBytes            *prometheus.CounterVec
+	querySamplesProcessed      *prometheus.CounterVec
+	queryPhysicalSamplesRead   *prometheus.CounterVec
+	queryEquivalentSamplesRead *prometheus.CounterVec
+	activeUsers                *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -147,6 +149,16 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Help: "Number of samples processed to execute a query.",
 		}, []string{"user"})
 
+		h.queryPhysicalSamplesRead = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_physical_samples_read_total",
+			Help: "Number of samples read from storage to execute a query. This excludes any samples that were read from a cache or otherwise not read due to query optimizations.",
+		}, []string{"user"})
+
+		h.queryEquivalentSamplesRead = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_equivalent_samples_read_total",
+			Help: "Equivalent number of samples that would have been read from storage to execute a query, if no caching or other optimizations were applied to the query.",
+		}, []string{"user"})
+
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
 			h.querySeconds.DeleteLabelValues(user, "false")
@@ -155,6 +167,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			h.queryChunks.DeleteLabelValues(user)
 			h.queryIndexBytes.DeleteLabelValues(user)
 			h.querySamplesProcessed.DeleteLabelValues(user)
+			h.queryPhysicalSamplesRead.DeleteLabelValues(user)
+			h.queryEquivalentSamplesRead.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -332,6 +346,8 @@ func (f *Handler) reportQueryStats(
 		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
+		f.queryPhysicalSamplesRead.WithLabelValues(userID).Add(float64(physicalSamplesRead))
+		f.queryEquivalentSamplesRead.WithLabelValues(userID).Add(float64(equivalentSamplesRead))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
 	}
 
