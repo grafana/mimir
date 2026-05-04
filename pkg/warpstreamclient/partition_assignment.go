@@ -15,9 +15,12 @@ type topicPartition struct {
 }
 
 // PartitionAssignmentStrategy selects the primary and secondary agent for a given partition.
+// Both methods share the same signature so a method value can be passed as a
+// generic agent resolver (e.g. to RecordBuffer).
 type PartitionAssignmentStrategy interface {
 	// Primary returns the Kafka NodeID designated as partition leader by Metadata.
-	Primary(topic string, partition int32) int32
+	// Returns (0, false) if the partition has no known leader.
+	Primary(topic string, partition int32) (nodeID int32, ok bool)
 
 	// Secondary returns a deterministic alternate NodeID for hedging.
 	// Returns (0, false) if no secondary is available.
@@ -50,8 +53,9 @@ func newDefaultPartitionAssignmentStrategy(agents []int32, leaders map[topicPart
 }
 
 // Primary returns the partition leader NodeID.
-func (s *DefaultPartitionAssignmentStrategy) Primary(topic string, partition int32) int32 {
-	return s.leaders[topicPartition{topic: topic, partition: partition}]
+func (s *DefaultPartitionAssignmentStrategy) Primary(topic string, partition int32) (int32, bool) {
+	id, ok := s.leaders[topicPartition{topic: topic, partition: partition}]
+	return id, ok
 }
 
 // Secondary returns the precomputed secondary NodeID for hedging.

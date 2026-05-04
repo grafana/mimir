@@ -46,7 +46,8 @@ func TestAgentPool_Refresh(t *testing.T) {
 		require.NoError(t, err)
 		strategy := pool.Strategy()
 		for part := int32(0); part < numPartitions; part++ {
-			nodeID := strategy.Primary(topicName, part)
+			nodeID, ok := strategy.Primary(topicName, part)
+			require.True(t, ok)
 			assert.GreaterOrEqual(t, nodeID, int32(0))
 		}
 	})
@@ -79,8 +80,9 @@ func TestAgentPool_StrategyBeforeRefresh(t *testing.T) {
 		pool := NewAgentPool(nil)
 		s := pool.Strategy()
 		require.NotNil(t, s)
-		assert.Equal(t, int32(0), s.Primary("topic", 0))
-		_, ok := s.Secondary("topic", 0)
+		_, ok := s.Primary("topic", 0)
+		assert.False(t, ok)
+		_, ok = s.Secondary("topic", 0)
 		assert.False(t, ok)
 	})
 
@@ -135,8 +137,12 @@ func TestAgentPool_RefreshMultiTopic(t *testing.T) {
 
 		strategy := pool.Strategy()
 		for part := int32(0); part < numPartitions; part++ {
-			assert.GreaterOrEqual(t, strategy.Primary(topicA, part), int32(0))
-			assert.GreaterOrEqual(t, strategy.Primary(topicB, part), int32(0))
+			idA, ok := strategy.Primary(topicA, part)
+			require.True(t, ok)
+			assert.GreaterOrEqual(t, idA, int32(0))
+			idB, ok := strategy.Primary(topicB, part)
+			require.True(t, ok)
+			assert.GreaterOrEqual(t, idB, int32(0))
 		}
 	})
 
@@ -313,7 +319,7 @@ func TestAgentPool_StrategyConcurrent(t *testing.T) {
 			strategy := pool.Strategy()
 			for part := int32(0); part < numPartitions; part++ {
 				_, _ = strategy.Secondary(topicName, part)
-				_ = strategy.Primary(topicName, part)
+				_, _ = strategy.Primary(topicName, part)
 			}
 		}()
 	}

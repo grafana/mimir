@@ -90,14 +90,24 @@ func TestDefaultPartitionAssignmentStrategy_Secondary(t *testing.T) {
 	s := newDefaultPartitionAssignmentStrategy(agents, leaders)
 
 	t.Run("Primary returns the leader", func(t *testing.T) {
-		assert.Equal(t, int32(1), s.Primary("t", 0))
-		assert.Equal(t, int32(2), s.Primary("t", 1))
+		id, ok := s.Primary("t", 0)
+		require.True(t, ok)
+		assert.Equal(t, int32(1), id)
+		id, ok = s.Primary("t", 1)
+		require.True(t, ok)
+		assert.Equal(t, int32(2), id)
+	})
+
+	t.Run("Primary returns false for unknown partition", func(t *testing.T) {
+		_, ok := s.Primary("t", 99)
+		assert.False(t, ok)
 	})
 
 	t.Run("Secondary differs from Primary", func(t *testing.T) {
 		sec, ok := s.Secondary("t", 0)
 		require.True(t, ok)
-		assert.NotEqual(t, s.Primary("t", 0), sec)
+		primary, _ := s.Primary("t", 0)
+		assert.NotEqual(t, primary, sec)
 	})
 
 	t.Run("Secondary is deterministic across repeated calls", func(t *testing.T) {
@@ -185,8 +195,9 @@ type mockPartitionAssignmentStrategy struct {
 	secondary map[partitionKey]int32
 }
 
-func (s *mockPartitionAssignmentStrategy) Primary(topic string, partition int32) int32 {
-	return s.primary[partitionKey{topic, partition}]
+func (s *mockPartitionAssignmentStrategy) Primary(topic string, partition int32) (int32, bool) {
+	id, ok := s.primary[partitionKey{topic, partition}]
+	return id, ok
 }
 
 func (s *mockPartitionAssignmentStrategy) Secondary(topic string, partition int32) (int32, bool) {
