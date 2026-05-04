@@ -104,6 +104,8 @@ func NewOperatorEvaluationStatsWithQueryStats(timeRange QueryTimeRange, memoryCo
 //
 // matchesSubsets must be a bitmap with a value for each subset tracked by this instance. true indicates the samples
 // should be added to the corresponding subset.
+//
+// The samples are also recorded in the number of physical samples read in the overall query stats.
 func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64, matchesSubsets []bool) {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
@@ -112,6 +114,7 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 	pointIdx := s.timeRange.PointIndex(stepT)
 
 	s.allSeries.Add(pointIdx, sampleCount, sampleCount)
+	s.queryStats.AddPhysicalSamplesRead(uint64(sampleCount))
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {
@@ -130,6 +133,8 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 //
 // matchesSubsets must be a bitmap with a value for each subset tracked by this instance. true indicates the samples
 // should be added to the corresponding subset.
+//
+// The samples are also recorded in the number of physical samples read in the overall query stats.
 func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, matchesSubsets []bool) {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
@@ -146,6 +151,7 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 	newSamplesRead := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
 
 	s.allSeries.Add(pointIdx, samplesProcessed, newSamplesRead)
+	s.queryStats.AddPhysicalSamplesRead(uint64(newSamplesRead))
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {

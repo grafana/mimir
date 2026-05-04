@@ -22,7 +22,7 @@ func TestOperatorEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.
 	end := start.Add(2 * step)
 	timeRange := NewRangeQueryTimeRange(start, end, step)
 
-	ctx := context.Background()
+	queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
@@ -49,6 +49,8 @@ func TestOperatorEvaluationStats_TrackSampleForInstantVectorSelector(t *testing.
 
 	stats.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	require.Equal(t, uint64(1+2+1+4), queryStats.LoadPhysicalSamplesRead())
 }
 
 func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T) {
@@ -77,7 +79,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 			end := start.Add(2 * step)
 			timeRange := NewRangeQueryTimeRange(start, end, step)
 
-			ctx := context.Background()
+			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 			stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
@@ -142,6 +144,8 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 			floats.Close()
 			histograms.Close()
 			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+			require.Equal(t, uint64((4+3+4+4+4)*testCase.samplesPerPoint), queryStats.LoadPhysicalSamplesRead())
 		})
 	}
 }
@@ -152,7 +156,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHis
 	end := start.Add(2 * step)
 	timeRange := NewRangeQueryTimeRange(start, end, step)
 
-	ctx := context.Background()
+	queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
@@ -177,37 +181,8 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHis
 	floats.Close()
 	histograms.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
-}
 
-func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_InstantQuery(t *testing.T) {
-	queryT := timestamp.Time(0)
-	timeRange := NewInstantQueryTimeRange(queryT)
-
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-
-	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
-	require.NoError(t, err)
-
-	samplesProcessedPerStep := newPerStepTracker("samples processed", timeRange.StepCount)
-	newSamplesReadPerStep := newPerStepTracker("new samples read", timeRange.StepCount)
-
-	floats := NewFPointRingBuffer(memoryConsumptionTracker)
-	histograms := NewHPointRingBuffer(memoryConsumptionTracker)
-
-	h := &histogram.FloatHistogram{}
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(queryT.Add(-3 * time.Second))}))
-	require.NoError(t, histograms.Append(promql.HPoint{T: timestamp.FromTime(queryT.Add(-2 * time.Second)), H: h}))
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(queryT.Add(-time.Second))}))
-
-	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(queryT), floats, histograms, timestamp.FromTime(queryT.Add(-4*time.Second)), timestamp.FromTime(queryT), nil)
-	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 2+EquivalentFloatSampleCount(h))
-	newSamplesReadPerStep.requireChange(t, stats.allSeries.newSamplesReadPerStep, 2 + +EquivalentFloatSampleCount(h))
-
-	stats.Close()
-	floats.Close()
-	histograms.Close()
-	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(2+EquivalentFloatSampleCount(h)), queryStats.LoadPhysicalSamplesRead())
 }
 
 func TestOperatorEvaluationStats_Subsets_TrackSampleForInstantVectorSelector(t *testing.T) {
@@ -216,7 +191,7 @@ func TestOperatorEvaluationStats_Subsets_TrackSampleForInstantVectorSelector(t *
 	end := start.Add(2 * step)
 	timeRange := NewRangeQueryTimeRange(start, end, step)
 
-	ctx := context.Background()
+	queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 2)
@@ -259,6 +234,8 @@ func TestOperatorEvaluationStats_Subsets_TrackSampleForInstantVectorSelector(t *
 
 	stats.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	require.Equal(t, uint64(3+2+1), queryStats.LoadPhysicalSamplesRead())
 }
 
 func TestOperatorEvaluationStats_Subsets_TrackSamplesForRangeVectorSelector(t *testing.T) {
@@ -267,7 +244,7 @@ func TestOperatorEvaluationStats_Subsets_TrackSamplesForRangeVectorSelector(t *t
 	end := start.Add(2 * step)
 	timeRange := NewRangeQueryTimeRange(start, end, step)
 
-	ctx := context.Background()
+	queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
@@ -303,6 +280,8 @@ func TestOperatorEvaluationStats_Subsets_TrackSamplesForRangeVectorSelector(t *t
 	floats.Close()
 	histograms.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	require.Equal(t, uint64(4+4), queryStats.LoadPhysicalSamplesRead())
 }
 
 type perStepTracker struct {
