@@ -297,7 +297,10 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	// Override some extra paths registered in the router (eg. /metrics which by default exposes prometheus.DefaultRegisterer).
 	// Entire router is registered in Mux to "/" path, so there is no conflict with overwriting specific paths.
-	for _, p := range []string{"/metrics", "/debug/"} {
+	// /-/reload is no longer registered by upstream's UI in v0.32.0, but we override it to 404
+	// defensively so the path can never be exposed under the alertmanager prefix if a future
+	// upstream version or a sibling component starts registering it.
+	for _, p := range []string{"/metrics", "/-/reload", "/debug/"} {
 		a := path.Join(am.cfg.ExternalURL.Path, p)
 		// Preserve end slash, as for Mux it means entire subtree.
 		if strings.HasSuffix(p, "/") {

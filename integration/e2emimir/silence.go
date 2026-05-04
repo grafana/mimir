@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/prometheus/alertmanager/pkg/labels"
+	"github.com/prometheus/alertmanager/silence"
 )
 
 // Silence is a local representation of an alertmanager silence for use in integration tests.
@@ -23,15 +24,5 @@ type Silence struct {
 
 // SilenceStatus stores the state of a silence.
 type SilenceStatus struct {
-	State SilenceState `json:"state"`
+	State silence.SilenceState `json:"state"`
 }
-
-// SilenceState is used as part of SilenceStatus.
-type SilenceState string
-
-// Possible values for SilenceState.
-const (
-	SilenceStateExpired SilenceState = "expired"
-	SilenceStateActive  SilenceState = "active"
-	SilenceStatePending SilenceState = "pending"
-)

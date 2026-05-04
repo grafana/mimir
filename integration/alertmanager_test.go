@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
+	amsilence "github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -586,7 +587,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				require.NoError(t, waitForSilences("active", 3*testCfg.replicationFactor))
 			}
 
-			assertSilences := func(list []e2emimir.Silence, s1, s2, s3 e2emimir.SilenceState) {
+			assertSilences := func(list []e2emimir.Silence, s1, s2, s3 amsilence.SilenceState) {
 				assert.Equal(t, 3, len(list))
 
 				ids := make(map[string]e2emimir.Silence, len(list))
@@ -610,7 +611,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
-					assertSilences(list, e2emimir.SilenceStateActive, e2emimir.SilenceStateActive, e2emimir.SilenceStateActive)
+					assertSilences(list, amsilence.SilenceStateActive, amsilence.SilenceStateActive, amsilence.SilenceStateActive)
 				}
 			}
 
@@ -620,17 +621,17 @@ func TestAlertmanagerSharding(t *testing.T) {
 					sil1, err := c.GetSilence(context.Background(), id1)
 					require.NoError(t, err)
 					assert.Equal(t, comment(1), sil1.Comment)
-					assert.Equal(t, e2emimir.SilenceStateActive, sil1.Status.State)
+					assert.Equal(t, amsilence.SilenceStateActive, sil1.Status.State)
 
 					sil2, err := c.GetSilence(context.Background(), id2)
 					require.NoError(t, err)
 					assert.Equal(t, comment(2), sil2.Comment)
-					assert.Equal(t, e2emimir.SilenceStateActive, sil2.Status.State)
+					assert.Equal(t, amsilence.SilenceStateActive, sil2.Status.State)
 
 					sil3, err := c.GetSilence(context.Background(), id3)
 					require.NoError(t, err)
 					assert.Equal(t, comment(3), sil3.Comment)
-					assert.Equal(t, e2emimir.SilenceStateActive, sil3.Status.State)
+					assert.Equal(t, amsilence.SilenceStateActive, sil3.Status.State)
 				}
 			}
 
@@ -674,7 +675,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
-					assertSilences(list, e2emimir.SilenceStateActive, e2emimir.SilenceStateExpired, e2emimir.SilenceStateActive)
+					assertSilences(list, amsilence.SilenceStateActive, amsilence.SilenceStateExpired, amsilence.SilenceStateActive)
 				}
 
 				err = c2.DeleteSilence(context.Background(), id3)
@@ -684,7 +685,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
-					assertSilences(list, e2emimir.SilenceStateActive, e2emimir.SilenceStateExpired, e2emimir.SilenceStateExpired)
+					assertSilences(list, amsilence.SilenceStateActive, amsilence.SilenceStateExpired, amsilence.SilenceStateExpired)
 				}
 
 				err = c3.DeleteSilence(context.Background(), id1)
@@ -694,7 +695,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
-					assertSilences(list, e2emimir.SilenceStateExpired, e2emimir.SilenceStateExpired, e2emimir.SilenceStateExpired)
+					assertSilences(list, amsilence.SilenceStateExpired, amsilence.SilenceStateExpired, amsilence.SilenceStateExpired)
 				}
 			}
 
