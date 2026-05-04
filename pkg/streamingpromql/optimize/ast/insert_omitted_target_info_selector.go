@@ -40,7 +40,9 @@ func (h *InsertOmittedTargetInfoSelector) Visit(node parser.Node, _ []parser.Nod
 	}
 	switch length := len(expr.Args); length {
 	case 1:
-		expr.Args = append(expr.Args, defaultTargetInfoSelector())
+		// Add a default selector. We're creating a new argument and that doesn't exist in the
+		// expression and so has no posistion. Use the position of the info call in this case.
+		expr.Args = append(expr.Args, defaultTargetInfoSelector(expr.PosRange))
 	case 2:
 		dataLabelMatchersExpr, ok := expr.Args[1].(*parser.VectorSelector)
 		if !ok {
@@ -58,13 +60,10 @@ func (h *InsertOmittedTargetInfoSelector) Visit(node parser.Node, _ []parser.Nod
 	return h, nil
 }
 
-func defaultTargetInfoSelector() *parser.VectorSelector {
+func defaultTargetInfoSelector(infoPos posrange.PositionRange) *parser.VectorSelector {
 	return &parser.VectorSelector{
-		Name: targetInfoName,
-		PosRange: posrange.PositionRange{
-			Start: 0,
-			End:   posrange.Pos(len(targetInfoName)),
-		},
+		Name:     targetInfoName,
+		PosRange: infoPos,
 		LabelMatchers: []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfoName),
 		},

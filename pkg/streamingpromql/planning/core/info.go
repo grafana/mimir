@@ -76,7 +76,9 @@ func (t *DataLabelSelector) ResultType() (parser.ValueType, error) {
 }
 
 func (t *DataLabelSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
-	//
+	// The data label selector for info functions is evaluated using a vector selector
+	// at query time so we need to use the same logic as a vector selector when determining
+	// the time range here.
 	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, nil, 0, 0, lookbackDelta, false, false)
 	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT)), nil
 }
