@@ -38,12 +38,12 @@ type AgentRecordBuffer struct {
 	flush         FlushFunc
 	metrics       *metrics
 
-	mu                sync.Mutex
-	bufferedRecords   []*kgo.Record
-	bufferedWireBytes int32
-	bufferedCallbacks []func(error)
+	mu                 sync.Mutex
+	bufferedRecords    []*kgo.Record
+	bufferedWireBytes  int32
+	bufferedCallbacks  []func(error)
 	bufferedFlushTimer *time.Timer
-	closed            bool
+	closed             bool
 
 	flushWG sync.WaitGroup
 	ctx     context.Context
@@ -66,14 +66,14 @@ func NewAgentRecordBuffer(nodeID int32, linger time.Duration, maxBatchBytes int3
 	}
 }
 
-// Add appends records to the pending batch and arranges for cb to fire once
-// after the batch containing these records is acked. If appending would push
-// the batch above maxBatchBytes the existing batch is flushed inline before
-// the new records are appended. If the buffer is closed cb fires
-// synchronously with errBufferClosed.
-func (a *AgentRecordBuffer) Add(records []*kgo.Record, cb func(error)) {
+// Add appends records to the pending batch and arranges for flushDone to
+// fire once after the batch containing these records is acked. If appending
+// would push the batch above maxBatchBytes the existing batch is flushed
+// inline before the new records are appended. If the buffer is closed
+// flushDone fires synchronously with errBufferClosed.
+func (a *AgentRecordBuffer) Add(records []*kgo.Record, flushDone func(error)) {
 	if len(records) == 0 {
-		cb(nil)
+		flushDone(nil)
 		return
 	}
 	bytes := wireBytesOf(records)
@@ -81,7 +81,7 @@ func (a *AgentRecordBuffer) Add(records []*kgo.Record, cb func(error)) {
 	a.mu.Lock()
 	if a.closed {
 		a.mu.Unlock()
-		cb(errBufferClosed)
+		flushDone(errBufferClosed)
 		return
 	}
 	if len(a.bufferedRecords) > 0 && a.bufferedWireBytes+bytes > a.maxBatchBytes {
@@ -89,7 +89,7 @@ func (a *AgentRecordBuffer) Add(records []*kgo.Record, cb func(error)) {
 	}
 	a.bufferedRecords = append(a.bufferedRecords, records...)
 	a.bufferedWireBytes += bytes
-	a.bufferedCallbacks = append(a.bufferedCallbacks, cb)
+	a.bufferedCallbacks = append(a.bufferedCallbacks, flushDone)
 	if a.bufferedFlushTimer == nil {
 		a.bufferedFlushTimer = time.AfterFunc(a.linger, a.timerFlush)
 	}
@@ -97,8 +97,8 @@ func (a *AgentRecordBuffer) Add(records []*kgo.Record, cb func(error)) {
 }
 
 // Close flushes the pending batch and waits until every in-flight FlushFunc
-// has completed and every cb has fired. Subsequent Add calls fail with
-// errBufferClosed. Idempotent.
+// has completed and every flushDone has fired. Subsequent Add calls fail
+// with errBufferClosed. Idempotent.
 func (a *AgentRecordBuffer) Close() {
 	a.mu.Lock()
 	if a.closed {
@@ -131,6 +131,9 @@ func (a *AgentRecordBuffer) startFlushLocked() {
 		return
 	}
 	if a.bufferedFlushTimer != nil {
+		// Stop's return value is intentionally ignored: a concurrently-firing
+		// timer's callback (timerFlush) blocks on a.mu and, once it acquires
+		// it, finds bufferedRecords empty and is a no-op via startFlushLocked.
 		a.bufferedFlushTimer.Stop()
 		a.bufferedFlushTimer = nil
 	}
@@ -146,8 +149,8 @@ func (a *AgentRecordBuffer) startFlushLocked() {
 		ack := make(chan error, 1)
 		a.flush(a.ctx, a.nodeID, records, func(err error) { ack <- err })
 		err := <-ack
-		for _, cb := range callbacks {
-			cb(err)
+		for _, flushDone := range callbacks {
+			flushDone(err)
 		}
 		a.metrics.lingerFlushesTotal.Inc()
 	}()

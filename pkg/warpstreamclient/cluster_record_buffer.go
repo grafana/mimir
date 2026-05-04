@@ -3,9 +3,9 @@
 package warpstreamclient
 
 import (
+	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -52,15 +52,33 @@ func NewClusterRecordBuffer(linger time.Duration, maxBatchBytes int32, resolve A
 }
 
 // Add buffers records into per-agent batches and arranges for done to fire
-// exactly once after every agent contributing to this Add has acknowledged
-// its share of the batch. done is called with the first error observed
-// across the participating agents (or nil on full success). If any record's
-// (topic, partition) does not resolve to an agent, Add fails the whole call
-// synchronously via done and buffers nothing. Add returns immediately; the
-// caller is expected to block on done.
-func (c *ClusterRecordBuffer) Add(records []*kgo.Record, done func(error)) {
+// exactly once with one of:
+//   - nil, when every agent contributing to this Add has acknowledged its
+//     share of the batch;
+//   - the first error observed across the participating agents;
+//   - ctx.Err() if ctx is canceled before the above happens.
+//
+// ctx governs only the caller's wait on done — it does NOT cancel the
+// underlying produce. Records are committed to the batch as soon as they are
+// buffered; cancelling ctx detaches this caller from the result but the
+// batch still flushes normally. As a consequence, when done fires with
+// ctx.Err() the records may still land successfully on the broker.
+//
+// If any record's (topic, partition) does not resolve to an agent, or the
+// cluster is closed, Add fails the whole call synchronously via done and
+// buffers nothing. Add returns immediately; the caller is expected to block
+// on done.
+func (c *ClusterRecordBuffer) Add(ctx context.Context, records []*kgo.Record, done func(error)) {
 	if len(records) == 0 {
 		done(nil)
+		return
+	}
+	if err := ctx.Err(); err != nil {
+		// Pre-canceled fast path: fail without buffering or dispatching.
+		// Distinct from a mid-flight cancel (which still buffers and lets
+		// the batch flush in the background); this matters because the
+		// caller may otherwise observe a duplicate from a "no-op" call.
+		done(err)
 		return
 	}
 
@@ -72,7 +90,9 @@ func (c *ClusterRecordBuffer) Add(records []*kgo.Record, done func(error)) {
 	// Resolve every record to its destination buffer up-front. Bailing
 	// synchronously on the first failure means by the time we start
 	// dispatching every destination is known to be valid — no partial
-	// dispatch is possible.
+	// dispatch is possible. Synchronous failures bypass the completion
+	// fan-in and call done directly because no agent has been told to
+	// dispatch yet.
 	dispatchByAgent := make(map[int32]*agentDispatch)
 	for _, r := range records {
 		nodeID, ok := c.resolve(r.Topic, r.Partition)
@@ -95,10 +115,13 @@ func (c *ClusterRecordBuffer) Add(records []*kgo.Record, done func(error)) {
 		dispatch.records = append(dispatch.records, r)
 	}
 
-	// Add the records to the respective per-agent buffer and keep track of completion.
-	completion := newAddCompletion(int32(len(dispatchByAgent)), done)
+	// Add the records to the respective per-agent buffer and keep track of
+	// completion. The completion type owns the once-notifyDone + ctx-watch
+	// wiring so that done fires exactly once on whichever happens first:
+	// every agent's flush completing, or ctx being canceled.
+	comp := newCompletion(ctx, int32(len(dispatchByAgent)), done)
 	for _, d := range dispatchByAgent {
-		d.buffer.Add(d.records, completion.report)
+		d.buffer.Add(d.records, comp.reportResult)
 	}
 }
 
@@ -157,34 +180,4 @@ func (c *ClusterRecordBuffer) agentRecordBufferFor(nodeID int32) (*AgentRecordBu
 	a = NewAgentRecordBuffer(nodeID, c.linger, c.maxBatchBytes, c.flush, c.metrics)
 	c.agentBuffers[nodeID] = a
 	return a, nil
-}
-
-// addCompletion fans-in N agent acknowledgements into a single done callback.
-// Each agent's flush calls report once; done fires after the Nth report,
-// with the first error observed (or nil on full success).
-type addCompletion struct {
-	pending  atomic.Int32
-	once     sync.Once
-	done     func(error)
-	mu       sync.Mutex
-	firstErr error
-}
-
-func newAddCompletion(pending int32, done func(error)) *addCompletion {
-	c := &addCompletion{done: done}
-	c.pending.Store(pending)
-	return c
-}
-
-func (c *addCompletion) report(err error) {
-	if err != nil {
-		c.mu.Lock()
-		if c.firstErr == nil {
-			c.firstErr = err
-		}
-		c.mu.Unlock()
-	}
-	if c.pending.Add(-1) == 0 {
-		c.once.Do(func() { c.done(c.firstErr) })
-	}
 }

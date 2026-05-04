@@ -3,6 +3,7 @@
 package warpstreamclient
 
 import (
+	"context"
 	"errors"
 	"sync/atomic"
 	"testing"
@@ -27,7 +28,7 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 		t.Cleanup(c.Close)
 
 		done := make(chan error, 1)
-		c.Add([]*kgo.Record{makeRecord("t", 0, "v")}, func(err error) { done <- err })
+		c.Add(context.Background(), []*kgo.Record{makeRecord("t", 0, "v")}, func(err error) { done <- err })
 
 		select {
 		case err := <-done:
@@ -52,7 +53,7 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 		t.Cleanup(c.Close)
 
 		done := make(chan error, 1)
-		c.Add([]*kgo.Record{
+		c.Add(context.Background(), []*kgo.Record{
 			makeRecord("t", 0, "a"),
 			makeRecord("t", 1, "b"),
 		}, func(err error) { done <- err })
@@ -83,7 +84,7 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 		t.Cleanup(c.Close)
 
 		done := make(chan error, 1)
-		c.Add([]*kgo.Record{
+		c.Add(context.Background(), []*kgo.Record{
 			makeRecord("t", 0, "a"),
 			makeRecord("t", 1, "b"),
 		}, func(err error) { done <- err })
@@ -115,7 +116,7 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 
 		var fires atomic.Int32
 		ch := make(chan struct{}, 1)
-		c.Add([]*kgo.Record{
+		c.Add(context.Background(), []*kgo.Record{
 			makeRecord("t", 0, "a"),
 			makeRecord("t", 1, "b"),
 		}, func(error) {
@@ -131,9 +132,9 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("done did not fire")
 		}
-		// Allow time for any spurious second firing.
-		time.Sleep(50 * time.Millisecond)
-		assert.Equal(t, int32(1), fires.Load())
+		// done must not fire a second time.
+		require.Never(t, func() bool { return fires.Load() > 1 },
+			100*time.Millisecond, 10*time.Millisecond)
 	})
 
 	t.Run("done returns first error when one of two agents fails", func(t *testing.T) {
@@ -156,7 +157,7 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 		t.Cleanup(c.Close)
 
 		done := make(chan error, 1)
-		c.Add([]*kgo.Record{
+		c.Add(context.Background(), []*kgo.Record{
 			makeRecord("t", 0, "a"),
 			makeRecord("t", 1, "b"),
 		}, func(err error) { done <- err })
@@ -179,7 +180,7 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 		t.Cleanup(c.Close)
 
 		done := make(chan error, 1)
-		c.Add([]*kgo.Record{
+		c.Add(context.Background(), []*kgo.Record{
 			makeRecord("t", 0, "a"),
 			makeRecord("t", 1, "b"),
 		}, func(err error) { done <- err })
@@ -201,7 +202,7 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 		t.Cleanup(c.Close)
 
 		done := make(chan error, 1)
-		c.Add(nil, func(err error) { done <- err })
+		c.Add(context.Background(), nil, func(err error) { done <- err })
 
 		select {
 		case err := <-done:
@@ -219,7 +220,7 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 		c.Close()
 
 		done := make(chan error, 1)
-		c.Add([]*kgo.Record{makeRecord("t", 0, "v")}, func(err error) { done <- err })
+		c.Add(context.Background(), []*kgo.Record{makeRecord("t", 0, "v")}, func(err error) { done <- err })
 
 		select {
 		case err := <-done:
@@ -227,6 +228,135 @@ func TestClusterRecordBuffer_Add(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("done did not fire after Add on closed cluster")
 		}
+	})
+
+	t.Run("context already canceled: done fires synchronously with ctx error", func(t *testing.T) {
+		flush := newRecordingFlush()
+		m := newMetrics(prometheus.NewPedanticRegistry())
+		c := NewClusterRecordBuffer(time.Hour, 1<<20, fixedAgentResolver(1), flush.Func(), m)
+		t.Cleanup(c.Close)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		done := make(chan error, 1)
+		c.Add(ctx, []*kgo.Record{makeRecord("t", 0, "v")}, func(err error) { done <- err })
+
+		select {
+		case err := <-done:
+			require.ErrorIs(t, err, context.Canceled)
+		case <-time.After(time.Second):
+			t.Fatal("done did not fire for pre-canceled ctx")
+		}
+		assert.Equal(t, 0, flush.callCount(), "no flush should run when ctx was canceled before Add")
+	})
+
+	t.Run("context canceled mid-flight: done fires with ctx error but records still flush", func(t *testing.T) {
+		flush := newRecordingFlush()
+		release := make(chan struct{})
+		flush.onFlush = func(int32, []*kgo.Record) error {
+			<-release
+			return nil
+		}
+		m := newMetrics(prometheus.NewPedanticRegistry())
+		c := NewClusterRecordBuffer(10*time.Millisecond, 1<<20, fixedAgentResolver(1), flush.Func(), m)
+		t.Cleanup(c.Close)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		c.Add(ctx, []*kgo.Record{makeRecord("t", 0, "v")}, func(err error) { done <- err })
+
+		// Wait for the linger to fire and the flush goroutine to enter onFlush.
+		require.Eventually(t, func() bool { return flush.callCount() == 1 },
+			time.Second, 10*time.Millisecond)
+
+		// Cancel while the flush is still blocked.
+		cancel()
+		select {
+		case err := <-done:
+			require.ErrorIs(t, err, context.Canceled)
+		case <-time.After(time.Second):
+			t.Fatal("done did not fire after ctx cancel")
+		}
+
+		// Release the flush; the records still get produced even though the
+		// caller already gave up. The second done invocation is a no-op.
+		close(release)
+	})
+
+	t.Run("multi-agent: ctx canceled mid-flight fires done exactly once with ctx error", func(t *testing.T) {
+		strat := &mockPartitionAssignmentStrategy{
+			primary: map[partitionKey]int32{
+				{"t", 0}: 1,
+				{"t", 1}: 2,
+			},
+		}
+		flush := newRecordingFlush()
+		// Hold both agents' flushes so we can cancel before either completes.
+		release := make(chan struct{})
+		flush.onFlush = func(int32, []*kgo.Record) error {
+			<-release
+			return nil
+		}
+		m := newMetrics(prometheus.NewPedanticRegistry())
+		c := NewClusterRecordBuffer(10*time.Millisecond, 1<<20, strat.Primary, flush.Func(), m)
+		t.Cleanup(c.Close)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		var fires atomic.Int32
+		done := make(chan error, 1)
+		c.Add(ctx, []*kgo.Record{
+			makeRecord("t", 0, "a"),
+			makeRecord("t", 1, "b"),
+		}, func(err error) {
+			fires.Add(1)
+			done <- err
+		})
+
+		// Wait for both agent flushes to enter onFlush (i.e., both linger
+		// timers fired and dispatched).
+		require.Eventually(t, func() bool { return flush.callCount() == 2 },
+			time.Second, 10*time.Millisecond)
+
+		cancel()
+		select {
+		case err := <-done:
+			require.ErrorIs(t, err, context.Canceled)
+		case <-time.After(time.Second):
+			t.Fatal("done did not fire after ctx cancel")
+		}
+
+		// Releasing both flushes invokes reportResult on both agents; neither
+		// must double-fire done. Also exercises the firstErr fan-in path:
+		// once.Do guarantees the late reports are no-ops.
+		close(release)
+		require.Never(t, func() bool { return fires.Load() > 1 },
+			100*time.Millisecond, 10*time.Millisecond)
+	})
+
+	t.Run("context canceled after success is a no-op", func(t *testing.T) {
+		flush := newRecordingFlush()
+		m := newMetrics(prometheus.NewPedanticRegistry())
+		c := NewClusterRecordBuffer(10*time.Millisecond, 1<<20, fixedAgentResolver(1), flush.Func(), m)
+		t.Cleanup(c.Close)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		var fires atomic.Int32
+		var observedErr atomic.Pointer[error]
+		c.Add(ctx, []*kgo.Record{makeRecord("t", 0, "v")}, func(err error) {
+			fires.Add(1)
+			observedErr.Store(&err)
+		})
+
+		require.Eventually(t, func() bool { return fires.Load() == 1 },
+			time.Second, 10*time.Millisecond, "done did not fire on flush success")
+		// Cancel after the success has already fired done; the watcher should
+		// have been detached, so no second firing occurs.
+		cancel()
+		require.Never(t, func() bool { return fires.Load() > 1 },
+			100*time.Millisecond, 10*time.Millisecond)
+		require.NotNil(t, observedErr.Load())
+		assert.NoError(t, *observedErr.Load())
 	})
 }
 
@@ -252,7 +382,7 @@ func TestClusterRecordBuffer_Close(t *testing.T) {
 		c := NewClusterRecordBuffer(time.Hour, 1<<20, strat.Primary, flush.Func(), m)
 
 		done := make(chan error, 1)
-		c.Add([]*kgo.Record{
+		c.Add(context.Background(), []*kgo.Record{
 			makeRecord("t", 0, "a"),
 			makeRecord("t", 1, "b"),
 		}, func(err error) { done <- err })
