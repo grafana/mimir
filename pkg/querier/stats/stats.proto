@@ -48,8 +48,7 @@ message Stats {
   uint64 samples_processed = 11;
   // The number of subqueries that were spun off as actual range queries in order to execute the full query
   uint32 spun_off_subqueries = 12;
-  // SamplesProcessedPerStep represents the number of samples scanned per step timestamp while evaluating a query.
-  repeated StepStat samples_processed_per_step = 13 [(gogoproto.nullable) = false];
+  reserved 13; // samples_processed_per_step
   // The number of remote execution requests that were made while evaluating a query.
   uint32 remote_execution_request_count = 14;
   // The number of range vectors that were split in the query.
