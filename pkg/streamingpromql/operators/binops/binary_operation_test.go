@@ -111,6 +111,43 @@ func TestBuildMatchers(t *testing.T) {
 		res := BuildMatchers(nil, hints)
 		require.Nil(t, res)
 	})
+
+	t.Run("without matching with too many values: label with too many unique values is skipped", func(t *testing.T) {
+		// generateSeriesMetadata with 128 series produces 128 unique pod values (one per series),
+		// exceeding maxHintMatcherValues (64). Pod should be skipped but container (3 unique) and
+		// region (3 unique) should still produce matchers.
+		series := generateSeriesMetadata("http_requests_total", 128)
+		hints := &Hints{} // exclude-matching mode with no exclusions
+		res := BuildMatchers(series, hints)
+
+		// pod has 128 unique values → skipped; container and region have ≤64 values → included.
+		require.Len(t, res, 2)
+		require.Equal(t, "container", res[0].Name)
+		require.Equal(t, "region", res[1].Name)
+	})
+
+	t.Run("without matching with heterogeneous labels: label absent from some series is skipped", func(t *testing.T) {
+		series := []types.SeriesMetadata{
+			{Labels: labels.FromStrings("env", "prod", "region", "us-east")},
+			{Labels: labels.FromStrings("env", "prod")}, // no region label
+		}
+		hints := &Hints{} // exclude-matching, no exclusions
+		expected := types.Matchers{
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+		}
+
+		res := BuildMatchers(series, hints)
+		// Only env is present on every series; region is missing from one series and must be skipped.
+		require.Equal(t, expected, res)
+	})
+
+	t.Run("without matching excludes all labels: returns nil", func(t *testing.T) {
+		series := generateSeriesMetadata("http_requests_total", 3)
+		// Exclude every non-__name__ label that generateSeriesMetadata produces.
+		hints := &Hints{Exclude: []string{"container", "pod", "region"}}
+		res := BuildMatchers(series, hints)
+		require.Nil(t, res)
+	})
 }
 
 func generateSeriesMetadata(name string, num int) []types.SeriesMetadata {

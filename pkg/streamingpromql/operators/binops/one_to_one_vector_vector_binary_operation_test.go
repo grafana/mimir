@@ -722,6 +722,66 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 				labels.FromStrings("env", "prod", "region", "us-east"),
 			},
 		},
+		"exclude hints with multiple LHS series: RHS receives matchers from common non-excluded labels": {
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo"}},
+			hints:          &Hints{Exclude: []string{"foo"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "bar", "region", "us-east"),
+				labels.FromStrings("env", "prod", "foo", "baz", "region", "eu-west"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "x", "region", "us-east"),
+				labels.FromStrings("env", "prod", "foo", "y", "region", "eu-west"),
+				labels.FromStrings("env", "staging", "foo", "z", "region", "us-east"), // filtered by env matcher
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "eu-west|us-east"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod", "region", "eu-west"),
+			},
+		},
+		"exclude hints with heterogeneous LHS labels: label absent from some LHS series is skipped": {
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"), // no region label
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging"), // filtered by env matcher
+			},
+			// Only env is on every LHS series; region is missing from one and must be skipped.
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"),
+			},
+		},
+		"exclude hints with multiple excluded labels": {
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo", "bar"}},
+			hints:          &Hints{Exclude: []string{"foo", "bar"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "a", "bar", "b", "region", "us-east"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "x", "bar", "y", "region", "us-east"),
+				labels.FromStrings("env", "dev", "foo", "x", "bar", "y", "region", "us-east"), // filtered by env matcher
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "us-east"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+			},
+		},
 		"fallback (nil hints, !On): RHS receives without-derived matchers": {
 			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo"}},
 			hints:          nil,

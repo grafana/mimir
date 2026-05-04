@@ -272,6 +272,151 @@ func TestAndUnlessBinaryOperation_PassesWithoutDerivedMatchersToRHS(t *testing.T
 	}
 }
 
+func TestAndUnlessBinaryOperation_PassesExcludeHintMatchersToRHS(t *testing.T) {
+	// Verifies that when explicit exclude hints are provided (non-nil Hints with empty Include
+	// and populated Exclude), the operator builds matchers from all LHS labels except those in
+	// Exclude and passes them to the RHS. This exercises the hints-based code path (as opposed
+	// to the fallback path tested in TestAndUnlessBinaryOperation_PassesWithoutDerivedMatchersToRHS).
+	testCases := map[string]struct {
+		isUnless       bool
+		vectorMatching parser.VectorMatching
+		hints          *Hints
+
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedRHSMatchers  types.Matchers
+		expectedOutputSeries []labels.Labels
+	}{
+		"and op with exclude hints: RHS receives matchers for non-excluded LHS labels": {
+			isUnless:       false,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo"}},
+			hints:          &Hints{Exclude: []string{"foo"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "bar", "region", "us-east"),
+				labels.FromStrings("env", "prod", "foo", "baz", "region", "eu-west"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "x", "region", "us-east"),
+				labels.FromStrings("env", "prod", "foo", "y", "region", "eu-west"),
+				labels.FromStrings("env", "staging", "foo", "z", "region", "us-east"), // filtered by env matcher
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "eu-west|us-east"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "bar", "region", "us-east"),
+				labels.FromStrings("env", "prod", "foo", "baz", "region", "eu-west"),
+			},
+		},
+		"unless op with exclude hints: RHS receives matchers for non-excluded LHS labels": {
+			isUnless:       true,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo"}},
+			hints:          &Hints{Exclude: []string{"foo"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "bar", "region", "us-east"),
+				labels.FromStrings("env", "staging", "foo", "baz", "region", "eu-west"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "x", "region", "us-east"),
+				labels.FromStrings("env", "dev", "foo", "y", "region", "us-east"), // filtered by env matcher
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "eu-west|us-east"},
+			},
+			// unless returns all LHS series; filtering of values happens in NextSeries
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "bar", "region", "us-east"),
+				labels.FromStrings("env", "staging", "foo", "baz", "region", "eu-west"),
+			},
+		},
+		"and op with empty exclude hints (default matching): RHS receives matchers for all non-__name__ LHS labels": {
+			isUnless:       false,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "staging", "region", "us-east"), // filtered by env matcher
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "us-east"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+			},
+		},
+		"and op with exclude hints and heterogeneous LHS labels: label absent from some LHS series is skipped": {
+			isUnless:       false,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"), // no region label
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging", "region", "us-east"),
+			},
+			// Only env is on every LHS series; region is missing from one and must be skipped.
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"),
+			},
+		},
+		"unless op with exclude hints excluding multiple labels": {
+			isUnless:       true,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo", "bar"}},
+			hints:          &Hints{Exclude: []string{"foo", "bar"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "a", "bar", "b", "region", "us-east"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "x", "bar", "y", "region", "us-east"),
+				labels.FromStrings("env", "dev", "foo", "x", "bar", "y", "region", "us-east"), // filtered by env matcher
+			},
+			// Both foo and bar are excluded; only env and region produce matchers.
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "us-east"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "a", "bar", "b", "region", "us-east"),
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			o := NewAndUnlessBinaryOperation(left, right, testCase.vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{}, testCase.hints, log.NewNopLogger())
+
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedRHSMatchers, right.MatchersProvided, "matchers passed to RHS")
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+			require.NoError(t, o.Finalize(ctx))
+			o.Close()
+		})
+	}
+}
+
 func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 	testCases := map[string]struct {
 		isUnless    bool
