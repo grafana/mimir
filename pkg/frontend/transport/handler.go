@@ -322,6 +322,8 @@ func (f *Handler) reportQueryStats(
 	numIndexBytes := stats.LoadFetchedIndexBytes()
 	sharded := strconv.FormatBool(stats.LoadShardedQueries() > 0)
 	samplesProcessed := stats.LoadSamplesProcessed()
+	equivalentSamplesRead := stats.LoadEquivalentSamplesRead()
+	physicalSamplesRead := stats.LoadPhysicalSamplesRead()
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
@@ -358,6 +360,8 @@ func (f *Handler) reportQueryStats(
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
 		"samples_processed", samplesProcessed,
+		"equivalent_samples_read", equivalentSamplesRead,
+		"physical_samples_read", physicalSamplesRead,
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {

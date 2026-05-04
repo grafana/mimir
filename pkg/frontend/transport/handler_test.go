@@ -498,6 +498,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["remote_execution_request_count"])
 				require.EqualValues(t, 0, msg["response_series_count"])
 				require.EqualValues(t, 0, msg["response_samples_count"])
+				require.EqualValues(t, 0, msg["equivalent_samples_read"])
+				require.EqualValues(t, 0, msg["physical_samples_read"])
 
 				if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
 					require.Equal(t, "success", msg["status"])
