@@ -42,7 +42,7 @@ func TestNewKafkaWriterClient_ShouldSupportSASLPlainAuthentication(t *testing.T)
 		cfg.SASL.Username = username
 		require.NoError(t, cfg.SASL.Password.Set("wrong"))
 
-		client, err := NewKafkaWriterClient(cfg, 1, cfg.Topic, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 		t.Cleanup(client.Close)
 
@@ -56,7 +56,7 @@ func TestNewKafkaWriterClient_ShouldSupportSASLPlainAuthentication(t *testing.T)
 		cfg.SASL.Username = username
 		require.NoError(t, cfg.SASL.Password.Set(password))
 
-		client, err := NewKafkaWriterClient(cfg, 1, cfg.Topic, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 		t.Cleanup(client.Close)
 
@@ -76,7 +76,7 @@ func TestNewKafkaWriterClient_ShouldTrackExtendedKafkaClientMetrics(t *testing.T
 	reg := prometheus.NewPedanticRegistry()
 	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
 
-	client, err := NewKafkaWriterClient(cfg, 1, cfg.Topic, log.NewNopLogger(), prefixedReg)
+	client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
@@ -119,7 +119,7 @@ func TestKafkaProducer_ShouldExposeBufferedBytesLimit(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
 
-	client, err := NewKafkaWriterClient(cfg, 1, cfg.Topic, log.NewNopLogger(), prefixedReg)
+	client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
 	require.NoError(t, err)
 
 	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
@@ -152,7 +152,7 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 	reg := prometheus.NewPedanticRegistry()
 	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
 
-	client, err := NewKafkaWriterClient(cfg, 1, cfg.Topic, log.NewNopLogger(), prefixedReg)
+	client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
 	require.NoError(t, err)
 
 	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
@@ -212,7 +212,7 @@ func TestKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.
 	reg := prometheus.NewPedanticRegistry()
 	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
 
-	client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, cfg.Topic, log.NewNopLogger(), prefixedReg)
+	client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), prefixedReg)
 	require.NoError(t, err)
 
 	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
@@ -506,7 +506,7 @@ func TestKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t 
 
 	cfg := createTestKafkaConfig(clusterAddr, topicName)
 	reg := prometheus.NewPedanticRegistry()
-	client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, cfg.Topic, log.NewNopLogger(), reg)
+	client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, reg)

@@ -179,6 +179,20 @@ func TestIngesterPartitionID(t *testing.T) {
 		assert.EqualValues(t, 2, actual)
 	})
 
+	t.Run("with zones and compartments", func(t *testing.T) {
+		actual, err := IngesterPartitionID("ingester-zone-a-set-0-0")
+		require.NoError(t, err)
+		assert.EqualValues(t, 0, actual)
+
+		actual, err = IngesterPartitionID("ingester-zone-a-set-1-0")
+		require.NoError(t, err)
+		assert.EqualValues(t, 0, actual)
+
+		actual, err = IngesterPartitionID("ingester-zone-a-set-0-1")
+		require.NoError(t, err)
+		assert.EqualValues(t, 1, actual)
+	})
+
 	t.Run("should return error if the ingester ID has a non supported format", func(t *testing.T) {
 		_, err := IngesterPartitionID("unknown")
 		require.Error(t, err)
