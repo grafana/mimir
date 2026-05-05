@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unsafe"
 
@@ -1917,6 +1918,48 @@ func TestQuery_ExecDeregistersTrackerOnFailure(t *testing.T) {
 	// The tracker must be deregistered even though we never called q.Close().
 	require.False(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
 	require.NoError(t, testutil.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+"cortex_querier_inflight_query_sampled_count 0\n"), sampledMetric))
+}
+
+func TestQuery_ContextCancellationDeregistersTracker(t *testing.T) {
+	// Verify that when the query context is cancelled and Query.Close() isn't called, the tracker is deregistered
+	// from the InflightMemoryConsumptionTracker.
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{idx="1"} 0+1x5
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	reg := prometheus.NewPedanticRegistry()
+	queryMetrics := stats.NewQueryMetrics(reg)
+	inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.Reg = reg
+	opts.Pedantic = false // We intentionally don't call Close(), so disable pedantic mode.
+	opts.MemoryConsumptionTrackerFactory = inflightTracker
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, queryMetrics, planner)
+	require.NoError(t, err)
+
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		q, err := engine.NewInstantQuery(ctx, storage, nil, "some_metric", timestamp.Time(0))
+		require.NoError(t, err)
+
+		// The tracker should be registered before Exec.
+		require.True(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+
+		// Cancel the context and wait for all async callbacks to finish.
+		cancel()
+		synctest.Wait()
+
+		// The tracker must be deregistered after context cancelled even though we never call q.Close().
+		require.False(t, inflightTracker.IsTracking(q.(*Query).memoryConsumptionTracker))
+	})
 }
 
 func TestQuery_CloseDeregistersTrackerOnSuccess(t *testing.T) {
