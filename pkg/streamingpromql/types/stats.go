@@ -153,14 +153,14 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 	if s.timeRange.IsInstant {
 		newSampleRangeStart = rangeStart
 	}
-	newSamplesRead := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
+	samplesReadIfSubsequentStep := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
 
-	s.allSeries.Add(pointIdx, allSamplesInRange, newSamplesRead, allSamplesInRange)
-	s.queryStats.AddPhysicalSamplesRead(uint64(newSamplesRead))
+	s.allSeries.Add(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange)
+	s.queryStats.AddPhysicalSamplesRead(uint64(samplesReadIfSubsequentStep))
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {
-			subset.Add(pointIdx, allSamplesInRange, newSamplesRead, allSamplesInRange)
+			subset.Add(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange)
 		}
 	}
 }
@@ -432,7 +432,7 @@ func newSubsetStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.
 		return nil, err
 	}
 
-	newSamplesRead, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	samplesReadIfSubsequentStep, err := Int64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -444,15 +444,15 @@ func newSubsetStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.
 
 	return &subsetStats{
 		samplesProcessedPerStep:     samplesProcessed[:timeRange.StepCount],
-		samplesReadIfSubsequentStep: newSamplesRead[:timeRange.StepCount],
+		samplesReadIfSubsequentStep: samplesReadIfSubsequentStep[:timeRange.StepCount],
 		samplesReadIfFirstStep:      samplesReadIfFirstStep[:timeRange.StepCount],
 		memoryConsumptionTracker:    memoryConsumptionTracker,
 	}, nil
 }
 
-func (s *subsetStats) Add(pointIndex int64, samplesProcessed int64, newSamplesRead int64, samplesReadIfFirstStep int64) {
+func (s *subsetStats) Add(pointIndex int64, samplesProcessed int64, samplesReadIfSubsequentStep int64, samplesReadIfFirstStep int64) {
 	s.samplesProcessedPerStep[pointIndex] += samplesProcessed
-	s.samplesReadIfSubsequentStep[pointIndex] += newSamplesRead
+	s.samplesReadIfSubsequentStep[pointIndex] += samplesReadIfSubsequentStep
 	s.samplesReadIfFirstStep[pointIndex] += samplesReadIfFirstStep
 }
 
@@ -474,8 +474,8 @@ func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInner
 	}
 }
 
-func (s *subsetStats) SetFromStepInvariant(samplesProcessed int64, newSamplesRead int64, samplesReadIfFirstStep int64) {
-	s.samplesReadIfSubsequentStep[0] = newSamplesRead
+func (s *subsetStats) SetFromStepInvariant(samplesProcessed int64, samplesReadIfSubsequentStep int64, samplesReadIfFirstStep int64) {
+	s.samplesReadIfSubsequentStep[0] = samplesReadIfSubsequentStep
 	for idx := range s.samplesProcessedPerStep {
 		s.samplesProcessedPerStep[idx] = samplesProcessed
 	}
