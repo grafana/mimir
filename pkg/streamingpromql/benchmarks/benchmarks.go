@@ -94,56 +94,56 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr:  "rate(a_X[1m])",
-			Steps: 10000,
+			Steps: 100,
 		},
 		{
 			Expr: "rate(nh_X[1m])",
 		},
 		{
 			Expr:  "rate(nh_X[1m])",
-			Steps: 10000,
+			Steps: 100,
 		},
 		{
 			Expr: "rate(a_X[1m] smoothed)",
 		},
 		{
 			Expr:  "rate(a_X[1m] smoothed)",
-			Steps: 10000,
+			Steps: 100,
 		},
 		{
 			Expr: "rate(a_X[2h] smoothed)",
 		},
 		{
 			Expr:  "rate(a_X[2h] smoothed)",
-			Steps: 10000,
+			Steps: 100,
 		},
 		{
 			Expr: "delta(a_X[1m] smoothed)",
 		},
 		{
 			Expr:  "delta(a_X[1m] smoothed)",
-			Steps: 10000,
+			Steps: 100,
 		},
 		{
 			Expr: "delta(a_X[2h] smoothed)",
 		},
 		{
 			Expr:  "delta(a_X[2h] smoothed)",
-			Steps: 10000,
+			Steps: 100,
 		},
 		{
 			Expr: "rate(a_X[1m] anchored)",
 		},
 		{
 			Expr:  "rate(a_X[1m] anchored)",
-			Steps: 10000,
+			Steps: 100,
 		},
 		{
 			Expr: "rate(a_X[2h] anchored)",
 		},
 		{
 			Expr:  "rate(a_X[2h] anchored)",
-			Steps: 10000,
+			Steps: 100,
 		},
 		//// Holt-Winters and long ranges.
 		//{
@@ -151,9 +151,11 @@ func TestCases(metricSizes []int) []BenchCase {
 		//},
 		{
 			Expr: "changes(a_X[1d])",
+			Steps: 100,
 		},
 		{
 			Expr: "rate(a_X[1d])",
+			Steps: 100,
 		},
 		// Test a long range histogram. 1d slows tests down too much, so use 1h.
 		{
@@ -210,7 +212,7 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr:  "a_X - b_X",
-			Steps: 10000,
+			Steps: 100,
 		},
 		{
 			Expr: "nh_X + nh_X",
@@ -427,6 +429,7 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr: "sum(sum_over_time(a_X[1d])) / sum(count_over_time(a_X[1d]))",
+			Steps: 100,
 		},
 		// Subset selector elimination cases
 		{
@@ -486,7 +489,7 @@ func TestCases(metricSizes []int) []BenchCase {
 				panic(fmt.Sprintf("invalid test case '%v': configured as instant query with non-zero number of steps %v", c.Expr, c.Steps))
 			}
 
-			if c.Steps >= NumIntervals {
+			if c.Steps*intervalsPerStep >= NumIntervals {
 				// Note that this doesn't check we have enough data to cover any range selectors.
 				panic(fmt.Sprintf("invalid test case '%v' with %v steps: test setup only creates %v steps", c.Expr, c.Steps, NumIntervals))
 			}
@@ -495,7 +498,7 @@ func TestCases(metricSizes []int) []BenchCase {
 		} else {
 			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 0, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
 			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 100, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
-			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 1000, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
+			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 212, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
 			// Important: if adding test cases with larger numbers of steps, make sure to adjust NumIntervals as well.
 		}
 	}

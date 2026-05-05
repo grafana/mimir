@@ -109,16 +109,44 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.Name(), func(t *testing.T) {
-			start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
-			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
-			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
-			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
+			start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0).In(time.UTC)
+			end := time.Unix(int64(NumIntervals*intervalSeconds), 0).In(time.UTC)
+			//r := end.Sub(start)
+
+			//fmt.Printf("START: %s, END: %s, RANGE: %s\n", start, end, r)
+
+			newStart := time.Unix(int64((NumIntervals-c.Steps*intervalsPerStep)*intervalSeconds), 0).In(time.UTC)
+			newEnd := time.Unix(int64(NumIntervals*intervalSeconds), 0).In(time.UTC)
+			//newR := newEnd.Sub(newStart)
+
+			//fmt.Printf("NEW START: %s, NEW END: %s, NEW RANGE: %s\n", newStart, newEnd, newR)
+
+			var (
+				prometheusResult *promql.Result
+				mimirResult      *promql.Result
+
+				prometheusClose func()
+				mimirClose      func()
+			)
+
+			if false {
+				prometheusResult, prometheusClose = c.Run(ctx, t, start, end, interval, prometheusEngine, q)
+				mimirResult, mimirClose = c.Run(ctx, t, start, end, interval, mimirEngine, q)
+			} else {
+				prometheusResult, prometheusClose = c.Run(ctx, t, newStart, newEnd, step, prometheusEngine, q)
+				mimirResult, mimirClose = c.Run(ctx, t, newStart, newEnd, step, mimirEngine, q)
+			}
+
+			if prometheusClose != nil {
+				t.Cleanup(prometheusClose)
+			}
+
+			if mimirClose != nil {
+				t.Cleanup(mimirClose)
+			}
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, c.IgnoreAnnotationDifferences)
-
-			prometheusClose()
-			mimirClose()
 		})
 	}
 }

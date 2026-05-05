@@ -35,12 +35,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const intervalSeconds = 10
-const interval = intervalSeconds * time.Second
+const (
+	step             = 5 * time.Minute
+	intervalsPerStep = int(step / interval)
+	intervalSeconds  = 10
+	interval         = intervalSeconds * time.Second
+	// The longest-range test we run has 1000 steps with a 2h range selector, so make sure we have slightly more data than that.
+	NumIntervals = 1000*intervalsPerStep + int(2*time.Hour/interval) + 1
 
-const NumIntervals = 10000 + int(time.Minute/interval) + 1 // The longest-range test we run has 10000 steps with a 1m range selector, so make sure we have slightly more data than that.
-
-const UserID = "benchmark-tenant"
+	UserID = "benchmark-tenant"
+)
 
 type IngesterConfigOption func(*ingester.Config)
 
@@ -288,11 +292,18 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 
 			req.Timeseries[metricIdx] = series
 		}
+
 		if _, err := ing.Push(ctx, req); err != nil {
 			return fmt.Errorf("failed to push samples to ingester: %w", err)
 		}
 
 		ing.Flush()
+
+		startTs := time.UnixMilli(int64(start) * interval.Milliseconds()).In(time.UTC)
+		endTs := time.UnixMilli(int64(end) * interval.Milliseconds()).In(time.UTC)
+
+		fmt.Printf("GENERATED START: %s, GENERATED END: %s\n", startTs, endTs)
+
 	}
 
 	return nil
