@@ -152,6 +152,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
                .addTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true, sort=sortAscending)
                .addTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending),
 
+      addShowNativeLatencyVariable(default='classic', nativeOnly=false)::
+        if nativeOnly
+        then self
+        else super.addShowNativeLatencyVariable(default),
+
       addActiveUserSelectorTemplates()::
         self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", %s=~"$namespace"}' % [$._config.per_cluster_label, $._config.per_namespace_label], 'user', sort=sortNaturalAscending),
 
@@ -302,8 +307,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  ncLatencyPanel(metricName, selector, multiplier='', quantile=[99, 50])::
-    super.latencyPanelNativeHistogram(metricName, selector, multiplier, quantile) + {
+  ncLatencyPanel(metricName, selector, multiplier='', quantile=[99, 50], nativeOnly=false)::
+    super.latencyPanelNativeHistogram(metricName, selector, multiplier, quantile, false, nativeOnly) + {
       fieldConfig+: {
         defaults+: { unit: 's' },
       },
@@ -1277,7 +1282,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
-  getObjectStoreRows(title, component):: [
+  getObjectStoreRows(title, component, nativeOnly=false):: [
     $.row(title)
     .addPanel(
       $.timeseriesPanel('Operations / sec') +
@@ -1292,27 +1297,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Attributes') +
-      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="attributes"' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="attributes"' % [$.namespaceMatcher(), component], nativeOnly=nativeOnly),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Exists') +
-      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="exists"' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="exists"' % [$.namespaceMatcher(), component], nativeOnly=nativeOnly),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Get') +
-      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get"' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get"' % [$.namespaceMatcher(), component], nativeOnly=nativeOnly),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: GetRange') +
-      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get_range"' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get_range"' % [$.namespaceMatcher(), component], nativeOnly=nativeOnly),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Upload') +
-      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="upload"' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="upload"' % [$.namespaceMatcher(), component], nativeOnly=nativeOnly),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Delete') +
-      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="delete"' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="delete"' % [$.namespaceMatcher(), component], nativeOnly=nativeOnly),
     )
     .splitIntoLines([4, 4]),
   ],

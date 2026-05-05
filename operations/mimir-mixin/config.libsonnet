@@ -220,6 +220,8 @@
 
     // Controls whether dashboards show classic or native latency histograms. Allowed values: 'classic' (default), 'native'.
     dashboards_default_latency_mode: 'classic',
+    // If enabled, only renders native version of queries in dashboards.
+    dashboards_latency_mode_native_only: false,
 
     // Used to add extra labels to all alerts. Careful: takes precedence over default labels.
     alert_extra_labels: {},

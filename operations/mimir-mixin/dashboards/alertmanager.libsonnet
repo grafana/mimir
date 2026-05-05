@@ -3,13 +3,14 @@ local filename = 'mimir-alertmanager.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    local nativeOnly = $._config.dashboards_latency_mode_native_only;
     local jobSelector = $.jobSelector($._config.job_names.alertmanager);
     local jobInstanceSelector = jobSelector + [utils.selector.noop($._config.per_instance_label)];
     local jobIntegrationSelector = jobSelector + [utils.selector.noop('integration')];
     assert std.md5(filename) == 'b0d38d318bbddd80476246d4930f9e55' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Alertmanager') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addShowNativeLatencyVariable($.latencyVariableDefault())
+    .addShowNativeLatencyVariable($.latencyVariableDefault(), nativeOnly=nativeOnly)
     .addRow(
       ($.row('Headlines') + {
          height: '100px',
@@ -33,11 +34,11 @@ local filename = 'mimir-alertmanager.json';
       $.row('Alertmanager Distributor')
       .addPanel(
         $.timeseriesPanel('QPS') +
-        $.qpsPanelNativeHistogram($.queries.alertmanager.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.alertmanager) + [alertmanagerGRPCRoutesRegex]))
+        $.qpsPanelNativeHistogram($.queries.alertmanager.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.alertmanager) + [alertmanagerGRPCRoutesRegex]), nativeOnly=nativeOnly)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.alertmanager.requestsPerSecondMetric, $.jobSelector($._config.job_names.alertmanager) + [alertmanagerGRPCRoutesRegex])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.alertmanager.requestsPerSecondMetric, $.jobSelector($._config.job_names.alertmanager) + [alertmanagerGRPCRoutesRegex], nativeOnly=nativeOnly)
       )
     )
     .addRow(
@@ -105,7 +106,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.ncLatencyPanel('cortex_alertmanager_notification_latency_seconds', '%s' % $.jobMatcher($._config.job_names.alertmanager))
+        $.ncLatencyPanel('cortex_alertmanager_notification_latency_seconds', '%s' % $.jobMatcher($._config.job_names.alertmanager), nativeOnly=nativeOnly)
       )
     )
     .addRowIf(
@@ -113,15 +114,15 @@ local filename = 'mimir-alertmanager.json';
       $.row('Configuration API (gateway) + Alertmanager UI')
       .addPanel(
         $.timeseriesPanel('QPS') +
-        $.qpsPanelNativeHistogram($.queries.alertmanager.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', '%s' % $.queries.alertmanager_http_routes_regex)]))
+        $.qpsPanelNativeHistogram($.queries.alertmanager.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', '%s' % $.queries.alertmanager_http_routes_regex)]), nativeOnly=nativeOnly)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', '%s' % $.queries.alertmanager_http_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', '%s' % $.queries.alertmanager_http_routes_regex)], nativeOnly=nativeOnly)
       )
     )
     .addRows(
-      $.getObjectStoreRows('Alertmanager Configuration Object Store (Alertmanager accesses)', 'alertmanager-storage')
+      $.getObjectStoreRows('Alertmanager Configuration Object Store (Alertmanager accesses)', 'alertmanager-storage', nativeOnly=nativeOnly)
     )
     .addRow(
       $.row('Replication')
@@ -196,7 +197,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.timeseriesPanel('Initial sync duration') +
-        $.ncLatencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '%s' % $.jobMatcher($._config.job_names.alertmanager)) + {
+        $.ncLatencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '%s' % $.jobMatcher($._config.job_names.alertmanager), nativeOnly=nativeOnly) + {
           targets: [
             target {
               interval: '1m',
