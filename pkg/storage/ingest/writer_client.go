@@ -156,6 +156,13 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgoOpts = append(kgoOpts, kgo.DefaultProduceTopic(kafkaCfg.Topic))
 	}
 
+	if codecs := kafkaProducerCompressionFromConfig(kafkaCfg.ProducerCompression); codecs != nil {
+		// Override the franz-go default (snappy with no-compression fallback) when the operator
+		// has explicitly configured a producer compression codec. This is required for Kafka-compatible
+		// backends that don't support snappy, such as Azure Event Hub.
+		kgoOpts = append(kgoOpts, kgo.ProducerBatchCompression(codecs...))
+	}
+
 	return kgo.NewClient(kgoOpts...)
 }
 
@@ -169,6 +176,28 @@ type KafkaProducerClient interface {
 }
 
 // KafkaProducer is a KafkaProducerClient wrapper exposing some higher level features and metrics useful for producers.
+
+// kafkaProducerCompressionFromConfig translates the configured producer compression codec name
+// into a franz-go CompressionCodec preference list. An empty config value returns nil so that
+// the franz-go default (snappy with no-compression fallback) is preserved.
+func kafkaProducerCompressionFromConfig(name string) []kgo.CompressionCodec {
+	switch name {
+	case kafkaCompressionNone:
+		return []kgo.CompressionCodec{kgo.NoCompression()}
+	case kafkaCompressionGzip:
+		return []kgo.CompressionCodec{kgo.GzipCompression()}
+	case kafkaCompressionSnappy:
+		return []kgo.CompressionCodec{kgo.SnappyCompression()}
+	case kafkaCompressionLz4:
+		return []kgo.CompressionCodec{kgo.Lz4Compression()}
+	case kafkaCompressionZstd:
+		return []kgo.CompressionCodec{kgo.ZstdCompression()}
+	default:
+		return nil
+	}
+}
+
+// KafkaProducer is a kgo.Client wrapper exposing some higher level features and metrics useful for producers.
 type KafkaProducer struct {
 	client KafkaProducerClient
 
