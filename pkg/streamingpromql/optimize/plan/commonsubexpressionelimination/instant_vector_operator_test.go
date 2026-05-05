@@ -915,18 +915,18 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 }
 
 func requireStats(t *testing.T, o types.Operator, ctx context.Context, expectedProcessed int64, expectedRead int64) {
-	stats, err := o.Stats(ctx)
+	operatorStats, err := o.Stats(ctx)
 	require.NoError(t, err)
 
-	require.False(t, stats.HasSubsets(), "subsets should not be present in statistics returned by duplication consumer")
+	require.False(t, operatorStats.HasSubsets(), "subsets should not be present in statistics returned by duplication consumer")
 
-	processed, processedPerStep := stats.GetSamplesProcessed()
-	require.Equal(t, expectedProcessed, processed)
-	require.Equal(t, []int64{expectedProcessed}, processedPerStep)
+	promStats, err := operatorStats.FinalizeAndComputePrometheusStats()
+	require.NoError(t, err)
 
-	read, readPerStep := stats.GetSamplesRead()
-	require.Equal(t, expectedRead, read)
-	require.Equal(t, []int64{expectedRead}, readPerStep)
+	require.Equal(t, expectedProcessed, promStats.TotalSamples)
+	require.Equal(t, []int64{expectedProcessed}, promStats.TotalSamplesPerStep)
+	require.Equal(t, expectedRead, promStats.SamplesRead)
+	require.Equal(t, []int64{expectedRead}, promStats.SamplesReadPerStep)
 
-	stats.Close()
+	operatorStats.Close()
 }

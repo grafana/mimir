@@ -17,5 +17,6 @@ message EncodedOperatorEvaluationStats {
 
 message EncodedSubsetStats {
   repeated int64 samplesProcessedPerStep = 1;
-  repeated int64 newSamplesReadPerStep = 2;
+  repeated int64 samplesReadIfSubsequentStep = 2;
+  repeated int64 samplesReadIfFirstStep = 3;
 }
