@@ -4,19 +4,17 @@ package ingester
 
 import (
 	"context"
-	"fmt"
-	"slices"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/kv/consul"
-	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/stretchr/testify/assert"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
@@ -33,11 +31,8 @@ func TestNewNullIngester_RequiresCompartments(t *testing.T) {
 	require.EqualError(t, err, "compartments must be enabled for null ingester")
 }
 
-func TestNullIngester_RegistersAndDeregistersInPartitionRing(t *testing.T) {
+func TestNullIngester_StartsAndStops(t *testing.T) {
 	ctx := context.Background()
-
-	kvClient, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	_, kafkaAddr := testkafka.CreateCluster(t, 1, "test-comp-0")
 
@@ -49,30 +44,72 @@ func TestNullIngester_RegistersAndDeregistersInPartitionRing(t *testing.T) {
 	cfg.IngestStorageConfig.Compartments.TopicFormat = "test-comp-<compartment-id>"
 	cfg.IngestStorageConfig.Compartments.ReadCompartmentID = 0
 	cfg.IngestStorageConfig.Compartments.WriteKafkaAddressFormat = kafkaAddr
-	cfg.IngesterPartitionRing.KVStore.Mock = kvClient
-	cfg.IngesterPartitionRing.MinOwnersDuration = 0
-	cfg.IngesterPartitionRing.lifecyclerPollingInterval = 10 * time.Millisecond
-
-	ringName := fmt.Sprintf("%s-rc-%d", PartitionRingName, 0)
-	ringKey := fmt.Sprintf("%s-rc-%d", PartitionRingKey, 0)
-	watcher := ring.NewPartitionRingWatcher(ringName, ringKey, kvClient, log.NewNopLogger(), nil)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher)) })
 
 	ni, err := NewNullIngester(cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ni))
-
-	// After startup, partition 0 should be ACTIVE and owned by this instance.
-	require.Eventually(t, func() bool {
-		pr := watcher.PartitionRing()
-		return slices.Contains(pr.ActivePartitionIDs(), int32(0)) &&
-			slices.Equal(pr.PartitionOwnerIDs(0), []string{"ingester-zone-a-0"})
-	}, 5*time.Second, 10*time.Millisecond, "partition 0 should be ACTIVE and owned by ingester-zone-a-0")
-
-	// After stop, the instance should be removed as owner.
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, ni))
-	require.Eventually(t, func() bool {
-		return slices.Equal(watcher.PartitionRing().PartitionOwnerIDs(0), []string{})
-	}, 5*time.Second, 10*time.Millisecond, "partition 0 should have no owners after stop")
+}
+
+func TestNullIngester_PushToStorageAndReleaseRequest_TracksIngestedSamples(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	ni := &NullIngester{
+		logger:  log.NewNopLogger(),
+		metrics: newIngesterMetrics(reg, false, func() *InstanceLimits { return nil }, nil, nil, nil),
+	}
+
+	push := func(t *testing.T, tenantID string, req *mimirpb.WriteRequest) {
+		t.Helper()
+		ctx := user.InjectOrgID(context.Background(), tenantID)
+		require.NoError(t, ni.PushToStorageAndReleaseRequest(ctx, req))
+	}
+
+	// Tenant A: 2 series, 3 float samples + 1 histogram = 4 samples.
+	push(t, "tenant-a", &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 1}, {Value: 2, TimestampMs: 2}},
+			}},
+			{TimeSeries: &mimirpb.TimeSeries{
+				Samples:    []mimirpb.Sample{{Value: 3, TimestampMs: 3}},
+				Histograms: []mimirpb.Histogram{{Timestamp: 4}},
+			}},
+		},
+	})
+
+	// Tenant B: 1 series, 1 sample.
+	push(t, "tenant-b", &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 1}},
+			}},
+		},
+	})
+
+	// Push again for tenant A to ensure the counter accumulates: 1 sample.
+	push(t, "tenant-a", &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Samples: []mimirpb.Sample{{Value: 5, TimestampMs: 5}},
+			}},
+		},
+	})
+
+	expected := `
+		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+		# TYPE cortex_ingester_ingested_samples_total counter
+		cortex_ingester_ingested_samples_total{user="tenant-a"} 5
+		cortex_ingester_ingested_samples_total{user="tenant-b"} 1
+	`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected), "cortex_ingester_ingested_samples_total"))
+}
+
+func TestNullIngester_PushToStorageAndReleaseRequest_RequiresTenantInContext(t *testing.T) {
+	ni := &NullIngester{
+		logger:  log.NewNopLogger(),
+		metrics: newIngesterMetrics(prometheus.NewRegistry(), false, func() *InstanceLimits { return nil }, nil, nil, nil),
+	}
+
+	err := ni.PushToStorageAndReleaseRequest(context.Background(), &mimirpb.WriteRequest{})
+	require.Error(t, err)
 }

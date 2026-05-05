@@ -1551,7 +1551,7 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
 		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
-		NullIngester:                     {API, MemberlistKV, IngesterPartitionRing},
+		NullIngester:                     {API, MemberlistKV},
 		MemberlistKV:                     {API, Vault},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
