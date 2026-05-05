@@ -151,15 +151,15 @@ type searchResultSender func(*client.SearchResultBatch) error
 // streamSearchResults reads from rs in batches of searchBatchSize and emits
 // each batch via send. Returns rs.Err() at termination.
 func streamSearchResults(rs storage.SearchResultSet, send searchResultSender) error {
-	batch := &client.SearchResultBatch{Results: make([]*client.SearchResultBatch_Result, 0, searchBatchSize)}
+	batch := &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
 	for rs.Next() {
 		v := rs.At()
-		batch.Results = append(batch.Results, &client.SearchResultBatch_Result{Value: v.Value, Score: v.Score})
+		batch.Results = append(batch.Results, client.SearchResultBatch_Result{Value: v.Value, Score: v.Score})
 		if len(batch.Results) >= searchBatchSize {
 			if err := send(batch); err != nil {
 				return err
 			}
-			batch = &client.SearchResultBatch{Results: make([]*client.SearchResultBatch_Result, 0, searchBatchSize)}
+			batch = &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
 		}
 	}
 	if err := rs.Err(); err != nil {
