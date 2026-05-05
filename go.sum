@@ -702,8 +702,8 @@ github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:
 github.com/ianlancetaylor/demangle v0.0.0-20230524184225-eabc099b10ab/go.mod h1:gx7rwoVhcfuVKG5uya9Hs3Sxj7EIvldVofAWIUtGouw=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
-github.com/influxdata/influxdb/v2 v2.8.0 h1:eMF4RH3f+xnonwUAODav4EJxRD6164dbSqPoKp0wFIg=
-github.com/influxdata/influxdb/v2 v2.8.0/go.mod h1:o9EF50Zom/8MX+7zuovTmGSqKNvLRmHrz/A3dr0E6o4=
+github.com/influxdata/influxdb/v2 v2.9.0 h1:xI4nmXfm0t17IGN4CuMvF+uKimuCzeDJJljBxHvCEAo=
+github.com/influxdata/influxdb/v2 v2.9.0/go.mod h1:WuiBlh8XhNatrmevgBPNVfdRVcLpl8nirYT5kHiKEKU=
 github.com/influxdata/tdigest v0.0.2-0.20210216194612-fc98d27c9e8b h1:i44CesU68ZBRvtCjBi3QSosCIKrjmMbYlQMFAwVLds4=
 github.com/influxdata/tdigest v0.0.2-0.20210216194612-fc98d27c9e8b/go.mod h1:Z0kXnxzbTC2qrx4NaIzYkE1k66+6oEDQTvL95hQFh5Y=
 github.com/ionos-cloud/sdk-go/v6 v6.3.6 h1:l/TtKgdQ1wUH3DDe2SfFD78AW+TJWdEbDpQhHkWd6CM=

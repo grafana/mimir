@@ -829,8 +829,8 @@ github.com/hashicorp/vault/api/auth/userpass
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
 github.com/inconshreveable/mousetrap
-# github.com/influxdata/influxdb/v2 v2.8.0
-## explicit; go 1.24.0
+# github.com/influxdata/influxdb/v2 v2.9.0
+## explicit; go 1.25.9
 github.com/influxdata/influxdb/v2/kit/io
 github.com/influxdata/influxdb/v2/models
 github.com/influxdata/influxdb/v2/pkg/escape
