@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1023,6 +1024,80 @@ func (t *testLogger) Log(keyvals ...interface{}) error {
 
 	t.logMessages = append(t.logMessages, msg)
 	return nil
+}
+
+func TestQueryStatsLogFieldsDocumentedInRunbook(t *testing.T) {
+	// This test ensures that every field emitted in the "query stats" log line is documented in the
+	// runbook. If you add a new field to reportQueryStats() in handler.go, either add it to the
+	// runbook or (for purely infrastructural fields that need no explanation) add it to
+	// undocumentedFields below.
+
+	roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		// Populate all conditional QueryDetails fields so the log line includes every field.
+		details := querymiddleware.QueryDetailsFromContext(req.Context())
+		now := time.Now()
+		details.MinT = now.Add(-time.Hour)
+		details.MaxT = now
+		details.ResultsCacheHitBytes = 100
+		details.ResultsCacheMissBytes = 200
+		details.ResponseSeriesCount = 5
+		details.ResponseSamplesCount = 50
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+		}, nil
+	})
+
+	ctx := context.Background()
+	ctx = user.InjectOrgID(ctx, "test-org")
+	ctx = api.ContextWithReadConsistencyLevel(ctx, "strong")
+	ctx = api.ContextWithReadConsistencyMaxDelay(ctx, time.Minute)
+
+	logger := &testLogger{}
+	handler := NewHandler(HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024}, roundTripper, logger, prometheus.NewRegistry())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up&start=1&end=2&step=1", nil)
+	req = req.WithContext(ctx)
+
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	var queryStatsMsg map[string]interface{}
+	for _, msg := range logger.logMessages {
+		if msg["msg"] == "query stats" {
+			queryStatsMsg = msg
+			break
+		}
+	}
+	require.NotNil(t, queryStatsMsg, "expected a 'query stats' log message")
+
+	runbookPath := filepath.Join("..", "..", "..", "docs", "sources", "mimir", "manage", "mimir-runbooks", "_index.md")
+	runbookBytes, err := os.ReadFile(runbookPath)
+	require.NoError(t, err, "could not read runbook file")
+
+	// Narrow the check to the "query stats" section of the runbook only.
+	runbookStr := string(runbookBytes)
+	sectionStart := strings.Index(runbookStr, "When looking at `msg=\"query stats\"` consider the following attributes;")
+	require.NotEqual(t, -1, sectionStart, "could not find 'query stats' section in runbook")
+	sectionEnd := strings.Index(runbookStr[sectionStart:], "When looking at `msg=\"evaluation stats\"` consider the following attributes;")
+	require.NotEqual(t, -1, sectionEnd, "could not find end of 'query stats' section in runbook")
+	queryStatsSection := runbookStr[sectionStart : sectionStart+sectionEnd]
+
+	// These fields are standard HTTP / logger-infrastructure fields that don't need runbook documentation.
+	undocumentedFields := map[string]struct{}{
+		"msg":        {},
+		"component":  {},
+		"method":     {},
+		"path":       {},
+		"route_name": {},
+		"level":      {},
+	}
+
+	for field := range queryStatsMsg {
+		if _, excluded := undocumentedFields[field]; excluded {
+			continue
+		}
+		assert.Contains(t, queryStatsSection, "- "+field, "field %q logged in 'query stats' is not documented in the runbook", field)
+	}
 }
 
 func TestFormatRequestHeaders(t *testing.T) {
