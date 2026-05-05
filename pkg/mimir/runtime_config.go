@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.yaml.in/yaml/v3"
@@ -204,6 +205,7 @@ func runtimeConfigHandler(runtimeCfgManager *runtimeconfig.Manager, defaultLimit
 
 // NewRuntimeManager returns a runtimeconfig.Manager, a services.Service that must be explicitly started to perform any work.
 // cfg is initialized as necessary, before being passed to runtimeconfig.New.
+// reg must not have any prefix applied; the "cortex_" prefix is added internally where needed.
 func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logger log.Logger) (*runtimeconfig.Manager, error) {
 	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
 	cfg.RuntimeConfig.Loader = loader.load
@@ -212,5 +214,15 @@ func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logg
 	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Ingester.DefaultLimits)
 	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Distributor.DefaultLimits)
-	return runtimeconfig.New(cfg.RuntimeConfig, name, reg, logger)
+	return runtimeconfig.New(cfg.RuntimeConfig, name, prometheus.WrapRegistererWithPrefix("cortex_", reg), runtimeConfigHTTPRoundTripper(cfg, reg, logger), logger)
+}
+
+func runtimeConfigHTTPRoundTripper(cfg *Config, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
+	label := cfg.RuntimeConfigClient.ClusterValidation.Label
+	if label == "" {
+		return http.DefaultTransport
+	}
+	invalidClusterValidations := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "runtime-config", util.HTTPProtocol)
+	reporter := util.NewInvalidClusterValidationReporter(label, invalidClusterValidations, logger)
+	return middleware.ClusterValidationRoundTripper(label, reporter, http.DefaultTransport)
 }

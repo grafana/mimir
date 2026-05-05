@@ -434,7 +434,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		return nil, nil
 	}
 
-	serv, err := NewRuntimeManager(&t.Cfg, "mimir-runtime-config", prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
+	serv, err := NewRuntimeManager(&t.Cfg, "mimir-runtime-config", t.Registerer, util_log.Logger)
 	if err != nil {
 		return nil, err
 	}

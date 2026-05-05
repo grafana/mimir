@@ -141,6 +141,7 @@ type Config struct {
 	Alertmanager        alertmanager.MultitenantAlertmanagerConfig `yaml:"alertmanager"`
 	AlertmanagerStorage alertstore.Config                          `yaml:"alertmanager_storage"`
 	RuntimeConfig       runtimeconfig.Config                       `yaml:"runtime_config"`
+	RuntimeConfigClient RuntimeConfigClientConfig                  `yaml:"runtime_config_client"`
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
@@ -209,6 +210,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Alertmanager.RegisterFlags(f, logger)
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
+	c.RuntimeConfigClient.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
@@ -241,6 +243,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
 			"usage_tracker_client":             &c.Distributor.UsageTrackerClient.GRPCClientConfig.ClusterValidation,
+			"runtime_config_client":            &c.RuntimeConfigClient.ClusterValidation,
 		},
 	}
 }
@@ -807,6 +810,16 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 		}
 	}
 	return nil
+}
+
+// RuntimeConfigClientConfig holds the client configuration for fetching runtime config via HTTP.
+type RuntimeConfigClientConfig struct {
+	ClusterValidation clusterutil.ClusterValidationConfig `yaml:"cluster_validation" category:"experimental"`
+}
+
+// RegisterFlags registers flags.
+func (c *RuntimeConfigClientConfig) RegisterFlags(f *flag.FlagSet) {
+	c.ClusterValidation.RegisterFlagsWithPrefix("runtime-config.client.cluster-validation.", f)
 }
 
 type CommonConfig struct {
