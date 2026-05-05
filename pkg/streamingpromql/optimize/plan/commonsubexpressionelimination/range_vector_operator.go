@@ -474,7 +474,7 @@ func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
 	return true
 }
 
-func (b *RangeVectorDuplicationBuffer) QueryStats(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
+func (b *RangeVectorDuplicationBuffer) Stats(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
 	if !b.allConsumersFinalized() {
 		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
 	}
@@ -653,7 +653,7 @@ func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) error {
 }
 
 func (d *RangeVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return d.Buffer.QueryStats(ctx, d)
+	return d.Buffer.Stats(ctx, d)
 }
 
 func (d *RangeVectorDuplicationConsumer) Close() {
