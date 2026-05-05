@@ -1491,8 +1491,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	//   - groupPointerSlicePool (for inner groups): 5 input series → cap=8 after bucketed pool rounding → 8 pointers (64 bytes)
 	sumGroupPointerSlicesOverhead := uint64(9 * unsafe.Sizeof(uintptr(0)))
 
-	rangeQueryStatsMemoryConsumption := 2 * (8 * types.Int64Size) // Two sample counter slices (one for floats, one for histograms), each with capacity 8 (5 steps, rounded up to nearest power of two)
-	instantQueryStatsMemoryConsumption := 2 * types.Int64Size     // Two sample counter slices (one for floats, one for histograms), each with capacity 1
+	rangeQueryStatsMemoryConsumption := 3 * (8 * types.Int64Size) // Three sample counter slices (one for samples processed, one for samples read if first step, one for samples read if subsequent step), each with capacity 8 (5 steps, rounded up to nearest power of two)
+	instantQueryStatsMemoryConsumption := 3 * types.Int64Size     // Three sample counter slices (same as above), each with capacity 1
 
 	testCases := map[string]struct {
 		expr                     string
@@ -1781,9 +1781,8 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
 
-	limit := 32*types.FPointSize + 4*types.SeriesMetadataSize + 3*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())
 	limits := NewStaticQueryLimitsProvider()
-	limits.MaxEstimatedMemoryConsumptionPerQuery = limit
+	limits.MaxEstimatedMemoryConsumptionPerQuery = 800
 	opts.Limits = limits
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -1858,7 +1857,7 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 		reg,
 		spanStubs[0],
 		0,
-		77,
+		85,
 		"instant",
 		expr,
 		timestamp.Time(0),

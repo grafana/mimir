@@ -107,7 +107,17 @@ func (d *Duplicate) ExpressionPosition() (posrange.PositionRange, error) {
 	return d.Inner.ExpressionPosition()
 }
 
-func (d *Duplicate) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+func (d *Duplicate) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	innerResultType, err := d.Inner.ResultType()
+	if err != nil {
+		return 0, err
+	}
+
+	if !timeRange.IsInstant && innerResultType == parser.ValueTypeMatrix {
+		// Range vector expression in a range query
+		return planning.QueryPlanV11, nil
+	}
+
 	return planning.QueryPlanVersionZero, nil
 }
 

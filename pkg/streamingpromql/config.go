@@ -38,15 +38,16 @@ type EngineOpts struct {
 
 	Limits QueryLimitsProvider `yaml:"-"`
 
-	EnablePruneToggles                     bool `yaml:"enable_prune_toggles" category:"experimental"`
-	EnableCommonSubexpressionElimination   bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
-	EnableSubsetSelectorElimination        bool `yaml:"enable_subset_selector_elimination" category:"experimental"`
-	EnableNarrowBinarySelectors            bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
-	EnableEliminateDeduplicateAndMerge     bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
-	EnableReduceMatchers                   bool `yaml:"enable_reduce_matchers" category:"experimental"`
-	EnableProjectionPushdown               bool `yaml:"enable_projection_pushdown" category:"experimental"`
-	EnableMultiAggregation                 bool `yaml:"enable_multi_aggregation" category:"experimental"`
-	EnableRemoveStaticallyEmptyExpressions bool `yaml:"enable_remove_statically_empty_expressions" category:"experimental"`
+	EnablePruneToggles                                        bool `yaml:"enable_prune_toggles" category:"experimental"`
+	EnableCommonSubexpressionElimination                      bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
+	EnableSubsetSelectorElimination                           bool `yaml:"enable_subset_selector_elimination" category:"experimental"`
+	EnableRangeQueryRangeVectorCommonSubexpressionElimination bool `yaml:"enable_range_query_range_vector_common_subexpression_elimination" category:"experimental"`
+	EnableNarrowBinarySelectors                               bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
+	EnableEliminateDeduplicateAndMerge                        bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
+	EnableReduceMatchers                                      bool `yaml:"enable_reduce_matchers" category:"experimental"`
+	EnableProjectionPushdown                                  bool `yaml:"enable_projection_pushdown" category:"experimental"`
+	EnableMultiAggregation                                    bool `yaml:"enable_multi_aggregation" category:"experimental"`
+	EnableRemoveStaticallyEmptyExpressions                    bool `yaml:"enable_remove_statically_empty_expressions" category:"experimental"`
 
 	RangeVectorSplitting RangeVectorSplittingConfig `yaml:"range_vector_splitting" category:"experimental"`
 }
@@ -70,6 +71,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnablePruneToggles, "querier.mimir-query-engine.enable-prune-toggles", true, "Enable pruning query expressions that are toggled off with constants.")
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
 	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", false, "Enable subset selector elimination when evaluating queries.")
+	f.BoolVar(&o.EnableRangeQueryRangeVectorCommonSubexpressionElimination, "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination", false, "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", true, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
@@ -122,14 +124,15 @@ func NewTestEngineOpts() EngineOpts {
 		Logger:   log.NewNopLogger(),
 		Limits:   NewStaticQueryLimitsProvider(),
 
-		EnablePruneToggles:                     true,
-		EnableCommonSubexpressionElimination:   true,
-		EnableSubsetSelectorElimination:        true,
-		EnableNarrowBinarySelectors:            true,
-		EnableEliminateDeduplicateAndMerge:     true,
-		EnableReduceMatchers:                   true,
-		EnableProjectionPushdown:               true,
-		EnableMultiAggregation:                 true,
-		EnableRemoveStaticallyEmptyExpressions: true,
+		EnablePruneToggles:                                        true,
+		EnableCommonSubexpressionElimination:                      true,
+		EnableSubsetSelectorElimination:                           true,
+		EnableNarrowBinarySelectors:                               true,
+		EnableEliminateDeduplicateAndMerge:                        true,
+		EnableReduceMatchers:                                      true,
+		EnableProjectionPushdown:                                  true,
+		EnableMultiAggregation:                                    true,
+		EnableRemoveStaticallyEmptyExpressions:                    true,
+		EnableRangeQueryRangeVectorCommonSubexpressionElimination: true,
 	}
 }

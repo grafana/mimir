@@ -268,7 +268,12 @@ func (a *API) RegisterAPI(actualCfg interface{}, defaultCfg interface{}, buildIn
 
 	a.RegisterRoute("/config", a.cfg.configHandler(actualCfg, defaultCfg), false, true, "GET")
 	a.RegisterRoute("/", indexHandler(a.indexPage), false, true, "GET")
-	a.RegisterRoutesWithPrefix("/static/", http.FileServer(http.FS(staticFiles)), false, true, 0, "GET")
+	// http.FileServer serves files relative to the embed.FS root, where assets live under "static/".
+	// The dskit server registers all routes on a subrouter rooted at -server.path-prefix, so when a
+	// path prefix is configured, r.URL.Path still includes it (e.g. "/mimir/static/foo.css") and
+	// FileServer would look up "mimir/static/foo.css" in the FS and 404. Stripping the prefix here
+	// ensures FileServer always sees "/static/...". When ServerPrefix is empty, this is a no-op.
+	a.RegisterRoutesWithPrefix("/static/", http.StripPrefix(a.cfg.ServerPrefix, http.FileServer(http.FS(staticFiles))), false, true, 0, "GET")
 	a.RegisterRoute("/debug/fgprof", fgprof.Handler(), false, true, "GET")
 	a.RegisterRoute("/api/v1/status/buildinfo", buildInfoHandler, false, true, "GET")
 	a.RegisterRoute("/api/v1/status/config", a.cfg.statusConfigHandler(), false, true, "GET")

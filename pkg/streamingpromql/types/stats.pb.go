@@ -77,8 +77,9 @@ func (m *EncodedOperatorEvaluationStats) GetSubsets() []EncodedSubsetStats {
 }
 
 type EncodedSubsetStats struct {
-	SamplesProcessedPerStep []int64 `protobuf:"varint,1,rep,packed,name=samplesProcessedPerStep,proto3" json:"samplesProcessedPerStep,omitempty"`
-	NewSamplesReadPerStep   []int64 `protobuf:"varint,2,rep,packed,name=newSamplesReadPerStep,proto3" json:"newSamplesReadPerStep,omitempty"`
+	SamplesProcessedPerStep     []int64 `protobuf:"varint,1,rep,packed,name=samplesProcessedPerStep,proto3" json:"samplesProcessedPerStep,omitempty"`
+	SamplesReadIfSubsequentStep []int64 `protobuf:"varint,2,rep,packed,name=samplesReadIfSubsequentStep,proto3" json:"samplesReadIfSubsequentStep,omitempty"`
+	SamplesReadIfFirstStep      []int64 `protobuf:"varint,3,rep,packed,name=samplesReadIfFirstStep,proto3" json:"samplesReadIfFirstStep,omitempty"`
 }
 
 func (m *EncodedSubsetStats) Reset()      { *m = EncodedSubsetStats{} }
@@ -120,9 +121,16 @@ func (m *EncodedSubsetStats) GetSamplesProcessedPerStep() []int64 {
 	return nil
 }
 
-func (m *EncodedSubsetStats) GetNewSamplesReadPerStep() []int64 {
+func (m *EncodedSubsetStats) GetSamplesReadIfSubsequentStep() []int64 {
 	if m != nil {
-		return m.NewSamplesReadPerStep
+		return m.SamplesReadIfSubsequentStep
+	}
+	return nil
+}
+
+func (m *EncodedSubsetStats) GetSamplesReadIfFirstStep() []int64 {
+	if m != nil {
+		return m.SamplesReadIfFirstStep
 	}
 	return nil
 }
@@ -135,25 +143,26 @@ func init() {
 func init() { proto.RegisterFile("stats.proto", fileDescriptor_b4756a0aec8b9d44) }
 
 var fileDescriptor_b4756a0aec8b9d44 = []byte{
-	// 280 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x2e, 0x2e, 0x49, 0x2c,
-	0x29, 0xd6, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x2d, 0xa9, 0x2c, 0x48, 0x2d, 0x96, 0x12,
-	0x49, 0xcf, 0x4f, 0xcf, 0x07, 0x8b, 0xe8, 0x83, 0x58, 0x10, 0x49, 0xa5, 0x59, 0x8c, 0x5c, 0x72,
-	0xae, 0x79, 0xc9, 0xf9, 0x29, 0xa9, 0x29, 0xfe, 0x05, 0xa9, 0x45, 0x89, 0x25, 0xf9, 0x45, 0xae,
-	0x65, 0x89, 0x39, 0xa5, 0x89, 0x25, 0x99, 0xf9, 0x79, 0xc1, 0x20, 0x53, 0x84, 0x6c, 0xb9, 0x38,
-	0x13, 0x73, 0x72, 0x82, 0x53, 0x8b, 0x32, 0x53, 0x8b, 0x25, 0x18, 0x15, 0x18, 0x35, 0xb8, 0x8d,
-	0x24, 0xf5, 0xc0, 0x66, 0xea, 0x41, 0x75, 0x06, 0x97, 0x26, 0x15, 0xa7, 0x96, 0x80, 0x55, 0x3b,
-	0xb1, 0x9c, 0xb8, 0x27, 0xcf, 0x10, 0x84, 0xd0, 0x21, 0x64, 0xc9, 0xc5, 0x5e, 0x0c, 0x96, 0x2f,
-	0x96, 0x60, 0x52, 0x60, 0x26, 0x46, 0x33, 0x4c, 0xbd, 0x52, 0x0b, 0x23, 0x97, 0x10, 0xa6, 0x2a,
-	0x21, 0x0b, 0x2e, 0xf1, 0xe2, 0xc4, 0xdc, 0x82, 0x9c, 0xd4, 0xe2, 0x80, 0xa2, 0xfc, 0xe4, 0xd4,
-	0xe2, 0xe2, 0xd4, 0x94, 0x80, 0xd4, 0xa2, 0xe0, 0x92, 0xd4, 0x02, 0x09, 0x46, 0x05, 0x66, 0x0d,
-	0xe6, 0x20, 0x5c, 0xd2, 0x42, 0x26, 0x5c, 0xa2, 0x79, 0xa9, 0xe5, 0xc1, 0x10, 0xd9, 0xa0, 0xd4,
-	0x44, 0xb8, 0x3e, 0x26, 0xb0, 0x3e, 0xec, 0x92, 0x4e, 0xd6, 0x17, 0x1e, 0xca, 0x31, 0xdc, 0x78,
-	0x28, 0xc7, 0xf0, 0xe1, 0xa1, 0x1c, 0x63, 0xc3, 0x23, 0x39, 0xc6, 0x15, 0x8f, 0xe4, 0x18, 0x4f,
-	0x3c, 0x92, 0x63, 0xbc, 0xf0, 0x48, 0x8e, 0xf1, 0xc1, 0x23, 0x39, 0xc6, 0x17, 0x8f, 0xe4, 0x18,
-	0x3e, 0x3c, 0x92, 0x63, 0x9c, 0xf0, 0x58, 0x8e, 0xe1, 0xc2, 0x63, 0x39, 0x86, 0x1b, 0x8f, 0xe5,
-	0x18, 0xa2, 0x20, 0xc1, 0x9e, 0xc4, 0x06, 0x0e, 0x67, 0x63, 0x40, 0x00, 0x00, 0x00, 0xff, 0xff,
-	0x31, 0xaf, 0x9e, 0xe5, 0x93, 0x01, 0x00, 0x00,
+	// 299 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x91, 0xcf, 0x4a, 0x42, 0x41,
+	0x14, 0x87, 0xe7, 0x78, 0xfb, 0x43, 0xe3, 0x6e, 0x88, 0xb2, 0x82, 0x93, 0xb8, 0x72, 0x65, 0x50,
+	0x10, 0x45, 0x04, 0x21, 0x18, 0xb4, 0x4a, 0xbc, 0xbb, 0x76, 0xa3, 0xf7, 0x24, 0xc2, 0xcd, 0xb9,
+	0xcd, 0x19, 0x83, 0x76, 0x3d, 0x42, 0xeb, 0x9e, 0xa0, 0x47, 0x71, 0xe9, 0xd2, 0x55, 0xe4, 0xb8,
+	0x69, 0xe9, 0x23, 0x84, 0x73, 0x8d, 0x88, 0x30, 0xda, 0x0d, 0xf3, 0x7d, 0xdf, 0x6f, 0x73, 0x64,
+	0x91, 0x9d, 0x76, 0x5c, 0xcb, 0xac, 0x71, 0x46, 0xad, 0xba, 0xc7, 0x8c, 0x78, 0x77, 0xb3, 0x6b,
+	0xba, 0x26, 0xfc, 0x1c, 0xcc, 0x5f, 0x39, 0xac, 0xbc, 0x80, 0xc4, 0x46, 0xbf, 0x63, 0x12, 0x4a,
+	0xae, 0x33, 0xb2, 0xda, 0x19, 0xdb, 0x78, 0xd0, 0xe9, 0x40, 0xbb, 0x9e, 0xe9, 0xc7, 0xf3, 0x15,
+	0x75, 0x2e, 0x37, 0x74, 0x9a, 0xc6, 0x64, 0x7b, 0xc4, 0x25, 0x28, 0x43, 0xb5, 0x78, 0xb8, 0x53,
+	0x0b, 0x9b, 0xb5, 0x45, 0x19, 0x0f, 0xda, 0x4c, 0x2e, 0xd8, 0xf5, 0x95, 0xe1, 0xdb, 0xbe, 0x68,
+	0x7d, 0x17, 0xea, 0x54, 0xae, 0x73, 0xe0, 0x5c, 0x2a, 0x94, 0xa3, 0xff, 0xc4, 0x5f, 0x7e, 0x65,
+	0x08, 0x52, 0xfd, 0xb6, 0xd4, 0x89, 0xdc, 0x66, 0x7d, 0x97, 0xa5, 0xc4, 0x4d, 0x6b, 0x3a, 0xc4,
+	0x4c, 0x49, 0x93, 0x6c, 0xec, 0x28, 0x2b, 0x41, 0x39, 0xaa, 0x46, 0xad, 0x65, 0x58, 0x5d, 0xc8,
+	0xbd, 0x05, 0x6a, 0x91, 0x4e, 0xae, 0x6e, 0xc3, 0xea, 0xfd, 0x80, 0xfa, 0x2e, 0xd4, 0x85, 0x50,
+	0xff, 0xa5, 0xa8, 0x63, 0xb9, 0xf5, 0x03, 0x5f, 0xf6, 0x2c, 0xe7, 0x71, 0x14, 0xe2, 0x25, 0xb4,
+	0x7e, 0x36, 0x9a, 0xa0, 0x18, 0x4f, 0x50, 0xcc, 0x26, 0x08, 0x4f, 0x1e, 0xe1, 0xd5, 0x23, 0x0c,
+	0x3d, 0xc2, 0xc8, 0x23, 0xbc, 0x7b, 0x84, 0x0f, 0x8f, 0x62, 0xe6, 0x11, 0x9e, 0xa7, 0x28, 0x46,
+	0x53, 0x14, 0xe3, 0x29, 0x8a, 0x9b, 0xfc, 0x74, 0xed, 0xb5, 0x70, 0xab, 0xa3, 0xcf, 0x00, 0x00,
+	0x00, 0xff, 0xff, 0xa8, 0xad, 0x2b, 0xd4, 0xd7, 0x01, 0x00, 0x00,
 }
 
 func (this *EncodedOperatorEvaluationStats) Equal(that interface{}) bool {
@@ -215,11 +224,19 @@ func (this *EncodedSubsetStats) Equal(that interface{}) bool {
 			return false
 		}
 	}
-	if len(this.NewSamplesReadPerStep) != len(that1.NewSamplesReadPerStep) {
+	if len(this.SamplesReadIfSubsequentStep) != len(that1.SamplesReadIfSubsequentStep) {
 		return false
 	}
-	for i := range this.NewSamplesReadPerStep {
-		if this.NewSamplesReadPerStep[i] != that1.NewSamplesReadPerStep[i] {
+	for i := range this.SamplesReadIfSubsequentStep {
+		if this.SamplesReadIfSubsequentStep[i] != that1.SamplesReadIfSubsequentStep[i] {
+			return false
+		}
+	}
+	if len(this.SamplesReadIfFirstStep) != len(that1.SamplesReadIfFirstStep) {
+		return false
+	}
+	for i := range this.SamplesReadIfFirstStep {
+		if this.SamplesReadIfFirstStep[i] != that1.SamplesReadIfFirstStep[i] {
 			return false
 		}
 	}
@@ -246,10 +263,11 @@ func (this *EncodedSubsetStats) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 6)
+	s := make([]string, 0, 7)
 	s = append(s, "&types.EncodedSubsetStats{")
 	s = append(s, "SamplesProcessedPerStep: "+fmt.Sprintf("%#v", this.SamplesProcessedPerStep)+",\n")
-	s = append(s, "NewSamplesReadPerStep: "+fmt.Sprintf("%#v", this.NewSamplesReadPerStep)+",\n")
+	s = append(s, "SamplesReadIfSubsequentStep: "+fmt.Sprintf("%#v", this.SamplesReadIfSubsequentStep)+",\n")
+	s = append(s, "SamplesReadIfFirstStep: "+fmt.Sprintf("%#v", this.SamplesReadIfFirstStep)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -328,10 +346,10 @@ func (m *EncodedSubsetStats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.NewSamplesReadPerStep) > 0 {
-		dAtA3 := make([]byte, len(m.NewSamplesReadPerStep)*10)
+	if len(m.SamplesReadIfFirstStep) > 0 {
+		dAtA3 := make([]byte, len(m.SamplesReadIfFirstStep)*10)
 		var j2 int
-		for _, num1 := range m.NewSamplesReadPerStep {
+		for _, num1 := range m.SamplesReadIfFirstStep {
 			num := uint64(num1)
 			for num >= 1<<7 {
 				dAtA3[j2] = uint8(uint64(num)&0x7f | 0x80)
@@ -345,12 +363,12 @@ func (m *EncodedSubsetStats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		copy(dAtA[i:], dAtA3[:j2])
 		i = encodeVarintStats(dAtA, i, uint64(j2))
 		i--
-		dAtA[i] = 0x12
+		dAtA[i] = 0x1a
 	}
-	if len(m.SamplesProcessedPerStep) > 0 {
-		dAtA5 := make([]byte, len(m.SamplesProcessedPerStep)*10)
+	if len(m.SamplesReadIfSubsequentStep) > 0 {
+		dAtA5 := make([]byte, len(m.SamplesReadIfSubsequentStep)*10)
 		var j4 int
-		for _, num1 := range m.SamplesProcessedPerStep {
+		for _, num1 := range m.SamplesReadIfSubsequentStep {
 			num := uint64(num1)
 			for num >= 1<<7 {
 				dAtA5[j4] = uint8(uint64(num)&0x7f | 0x80)
@@ -363,6 +381,25 @@ func (m *EncodedSubsetStats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i -= j4
 		copy(dAtA[i:], dAtA5[:j4])
 		i = encodeVarintStats(dAtA, i, uint64(j4))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.SamplesProcessedPerStep) > 0 {
+		dAtA7 := make([]byte, len(m.SamplesProcessedPerStep)*10)
+		var j6 int
+		for _, num1 := range m.SamplesProcessedPerStep {
+			num := uint64(num1)
+			for num >= 1<<7 {
+				dAtA7[j6] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j6++
+			}
+			dAtA7[j6] = uint8(num)
+			j6++
+		}
+		i -= j6
+		copy(dAtA[i:], dAtA7[:j6])
+		i = encodeVarintStats(dAtA, i, uint64(j6))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -410,9 +447,16 @@ func (m *EncodedSubsetStats) Size() (n int) {
 		}
 		n += 1 + sovStats(uint64(l)) + l
 	}
-	if len(m.NewSamplesReadPerStep) > 0 {
+	if len(m.SamplesReadIfSubsequentStep) > 0 {
 		l = 0
-		for _, e := range m.NewSamplesReadPerStep {
+		for _, e := range m.SamplesReadIfSubsequentStep {
+			l += sovStats(uint64(e))
+		}
+		n += 1 + sovStats(uint64(l)) + l
+	}
+	if len(m.SamplesReadIfFirstStep) > 0 {
+		l = 0
+		for _, e := range m.SamplesReadIfFirstStep {
 			l += sovStats(uint64(e))
 		}
 		n += 1 + sovStats(uint64(l)) + l
@@ -448,7 +492,8 @@ func (this *EncodedSubsetStats) String() string {
 	}
 	s := strings.Join([]string{`&EncodedSubsetStats{`,
 		`SamplesProcessedPerStep:` + fmt.Sprintf("%v", this.SamplesProcessedPerStep) + `,`,
-		`NewSamplesReadPerStep:` + fmt.Sprintf("%v", this.NewSamplesReadPerStep) + `,`,
+		`SamplesReadIfSubsequentStep:` + fmt.Sprintf("%v", this.SamplesReadIfSubsequentStep) + `,`,
+		`SamplesReadIfFirstStep:` + fmt.Sprintf("%v", this.SamplesReadIfFirstStep) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -700,7 +745,7 @@ func (m *EncodedSubsetStats) Unmarshal(dAtA []byte) error {
 						break
 					}
 				}
-				m.NewSamplesReadPerStep = append(m.NewSamplesReadPerStep, v)
+				m.SamplesReadIfSubsequentStep = append(m.SamplesReadIfSubsequentStep, v)
 			} else if wireType == 2 {
 				var packedLen int
 				for shift := uint(0); ; shift += 7 {
@@ -735,8 +780,8 @@ func (m *EncodedSubsetStats) Unmarshal(dAtA []byte) error {
 					}
 				}
 				elementCount = count
-				if elementCount != 0 && len(m.NewSamplesReadPerStep) == 0 {
-					m.NewSamplesReadPerStep = make([]int64, 0, elementCount)
+				if elementCount != 0 && len(m.SamplesReadIfSubsequentStep) == 0 {
+					m.SamplesReadIfSubsequentStep = make([]int64, 0, elementCount)
 				}
 				for iNdEx < postIndex {
 					var v int64
@@ -754,10 +799,86 @@ func (m *EncodedSubsetStats) Unmarshal(dAtA []byte) error {
 							break
 						}
 					}
-					m.NewSamplesReadPerStep = append(m.NewSamplesReadPerStep, v)
+					m.SamplesReadIfSubsequentStep = append(m.SamplesReadIfSubsequentStep, v)
 				}
 			} else {
-				return fmt.Errorf("proto: wrong wireType = %d for field NewSamplesReadPerStep", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field SamplesReadIfSubsequentStep", wireType)
+			}
+		case 3:
+			if wireType == 0 {
+				var v int64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowStats
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.SamplesReadIfFirstStep = append(m.SamplesReadIfFirstStep, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowStats
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthStats
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthStats
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.SamplesReadIfFirstStep) == 0 {
+					m.SamplesReadIfFirstStep = make([]int64, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v int64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowStats
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= int64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.SamplesReadIfFirstStep = append(m.SamplesReadIfFirstStep, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field SamplesReadIfFirstStep", wireType)
 			}
 		default:
 			iNdEx = preIndex

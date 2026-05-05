@@ -1091,6 +1091,9 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 		input    interface{}
 		expected error
 	}{
+		"nil input": {
+			input: nil,
+		},
 		"*HTTPClientConfig": {
 			input: &commoncfg.HTTPClientConfig{
 				BasicAuth: &commoncfg.BasicAuth{
@@ -1245,6 +1248,11 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 				},
 			},
 			expected: errPasswordFileNotAllowed,
+		},
+		"map containing nil value": {
+			input: map[string]interface{}{
+				"test": nil,
+			},
 		},
 		"map containing TLSConfig as nested child": {
 			input: map[string][]config.EmailConfig{

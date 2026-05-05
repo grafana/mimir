@@ -297,9 +297,8 @@ load 1m
 	metric{instance="a"} 1 2 3
 	custom_info{instance="a", enriched="yes"} 1 1 1
 
-# Unsupported by streaming engine.
-# eval range from 0m to 2m step 1m info(metric, {__name__="custom_info"})
-#	metric{instance="a", enriched="yes"} 1 2 3
+eval range from 0m to 2m step 1m info(metric, {__name__="custom_info"})
+	metric{instance="a", enriched="yes"} 1 2 3
 
 clear
 
@@ -309,6 +308,5 @@ load 1m
 	target_info{instance="a", job="1", x="from_target"} 1 1 1
 	build_info{instance="a", job="1", x="from_build"} 1 1 1
 
-# Unsupported by streaming engine.
-# eval range from 0m to 2m step 1m info(metric, {__name__=~".+_info"})
-#	expect fail regex: conflicting label
+eval range from 0m to 2m step 1m info(metric, {__name__=~".+_info"})
+	expect fail regex: conflicting label

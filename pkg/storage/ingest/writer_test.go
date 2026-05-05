@@ -58,7 +58,8 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		writer, reg := createTestWriter(t, cfg)
 
 		produceRequestProcessed := atomic.NewBool(false)
 
@@ -91,8 +92,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		require.Len(t, fetches.Records(), 1)
 		assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
 
-		received := mimirpb.WriteRequest{}
-		require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+		received := deserializeRecord(t, fetches.Records()[0])
 		require.Len(t, received.Timeseries, len(multiSeries))
 
 		for idx, expected := range multiSeries {
@@ -183,15 +183,12 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.Equal(t, []byte(tenantID), records[0].Key)
 		assert.Equal(t, []byte(tenantID), records[1].Key)
 
-		actualReq1 := &mimirpb.WriteRequest{}
-		actualReq2 := &mimirpb.WriteRequest{}
-		require.NoError(t, actualReq1.Unmarshal(records[0].Value))
-		require.NoError(t, actualReq2.Unmarshal(records[1].Value))
+		actualReq1 := deserializeRecord(t, records[0])
+		actualReq2 := deserializeRecord(t, records[1])
 
-		actualMergedReq := *actualReq1
-		actualMergedReq.Timeseries = append(actualMergedReq.Timeseries, actualReq2.Timeseries...)
-		actualMergedReq.ClearTimeseriesUnmarshalData()
-		assert.Equal(t, expectedReq, &actualMergedReq)
+		mergedTimeseries := append(actualReq1.Timeseries, actualReq2.Timeseries...)
+		assert.Equal(t, expectedReq.Timeseries, mergedTimeseries)
+		assert.Equal(t, expectedReq.Source, actualReq1.Source)
 
 		// Check metrics.
 		expectedSentBytes := len(records[0].Value) + len(records[1].Value)
@@ -261,8 +258,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			require.Len(t, fetches.Records(), 1)
 			assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
 
-			received := mimirpb.WriteRequest{}
-			require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+			received := deserializeRecord(t, fetches.Records()[0])
 			require.Len(t, received.Timeseries, len(expectedSeries))
 
 			for idx, expected := range expectedSeries {
@@ -581,9 +577,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		require.Len(t, fetches.Records(), 1)
 		assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
 
-		received := mimirpb.WriteRequest{}
-		require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
-		received.ClearTimeseriesUnmarshalData()
+		received := deserializeRecord(t, fetches.Records()[0])
 
 		// We expect that the small time series has been ingested, while the huge one has been discarded.
 		require.Len(t, received.Timeseries, 1)
@@ -639,7 +633,8 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Estimate the size of each record written in this test.
 		writeReq := createWriteRequest()
-		writeReqRecords, err := marshalWriteRequestToRecords(topicName, partitionID, tenantID, writeReq, writeReq.Size(), maxProducerRecordDataBytesLimit, mimirpb.SplitWriteRequestByMaxMarshalSize)
+		serializer := RecordSerializerFromVersion(2)
+		writeReqRecords, _, err := serializer.ToRecords(topicName, partitionID, tenantID, writeReq, maxProducerRecordDataBytesLimit)
 		require.NoError(t, err)
 		require.Len(t, writeReqRecords, 1)
 		estimatedRecordSize := len(writeReqRecords[0].Value)
@@ -812,7 +807,9 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, reg := createTestWriter(t, cfg)
 
 		req1 := &mimirpb.WriteRequest{Timeseries: series1, Source: mimirpb.API}
 		req2 := &mimirpb.WriteRequest{Timeseries: series2, Source: mimirpb.API}
@@ -894,7 +891,9 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, reg := createTestWriter(t, cfg)
 
 		nonEmptyReq := &mimirpb.WriteRequest{Timeseries: series1, Source: mimirpb.API}
 		inputSize := nonEmptyReq.Size()
@@ -960,7 +959,9 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.ProducerRecordVersion = 1
+		writer, _ := createTestWriter(t, cfg)
 
 		partitionRequests := []PartitionWriteRequest{
 			{PartitionID: 0, WriteRequest: &mimirpb.WriteRequest{}},
@@ -1727,6 +1728,16 @@ func TestWriter_WriteSync_SetsRecordTimestampFromContext(t *testing.T) {
 	records := fetches.Records()
 	require.Len(t, records, 1)
 	assert.Equal(t, ts, records[0].Timestamp)
+}
+
+func deserializeRecord(t *testing.T, rec *kgo.Record) mimirpb.WriteRequest {
+	t.Helper()
+
+	version := ParseRecordVersion(rec)
+	var prealloc mimirpb.PreallocWriteRequest
+	require.NoError(t, DeserializeRecordContent(rec.Value, &prealloc, version))
+	prealloc.ClearTimeseriesUnmarshalData()
+	return prealloc.WriteRequest
 }
 
 func createTestKafkaClient(t *testing.T, cfg KafkaConfig) *kgo.Client {

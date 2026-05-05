@@ -51,8 +51,8 @@ func (n *NoOp) ReplaceChild(idx int, _ planning.Node) error {
 }
 
 func (n *NoOp) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*NoOp)
-	return ok
+	o, ok := other.(*NoOp)
+	return ok && n.MatrixSelector == o.MatrixSelector
 }
 
 func (n *NoOp) MergeHints(_ planning.Node) error {
@@ -61,6 +61,9 @@ func (n *NoOp) MergeHints(_ planning.Node) error {
 }
 
 func (n *NoOp) Describe() string {
+	if n.MatrixSelector {
+		return "matrix"
+	}
 	return ""
 }
 
@@ -73,6 +76,9 @@ func (n *NoOp) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTime
 }
 
 func (n *NoOp) ResultType() (parser.ValueType, error) {
+	if n.MatrixSelector {
+		return parser.ValueTypeMatrix, nil
+	}
 	return parser.ValueTypeVector, nil
 }
 
@@ -85,10 +91,17 @@ func (n *NoOp) ExpressionPosition() (posrange.PositionRange, error) {
 }
 
 func (n *NoOp) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
-	return planning.QueryPlanV9, nil
+	return planning.QueryPlanV10, nil
 }
 
-func MaterializeNoOp(_ *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	o := operators.NewNoOp(timeRange, params.MemoryConsumptionTracker)
+func MaterializeNoOp(n *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	var o types.Operator
+
+	if n.MatrixSelector {
+		o = operators.NewNoOpRange(timeRange, params.MemoryConsumptionTracker)
+	} else {
+		o = operators.NewNoOpInstant(timeRange, params.MemoryConsumptionTracker)
+	}
+
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

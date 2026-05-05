@@ -454,8 +454,25 @@ func newQueryMiddlewares(
 		prom2CompatMiddleware,
 	)
 
-	// Inject the extra middlewares provided by the user before the caching, query pruning, and
-	// query sharding middlewares.
+	// This is here for now as we need to run it before query sharding and before any extra middlewares
+	// that may transform the query and prevent the rewrite from matching. We plan to make it an AST
+	// optimization pass later.
+	if cfg.isPruningQueriesEnabled() {
+		rewriteMiddleware := newRewriteMiddleware(log, cfg, registerer)
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
+			newInstrumentMiddleware("rewriting", metrics),
+			rewriteMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			newInstrumentMiddleware("rewriting", metrics),
+			rewriteMiddleware,
+		)
+	}
+
+	// Inject the extra middlewares provided by the user before the caching and query sharding
+	// middlewares, but after the rewriting middleware so that query rewrites see the original query.
 	// This is important because these extra middlewares can potentially mutate the incoming
 	// query.
 	if len(cfg.ExtraInstantQueryMiddlewares) > 0 {
@@ -493,21 +510,6 @@ func newQueryMiddlewares(
 		newInstrumentMiddleware("experimental_functions", metrics),
 		experimentalFunctionsMiddleware,
 	)
-
-	// This is here for now as we need to run it before query sharding, but we plan to make it an AST optimization pass later.
-	if cfg.isPruningQueriesEnabled() {
-		rewriteMiddleware := newRewriteMiddleware(log, cfg, registerer)
-		queryRangeMiddleware = append(
-			queryRangeMiddleware,
-			newInstrumentMiddleware("rewriting", metrics),
-			rewriteMiddleware,
-		)
-		queryInstantMiddleware = append(
-			queryInstantMiddleware,
-			newInstrumentMiddleware("rewriting", metrics),
-			rewriteMiddleware,
-		)
-	}
 
 	// Create split and cache middleware if either splitting or caching is enabled
 	var splitAndCacheMiddleware MetricsQueryMiddleware
