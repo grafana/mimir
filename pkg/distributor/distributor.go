@@ -1169,6 +1169,10 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		dropLabels := d.limits.DropLabels(userID)
 		relabelConfigs := d.limits.MetricRelabelConfigs(userID)
 
+		if len(dropLabels) == 0 && len(relabelConfigs) == 0 {
+			return next(ctx, pushReq)
+		}
+
 		var removeTsIndexes []int
 		lb := labels.NewBuilder(labels.EmptyLabels())
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
