@@ -39,6 +39,10 @@ func TestMain(m *testing.M) {
 }
 
 func TestWriter_WriteSync(t *testing.T) {
+	runForEachKafkaBackend(t, testWriter_WriteSync)
+}
+
+func testWriter_WriteSync(t *testing.T, backend string) {
 	const (
 		topicName     = "test"
 		numPartitions = 10
@@ -58,7 +62,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		writer, reg := createTestWriter(t, cfg)
 
 		produceRequestProcessed := atomic.NewBool(false)
@@ -141,7 +145,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Customize the max record size to force splitting the WriteRequest into two records.
 		expectedReq := &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API}
-		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		cfg.ProducerMaxRecordSizeBytes = int(float64(expectedReq.Size()) * 0.8)
 
 		writer, reg := createTestWriter(t, cfg)
@@ -235,7 +239,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		}
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		config := createTestKafkaConfig(clusterAddr, topicName)
+		config := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		writer, reg := createTestWriter(t, config)
 
 		// Write to partitions.
@@ -287,7 +291,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		)
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		writer, _ := createTestWriter(t, createTestKafkaConfigForBackend(backend, clusterAddr, topicName))
 
 		// Get the underlying Kafka client used by the writer.
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -349,6 +353,10 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should batch multiple subsequent records together while sending the previous batches to Kafka once max in-flight Produce requests limit has been reached", func(t *testing.T) {
 		t.Parallel()
 
+		if backend == KafkaBackendWarpstream {
+			t.Skipf("Warpstream client doesn't support max in-flight Produce requests limit")
+		}
+
 		var (
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -360,7 +368,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 
 		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
-		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		cfg.MaxInflightProduceRequests = 1
 		writer, _ := createTestWriter(t, cfg)
 
@@ -413,7 +421,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		writer, reg := createTestWriter(t, createTestKafkaConfigForBackend(backend, clusterAddr, topicName))
 
 		// Write to a non-existing partition.
 		err := writer.WriteSync(ctx, topicName, 100, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
@@ -435,9 +443,12 @@ func TestWriter_WriteSync(t *testing.T) {
 
 	t.Run("should return an error and stop retrying sending a record once the write timeout expires", func(t *testing.T) {
 		t.Parallel()
+		if backend != KafkaBackendKafka {
+			t.Skipf("test asserts kgo's RecordRetries + RecordDeliveryTimeout error path, kafka-backend only")
+		}
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		writer, reg := createTestWriter(t, kafkaCfg)
 
 		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
@@ -470,9 +481,12 @@ func TestWriter_WriteSync(t *testing.T) {
 	// This test documents how the Kafka client works. It's not what we ideally want, but it's how it works.
 	t.Run("should fail all buffered records and close the connection on timeout while waiting for Produce response", func(t *testing.T) {
 		t.Parallel()
+		if backend != KafkaBackendKafka {
+			t.Skipf("test asserts kgo's RecordDeliveryTimeout error path, kafka-backend only")
+		}
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 
 		var (
@@ -535,6 +549,9 @@ func TestWriter_WriteSync(t *testing.T) {
 
 	t.Run("should return error if the WriteRequest contains a timeseries which is larger than the maximum allowed record data size", func(t *testing.T) {
 		t.Parallel()
+		if backend != KafkaBackendKafka {
+			t.Skipf("test asserts ErrWriteRequestDataItemTooLarge surfaced via kgo's record-size enforcement, kafka-backend only")
+		}
 
 		req := &mimirpb.WriteRequest{
 			Timeseries: []mimirpb.PreallocTimeseries{
@@ -546,7 +563,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		}
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		writer, reg := createTestWriter(t, createTestKafkaConfigForBackend(backend, clusterAddr, topicName))
 
 		produceRequestProcessed := atomic.NewBool(false)
 
@@ -626,6 +643,9 @@ func TestWriter_WriteSync(t *testing.T) {
 
 	t.Run("should not block the WriteSync() because Kafka buffer is full", func(t *testing.T) {
 		t.Parallel()
+		if backend != KafkaBackendKafka {
+			t.Skipf("test asserts kgo's buffered-bytes-full error path, kafka-backend only")
+		}
 
 		createWriteRequest := func() *mimirpb.WriteRequest {
 			return &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}
@@ -652,7 +672,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 
-		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		cfg.ProducerMaxBufferedBytes = int64((estimatedRecordSize * 4) - 1) // Configure the test so that we expect 3 produced records.
 		cfg.WriteTimeout = time.Second
 
@@ -777,7 +797,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+		writer, _ := createTestWriter(t, createTestKafkaConfigForBackend(backend, clusterAddr, topicName))
 
 		err := writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
 		require.NoError(t, err)
@@ -790,6 +810,10 @@ func TestWriter_WriteSync(t *testing.T) {
 }
 
 func TestWriter_MultiWriteSync(t *testing.T) {
+	runForEachKafkaBackend(t, testWriter_MultiWriteSync)
+}
+
+func testWriter_MultiWriteSync(t *testing.T, backend string) {
 	const (
 		topicName     = "test"
 		numPartitions = 10
@@ -807,7 +831,7 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		cfg.ProducerRecordVersion = 1
 		writer, reg := createTestWriter(t, cfg)
 
@@ -891,7 +915,7 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		cfg.ProducerRecordVersion = 1
 		writer, reg := createTestWriter(t, cfg)
 
@@ -959,7 +983,7 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 		cfg.ProducerRecordVersion = 1
 		writer, _ := createTestWriter(t, cfg)
 
@@ -974,6 +998,10 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 }
 
 func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
+	runForEachKafkaBackend(t, testWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull)
+}
+
+func testWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T, backend string) {
 	const (
 		topicName     = "test"
 		numPartitions = 1
@@ -1005,7 +1033,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 	t.Cleanup(cancel)
 
 	cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
 	cfg.ProducerMaxBufferedBytes = 10000
 	cfg.WriteTimeout = testDuration * 10 // We want the Kafka client to block in case of any issue.
 
@@ -1665,10 +1693,17 @@ func BenchmarkWriter_WriteSync(b *testing.B) {
 	})
 }
 
+// createTestKafkaConfig returns a KafkaConfig for the default ("kafka")
+// backend. Use createTestKafkaConfigForBackend to override.
 func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
+	return createTestKafkaConfigForBackend(KafkaBackendKafka, clusterAddr, topicName)
+}
+
+func createTestKafkaConfigForBackend(backend, clusterAddr, topicName string) KafkaConfig {
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
 
+	cfg.Backend = backend
 	cfg.Address = flagext.StringSliceCSV{clusterAddr}
 	cfg.Topic = topicName
 	cfg.WriteTimeout = 5 * time.Second
@@ -1676,6 +1711,18 @@ func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 	cfg.concurrentFetchersFetchBackoffConfig = fastFetchBackoffConfig
 
 	return cfg
+}
+
+// runForEachKafkaBackend runs fn as a subtest for every supported Kafka
+// producer backend. Tests that exercise the Writer should wrap their bodies
+// with this helper so behavior is verified for both backends.
+func runForEachKafkaBackend(t *testing.T, fn func(t *testing.T, backend string)) {
+	t.Helper()
+	for _, backend := range []string{KafkaBackendKafka, KafkaBackendWarpstream} {
+		t.Run(backend, func(t *testing.T) {
+			fn(t, backend)
+		})
+	}
 }
 
 func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gatherer) {
@@ -1693,7 +1740,10 @@ func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gather
 
 func TestWriter_WriteSync_SetsRecordTimestampFromContext(t *testing.T) {
 	t.Parallel()
+	runForEachKafkaBackend(t, testWriter_WriteSync_SetsRecordTimestampFromContext)
+}
 
+func testWriter_WriteSync_SetsRecordTimestampFromContext(t *testing.T, backend string) {
 	const (
 		topicName     = "test"
 		numPartitions = 1
@@ -1702,7 +1752,7 @@ func TestWriter_WriteSync_SetsRecordTimestampFromContext(t *testing.T) {
 	)
 
 	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-	writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+	writer, _ := createTestWriter(t, createTestKafkaConfigForBackend(backend, clusterAddr, topicName))
 
 	// Use a timestamp close to now so it doesn't trip franz-go's RecordDeliveryTimeout.
 	ts := time.Now().Add(-time.Second).Truncate(time.Millisecond)

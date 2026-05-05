@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -30,6 +31,14 @@ type ClusterRecordBuffer struct {
 	resolve       AgentResolver
 	flush         FlushFunc
 	metrics       *metrics
+
+	// bufferedBytes is the total size in bytes of every record currently
+	// waiting between Add and the corresponding done callback firing.
+	bufferedBytes atomic.Int64
+
+	// bufferedRecords is the count of records currently waiting between Add
+	// and the corresponding done callback firing.
+	bufferedRecords atomic.Int64
 
 	mu           sync.RWMutex
 	agentBuffers map[int32]*AgentRecordBuffer
@@ -87,13 +96,19 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, records []*kgo.Record, do
 		records []*kgo.Record
 	}
 
+	var (
+		totalBytes      = int64(0)
+		totalRecords    = int64(len(records))
+		dispatchByAgent = make(map[int32]*agentDispatch)
+		pendingAgents   atomic.Int32
+	)
+
 	// Resolve every record to its destination buffer up-front. Bailing
 	// synchronously on the first failure means by the time we start
 	// dispatching every destination is known to be valid — no partial
 	// dispatch is possible. Synchronous failures bypass the completion
 	// fan-in and call done directly because no agent has been told to
 	// dispatch yet.
-	dispatchByAgent := make(map[int32]*agentDispatch)
 	for _, r := range records {
 		nodeID, ok := c.resolve(r.Topic, r.Partition)
 		if !ok {
@@ -113,16 +128,43 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, records []*kgo.Record, do
 		}
 
 		dispatch.records = append(dispatch.records, r)
+		totalBytes += int64(len(r.Value))
 	}
 
+	// Account these records against buffered bytes / records for as
+	// long as the producer is responsible for them — from Add until the last
+	// per-agent flush has actually reported.
+	c.bufferedBytes.Add(totalBytes)
+	c.bufferedRecords.Add(totalRecords)
+	pendingAgents.Store(int32(len(dispatchByAgent)))
+
 	// Add the records to the respective per-agent buffer and keep track of
-	// completion. The completion type owns the once-notifyDone + ctx-watch
-	// wiring so that done fires exactly once on whichever happens first:
-	// every agent's flush completing, or ctx being canceled.
+	// completion.
 	comp := newCompletion(ctx, int32(len(dispatchByAgent)), done)
 	for _, d := range dispatchByAgent {
-		d.buffer.Add(d.records, comp.reportResult)
+		d.buffer.Add(d.records, func(err error) {
+			// If this function context is canceled, we shouldn't immediately decrease the
+			// buffered bytes / records count, but only when they've been effectively flushed
+			// or the Produce failed.
+			if pendingAgents.Add(-1) == 0 {
+				c.bufferedBytes.Add(-totalBytes)
+				c.bufferedRecords.Add(-totalRecords)
+			}
+			comp.reportResult(err)
+		})
 	}
+}
+
+// BufferedBytes returns the total size in bytes of every record currently
+// awaiting acknowledgement (still buffered or in flight).
+func (c *ClusterRecordBuffer) BufferedBytes() int64 {
+	return c.bufferedBytes.Load()
+}
+
+// BufferedRecords returns the count of records currently awaiting
+// acknowledgement (still buffered or in flight).
+func (c *ClusterRecordBuffer) BufferedRecords() int64 {
+	return c.bufferedRecords.Load()
 }
 
 // Close flushes every per-agent buffer in parallel and waits for all of them

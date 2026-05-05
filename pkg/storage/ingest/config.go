@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/warpstreamclient"
 )
 
 const (
@@ -27,7 +28,17 @@ const (
 	consumeFromTimestamp  = "timestamp"
 )
 
+// KafkaBackend identifies the producer implementation used by the ingest writer.
+const (
+	KafkaBackendKafka      = "kafka"
+	KafkaBackendWarpstream = "warpstream"
+)
+
+var kafkaBackendOptions = []string{KafkaBackendKafka, KafkaBackendWarpstream}
+
 var (
+	ErrInvalidKafkaBackend = fmt.Errorf("the configured kafka backend is invalid, must be one of: %s", util.JoinStrings(kafkaBackendOptions, ", "))
+
 	ErrMissingKafkaAddress               = errors.New("the Kafka address has not been configured")
 	ErrMissingKafkaTopic                 = errors.New("the Kafka topic has not been configured")
 	ErrInvalidConsumePosition            = errors.New("the configured consume position is invalid")
@@ -91,6 +102,9 @@ func (cfg *Config) Validate() error {
 
 // KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
+	// Backend selects the producer implementation. See KafkaBackend* constants.
+	Backend string `yaml:"backend"`
+
 	// Address is a list of seed brokers. The config name is singular for backward compatibility.
 	Address      flagext.StringSliceCSV `yaml:"address"`
 	Topic        string                 `yaml:"topic"`
@@ -99,6 +113,13 @@ type KafkaConfig struct {
 	DialTimeout  time.Duration          `yaml:"dial_timeout"`
 	WriteTimeout time.Duration          `yaml:"write_timeout"`
 	WriteClients int                    `yaml:"write_clients" category:"deprecated"` // TODO Remove in Mimir 3.3.
+
+	// Warpstream-only settings, ignored when Backend != KafkaBackendWarpstream.
+	WarpstreamHedgeSlowMultiplier    float64       `yaml:"warpstream_hedge_slow_multiplier" category:"experimental"`
+	WarpstreamHedgeMaxSlowFraction   float64       `yaml:"warpstream_hedge_max_slow_fraction" category:"experimental"`
+	WarpstreamHedgeFaultyThreshold   float64       `yaml:"warpstream_hedge_faulty_threshold" category:"experimental"`
+	WarpstreamHedgeMaxFaultyFraction float64       `yaml:"warpstream_hedge_max_faulty_fraction" category:"experimental"`
+	WarpstreamHedgeMinDelay          time.Duration `yaml:"warpstream_hedge_min_delay" category:"experimental"`
 
 	SASL       KafkaAuthConfig `yaml:",inline"`
 	TLSEnabled bool            `yaml:"tls_enabled"`
@@ -175,7 +196,15 @@ func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.concurrentFetchersFetchBackoffConfig = defaultFetchBackoffConfig
 
+	f.StringVar(&cfg.Backend, prefix+"backend", KafkaBackendKafka, fmt.Sprintf("The Kafka producer backend implementation. Supported values: %s.", util.JoinStrings(kafkaBackendOptions, ", ")))
 	f.Var(&cfg.Address, prefix+"address", "The Kafka seed broker address, or a comma-separated list of seed broker addresses.")
+
+	f.Float64Var(&cfg.WarpstreamHedgeSlowMultiplier, prefix+"warpstream-hedge-slow-multiplier", 2.0, "Hedge a Produce request when the primary agent's window-average latency exceeds this multiple of the cluster baseline. Only applies when "+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHedgeMaxSlowFraction, prefix+"warpstream-hedge-max-slow-fraction", 0.3, "Suppress hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when "+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHedgeFaultyThreshold, prefix+"warpstream-hedge-faulty-threshold", 0.05, "Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when "+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHedgeMaxFaultyFraction, prefix+"warpstream-hedge-max-faulty-fraction", 0.3, "Suppress hedging when more than this fraction of agents are faulty (cluster-wide issue). Only applies when "+prefix+"backend=warpstream.")
+	f.DurationVar(&cfg.WarpstreamHedgeMinDelay, prefix+"warpstream-hedge-min-delay", 10*time.Millisecond, "Floor on the dynamically-computed hedge delay. Only applies when "+prefix+"backend=warpstream.")
+
 	f.StringVar(&cfg.Topic, prefix+"topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"client-id", "", "The Kafka client ID.")
 	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.")
@@ -226,6 +255,9 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 }
 
 func (cfg *KafkaConfig) Validate() error {
+	if !slices.Contains(kafkaBackendOptions, cfg.Backend) {
+		return ErrInvalidKafkaBackend
+	}
 	if cfg.Address.String() == "" {
 		return ErrMissingKafkaAddress
 	}
@@ -296,6 +328,38 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// ToWarpstreamClientConfig maps the Warpstream-relevant subset of
+// KafkaConfig to a warpstreamclient.Config.
+func (cfg *KafkaConfig) ToWarpstreamClientConfig() (warpstreamclient.Config, error) {
+	wsCfg := warpstreamclient.Config{
+		Address:                 cfg.Address,
+		Topic:                   cfg.Topic,
+		ClientID:                cfg.ClientID,
+		DialTimeout:             cfg.DialTimeout,
+		WriteTimeout:            cfg.WriteTimeout,
+		TLSEnabled:              cfg.TLSEnabled,
+		SASLOptions:             kafkaAuthOptions(cfg.SASL),
+		Linger:                  defaultProducerLinger,
+		MaxBatchBytes:           producerBatchMaxBytes,
+		MaxBufferedBytes:        cfg.ProducerMaxBufferedBytes,
+		HedgeSlowMultiplier:     cfg.WarpstreamHedgeSlowMultiplier,
+		HedgeMaxSlowFraction:    cfg.WarpstreamHedgeMaxSlowFraction,
+		HedgeFaultyThreshold:    cfg.WarpstreamHedgeFaultyThreshold,
+		HedgeMaxFaultyFraction:  cfg.WarpstreamHedgeMaxFaultyFraction,
+		HedgeMinDelay:           cfg.WarpstreamHedgeMinDelay,
+		ClusterStatsTTL:         time.Second,
+		MetadataRefreshInterval: defaultMetadataRefreshInterval,
+	}
+	if cfg.TLSEnabled {
+		tlsConfig, err := cfg.TLS.GetTLSConfig()
+		if err != nil {
+			return warpstreamclient.Config{}, fmt.Errorf("invalid Kafka TLS config: %w", err)
+		}
+		wsCfg.TLSConfig = tlsConfig
+	}
+	return wsCfg, nil
 }
 
 // GetConsumerGroup returns the consumer group to use for the given instanceID and partitionID.

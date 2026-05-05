@@ -27,17 +27,21 @@ const produceAPIVersion int16 = 11
 // it batches records per primary agent, hedges across secondaries on slow or
 // failing primaries, and tracks per-agent stats to make hedge decisions.
 //
+// WarpstreamClient embeds *kgo.Client so non-producer methods work exactly
+// as on a vanilla franz-go client.
+//
 // Safe for concurrent use.
 type WarpstreamClient struct {
+	*kgo.Client
+
 	cfg     Config
 	logger  log.Logger
 	metrics *metrics
 
-	kgoClient *kgo.Client
-	pool      *AgentPool
-	tracker   *CachedAgentStatsTracker
-	hedger    *Hedger
-	buffer    *ClusterRecordBuffer
+	pool    *AgentPool
+	tracker *CachedAgentStatsTracker
+	hedger  *Hedger
+	buffer  *ClusterRecordBuffer
 
 	// refreshCtx is canceled by Close. It both signals the background
 	// refresh goroutine to exit and interrupts any in-flight Refresh.
@@ -93,7 +97,7 @@ func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registere
 		cfg:           cfg,
 		logger:        logger,
 		metrics:       m,
-		kgoClient:     kgoClient,
+		Client:        kgoClient,
 		pool:          pool,
 		tracker:       tracker,
 		refreshCtx:    refreshCtx,
@@ -106,6 +110,17 @@ func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registere
 	return c, nil
 }
 
+// Produce buffers a single record and invokes promise once that record has
+// been acknowledged (or failed).
+//
+// ctx governs only the wait on the result. Records are committed to the
+// in-memory batch as soon as ProduceSync is called; cancelling ctx detaches
+// this caller from the result, but the batch still flushes — possibly
+// delivering – the records anyway.
+func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, promise func(*kgo.Record, error)) {
+	c.buffer.Add(ctx, []*kgo.Record{record}, func(err error) { promise(record, err) })
+}
+
 // ProduceSync produces records and blocks until the broker has acknowledged
 // the batch (or it has failed). The returned slice has one entry per input
 // record, in the same order. Every record receives the same outcome: a
@@ -114,8 +129,7 @@ func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registere
 // ctx governs only the wait on the result. Records are committed to the
 // in-memory batch as soon as ProduceSync is called; cancelling ctx detaches
 // this caller from the result, but the batch still flushes — possibly
-// delivering the records anyway. This is consistent with at-least-once
-// semantics: a duplicate may follow a caller-side retry.
+// delivering – the records anyway.
 func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Record) kgo.ProduceResults {
 	if len(records) == 0 {
 		return nil
@@ -131,16 +145,29 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 	return results
 }
 
+// BufferedProduceBytes returns the total size in bytes of every record
+// awaiting acknowledgement (still buffered or in flight).
+func (c *WarpstreamClient) BufferedProduceBytes() int64 {
+	return c.buffer.BufferedBytes()
+}
+
+// BufferedProduceRecords returns the count of records awaiting acknowledgement
+// (still buffered or in flight).
+func (c *WarpstreamClient) BufferedProduceRecords() int64 {
+	return c.buffer.BufferedRecords()
+}
+
 // Close stops the background metadata refresh, flushes every pending batch,
-// then closes the underlying kgo.Client. Idempotent.
-func (c *WarpstreamClient) Close() error {
+// then closes the underlying kgo.Client. Idempotent. Returns no error;
+// failures during the final flush surface through the per-record results
+// already delivered before Close is called.
+func (c *WarpstreamClient) Close() {
 	c.closeOnce.Do(func() {
 		c.refreshCancel()
 		c.refreshWG.Wait()
 		c.buffer.Close()
-		c.kgoClient.Close()
+		c.Client.Close()
 	})
-	return nil
 }
 
 // flushBatch is the FlushFunc the buffer calls when an agent's batch is

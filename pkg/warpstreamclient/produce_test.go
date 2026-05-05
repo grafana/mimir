@@ -182,8 +182,8 @@ func TestBuildMultiTopicProduceRequest(t *testing.T) {
 		}
 		require.Equal(t, idA, topics["a"].TopicID)
 		require.Equal(t, idB, topics["b"].TopicID)
-		assert.Len(t, topics["a"].Partitions, 2, "topic a has two partitions")
-		assert.Len(t, topics["b"].Partitions, 1, "topic b has one partition")
+		assert.Len(t, topics["a"].Partitions, 2)
+		assert.Len(t, topics["b"].Partitions, 1)
 	})
 
 	t.Run("populates the requested API version and acks", func(t *testing.T) {
@@ -277,10 +277,10 @@ func BenchmarkParseProduceResponse(b *testing.B) {
 func decodeRecordBatch(t *testing.T, raw []byte) kmsg.RecordBatch {
 	t.Helper()
 	var rb kmsg.RecordBatch
-	require.NoError(t, rb.ReadFrom(raw), "RecordBatch.ReadFrom failed")
+	require.NoError(t, rb.ReadFrom(raw))
 
 	want := int32(crc32.Checksum(raw[crcOffset+4:], crc32cTable))
-	assert.Equal(t, want, rb.CRC, "CRC mismatch")
+	assert.Equal(t, want, rb.CRC)
 	return rb
 }
 
@@ -290,14 +290,14 @@ func decodeRecords(t *testing.T, rb kmsg.RecordBatch) []kmsg.Record {
 	payload := rb.Records
 	if rb.Attributes&0x7 == 2 { // CodecSnappy
 		dec, err := s2.Decode(nil, payload)
-		require.NoError(t, err, "Snappy decompress failed")
+		require.NoError(t, err)
 		payload = dec
 	}
 
 	records := make([]kmsg.Record, 0, rb.NumRecords)
 	for len(payload) > 0 {
 		var rec kmsg.Record
-		require.NoError(t, rec.ReadFrom(payload), "Record.ReadFrom failed")
+		require.NoError(t, rec.ReadFrom(payload))
 		records = append(records, rec)
 		// Advance past this record: Length field (varint) + Length bytes.
 		advLen := kbin.VarintLen(rec.Length) + int(rec.Length)

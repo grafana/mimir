@@ -133,7 +133,7 @@ func TestAgentRecordBuffer_Add(t *testing.T) {
 		done := make(chan error, 1)
 		a.Add([]*kgo.Record{makeRecord("t", 0, "v")}, func(err error) { done <- err })
 
-		require.Equal(t, 0, flush.callCount(), "no flush expected before Close")
+		require.Equal(t, 0, flush.callCount())
 		a.Close()
 
 		select {
@@ -182,7 +182,7 @@ func TestAgentRecordBuffer_Add(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 			t.Fatal("cb did not fire for empty Add")
 		}
-		assert.Equal(t, 0, flush.callCount(), "empty Add must not invoke flush")
+		assert.Equal(t, 0, flush.callCount())
 		assert.Equal(t, float64(0), testutil.ToFloat64(m.lingerFlushesTotal))
 	})
 
