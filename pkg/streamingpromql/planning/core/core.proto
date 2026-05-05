@@ -30,7 +30,6 @@ message BinaryExpressionHints {
   // (no on/without) matching. When include is empty and hints is non-nil,
   // matchers are built from all LHS labels except those in exclude.
   repeated string exclude = 2;
-  reserved 3;
 }
 
 message AggregateExpressionDetails {
