@@ -90,6 +90,12 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		return nil, errors.New("LoadPath is empty")
 	}
 
+	// The cluster-validation counter shares its name with similarly-named counters from other
+	// client-side cluster-validation reporters in the calling application (e.g. gRPC clients), so
+	// its label set must match theirs: {client, protocol, method}, with no per-manager "config"
+	// label. We therefore pass an un-wrapped registerer to httpTransport and disambiguate per
+	// manager via the "client" label value (set to "runtime-config/<configName>").
+	clusterValidationRegisterer := registerer
 	registerer = prometheus.WrapRegistererWith(prometheus.Labels{"config": configName}, registerer)
 
 	mgr := Manager{
@@ -114,7 +120,7 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 				if timeout == 0 {
 					timeout = 30 * time.Second
 				}
-				httpClient = &http.Client{Timeout: timeout, Transport: httpTransport(cfg, registerer, logger)}
+				httpClient = &http.Client{Timeout: timeout, Transport: httpTransport(cfg, configName, clusterValidationRegisterer, logger)}
 				httpDuration = newHTTPRequestDuration(registerer)
 			}
 			mgr.providers = append(mgr.providers, newHTTPProvider(p, httpClient, httpDuration))
@@ -376,14 +382,14 @@ func (om *Manager) GetConfig() interface{} {
 	return nil
 }
 
-func httpTransport(cfg Config, registerer prometheus.Registerer, logger log.Logger) http.RoundTripper {
+func httpTransport(cfg Config, configName string, registerer prometheus.Registerer, logger log.Logger) http.RoundTripper {
 	rt := http.DefaultTransport
 	if cfg.HTTPClientClusterValidation.Label != "" {
 		invalidClusterValidations := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Name: "client_invalid_cluster_validation_label_requests_total",
 			Help: "Number of requests with invalid cluster validation label.",
 			ConstLabels: map[string]string{
-				"client":   "runtime-config",
+				"client":   "runtime-config/" + configName,
 				"protocol": "http",
 			},
 		}, []string{"method"})
