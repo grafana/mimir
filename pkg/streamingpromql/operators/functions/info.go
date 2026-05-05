@@ -129,7 +129,10 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 		values := identifyingLabelValues[labelName]
 		switch len(values) {
 		case 0:
-			return nil, true
+			// No inner series have this identifying label; skip generating a matcher
+			// for it but continue processing other labels. Only skip querying info
+			// entirely if no identifying labels have any values at all.
+			continue
 		case 1:
 			for value := range values {
 				matchers = append(matchers, types.Matcher{
@@ -151,6 +154,10 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 				Value: regexPattern,
 			})
 		}
+	}
+
+	if len(matchers) == 0 {
+		return nil, true
 	}
 
 	return matchers, false
@@ -201,12 +208,12 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			// Check for duplicate series for the same timestamp and signature.
 			// If a duplicate is found, only error out if the original timestamp is the same.
 			// Otherwise, keep the one with the latest original timestamp.
-			sigTimestamps, exists := sigTimestampsByMetric[metricName]
+			metricSigTimestamps, exists := sigTimestampsByMetric[metricName]
 			if !exists {
-				sigTimestamps = make(map[int64]map[string]labelsTime)
-				sigTimestampsByMetric[metricName] = sigTimestamps
+				metricSigTimestamps = make(map[int64]map[string]labelsTime)
+				sigTimestampsByMetric[metricName] = metricSigTimestamps
 			}
-			sigsAtTimestamp, exists := sigTimestamps[sample.T]
+			sigsAtTimestamp, exists := metricSigTimestamps[sample.T]
 			if !exists {
 				sigsAtTimestamp = make(map[string]labelsTime)
 			}
@@ -222,21 +229,28 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 				labels: metadata.Labels,
 				time:   origTs,
 			}
-			sigTimestamps[sample.T] = sigsAtTimestamp
-
-			// We summarise the info series by recording per timestamp and labels-only signature
-			// the series labels we've seen.
-			sigAtTimestamp, exists := f.sigTimestamps[sample.T]
-			if !exists {
-				sigAtTimestamp = make(map[string][]labels.Labels)
-			}
-			sigAtTimestamp[string(sig)] = append(sigAtTimestamp[string(sig)], metadata.Labels)
-			f.sigTimestamps[sample.T] = sigAtTimestamp
+			metricSigTimestamps[sample.T] = sigsAtTimestamp
 		}
 
 		// Return the info series data to the pool as we no longer need the raw samples
 		// now that we've saved the processed summary.
 		types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
+	}
+
+	// Summarise the info series by recording per timestamp and labels-only signature
+	// the series labels we've seen. We do this in a second pass so the inner loop's
+	// per-(metric, sig) duplicate resolution finalises before we write the result.
+	for _, metricSigTimestamps := range sigTimestampsByMetric {
+		for t, sigsAtTimestamp := range metricSigTimestamps {
+			sigAtTimestamp, exists := f.sigTimestamps[t]
+			if !exists {
+				sigAtTimestamp = make(map[string][]labels.Labels)
+			}
+			for sig, lt := range sigsAtTimestamp {
+				sigAtTimestamp[sig] = append(sigAtTimestamp[sig], lt.labels)
+			}
+			f.sigTimestamps[t] = sigAtTimestamp
+		}
 	}
 
 	// Now that we've seen all info series, summarise them overall across all timestamps.
@@ -321,7 +335,9 @@ func matchersMatch(matchers []*labels.Matcher, value string) bool {
 // combineSeriesMetadata combines inner series metadata with info series labels.
 func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Store user-specified label matchers in a map for easy retrieval.
-	dataLabelMatchersMap := make(map[string]*labels.Matcher)
+	// Multiple matchers may target the same label name (e.g. {data=~".+", data=~".*"}),
+	// so we store all of them per name to match upstream Prometheus behaviour.
+	dataLabelMatchersMap := make(map[string][]*labels.Matcher)
 	for _, m := range dataLabelMatchers {
 		if m.Name == model.MetricNameLabel {
 			continue
@@ -330,15 +346,20 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		if err != nil {
 			return nil, err
 		}
-		dataLabelMatchersMap[m.Name] = matcher
+		dataLabelMatchersMap[m.Name] = append(dataLabelMatchersMap[m.Name], matcher)
 	}
 
 	// Check if any data label matcher doesn't match the empty string (e.g. {cluster=~".+"}).
 	// If so, inner series without a matching info series should be suppressed.
 	hasNonEmptyDataLabelMatcher := false
-	for _, m := range dataLabelMatchersMap {
-		if !m.Matches("") {
-			hasNonEmptyDataLabelMatcher = true
+	for _, ms := range dataLabelMatchersMap {
+		for _, m := range ms {
+			if !m.Matches("") {
+				hasNonEmptyDataLabelMatcher = true
+				break
+			}
+		}
+		if hasNonEmptyDataLabelMatcher {
 			break
 		}
 	}
@@ -377,7 +398,10 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 
 		// Get all possible combinations of info series labels with this inner series,
 		// and track them properly so we know exactly how many to pull from the pool later.
-		newLabelSets, labelSetsOrder := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
+		newLabelSets, labelSetsOrder, err := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
+		if err != nil {
+			return nil, err
+		}
 
 		// If user specified label matchers but no labels from info series matched, skip this series.
 		if len(dataLabelMatchersMap) > 0 && len(newLabelSets) == 0 {
@@ -444,7 +468,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 }
 
 // combineLabels combines inner series labels with info series label sets.
-func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSetsMap map[string][]labels.Labels, dataLabelMatchersMap map[string]*labels.Matcher) ([]labels.Labels, []string) {
+func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSetsMap map[string][]labels.Labels, dataLabelMatchersMap map[string][]*labels.Matcher) ([]labels.Labels, []string, error) {
 	newLabelSets := make([]labels.Labels, 0, len(labelSetsMap))
 	labelSetsOrder := make([]string, 0, len(labelSetsMap))
 	savedLabels := make(map[string]struct{})
@@ -453,9 +477,14 @@ func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSe
 		lb.Reset(innerSeries.Labels)
 		clear(savedLabels)
 
+		var conflictErr error
 		for _, infoLabels := range labelSets {
 			// Add requested labels to inner series.
 			infoLabels.Range(func(l labels.Label) {
+				if conflictErr != nil {
+					return
+				}
+
 				// Ignore metric name.
 				if l.Name == model.MetricNameLabel {
 					return
@@ -467,23 +496,40 @@ func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSe
 					return
 				}
 
-				// If user specified certain label matchers, ignore labels that don't match.
+				// If user specified certain label matchers, only include labels
+				// whose name is among the specified data label matchers.
+				// Value filtering is not needed here as info series were already
+				// pre-filtered by the selector during fetching.
 				if len(dataLabelMatchersMap) > 0 {
-					if matcher, ok := dataLabelMatchersMap[l.Name]; !ok || !matcher.Matches(l.Value) {
+					if _, ok := dataLabelMatchersMap[l.Name]; !ok {
 						return
 					}
+				}
+
+				// Detect conflicting labels from different info metrics.
+				if v := lb.Get(l.Name); v != "" && v != l.Value {
+					conflictErr = fmt.Errorf("conflicting label: %s", l.Name)
+					return
 				}
 
 				lb.Set(l.Name, l.Value)
 				savedLabels[l.Name] = struct{}{}
 			})
+			if conflictErr != nil {
+				return nil, nil, conflictErr
+			}
 		}
 
 		shouldSkip := false
 		// If user specified certain label matchers but no labels matched, skip this series.
-		for _, m := range dataLabelMatchersMap {
-			if _, saved := savedLabels[m.Name]; !saved && !m.Matches("") {
-				shouldSkip = true
+		for _, ms := range dataLabelMatchersMap {
+			for _, m := range ms {
+				if _, saved := savedLabels[m.Name]; !saved && !m.Matches("") {
+					shouldSkip = true
+					break
+				}
+			}
+			if shouldSkip {
 				break
 			}
 		}
@@ -495,7 +541,7 @@ func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSe
 		labelSetsOrder = append(labelSetsOrder, makeLabelSetsHash(labelSets))
 	}
 
-	return newLabelSets, labelSetsOrder
+	return newLabelSets, labelSetsOrder, nil
 }
 
 func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

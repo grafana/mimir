@@ -216,7 +216,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	v.evaluationStats, err = types.NewOperatorEvaluationStats(v.Selector.TimeRange, v.MemoryConsumptionTracker, len(v.Selector.Subsets))
+	v.evaluationStats, err = types.NewOperatorEvaluationStats(ctx, v.Selector.TimeRange, v.MemoryConsumptionTracker, len(v.Selector.Subsets))
 	if err != nil {
 		return err
 	}

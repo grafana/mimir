@@ -65,7 +65,14 @@ const QueryPlanV8 = QueryPlanVersion(8)
 // QueryPlanV9 introduces the NoOp node.
 const QueryPlanV9 = QueryPlanVersion(9)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV9
+// QueryPlanV10 introduces a matrix variant of the NoOp node.
+const QueryPlanV10 = QueryPlanVersion(10)
+
+// QueryPlanV11 introduces support for deduplicating range vector selectors in range queries as part of
+// common subexpression elimination.
+const QueryPlanV11 = QueryPlanVersion(11)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV11
 
 type QueryPlan struct {
 	Root       Node

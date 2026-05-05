@@ -250,6 +250,63 @@ func TestKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.
 	require.Equal(t, float64(0), *histogram.SampleSum)
 }
 
+func TestKafkaProducer_ProduceSync_ShouldRejectWholeBatchIfBufferIsFull(t *testing.T) {
+	const (
+		numPartitions = 1
+		topicName     = "test"
+		recordValue   = "1234567890"
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	// Set the limit lower than the size of a 3-record batch so the batch must be rejected as a whole.
+	cfg.ProducerMaxBufferedBytes = int64(2 * len(recordValue))
+
+	reg := prometheus.NewPedanticRegistry()
+	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
+
+	client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
+	require.NoError(t, err)
+
+	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
+	t.Cleanup(producer.Close)
+
+	batch := []*kgo.Record{
+		{Key: []byte("test"), Value: []byte(recordValue)},
+		{Key: []byte("test"), Value: []byte(recordValue)},
+		{Key: []byte("test"), Value: []byte(recordValue)},
+	}
+
+	res := producer.ProduceSync(context.Background(), batch)
+	require.Len(t, res, len(batch))
+	for i, r := range res {
+		require.ErrorIsf(t, r.Err, kgo.ErrMaxBuffered, "result[%d] should be ErrMaxBuffered", i)
+		require.Same(t, batch[i], r.Record, "result[%d] should reference the original record", i)
+	}
+
+	// No record should be buffered in the Kafka client (none was produced).
+	require.Equal(t, int64(0), producer.BufferedProduceRecords())
+	require.Equal(t, int64(0), producer.bufferedBytes.Load())
+
+	// Every record in the rejected batch should be counted as enqueued and as failed with reason "buffer-full".
+	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+		# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+		cortex_ingest_storage_writer_produce_records_enqueued_total 3
+
+		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+		cortex_ingest_storage_writer_produce_records_failed_total{reason="buffer-full"} 3
+	`),
+		"cortex_ingest_storage_writer_produce_records_enqueued_total",
+		"cortex_ingest_storage_writer_produce_records_failed_total"))
+
+	// A subsequent batch that fits in the buffer should succeed.
+	res = producer.ProduceSync(context.Background(), []*kgo.Record{{Key: []byte("test"), Value: []byte(recordValue)}})
+	require.NoError(t, res.FirstErr())
+}
+
 func TestKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t *testing.T) {
 	t.Parallel()
 

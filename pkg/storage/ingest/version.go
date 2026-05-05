@@ -22,7 +22,9 @@ var (
 	// Bake in a shared symbols table for extremely common symbols.
 	// The index corresponds to the symbol value.
 	// The first `V2RecordSymbolOffset` symbols are reserved for this table.
-	// Note: V2 is not yet stabilized.
+	//
+	// *IMPORTANT*:
+	// V2 is a stabilized wire format: this table cannot be changed without a version bump.
 	V2CommonSymbols = mimirpb.NewCommonSymbols([]string{
 		// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
 		// This ensures that empty/missing refs still map to empty string.

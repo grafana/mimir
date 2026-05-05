@@ -7,8 +7,10 @@
           alert: $.alertName('UsageTrackerSnapshotUploadFailing'),
           'for': '15m',
           expr: |||
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_usage_tracker_snapshot_events_publish_failures_total[5m])) > 0
-          ||| % $._config,
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_usage_tracker_snapshot_events_publish_failures_total[%(rate_interval)s])) > 0
+          ||| % $._config {
+            rate_interval: $.rateInterval('5m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -20,8 +22,10 @@
           alert: $.alertName('UsageTrackerSnapshotDownloadFailing'),
           'for': '15m',
           expr: |||
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_usage_tracker_snapshot_events_errors_total{error="download"}[5m])) > 0
-          ||| % $._config,
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_usage_tracker_snapshot_events_errors_total{error="download"}[%(rate_interval)s])) > 0
+          ||| % $._config {
+            rate_interval: $.rateInterval('5m'),
+          },
           labels: {
             severity: 'critical',
           },
