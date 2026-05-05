@@ -3,7 +3,6 @@
 package encoding
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -27,7 +26,7 @@ const testBufPoolSize = 16
 
 var testBucketBufPool = sync.Pool{
 	New: func() any {
-		return bufio.NewReaderSize(nil, testBufPoolSize)
+		return make([]byte, testBufPoolSize)
 	},
 }
 
@@ -47,8 +46,7 @@ func newFailingBufReader(t *testing.T, sentinel error) *BucketBufReader {
 	bkt := &failingBucket{err: sentinel}
 	ctx := context.Background()
 	reader := NewBucketReader(ctx, bkt, "obj", 0, 10)
-	bufioReader := testBucketBufPool.Get().(*bufio.Reader)
-	bufioReader.Reset(reader)
+	reader.buf = testBucketBufPool.Get().([]byte)
 	return &BucketBufReader{
 		ctx:    ctx,
 		bkt:    bkt,
@@ -56,7 +54,6 @@ func newFailingBufReader(t *testing.T, sentinel error) *BucketBufReader {
 		base:   0,
 		length: 10,
 		r:      reader,
-		buf:    bufioReader,
 	}
 }
 
