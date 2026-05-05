@@ -18727,37 +18727,6 @@
     },
     {
       "kind": "block",
-      "name": "runtime_config_client",
-      "required": false,
-      "desc": "",
-      "blockEntries": [
-        {
-          "kind": "block",
-          "name": "cluster_validation",
-          "required": false,
-          "desc": "",
-          "blockEntries": [
-            {
-              "kind": "field",
-              "name": "label",
-              "required": false,
-              "desc": "Primary cluster validation label.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "runtime-config.client.cluster-validation.label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
-            }
-          ],
-          "fieldValue": null,
-          "fieldDefaultValue": null
-        }
-      ],
-      "fieldValue": null,
-      "fieldDefaultValue": null
-    },
-    {
-      "kind": "block",
       "name": "memberlist",
       "required": false,
       "desc": "",
