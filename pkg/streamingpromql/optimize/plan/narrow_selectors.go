@@ -96,6 +96,11 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 				addedHint = true
 			}
 		} else if !e.VectorMatching.On {
+			// Note: "on ()" with an empty label list falls through to neither branch.
+			// The first condition requires On=true AND MatchingLabels>0, which excludes "on ()".
+			// This branch requires On=false, which also excludes "on ()".
+			// This is intentional: "on ()" matches all series regardless of labels,
+			// so no narrowing hint is useful.
 			// "without (labels)" / "ignoring (labels)" / default (no on/without) matching:
 			// tell the operator to build RHS matchers from all LHS labels at query time,
 			// excluding both the without/ignoring labels and any synthesised labels.

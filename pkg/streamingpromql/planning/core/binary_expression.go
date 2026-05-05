@@ -164,6 +164,17 @@ func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.N
 		b.ReturnBool == otherBinaryExpression.ReturnBool
 }
 
+// MergeHints merges the hints from other into b. It returns an error if the
+// hints are incompatible.
+//
+// nil hints and non-nil hints with an empty Include (exclude-matching mode)
+// are intentionally treated as distinct, incompatible states:
+//   - nil hints means no optimization was applied (e.g. from an older query-frontend).
+//   - Non-nil hints with empty Include means exclude-matching mode (without/ignoring/default).
+//
+// Merging these two would be incorrect because nil hints signal that the sender
+// did not compute any narrowing information, so we cannot assume exclude-matching
+// semantics. See IsExcludeMatching for the full convention.
 func (b *BinaryExpression) MergeHints(other planning.Node) error {
 	otherBinaryExpression, ok := other.(*BinaryExpression)
 	if !ok {
