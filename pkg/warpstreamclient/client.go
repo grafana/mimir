@@ -243,6 +243,13 @@ func newKgoClient(cfg Config) (*kgo.Client, error) {
 		// produce path is enforced one level up.
 		kgo.MaxBufferedRecords(math.MaxInt),
 		kgo.MaxBufferedBytes(0),
+
+		// Mirror the warpstream-side producer settings so direct Produce calls
+		// on the embedded kgo.Client (e.g. benchmarks, tests) honour the same
+		// batching configuration. The wrapping ProduceSync path does not use
+		// kgo's producer, so these are no-ops in normal operation.
+		kgo.ProducerLinger(cfg.Linger),
+		kgo.ProducerBatchMaxBytes(cfg.MaxBatchBytes),
 	}
 	if cfg.TLSEnabled {
 		opts = append(opts, kgo.DialTLSConfig(cfg.TLSConfig))

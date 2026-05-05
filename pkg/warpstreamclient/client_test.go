@@ -4,6 +4,8 @@ package warpstreamclient
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -304,4 +306,95 @@ func TestWarpstreamClient_Close(t *testing.T) {
 		require.NoError(t, fetches.Err())
 		require.Len(t, fetches.Records(), 1)
 	})
+}
+
+// produceClient is the minimum surface BenchmarkProduce exercises against
+// both kgo.Client and *WarpstreamClient.
+type produceClient interface {
+	Produce(ctx context.Context, r *kgo.Record, promise func(*kgo.Record, error))
+	Close()
+}
+
+// BenchmarkProduce stresses Produce() throughput for both backends against
+// the same kfake cluster (multi-broker, multi-partition), with many concurrent
+// goroutines fanning small records across partitions. To keep the comparison
+// apples-to-apples, the franz-go side uses the *kgo.Client embedded in the
+// WarpstreamClient — both legs run with identical kgo configuration. The
+// custom records/sec metric reports post-completion throughput; combined
+// with -benchmem it gives a per-record CPU and allocation profile.
+func BenchmarkProduce(b *testing.B) {
+	const (
+		topic            = "bench-topic"
+		numPartitions    = int32(500)
+		numBrokers       = 100
+		valueLen         = 1024
+		recordsPerOp     = 100
+	)
+
+	cluster, addr := testkafka.CreateCluster(b, numPartitions, topic, testkafka.WithNumBrokers(numBrokers))
+	b.Cleanup(cluster.Close)
+
+	cfg := Config{
+		Address:                 []string{addr},
+		Topic:                   topic,
+		ClientID:                "warpstream-bench",
+		DialTimeout:             2 * time.Second,
+		WriteTimeout:            30 * time.Second,
+		Linger:                  50 * time.Millisecond,
+		MaxBatchBytes:           16 << 20,
+		HedgeSlowMultiplier:     2.0,
+		HedgeMaxSlowFraction:    0.3,
+		HedgeFaultyThreshold:    0.05,
+		HedgeMaxFaultyFraction:  0.3,
+		HedgeMinDelay:           time.Hour, // Disable hedging: never fires within the benchmark.
+		ClusterStatsTTL:         time.Second,
+		MetadataRefreshInterval: time.Hour,
+	}
+	wsc, err := NewWarpstreamClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(b, err)
+	b.Cleanup(wsc.Close)
+
+	// The franz-go leg reuses the kgo.Client embedded in the WarpstreamClient
+	// (its produce path is unaffected by the wrapping logic), so both legs
+	// share the exact same kgo configuration, broker set, and metadata view.
+	cases := []struct {
+		name   string
+		client produceClient
+	}{
+		{name: "kgo", client: wsc.Client},
+		{name: "warpstream", client: wsc},
+	}
+
+	value := make([]byte, valueLen)
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			p := tc.client
+			ctx := context.Background()
+			var (
+				wg        sync.WaitGroup
+				partition atomic.Int32
+			)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					wg.Add(recordsPerOp)
+					for i := 0; i < recordsPerOp; i++ {
+						pid := partition.Add(1) % numPartitions
+						rec := &kgo.Record{
+							Topic:     topic,
+							Partition: pid,
+							Value:     value,
+						}
+						p.Produce(ctx, rec, func(*kgo.Record, error) { wg.Done() })
+					}
+				}
+			})
+			wg.Wait()
+			b.StopTimer()
+
+			b.ReportMetric(float64(b.N*recordsPerOp)/b.Elapsed().Seconds(), "records/sec")
+		})
+	}
 }
