@@ -8,6 +8,8 @@ package mimir
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
@@ -313,6 +316,51 @@ overrides:
 	require.Equal(t, ``, overrides.ActiveSeriesCustomTrackersConfig("user-5").String())
 	require.Equal(t, `additional:{foo="user_1_additional"};common:{foo="user_1_additional"}`, overrides.ActiveSeriesCustomTrackersConfig("user-6").String())
 	require.Equal(t, `default:{foo="default"}`, overrides.ActiveSeriesCustomTrackersConfig("user-without-overrides").String())
+}
+
+func TestRuntimeConfigHTTPClientClusterValidation(t *testing.T) {
+	const minimalConfig = "overrides: {}\n"
+
+	t.Run("with cluster validation label", func(t *testing.T) {
+		var gotHeader string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotHeader = r.Header.Get(clusterutil.ClusterValidationLabelHeader)
+			_, _ = w.Write([]byte(minimalConfig))
+		}))
+		t.Cleanup(srv.Close)
+
+		cfg := Config{}
+		flagext.DefaultValues(&cfg)
+		cfg.RuntimeConfig.HTTPClientClusterValidation.Label = "test-cluster"
+		require.NoError(t, cfg.RuntimeConfig.LoadPath.Set(srv.URL))
+
+		manager, err := NewRuntimeManager(&cfg, "test", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+		require.Equal(t, "test-cluster", gotHeader)
+	})
+
+	t.Run("without cluster validation label", func(t *testing.T) {
+		var headerPresent bool
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, headerPresent = r.Header[clusterutil.ClusterValidationLabelHeader]
+			_, _ = w.Write([]byte(minimalConfig))
+		}))
+		t.Cleanup(srv.Close)
+
+		cfg := Config{}
+		flagext.DefaultValues(&cfg)
+		require.NoError(t, cfg.RuntimeConfig.LoadPath.Set(srv.URL))
+
+		manager, err := NewRuntimeManager(&cfg, "test", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager)) })
+
+		require.False(t, headerPresent)
+	})
 }
 
 func getDefaultLimits() validation.Limits {
