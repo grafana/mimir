@@ -12,6 +12,13 @@ import (
 )
 
 func TestFilterContains(t *testing.T) {
+	// Score for "ber" in "kubernetes": idx=2 ("k-u-ber-..."), maxIdx=10-3=7, score = 1 - 0.9*2/7 = 0.74285...
+	const berInKubernetes = 1.0 - 0.9*2.0/7.0
+	// Score for "b" in "abc": idx=1, maxIdx=3-1=2, score = 1 - 0.9*1/2 = 0.55.
+	const bInAbc = 1.0 - 0.9*1.0/2.0
+	// Score for "x" at the very end of "abcdex": idx=5, maxIdx=6-1=5, score = 1 - 0.9 = 0.1.
+	const xLastInAbcdex = 1.0 - 0.9*5.0/5.0
+
 	tests := []struct {
 		name          string
 		term          string
@@ -21,7 +28,9 @@ func TestFilterContains(t *testing.T) {
 		wantScore     float64
 	}{
 		{name: "prefix scores 1.0", term: "kube", caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: 1.0},
-		{name: "non-prefix substring scores 0.9", term: "ber", caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: 0.9},
+		{name: "non-prefix substring scores by position decay", term: "ber", caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: berInKubernetes},
+		{name: "early non-prefix scores higher than late", term: "b", caseSensitive: true, value: "abc", wantAccepted: true, wantScore: bInAbc},
+		{name: "latest possible position scores 0.1", term: "x", caseSensitive: true, value: "abcdex", wantAccepted: true, wantScore: xLastInAbcdex},
 		{name: "case-sensitive miss on case difference", term: "Kube", caseSensitive: true, value: "kubernetes", wantAccepted: false, wantScore: 0},
 		{name: "case-insensitive matches across cases", term: "Kube", caseSensitive: false, value: "kubernetes", wantAccepted: true, wantScore: 1.0},
 		{name: "non-substring rejected", term: "xyz", caseSensitive: true, value: "kubernetes", wantAccepted: false, wantScore: 0},
@@ -34,7 +43,7 @@ func TestFilterContains(t *testing.T) {
 			require.NoError(t, err)
 			gotAccepted, gotScore := f.Accept(tt.value)
 			assert.Equal(t, tt.wantAccepted, gotAccepted)
-			assert.Equal(t, tt.wantScore, gotScore)
+			assert.InDelta(t, tt.wantScore, gotScore, 1e-9)
 		})
 	}
 }
@@ -195,8 +204,10 @@ func TestBuildFilterEmptyReturnsNil(t *testing.T) {
 	assert.Nil(t, f)
 }
 
-func TestBuildFilterSingleTermSubstringFallsThroughToFuzzy(t *testing.T) {
-	// "kub" prefix-matches "kubernetes" so substring scores 1.0; fuzzy not invoked.
+func TestBuildFilterSubsequenceSingleTermPrefixScoresOne(t *testing.T) {
+	// FuzzAlgSubsequence: BuildFilter returns just a FilterSubsequence — no
+	// substring fallback. The subsequence filter's prefix override still
+	// scores prefix matches at 1.0.
 	f, err := BuildFilter(&Params{
 		Terms:         []string{"kub"},
 		CaseSensitive: true,
@@ -210,21 +221,41 @@ func TestBuildFilterSingleTermSubstringFallsThroughToFuzzy(t *testing.T) {
 	assert.InDelta(t, 1.0, score, 1e-9)
 }
 
-func TestBuildFilterSingleTermSubstringMissesFuzzyAccepts(t *testing.T) {
-	// "kub" is not a substring of "qkbu" but composes with fuzzy as a chain.
+func TestBuildFilterJaroWinklerThresholdZeroIsSubstringOnly(t *testing.T) {
+	// FuzzAlgJaroWinkler with threshold 0 should yield a substring-only
+	// filter (mirrors Prometheus PR #18573 buildSearchFilter, which omits the
+	// fuzzy filter when threshold == 0).
 	f, err := BuildFilter(&Params{
-		Terms:         []string{"kub"},
+		Terms:         []string{"metric"},
 		CaseSensitive: true,
-		FuzzAlg:       FuzzAlgSubsequence,
+		FuzzAlg:       FuzzAlgJaroWinkler,
 		FuzzThreshold: 0,
 	})
 	require.NoError(t, err)
-	accepted, score := f.Accept("qkbu")
-	_ = score
-	// Either accepted via fuzzy, or rejected — both are acceptable behaviour
-	// here depending on the Prometheus matcher. The point of the test is that
-	// BuildFilter actually composes the fallback chain and doesn't crash.
-	_ = accepted
+	require.NotNil(t, f)
+	// Substring match is accepted.
+	accepted, _ := f.Accept("metric_a")
+	assert.True(t, accepted, "substring should be accepted")
+	// Non-substring is rejected because there's no fuzzy fallback.
+	accepted, _ = f.Accept("totally_unrelated")
+	assert.False(t, accepted, "without fuzzy fallback at threshold 0, non-substring must be rejected")
+}
+
+func TestBuildFilterJaroWinklerWithThresholdComposesFallback(t *testing.T) {
+	// FuzzAlgJaroWinkler with threshold > 0: substring tried first, fuzzy
+	// fallback for non-substring values that score above threshold.
+	f, err := BuildFilter(&Params{
+		Terms:         []string{"metric"},
+		CaseSensitive: true,
+		FuzzAlg:       FuzzAlgJaroWinkler,
+		FuzzThreshold: 80,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, f)
+	// Prefix substring scores 1.0 via the substring path.
+	accepted, score := f.Accept("metric")
+	assert.True(t, accepted)
+	assert.InDelta(t, 1.0, score, 1e-9)
 }
 
 func TestBuildFilterMultipleTermsORed(t *testing.T) {

@@ -12,8 +12,9 @@ import (
 )
 
 // FilterContains accepts values that contain a fixed substring. Score is
-// 1.0 on prefix match, 0.9 on non-prefix substring, 0 on reject. Mirrors
-// Prometheus PR #18573's SubstringFilter score semantics.
+// 1.0 on prefix match; for non-prefix substrings the score decays linearly
+// with the match position from 1.0 (early match) to 0.1 (latest match).
+// Mirrors Prometheus PR #18573's SubstringFilter score semantics.
 type FilterContains struct {
 	term          string
 	caseSensitive bool
@@ -32,19 +33,22 @@ func NewFilterContains(term string, caseSensitive bool) (*FilterContains, error)
 	return &FilterContains{term: term, caseSensitive: caseSensitive}, nil
 }
 
-// Accept returns (true, 1.0) on prefix match, (true, 0.9) on non-prefix
-// substring, (false, 0) on reject.
+// Accept returns (true, 1.0) on prefix match; (true, score) for a non-prefix
+// substring where score = 1.0 - 0.9 * idx / maxIdx (range [0.1, 1.0));
+// (false, 0) on reject.
 func (f *FilterContains) Accept(value string) (bool, float64) {
 	if !f.caseSensitive {
 		value = strings.ToLower(value)
 	}
-	if !strings.Contains(value, f.term) {
+	idx := strings.Index(value, f.term)
+	if idx < 0 {
 		return false, 0
 	}
-	if strings.HasPrefix(value, f.term) {
+	if idx == 0 {
 		return true, 1.0
 	}
-	return true, 0.9
+	maxIdx := len(value) - len(f.term)
+	return true, 1.0 - 0.9*float64(idx)/float64(maxIdx)
 }
 
 // FilterJaro accepts values whose Jaro-Winkler similarity to a fixed term is
@@ -180,9 +184,14 @@ func (f *filterFallback) Accept(value string) (bool, float64) {
 // when Params is nil or has zero Terms — a nil storage.Filter accepts every
 // value with score 1.0 by Prometheus convention.
 //
-// Per term, builds a filterFallback{FilterContains, fuzzy} (substring tried
-// first, fuzzy fallback). Across terms, combines with filterOr (OR-max).
-// FuzzThreshold (int 0-100) is divided by 100 internally.
+// Per-term composition mirrors Prometheus PR #18573's buildSearchFilter:
+//   - FuzzAlgSubsequence: just a FilterSubsequence (no substring fallback;
+//     prefix matches still score 1.0 inside FilterSubsequence).
+//   - FuzzAlgJaroWinkler: FilterContains OR FilterJaro via filterFallback;
+//     the FilterJaro is omitted when threshold is 0 (substring only).
+//
+// Across terms, combines with filterOr (OR-max). FuzzThreshold (int 0-100)
+// is divided by 100 internally.
 func BuildFilter(p *Params) (storage.Filter, error) {
 	if p == nil || len(p.Terms) == 0 {
 		return nil, nil
@@ -193,24 +202,38 @@ func BuildFilter(p *Params) (storage.Filter, error) {
 	threshold := float64(p.FuzzThreshold) / 100.0
 	perTerm := make([]storage.Filter, 0, len(p.Terms))
 	for _, term := range p.Terms {
-		substring, err := NewFilterContains(term, p.CaseSensitive)
+		f, err := buildPerTermFilter(term, p.CaseSensitive, p.FuzzAlg, p.FuzzThreshold, threshold)
 		if err != nil {
 			return nil, err
 		}
-		var fuzzy storage.Filter
-		switch p.FuzzAlg {
-		case FuzzAlgJaroWinkler:
-			fuzzy, err = NewFilterJaro(term, threshold, p.CaseSensitive)
-		default: // FuzzAlgSubsequence
-			fuzzy, err = NewFilterSubsequence(term, threshold, p.CaseSensitive)
-		}
-		if err != nil {
-			return nil, err
-		}
-		perTerm = append(perTerm, &filterFallback{substring: substring, fuzzy: fuzzy})
+		perTerm = append(perTerm, f)
 	}
 	if len(perTerm) == 1 {
 		return perTerm[0], nil
 	}
 	return newFilterOr(perTerm...), nil
+}
+
+// buildPerTermFilter composes the per-term filter. fuzzThresholdInt is the
+// raw integer value from Params (0-100) — used to decide whether to attach a
+// Jaro-Winkler fuzzy filter under the FuzzAlgJaroWinkler branch (omitted when
+// threshold is 0, mirroring Prometheus's buildSearchFilter).
+func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresholdInt int, threshold float64) (storage.Filter, error) {
+	switch alg {
+	case FuzzAlgJaroWinkler:
+		substring, err := NewFilterContains(term, caseSensitive)
+		if err != nil {
+			return nil, err
+		}
+		if fuzzThresholdInt == 0 {
+			return substring, nil
+		}
+		fuzzy, err := NewFilterJaro(term, threshold, caseSensitive)
+		if err != nil {
+			return nil, err
+		}
+		return &filterFallback{substring: substring, fuzzy: fuzzy}, nil
+	default: // FuzzAlgSubsequence — no substring fallback; prefix matches still score 1.0 inside FilterSubsequence.
+		return NewFilterSubsequence(term, threshold, caseSensitive)
+	}
 }
