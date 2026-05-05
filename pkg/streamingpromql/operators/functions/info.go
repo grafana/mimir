@@ -341,11 +341,11 @@ func matchersMatch(matchers []*labels.Matcher, value string) bool {
 // is prepended so non-info metrics are never treated as info metrics. When no
 // __name__ matchers are present, a target_info= matcher is returned.
 //
-// In the planner path, InsertOmittedTargetInfoSelector and
-// InsertSyntheticInfoNameMatcher together ensure the info selector's matchers
-// always include a positive __name__ matcher, so this function effectively
-// returns its input unchanged in production. The branches remain as
-// defense-in-depth for callers that bypass the planner (e.g. unit tests).
+// In the planner path, EnsureInfoHasPositiveNameMatcher ensures the info
+// selector's matchers always include a positive __name__ matcher, so this
+// function effectively returns its input unchanged in production. The
+// branches remain as defense-in-depth for callers that bypass the planner
+// (e.g. unit tests).
 func effectiveInfoNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
 	var nameMatchers []*labels.Matcher
 	for _, m := range matchers {
