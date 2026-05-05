@@ -220,6 +220,11 @@
             //
             // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
             // but queriers are busy.
+            //
+            // or vector(0) ensures KEDA receives a numeric result when queriers exist but have NOT
+            // received traffic yet (e.g. during a migration before routing is switched).
+            // Without it, the histogram counter is absent from Prometheus until the first request,
+            // causing KEDA to error with ignoreNullValues=false and triggering MimirAutoscalerKedaFailing.
             query: queryWithWeight('(sum(rate(cortex_querier_request_duration_seconds_sum{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m])) or vector(0))' % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
