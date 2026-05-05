@@ -156,7 +156,12 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 	samplesReadIfSubsequentStep := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
 
 	s.allSeries.Add(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange)
-	s.queryStats.AddPhysicalSamplesRead(uint64(samplesReadIfSubsequentStep))
+
+	if pointIdx == 0 {
+		s.queryStats.AddPhysicalSamplesRead(uint64(allSamplesInRange))
+	} else {
+		s.queryStats.AddPhysicalSamplesRead(uint64(samplesReadIfSubsequentStep))
+	}
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {

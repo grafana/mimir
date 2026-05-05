@@ -157,7 +157,7 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 			histograms.Close()
 			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
-			require.Equal(t, uint64((4+3+4+4+4)*testCase.samplesPerPoint), queryStats.LoadPhysicalSamplesRead())
+			require.Equal(t, uint64((4+3+4+6+4)*testCase.samplesPerPoint), queryStats.LoadPhysicalSamplesRead())
 		})
 	}
 }
