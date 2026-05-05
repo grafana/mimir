@@ -1029,6 +1029,24 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 			err:                middleware.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
+		"a hard sampleTimestampTooOldError still gets translated into an HTTP 400 (Prometheus remote write keeps non-OTLP behavior)": {
+			err: func() error {
+				e := newSampleTimestampTooOldError(123, "metric")
+				e.rejectedSamples = 1
+				e.totalSamplesInRequest = 1
+				return e
+			}(),
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
+		"a soft sampleTimestampTooOldError still gets translated into an HTTP 400 on non-OTLP paths (only OTLP upgrades to 200 PartialSuccess)": {
+			err: func() error {
+				e := newSampleTimestampTooOldError(123, "metric")
+				e.rejectedSamples = 1
+				e.totalSamplesInRequest = 5
+				return e
+			}(),
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
 		"an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,

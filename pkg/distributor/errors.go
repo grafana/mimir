@@ -153,6 +153,61 @@ func (e validationError) IsSoft() bool {
 // Ensure that validationError implements Error.
 var _ Error = validationError{}
 
+// sampleTimestampTooOldError represents a "sample timestamp too far in the past" validation error.
+//
+// Like other validation errors, its cause is BAD_DATA so non-OTLP write paths (Prometheus remote
+// write, gRPC Push, Influx) keep returning HTTP 400 / gRPC InvalidArgument. Unlike
+// validationError, however, it can become "soft" once the validation middleware has populated
+// rejectedSamples/totalSamplesInRequest: when the request also contained samples that validated
+// successfully, IsSoft() returns true and the OTLP handler responds with HTTP 200 +
+// ExportMetricsPartialSuccess (RejectedDataPoints populated) instead of HTTP 400. This aligns
+// the OTLP response with the partial-success contract documented at
+// https://opentelemetry.io/docs/specs/otlp/#partial-success and matches the precedent set by
+// activeSeriesLimitedError for usage-tracker rejections.
+type sampleTimestampTooOldError struct {
+	msg string
+
+	// rejectedSamples is the number of OTLP data points (samples + histograms) discarded from
+	// the request because they belong to series that failed validation. Populated by
+	// prePushValidationMiddleware after the validation loop completes.
+	rejectedSamples int64
+
+	// totalSamplesInRequest is the total number of OTLP data points the client sent in the
+	// request (validated samples + rejected samples). Populated by prePushValidationMiddleware
+	// alongside rejectedSamples and used to decide whether the rejection was partial.
+	totalSamplesInRequest int64
+}
+
+// newSampleTimestampTooOldError builds an error for a single rejected sample. The validation
+// middleware fills in rejectedSamples and totalSamplesInRequest after the per-series loop, when
+// it knows whether other samples in the same request validated successfully.
+func newSampleTimestampTooOldError(timestampMs int64, metricName string) sampleTimestampTooOldError {
+	return sampleTimestampTooOldError{
+		// fmt.Sprintf copies the metric name bytes, so msg is safe to retain past the gRPC
+		// buffer's lifetime even though metricName is an unsafe reference.
+		msg: fmt.Sprintf(sampleTimestampTooOldMsgFormat, timestampMs, metricName),
+	}
+}
+
+func (e sampleTimestampTooOldError) Error() string {
+	return e.msg
+}
+
+func (e sampleTimestampTooOldError) Cause() mimirpb.ErrorCause {
+	return mimirpb.ERROR_CAUSE_BAD_DATA
+}
+
+// IsSoft reports whether the rejection is partial and should be surfaced as an OTLP
+// PartialSuccess (HTTP 200) instead of failing the whole request. The condition mirrors
+// activeSeriesLimitedError.IsSoft: at least one sample was rejected, but at least one other
+// sample validated successfully.
+func (e sampleTimestampTooOldError) IsSoft() bool {
+	return e.rejectedSamples > 0 && e.rejectedSamples < e.totalSamplesInRequest
+}
+
+// Ensure that sampleTimestampTooOldError implements Error.
+var _ Error = sampleTimestampTooOldError{}
+
 type reactiveLimiterExceededError struct {
 	error
 }

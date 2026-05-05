@@ -84,6 +84,63 @@ func TestNewValidationError(t *testing.T) {
 	checkDistributorError(t, wrappedErr, mimirpb.ERROR_CAUSE_BAD_DATA)
 }
 
+func TestNewSampleTimestampTooOldError(t *testing.T) {
+	const (
+		timestampMs int64 = 1234
+		metricName        = "testmetric"
+	)
+	err := newSampleTimestampTooOldError(timestampMs, metricName)
+	expectedMsg := fmt.Sprintf(sampleTimestampTooOldMsgFormat, timestampMs, metricName)
+	assert.Error(t, err)
+	assert.EqualError(t, err, expectedMsg)
+	checkDistributorError(t, err, mimirpb.ERROR_CAUSE_BAD_DATA)
+
+	// errors.As locates the typed error directly and through fmt.Errorf wrapping, while keeping
+	// validationError out of the picture so the OTLP handler can read rejection counts.
+	assert.True(t, errors.As(err, &sampleTimestampTooOldError{}))
+	assert.False(t, errors.As(err, &replicasDidNotMatchError{}))
+	assert.False(t, errors.As(err, &validationError{}))
+	wrappedErr := fmt.Errorf("wrapped %w", err)
+	assert.ErrorIs(t, wrappedErr, err)
+	assert.True(t, errors.As(wrappedErr, &sampleTimestampTooOldError{}))
+	checkDistributorError(t, wrappedErr, mimirpb.ERROR_CAUSE_BAD_DATA)
+
+	// Until prePushValidationMiddleware fills in counts, IsSoft() is false so the error fails
+	// the entire request like any other validation rejection.
+	assert.False(t, err.IsSoft())
+
+	t.Run("IsSoft reflects whether the rejection was partial", func(t *testing.T) {
+		testCases := map[string]struct {
+			rejected, total int64
+			expectedSoft    bool
+		}{
+			"all samples rejected (single-series request) returns hard failure": {
+				rejected: 1, total: 1, expectedSoft: false,
+			},
+			"all samples rejected (multi-series request) returns hard failure": {
+				rejected: 5, total: 5, expectedSoft: false,
+			},
+			"some samples rejected returns soft failure": {
+				rejected: 1, total: 2, expectedSoft: true,
+			},
+			"unset counts (cause path bypassed the middleware) returns hard failure": {
+				rejected: 0, total: 0, expectedSoft: false,
+			},
+			"counts not yet populated returns hard failure": {
+				rejected: 0, total: 5, expectedSoft: false,
+			},
+		}
+		for name, tc := range testCases {
+			t.Run(name, func(t *testing.T) {
+				e := newSampleTimestampTooOldError(timestampMs, metricName)
+				e.rejectedSamples = tc.rejected
+				e.totalSamplesInRequest = tc.total
+				assert.Equal(t, tc.expectedSoft, e.IsSoft())
+			})
+		}
+	})
+}
+
 func TestNewIngestionRateError(t *testing.T) {
 	limit := 10.0
 	burst := 10

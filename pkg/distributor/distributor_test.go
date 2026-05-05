@@ -7991,6 +7991,145 @@ func TestDistributorValidation(t *testing.T) {
 	}
 }
 
+// TestPrePushValidationMiddleware_SampleTimestampTooOld_Partial verifies that the validation
+// middleware surfaces a soft sampleTimestampTooOldError - carrying rejectedSamples and
+// totalSamplesInRequest counts - when only some series in a request were too far in the past.
+// This is what lets the OTLP handler reply with HTTP 200 + ExportMetricsPartialSuccess instead
+// of HTTP 400 (per the OTLP partial-success spec). When all samples in the request are
+// rejected, the same error is "hard" so non-OTLP paths still return 400 / InvalidArgument.
+func TestPrePushValidationMiddleware_SampleTimestampTooOld(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	now := model.Now()
+	past := now.Add(-25 * time.Hour)
+
+	// makeReq builds a write request with one series per label/timestamp pair. Each series has
+	// a single float sample so rejectedSamples == number of too-old series.
+	makeReq := func(specs ...struct {
+		metric      string
+		timestampMs int64
+	}) *mimirpb.WriteRequest {
+		series := make([]mimirpb.PreallocTimeseries, 0, len(specs))
+		for _, s := range specs {
+			series = append(series, makeTimeseries(
+				[]string{model.MetricNameLabel, s.metric},
+				makeSamples(s.timestampMs, 1),
+				nil, nil,
+			))
+		}
+		return &mimirpb.WriteRequest{Timeseries: series}
+	}
+
+	type testCase struct {
+		name                       string
+		req                        *mimirpb.WriteRequest
+		expectedRejected, expected int64
+		expectedSoft               bool
+	}
+	for _, tc := range []testCase{
+		{
+			name: "single too-old sample is a hard error so non-OTLP paths still return 400",
+			req: makeReq(struct {
+				metric      string
+				timestampMs int64
+			}{"tooold", int64(past)}),
+			expectedRejected: 1,
+			expected:         1,
+			expectedSoft:     false,
+		},
+		{
+			name: "one too-old series among valid ones is a soft error for OTLP partial-success",
+			req: makeReq(
+				struct {
+					metric      string
+					timestampMs int64
+				}{"tooold", int64(past)},
+				struct {
+					metric      string
+					timestampMs int64
+				}{"valid_a", int64(now)},
+				struct {
+					metric      string
+					timestampMs int64
+				}{"valid_b", int64(now)},
+			),
+			expectedRejected: 1,
+			expected:         3,
+			expectedSoft:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := prepareDefaultLimits()
+			limits.CreationGracePeriod = model.Duration(2 * time.Hour)
+			limits.PastGracePeriod = model.Duration(now.Sub(past) / 2)
+
+			ds, _, _, _ := prepare(t, prepConfig{
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: 1,
+				limits:          limits,
+			})
+
+			pushReq := NewParsedRequest(tc.req, tc.req.Size())
+
+			// Calling the validation middleware in isolation lets us inspect the raw
+			// (pre-toErrorWithGRPCStatus) error and assert on the typed sampleTimestampTooOldError
+			// fields that determine OTLP partial-success behavior.
+			middleware := ds[0].prePushValidationMiddleware(func(context.Context, *Request) error {
+				return nil
+			})
+			err := middleware(ctx, pushReq)
+			require.Error(t, err)
+
+			var tooOldErr sampleTimestampTooOldError
+			require.True(t, errors.As(err, &tooOldErr), "expected sampleTimestampTooOldError, got %T: %v", err, err)
+			assert.Equal(t, tc.expectedRejected, tooOldErr.rejectedSamples)
+			assert.Equal(t, tc.expected, tooOldErr.totalSamplesInRequest)
+			assert.Equal(t, tc.expectedSoft, tooOldErr.IsSoft())
+
+			// Cause is always BAD_DATA, so non-OTLP write paths keep mapping this to gRPC
+			// InvalidArgument / HTTP 400 regardless of softness.
+			assert.Equal(t, mimirpb.ERROR_CAUSE_BAD_DATA, tooOldErr.Cause())
+		})
+	}
+}
+
+// TestDistributor_Push_TooFarInPast_ReturnsBadRequest is a regression guard for non-OTLP write
+// paths: even with the new soft-error machinery, gRPC Push must still return InvalidArgument
+// (HTTP 400) for too-old samples - only the OTLP HTTP handler upgrades partial rejections to a
+// 200 PartialSuccess response.
+func TestDistributor_Push_TooFarInPast_ReturnsBadRequest(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "1")
+	now := model.Now()
+	past := now.Add(-25 * time.Hour)
+
+	limits := prepareDefaultLimits()
+	limits.CreationGracePeriod = model.Duration(2 * time.Hour)
+	limits.PastGracePeriod = model.Duration(now.Sub(past) / 2)
+
+	ds, _, _, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		limits:          limits,
+	})
+
+	// Mix of valid and too-old samples is still surfaced as a gRPC error on this path.
+	resp, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(
+		[][]mimirpb.LabelAdapter{
+			{{Name: model.MetricNameLabel, Value: "tooold"}},
+			{{Name: model.MetricNameLabel, Value: "valid"}},
+		},
+		[]mimirpb.Sample{
+			{TimestampMs: int64(past), Value: 1},
+			{TimestampMs: int64(now), Value: 2},
+		},
+		nil, nil, mimirpb.API,
+	))
+	require.Nil(t, resp)
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA}
+	checkGRPCError(t, status.New(codes.InvalidArgument, fmt.Sprintf(sampleTimestampTooOldMsgFormat, past, "tooold")), expectedDetails, err)
+}
+
 func TestDistributor_Push_Relabel(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 

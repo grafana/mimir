@@ -384,7 +384,9 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 			m.tooFarInPast.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
 			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-			return fmt.Errorf(sampleTimestampTooOldMsgFormat, s.TimestampMs, unsafeMetricName)
+			// Return a typed error so prePushValidationMiddleware can convert it into an OTLP
+			// partial-success response when the request also contained valid samples.
+			return newSampleTimestampTooOldError(s.TimestampMs, unsafeMetricName)
 		}
 	} else if cfg.enforceOOOWindowOnDistributor && cfg.outOfOrderTimeWindow > 0 && model.Time(s.TimestampMs) < now.Add(-cfg.outOfOrderTimeWindow) {
 		m.sampleTimestampTooOld.WithLabelValues(userID, group).Inc()
@@ -412,7 +414,9 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 			cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
 			m.tooFarInPast.WithLabelValues(userID, group).Inc()
 			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-			return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
+			// Return a typed error so prePushValidationMiddleware can convert it into an OTLP
+			// partial-success response when the request also contained valid samples.
+			return false, newSampleTimestampTooOldError(s.Timestamp, unsafeMetricName)
 		}
 	} else if cfg.enforceOOOWindowOnDistributor && cfg.outOfOrderTimeWindow > 0 && model.Time(s.Timestamp) < now.Add(-cfg.outOfOrderTimeWindow) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonSampleTimestampTooOld, now.Time())

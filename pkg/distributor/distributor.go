@@ -1327,6 +1327,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var firstPartialErr error
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
+		// rejectedDataPoints counts samples + histograms that were dropped because their series
+		// failed validation. It is used to populate RejectedDataPoints on OTLP partial-success
+		// responses when the first validation error was a "sample timestamp too old" rejection.
+		var rejectedDataPoints int64
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
 		var dedupedPerUnsafeMetricName map[string]int
 		var valueTooLongSummaries labelValueTooLongSummaries
@@ -1356,6 +1360,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
 			if validationErr != nil {
+				rejectedDataPoints += int64(rawSamples + rawHistograms)
 				if firstPartialErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
@@ -1435,6 +1440,21 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 		if len(removeIndexes) > 0 {
 			req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
+		}
+
+		// If the first validation error was a "sample timestamp too old" rejection, surface it as
+		// a typed sampleTimestampTooOldError carrying rejection counts. When other samples in the
+		// same request validated successfully, this lets the OTLP handler respond with HTTP 200
+		// + ExportMetricsPartialSuccess (matching the OTLP partial-success spec) instead of 400.
+		// Other write paths (Prometheus remote write, gRPC Push, Influx) still see a BAD_DATA
+		// cause and continue returning HTTP 400 / gRPC InvalidArgument unchanged.
+		if firstPartialErr != nil {
+			var tooOldErr sampleTimestampTooOldError
+			if errors.As(firstPartialErr, &tooOldErr) && rejectedDataPoints > 0 {
+				tooOldErr.rejectedSamples = rejectedDataPoints
+				tooOldErr.totalSamplesInRequest = int64(validatedSamples) + rejectedDataPoints
+				firstPartialErr = tooOldErr
+			}
 		}
 
 		if validatedSamples == 0 && validatedMetadata == 0 {

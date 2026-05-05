@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	gogoproto "github.com/gogo/protobuf/proto"
 	gogostatus "github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -1768,6 +1769,67 @@ func TestHandlerOTLPPush(t *testing.T) {
 			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="` + newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error() + `" insight=true`},
 			expectedRetryHeader:   true,
 		},
+		func() testCase {
+			// When some samples are too far in the past but other samples in the same request
+			// validated successfully, the OTLP handler must return HTTP 200 with a
+			// PartialSuccess body per the OTLP partial-success spec.
+			tooOldErr := newSampleTimestampTooOldError(123, "tooold")
+			tooOldErr.rejectedSamples = 2
+			tooOldErr.totalSamplesInRequest = 5
+
+			partial := &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: tooOldErr.rejectedSamples,
+				ErrorMessage:       tooOldErr.Error(),
+			}
+			// Handler marshals via gogo/protobuf; matching it here makes the assertion exact.
+			body, err := gogoproto.Marshal(&colmetricpb.ExportMetricsServiceResponse{PartialSuccess: partial})
+			require.NoError(t, err)
+
+			return testCase{
+				name:       "Soft sampleTimestampTooOldError with rejected samples",
+				maxMsgSize: 100000,
+				series:     sampleSeries,
+				metadata:   sampleMetadata,
+				verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+					return tooOldErr
+				},
+				responseCode:           http.StatusOK,
+				responseContentType:    pbContentType,
+				responseContentLength:  len(body),
+				expectedRetryHeader:    false,
+				expectedPartialSuccess: partial,
+			}
+		}(),
+		func() testCase {
+			// All samples in the request were too old: there is no partial success to report
+			// and the handler must keep returning HTTP 400 with the validation error in the body.
+			tooOldErr := newSampleTimestampTooOldError(123, "tooold")
+			tooOldErr.rejectedSamples = 5
+			tooOldErr.totalSamplesInRequest = 5
+
+			// Mirror the body the handler builds in writeErrorToHTTPResponseBody so the
+			// expected Content-Length matches what the client will see on the wire. The
+			// handler uses gogo/protobuf to marshal the gogo/status proto, so we do the same.
+			st := gogostatus.New(codes.InvalidArgument, tooOldErr.Error()).Proto()
+			body, err := gogoproto.Marshal(st)
+			require.NoError(t, err)
+
+			return testCase{
+				name:       "Hard sampleTimestampTooOldError when all samples rejected",
+				maxMsgSize: 100000,
+				series:     sampleSeries,
+				metadata:   sampleMetadata,
+				verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+					return tooOldErr
+				},
+				responseCode:          http.StatusBadRequest,
+				responseContentType:   pbContentType,
+				responseContentLength: len(body),
+				errMessage:            tooOldErr.Error(),
+				expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=400 err="` + tooOldErr.Error() + `" insight=true`},
+				expectedRetryHeader:   false,
+			}
+		}(),
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

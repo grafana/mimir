@@ -215,10 +215,14 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 	var rejectedDataPoints int64
 	var ingPushErr ingesterPushError
 	var asErr activeSeriesLimitedError
-	if errors.As(pushErr, &ingPushErr) {
+	var tooOldErr sampleTimestampTooOldError
+	switch {
+	case errors.As(pushErr, &ingPushErr):
 		rejectedDataPoints = ingPushErr.rejectedSamples
-	} else if errors.As(pushErr, &asErr) {
+	case errors.As(pushErr, &asErr):
 		rejectedDataPoints = asErr.rejectedSamples
+	case errors.As(pushErr, &tooOldErr):
+		rejectedDataPoints = tooOldErr.rejectedSamples
 	}
 
 	expResp := colmetricpb.ExportMetricsServiceResponse{
