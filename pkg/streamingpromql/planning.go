@@ -93,6 +93,7 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
 	//  2. We don't want to register these optimization passes in queriers.
 	planner.RegisterASTOptimizationPass(&ast.InsertOmittedTargetInfoSelector{}) // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments.
+	planner.RegisterASTOptimizationPass(&ast.InsertSyntheticInfoNameMatcher{})  // After InsertOmittedTargetInfoSelector so info()'s second arg always has at least one positive __name__ matcher.
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})               // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
 
 	if opts.EnablePruneToggles {
