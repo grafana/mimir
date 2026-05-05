@@ -506,7 +506,6 @@ func TestKafkaConfig_ToWarpstreamClientConfig(t *testing.T) {
 			ClientID:                         "client-1",
 			DialTimeout:                      3 * time.Second,
 			WriteTimeout:                     7 * time.Second,
-			ProducerMaxBufferedBytes:         1 << 28,
 			WarpstreamHedgeSlowMultiplier:    1.5,
 			WarpstreamHedgeMaxSlowFraction:   0.4,
 			WarpstreamHedgeFaultyThreshold:   0.06,
@@ -521,7 +520,6 @@ func TestKafkaConfig_ToWarpstreamClientConfig(t *testing.T) {
 		assert.Equal(t, "client-1", wsCfg.ClientID)
 		assert.Equal(t, 3*time.Second, wsCfg.DialTimeout)
 		assert.Equal(t, 7*time.Second, wsCfg.WriteTimeout)
-		assert.Equal(t, int64(1<<28), wsCfg.MaxBufferedBytes)
 		// Linger, max batch bytes, and metadata refresh interval mirror the
 		// kafka-backend defaults; ClusterStatsTTL is hardcoded to 1s.
 		assert.Equal(t, defaultProducerLinger, wsCfg.Linger)

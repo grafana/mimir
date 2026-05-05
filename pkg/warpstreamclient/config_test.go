@@ -17,7 +17,6 @@ func TestConfig_Validate(t *testing.T) {
 		DialTimeout:             2 * time.Second,
 		WriteTimeout:            10 * time.Second,
 		MaxBatchBytes:           16_000_000,
-		MaxBufferedBytes:        1 << 30,
 		HedgeSlowMultiplier:     2.0,
 		HedgeMaxSlowFraction:    0.3,
 		HedgeFaultyThreshold:    0.05,
@@ -61,10 +60,6 @@ func TestConfig_Validate(t *testing.T) {
 		"negative max batch bytes": {
 			mutate:     func(c *Config) { c.MaxBatchBytes = -1 },
 			wantErrMsg: "max batch bytes must be positive",
-		},
-		"zero max buffered bytes": {
-			mutate:     func(c *Config) { c.MaxBufferedBytes = 0 },
-			wantErrMsg: "max buffered bytes must be positive",
 		},
 		"negative linger": {
 			mutate:     func(c *Config) { c.Linger = -1 },

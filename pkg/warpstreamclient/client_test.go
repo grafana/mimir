@@ -36,7 +36,6 @@ func newTestWarpstreamClient(t *testing.T, topic string, numPartitions int32) (*
 		WriteTimeout:            5 * time.Second,
 		Linger:                  10 * time.Millisecond,
 		MaxBatchBytes:           1 << 20,
-		MaxBufferedBytes:        1 << 24,
 		HedgeSlowMultiplier:     2.0,
 		HedgeMaxSlowFraction:    0.3,
 		HedgeFaultyThreshold:    0.05,

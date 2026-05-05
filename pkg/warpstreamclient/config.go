@@ -26,9 +26,8 @@ type Config struct {
 	SASLOptions []kgo.Opt
 
 	// Producer settings.
-	Linger           time.Duration
-	MaxBatchBytes    int32
-	MaxBufferedBytes int64
+	Linger        time.Duration
+	MaxBatchBytes int32
 
 	// HedgeSlowMultiplier triggers hedging when an agent's window-average
 	// latency exceeds the cluster baseline multiplied by this value. Must be >= 1.
@@ -78,9 +77,6 @@ func (c *Config) Validate() error {
 	}
 	if c.MaxBatchBytes <= 0 {
 		return errors.New("max batch bytes must be positive")
-	}
-	if c.MaxBufferedBytes <= 0 {
-		return errors.New("max buffered bytes must be positive")
 	}
 	if c.Linger < 0 {
 		return errors.New("linger must be non-negative")

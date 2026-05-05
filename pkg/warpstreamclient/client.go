@@ -5,6 +5,7 @@ package warpstreamclient
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -237,6 +238,11 @@ func newKgoClient(cfg Config) (*kgo.Client, error) {
 		kgo.DialTimeout(cfg.DialTimeout),
 		kgo.RequestTimeoutOverhead(cfg.WriteTimeout),
 		kgo.MetadataMaxAge(cfg.MetadataRefreshInterval),
+
+		// Disable franz-go's own buffered-records / buffered-bytes caps. The
+		// produce path is enforced one level up.
+		kgo.MaxBufferedRecords(math.MaxInt),
+		kgo.MaxBufferedBytes(0),
 	}
 	if cfg.TLSEnabled {
 		opts = append(opts, kgo.DialTLSConfig(cfg.TLSConfig))

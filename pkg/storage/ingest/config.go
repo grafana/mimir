@@ -343,7 +343,6 @@ func (cfg *KafkaConfig) ToWarpstreamClientConfig() (warpstreamclient.Config, err
 		SASLOptions:             kafkaAuthOptions(cfg.SASL),
 		Linger:                  defaultProducerLinger,
 		MaxBatchBytes:           producerBatchMaxBytes,
-		MaxBufferedBytes:        cfg.ProducerMaxBufferedBytes,
 		HedgeSlowMultiplier:     cfg.WarpstreamHedgeSlowMultiplier,
 		HedgeMaxSlowFraction:    cfg.WarpstreamHedgeMaxSlowFraction,
 		HedgeFaultyThreshold:    cfg.WarpstreamHedgeFaultyThreshold,
