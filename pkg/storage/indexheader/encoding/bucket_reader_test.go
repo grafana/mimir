@@ -9,6 +9,7 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -38,23 +39,17 @@ func newTestBufReader(t *testing.T, base, length int) (*BucketBufReader, *tracki
 	objectData = append(objectData, testBucketContents...)
 	bkt := newTrackingBucket(t, objectData)
 
-	return newBucketBufReader(ctx, &testBucketBufPool, bkt, testBucketObjectName, base, length), bkt
+	// Use chunkSize == buffer size so existing GetRange-count assertions remain
+	// meaningful: each fetch is sized to fully populate the small test buffer
+	// in one call, mirroring pre-async behavior.
+	return newBucketBufReader(ctx, &testBucketBufPool, bkt, testBucketObjectName, base, length, testBufPoolSize), bkt
 }
 
 func newFailingBufReader(t *testing.T, sentinel error) *BucketBufReader {
 	t.Helper()
 	bkt := &failingBucket{err: sentinel}
 	ctx := context.Background()
-	reader := NewBucketReader(ctx, bkt, "obj", 0, 10)
-	reader.buf = testBucketBufPool.Get().([]byte)
-	return &BucketBufReader{
-		ctx:    ctx,
-		bkt:    bkt,
-		name:   "obj",
-		base:   0,
-		length: 10,
-		r:      reader,
-	}
+	return newBucketBufReader(ctx, &testBucketBufPool, bkt, "obj", 0, 10, testBufPoolSize)
 }
 
 func TestBucketBufReader_Read_Sequential(t *testing.T) {
@@ -269,18 +264,29 @@ func TestBucketBufReader_Close(t *testing.T) {
 func TestBucketBufReader_GetRangeCalls_Buffering(t *testing.T) {
 	r, bkt := newTestBufReader(t, 0, len(testBucketContents))
 
-	// The first read operation causes bufio to fill its buffer.
-	// The first testBufPoolSize bytes read will be covered by a single GetRange call.
-	for i := 0; i < testBufPoolSize; i++ {
+	// First read forces the prefetch goroutine's first fetch and waits for it.
+	// At this point exactly one GetRange has happened: the consumer just unblocked
+	// from waiting on data and the buffer still has 15 unread bytes, so the
+	// prefetcher has no room for another chunk yet.
+	_, err := r.Read(1)
+	require.NoError(t, err)
+	require.Equal(t, 1, bkt.callCount())
+
+	// Reads 2-16 are served from the same buffered chunk. The 16th read drains
+	// the buffer; the prefetcher may or may not have started chunk #2 by the
+	// time the loop ends, so we don't assert the count here.
+	for i := 1; i < testBufPoolSize; i++ {
 		_, err := r.Read(1)
 		require.NoError(t, err)
 	}
-	require.Len(t, bkt.calls, 1)
 
-	// Buffer depleted; next read operation triggers another bufio fill and GetRange call.
-	_, err := r.Read(1)
+	// Read #17 needs the next chunk; this Read blocks until the second fetch
+	// arrives. Once it returns, the buffer holds 15 of the 16 bytes from chunk
+	// #2 and the prefetcher again has no room for another chunk, so exactly two
+	// GetRange calls have happened.
+	_, err = r.Read(1)
 	require.NoError(t, err)
-	require.Len(t, bkt.calls, 2)
+	require.Equal(t, 2, bkt.callCount())
 }
 
 func TestBucketBufReader_GetRangeCalls_ResetRefetches(t *testing.T) {
@@ -288,13 +294,13 @@ func TestBucketBufReader_GetRangeCalls_ResetRefetches(t *testing.T) {
 
 	_, err := r.Read(1)
 	require.NoError(t, err)
-	require.Len(t, bkt.calls, 1)
+	require.Equal(t, 1, bkt.callCount())
 
 	// After Reset the buffer is discarded; the next read must refetch from the bucket.
 	require.NoError(t, r.Reset())
 	_, err = r.Read(1)
 	require.NoError(t, err)
-	require.Len(t, bkt.calls, 2)
+	require.Equal(t, 2, bkt.callCount())
 }
 
 func TestBucketBufReader_Read_GetRangeError(t *testing.T) {
@@ -314,8 +320,11 @@ func TestBucketBufReader_ReadInto_GetRangeError(t *testing.T) {
 }
 
 // trackingBucket wraps an InstrumentedBucketReader and records every GetRange call.
+// The async prefetch goroutine calls GetRange from a different goroutine than the
+// test, so calls is guarded by mu.
 type trackingBucket struct {
 	objstore.InstrumentedBucketReader
+	mu    sync.Mutex
 	calls []rangeCall
 }
 
@@ -325,8 +334,24 @@ type rangeCall struct {
 }
 
 func (b *trackingBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	b.mu.Lock()
 	b.calls = append(b.calls, rangeCall{off, length})
+	b.mu.Unlock()
 	return b.InstrumentedBucketReader.GetRange(ctx, name, off, length)
+}
+
+func (b *trackingBucket) callCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.calls)
+}
+
+func (b *trackingBucket) callsCopy() []rangeCall {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]rangeCall, len(b.calls))
+	copy(out, b.calls)
+	return out
 }
 
 func newTrackingBucket(t *testing.T, objectData []byte) *trackingBucket {
@@ -372,4 +397,174 @@ func (b *failingBucket) Close() error                   { return nil }
 
 func (b *failingBucket) ReaderWithExpectedErrs(_ objstore.IsOpFailureExpectedFunc) objstore.BucketReader {
 	return b
+}
+
+// blockingBucket holds GetRange calls until release is closed. It also
+// reports each call on the starts channel so tests can synchronize with the
+// async prefetch goroutine.
+type blockingBucket struct {
+	objstore.InstrumentedBucketReader
+	starts  chan rangeCall
+	release chan struct{}
+}
+
+func newBlockingBucket(t *testing.T, data []byte) *blockingBucket {
+	t.Helper()
+	inmem := objstore.NewInMemBucket()
+	require.NoError(t, inmem.Upload(context.Background(), testBucketObjectName, bytes.NewReader(data)))
+	return &blockingBucket{
+		InstrumentedBucketReader: objstore.WithNoopInstr(inmem),
+		starts:                   make(chan rangeCall, 64),
+		release:                  make(chan struct{}),
+	}
+}
+
+func (b *blockingBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	b.starts <- rangeCall{off, length}
+	select {
+	case <-b.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return b.InstrumentedBucketReader.GetRange(ctx, name, off, length)
+}
+
+func TestBucketReader_AsyncPrefetch_ChunkedFills(t *testing.T) {
+	const (
+		bufSize   = 32
+		chunkSize = 8
+	)
+	pool := &sync.Pool{
+		New: func() any { return make([]byte, bufSize) },
+	}
+
+	ctx := context.Background()
+	bkt := newTrackingBucket(t, testBucketContents)
+	r := newBucketBufReader(ctx, pool, bkt, testBucketObjectName, 0, len(testBucketContents), chunkSize)
+
+	out := make([]byte, len(testBucketContents))
+	require.NoError(t, r.ReadInto(out))
+	require.Equal(t, testBucketContents, out)
+	require.NoError(t, r.Close())
+
+	calls := bkt.callsCopy()
+	require.NotEmpty(t, calls)
+	for _, c := range calls {
+		require.LessOrEqual(t, c.length, int64(chunkSize), "fetch larger than chunkSize")
+	}
+	var totalFetched int64
+	for _, c := range calls {
+		totalFetched += c.length
+	}
+	require.Equal(t, int64(len(testBucketContents)), totalFetched)
+	// 36 bytes split into 8-byte chunks requires at least ceil(36/8)=5 fetches.
+	require.GreaterOrEqual(t, len(calls), 5)
+}
+
+func TestBucketReader_AsyncPrefetch_ResetCancelsInFlight(t *testing.T) {
+	ctx := context.Background()
+	bkt := newBlockingBucket(t, testBucketContents)
+	r := newBucketBufReader(ctx, &testBucketBufPool, bkt, testBucketObjectName, 0, len(testBucketContents), testBufPoolSize)
+
+	select {
+	case firstCall := <-bkt.starts:
+		require.Equal(t, int64(0), firstCall.off)
+	case <-time.After(2 * time.Second):
+		t.Fatal("first GetRange did not start in time")
+	}
+
+	require.NoError(t, r.ResetAt(8))
+
+	select {
+	case secondCall := <-bkt.starts:
+		require.Equal(t, int64(8), secondCall.off, "second fetch should be from the reset offset")
+	case <-time.After(2 * time.Second):
+		t.Fatal("second GetRange did not start after Reset")
+	}
+
+	close(bkt.release)
+	require.NoError(t, r.Close())
+}
+
+func TestBucketReader_AsyncPrefetch_PeekBlocksUntilFetched(t *testing.T) {
+	ctx := context.Background()
+	bkt := newBlockingBucket(t, testBucketContents)
+	r := newBucketBufReader(ctx, &testBucketBufPool, bkt, testBucketObjectName, 0, len(testBucketContents), testBufPoolSize)
+
+	select {
+	case <-bkt.starts:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first GetRange did not start in time")
+	}
+
+	peekDone := make(chan []byte, 1)
+	peekErr := make(chan error, 1)
+	go func() {
+		b, err := r.Peek(5)
+		peekErr <- err
+		peekDone <- b
+	}()
+
+	select {
+	case <-peekDone:
+		t.Fatal("Peek returned before any data was available")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(bkt.release)
+
+	select {
+	case b := <-peekDone:
+		require.NoError(t, <-peekErr)
+		require.Equal(t, testBucketContents[:5], b)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Peek did not return after the bucket released")
+	}
+
+	require.NoError(t, r.Close())
+}
+
+func TestBucketReader_AsyncPrefetch_CloseStopsGoroutine(t *testing.T) {
+	r, _ := newTestBufReader(t, 0, len(testBucketContents))
+
+	_, err := r.Read(1)
+	require.NoError(t, err)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- r.Close()
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return within 5 seconds")
+	}
+}
+
+func TestBucketReader_AsyncPrefetch_CloseUnblocksFetch(t *testing.T) {
+	ctx := context.Background()
+	bkt := newBlockingBucket(t, testBucketContents)
+	r := newBucketBufReader(ctx, &testBucketBufPool, bkt, testBucketObjectName, 0, len(testBucketContents), testBufPoolSize)
+
+	select {
+	case <-bkt.starts:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first GetRange did not start in time")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- r.Close()
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not unblock the in-flight fetch within 5 seconds")
+	}
+
+	close(bkt.release)
 }

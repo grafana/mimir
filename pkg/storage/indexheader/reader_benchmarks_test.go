@@ -160,8 +160,8 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 		require.NoError(b, bkt.Close())
 	})
 
-	for _, nameCount := range []int{50, 100, 200} {
-		for _, valueCount := range []int{100, 500, 1000, 5000} {
+	for _, nameCount := range []int{50, 100} {
+		for _, valueCount := range []int{100, 500, 1000} {
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
 			blockID, err := block.CreateBlock(ctx, dir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
