@@ -329,30 +329,20 @@ type PushWrapper func(next PushFunc) PushFunc
 
 // WithCleanup wraps the given pushWrapper function with automatic resource cleanup handling.
 // It ensures Request.CleanUp() is called via defer if the given next PushFunc isn't invoked.
-// See NextOrCleanup for the cleanup detection mechanism.
 func WithCleanup(next PushFunc, pushWrapper func(next PushFunc, ctx context.Context, pushReq *Request) error) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-		return pushWrapper(next, ctx, pushReq)
+	nextWrapper := func(ctx context.Context, req *Request) error {
+		req.needsCleanup = false
+		return next(ctx, req)
 	}
-}
-
-// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
-// The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
-//
-// This function is used outside of this codebase.
-func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
-	cleanupInDefer := true
-	return func(ctx context.Context, req *Request) error {
-			cleanupInDefer = false
-			return next(ctx, req)
-		},
-		func() {
-			if cleanupInDefer {
+	return func(ctx context.Context, pushReq *Request) error {
+		pushReq.needsCleanup = true
+		defer func() {
+			if pushReq.needsCleanup {
 				pushReq.CleanUp()
 			}
-		}
+		}()
+		return pushWrapper(nextWrapper, ctx, pushReq)
+	}
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
