@@ -111,6 +111,7 @@ func TestDirectConfigOverwritesCommonConfig(t *testing.T) {
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.RuntimeConfig.HTTPClientClusterValidation.Label)
 	})
 
 	t.Run("yaml inheritance", func(t *testing.T) {
@@ -151,6 +152,7 @@ querier:
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.RuntimeConfig.HTTPClientClusterValidation.Label)
 	})
 }
 
@@ -185,6 +187,7 @@ func TestDirectConfigUnsetCommonConfig(t *testing.T) {
 		require.Equal(t, "common-cluster", cfg.MimirConfig.QueryScheduler.GRPCClientConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.RuntimeConfig.HTTPClientClusterValidation.Label)
 	})
 
 	t.Run("yaml inheritance", func(t *testing.T) {
@@ -225,6 +228,7 @@ alertmanager:
 		require.Equal(t, "common-cluster", cfg.MimirConfig.QueryScheduler.GRPCClientConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.RuntimeConfig.HTTPClientClusterValidation.Label)
 	})
 }
 
@@ -341,4 +345,5 @@ func checkAllClusterValidationLabels(t *testing.T, cfg customExtendedConfig, exp
 	require.Equal(t, expectedValue, cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
 	require.Equal(t, expectedValue, cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
 	require.Equal(t, expectedValue, cfg.MimirConfig.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.RuntimeConfig.HTTPClientClusterValidation.Label)
 }
