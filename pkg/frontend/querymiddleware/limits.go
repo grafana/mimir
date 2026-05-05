@@ -435,16 +435,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	if localStats := stats.FromContext(ctx); localStats != nil {
 		engineStats := q.Stats()
 		localStats.AddSamplesProcessed(uint64(engineStats.Samples.TotalSamples))
-
-		stepStats := make([]stats.StepStat, 0, len(engineStats.Samples.TotalSamplesPerStep))
-		for i, count := range engineStats.Samples.TotalSamplesPerStep {
-			stepStats = append(stepStats, stats.StepStat{
-				Timestamp: r.GetStart() + int64(i)*r.GetStep(),
-				Value:     count,
-			})
-		}
-
-		localStats.AddSamplesProcessedPerStep(stepStats)
+		localStats.AddEquivalentSamplesRead(uint64(engineStats.Samples.SamplesRead))
 	}
 
 	resp = &PrometheusResponseWithFinalizer{

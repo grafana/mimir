@@ -57,8 +57,8 @@ func (s *StringLiteral) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (s *StringLiteral) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.NewOperatorEvaluationStats(s.timeRange, s.memoryConsumptionTracker, 0)
+func (s *StringLiteral) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.NewOperatorEvaluationStats(ctx, s.timeRange, s.memoryConsumptionTracker, 0)
 }
 
 func (s *StringLiteral) Close() {

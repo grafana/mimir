@@ -28,9 +28,6 @@ func NewPromQLParserOptions() parser.Options {
 		// is controlled by an experimental functions query-frontend middleware that reads per-tenant settings.
 		EnableExperimentalFunctions: true,
 
-		// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
-		ExperimentalDurationExpr: true,
-
 		// This enables the anchored and smoothed selector modifiers.
 		EnableExtendedRangeSelectors: true,
 

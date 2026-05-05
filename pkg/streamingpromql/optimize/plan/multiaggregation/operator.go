@@ -183,7 +183,7 @@ func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context, instance
 			stats.Close()
 
 			level.Warn(m.logger).Log("msg", "MultiAggregatorGroupEvaluator expected subset statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
-			return types.NewOperatorEvaluationStats(m.timeRange, m.memoryConsumptionTracker, 0)
+			return types.NewOperatorEvaluationStats(ctx, m.timeRange, m.memoryConsumptionTracker, 0)
 		}
 
 		stats.UseSubset(instance.subsetIndex)

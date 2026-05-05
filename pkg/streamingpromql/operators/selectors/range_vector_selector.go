@@ -266,7 +266,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 
 func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	m.evaluationStats, err = types.NewOperatorEvaluationStats(m.Selector.TimeRange, m.MemoryConsumptionTracker, len(m.Selector.Subsets))
+	m.evaluationStats, err = types.NewOperatorEvaluationStats(ctx, m.Selector.TimeRange, m.MemoryConsumptionTracker, len(m.Selector.Subsets))
 	if err != nil {
 		return err
 	}

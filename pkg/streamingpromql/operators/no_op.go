@@ -52,8 +52,8 @@ func (n *NoOpInstant) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (n *NoOpInstant) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.NewOperatorEvaluationStats(n.timeRange, n.memoryConsumptionTracker, 0)
+func (n *NoOpInstant) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.NewOperatorEvaluationStats(ctx, n.timeRange, n.memoryConsumptionTracker, 0)
 }
 
 func (n *NoOpInstant) Close() {
@@ -92,8 +92,8 @@ func (n *NoOpRange) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (n *NoOpRange) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.NewOperatorEvaluationStats(n.timeRange, n.memoryConsumptionTracker, 0)
+func (n *NoOpRange) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	return types.NewOperatorEvaluationStats(ctx, n.timeRange, n.memoryConsumptionTracker, 0)
 }
 
 func (n *NoOpRange) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {

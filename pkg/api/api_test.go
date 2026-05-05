@@ -246,6 +246,60 @@ func TestApiIngesterShutdown(t *testing.T) {
 	}
 }
 
+// TestStaticAssetsRespectPathPrefix verifies that the embedded static assets are reachable
+// both when -server.path-prefix is unset and when it is configured. Without the StripPrefix
+// wrapper, http.FileServer would receive the path-prefixed URL (e.g. /mimir/static/foo.css),
+// fail to find "mimir/static/foo.css" in the embedded FS, and return 404. See #13476.
+func TestStaticAssetsRespectPathPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		pathPrefix string
+		requestURL string
+	}{
+		{
+			name:       "no path prefix",
+			pathPrefix: "",
+			requestURL: "/static/mimir-styles.css",
+		},
+		{
+			name:       "with path prefix",
+			pathPrefix: "/mimir",
+			requestURL: "/mimir/static/mimir-styles.css",
+		},
+		{
+			name:       "with nested path prefix",
+			pathPrefix: "/foo/bar",
+			requestURL: "/foo/bar/static/mimir-styles.css",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{
+				GzipCompressionLevel: gzip.DefaultCompression,
+				ServerPrefix:         tc.pathPrefix,
+			}
+			serverCfg := getServerConfig(t)
+			serverCfg.PathPrefix = tc.pathPrefix
+			federationCfg := tenantfederation.Config{}
+			srv, err := server.New(serverCfg)
+			require.NoError(t, err)
+			t.Cleanup(srv.Shutdown)
+
+			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			api.RegisterAPI(&cfg, &cfg, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+
+			// srv.HTTP is the (sub)router built by dskit; when cfg.PathPrefix is non-empty
+			// it is the subrouter that matches the full path including the prefix.
+			req := httptest.NewRequest(http.MethodGet, tc.requestURL, nil)
+			w := httptest.NewRecorder()
+			srv.HTTP.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code, "static asset should be served at %s", tc.requestURL)
+			require.NotEmpty(t, w.Body.Bytes(), "response body should contain the asset bytes")
+		})
+	}
+}
+
 // Generates server config, with gRPC listening on random port.
 func getServerConfig(t *testing.T) server.Config {
 	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)

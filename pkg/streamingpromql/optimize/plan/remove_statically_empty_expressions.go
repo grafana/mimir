@@ -21,24 +21,13 @@ import (
 // RemoveStaticallyEmptyExpressionsOptimizationPass replaces subexpressions that can be statically
 // determined to return no results with a NoOp node, avoiding unnecessary computation.
 //
-// It detects the following pattern in both "and" operands:
+// It detects the following patterns for timestamp() calls:
 //
 //	timestamp(<inner>) < <constant>   (or the symmetric form <constant> > timestamp(<inner>))
 //	timestamp(<inner>) <= <constant>  (or the symmetric form <constant> >= timestamp(<inner>))
 //
-// where <constant> is a NumberLiteral (possibly wrapped in transparent nodes).
-//
-// The check is conservative: the optimization applies only when the query start is far enough
-// after <constant> that even a sample as old as one lookback-delta before the step cannot
-// satisfy the comparison:
-//
-//	timestamp(v) < C  →  always false when StartT (in ms) >= C*1000 + lookback delta (in ms)
-//	timestamp(v) <= C →  always false when StartT (in ms) >  C*1000 + lookback delta (in ms)
-//
-// This allows the optimization pass to work correctly when v is an instant vector selector
-// (which returns the underlying sample timestamp and so could return a value as early as
-// StartT - lookback delta), and when v is any other kind of expression (which will
-// return the output timestamp, and so could return a value as early as StartT).
+// where <constant> is a NumberLiteral (possibly wrapped in transparent nodes) that is before the start of the possible
+// timestamps that could be returned given the query's time range.
 //
 // For simplicity, the optimization pass does not descend into Subquery nodes, because the effective time range for
 // expressions inside a subquery differs from the outer query time range.
@@ -48,6 +37,15 @@ import (
 //	metric{label1="example", label1="another"}
 //
 // This exact match selector is guaranteed to not match any results.
+//
+// It also detects combinations of the above with 'and', 'or' and 'unless' operations:
+//
+//	empty AND anything is empty
+//	anything AND empty is empty
+//	empty OR RHS is RHS
+//	LHS OR empty is LHS
+//	empty UNLESS anything is empty
+//	LHS UNLESS empty is LHS
 type RemoveStaticallyEmptyExpressionsOptimizationPass struct {
 	attempts prometheus.Counter
 	modified prometheus.Counter
@@ -98,9 +96,9 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Con
 	return plan, nil
 }
 
-// apply recursively walks the plan tree, replacing statically-empty "and" binary expressions
-// with a NoOp node. It returns the replacement node (non-nil if this node should be replaced),
-// the number of replacements made, and any error.
+// apply recursively walks the plan tree, replacing statically-empty binary expressions
+// with a NoOp node or simplified equivalent. It returns the replacement node (non-nil if this
+// node should be replaced), whether any modification was made, and any error.
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.Node, params *planning.QueryParameters) (planning.Node, bool, error) {
 	// Do not descend into subqueries for simplicity: their children are evaluated over a different time range
 	// (shifted backwards by the subquery range), so params.TimeRange does not apply there.
@@ -135,11 +133,17 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 	if empty, matrix := isAlwaysEmptySelector(node); empty {
 		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{MatrixSelector: matrix}}
 		return noOp, true, nil
-	} else if empty, err := isAlwaysEmpty(node, params); err != nil {
+	}
+
+	if empty, err := isAlwaysEmpty(node, params); err != nil {
 		return nil, false, err
 	} else if empty {
 		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
 		return noOp, true, nil
+	}
+
+	if replacement := simplify(node); replacement != nil {
+		return replacement, true, nil
 	}
 
 	return nil, modified, nil
@@ -218,6 +222,23 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 		}
 
 		return isAlwaysEmpty(node.RHS, params)
+
+	case core.BINARY_LOR:
+		// A or B is empty only when both sides are empty.
+		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
+		if err != nil {
+			return false, err
+		}
+
+		if !lhsEmpty {
+			return false, nil
+		}
+
+		return isAlwaysEmpty(node.RHS, params)
+
+	case core.BINARY_LUNLESS:
+		// A unless B is empty whenever A is empty, regardless of B.
+		return isAlwaysEmpty(node.LHS, params)
 
 	case core.BINARY_LSS:
 		// Check for timestamp(v) < C.
@@ -316,6 +337,43 @@ func findConstant(node planning.Node) (*core.NumberLiteral, bool) {
 
 	literal, ok := node.(*core.NumberLiteral)
 	return literal, ok
+}
+
+// simplify returns a simpler version of node, or nil if no simplification applies.
+func simplify(node planning.Node) planning.Node {
+	switch node := node.(type) {
+	case *core.DeduplicateAndMerge:
+		// 'or' operations are wrapped in a DeduplicateAndMerge node.
+		// If we can optimize the 'or' away, then there's no need for the DeduplicateAndMerge either.
+
+		inner, isBinOp := node.Inner.(*core.BinaryExpression)
+		if !isBinOp || inner.Op != core.BINARY_LOR {
+			return nil
+		}
+
+		// empty OR RHS is equivalent to RHS.
+		if _, noOp := inner.LHS.(*core.NoOp); noOp {
+			return inner.RHS
+		}
+
+		// LHS or empty is equivalent to LHS.
+		if _, noOp := inner.RHS.(*core.NoOp); noOp {
+			return inner.LHS
+		}
+
+	case *core.BinaryExpression:
+		if node.Op != core.BINARY_LUNLESS {
+			return nil
+		}
+
+		// If the LHS is a no-op this means the whole expression is a no-op, and that is
+		// handled by isAlwaysEmptyBinaryExpression.
+		if _, noOp := node.RHS.(*core.NoOp); noOp {
+			return node.LHS
+		}
+	}
+
+	return nil
 }
 
 // unwrap removes transparent wrapper nodes returning the innermost non-wrapper node.

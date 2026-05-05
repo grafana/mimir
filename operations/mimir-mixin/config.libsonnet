@@ -354,7 +354,7 @@
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[%(recording_rules_range_interval)s])),
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[%(rate_interval)s])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -767,11 +767,6 @@
     // stepInterval() to compute safe windows automatically.
     // See https://www.robustperception.io/what-range-should-i-use-with-rate/
     scrape_interval: '15s',
-
-    // Tunes histogram recording rules to aggregate over this interval.
-    // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
-    // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
-    recording_rules_range_interval: '1m',
 
     // Used to inject rows into dashboards at specific places that support it.
     injectRows: {},

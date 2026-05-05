@@ -1155,7 +1155,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.True(t, ok, fmt.Sprintf("expected error to be a status error, but got: %T", err))
 			}
 
-			m, err := client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
+			m, err := client.StreamingSeriesToMatrixForTests(0, 10, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedResponse.String(), m.String())
 
@@ -2921,7 +2921,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 	tests := map[string]struct {
 		shuffleShardSize            int
 		requestMatchers             []*labels.Matcher
-		expectError                 error
+		expectLimitError            error
 		expectedSeries              [][]mimirpb.LabelAdapter
 		expectedNumQueriedIngesters int
 	}{
@@ -2947,8 +2947,8 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			expectedNumQueriedIngesters: numIngesters,
 		},
 		"aborts if response is too large": {
-			requestMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "large_metric")},
-			expectError:     ErrResponseTooLarge,
+			requestMatchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "large_metric")},
+			expectLimitError: ErrResponseTooLarge,
 		},
 	}
 
@@ -3019,8 +3019,9 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 
 					// Query active series.
 					series, err := d.ActiveSeries(ctx, testData.requestMatchers)
-					if testData.expectError != nil {
-						require.ErrorIs(t, err, testData.expectError)
+					if testData.expectLimitError != nil {
+						require.ErrorIs(t, err, testData.expectLimitError)
+						require.True(t, validation.IsLimitError(err), "expected error to be a LimitError")
 						return
 					}
 
@@ -3241,6 +3242,9 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 		ingesterStateByZone map[string]ingesterZoneState
 		ingesterDataByZone  map[string][]*mimirpb.WriteRequest
 		shardSize           int
+		// limitsFn must return a fresh *validation.Limits per call: prepare mutates
+		// fields on it, and parallel sub-tests sharing the same pointer would race.
+		limitsFn            func() *validation.Limits
 		expectedSeriesCount int
 		expectedErr         error
 	}{
@@ -3563,6 +3567,30 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 			shardSize:           1, // Tenant's shard made of: ingester-zone-a-0, ingester-zone-b-0 and ingester-zone-c-0.
 			expectedSeriesCount: 5,
 		},
+		"multi zone, 3 ingesters, limits errors are propagated": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 1, happyIngesters: 1},
+				"zone-b": {numIngesters: 1, happyIngesters: 1},
+				"zone-c": {numIngesters: 1, happyIngesters: 1},
+			},
+			ingesterDataByZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+				},
+			},
+			limitsFn: func() *validation.Limits {
+				limits := prepareDefaultLimits()
+				limits.ActiveSeriesResultsMaxSizeBytes = 1
+				return limits
+			},
+			expectedErr: ErrResponseTooLarge,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -3573,8 +3601,7 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
-					// Create distributor.
-					distributors, _, _, _ := prepare(t, prepConfig{
+					cfg := prepConfig{
 						ingesterStateByZone: testData.ingesterStateByZone,
 						ingesterDataByZone:  testData.ingesterDataByZone,
 						numDistributors:     1,
@@ -3582,7 +3609,13 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
-					})
+					}
+					if testData.limitsFn != nil {
+						cfg.limits = testData.limitsFn()
+					}
+
+					// Create distributor.
+					distributors, _, _, _ := prepare(t, cfg)
 
 					ctx := user.InjectOrgID(context.Background(), "test")
 					qStats, ctx := stats.ContextWithEmptyStats(ctx)
@@ -3603,6 +3636,56 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDistributor_ActiveSeries_TerminalErrors(t *testing.T) {
+	reqMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}
+
+	ingesterStateByZone := map[string]ingesterZoneState{
+		"zone-a": {numIngesters: 1, happyIngesters: 1},
+		"zone-b": {numIngesters: 1, happyIngesters: 1},
+		"zone-c": {numIngesters: 1, happyIngesters: 1},
+	}
+	ingesterDataByZone := map[string][]*mimirpb.WriteRequest{
+		"zone-a": {
+			makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+		},
+		"zone-b": {
+			makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+		},
+		"zone-c": {
+			makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+		},
+	}
+
+	limits := prepareDefaultLimits()
+	limits.ActiveSeriesResultsMaxSizeBytes = 1
+
+	distributors, ingesters, _, _ := prepare(t, prepConfig{
+		ingesterStateByZone: ingesterStateByZone,
+		ingesterDataByZone:  ingesterDataByZone,
+		numDistributors:     1,
+		limits:              limits,
+		configure: func(config *Config) {
+			config.MinimizeIngesterRequests = true
+		},
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	_, err := distributors[0].ActiveSeries(ctx, reqMatchers)
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+
+	// With MinimizeRequests enabled and 3 zones (MaxUnavailableZones=1), only 2
+	// zones are queried initially. When the first zone returns
+	// ErrResponseTooLarge and that error is treated as terminal, the operation
+	// should abort immediately without starting a request to the 3rd zone.
+	//
+	// Sometimes, if the first ingester is very fast, the error is processed by the distributor
+	// while the query is still in-flight to the second ingester.
+	// In that case, the query to the second ingester is cancelled.
+	// Hence, we expect 1 or 2 ingesters to be queried here, but never 3.
+	assert.LessOrEqual(t, countMockIngestersCalled(ingesters, "ActiveSeries"), 2)
 }
 
 func BenchmarkDistributor_ActiveSeries(b *testing.B) {
@@ -6430,6 +6513,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		distributorCfg.IngestersLookbackPeriod = time.Hour
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
 		distributorCfg.IngestStorageConfig = ingestCfg
+		// Disable request hedging to other zones to avoid flaky tests when timing is unlucky.
+		distributorCfg.MinimiseIngesterRequestsHedgingDelay = 0
 
 		if cfg.configure != nil {
 			cfg.configure(&distributorCfg)

@@ -305,7 +305,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		err = ingester.QueryStream(req, &s)
 		require.NoError(t, err)
 
-		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, model.Matrix{{
 			Metric: metricModel,
@@ -558,7 +558,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 							err := ingester.QueryStream(newReaderReq(), &s)
 							require.NoError(t, err)
 
-							res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+							res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 							require.NoError(t, err)
 
 							// We expect a response consistent with the samples written.
@@ -631,7 +631,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			err = ingester.QueryStream(newReaderReq(), &s)
 			require.NoError(t, err)
 
-			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 			require.NoError(t, err)
 
 			slices.SortFunc(res, func(a, b *model.SampleStream) int {
