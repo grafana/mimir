@@ -302,5 +302,5 @@ message SearchResultBatch {
     string value = 1;
     double score = 2;
   }
-  repeated Result results = 1;
+  repeated Result results = 1 [(gogoproto.nullable) = false];
 }

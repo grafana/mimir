@@ -199,14 +199,14 @@ func storepbToOrdering(o storepb.SearchOrdering) storage.Ordering {
 
 // streamBucketSearchResults sends results in batches of searchBatchSize via send.
 func streamBucketSearchResults(results []storage.SearchResult, send func(*storepb.SearchResultBatch) error) error {
-	batch := &storepb.SearchResultBatch{Results: make([]*storepb.SearchResultBatch_Result, 0, searchBatchSize)}
+	batch := &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
 	for _, r := range results {
-		batch.Results = append(batch.Results, &storepb.SearchResultBatch_Result{Value: r.Value, Score: r.Score})
+		batch.Results = append(batch.Results, storepb.SearchResultBatch_Result{Value: r.Value, Score: r.Score})
 		if len(batch.Results) >= searchBatchSize {
 			if err := send(batch); err != nil {
 				return err
 			}
-			batch = &storepb.SearchResultBatch{Results: make([]*storepb.SearchResultBatch_Result, 0, searchBatchSize)}
+			batch = &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
 		}
 	}
 	if len(batch.Results) > 0 {
