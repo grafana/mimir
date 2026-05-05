@@ -92,8 +92,8 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
 	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
 	//  2. We don't want to register these optimization passes in queriers.
-	planner.RegisterASTOptimizationPass(&ast.InsertOmittedTargetInfoSelector{}) // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments.
-	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})               // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
+	planner.RegisterASTOptimizationPass(&ast.EnsureInfoHasPositiveNameMatcher{}) // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments and that the second argument has at least one positive __name__ matcher.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})                // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
 
 	if opts.EnablePruneToggles {
 		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
@@ -652,7 +652,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 				vectorSelector.ReturnSampleTimestamps = true
 			}
 		case functions.FUNCTION_INFO:
-			// The InsertOmittedTargetInfoSelector AST pass ensures there are always 2 arguments.
+			// The EnsureInfoHasPositiveNameMatcher AST pass ensures there are always 2 arguments.
 			// Check len(args) == 2 for safety in case the pass doesn't run (e.g., in tests).
 			if len(args) == 2 {
 				vectorSelector, ok := args[1].(*core.VectorSelector)

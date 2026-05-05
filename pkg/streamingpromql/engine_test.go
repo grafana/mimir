@@ -4059,8 +4059,9 @@ func TestQueryClose(t *testing.T) {
 func TestEagerLoadSelectors(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
-			some_metric 0+1x5
-			some_other_metric 0+2x5
+			some_metric{instance="a", job="x"} 0+1x5
+			some_other_metric{instance="a", job="x"} 0+2x5
+			web_thing{instance="a", job="x", env="staging"} 0+1x5
 	`)
 
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
@@ -4082,6 +4083,15 @@ func TestEagerLoadSelectors(t *testing.T) {
 	testCases := []string{
 		`sum(some_metric) + sum(some_other_metric)`,
 		`sum(rate(some_metric[5m])) + sum(rate(some_other_metric[5m]))`,
+		// Regression test for the info() AST optimization that injects a synthetic
+		// __name__=~".+_info" matcher when only negative __name__ matchers are
+		// supplied. Without the AST pass, EagerLoad's Prepare() loads info series
+		// using only the user's __name__!~".+_info" matcher, which lets web_thing
+		// through; web_thing's env=staging then leaks into some_metric. With the
+		// pass, the synthetic .+_info matcher contradicts the negation, the info
+		// Select returns nothing, env=~".+" suppresses the un-enriched inner
+		// series, and the result is empty under both load modes.
+		`info(some_metric, {__name__!~".+_info", env=~".+"})`,
 	}
 
 	ctx := context.Background()
