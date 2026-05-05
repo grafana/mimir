@@ -171,16 +171,15 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 //
 // Both instances must be for the same time range.
 //
-// At most one of the two instances may have subsets. If both have subsets, an error is returned.
-// When one has subsets and the other does not, the overall statistics from the instance without subsets
-// are added to each subset in the instance with subsets.
+// Only the receiver may have subsets. If the other instance has subsets, an error is returned.
+// The samples from the other instance are added to all the receiver's subsets.
 func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 	if !s.timeRange.Equal(other.timeRange) {
 		return errors.New("cannot add OperatorEvaluationStats with different time ranges")
 	}
 
-	if len(s.subsets) > 0 && len(other.subsets) > 0 {
-		return errors.New("cannot add two OperatorEvaluationStats instances that both have subsets")
+	if len(other.subsets) > 0 {
+		return errors.New("cannot add an OperatorEvaluationStats instance that has subsets")
 	}
 
 	for i := range s.timeRange.StepCount {

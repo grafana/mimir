@@ -464,44 +464,25 @@ func TestOperatorEvaluationStats_Add_WithSubsets(t *testing.T) {
 		withoutSubsets.Close()
 	})
 
-	t.Run("receiver has no subsets, other does", func(t *testing.T) {
+	t.Run("receiver has no subsets, other does: returns error", func(t *testing.T) {
 		withoutSubsets, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 		require.NoError(t, err)
 		withSubsets, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
 		require.NoError(t, err)
 
-		withoutSubsets.allSeries.samplesProcessedPerStep[0] = 10
-		withoutSubsets.allSeries.samplesReadIfSubsequentStep[0] = 1
-		withoutSubsets.allSeries.samplesReadIfFirstStep[0] = 100
-
-		withSubsets.allSeries.samplesProcessedPerStep[0] = 40
-		withSubsets.allSeries.samplesProcessedPerStep[1] = 50
-		withSubsets.allSeries.samplesReadIfSubsequentStep[0] = 4
-		withSubsets.allSeries.samplesReadIfSubsequentStep[1] = 5
-		withSubsets.allSeries.samplesReadIfFirstStep[0] = 400
-		withSubsets.allSeries.samplesReadIfFirstStep[1] = 500
-		withSubsets.subsets[0].samplesProcessedPerStep[0] = 30
-		withSubsets.subsets[0].samplesReadIfSubsequentStep[0] = 3
-		withSubsets.subsets[0].samplesReadIfFirstStep[0] = 300
-
-		require.NoError(t, withoutSubsets.Add(withSubsets))
-
-		// Only overall stats are updated; withoutSubsets has no subsets to carry over.
-		require.Equal(t, []int64{50, 50, 0}, withoutSubsets.allSeries.samplesProcessedPerStep)
-		require.Equal(t, []int64{5, 5, 0}, withoutSubsets.allSeries.samplesReadIfSubsequentStep)
-		require.Equal(t, []int64{500, 500, 0}, withoutSubsets.allSeries.samplesReadIfFirstStep)
+		require.EqualError(t, withoutSubsets.Add(withSubsets), "cannot add an OperatorEvaluationStats instance that has subsets")
 
 		withoutSubsets.Close()
 		withSubsets.Close()
 	})
 
-	t.Run("both have subsets returns error", func(t *testing.T) {
+	t.Run("both have subsets: returns error", func(t *testing.T) {
 		s1, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
 		require.NoError(t, err)
 		s2, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
 		require.NoError(t, err)
 
-		require.EqualError(t, s1.Add(s2), "cannot add two OperatorEvaluationStats instances that both have subsets")
+		require.EqualError(t, s1.Add(s2), "cannot add an OperatorEvaluationStats instance that has subsets")
 
 		s1.Close()
 		s2.Close()
