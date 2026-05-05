@@ -1837,7 +1837,7 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 	engine, err := NewEngine(opts, stats.NewQueryMetrics(reg), planner)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	expr := "some_metric"
 	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), DefaultLookbackDelta, false, NoopPlanningObserver{})
 	require.NoError(t, err)

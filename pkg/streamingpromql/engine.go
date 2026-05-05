@@ -286,7 +286,7 @@ func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, 
 	return e.materializeAndCreateEvaluator(ctx, queryable, params, nodeRequests)
 }
 
-func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
+func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (_ *Evaluator, retErr error) {
 	span, ctx := tracing.StartSpanFromContext(ctx, "Engine.materializeAndCreateEvaluator")
 	defer span.Finish()
 
@@ -319,13 +319,24 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 			return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 		}
 		operatorParams.MemoryConsumptionTracker = e.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, params.OriginalExpression)
+
+		// Schedule deregistration of the memory tracker after the context was cancelled.
+		// This is the last-resort protection from leaking the tracking, if the upstream code didn't close the returned evaluator.
+		stopAfterFunc := context.AfterFunc(ctx, func() {
+			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
+		})
+		defer func() {
+			if retErr != nil {
+				stopAfterFunc()
+				e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
+			}
+		}()
 	}
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)
 	for idx, req := range nodeRequests {
 		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
 		if err != nil {
-			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 			return nil, err
 		}
 
@@ -334,7 +345,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	evaluator, err := NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
 	if err != nil {
-		e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 		return nil, err
 	}
 	return evaluator, nil
