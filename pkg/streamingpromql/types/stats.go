@@ -266,6 +266,10 @@ func (s *OperatorEvaluationStats) CloneSingleStep(timeRange QueryTimeRange) (*Op
 		return nil, fmt.Errorf("cannot clone single step of OperatorEvaluationStats because the desired time %v is not aligned with the steps of the source (start time %v, step %v)", timeRange.StartT, s.timeRange.StartT, s.timeRange.IntervalMilliseconds)
 	}
 
+	if stepIdx < 0 || stepIdx >= int64(s.timeRange.StepCount) {
+		return nil, fmt.Errorf("cannot clone single step of OperatorEvaluationStats because the desired time %v is outside the source time range (start time %v, end time %v)", timeRange.StartT, s.timeRange.StartT, s.timeRange.EndT)
+	}
+
 	singleStepStats, err := s.newEmptyInstanceWithSameSubsets(timeRange)
 	if err != nil {
 		return nil, err

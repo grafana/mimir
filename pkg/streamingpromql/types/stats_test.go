@@ -747,6 +747,14 @@ func TestOperatorEvaluationStats_Clone_InvalidTimeRanges(t *testing.T) {
 			timeRange: NewInstantQueryTimeRange(start.Add(30 * time.Second)),
 			err:       `cannot clone single step of OperatorEvaluationStats because the desired time 30000 is not aligned with the steps of the source (start time 0, step 60000)`,
 		},
+		"after source time range": {
+			timeRange: NewInstantQueryTimeRange(start.Add(5 * step)),
+			err:       `cannot clone single step of OperatorEvaluationStats because the desired time 300000 is outside the source time range (start time 0, end time 120000)`,
+		},
+		"before source time range": {
+			timeRange: NewInstantQueryTimeRange(start.Add(-step)),
+			err:       `cannot clone single step of OperatorEvaluationStats because the desired time -60000 is outside the source time range (start time 0, end time 120000)`,
+		},
 	}
 
 	for name, testCase := range testCases {
