@@ -97,10 +97,7 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		return nil, nil
 	}
 
-	var rhsMatchers types.Matchers
-	if a.hints != nil {
-		rhsMatchers = BuildMatchers(ctx, a.logger, leftMetadata, a.hints)
-	}
+	rhsMatchers := BuildMatchers(ctx, a.logger, leftMetadata, a.hints)
 	rightMetadata, err := a.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {
 		return nil, err

@@ -193,13 +193,13 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	// If there are labels that this binary operation selects on or aggregations being done
 	// on the LHS, we can use the series and their values for those labels to reduce the amount
 	// of data fetched on the RHS.
-	if b.hints != nil {
-		// Note we are reassigning `matchers` here before passing to the RHS and dropping any
-		// other extra matchers passed to this binary operation. Hints from the optimization
-		// pass are set specifically for each binary operation and include only fields that are
-		// valid to be passed to its RHS. We drop existing extra matchers since they may refer
-		// to labels that don't exist on the RHS of this binary operation.
-		matchers = BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints)
+	// Note we are reassigning `matchers` here before passing to the RHS and dropping any
+	// other extra matchers passed to this binary operation. Hints from the optimization
+	// pass are set specifically for each binary operation and include only fields that are
+	// valid to be passed to its RHS. We drop existing extra matchers since they may refer
+	// to labels that don't exist on the RHS of this binary operation.
+	if hintMatchers := BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints); hintMatchers != nil {
+		matchers = hintMatchers
 	}
 
 	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)

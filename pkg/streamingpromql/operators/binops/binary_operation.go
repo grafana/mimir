@@ -807,14 +807,18 @@ const (
 // hints.Exclude (exclude-matching semantics). Otherwise, matchers are built from the
 // labels listed in hints.Include.
 //
-// Callers should only call this when hints are non-nil. During rolling upgrades,
-// an older query-frontend may send a plan without hints (nil). In that case,
-// callers should skip narrowing entirely rather than trying to build matchers
-// from VectorMatching.MatchingLabels, because those labels may include names
-// synthesized by label_replace/label_join that don't exist in storage. Matching
-// on them would drop series incorrectly. Skipping narrowing is safe and won't
-// result in correctness issues, it'll just fetch more data than it needs.
+// If hints are nil, BuildMatchers returns nil. During rolling upgrades, an older
+// query-frontend may send a plan without hints. In that case we skip narrowing
+// rather than trying to build matchers from VectorMatching.MatchingLabels,
+// because those labels may include names synthesized by label_replace/label_join
+// that don't exist in storage. Matching on them would incorrectly drop series.
+// Skipping narrowing is safe and won't result in correctness issues,
+// it'll just fetch more data than it needs.
 func BuildMatchers(ctx context.Context, logger log.Logger, metadata []types.SeriesMetadata, hints *Hints) types.Matchers {
+	if hints == nil {
+		return nil
+	}
+
 	var matchers types.Matchers
 	if hints.IsExcludeMatching() {
 		matchers = buildMatchersForWithout(metadata, hints.Exclude)
