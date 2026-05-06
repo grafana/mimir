@@ -679,10 +679,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		&querierapi.ConsistencyExtractor{},
 	)
 
-	if t.Cfg.Querier.FilterQueryablesEnabled {
-		t.Extractors = append(t.Extractors, &querier.FilterQueryablesExtractor{})
-	}
-
 	if t.Cfg.LabelAccessControlEnabled {
 		t.Extractors = append(t.Extractors, querier_labelaccess.NewExtractor())
 	}
