@@ -2010,3 +2010,66 @@ func TestQuerySharding_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 		require.Nil(t, resp)
 	})
 }
+
+// TestExecuteQueryOnQueryable_ClosesQueryOnError verifies that
+// ExecuteQueryOnQueryable calls Close on the underlying promql.Query for every
+// error path between query creation and the response finalizer hand-off. We
+// assert this directly by wrapping the engine and counting Close() calls on
+// every Query it produces.
+func TestExecuteQueryOnQueryable_ClosesQueryOnError(t *testing.T) {
+	failingQueryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
+		return nil, apierror.New(apierror.TypeInternal, "boom")
+	})
+
+	successfulQueryable := testdatagen.StorageSeriesQueryable([]storage.Series{
+		testdatagen.NewSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(5)),
+	})
+
+	for _, tc := range []struct {
+		name          string
+		queryable     storage.Queryable
+		expectSuccess bool
+	}{
+		{
+			name:      "execution error closes the query",
+			queryable: failingQueryable,
+		},
+		{
+			name:          "successful query is closed via finalizer",
+			queryable:     successfulQueryable,
+			expectSuccess: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, innerEngine := newEngineForTesting(t, querier.MimirEngine)
+			engine := newCloseCountingEngine(innerEngine)
+
+			req := &PrometheusRangeQueryRequest{
+				path:      "/query_range",
+				start:     util.TimeToMillis(start),
+				end:       util.TimeToMillis(end),
+				step:      step.Milliseconds(),
+				queryExpr: parseQuery(t, "sum(bar1)"),
+			}
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			resp, err := ExecuteQueryOnQueryable(ctx, req, engine, tc.queryable, NewAnnotationAccumulator())
+
+			require.Equal(t, 1, engine.queriesCreated(), "expected exactly one promql.Query to be created")
+
+			if tc.expectSuccess {
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				// Ownership is transferred to the response finalizer; Close
+				// must not have been called yet.
+				require.Zero(t, engine.totalCloseCalls(), "expected Close to not have been called before the response finalizer fires")
+				resp.(*PrometheusResponseWithFinalizer).Close()
+			} else {
+				require.Error(t, err)
+				require.Nil(t, resp)
+			}
+
+			require.GreaterOrEqual(t, engine.totalCloseCalls(), 1, "expected Close to be called at least once on the underlying query")
+		})
+	}
+}
