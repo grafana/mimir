@@ -297,3 +297,112 @@ func TestBuildFilterRejectsInvalid(t *testing.T) {
 	_, err = BuildFilter(&Params{Terms: []string{"a"}, FuzzAlg: FuzzAlg(99)})
 	require.Error(t, err)
 }
+
+// TestBuildFilterRejectsInvalidFieldsEvenWhenTermsEmpty locks in the contract
+// that BuildFilter validates Params *before* the empty-Terms early-return.
+// Without this test, reverting the validation order would still pass every
+// other test (Terms-empty paths simply return (nil, nil)) and the early-
+// detection improvement would silently regress.
+func TestBuildFilterRejectsInvalidFieldsEvenWhenTermsEmpty(t *testing.T) {
+	_, err := BuildFilter(&Params{FuzzThreshold: 150})
+	require.Error(t, err, "out-of-range FuzzThreshold must be rejected even with empty Terms")
+	_, err = BuildFilter(&Params{FuzzAlg: FuzzAlg(99)})
+	require.Error(t, err, "unknown FuzzAlg must be rejected even with empty Terms")
+}
+
+func TestBuildFilterCaseInsensitiveWrapsAtORRoot(t *testing.T) {
+	// CaseSensitive=false must wrap the root in caseFoldingFilter so each value
+	// is lowercased exactly once for the whole OR chain, not per-term per-Accept.
+	f, err := BuildFilter(&Params{
+		Terms:         []string{"FOO", "Bar"},
+		CaseSensitive: false,
+		FuzzAlg:       FuzzAlgSubsequence,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, f)
+	_, ok := f.(*caseFoldingFilter)
+	assert.True(t, ok, "case-insensitive BuildFilter must return *caseFoldingFilter root")
+
+	// Functional check: the wrapper folds the value before delegating, and the
+	// inner per-term filters were built against pre-lowered terms, so an
+	// uppercase value still matches.
+	accepted, _ := f.Accept("FOOBAR")
+	assert.True(t, accepted, "case-insensitive filter should match uppercase value")
+}
+
+func TestBuildFilterCaseSensitiveReturnsLeafDirectly(t *testing.T) {
+	// CaseSensitive=true must NOT wrap in caseFoldingFilter — the inner filter
+	// surfaces directly so we don't pay an unnecessary ToLower per Accept.
+	f, err := BuildFilter(&Params{
+		Terms:         []string{"foo"},
+		CaseSensitive: true,
+		FuzzAlg:       FuzzAlgSubsequence,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, f)
+	_, ok := f.(*caseFoldingFilter)
+	assert.False(t, ok, "case-sensitive BuildFilter must not wrap in caseFoldingFilter")
+}
+
+// recordingFilter captures every value passed to Accept so a test can assert
+// (a) how many Accept calls reached the wrapped child and (b) what value
+// the child saw — proving caseFoldingFilter folds exactly once at the OR
+// root and the child sees pre-lowered input. Score is configurable so tests
+// can avoid filterOr's score==1.0 short-circuit when they need every leaf
+// to be invoked.
+type recordingFilter struct {
+	score float64
+	seen  []string
+}
+
+func (r *recordingFilter) Accept(value string) (bool, float64) {
+	r.seen = append(r.seen, value)
+	return r.score > 0, r.score
+}
+
+func TestCaseFoldingFilterFoldsOncePerAcceptAndPassesLoweredValue(t *testing.T) {
+	rec := &recordingFilter{score: 1.0}
+	f := &caseFoldingFilter{inner: rec}
+
+	for _, v := range []string{"FOO", "Bar", "alreadyLower"} {
+		_, _ = f.Accept(v)
+	}
+	require.Equal(t, []string{"foo", "bar", "alreadylower"}, rec.seen,
+		"caseFoldingFilter must hand each value, lowered, to the inner filter exactly once")
+}
+
+func TestCaseFoldingFilterFeedsORChildrenLoweredValue(t *testing.T) {
+	// caseFoldingFilter wrapping a filterOr root must fold the value once
+	// and forward the lowered value to every child leaf — never the original
+	// case. Use score 0.5 so filterOr does not short-circuit on the first
+	// leaf (it short-circuits at exactly 1.0).
+	rec1 := &recordingFilter{score: 0.5}
+	rec2 := &recordingFilter{score: 0.5}
+	root := &caseFoldingFilter{inner: newFilterOr(rec1, rec2)}
+
+	_, _ = root.Accept("MIXEDCase_Value")
+
+	assert.Equal(t, []string{"mixedcase_value"}, rec1.seen,
+		"first leaf must see only the lowered value")
+	assert.Equal(t, []string{"mixedcase_value"}, rec2.seen,
+		"second leaf must see only the lowered value (folded once at the root, not per-leaf)")
+}
+
+// BenchmarkBuildFilterCaseInsensitiveAccept measures allocs/op for repeated
+// Accept calls against a case-insensitive 4-term Jaro-Winkler filter; this is
+// the load shape at a multi-term streaming search.
+func BenchmarkBuildFilterCaseInsensitiveAccept(b *testing.B) {
+	f, err := BuildFilter(&Params{
+		Terms:         []string{"metric", "Status", "ENV", "version"},
+		CaseSensitive: false,
+		FuzzAlg:       FuzzAlgJaroWinkler,
+		FuzzThreshold: 80,
+	})
+	require.NoError(b, err)
+	values := []string{"Metric_count", "STATUS_OK", "Env_prod", "Version_1_2_3", "totally_unrelated"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = f.Accept(values[i%len(values)])
+	}
+}
