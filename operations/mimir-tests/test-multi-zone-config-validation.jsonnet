@@ -50,7 +50,7 @@ local isError(err, needle) = err != null && std.length(std.findSubstr(needle, er
 // test. Built from multi-zone-common alone so the production assertions next to real
 // callers don't fire on the deliberately broken manifests.
 local validate(deployments, deploymentNames) =
-  (multiZoneCommon + { _config+: env._config } + deployments).validateMimirMultiZoneConfig(deploymentNames);
+  (multiZoneCommon { _config+: env._config } + deployments).validateMimirMultiZoneConfig(deploymentNames);
 
 // 1. Single deployment, cross-zone CLI address.
 local err1 = validate(
@@ -58,7 +58,7 @@ local err1 = validate(
   ['distributor'],
 );
 assert isError(err1, 'non-matching zone') :
-  'case 1: expected non-matching zone error, got: %s' % err1;
+       'case 1: expected non-matching zone error, got: %s' % err1;
 
 // 2. Single deployment, name without any zone marker.
 local err2 = validate(
@@ -66,7 +66,7 @@ local err2 = validate(
   ['distributor'],
 );
 assert isError(err2, 'Unable to extract zone letter') :
-  'case 2: expected zone-letter extraction error, got: %s' % err2;
+       'case 2: expected zone-letter extraction error, got: %s' % err2;
 
 // 3. Single deployment, embedded-form name ("distributor-zone-a-set-0"), cross-zone CLI
 //    address.
@@ -75,7 +75,7 @@ local err3 = validate(
   ['distributor'],
 );
 assert isError(err3, 'non-matching zone') :
-  'case 3: expected non-matching zone error from embedded-form name, got: %s' % err3;
+       'case 3: expected non-matching zone error from embedded-form name, got: %s' % err3;
 
 // 4. Deployment set: one good entry, one bad. Validator must walk the map.
 local err4 = validate(
@@ -86,7 +86,7 @@ local err4 = validate(
   ['deployments'],
 );
 assert isError(err4, 'non-matching zone') :
-  'case 4: expected non-matching zone error from deployment set, got: %s' % err4;
+       'case 4: expected non-matching zone error from deployment set, got: %s' % err4;
 
 // 5. Deployment set with only null entries. Dispatcher must tolerate it (parity with
 //    single-deployment behaviour, which returns null when the field resolves to null).
@@ -95,7 +95,7 @@ local err5 = validate(
   ['deployments'],
 );
 assert err5 == null :
-  'case 5: expected null for null-entry deployment set, got: %s' % err5;
+       'case 5: expected null for null-entry deployment set, got: %s' % err5;
 
 // 6. Querier with a wrong-zone "querier.prefer-availability-zones" flag value.
 //    Exercises validateContainerPreferAvailabilityZones(), which only fires for
@@ -105,7 +105,7 @@ local err6 = validate(
   ['querier'],
 );
 assert isError(err6, '-querier.prefer-availability-zones') && isError(err6, 'invalid zones') :
-  'case 6: expected invalid prefer-availability-zones error, got: %s' % err6;
+       'case 6: expected invalid prefer-availability-zones error, got: %s' % err6;
 
 // 7. Querier missing the "querier.prefer-availability-zones" flag entirely.
 local err7 = validate(
@@ -120,6 +120,6 @@ local err7 = validate(
   ['querier'],
 );
 assert isError(err7, 'missing the required CLI flag "-querier.prefer-availability-zones"') :
-  'case 7: expected missing-flag error, got: %s' % err7;
+       'case 7: expected missing-flag error, got: %s' % err7;
 
 {}
