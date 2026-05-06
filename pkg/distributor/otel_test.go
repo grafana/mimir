@@ -1768,6 +1768,32 @@ func TestHandlerOTLPPush(t *testing.T) {
 			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="` + newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error() + `" insight=true`},
 			expectedRetryHeader:   true,
 		},
+		{
+			// Regression test for OTLP spec compliance: when an ingester rejects some but not
+			// all samples as too-old (outside the OOO window), the OTLP handler must return
+			// HTTP 200 with partial_success per the OTLP spec, not 400. The status produced
+			// here mirrors what newErrorWithStatus produces server-side for a
+			// softErrorWithRejectedSamples wrapping a sampleTimestampTooOld sampleError.
+			name:       "Soft ingesterPushError simulating sample_timestamp_too_old partial rejection",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(t *testing.T, _ context.Context, _ *Request, _ testCase) error {
+				const tooOldMsg = "the sample has been rejected because its timestamp is too old"
+				return newIngesterPushError(
+					createSoftStatusWithDetailsAndRejected(t, codes.InvalidArgument, tooOldMsg, mimirpb.ERROR_CAUSE_BAD_DATA, 2),
+					"ingester-25",
+				)
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 107,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 2,
+				ErrorMessage:       "failed pushing to ingester ingester-25: the sample has been rejected because its timestamp is too old",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

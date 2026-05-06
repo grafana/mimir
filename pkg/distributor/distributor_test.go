@@ -8667,6 +8667,18 @@ func createSoftStatusWithDetails(t *testing.T, code codes.Code, message string, 
 	return statWithDetails
 }
 
+func createSoftStatusWithDetailsAndRejected(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause, rejectedSamples int64) *status.Status {
+	stat := status.New(code, message)
+	statWithDetails, err := stat.WithDetails(&mimirpb.ErrorDetails{
+		Cause:           cause,
+		Soft:            true,
+		RejectedSamples: rejectedSamples,
+	})
+
+	require.NoError(t, err)
+	return statWithDetails
+}
+
 func countCalls(ingesters []*mockIngester, name string) int {
 	count := 0
 

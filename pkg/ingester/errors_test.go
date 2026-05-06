@@ -441,6 +441,20 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			expectedMessage: fmt.Sprintf("wrapped: %s", newSampleError("id", "sample error", timestamp, labelAdapters).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA, Soft: true},
 		},
+		// Regression test for OTLP spec compliance: when the ingester partially rejects
+		// samples as too-old, it wraps the sampleError in softErrorWithRejectedSamples (see
+		// PushWithCleanup). The resulting gRPC status must carry both Soft=true and the
+		// rejected sample count, so the distributor can surface OTLP partial_success per
+		// the OTLP spec.
+		"a sampleTimestampTooOld wrapped in softErrorWithRejectedSamples carries Soft and RejectedSamples": {
+			err: softErrorWithRejectedSamples{
+				err:             newSampleTimestampTooOldError(timestamp, labelAdapters),
+				rejectedSamples: 2,
+			},
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: newSampleTimestampTooOldError(timestamp, labelAdapters).Error(),
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA, Soft: true, RejectedSamples: 2},
+		},
 		"an exemplarError gets translated into an ErrorWithStatus InvalidArgument error with details": {
 			err:             newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
 			expectedCode:    codes.InvalidArgument,
