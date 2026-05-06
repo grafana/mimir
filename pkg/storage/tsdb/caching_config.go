@@ -182,7 +182,8 @@ func NewMetadataCachingBucket(
 }
 
 func NewChunksCacheClient(
-	cfg cache.BackendConfig, logger log.Logger, reg prometheus.Registerer) (chunksCache cache.Cache, err error) {
+	cfg cache.BackendConfig, logger log.Logger, reg prometheus.Registerer,
+) (chunksCache cache.Cache, err error) {
 	const name = "chunks-cache"
 	chunksCache, err = cache.CreateClient(
 		name, cfg, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg),
@@ -194,7 +195,8 @@ func NewChunksCacheClient(
 }
 
 func NewIndexHeaderCacheClient(
-	cfg cache.BackendConfig, logger log.Logger, reg prometheus.Registerer) (indexHeaderCache cache.Cache, err error) {
+	cfg cache.BackendConfig, logger log.Logger, reg prometheus.Registerer,
+) (indexHeaderCache cache.Cache, err error) {
 	const name = "index-header-cache"
 	indexHeaderCache, err = cache.CreateClient(
 		name, cfg, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg),
@@ -215,7 +217,23 @@ func NewIndexHeaderCacheClient(
 func NewStoreCachingBucket(
 	cfg BlocksStorageConfig,
 	metadataCache cache.Cache,
-	indexHeaderCacheClient cache.Cache,
+	indexHeaderCache cache.Cache,
+	chunksCache cache.Cache,
+	bkt objstore.Bucket,
+	logger log.Logger,
+	reg prometheus.Registerer,
+) (objstore.Bucket, error) {
+	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
+	return newStoreCachingBucket(
+		cachingBucketCfg, cfg, metadataCache, indexHeaderCache, chunksCache, bkt, logger, reg,
+	)
+}
+
+func newStoreCachingBucket(
+	cachingBucketCfg *bucketcache.CachingBucketConfig,
+	cfg BlocksStorageConfig,
+	metadataCache cache.Cache,
+	indexHeaderCache cache.Cache,
 	chunksCache cache.Cache,
 	bkt objstore.Bucket,
 	logger log.Logger,
@@ -224,7 +242,6 @@ func NewStoreCachingBucket(
 	var (
 		err               error
 		cachingConfigured = false
-		cachingBucketCfg  = bucketcache.NewCachingBucketConfig()
 	)
 
 	if metadataCache != nil {
@@ -232,19 +249,19 @@ func NewStoreCachingBucket(
 		cachingBucketCfg = configureMetadataCaching(metadataCache, cfg.BucketStore.MetadataCache, cachingBucketCfg)
 	}
 
-	if indexHeaderCacheClient != nil {
+	if indexHeaderCache != nil {
 		cachingConfigured = true
-		indexHeaderCacheClient = cache.NewSpanlessTracingCache(indexHeaderCacheClient, logger, tenant.NewMultiResolver())
+		indexHeaderCache = cache.NewSpanlessTracingCache(indexHeaderCache, logger, tenant.NewMultiResolver())
 
 		// GetRange caching requires object attributes for calculating subranges.
 		// Use the metadata cache for attributes if enabled, otherwise fallback to index cache.
-		attributesCache := indexHeaderCacheClient
+		attributesCache := indexHeaderCache
 		if metadataCache != nil {
 			attributesCache = metadataCache
 		}
 		if cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems > 0 {
-			indexHeaderCacheClient, err = cache.WrapWithLRUCache(
-				indexHeaderCacheClient,
+			indexHeaderCache, err = cache.WrapWithLRUCache(
+				indexHeaderCache,
 				"block-index-header-cache",
 				prometheus.WrapRegistererWithPrefix("cortex_", reg),
 				cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems,
@@ -257,7 +274,7 @@ func NewStoreCachingBucket(
 		}
 		cachingBucketCfg.CacheGetRange(
 			"block-index-header",
-			indexHeaderCacheClient,
+			indexHeaderCache,
 			isBlockIndexFile,
 			subrangeSize,
 			attributesCache,
