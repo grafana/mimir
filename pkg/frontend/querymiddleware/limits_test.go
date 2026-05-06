@@ -1485,7 +1485,9 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 // inflight tracker count rather than wrapping the engine.
 func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) {
 	const sampledMetric = "cortex_querier_inflight_query_sampled_count"
-	const sampledHelp = "# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.\n# TYPE cortex_querier_inflight_query_sampled_count gauge\n"
+	const sampledHelp = `# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
+# TYPE cortex_querier_inflight_query_sampled_count gauge
+`
 
 	parseExpr := func(t *testing.T, s string) parser.Expr {
 		t.Helper()
