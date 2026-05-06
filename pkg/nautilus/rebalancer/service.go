@@ -3,215 +3,176 @@
 package rebalancer
 
 import (
-	"context"
-	"encoding/json"
 	"sync"
 	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
-// GetAssignmentsRequest is the request message for GetAssignments.
-type GetAssignmentsRequest struct{}
-
-func (m *GetAssignmentsRequest) Reset()                             {}
-func (m *GetAssignmentsRequest) String() string                     { return "{}" }
-func (m *GetAssignmentsRequest) ProtoMessage()                      {}
-func (m *GetAssignmentsRequest) Marshal() ([]byte, error)           { return nil, nil }
-func (m *GetAssignmentsRequest) MarshalTo(dAtA []byte) (int, error) { return 0, nil }
-func (m *GetAssignmentsRequest) Unmarshal(dAtA []byte) error        { return nil }
-func (m *GetAssignmentsRequest) Size() int                          { return 0 }
-
-// GetAssignmentsResponse contains the full set of timed assignments.
-// Wire format uses JSON encoding inside a single length-delimited
-// protobuf field for simplicity in this prototype.
-type GetAssignmentsResponse struct {
-	Assignments []TimedAssignmentProto `json:"assignments"`
+// logStore provides thread-safe access to the assignment log plus a
+// fan-out subscription mechanism for streaming RPC clients.
+//
+// Reads (snapshot, latestActiveAssignment) take a defensive copy so
+// callers can iterate without holding the mutex. Apply mutates the
+// log under the mutex and broadcasts a fresh snapshot to all
+// subscribers via 1-buffered conflated channels: a slow subscriber
+// sees only the most recent snapshot, never every intermediate one.
+type logStore struct {
+	mu          sync.Mutex
+	log         *assignment.Log
+	subscribers map[*subscription]struct{}
 }
 
-// TimedAssignmentProto is the wire representation of a timed assignment.
-type TimedAssignmentProto struct {
-	FromUnixMs int64                  `json:"from_unix_ms"`
-	Entries    []AssignmentEntryProto `json:"entries"`
+// subscription holds a single watcher's conflated update channel.
+type subscription struct {
+	ch chan []assignment.LogEntry
 }
 
-// AssignmentEntryProto is the wire representation of a hash-range-to-partition mapping.
-type AssignmentEntryProto struct {
-	Lo          uint32 `json:"lo"`
-	Hi          uint32 `json:"hi"`
-	PartitionID int32  `json:"partition_id"`
-}
-
-func (m *GetAssignmentsResponse) Reset()         { *m = GetAssignmentsResponse{} }
-func (m *GetAssignmentsResponse) String() string { b, _ := json.Marshal(m); return string(b) }
-func (m *GetAssignmentsResponse) ProtoMessage()  {}
-
-func (m *GetAssignmentsResponse) Marshal() ([]byte, error) {
-	return json.Marshal(m)
-}
-func (m *GetAssignmentsResponse) MarshalTo(dAtA []byte) (int, error) {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return 0, err
+func newLogStore() *logStore {
+	return &logStore{
+		log:         assignment.NewLog(),
+		subscribers: make(map[*subscription]struct{}),
 	}
-	copy(dAtA, b)
-	return len(b), nil
-}
-func (m *GetAssignmentsResponse) Unmarshal(dAtA []byte) error {
-	return json.Unmarshal(dAtA, m)
-}
-func (m *GetAssignmentsResponse) Size() int {
-	b, _ := json.Marshal(m)
-	return len(b)
 }
 
-// ToTimedAssignmentSet converts the proto response to the domain type.
-func (m *GetAssignmentsResponse) ToTimedAssignmentSet() *assignment.TimedAssignmentSet {
-	s := &assignment.TimedAssignmentSet{
-		Assignments: make([]assignment.TimedAssignment, len(m.Assignments)),
+// apply installs next as the new desired tiling at wall-clock at,
+// pre-issuing successor leases of duration leaseDuration whenever
+// an existing lease's To falls within lookahead of at. Prunes
+// entries whose leases ended before at-retention, and broadcasts
+// the resulting snapshot to all subscribers if the log changed.
+// Returns true on change. retention <= 0 disables pruning.
+//
+// On a stable cluster, most rounds are no-ops: the previous round
+// pre-issued a successor whose To is comfortably past at+lookahead.
+// Only when the lookahead window catches up does Apply append a new
+// successor and trigger a broadcast.
+func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuration, lookahead, retention time.Duration) bool {
+	s.mu.Lock()
+	changed := s.log.Apply(at, next, leaseDuration, lookahead)
+	if retention > 0 {
+		s.log.Prune(at.Add(-retention))
 	}
-	for i, ta := range m.Assignments {
-		entries := make([]assignment.Entry, len(ta.Entries))
-		for j, e := range ta.Entries {
-			entries[j] = assignment.Entry{
-				Range:       assignment.HashRange{Lo: e.Lo, Hi: e.Hi},
-				PartitionID: e.PartitionID,
-			}
-		}
-		s.Assignments[i] = assignment.TimedAssignment{
-			From:       time.UnixMilli(ta.FromUnixMs),
-			Assignment: &assignment.Assignment{Entries: entries},
-		}
+	if !changed {
+		s.mu.Unlock()
+		return false
 	}
-	return s
-}
-
-// TimedAssignmentSetToProto converts the domain type to the proto response.
-func TimedAssignmentSetToProto(s *assignment.TimedAssignmentSet) *GetAssignmentsResponse {
-	resp := &GetAssignmentsResponse{
-		Assignments: make([]TimedAssignmentProto, len(s.Assignments)),
+	snap := s.log.Entries()
+	subs := make([]*subscription, 0, len(s.subscribers))
+	for sub := range s.subscribers {
+		subs = append(subs, sub)
 	}
-	for i, ta := range s.Assignments {
-		entries := make([]AssignmentEntryProto, len(ta.Assignment.Entries))
-		for j, e := range ta.Assignment.Entries {
-			entries[j] = AssignmentEntryProto{
-				Lo:          e.Range.Lo,
-				Hi:          e.Range.Hi,
-				PartitionID: e.PartitionID,
-			}
-		}
-		resp.Assignments[i] = TimedAssignmentProto{
-			FromUnixMs: ta.From.UnixMilli(),
-			Entries:    entries,
-		}
+	s.mu.Unlock()
+
+	for _, sub := range subs {
+		conflateSend(sub.ch, snap)
 	}
-	return resp
+	return true
 }
 
-// NautilusRebalancerServer is the gRPC server interface.
-type NautilusRebalancerServer interface {
-	GetAssignments(context.Context, *GetAssignmentsRequest) (*GetAssignmentsResponse, error)
-}
-
-// NautilusRebalancerClient is the gRPC client interface.
-type NautilusRebalancerClient interface {
-	GetAssignments(ctx context.Context, in *GetAssignmentsRequest, opts ...grpc.CallOption) (*GetAssignmentsResponse, error)
-}
-
-type nautilusRebalancerClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewNautilusRebalancerClient(cc grpc.ClientConnInterface) NautilusRebalancerClient {
-	return &nautilusRebalancerClient{cc: cc}
-}
-
-func (c *nautilusRebalancerClient) GetAssignments(ctx context.Context, in *GetAssignmentsRequest, opts ...grpc.CallOption) (*GetAssignmentsResponse, error) {
-	out := new(GetAssignmentsResponse)
-	err := c.cc.Invoke(ctx, "/nautilus.NautilusRebalancer/GetAssignments", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// UnimplementedNautilusRebalancerServer must be embedded for forward compat.
-type UnimplementedNautilusRebalancerServer struct{}
-
-func (*UnimplementedNautilusRebalancerServer) GetAssignments(context.Context, *GetAssignmentsRequest) (*GetAssignmentsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetAssignments not implemented")
-}
-
-func _NautilusRebalancer_GetAssignments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetAssignmentsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NautilusRebalancerServer).GetAssignments(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/nautilus.NautilusRebalancer/GetAssignments",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NautilusRebalancerServer).GetAssignments(ctx, req.(*GetAssignmentsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-// NautilusRebalancerServiceDesc is the gRPC service descriptor.
-var NautilusRebalancerServiceDesc = grpc.ServiceDesc{
-	ServiceName: "nautilus.NautilusRebalancer",
-	HandlerType: (*NautilusRebalancerServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "GetAssignments",
-			Handler:    _NautilusRebalancer_GetAssignments_Handler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "nautilus/rebalancer/service.proto",
-}
-
-// assignmentStore provides thread-safe access to the timed assignment set.
-type assignmentStore struct {
-	mu  sync.RWMutex
-	set assignment.TimedAssignmentSet
-}
-
-// maxStoredAssignments is the maximum number of historical assignments
-// kept in the store. Only the most recent are retained; older ones are
-// dropped. Queriers will need a longer window once they consult the
-// store, but for now distributors only use Latest().
-const maxStoredAssignments = 5
-
-func (s *assignmentStore) add(from time.Time, a *assignment.Assignment) {
+// leaseHorizon returns the soonest moment in the future at which
+// some currently-relevant lease (active or pre-issued) expires, or
+// the zero time if no such lease exists.
+func (s *logStore) leaseHorizon(at time.Time) time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.set.Add(from, a)
+	return s.log.LeaseHorizon(at)
+}
 
-	if n := len(s.set.Assignments); n > maxStoredAssignments {
-		s.set.Assignments = s.set.Assignments[n-maxStoredAssignments:]
+// snapshot returns a defensive copy of all log entries (active,
+// pre-issued, and expired-but-not-yet-pruned).
+func (s *logStore) snapshot() []assignment.LogEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.log.Entries()
+}
+
+// latestActiveAssignment returns the entries whose leases are
+// active at `at` collapsed into an *Assignment value, or nil if no
+// entries are active (e.g. all leases have expired).
+func (s *logStore) latestActiveAssignment(at time.Time) *assignment.Assignment {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.log.LatestActiveAssignment(at)
+}
+
+// subscribe registers a new watcher. It returns the current snapshot
+// (so the caller can prime its consumer atomically with the
+// subscription), a channel that receives subsequent snapshots, and an
+// unsubscribe function the caller MUST invoke when finished.
+func (s *logStore) subscribe() (initial []assignment.LogEntry, updates <-chan []assignment.LogEntry, unsubscribe func()) {
+	sub := &subscription{ch: make(chan []assignment.LogEntry, 1)}
+	s.mu.Lock()
+	initial = s.log.Entries()
+	s.subscribers[sub] = struct{}{}
+	s.mu.Unlock()
+	return initial, sub.ch, func() {
+		s.mu.Lock()
+		delete(s.subscribers, sub)
+		s.mu.Unlock()
+		// Drain so a pending broadcast doesn't leak the goroutine if
+		// it raced with unsubscribe.
+		select {
+		case <-sub.ch:
+		default:
+		}
 	}
 }
 
-func (s *assignmentStore) snapshot() assignment.TimedAssignmentSet {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	cp := assignment.TimedAssignmentSet{
-		Assignments: make([]assignment.TimedAssignment, len(s.set.Assignments)),
-	}
-	copy(cp.Assignments, s.set.Assignments)
-	return cp
+// numSubscribers is exported only for tests.
+func (s *logStore) numSubscribers() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.subscribers)
 }
 
-func (s *assignmentStore) latest() *assignment.Assignment {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.set.Latest()
+// conflateSend performs a non-blocking send of snap on ch. If the
+// buffer is already full, it drains the stale value and replaces it
+// with snap so slow subscribers always see the most recent state.
+func conflateSend(ch chan []assignment.LogEntry, snap []assignment.LogEntry) {
+	for {
+		select {
+		case ch <- snap:
+			return
+		default:
+			// Drain a stale value (if it's still there) and retry.
+			// The drained value may or may not be present by the time
+			// we get here; the default branch covers either case.
+			select {
+			case <-ch:
+			default:
+				return
+			}
+		}
+	}
+}
+
+// EntriesToProto converts domain LogEntry values into their wire
+// representation. Both From and To are encoded as unix milliseconds.
+func EntriesToProto(es []assignment.LogEntry) []LogEntry {
+	out := make([]LogEntry, len(es))
+	for i, e := range es {
+		out[i] = LogEntry{
+			Lo:          e.Range.Lo,
+			Hi:          e.Range.Hi,
+			PartitionId: e.PartitionID,
+			FromUnixMs:  e.From.UnixMilli(),
+			ToUnixMs:    e.To.UnixMilli(),
+		}
+	}
+	return out
+}
+
+// EntriesFromProto converts wire LogEntry values back to the domain
+// type.
+func EntriesFromProto(es []LogEntry) []assignment.LogEntry {
+	out := make([]assignment.LogEntry, len(es))
+	for i, e := range es {
+		out[i] = assignment.LogEntry{
+			Range:       assignment.HashRange{Lo: e.Lo, Hi: e.Hi},
+			PartitionID: e.PartitionId,
+			From:        time.UnixMilli(e.FromUnixMs),
+			To:          time.UnixMilli(e.ToUnixMs),
+		}
+	}
+	return out
 }

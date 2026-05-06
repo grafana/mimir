@@ -25,8 +25,24 @@ import (
 
 // Config holds the configuration for the nautilus ingestion rebalancer.
 type Config struct {
-	RebalanceInterval time.Duration `yaml:"rebalance_interval"`
-	MovementBudget    float64       `yaml:"movement_budget"`
+	// MinRebalanceInterval is a lower bound on the gap between
+	// rebalance rounds. The rebalancer normally schedules itself
+	// dynamically — each round is timed to fire LeaseLookahead
+	// before the soonest active or pre-issued lease expires. This
+	// value caps how aggressively it runs immediately after a
+	// reassignment (which truncates a lease's To and would otherwise
+	// drag the next scheduled time arbitrarily close to "now") and
+	// covers the cold-start case where the log is empty.
+	MinRebalanceInterval time.Duration `yaml:"min_rebalance_interval"`
+
+	// MaxRebalanceInterval caps the gap between rounds even when
+	// the lease horizon would otherwise allow a longer wait. Acts
+	// as a heartbeat for stats collection and reassignment
+	// reactivity (the rebalancer can't react to a load imbalance
+	// while it's idle).
+	MaxRebalanceInterval time.Duration `yaml:"max_rebalance_interval"`
+
+	MovementBudget float64 `yaml:"movement_budget"`
 
 	// IngesterRPCTimeout bounds each individual HashRangeStats /
 	// SetHashRanges call to a single ingester. RPCs are issued in
@@ -57,15 +73,49 @@ type Config struct {
 	// already been moved off. Should match the ingester's TSDB head
 	// compaction interval (default 2h).
 	CompactionInterval time.Duration `yaml:"compaction_interval"`
+
+	// LeaseDuration is how long each freshly-issued lease is valid.
+	// Each rebalance round, for every (Range, PartitionID) in the
+	// desired tiling whose latest lease will expire within
+	// LeaseLookahead, the rebalancer pre-issues a successor lease
+	// covering [prev.To, prev.To + LeaseDuration). Consumers
+	// (distributors, queriers) treat leases whose To has passed as
+	// expired and fall back to the partition ring's default
+	// routing. The rebalancer schedules itself to run roughly once
+	// per lease — see LeaseLookahead.
+	LeaseDuration time.Duration `yaml:"lease_duration"`
+
+	// LeaseLookahead is how far before an active lease's expiry the
+	// rebalancer wakes up to pre-issue its successor. The next
+	// round is scheduled for (lease_horizon - LeaseLookahead),
+	// where lease_horizon is the soonest-expiring active or
+	// pre-issued lease. This window must be wide enough to cover
+	// the rebalance round's runtime plus RPC propagation to all
+	// distributors, so by the time the active lease expires every
+	// consumer has its successor in hand.
+	LeaseLookahead time.Duration `yaml:"lease_lookahead"`
+
+	// EntryRetention bounds how long expired log entries are kept
+	// in the log after their lease ended (To). Active leases are
+	// never pruned. Must exceed the querier's QueryIngestersWithin
+	// (default 13h) plus a drain buffer once the querier consumes
+	// the log; for now (distributor-only consumer) the value
+	// primarily caps the rebalancer's memory footprint and the size
+	// of the streaming snapshots.
+	EntryRetention time.Duration `yaml:"entry_retention"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.DurationVar(&cfg.RebalanceInterval, prefix+"rebalance-interval", 60*time.Second, "How often the rebalancer runs.")
+	f.DurationVar(&cfg.MinRebalanceInterval, prefix+"min-rebalance-interval", 30*time.Second, "Lower bound on the gap between rebalance rounds. The rebalancer schedules itself dynamically (next round at lease_horizon - LeaseLookahead), but this floor protects against degenerate cases such as just-truncated leases or a fully-expired log.")
+	f.DurationVar(&cfg.MaxRebalanceInterval, prefix+"max-rebalance-interval", 5*time.Minute, "Upper bound on the gap between rebalance rounds. Acts as a heartbeat for stats collection and reassignment reactivity even when the lease horizon would otherwise allow a longer wait.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.09, "Maximum fraction of the hash space that can be moved per round.")
 	f.DurationVar(&cfg.IngesterRPCTimeout, prefix+"ingester-rpc-timeout", 4*time.Second, "Per-call timeout for HashRangeStats and SetHashRanges RPCs to each ingester. Prevents one stuck pod (e.g. mid-rollout) from stalling the whole rebalance round. 0 disables.")
 	f.IntVar(&cfg.IngesterRPCConcurrency, prefix+"ingester-rpc-concurrency", 10, "Maximum concurrent ingester RPCs per round. 0 means one per ingester (unbounded).")
 	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 90*time.Second, "Minimum time between consecutive moves of the same hash range (or any range overlapping it). Per-range anti-flap guard complementing the compaction-interval partition-level budget. 0 disables.")
 	f.DurationVar(&cfg.CompactionInterval, prefix+"compaction-interval", 2*time.Hour, "Window over which recent moves off a source partition count against its movable budget. Series moved off an ingester stay in its TSDB head (reported L_pid) until head compaction GCs them. Should match the ingester's TSDB head compaction interval. 0 disables the movable-budget guard (moves are only gated by MovementBudget and MoveCooldown).")
+	f.DurationVar(&cfg.LeaseDuration, prefix+"lease-duration", 5*time.Minute, "Duration of each freshly-issued or pre-issued successor assignment-log lease. Consumers fall back to the partition ring once a lease expires, so this caps how long stale routing can persist after a rebalancer outage.")
+	f.DurationVar(&cfg.LeaseLookahead, prefix+"lease-lookahead", 90*time.Second, "How far before an active lease's expiry the rebalancer pre-issues its successor. Steady-state rebalance interval is approximately LeaseDuration; LeaseLookahead is the safety buffer to disseminate the successor to all consumers before the active lease ends.")
+	f.DurationVar(&cfg.EntryRetention, prefix+"entry-retention", 24*time.Hour, "How long expired assignment-log entries are retained after their lease ended. Active and pre-issued leases are never pruned. Must exceed querier QueryIngestersWithin plus a drain buffer once queriers consume the log; today the value chiefly caps the rebalancer's snapshot size sent to distributor stream subscribers.")
 }
 
 // Rebalancer is a Mimir module that periodically queries ingesters for
@@ -82,7 +132,7 @@ type Rebalancer struct {
 	pool          *ring_client.Pool
 	partitionRing *ring.PartitionInstanceRing
 
-	store assignmentStore
+	store *logStore
 	admin adminState
 
 	// prevInstanceRanges tracks the last set of ranges pushed to each
@@ -92,7 +142,7 @@ type Rebalancer struct {
 	// moveCooldowns records, for each hash range that was recently
 	// moved, the wall-clock time at which it (and any range overlapping
 	// its boundaries) becomes eligible to be moved again. Mutated only
-	// by rebalance(), which runs single-threaded via TimerService.
+	// by rebalance(), which runs single-threaded from running().
 	moveCooldowns map[assignment.HashRange]time.Time
 
 	// recentMoves records, per *source* partition, all moves off that
@@ -125,23 +175,107 @@ func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partiti
 		ingesterRing:  ingesterRing,
 		pool:          pool,
 		partitionRing: partitionRing,
+		store:         newLogStore(),
 		moveCooldowns: make(map[assignment.HashRange]time.Time),
 		recentMoves:   make(map[int32][]moveRecord),
 	}
 
-	r.Service = services.NewTimerService(cfg.RebalanceInterval, r.starting, r.rebalance, nil)
+	r.Service = services.NewBasicService(r.starting, r.running, nil)
 	return r
 }
 
-// GetAssignments implements NautilusRebalancerServer.
-func (r *Rebalancer) GetAssignments(_ context.Context, _ *GetAssignmentsRequest) (*GetAssignmentsResponse, error) {
-	snap := r.store.snapshot()
-	return TimedAssignmentSetToProto(&snap), nil
+func (r *Rebalancer) starting(_ context.Context) error {
+	level.Info(r.logger).Log("msg", "nautilus rebalancer starting",
+		"lease_duration", r.cfg.LeaseDuration,
+		"lease_lookahead", r.cfg.LeaseLookahead,
+		"min_rebalance_interval", r.cfg.MinRebalanceInterval,
+		"max_rebalance_interval", r.cfg.MaxRebalanceInterval)
+	return nil
 }
 
-func (r *Rebalancer) starting(_ context.Context) error {
-	level.Info(r.logger).Log("msg", "nautilus rebalancer starting")
-	return nil
+// running drives rebalance rounds with dynamic scheduling: each
+// round computes the lease horizon (the soonest-expiring active or
+// pre-issued lease) and schedules the next round to fire
+// LeaseLookahead before that, clamped to [MinRebalanceInterval,
+// MaxRebalanceInterval]. This puts the steady-state cadence at one
+// round per LeaseDuration, with each round emitting the next
+// successor lease LeaseLookahead in advance of the current one
+// expiring.
+func (r *Rebalancer) running(ctx context.Context) error {
+	// First round runs immediately so the cluster gets an initial
+	// assignment as soon as the rebalancer is up.
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-timer.C:
+			if err := r.rebalance(ctx); err != nil {
+				level.Warn(r.logger).Log("msg", "rebalance round failed", "err", err)
+			}
+			timer.Reset(r.nextRoundDelay(time.Now()))
+		}
+	}
+}
+
+// nextRoundDelay computes the time until the next rebalance round.
+// In steady state the result equals LeaseDuration (one round per
+// lease, scheduled LeaseLookahead before the current lease expires).
+// On cold start (no leases yet) or after a full lease expiry the
+// MinRebalanceInterval floor applies; the MaxRebalanceInterval
+// ceiling guards against degenerate "horizon very far in the
+// future" cases.
+func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
+	horizon := r.store.leaseHorizon(now)
+	var delay time.Duration
+	if horizon.IsZero() {
+		// No active or pre-issued leases. Likely either a cold start
+		// where the round above couldn't write to the log (e.g.
+		// no active partitions yet) or a long outage that left every
+		// lease expired. Retry at the floor.
+		delay = r.cfg.MinRebalanceInterval
+	} else {
+		delay = horizon.Sub(now) - r.cfg.LeaseLookahead
+	}
+	if delay < r.cfg.MinRebalanceInterval {
+		delay = r.cfg.MinRebalanceInterval
+	}
+	if r.cfg.MaxRebalanceInterval > 0 && delay > r.cfg.MaxRebalanceInterval {
+		delay = r.cfg.MaxRebalanceInterval
+	}
+	return delay
+}
+
+// WatchAssignments implements NautilusRebalancerServer. It sends
+// the current full snapshot of the assignment log immediately on
+// connect and then a fresh full snapshot on every subsequent
+// rebalance round that mutates the log (i.e. every round that
+// pre-issues a successor lease, preempts an active lease, or
+// creates a new lease for a reassignment). The store conflates
+// updates so a slow subscriber sees only the most recent snapshot.
+func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream NautilusRebalancer_WatchAssignmentsServer) error {
+	initial, updates, unsubscribe := r.store.subscribe()
+	defer unsubscribe()
+
+	if err := stream.Send(&WatchAssignmentsResponse{Entries: EntriesToProto(initial)}); err != nil {
+		return err
+	}
+	ctx := stream.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case snap, ok := <-updates:
+			if !ok {
+				return nil
+			}
+			if err := stream.Send(&WatchAssignmentsResponse{Entries: EntriesToProto(snap)}); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (r *Rebalancer) rebalance(ctx context.Context) error {
@@ -157,7 +291,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	current := r.store.latest()
+	current := r.store.latestActiveAssignment(time.Now())
 	if current == nil {
 		// Cold start: try to reconstruct the assignment from whatever
 		// each ingester locally remembers (via GetHashRanges). On a
@@ -175,7 +309,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				"partitions", len(activePartitions),
 				"total_entries", len(current.Entries))
 		}
-		r.store.add(time.Now(), current)
+		r.store.apply(time.Now(), current, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
 		r.pushRangesToIngesters(ctx, current)
 		return nil
 	}
@@ -215,7 +349,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	r.recordMoveCooldowns(now, actions)
 	r.recordRecentMoves(now, actions, lm)
 
-	r.store.add(now, newAssignment)
+	r.store.apply(now, newAssignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
 	r.pushRangesToIngesters(ctx, newAssignment)
 
 	// Compute round summary stats using L (memory series) so the admin
@@ -285,7 +419,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		End: append([]assignment.Entry(nil), newAssignment.Entries...),
 	})
 
-	level.Info(r.logger).Log("msg", "rebalance complete", "entries", len(newAssignment.Entries), "total_assignments", len(r.store.snapshot().Assignments))
+	level.Info(r.logger).Log("msg", "rebalance complete", "entries", len(newAssignment.Entries), "log_entries", len(r.store.snapshot()))
 	return nil
 }
 

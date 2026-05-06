@@ -235,14 +235,23 @@ type Distributor struct {
 
 	reactiveLimiter reactivelimiter.ReactiveLimiter
 
-	// nautilusAssignments holds the timed assignment set polled from the
-	// nautilus rebalancer. The latest assignment is used to route series
-	// to partitions instead of the partition ring's default hashing.
-	nautilusAssignments syncatomic.Pointer[assignment.TimedAssignmentSet]
+	// nautilusLog holds the wallclock-keyed assignment log streamed from
+	// the nautilus rebalancer via WatchAssignments. Lookup(now, key) is
+	// used to route series to partitions instead of the partition ring's
+	// default hashing. Each entry in the log is a time-boxed lease;
+	// once now > entry.To the distributor falls back to the partition
+	// ring for that key, so a dead rebalancer is self-correcting after
+	// at most LeaseDuration of staleness.
+	nautilusLog syncatomic.Pointer[assignment.Log]
 
 	// nautilusRebalancerConn is the gRPC connection to the rebalancer.
 	nautilusRebalancerConn io.Closer
-	clusterValidationLabel string
+	// nautilusStreamConnected is 1 while a WatchAssignments stream is
+	// open and exposed as a gauge for alerting on disconnects.
+	nautilusStreamConnected      atomic.Bool
+	nautilusAssignmentsReceived  prometheus.Counter
+	nautilusStreamConnectedGauge prometheus.GaugeFunc
+	clusterValidationLabel       string
 
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
@@ -252,10 +261,10 @@ type Distributor struct {
 func defaultSleep(d time.Duration) { time.Sleep(d) }
 func defaultNow() time.Time        { return time.Now() }
 
-// GetNautilusAssignments returns the current timed assignment set, or nil
-// if none has been polled yet.
-func (d *Distributor) GetNautilusAssignments() *assignment.TimedAssignmentSet {
-	return d.nautilusAssignments.Load()
+// GetNautilusLog returns the current assignment log streamed from the
+// nautilus rebalancer, or nil if no snapshot has been received yet.
+func (d *Distributor) GetNautilusLog() *assignment.Log {
+	return d.nautilusLog.Load()
 }
 
 // GetIngesterPool returns the ingester client pool, allowing other modules
@@ -681,10 +690,25 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "Number of times a hash collision was detected when de-duplicating samples.",
 		}),
 
+		nautilusAssignmentsReceived: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_nautilus_assignments_received_total",
+			Help: "Total number of assignment-log snapshots received from the nautilus rebalancer over the WatchAssignments stream.",
+		}),
+
 		PushMetrics: newPushMetrics(reg),
 		now:         defaultNow,
 		sleep:       defaultSleep,
 	}
+
+	d.nautilusStreamConnectedGauge = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_distributor_nautilus_stream_connected",
+		Help: "1 if the distributor's WatchAssignments stream to the nautilus rebalancer is currently open, 0 otherwise.",
+	}, func() float64 {
+		if d.nautilusStreamConnected.Load() {
+			return 1
+		}
+		return 0
+	})
 
 	// Initialize expected rejected request labels
 	d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate)
@@ -926,12 +950,8 @@ func (d *Distributor) running(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
 
-	var nautilusTickerChan <-chan time.Time
 	if d.nautilusRebalancerConn != nil {
-		nautilusTicker := time.NewTicker(10 * time.Second)
-		defer nautilusTicker.Stop()
-		nautilusTickerChan = nautilusTicker.C
-		d.pollNautilusAssignments(ctx)
+		go d.watchNautilusAssignments(ctx)
 	}
 
 	for {
@@ -944,31 +964,93 @@ func (d *Distributor) running(ctx context.Context) error {
 
 		case err := <-d.subservicesWatcher.Chan():
 			return errors.Wrap(err, "distributor subservice failed")
-
-		case <-nautilusTickerChan:
-			d.pollNautilusAssignments(ctx)
 		}
 	}
 }
 
-func (d *Distributor) pollNautilusAssignments(ctx context.Context) {
+// watchNautilusAssignments maintains a long-lived WatchAssignments
+// server-streaming RPC against the nautilus rebalancer. Each received
+// snapshot atomically replaces d.nautilusLog. Stream errors trigger a
+// reconnect with capped exponential backoff. Reduces staleness from
+// the previous 10s polling interval to roughly RPC propagation time;
+// per-distributor clocks still differ from the rebalancer's, so a
+// brief routing split across rebalance boundaries remains possible.
+//
+// The log itself is self-expiring: each entry is a time-boxed lease,
+// so if this loop fails to reconnect for longer than the lease
+// duration, Lookup returns false and routing falls back to the
+// partition ring without any extra liveness checks here.
+func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
 	conn, ok := d.nautilusRebalancerConn.(*grpc.ClientConn)
 	if !ok || conn == nil {
 		return
 	}
-
 	client := rebalancer.NewNautilusRebalancerClient(conn)
-	tctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	resp, err := client.GetAssignments(tctx, &rebalancer.GetAssignmentsRequest{})
-	if err != nil {
-		level.Warn(d.log).Log("msg", "failed to poll nautilus rebalancer", "err", err)
-		return
-	}
 
-	set := resp.ToTimedAssignmentSet()
-	d.nautilusAssignments.Store(set)
-	level.Debug(d.log).Log("msg", "polled nautilus assignments", "count", len(set.Assignments))
+	const (
+		minBackoff = 250 * time.Millisecond
+		maxBackoff = 8 * time.Second
+	)
+	backoff := minBackoff
+
+	for ctx.Err() == nil {
+		stream, err := client.WatchAssignments(ctx, &rebalancer.WatchAssignmentsRequest{})
+		if err != nil {
+			level.Warn(d.log).Log("msg", "failed to open nautilus WatchAssignments stream", "err", err, "backoff", backoff)
+			d.sleepWithCtx(ctx, backoff)
+			backoff = nextBackoff(backoff, maxBackoff)
+			continue
+		}
+		d.nautilusStreamConnected.Store(true)
+		// Reset backoff once we've successfully connected.
+		backoff = minBackoff
+
+		err = d.consumeNautilusStream(stream)
+		d.nautilusStreamConnected.Store(false)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			level.Warn(d.log).Log("msg", "nautilus WatchAssignments stream ended", "err", err, "backoff", backoff)
+		}
+		d.sleepWithCtx(ctx, backoff)
+		backoff = nextBackoff(backoff, maxBackoff)
+	}
+}
+
+// consumeNautilusStream loops on Recv and atomically swaps
+// d.nautilusLog on each snapshot. Returns the error that ended the
+// stream so the caller can decide whether to reconnect.
+func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer_WatchAssignmentsClient) error {
+	for {
+		resp, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		log := assignment.NewLogFromEntries(rebalancer.EntriesFromProto(resp.Entries))
+		d.nautilusLog.Store(log)
+		d.nautilusAssignmentsReceived.Inc()
+		level.Debug(d.log).Log("msg", "received nautilus assignment snapshot", "entries", len(resp.Entries))
+	}
+}
+
+// sleepWithCtx sleeps for dur but returns early if ctx is cancelled.
+func (d *Distributor) sleepWithCtx(ctx context.Context, dur time.Duration) {
+	t := time.NewTimer(dur)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
+// nextBackoff returns a doubled backoff capped at max.
+func nextBackoff(cur, max time.Duration) time.Duration {
+	next := cur * 2
+	if next > max {
+		next = max
+	}
+	return next
 }
 
 func (d *Distributor) cleanupInactiveUser(userID string) {
@@ -2425,12 +2507,11 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	var partitionKeys []ring.PartitionKeys
 	var err error
 
-	var nautilusAssignment *assignment.Assignment
-	if s := d.nautilusAssignments.Load(); s != nil {
-		nautilusAssignment = s.Latest()
-	}
-	if nautilusAssignment != nil {
-		partitionKeys, err = d.getKeysByAssignment(ctx, nautilusAssignment, keys)
+	// Capture `now` once so all keys in this write request consult
+	// the same point-in-time view of the assignment log.
+	now := d.now()
+	if log := d.nautilusLog.Load(); log != nil {
+		partitionKeys, err = d.getKeysByAssignment(ctx, log, now, keys)
 	} else {
 		partitionKeys, err = tenantRing.GetKeysByPartition(ctx, keys)
 	}
@@ -2471,10 +2552,13 @@ func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys 
 	return keys, initialMetadataIndex
 }
 
-// getKeysByAssignment groups keys by partition using the nautilus assignment,
-// falling back to the partition ring's ActivePartitionForKey for keys that
-// don't have a valid assignment (e.g. assigned partition is inactive).
-func (d *Distributor) getKeysByAssignment(ctx context.Context, a *assignment.Assignment, keys []uint32) ([]ring.PartitionKeys, error) {
+// getKeysByAssignment groups keys by partition using the nautilus
+// assignment log, looking up each key as of `at`. Falls back to the
+// partition ring's ActivePartitionForKey for keys that don't have a
+// valid assignment open at `at` (e.g. the rebalancer hasn't yet
+// produced a tile covering this key, or the key fell into a tile
+// that just closed during a transition).
+func (d *Distributor) getKeysByAssignment(ctx context.Context, log *assignment.Log, at time.Time, keys []uint32) ([]ring.PartitionKeys, error) {
 	pRing := d.partitionsRing.PartitionRing()
 
 	partitionIndexes := make(map[int32][]int)
@@ -2485,9 +2569,9 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, a *assignment.Ass
 			}
 		}
 
-		pid, ok := a.Lookup(key)
+		pid, ok := log.Lookup(at, key)
 		if !ok {
-			level.Warn(d.log).Log("msg", "key not found in assignment; falling back to partition ring", "key", key)
+			level.Warn(d.log).Log("msg", "key not found in assignment log; falling back to partition ring", "key", key)
 			var err error
 			pid, err = pRing.ActivePartitionForKey(key)
 			if err != nil {

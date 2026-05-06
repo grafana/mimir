@@ -983,7 +983,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/usagetrackerpb.UsageTracker/TrackSeriesBatch",
 			"/cortex.Ingester/HashRangeStats",
 			"/cortex.Ingester/SetHashRanges",
-			"/nautilus.NautilusRebalancer/GetAssignments",
+			"/nautilus.rebalancer.NautilusRebalancer/WatchAssignments",
 		})
 
 	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.

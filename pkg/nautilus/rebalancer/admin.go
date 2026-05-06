@@ -228,7 +228,7 @@ type adminPageData struct {
 
 func (r *Rebalancer) buildAdminPageData() adminPageData {
 	rounds, lastStats, lastPartitionL, lastMovable := r.admin.snapshot()
-	current := r.store.latest()
+	current := r.store.latestActiveAssignment(time.Now())
 
 	data := adminPageData{
 		GeneratedAt:        time.Now().UTC().Format(time.RFC3339),

@@ -1468,7 +1468,7 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 		t.IngesterPartitionInstanceRing,
 		util_log.Logger,
 	)
-	t.Server.GRPC.RegisterService(&rebalancer.NautilusRebalancerServiceDesc, t.NautilusRebalancer)
+	rebalancer.RegisterNautilusRebalancerServer(t.Server.GRPC, t.NautilusRebalancer)
 
 	// Mount as a prefix so the rebalancer's ServeHTTP can dispatch
 	// sub-routes (e.g. /rounds.json, /rounds/{idx}.json) used by

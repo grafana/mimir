@@ -3,6 +3,7 @@
 package rebalancer
 
 import (
+	"context"
 	"math"
 	"testing"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
@@ -324,57 +327,301 @@ func TestRunSlicer_Phase4_SplitsAnyHotSlice(t *testing.T) {
 		"hot slice on overloaded partition should be split for granularity")
 }
 
-func TestAssignmentStore(t *testing.T) {
-	s := &assignmentStore{}
+const (
+	testStoreLease     = time.Hour
+	testStoreLookahead = 5 * time.Minute
+)
 
-	assert.Nil(t, s.latest())
+func TestLogStore(t *testing.T) {
+	s := newLogStore()
+
+	assert.Nil(t, s.latestActiveAssignment(time.Now()))
+	assert.Empty(t, s.snapshot())
 
 	a1 := assignment.EvenSplit([]int32{0, 1})
-	t1 := time.Now()
-	s.add(t1, a1)
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.True(t, s.apply(t1, a1, testStoreLease, testStoreLookahead, time.Hour))
 
-	assert.Equal(t, a1, s.latest())
-
-	snap := s.snapshot()
-	require.Len(t, snap.Assignments, 1)
-	assert.Equal(t, t1.UnixMilli(), snap.Assignments[0].From.UnixMilli())
+	got := s.latestActiveAssignment(t1)
+	require.NotNil(t, got)
+	require.Equal(t, len(a1.Entries), len(got.Entries))
 
 	a2 := assignment.EvenSplit([]int32{0, 1, 2})
 	t2 := t1.Add(time.Minute)
-	s.add(t2, a2)
+	require.True(t, s.apply(t2, a2, testStoreLease, testStoreLookahead, time.Hour))
 
-	assert.Equal(t, a2, s.latest())
+	got = s.latestActiveAssignment(t2)
+	require.NotNil(t, got)
+	require.Equal(t, len(a2.Entries), len(got.Entries))
 
-	snap = s.snapshot()
-	require.Len(t, snap.Assignments, 2)
+	// Preempted entries from a1 plus active entries from a2 should
+	// be reflected in the snapshot. Exact count depends on partition
+	// boundary alignment.
+	snap := s.snapshot()
+	require.NotEmpty(t, snap)
 }
 
-func TestGetAssignmentsResponse_RoundTrip(t *testing.T) {
-	a := assignment.EvenSplit([]int32{0, 1, 2})
-	set := &assignment.TimedAssignmentSet{}
-	set.Add(time.Now(), a)
+func TestLogStore_SubscribeReceivesUpdates(t *testing.T) {
+	s := newLogStore()
 
-	proto := TimedAssignmentSetToProto(set)
+	a1 := assignment.EvenSplit([]int32{0, 1})
+	require.True(t, s.apply(time.Now(), a1, testStoreLease, testStoreLookahead, time.Hour))
 
-	data, err := proto.Marshal()
-	require.NoError(t, err)
-	require.NotEmpty(t, data)
+	initial, updates, unsubscribe := s.subscribe()
+	defer unsubscribe()
 
-	restored := &GetAssignmentsResponse{}
-	err = restored.Unmarshal(data)
-	require.NoError(t, err)
+	require.NotEmpty(t, initial)
 
-	restoredSet := restored.ToTimedAssignmentSet()
-	require.Len(t, restoredSet.Assignments, 1)
+	a2 := assignment.EvenSplit([]int32{0, 1, 2})
+	require.True(t, s.apply(time.Now().Add(time.Minute), a2, testStoreLease, testStoreLookahead, time.Hour))
 
-	latest := restoredSet.Latest()
-	require.NotNil(t, latest)
-	require.Len(t, latest.Entries, len(a.Entries))
+	select {
+	case snap := <-updates:
+		require.NotEmpty(t, snap)
+	case <-time.After(time.Second):
+		t.Fatal("did not receive update on subscription channel")
+	}
+}
 
-	for i, e := range a.Entries {
-		assert.Equal(t, e.Range.Lo, latest.Entries[i].Range.Lo)
-		assert.Equal(t, e.Range.Hi, latest.Entries[i].Range.Hi)
-		assert.Equal(t, e.PartitionID, latest.Entries[i].PartitionID)
+func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
+	s := newLogStore()
+
+	_, updates, unsubscribe := s.subscribe()
+	defer unsubscribe()
+
+	// Three back-to-back applies; a slow consumer should see exactly
+	// one (the last) snapshot.
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.True(t, s.apply(t0, assignment.EvenSplit([]int32{0}), testStoreLease, testStoreLookahead, time.Hour))
+	require.True(t, s.apply(t0.Add(time.Second), assignment.EvenSplit([]int32{0, 1}), testStoreLease, testStoreLookahead, time.Hour))
+	require.True(t, s.apply(t0.Add(2*time.Second), assignment.EvenSplit([]int32{0, 1, 2}), testStoreLease, testStoreLookahead, time.Hour))
+
+	// Drain — channel must hold exactly one buffered value (the
+	// latest), and after reading nothing else should be queued.
+	select {
+	case snap := <-updates:
+		require.NotEmpty(t, snap)
+	case <-time.After(time.Second):
+		t.Fatal("did not receive any update")
+	}
+	select {
+	case <-updates:
+		t.Fatal("conflation failed: expected only one update buffered")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestLogStore_UnsubscribeReleasesSubscriber(t *testing.T) {
+	s := newLogStore()
+	_, _, unsubscribe := s.subscribe()
+	require.Equal(t, 1, s.numSubscribers())
+	unsubscribe()
+	require.Equal(t, 0, s.numSubscribers())
+}
+
+func TestLogStore_ApplyOutsideLookaheadIsNoOp(t *testing.T) {
+	s := newLogStore()
+	a := assignment.EvenSplit([]int32{0, 1})
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	require.True(t, s.apply(t0, a, testStoreLease, testStoreLookahead, time.Hour))
+	// Re-applying soon after the first round: latest lease's To
+	// is far outside lookahead, so this must NOT mutate the log
+	// and must NOT broadcast.
+	require.False(t, s.apply(t0.Add(time.Second), a, testStoreLease, testStoreLookahead, time.Hour))
+}
+
+func TestLogStore_ApplyWithinLookaheadEmitsSuccessor(t *testing.T) {
+	s := newLogStore()
+	a := assignment.EvenSplit([]int32{0, 1})
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	require.True(t, s.apply(t0, a, testStoreLease, testStoreLookahead, time.Hour))
+	// Step forward to (lease - lookahead): now+lookahead == lease
+	// horizon, so apply must queue successor leases for every pair.
+	t1 := t0.Add(testStoreLease - testStoreLookahead)
+	require.True(t, s.apply(t1, a, testStoreLease, testStoreLookahead, time.Hour))
+
+	require.Equal(t, 2*len(a.Entries), len(s.snapshot()),
+		"each (Range, PID) now has two entries: active + pre-issued successor")
+}
+
+func TestLogStore_ApplyPrunesExpiredEntries(t *testing.T) {
+	s := newLogStore()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	const lease = time.Minute
+	const lookahead = time.Second
+	const retention = time.Minute
+
+	a1 := &assignment.Assignment{Entries: []assignment.Entry{
+		{Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1},
+	}}
+	require.True(t, s.apply(t0, a1, lease, lookahead, retention))
+
+	// Preempt P1 by giving ownership to P2 one second later.
+	t1 := t0.Add(time.Second)
+	a2 := &assignment.Assignment{Entries: []assignment.Entry{
+		{Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 2},
+	}}
+	require.True(t, s.apply(t1, a2, lease, lookahead, retention))
+
+	// Both entries are still present: P1's lease ended at t1, P2's
+	// is active.
+	require.Len(t, s.snapshot(), 2)
+
+	// Apply far in the future. By now retention drops anything with
+	// To < threshold = (t_now - retention).
+	tFuture := t1.Add(10 * time.Minute)
+	a3 := &assignment.Assignment{Entries: []assignment.Entry{
+		{Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 3},
+	}}
+	require.True(t, s.apply(tFuture, a3, lease, lookahead, retention))
+
+	// P1's preempted entry (To=t1) and P2's expired entry
+	// (To=t1+lease) both fall well before (tFuture - retention),
+	// so both are pruned. Only the freshly-created P3 entry
+	// survives.
+	snap := s.snapshot()
+	require.Len(t, snap, 1)
+	assert.Equal(t, int32(3), snap[0].PartitionID)
+}
+
+func TestLogStore_LeaseHorizon(t *testing.T) {
+	s := newLogStore()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Empty store: zero time.
+	assert.True(t, s.leaseHorizon(t0).IsZero())
+
+	a := assignment.EvenSplit([]int32{0, 1})
+	require.True(t, s.apply(t0, a, testStoreLease, testStoreLookahead, time.Hour))
+	assert.Equal(t, t0.Add(testStoreLease), s.leaseHorizon(t0))
+}
+
+func TestEntriesProtoRoundTrip(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	domain := []assignment.LogEntry{
+		{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1, From: t0, To: t0.Add(time.Hour)},
+		{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 2, From: t0, To: t0.Add(30 * time.Minute)},
+		{Range: assignment.HashRange{Lo: 200, Hi: math.MaxUint32}, PartitionID: 3, From: t0, To: t0.Add(2 * time.Hour)},
+	}
+
+	wire := EntriesToProto(domain)
+	require.Len(t, wire, len(domain))
+
+	round := EntriesFromProto(wire)
+	require.Len(t, round, len(domain))
+	for i, want := range domain {
+		require.Equal(t, want.Range, round[i].Range)
+		require.Equal(t, want.PartitionID, round[i].PartitionID)
+		require.True(t, want.From.Equal(round[i].From))
+		require.True(t, want.To.Equal(round[i].To))
+	}
+}
+
+// fakeWatchAssignmentsStream implements
+// NautilusRebalancer_WatchAssignmentsServer for in-process tests of
+// the WatchAssignments handler. Sent messages are appended to a
+// channel; ctx and Send errors are configurable.
+type fakeWatchAssignmentsStream struct {
+	grpc.ServerStream
+	ctx     context.Context
+	sent    chan *WatchAssignmentsResponse
+	sendErr error
+}
+
+func newFakeStream(ctx context.Context, buf int) *fakeWatchAssignmentsStream {
+	return &fakeWatchAssignmentsStream{
+		ctx:  ctx,
+		sent: make(chan *WatchAssignmentsResponse, buf),
+	}
+}
+
+func (s *fakeWatchAssignmentsStream) Send(m *WatchAssignmentsResponse) error {
+	if s.sendErr != nil {
+		return s.sendErr
+	}
+	s.sent <- m
+	return nil
+}
+
+func (s *fakeWatchAssignmentsStream) Context() context.Context       { return s.ctx }
+func (s *fakeWatchAssignmentsStream) SetHeader(_ metadata.MD) error  { return nil }
+func (s *fakeWatchAssignmentsStream) SendHeader(_ metadata.MD) error { return nil }
+func (s *fakeWatchAssignmentsStream) SetTrailer(_ metadata.MD)       {}
+func (s *fakeWatchAssignmentsStream) SendMsg(_ interface{}) error    { return nil }
+func (s *fakeWatchAssignmentsStream) RecvMsg(_ interface{}) error    { return nil }
+
+func TestRebalancer_NextRoundDelay(t *testing.T) {
+	cfg := Config{
+		MinRebalanceInterval: 30 * time.Second,
+		MaxRebalanceInterval: 5 * time.Minute,
+		LeaseDuration:        5 * time.Minute,
+		LeaseLookahead:       90 * time.Second,
+	}
+	r := &Rebalancer{cfg: cfg, store: newLogStore()}
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Empty log: floor at MinRebalanceInterval.
+	assert.Equal(t, cfg.MinRebalanceInterval, r.nextRoundDelay(t0))
+
+	// Seed a tiling. Lease horizon = t0 + 5m.
+	require.True(t, r.store.apply(t0, assignment.EvenSplit([]int32{0, 1}), cfg.LeaseDuration, cfg.LeaseLookahead, time.Hour))
+
+	// Just after the round: horizon - lookahead = 5m - 90s = 3m30s.
+	assert.Equal(t, 3*time.Minute+30*time.Second, r.nextRoundDelay(t0))
+
+	// After we've consumed all but lookahead's worth of runway:
+	// floor kicks in.
+	assert.Equal(t, cfg.MinRebalanceInterval, r.nextRoundDelay(t0.Add(cfg.LeaseDuration-10*time.Second)))
+
+	// Hypothetical horizon very far in the future: ceiling kicks in.
+	rFar := &Rebalancer{cfg: cfg, store: newLogStore()}
+	require.True(t, rFar.store.apply(t0, assignment.EvenSplit([]int32{0, 1}), 24*time.Hour, cfg.LeaseLookahead, time.Hour))
+	assert.Equal(t, cfg.MaxRebalanceInterval, rFar.nextRoundDelay(t0))
+}
+
+func TestRebalancer_WatchAssignments_SendsInitialAndUpdates(t *testing.T) {
+	r := &Rebalancer{store: newLogStore()}
+
+	// Seed the log so the initial snapshot is non-empty.
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	r.store.apply(t0, assignment.EvenSplit([]int32{0, 1}), testStoreLease, testStoreLookahead, time.Hour)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := newFakeStream(ctx, 4)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- r.WatchAssignments(&WatchAssignmentsRequest{}, stream)
+	}()
+
+	// Initial snapshot.
+	select {
+	case msg := <-stream.sent:
+		require.NotEmpty(t, msg.Entries)
+	case <-time.After(time.Second):
+		t.Fatal("did not receive initial snapshot")
+	}
+
+	// Apply a change; expect a fresh snapshot.
+	r.store.apply(t0.Add(time.Minute), assignment.EvenSplit([]int32{0, 1, 2}), testStoreLease, testStoreLookahead, time.Hour)
+	select {
+	case msg := <-stream.sent:
+		require.NotEmpty(t, msg.Entries)
+	case <-time.After(time.Second):
+		t.Fatal("did not receive update snapshot")
+	}
+
+	// Cancel the stream context; handler should exit.
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("WatchAssignments did not exit on context cancel")
 	}
 }
 
