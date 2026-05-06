@@ -131,11 +131,20 @@ var _ Error = tooManyClustersError{}
 // validationError is an error, used to represent all validation errors from the validation package.
 type validationError struct {
 	error
+	rejectedSamples int64
+	soft            bool
 }
 
 // newValidationError wraps the given error into a validationError error.
 func newValidationError(err error) validationError {
 	return validationError{error: err}
+}
+
+// newSoftValidationError wraps the given error as a partial rejection: Some samples
+// were rejected by distributor-level validation while the rest of the request was
+// successfully pushed.
+func newSoftValidationError(err error, rejectedSamples int64) validationError {
+	return validationError{error: err, rejectedSamples: rejectedSamples, soft: true}
 }
 
 func (e validationError) Cause() mimirpb.ErrorCause {
@@ -147,7 +156,7 @@ func (e validationError) Unwrap() error {
 }
 
 func (e validationError) IsSoft() bool {
-	return false
+	return e.soft
 }
 
 // Ensure that validationError implements Error.
