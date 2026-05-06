@@ -823,7 +823,7 @@ func BuildMatchers(ctx context.Context, logger log.Logger, metadata []types.Seri
 
 	var matchers types.Matchers
 	if hints.IsExcludeMatching() {
-		matchers = buildMatchersForWithout(metadata, hints.Exclude)
+		matchers = buildMatchersForIgnoring(metadata, hints.Exclude)
 		sl.DebugLog(
 			"msg", "binary operator passing exclude-derived matchers",
 			"excluded_labels", hints.Exclude,
@@ -869,14 +869,14 @@ func buildMatchersForOn(metadata []types.SeriesMetadata, include []string) types
 	return matchers
 }
 
-// buildMatchersForWithout builds matchers to limit the data selected on one side of a binary
+// buildMatchersForIgnoring builds matchers to limit the data selected on one side of a binary
 // operation when using without or default (no on/without) matching, based on the series returned
 // by the other side. For each label name present on all involved series (i.e. not in excludeLabels and not __name__),
 // it calls getUniqueLabelValues and builds a regexp matcher for that label if its below the cap.
 //
 // Only labels present on every LHS series are considered. If any LHS series lacks a label,
 // a RHS series also lacking it could still be a valid match under without semantics so generating a matcher for that label would incorrectly filter the RHS.
-func buildMatchersForWithout(metadata []types.SeriesMetadata, excludeLabels []string) types.Matchers {
+func buildMatchersForIgnoring(metadata []types.SeriesMetadata, excludeLabels []string) types.Matchers {
 	// If there's no metadata we take the fast path because passing any matchers would be wrong.
 	if len(metadata) == 0 {
 		return nil
