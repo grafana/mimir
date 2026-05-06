@@ -51,7 +51,7 @@ message HashRangeRate {
   uint32 lo = 1;
   uint32 hi = 2;
   reserved 3; // formerly samples_per_second; dropped when the rebalancer
-              // switched to a series-only load model.
+  // switched to a series-only load model.
   int64 active_series = 4;
 }
 

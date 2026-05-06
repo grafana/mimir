@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package nautilus.rebalancer;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "rebalancer";
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+// NautilusRebalancer is the rebalancer-side gRPC surface that
+// distributors (and, in the future, queriers) consume to learn how
+// hash ranges map to ingester partitions.
+service NautilusRebalancer {
+  // WatchAssignments subscribes to the rebalancer's assignment log.
+  // The server sends the current full snapshot immediately on
+  // connect, then sends a fresh full snapshot on each rebalance
+  // round that changes the log. Slow subscribers receive only the
+  // most recent snapshot; intermediate ones are conflated.
+  rpc WatchAssignments(WatchAssignmentsRequest) returns (stream WatchAssignmentsResponse);
+}
+
+message WatchAssignmentsRequest {}
+
+// WatchAssignmentsResponse is a full snapshot of the rebalancer's
+// assignment log at the time of the broadcast.
+message WatchAssignmentsResponse {
+  repeated LogEntry entries = 1 [(gogoproto.nullable) = false];
+}
+
+// LogEntry is the wire representation of a single (partition, hash
+// range) ownership lease that is valid during the wall-clock window
+// [from_unix_ms, to_unix_ms). Leases are time-boxed: to_unix_ms is
+// always set at creation time and is in the future. On each
+// rebalance round the rebalancer either renews the lease (extends
+// to_unix_ms) or preempts it (truncates to_unix_ms to the current
+// wall-clock).
+//
+// At any single wall-clock time at, the entries with
+// from_unix_ms <= at < to_unix_ms tile the full 32-bit hash space —
+// provided the rebalancer has been alive recently enough to keep
+// leases fresh.
+message LogEntry {
+  uint32 lo = 1;
+  uint32 hi = 2;
+  int32 partition_id = 3;
+  // from_unix_ms and to_unix_ms are wall-clock times in unix
+  // milliseconds. Both are always set; consumers detect expired
+  // leases by comparing to_unix_ms against their local clock.
+  int64 from_unix_ms = 4;
+  int64 to_unix_ms = 5;
+}
