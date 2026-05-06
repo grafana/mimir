@@ -18,18 +18,52 @@ import (
 // produceAPIVersion is the Kafka Produce API version this client emits. v11
 // matches franz-go's own negotiated default for ProduceRequest, addresses
 // topics by name on the wire (so stale TopicIDs cannot mis-route), and is
-// supported by every broker Mimir targets (vanilla Kafka 2.4+, Warpstream).
+// supported by every broker this client targets (vanilla Kafka 2.4+, Warpstream).
 // Topic UUID is the addressing mode at v13+; bumping past v11 would make
 // TopicID load-bearing and require dropping the topic name from requests,
 // which we do not need today.
 const produceAPIVersion int16 = 11
 
-// WarpstreamClient is a produce-only Kafka client optimised for Warpstream:
-// it batches records per primary agent, hedges across secondaries on slow or
-// failing primaries, and tracks per-agent stats to make hedge decisions.
+// WarpstreamClient is a produce-only Kafka client tailored to Warpstream's
+// stateless-agent architecture. It exists because franz-go's standard produce
+// path enforces vanilla Kafka's "Produce request must go to the partition
+// leader" rule, which prevents hedging: in vanilla Kafka, sending the same
+// batch to two brokers fails (NotLeaderForPartition).
 //
-// WarpstreamClient embeds *kgo.Client so non-producer methods work exactly
-// as on a vanilla franz-go client.
+// Warpstream is different — its agents are fully stateless, every agent can
+// serve every partition at any time — and the produce contract this client
+// exposes is at-least-once with no in-partition sequencing requirement, which
+// makes duplicates tolerable.
+//
+// The client trades the vanilla-Kafka guarantee away in exchange for the
+// ability to race a slow primary against a different agent and take
+// whichever responds first.
+//
+// The design is the minimum machinery needed to do that hedging on top of
+// normal produce traffic:
+//
+//   - An *AgentPool* watches Metadata and exposes the current set of
+//     reachable agents plus the (Kafka-protocol-mandated) leader for each
+//     partition. The pool is kept up to date in the background; the produce
+//     path never blocks on Metadata refreshes.
+//   - A *PartitionAssignmentStrategy* turns the pool into a deterministic
+//     primary/secondary mapping. Every client instance with the same pool
+//     view picks the same secondary for a given partition, which keeps
+//     hedge load predictable and analysable instead of random.
+//   - A *ClusterRecordBuffer* + per-agent *AgentRecordBuffer* implement
+//     linger-based batching keyed on the primary agent (not on partition,
+//     as franz-go does), so a single Produce request to one agent can
+//     carry batches for many partitions.
+//   - A *Hedger* decides per-flush whether to actually send a hedge based
+//     on rolling per-agent latency and error stats. Hedging is opt-in per
+//     batch, not unconditional, so a healthy cluster pays no extra cost.
+//   - The embedded *kgo.Client is reused for connection management,
+//     Metadata, and SASL/TLS. We deliberately do not use franz-go's
+//     producer state machine — its routing model would force per-partition
+//     leader pinning that defeats the whole point.
+//
+// Embedding *kgo.Client also means callers can use any non-producer method
+// (Ping, MetadataRequest, etc.) on a WarpstreamClient transparently.
 //
 // Safe for concurrent use.
 type WarpstreamClient struct {
@@ -52,16 +86,9 @@ type WarpstreamClient struct {
 	refreshWG     sync.WaitGroup
 }
 
-// NewWarpstreamClient builds and wires every component needed to produce to
-// Warpstream: a kgo.Client for connection management and metadata, an
-// AgentPool that maintains the current set of agents, an AgentStatsTracker
-// that records per-agent latency and error rate, a Hedger that races slow
-// primaries against per-partition secondaries, a TrackingProducer that feeds
-// the tracker on every leg, and a ClusterRecordBuffer that batches records
-// per primary agent and flushes via the Hedger.
-//
-// On startup the AgentPool is refreshed once; failure aborts construction.
-// A background goroutine refreshes it periodically thereafter.
+// NewWarpstreamClient wires every component of the produce path. The initial
+// AgentPool refresh is synchronous: if Metadata cannot be reached on startup
+// we fail fast rather than serving traffic against an empty pool.
 func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registerer) (*WarpstreamClient, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid warpstream client config: %w", err)
@@ -111,26 +138,17 @@ func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registere
 	return c, nil
 }
 
-// Produce buffers a single record and invokes promise once that record has
-// been acknowledged (or failed).
-//
-// ctx governs only the wait on the result. Records are committed to the
-// in-memory batch as soon as ProduceSync is called; cancelling ctx detaches
-// this caller from the result, but the batch still flushes — possibly
-// delivering – the records anyway.
+// Produce buffers record and invokes promise once it has been acknowledged
+// or failed. Cancelling ctx detaches the caller from the result; the record
+// is still produced (possibly successfully) in the background.
 func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, promise func(*kgo.Record, error)) {
 	c.buffer.Add(ctx, []*kgo.Record{record}, func(err error) { promise(record, err) })
 }
 
-// ProduceSync produces records and blocks until the broker has acknowledged
-// the batch (or it has failed). The returned slice has one entry per input
-// record, in the same order. Every record receives the same outcome: a
-// transport-level error fails the whole batch (Hedger semantics).
-//
-// ctx governs only the wait on the result. Records are committed to the
-// in-memory batch as soon as ProduceSync is called; cancelling ctx detaches
-// this caller from the result, but the batch still flushes — possibly
-// delivering – the records anyway.
+// ProduceSync produces records and blocks until they have been acknowledged
+// or failed. Results are in input order; every record receives the same
+// outcome (transport errors fail the whole batch). Cancelling ctx detaches
+// the caller, not the in-flight produce.
 func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Record) kgo.ProduceResults {
 	if len(records) == 0 {
 		return nil
@@ -146,22 +164,18 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 	return results
 }
 
-// BufferedProduceBytes returns the total size in bytes of every record
-// awaiting acknowledgement (still buffered or in flight).
+// BufferedProduceBytes returns the bytes of all records awaiting ack.
 func (c *WarpstreamClient) BufferedProduceBytes() int64 {
 	return c.buffer.BufferedBytes()
 }
 
-// BufferedProduceRecords returns the count of records awaiting acknowledgement
-// (still buffered or in flight).
+// BufferedProduceRecords returns the count of records awaiting ack.
 func (c *WarpstreamClient) BufferedProduceRecords() int64 {
 	return c.buffer.BufferedRecords()
 }
 
-// Close stops the background metadata refresh, flushes every pending batch,
-// then closes the underlying kgo.Client. Idempotent. Returns no error;
-// failures during the final flush surface through the per-record results
-// already delivered before Close is called.
+// Close stops the background metadata refresh, flushes pending batches, and
+// closes the underlying kgo.Client. Idempotent.
 func (c *WarpstreamClient) Close() {
 	c.closeOnce.Do(func() {
 		c.refreshCancel()
@@ -172,14 +186,7 @@ func (c *WarpstreamClient) Close() {
 }
 
 // flushBatch is the FlushFunc the buffer calls when an agent's batch is
-// ready. It builds a (possibly multi-topic) ProduceRequest, sends via the
-// Hedger, parses the response for per-partition errors, and reports the
-// outcome via done.
-//
-// Records carrying a topic the AgentPool has not learned about fail the
-// whole batch synchronously via buildMultiTopicProduceRequest: the agent
-// has no way to address such a topic on v13+ and would in any case reject
-// it with UNKNOWN_TOPIC_OR_PARTITION on the wire.
+// ready: build the ProduceRequest, hand it to the Hedger, report the outcome.
 func (c *WarpstreamClient) flushBatch(ctx context.Context, nodeID int32, records []*kgo.Record, done func(error)) {
 	req, err := buildMultiTopicProduceRequest(produceAPIVersion, c.pool.TopicID, records)
 	if err != nil {
@@ -196,15 +203,10 @@ func (c *WarpstreamClient) flushBatch(ctx context.Context, nodeID int32, records
 	done(parseProduceResponse(resp))
 }
 
-// startBackgroundRefresh runs pool.Refresh on a fixed interval and purges
-// the tracker of any agents the refresh reports as removed.
-//
-// Refresh is called with refreshCtx, which has no deadline of its own; the
-// underlying Metadata fetch is bounded by kgo's RequestTimeoutOverhead
-// (configured from cfg.WriteTimeout in newKgoClient). Adding our own
-// per-call timeout would just duplicate that bound. refreshCtx is canceled
-// by Close, which both interrupts an in-flight Refresh and breaks the
-// ticker loop on the next iteration.
+// startBackgroundRefresh ticks pool.Refresh and purges the tracker of removed
+// agents. refreshCtx (cancelled by Close) bounds both the loop and any
+// in-flight Refresh; the underlying Metadata fetch is already capped by
+// kgo's RequestTimeoutOverhead, so we don't add a per-call deadline.
 func (c *WarpstreamClient) startBackgroundRefresh() {
 	c.refreshWG.Add(1)
 	go func() {

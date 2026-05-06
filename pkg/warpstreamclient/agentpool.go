@@ -21,9 +21,32 @@ type poolState struct {
 	strategy *DefaultPartitionAssignmentStrategy
 }
 
-// AgentPool discovers and maintains the current set of Warpstream agents and
-// the partition-leader mapping for every topic in the cluster. Each Refresh
-// produces a new DefaultPartitionAssignmentStrategy from the updated snapshot.
+// AgentPool is the source of truth for "what agents exist right now and
+// which one does Warpstream consider leader for each partition". Every
+// produce decision in this package — primary routing, secondary selection
+// for hedging, partition splitting on retries — is keyed off a snapshot
+// produced by Refresh.
+//
+// We could in principle ask the embedded *kgo.Client for this on every
+// produce, but doing so has two problems. First, kgo's metadata view is
+// updated on its own schedule and can be stale in different ways than ours.
+// Second, the produce hot path needs read access without taking any lock
+// the metadata refresher might hold; we want a consistent snapshot, not
+// a live query. AgentPool therefore owns its own copy of the data, refreshed
+// on a fixed cadence by the WarpstreamClient, and exposes it as an immutable
+// poolState pointer swapped in atomically.
+//
+// The snapshot bundles three things together — agent list, per-topic UUIDs,
+// and the partition-assignment strategy — because the produce path needs
+// to read all three coherently. Splitting them across separate atomics
+// would let a reader observe a strategy built from one set of agents while
+// looking up a topic UUID from a different one, which would manifest as
+// rare, hard-to-diagnose hedging-to-departed-agent bugs.
+//
+// Refresh has one data-preservation rule: when Metadata reports a topic
+// with a non-zero ErrorCode (LEADER_NOT_AVAILABLE during reassignment,
+// etc.) the response zeroes the topic UUID, so we carry the previous UUID
+// forward to keep producing during transient hiccups.
 type AgentPool struct {
 	client *kgo.Client
 
@@ -32,8 +55,8 @@ type AgentPool struct {
 	state atomic.Pointer[poolState]
 }
 
-// NewAgentPool returns an AgentPool. Strategy() returns an empty (but non-nil)
-// strategy until Refresh is called for the first time.
+// NewAgentPool returns an AgentPool with an empty (non-nil) strategy until
+// the first Refresh.
 func NewAgentPool(client *kgo.Client) *AgentPool {
 	p := &AgentPool{client: client}
 	p.state.Store(&poolState{
@@ -43,17 +66,11 @@ func NewAgentPool(client *kgo.Client) *AgentPool {
 	return p
 }
 
-// Refresh updates the agent pool and the leader mapping for every topic in the
-// cluster from the kgo.Client's metadata cache (via RequestCachedMetadata),
-// which avoids a duplicate network round-trip when the client's own background
-// refresh has already fetched fresh data within MetadataMinAge. Falls back
-// to a real MetadataRequest when the cache is stale.
-//
-// Refresh must not be called concurrently from multiple goroutines.
-//
-// Returns the NodeIDs of agents that were present before and are now absent;
-// callers must purge these from any per-agent state (e.g. AgentStatsTracker).
-// A new DefaultPartitionAssignmentStrategy is always created from the updated snapshot.
+// Refresh atomically replaces the snapshot. Uses the kgo.Client's cached
+// Metadata when fresh, falls back to a real MetadataRequest when stale.
+// Returns the NodeIDs that have left the cluster since the last Refresh —
+// callers must purge per-agent state (stats, etc.) for those IDs. Not safe
+// for concurrent calls.
 func (p *AgentPool) Refresh(ctx context.Context) (removed []int32, err error) {
 	// Topics=nil requests metadata for every topic in the cluster.
 	req := kmsg.NewPtrMetadataRequest()
@@ -85,31 +102,23 @@ func (p *AgentPool) Refresh(ctx context.Context) (removed []int32, err error) {
 	return removed, nil
 }
 
-// Strategy returns the PartitionAssignmentStrategy built from the last Refresh.
+// Strategy returns the strategy from the last Refresh.
 func (p *AgentPool) Strategy() PartitionAssignmentStrategy {
 	return p.state.Load().strategy
 }
 
-// TopicID returns the UUID of the given topic as reported by the last Metadata refresh.
-// Returns ok=false for topics that did not exist in the cluster at the last refresh.
-// The UUID is required for Produce API v13+, which addresses topics by UUID rather than name.
+// TopicID returns the UUID of topic from the last Metadata refresh, or
+// ok=false if the topic was unknown. UUIDs are required for Produce v13+.
 func (p *AgentPool) TopicID(topic string) ([16]byte, bool) {
 	id, ok := p.state.Load().topicIDs[topic]
 	return id, ok
 }
 
-// buildLeadersAndTopicIDs extracts the leader map and topic UUIDs from a Metadata
-// response covering every topic in the cluster (Topics=nil request).
-//
-// The response is authoritative: topics absent from it have been deleted and are
-// dropped from the snapshot. Topics returned with a non-zero ErrorCode are a
-// special case — the response carries no useful UUID or partition data (zero
-// UUID, empty Partitions), so we carry over the previous UUID to ride out
-// transient errors like LEADER_NOT_AVAILABLE without breaking the producer.
-//
-// Leaders whose NodeID is not in agentSet are dropped, guarding against
-// transient mid-update responses where a partition references a broker that
-// has already left the cluster.
+// buildLeadersAndTopicIDs extracts the leader map and topic UUIDs from a
+// Metadata response. Drops leaders pointing to NodeIDs absent from agentSet
+// (transient mid-update window). Carries previous UUIDs forward for topics
+// returned with a non-zero ErrorCode, so transient errors don't blank the
+// topic from the producer's view.
 func buildLeadersAndTopicIDs(
 	respTopics []kmsg.MetadataResponseTopic,
 	agentSet map[int32]struct{},
@@ -140,7 +149,7 @@ func buildLeadersAndTopicIDs(
 	return leaders, topicIDs
 }
 
-// diffRemovedAgents returns the NodeIDs in old that are absent from newSet.
+// diffRemovedAgents returns NodeIDs in old that are absent from newSet.
 func diffRemovedAgents(old []int32, newSet map[int32]struct{}) []int32 {
 	var removed []int32
 	for _, id := range old {

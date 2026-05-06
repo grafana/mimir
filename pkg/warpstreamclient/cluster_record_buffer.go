@@ -16,15 +16,33 @@ import (
 // Returns ok=false when no agent is currently assigned to the partition.
 type AgentResolver func(topic string, partition int32) (nodeID int32, ok bool)
 
-// ClusterRecordBuffer routes records to per-agent buffers (AgentRecordBuffer)
-// according to AgentResolver. Each agent owns its own batching state and
-// linger timer; the cluster only manages routing and lifecycle.
+// ClusterRecordBuffer is the cluster-wide entry point for buffering produce
+// records. It owns the routing and lifecycle of per-agent batches; each
+// AgentRecordBuffer owns its own state, linger timer, and flush loop.
 //
-// The cluster uses a sync.RWMutex for the agents map: the hot path
-// (Add to an existing agent) takes only RLock, so concurrent Adds for
-// different agents do not contend with each other. Creating the buffer for
-// an agent that hasn't been seen before takes a brief write lock; once
-// created, the buffer is reused.
+// The split between cluster and per-agent state is deliberate. Produce
+// traffic targets many partitions but, after AgentResolver maps them,
+// lands on a much smaller set of agents — so the natural unit of batching
+// is one buffer per primary agent rather than one per partition (as
+// franz-go does). Batching per agent has two consequences that matter:
+//
+//   - One ProduceRequest can carry records for many partitions, which is
+//     the whole point of choosing a per-agent grouping for Warpstream:
+//     fewer wire round-trips and less per-batch hedging overhead.
+//   - The per-partition leader bookkeeping that vanilla Kafka clients need
+//     (one in-flight cap per leader, one batch per leader, per-leader
+//     ordering) becomes irrelevant. Warpstream agents are stateless;
+//     "leader" is just a routing decision we make ourselves.
+//
+// Concurrency is biased to the hot path: the agents map is guarded by a
+// sync.RWMutex so concurrent Adds to different agents take RLock and never
+// contend with each other. Creating a per-agent buffer is a one-time write
+// lock per new NodeID; subsequent Adds reuse it. bufferedBytes /
+// bufferedRecords are atomic counters that mirror franz-go's
+// BufferedProduceBytes / BufferedProduceRecords semantics — they reflect
+// "records the producer is responsible for", not "records the caller is
+// waiting on", which is why they are decremented on actual flush completion
+// (not on caller ctx-cancel).
 type ClusterRecordBuffer struct {
 	linger        time.Duration
 	maxBatchBytes int32
@@ -45,10 +63,8 @@ type ClusterRecordBuffer struct {
 	closed       bool
 }
 
-// NewClusterRecordBuffer returns a ClusterRecordBuffer ready to accept
-// records. flush is forwarded to every per-agent buffer the cluster lazily
-// creates. resolve is consulted on every Add to bucket each record under a
-// destination agent.
+// NewClusterRecordBuffer returns a buffer that lazily spawns one
+// AgentRecordBuffer per NodeID seen via resolve, all sharing flush.
 func NewClusterRecordBuffer(linger time.Duration, maxBatchBytes int32, resolve AgentResolver, flush FlushFunc, m *metrics) *ClusterRecordBuffer {
 	return &ClusterRecordBuffer{
 		linger:        linger,
@@ -60,23 +76,13 @@ func NewClusterRecordBuffer(linger time.Duration, maxBatchBytes int32, resolve A
 	}
 }
 
-// Add buffers records into per-agent batches and arranges for done to fire
-// exactly once with one of:
-//   - nil, when every agent contributing to this Add has acknowledged its
-//     share of the batch;
-//   - the first error observed across the participating agents;
-//   - ctx.Err() if ctx is canceled before the above happens.
+// Add buffers records and fires done exactly once with: nil on full success,
+// the first error observed, or ctx.Err() if ctx is cancelled first.
 //
-// ctx governs only the caller's wait on done — it does NOT cancel the
-// underlying produce. Records are committed to the batch as soon as they are
-// buffered; cancelling ctx detaches this caller from the result but the
-// batch still flushes normally. As a consequence, when done fires with
-// ctx.Err() the records may still land successfully on the broker.
-//
-// If any record's (topic, partition) does not resolve to an agent, or the
-// cluster is closed, Add fails the whole call synchronously via done and
-// buffers nothing. Add returns immediately; the caller is expected to block
-// on done.
+// Cancelling ctx detaches the caller, not the produce — records still flush
+// in the background and may land on the broker after done fires with
+// ctx.Err(). Unresolved partitions and closed buffers fail synchronously
+// via done without buffering anything.
 func (c *ClusterRecordBuffer) Add(ctx context.Context, records []*kgo.Record, done func(error)) {
 	if len(records) == 0 {
 		done(nil)
@@ -155,20 +161,18 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, records []*kgo.Record, do
 	}
 }
 
-// BufferedBytes returns the total size in bytes of every record currently
-// awaiting acknowledgement (still buffered or in flight).
+// BufferedBytes returns the bytes of all records awaiting ack.
 func (c *ClusterRecordBuffer) BufferedBytes() int64 {
 	return c.bufferedBytes.Load()
 }
 
-// BufferedRecords returns the count of records currently awaiting
-// acknowledgement (still buffered or in flight).
+// BufferedRecords returns the count of records awaiting ack.
 func (c *ClusterRecordBuffer) BufferedRecords() int64 {
 	return c.bufferedRecords.Load()
 }
 
-// Close flushes every per-agent buffer in parallel and waits for all of them
-// to drain. Subsequent Add calls fail with errBufferClosed. Idempotent.
+// Close flushes every per-agent buffer in parallel and waits for them to
+// drain. Subsequent Adds fail with errBufferClosed. Idempotent.
 func (c *ClusterRecordBuffer) Close() {
 	c.mu.Lock()
 	if c.closed {
@@ -195,8 +199,7 @@ func (c *ClusterRecordBuffer) Close() {
 }
 
 // agentRecordBufferFor returns the per-agent buffer for nodeID, creating it
-// on first call. Returns an error when the cluster is closed (and would in
-// the future cover any other reason a buffer cannot be supplied).
+// on first call. Errors with errBufferClosed if the cluster is closed.
 func (c *ClusterRecordBuffer) agentRecordBufferFor(nodeID int32) (*AgentRecordBuffer, error) {
 	// Hot path: read lock for an already-known agent.
 	c.mu.RLock()

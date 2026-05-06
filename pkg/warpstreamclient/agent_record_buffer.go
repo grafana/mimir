@@ -21,16 +21,33 @@ var errBufferClosed = errors.New("record buffer is closed")
 // or has failed.
 type FlushFunc func(ctx context.Context, nodeID int32, records []*kgo.Record, done func(error))
 
-// AgentRecordBuffer accumulates records destined for one agent and invokes
-// FlushFunc when:
-//   - the linger timer fires;
-//   - adding records would push the batch above maxBatchBytes; or
-//   - Close is called.
+// AgentRecordBuffer accumulates records targeted at one Warpstream agent and
+// flushes them as a single ProduceRequest on linger expiry, batch-size
+// overflow, or Close. It exists because Warpstream's stateless model lets a
+// single Produce request to one agent carry batches for many partitions —
+// the natural unit of batching here is "records bound for this agent",
+// independent of how many topics or partitions they span.
 //
-// AgentRecordBuffer is concurrency-safe via a single per-instance mutex and
-// has no knowledge of routing, resolvers, or the existence of other agents.
+// The buffer is intentionally narrow: it knows nothing about routing,
+// resolvers, hedging, or other agents. ClusterRecordBuffer owns those
+// concerns. This split keeps the per-agent contention surface small (one
+// mutex per agent) and keeps the multi-agent fan-in logic out of the hot
+// per-record path. Concurrent Adds for *different* agents never touch the
+// same mutex.
 //
-// The linger period is always honoured; there is no synchronous-flush bypass.
+// Two design choices stand out:
+//
+//   - The linger period is always honoured. The typical deployment has
+//     many concurrent client processes producing to the same Warpstream
+//     cluster and enforcing linger allow us to amortise the Produce requests
+//     cost.
+//   - Each flush runs in its own goroutine so the buffer can immediately
+//     start accumulating the next batch. This means multiple Produce
+//     requests to the same agent can be in flight concurrently. There is
+//     no per-agent in-flight cap by design: Warpstream agents are
+//     stateless, ordering between requests doesn't matter for the produce
+//     contract this client exposes, and the cap that would matter (memory
+//     pressure) is enforced by the caller upstream.
 type AgentRecordBuffer struct {
 	nodeID        int32
 	linger        time.Duration
@@ -50,9 +67,8 @@ type AgentRecordBuffer struct {
 	cancel  context.CancelFunc
 }
 
-// NewAgentRecordBuffer returns a buffer ready to accept records destined for
-// nodeID. flush is invoked from a background goroutine when a batch is ready
-// to send.
+// NewAgentRecordBuffer returns a buffer for records destined to nodeID.
+// flush runs in a background goroutine when a batch is ready.
 func NewAgentRecordBuffer(nodeID int32, linger time.Duration, maxBatchBytes int32, flush FlushFunc, m *metrics) *AgentRecordBuffer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &AgentRecordBuffer{
@@ -66,11 +82,9 @@ func NewAgentRecordBuffer(nodeID int32, linger time.Duration, maxBatchBytes int3
 	}
 }
 
-// Add appends records to the pending batch and arranges for flushDone to
-// fire once after the batch containing these records is acked. If appending
-// would push the batch above maxBatchBytes the existing batch is flushed
-// inline before the new records are appended. If the buffer is closed
-// flushDone fires synchronously with errBufferClosed.
+// Add appends records to the pending batch and fires flushDone once after
+// that batch is acked. Overflowing maxBatchBytes flushes the existing batch
+// inline first; closed buffers fail flushDone with errBufferClosed.
 func (a *AgentRecordBuffer) Add(records []*kgo.Record, flushDone func(error)) {
 	if len(records) == 0 {
 		flushDone(nil)
@@ -96,9 +110,8 @@ func (a *AgentRecordBuffer) Add(records []*kgo.Record, flushDone func(error)) {
 	a.mu.Unlock()
 }
 
-// Close flushes the pending batch and waits until every in-flight FlushFunc
-// has completed and every flushDone has fired. Subsequent Add calls fail
-// with errBufferClosed. Idempotent.
+// Close flushes the pending batch and waits for every in-flight FlushFunc
+// to report. Subsequent Adds fail with errBufferClosed. Idempotent.
 func (a *AgentRecordBuffer) Close() {
 	a.mu.Lock()
 	if a.closed {
@@ -120,12 +133,9 @@ func (a *AgentRecordBuffer) timerFlush() {
 	a.startFlushLocked()
 }
 
-// startFlushLocked snapshots the pending batch and dispatches it to the
-// FlushFunc in a background goroutine. Resets the buffer state so a fresh
-// batch can begin accumulating immediately. No-op if there is nothing
-// buffered.
-//
-// Caller must hold a.mu.
+// startFlushLocked dispatches the pending batch to flush in a goroutine and
+// resets buffer state so the next batch can accumulate immediately. No-op
+// if nothing is buffered. Caller must hold a.mu.
 func (a *AgentRecordBuffer) startFlushLocked() {
 	if len(a.bufferedRecords) == 0 {
 		return
@@ -156,11 +166,9 @@ func (a *AgentRecordBuffer) startFlushLocked() {
 	}()
 }
 
-// wireBytesOf returns an approximate wire-encoded size of records, used as a
-// stable upper-bound estimate for the batch-size cap. Exact accuracy is not
-// required; what matters is that the estimate is monotone and never
-// underestimates badly enough to allow batches significantly above
-// maxBatchBytes.
+// wireBytesOf returns an upper-bound estimate of the wire-encoded size of
+// records. Used only for the batch-size cap, where exact accuracy doesn't
+// matter — only that we never significantly under-count.
 func wireBytesOf(records []*kgo.Record) int32 {
 	const recordOverheadEstimate = 24 // ~upper bound on Length+Attributes+TimestampDelta+OffsetDelta+(varint lengths)
 	var n int32

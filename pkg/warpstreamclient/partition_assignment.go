@@ -14,9 +14,33 @@ type topicPartition struct {
 	partition int32
 }
 
-// PartitionAssignmentStrategy selects the primary and secondary agent for a given partition.
-// Both methods share the same signature so a method value can be passed as a
-// generic agent resolver (e.g. to RecordBuffer).
+// PartitionAssignmentStrategy maps a partition to a primary agent (used for
+// normal routing) and a secondary agent (used for hedging).
+//
+// The "secondary" concept is the half of the design that needs justifying.
+// In vanilla Kafka, a partition has exactly one leader and clients route
+// strictly to it; "secondary" makes no sense. With Warpstream, every agent
+// can serve every partition, but secondary selection is far from free: each
+// agent that accepts records for a partition writes its own segment file
+// to object storage, and Warpstream's control-plane RSM has to track every
+// (partition → segment) mapping it produces. If every client process
+// picked a random secondary on every hedge, records for a single partition
+// would be scattered across as many segment files as there are agents —
+// inflating object-storage write amplification, fanning out fetch-side
+// reads across many small segments, and bloating the control-plane state
+// the RSM has to keep consistent.
+//
+// Determinism contains the blast radius. Hedge traffic for a given
+// partition lands on the *same* alternate agent across every Kafka client
+// instance, so the per-partition footprint stays at "one primary segment
+// stream + one secondary segment stream" rather than fanning out across
+// the whole pool. The implementation hashes (topic, partition) over the
+// sorted agent list (minus the primary): all clients with the same
+// Metadata view compute the same secondary, and as agents come and go
+// secondaries only shift for the partitions actually affected.
+//
+// Both methods share the (topic, partition) signature so a method value
+// can be handed off as a generic AgentResolver to RecordBuffer.
 type PartitionAssignmentStrategy interface {
 	// Primary returns the Kafka NodeID designated as partition leader by Metadata.
 	// Returns (0, false) if the partition has no known leader.
@@ -27,17 +51,15 @@ type PartitionAssignmentStrategy interface {
 	Secondary(topic string, partition int32) (nodeID int32, ok bool)
 }
 
-// LazyPartitionAssignmentStrategy is a PartitionAssignmentStrategy that
-// resolves to an underlying strategy via a caller-supplied function on every
-// call. Useful for wiring a long-lived consumer (e.g. Hedger) to a strategy
-// that is replaced on metadata refresh: the function returns the latest
-// snapshot without the consumer needing to be re-wired.
+// LazyPartitionAssignmentStrategy resolves the underlying strategy on every
+// call. The strategy is rebuilt by AgentPool.Refresh, but consumers like
+// Hedger and ClusterRecordBuffer are wired once at startup; this indirection
+// lets them pick up the latest snapshot without rewiring.
 type LazyPartitionAssignmentStrategy struct {
 	resolve func() PartitionAssignmentStrategy
 }
 
-// NewLazyPartitionAssignmentStrategy returns a strategy that calls resolve on
-// every Primary/Secondary lookup.
+// NewLazyPartitionAssignmentStrategy calls resolve on every lookup.
 func NewLazyPartitionAssignmentStrategy(resolve func() PartitionAssignmentStrategy) *LazyPartitionAssignmentStrategy {
 	return &LazyPartitionAssignmentStrategy{resolve: resolve}
 }
@@ -52,10 +74,10 @@ func (l *LazyPartitionAssignmentStrategy) Secondary(topic string, partition int3
 	return l.resolve().Secondary(topic, partition)
 }
 
-// DefaultPartitionAssignmentStrategy implements PartitionAssignmentStrategy from an
-// immutable snapshot of the agent pool. Both the leader map and the secondary map
-// are precomputed in the constructor so reads are alloc-free and lock-free.
-// A new instance is created by AgentPool.Refresh on every call.
+// DefaultPartitionAssignmentStrategy is an immutable snapshot of the agent
+// pool. Both the leader and secondary maps are precomputed in the
+// constructor so the produce hot path reads them lock-free and alloc-free.
+// AgentPool.Refresh creates a new instance on every refresh.
 type DefaultPartitionAssignmentStrategy struct {
 	leaders     map[topicPartition]int32
 	secondaries map[topicPartition]int32 // keys without an entry have no secondary; values are valid NodeIDs (including 0)
@@ -89,12 +111,9 @@ func (s *DefaultPartitionAssignmentStrategy) Secondary(topic string, partition i
 	return id, ok
 }
 
-// selectSecondary picks a secondary NodeID deterministically by hashing
-// (topic, partition) over the sorted candidate list (all agents minus primary).
-// Returns (0, false) if no secondary is available.
-//
-// The walk is alloc-free: rather than building a candidate slice, it counts
-// non-primary agents and maps the hash to one via modular arithmetic.
+// selectSecondary picks a NodeID deterministically by hashing (topic,
+// partition) over the candidate list (sorted agents minus primary). Walks
+// the slice without allocating an intermediate one.
 func selectSecondary(topic string, partition int32, primary int32, all []int32) (int32, bool) {
 	if len(all) < 2 {
 		return 0, false

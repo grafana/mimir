@@ -34,30 +34,48 @@ type HedgerConfig struct {
 	MinHedgeDelay time.Duration
 }
 
-// Hedger wraps another DirectProducer with dynamic latency-aware hedging
-// and per-partition fallback. It implements DirectProducer itself, so it
-// composes with other DirectProducer decorators.
+// Hedger is the layer that turns Warpstream's stateless-agent property
+// into actual reliability for produce traffic. In vanilla Kafka the same
+// ProduceRequest cannot be sent to two brokers — a Produce must go to the
+// partition leader, period — so a slow leader stalls the request until
+// either retries kick in or the timeout fires. Warpstream lets us race a
+// slow primary against a *different* agent because every agent can serve
+// every partition. This component owns that race.
 //
-// Hedger has two distinct triggers for the secondary leg:
-//   - Hedge timer: when the latency tracker reports the primary is slow
-//     relative to the cluster baseline, a fanout to per-partition
-//     secondaries is launched after MinHedgeDelay (or the baseline,
-//     whichever is larger). The first leg to fully succeed wins.
-//   - Primary failure: any error returned by the primary (with or without
-//     a hedge having been triggered) falls through to per-partition fanout
-//     as a retry. The Hedger therefore acts as both a hedge layer and a
-//     full-request retry layer in one component.
+// The decision to actually hedge is dynamic, not unconditional. Issuing a
+// duplicate request always costs cluster CPU and bandwidth; doing it on
+// every request would multiply load by 2× even when the cluster is healthy.
+// The hedger consults the AgentStatsTracker for two signals:
 //
-// The fanout is treated as all-or-nothing: a sub-request that errors fails
-// the whole fanout. This matches Warpstream's semantics, where a single
-// Produce request to one agent either succeeds entirely or fails
-// entirely; it would be unusual for one partition in a request to succeed
-// while another in the same request fails for an agent-level reason.
+//   - Per-agent latency vs. cluster baseline (SlowMultiplier).
+//   - Per-agent error rate vs. configured floor (FaultyThreshold).
 //
-// Hedger does not record per-agent latency or error stats itself: the
-// inner DirectProducer is expected to be wrapped by a TrackingProducer
-// (or equivalent) so every leg — including legs whose results the Hedger
-// races and discards — is observed exactly once.
+// The hedge fires only when the *primary* looks worse than the cluster on
+// at least one axis. It is then suppressed when *too many* agents look bad
+// — a cluster-wide latency or error spike means hedging would amplify the
+// pain rather than route around a single bad agent. This is the difference
+// between "one node is sick, route around it" and "everyone is sick, don't
+// make it worse" and is the whole reason this lives in a dedicated layer
+// instead of being a fixed-delay hedge timer.
+//
+// There are two paths into the secondary leg:
+//
+//   - The hedge timer expires first → fan out to per-partition secondaries
+//     (computed via PartitionAssignmentStrategy). The first leg to fully
+//     succeed wins; the loser's response is discarded.
+//   - The primary fails (with or without a hedge having fired) → fall
+//     through to the same fan-out as a retry. The Hedger therefore doubles
+//     as a full-request retry layer.
+//
+// The fan-out is all-or-nothing per Warpstream's request semantics: a
+// single Produce request to one agent either succeeds entirely or fails
+// entirely, so a sub-request error fails the whole fan-out leg. The
+// component records hedgeAttemptsTotal / hedgeWinsTotal so an operator can
+// tell at a glance whether hedging is helping or just adding load.
+//
+// Hedger does not record per-agent stats itself; the inner DirectProducer
+// must already be wrapped by a TrackingProducer so every leg, including
+// the discarded ones, contributes to the rolling latency/error window.
 type Hedger struct {
 	inner    DirectProducer
 	tracker  AgentStatsTracker
@@ -66,9 +84,8 @@ type Hedger struct {
 	metrics  *metrics
 }
 
-// NewHedger returns a Hedger that adds dynamic hedging on top of inner.
-// tracker is used only to read AgentStats/ClusterStats for the hedge
-// decision; per-leg observations must be recorded by a tracking decorator
+// NewHedger wraps inner with dynamic hedging. tracker is read-only here —
+// per-leg observations must already be recorded by a TrackingProducer
 // inside inner.
 func NewHedger(inner DirectProducer, tracker AgentStatsTracker, strategy PartitionAssignmentStrategy, cfg HedgerConfig, m *metrics) *Hedger {
 	return &Hedger{
@@ -80,12 +97,9 @@ func NewHedger(inner DirectProducer, tracker AgentStatsTracker, strategy Partiti
 	}
 }
 
-// Produce sends req to primaryID via inner.Produce, optionally hedging to
-// per-partition secondaries when the latency tracker indicates the primary
-// is slow. On primary failure (with or without hedging), unconditionally
-// retries via per-partition fanout.
-//
-// Implements DirectProducer.
+// Produce sends req to primaryID, optionally racing a per-partition fan-out
+// when the primary looks slow, and falling back to the same fan-out as a
+// retry on primary failure. Implements DirectProducer.
 func (h *Hedger) Produce(ctx context.Context, primaryID int32, req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error) {
 	delay, hedge := h.shouldHedge(time.Now(), primaryID)
 
@@ -121,12 +135,9 @@ func (h *Hedger) Produce(ctx context.Context, primaryID int32, req *kmsg.Produce
 	return h.fanoutToSecondaryAgents(ctx, req, bufferedPrimary(primary))
 }
 
-// shouldHedge consults the stats tracker and returns the hedge delay (and
-// whether to hedge at all) for this primary. Hedging is suppressed when
-// either query lacks reliable data (no per-agent signal for the primary
-// or no quorum of qualifying agents in the cluster), when the primary is
-// healthy on both axes, or when the cluster has a widespread slow- or
-// faulty-fraction issue.
+// shouldHedge returns the hedge delay (and whether to hedge) for primaryID.
+// Suppresses when stats are missing, when the primary is healthy, or when
+// the cluster as a whole is unhealthy — see the Hedger doc for the why.
 func (h *Hedger) shouldHedge(now time.Time, primaryID int32) (time.Duration, bool) {
 	primary, ok := h.tracker.AgentStats(now, primaryID)
 	if !ok {
@@ -167,13 +178,10 @@ func (h *Hedger) shouldHedge(now time.Time, primaryID int32) (time.Duration, boo
 }
 
 // fanoutToSecondaryAgents splits req across per-partition secondaries and
-// races the resulting fanout against the primary leg supplied via
-// primaryCh; the first leg to fully succeed wins. The fanout is
-// all-or-nothing: any sub-request error fails the whole fanout. If both
-// legs fail the primary's error is returned and the fanout error is
-// discarded. If the request cannot be split (some partition has no
-// secondary) the fanout never runs and the primary's outcome is returned
-// alone.
+// races the fan-out against primaryCh; first full success wins. All-or-
+// nothing per leg. If req can't be split (no secondary for some partition)
+// the primary's outcome is returned alone. On both-fail the primary error
+// is returned and the fan-out error is discarded.
 func (h *Hedger) fanoutToSecondaryAgents(ctx context.Context, req *kmsg.ProduceRequest, primaryCh <-chan directProduceResult) (*kmsg.ProduceResponse, error) {
 	// Split the request to per-secondary agent requests.
 	secondaryReqs, err := splitProduceRequestToSecondaryAgents(req, h.strategy)
