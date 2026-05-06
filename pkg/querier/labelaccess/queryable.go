@@ -174,6 +174,7 @@ func (l *labelAccessQuerier) LabelValues(ctx context.Context, name string, hints
 	}
 
 	unique := make(map[string]struct{})
+	var annos annotations.Annotations
 	// LBAC policies can be applied to any labels associated with a series. Because of this we
 	// need to include the matchers from each distinct LBAC selector in the call to the upstream
 	// querier because we don't have any other way to make sure they are applied to the various
@@ -187,7 +188,7 @@ func (l *labelAccessQuerier) LabelValues(ctx context.Context, name string, hints
 		ourMatchers := make([]*labels.Matcher, 0, len(matchers)+len(selector))
 		ourMatchers = append(ourMatchers, matchers...)
 		ourMatchers = l.mergeMatchers(ourMatchers, selector)
-		lbls, _, err := l.labelQuerier.LabelValues(ctx, name, hints, ourMatchers...)
+		lbls, selectorAnnos, err := l.labelQuerier.LabelValues(ctx, name, hints, ourMatchers...)
 
 		// Return an error here immediately even if there are some partial values we could return
 		// to callers. We'd rather return an error so that callers could retry instead of partial
@@ -196,6 +197,7 @@ func (l *labelAccessQuerier) LabelValues(ctx context.Context, name string, hints
 			return nil, nil, fmt.Errorf("unable to get label values for %s with selector %s: %w", name, selector, err)
 		}
 
+		annos.Merge(selectorAnnos)
 		spanlog.DebugLog("msg", "label values filtered by LBAC selector", "name", name, "selector", selector, "results", len(lbls))
 		for _, lbl := range lbls {
 			unique[lbl] = struct{}{}
@@ -207,7 +209,7 @@ func (l *labelAccessQuerier) LabelValues(ctx context.Context, name string, hints
 		values = append(values, k)
 	}
 	sort.Strings(values)
-	return values, nil, nil
+	return values, annos, nil
 }
 
 // LabelNames returns all the unique label names present in the block in sorted order.
@@ -236,6 +238,7 @@ func (l *labelAccessQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 	}
 
 	unique := make(map[string]struct{})
+	var annos annotations.Annotations
 	// LBAC policies can be applied to any labels associated with a series. Because of this we
 	// need to include the matchers from each distinct LBAC selector in the call to the upstream
 	// querier because we don't have any other way to make sure they are applied to the various
@@ -249,7 +252,7 @@ func (l *labelAccessQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 		ourMatchers := make([]*labels.Matcher, 0, len(matchers)+len(selector))
 		ourMatchers = append(ourMatchers, matchers...)
 		ourMatchers = l.mergeMatchers(ourMatchers, selector)
-		lbls, _, err := l.labelQuerier.LabelNames(ctx, hints, ourMatchers...)
+		lbls, selectorAnnos, err := l.labelQuerier.LabelNames(ctx, hints, ourMatchers...)
 
 		// Return an error here immediately even if there are some partial values we could return
 		// to callers. We'd rather return an error so that callers could retry instead of partial
@@ -258,6 +261,7 @@ func (l *labelAccessQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 			return nil, nil, fmt.Errorf("unable to get label names with selector %s: %w", selector, err)
 		}
 
+		annos.Merge(selectorAnnos)
 		spanlog.DebugLog("msg", "label names filtered by LBAC selector", "selector", selector, "results", len(lbls))
 		for _, lbl := range lbls {
 			unique[lbl] = struct{}{}
@@ -272,7 +276,7 @@ func (l *labelAccessQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 	// Note: we could potentially avoid this sort by taking advantage of the fact that the
 	// upstream querier is required to return sorted label names if performance becomes a concern.
 	sort.Strings(names)
-	return names, nil, nil
+	return names, annos, nil
 }
 
 // Close releases the resources of the Querier.

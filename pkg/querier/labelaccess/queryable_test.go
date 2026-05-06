@@ -368,6 +368,7 @@ func TestLabelPoliciesToPromSelectors(t *testing.T) {
 
 type mockQuerier struct {
 	series []labels.Labels
+	annos  annotations.Annotations
 	err    error
 }
 
@@ -406,7 +407,7 @@ func (q *mockQuerier) LabelValues(_ context.Context, name string, _ *storage.Lab
 		}
 	}
 
-	return values, nil, nil
+	return values, q.annos, nil
 }
 
 func (q *mockQuerier) LabelNames(_ context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -446,7 +447,7 @@ func (q *mockQuerier) LabelNames(_ context.Context, _ *storage.LabelHints, match
 	}
 
 	sort.Strings(values)
-	return values, nil, nil
+	return values, q.annos, nil
 }
 
 func (q *mockQuerier) Close() error {
@@ -558,6 +559,23 @@ func TestLabelAccessQuerier_LabelValues(t *testing.T) {
 		}
 	})
 
+	t.Run("multiple selectors propagates annotations", func(t *testing.T) {
+		upstream := mockQuerier{
+			series: upstream.series,
+			annos:  annotations.Annotations{"warning": errors.New("warning")},
+		}
+		q := labelAccessQuerier{querier: &upstream, labelQuerier: &upstream, logger: log.NewNopLogger()}
+		ctx = shared.InjectLabelMatchersContext(ctx, shared.LabelPolicySet{
+			tenantID: {
+				{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prd")}},
+				{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "class", "secret")}},
+			},
+		})
+		_, annos, err := q.LabelValues(ctx, "env", &storage.LabelHints{})
+		require.NoError(t, err)
+		assert.Equal(t, upstream.annos, annos)
+	})
+
 	t.Run("single selector and matcher", func(t *testing.T) {
 		q := labelAccessQuerier{querier: &upstream, labelQuerier: &upstream, logger: log.NewNopLogger()}
 		ctx = shared.InjectLabelMatchersContext(ctx, shared.LabelPolicySet{
@@ -662,6 +680,23 @@ func TestLabelAccessQuerier_LabelNames(t *testing.T) {
 		names, _, err := q.LabelNames(ctx, &storage.LabelHints{})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"class", "env", "foo", "series1", "series2"}, names)
+	})
+
+	t.Run("multiple selectors propagates annotations", func(t *testing.T) {
+		upstream := mockQuerier{
+			series: upstream.series,
+			annos:  annotations.Annotations{"warning": errors.New("warning")},
+		}
+		q := labelAccessQuerier{querier: &upstream, labelQuerier: &upstream, logger: log.NewNopLogger()}
+		ctx = shared.InjectLabelMatchersContext(ctx, shared.LabelPolicySet{
+			tenantID: {
+				{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prd")}},
+				{Selector: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "class", "secret")}},
+			},
+		})
+		_, annos, err := q.LabelNames(ctx, &storage.LabelHints{})
+		require.NoError(t, err)
+		assert.Equal(t, upstream.annos, annos)
 	})
 
 	t.Run("single selector and matcher", func(t *testing.T) {
