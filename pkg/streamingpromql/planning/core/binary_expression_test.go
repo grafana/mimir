@@ -162,9 +162,9 @@ func TestBinaryExpression_Describe(t *testing.T) {
 					},
 				},
 			},
-		expected: `LHS + RHS, hints include (region, env)`,
-	},
-	"hints with exclude matching and no exclude labels": {
+			expected: `LHS + RHS, hints include (region, env)`,
+		},
+		"hints with exclude matching and no exclude labels": {
 			node: &BinaryExpression{
 				BinaryExpressionDetails: &BinaryExpressionDetails{
 					Op:    BINARY_ADD,
