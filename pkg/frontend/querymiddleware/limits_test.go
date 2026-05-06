@@ -17,6 +17,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -38,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1470,6 +1473,86 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 
 			options := RequestOptionsFromContext(contextCapturingStorage.ctx)
 			require.Equal(t, testCase.req.GetOptions(), options)
+		})
+	}
+}
+
+// TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError verifies that
+// engineQueryRequestRoundTripperHandler.Do leaves no in-flight memory
+// consumption tracker behind, regardless of which return path Do takes.
+// `engineQueryRequestRoundTripperHandler` is wired to a concrete
+// *streamingpromql.Engine, so this test asserts the post-condition via the
+// inflight tracker count rather than wrapping the engine.
+func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) {
+	const sampledMetric = "cortex_querier_inflight_query_sampled_count"
+	const sampledHelp = "# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.\n# TYPE cortex_querier_inflight_query_sampled_count gauge\n"
+
+	parseExpr := func(t *testing.T, s string) parser.Expr {
+		t.Helper()
+		expr, err := promqlext.NewPromQLParser().ParseExpr(s)
+		require.NoError(t, err)
+		return expr
+	}
+
+	const lookbackDelta = 5 * time.Minute
+
+	testCases := map[string]struct {
+		req           MetricsQueryRequest
+		expectSuccess bool
+	}{
+		"execution error leaves no tracker registered": {
+			// `some_metric * on(foo) some_other_metric` triggers a duplicate-match
+			// error from Exec — the failure path between Exec and the finalizer
+			// hand-off.
+			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, parseExpr(t, `some_metric * on(foo) some_other_metric`), Options{}, nil, ""),
+		},
+		"successful query drains via finalizer": {
+			req:           NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, parseExpr(t, `some_metric`), Options{}, nil, ""),
+			expectSuccess: true,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			queryMetrics := stats.NewQueryMetrics(reg)
+			inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+
+			opts := streamingpromql.NewTestEngineOpts()
+			opts.CommonOpts.Reg = reg
+			opts.MemoryConsumptionTrackerFactory = inflightTracker
+
+			planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			engine, err := streamingpromql.NewEngine(opts, queryMetrics, planner)
+			require.NoError(t, err)
+
+			testStorage := promqltest.LoadedStorage(t, `
+				load 1s
+					some_metric{foo="bar"} 0+1x50
+					some_other_metric{foo="bar", idx="0"} 0+1x50
+					some_other_metric{foo="bar", idx="1"} 0+1x50
+			`)
+			t.Cleanup(func() { testStorage.Close() })
+
+			handler := NewEngineQueryRequestRoundTripperHandler(engine, newTestCodec(), log.NewNopLogger())
+			handler.(*engineQueryRequestRoundTripperHandler).storage = testStorage
+
+			resp, err := handler.Do(context.Background(), tc.req)
+
+			if tc.expectSuccess {
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				// On success the query is held alive by the finalizer; the
+				// tracker should still be registered until we close the response.
+				require.NoError(t, promtest.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+sampledMetric+" 1\n"), sampledMetric))
+				resp.(*PrometheusResponseWithFinalizer).Close()
+			} else {
+				require.Error(t, err)
+				require.Nil(t, resp)
+			}
+
+			require.NoError(t, promtest.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+sampledMetric+" 0\n"), sampledMetric))
 		})
 	}
 }
