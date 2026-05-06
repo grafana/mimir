@@ -226,7 +226,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 			}
 
 			currentUncachedRanges = append(currentUncachedRanges, splitRange)
-			currentRangeLength = splitRange.End - splitRange.Start
+			currentRangeLength = thisRangeLength
 		}
 	}
 
