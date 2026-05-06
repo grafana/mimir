@@ -153,9 +153,9 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 	// any failure path before that hand-off we must Close qry ourselves, otherwise
 	// the query's resources (memory consumption tracker, pooled buffers, evaluator
 	// context) leak.
-	handedOff := false
+	shouldCloseQuery := true
 	defer func() {
-		if !handedOff {
+		if shouldCloseQuery {
 			qry.Close()
 		}
 	}()
@@ -201,7 +201,7 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 		finalizer: qry.Close,
 	}
 
-	handedOff = true
+	shouldCloseQuery = false
 	return resp, nil
 }
 

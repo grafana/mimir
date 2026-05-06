@@ -204,9 +204,9 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	// any failure path before that hand-off we must Close qry ourselves, otherwise
 	// the query's resources (memory consumption tracker, pooled buffers, evaluator
 	// context) leak.
-	handedOff := false
+	shouldCloseQuery := true
 	defer func() {
-		if !handedOff {
+		if shouldCloseQuery {
 			qry.Close()
 		}
 	}()
@@ -246,6 +246,6 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		finalizer: qry.Close,
 	}
 
-	handedOff = true
+	shouldCloseQuery = false
 	return resp, nil
 }

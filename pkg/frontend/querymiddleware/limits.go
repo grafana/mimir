@@ -422,9 +422,9 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	// failure path before that hand-off we must Close q ourselves, otherwise the
 	// query's resources (memory consumption tracker, pooled buffers, evaluator
 	// context) leak.
-	handedOff := false
+	shouldCloseQuery := true
 	defer func() {
-		if !handedOff {
+		if shouldCloseQuery {
 			q.Close()
 		}
 	}()
@@ -462,7 +462,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		finalizer: q.Close,
 	}
 
-	handedOff = true
+	shouldCloseQuery = false
 	return resp, nil
 }
 
