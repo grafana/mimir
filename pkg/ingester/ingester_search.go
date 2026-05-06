@@ -8,6 +8,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
@@ -149,7 +150,9 @@ func protoToOrdering(o client.SearchOrdering) storage.Ordering {
 type searchResultSender func(*client.SearchResultBatch) error
 
 // streamSearchResults reads from rs in batches of searchBatchSize and emits
-// each batch via send. Returns rs.Err() at termination.
+// each batch via send. Any warnings accumulated by rs are attached to the
+// final batch (or sent alone if no results were produced). Returns rs.Err()
+// at termination.
 func streamSearchResults(rs storage.SearchResultSet, send searchResultSender) error {
 	batch := &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
 	for rs.Next() {
@@ -165,10 +168,24 @@ func streamSearchResults(rs storage.SearchResultSet, send searchResultSender) er
 	if err := rs.Err(); err != nil {
 		return err
 	}
-	if len(batch.Results) > 0 {
+	batch.Warnings = warningsToStrings(rs.Warnings())
+	if len(batch.Results) > 0 || len(batch.Warnings) > 0 {
 		if err := send(batch); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// warningsToStrings flattens annotations into a string slice for wire transport.
+// Returns nil for empty input so the proto field is omitted on the wire.
+func warningsToStrings(a annotations.Annotations) []string {
+	if len(a) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(a))
+	for _, w := range a {
+		out = append(out, w.Error())
+	}
+	return out
 }

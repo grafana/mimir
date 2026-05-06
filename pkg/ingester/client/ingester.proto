@@ -159,13 +159,16 @@ message SearchLabelValuesRequest {
 }
 
 // SearchResultBatch carries one batch of (value, score) pairs in a streaming
-// reply. Both SearchLabel{Names,Values} use this shape.
+// reply. Both SearchLabel{Names,Values} use this shape. Warnings, when
+// present, accompany the final batch of a stream and carry annotations
+// produced by the underlying Searcher.
 message SearchResultBatch {
   message Result {
     string value = 1;
     double score = 2;
   }
   repeated Result results = 1 [(gogoproto.nullable) = false];
+  repeated string warnings = 2;
 }
 
 // QueryStreamResponse contains either:
