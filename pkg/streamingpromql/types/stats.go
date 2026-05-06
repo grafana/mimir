@@ -201,6 +201,36 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 	return nil
 }
 
+// AddSingleStep adds the statistics from other to this instance.
+//
+// Both instances must have a single step, but may have different time ranges.
+//
+// Both instances must have the same number of subsets.
+//
+// This instance is modified in place.
+func (s *OperatorEvaluationStats) AddSingleStep(other *OperatorEvaluationStats) error {
+	if s.timeRange.StepCount != 1 {
+		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance with %v steps", s.timeRange.StepCount)
+	}
+
+	if other.timeRange.StepCount != 1 {
+		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance from another instance with %v steps", other.timeRange.StepCount)
+	}
+
+	if len(s.subsets) != len(other.subsets) {
+		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance with %v subsets from another instance with %v subsets", len(s.subsets), len(other.subsets))
+	}
+
+	s.allSeries.Add(int64(0), other.allSeries.samplesProcessedPerStep[0], other.allSeries.samplesReadIfSubsequentStep[0], other.allSeries.samplesReadIfFirstStep[0])
+
+	for subsetIdx, subset := range s.subsets {
+		otherSubset := other.subsets[subsetIdx]
+		subset.Add(int64(0), otherSubset.samplesProcessedPerStep[0], otherSubset.samplesReadIfSubsequentStep[0], otherSubset.samplesReadIfFirstStep[0])
+	}
+
+	return nil
+}
+
 func (s *OperatorEvaluationStats) newEmptyInstanceWithSameSubsets(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
 	return NewOperatorEvaluationStatsWithQueryStats(timeRange, s.memoryConsumptionTracker, s.queryStats, len(s.subsets))
 }

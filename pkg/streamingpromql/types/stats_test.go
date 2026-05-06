@@ -510,6 +510,67 @@ func TestOperatorEvaluationStats_Add_WithSubsets(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
+func TestOperatorEvaluationStats_AddSingleStep(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	source, err := NewOperatorEvaluationStats(ctx, NewInstantQueryTimeRange(timestamp.Time(1234)), memoryConsumptionTracker, 1)
+	require.NoError(t, err)
+
+	source.allSeries.samplesProcessedPerStep[0] = 10
+	source.allSeries.samplesReadIfSubsequentStep[0] = 1
+	source.allSeries.samplesReadIfFirstStep[0] = 100
+	source.subsets[0].samplesProcessedPerStep[0] = 5
+	source.subsets[0].samplesReadIfSubsequentStep[0] = 3
+	source.subsets[0].samplesReadIfFirstStep[0] = 300
+
+	destination, err := NewOperatorEvaluationStats(ctx, NewInstantQueryTimeRange(timestamp.Time(5678)), memoryConsumptionTracker, 1)
+	require.NoError(t, err)
+
+	destination.allSeries.samplesProcessedPerStep[0] = 20
+	destination.allSeries.samplesReadIfSubsequentStep[0] = 4
+	destination.allSeries.samplesReadIfFirstStep[0] = 200
+	destination.subsets[0].samplesProcessedPerStep[0] = 9
+	destination.subsets[0].samplesReadIfSubsequentStep[0] = 7
+	destination.subsets[0].samplesReadIfFirstStep[0] = 700
+
+	require.NoError(t, destination.AddSingleStep(source))
+
+	// The destination should be updated.
+	require.Equal(t, int64(10+20), destination.allSeries.samplesProcessedPerStep[0])
+	require.Equal(t, int64(1+4), destination.allSeries.samplesReadIfSubsequentStep[0])
+	require.Equal(t, int64(100+200), destination.allSeries.samplesReadIfFirstStep[0])
+	require.Equal(t, int64(5+9), destination.subsets[0].samplesProcessedPerStep[0])
+	require.Equal(t, int64(3+7), destination.subsets[0].samplesReadIfSubsequentStep[0])
+	require.Equal(t, int64(300+700), destination.subsets[0].samplesReadIfFirstStep[0])
+
+	// The source should be unchanged.
+	require.Equal(t, int64(10), source.allSeries.samplesProcessedPerStep[0])
+	require.Equal(t, int64(1), source.allSeries.samplesReadIfSubsequentStep[0])
+	require.Equal(t, int64(100), source.allSeries.samplesReadIfFirstStep[0])
+	require.Equal(t, int64(5), source.subsets[0].samplesProcessedPerStep[0])
+	require.Equal(t, int64(3), source.subsets[0].samplesReadIfSubsequentStep[0])
+	require.Equal(t, int64(300), source.subsets[0].samplesReadIfFirstStep[0])
+
+	source.Close()
+	destination.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestOperatorEvaluationStats_AddSingleStep_MultipleSteps(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	oneStep, err := NewOperatorEvaluationStats(ctx, NewInstantQueryTimeRange(timestamp.Time(0)), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+
+	multipleSteps, err := NewOperatorEvaluationStats(ctx, NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(5*time.Minute), time.Minute), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+
+	require.EqualError(t, oneStep.AddSingleStep(multipleSteps), "cannot add a single step to a OperatorEvaluationStats instance from another instance with 6 steps")
+	require.EqualError(t, multipleSteps.AddSingleStep(oneStep), "cannot add a single step to a OperatorEvaluationStats instance with 6 steps")
+}
+
 func TestOperatorEvaluationStats_Clone(t *testing.T) {
 	start := timestamp.Time(0)
 	step := time.Minute
