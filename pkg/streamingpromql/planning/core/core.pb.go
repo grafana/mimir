@@ -255,8 +255,8 @@ type BinaryExpressionHints struct {
 	// these labels are used to build matchers.
 	Include []string `protobuf:"bytes,1,rep,name=include,proto3" json:"include,omitempty"`
 	// exclude lists label names that should not be used as extra selectors on
-	// the RHS of a binary operation. Used for "without" / "ignoring" / default
-	// (no on/without) matching. When include is empty and hints is non-nil,
+	// the RHS of a binary operation. Used for "ignoring (labels)" / default
+	// (no on/ignoring) matching. When include is empty and hints is non-nil,
 	// matchers are built from all LHS labels except those in exclude.
 	Exclude []string `protobuf:"bytes,2,rep,name=exclude,proto3" json:"exclude,omitempty"`
 }
