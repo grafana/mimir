@@ -166,10 +166,10 @@ func (s *fakeSearchResultSet) Next() bool {
 	s.idx++
 	return true
 }
-func (s *fakeSearchResultSet) At() storage.SearchResult           { return s.results[s.idx-1] }
-func (s *fakeSearchResultSet) Warnings() annotations.Annotations  { return s.warns }
-func (s *fakeSearchResultSet) Err() error                         { return s.err }
-func (s *fakeSearchResultSet) Close() error                       { return nil }
+func (s *fakeSearchResultSet) At() storage.SearchResult          { return s.results[s.idx-1] }
+func (s *fakeSearchResultSet) Warnings() annotations.Annotations { return s.warns }
+func (s *fakeSearchResultSet) Err() error                        { return s.err }
+func (s *fakeSearchResultSet) Close() error                      { return nil }
 
 func TestStreamSearchResultsPropagatesWarnings(t *testing.T) {
 	tests := []struct {
