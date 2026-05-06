@@ -236,13 +236,25 @@ type Distributor struct {
 	reactiveLimiter reactivelimiter.ReactiveLimiter
 
 	// nautilusLog holds the wallclock-keyed assignment log streamed from
-	// the nautilus rebalancer via WatchAssignments. Lookup(now, key) is
-	// used to route series to partitions instead of the partition ring's
-	// default hashing. Each entry in the log is a time-boxed lease;
-	// once now > entry.To the distributor falls back to the partition
-	// ring for that key, so a dead rebalancer is self-correcting after
-	// at most LeaseDuration of staleness.
+	// the nautilus rebalancer via WatchAssignments. The log is the
+	// authoritative record of (Range, PartitionID) leases over time;
+	// the distributor routes writes via nautilusActiveTable below
+	// (which is a query-optimized view of the log's currently-active
+	// entries). The full Log is retained so that, when the active
+	// table goes stale, we can rebuild it — including any pre-issued
+	// successor leases — without waiting for a fresh stream snapshot.
 	nautilusLog syncatomic.Pointer[assignment.Log]
+
+	// nautilusActiveTable is a sorted-by-Range.Lo view of the entries
+	// in nautilusLog whose leases are active right now. Lookups are
+	// O(log N), so the per-series routing cost stays tiny even with
+	// many active tiles or a long expired-history retention. The
+	// table carries an explicit ValidUntil; once wall-clock crosses
+	// it, the table is rebuilt from nautilusLog under
+	// nautilusActiveTableMu (which means the subsequent pre-issued
+	// successor takes over without a stream round-trip).
+	nautilusActiveTable   syncatomic.Pointer[assignment.ActiveTable]
+	nautilusActiveTableMu sync.Mutex
 
 	// nautilusRebalancerConn is the gRPC connection to the rebalancer.
 	nautilusRebalancerConn io.Closer
@@ -1019,8 +1031,9 @@ func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
 }
 
 // consumeNautilusStream loops on Recv and atomically swaps
-// d.nautilusLog on each snapshot. Returns the error that ended the
-// stream so the caller can decide whether to reconnect.
+// d.nautilusLog plus its derived d.nautilusActiveTable on each
+// snapshot. Returns the error that ended the stream so the caller
+// can decide whether to reconnect.
 func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer_WatchAssignmentsClient) error {
 	for {
 		resp, err := stream.Recv()
@@ -1029,6 +1042,13 @@ func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer
 		}
 		log := assignment.NewLogFromEntries(rebalancer.EntriesFromProto(resp.Entries))
 		d.nautilusLog.Store(log)
+		// Pre-build the active table for "now" so the next write
+		// request hits the fast path immediately. Hold the rebuild
+		// mutex so a concurrent stale-rebuild from getKeysByAssignment
+		// doesn't overwrite us with an older snapshot.
+		d.nautilusActiveTableMu.Lock()
+		d.nautilusActiveTable.Store(log.ActiveTable(d.now()))
+		d.nautilusActiveTableMu.Unlock()
 		d.nautilusAssignmentsReceived.Inc()
 		level.Debug(d.log).Log("msg", "received nautilus assignment snapshot", "entries", len(resp.Entries))
 	}
@@ -2510,8 +2530,8 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	// Capture `now` once so all keys in this write request consult
 	// the same point-in-time view of the assignment log.
 	now := d.now()
-	if log := d.nautilusLog.Load(); log != nil {
-		partitionKeys, err = d.getKeysByAssignment(ctx, log, now, keys)
+	if table := d.nautilusActiveTableFor(now); table != nil {
+		partitionKeys, err = d.getKeysByAssignment(ctx, table, keys)
 	} else {
 		partitionKeys, err = tenantRing.GetKeysByPartition(ctx, keys)
 	}
@@ -2552,13 +2572,43 @@ func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys 
 	return keys, initialMetadataIndex
 }
 
-// getKeysByAssignment groups keys by partition using the nautilus
-// assignment log, looking up each key as of `at`. Falls back to the
-// partition ring's ActivePartitionForKey for keys that don't have a
-// valid assignment open at `at` (e.g. the rebalancer hasn't yet
-// produced a tile covering this key, or the key fell into a tile
-// that just closed during a transition).
-func (d *Distributor) getKeysByAssignment(ctx context.Context, log *assignment.Log, at time.Time, keys []uint32) ([]ring.PartitionKeys, error) {
+// nautilusActiveTableFor returns an ActiveTable suitable for routing
+// at wall-clock at, rebuilding from the latest stream snapshot if
+// the cached table is missing, hasn't yet started, or has gone
+// stale (e.g. its leases just expired and a pre-issued successor
+// became active). Returns nil if no log has ever been received or
+// every entry in the latest log has expired (rebalancer outage),
+// signalling the caller to fall back to the partition ring.
+//
+// The fast path is a single atomic load. The slow path takes the
+// rebuild mutex so simultaneous lookups don't all rebuild
+// independently.
+func (d *Distributor) nautilusActiveTableFor(at time.Time) *assignment.ActiveTable {
+	if t := d.nautilusActiveTable.Load(); t != nil && t.CoversAt(at) {
+		return t
+	}
+	d.nautilusActiveTableMu.Lock()
+	defer d.nautilusActiveTableMu.Unlock()
+
+	// Re-check under the lock: another goroutine may have just
+	// rebuilt the table.
+	if t := d.nautilusActiveTable.Load(); t != nil && t.CoversAt(at) {
+		return t
+	}
+	log := d.nautilusLog.Load()
+	if log == nil {
+		return nil
+	}
+	t := log.ActiveTable(at)
+	d.nautilusActiveTable.Store(t)
+	return t
+}
+
+// getKeysByAssignment groups keys by partition using a nautilus
+// ActiveTable. Falls back per-key to the partition ring's
+// ActivePartitionForKey when the table doesn't cover a given key
+// (e.g. a hash gap, or an unrelated edge case during a transition).
+func (d *Distributor) getKeysByAssignment(ctx context.Context, table *assignment.ActiveTable, keys []uint32) ([]ring.PartitionKeys, error) {
 	pRing := d.partitionsRing.PartitionRing()
 
 	partitionIndexes := make(map[int32][]int)
@@ -2569,7 +2619,7 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, log *assignment.L
 			}
 		}
 
-		pid, ok := log.Lookup(at, key)
+		pid, ok := table.Lookup(key)
 		if !ok {
 			level.Warn(d.log).Log("msg", "key not found in assignment log; falling back to partition ring", "key", key)
 			var err error
