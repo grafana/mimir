@@ -1325,11 +1325,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var droppedNativeHistograms int
 
 		var firstPartialErr error
-		// firstSampleValidationErr holds the unwrapped sample-validation error (the
-		// underlying fmt.Errorf from validateSample). It is kept separately from
-		// firstPartialErr (which may also hold a metadata-validation error) so we can
-		// build a soft validationError when the request is partially accepted.
-		var firstSampleValidationErr error
+		// firstValidationErr holds the first encountered series validation error.
+		// It is kept separately from firstPartialErr (which may also hold a metadata-validation error)
+		// so we can build a soft validationError when the request is partially accepted.
+		var firstValidationErr error
 		var rejectedSamplesCount int64
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
@@ -1365,7 +1364,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				if firstPartialErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
-					firstSampleValidationErr = validationErr
+					firstValidationErr = validationErr
 				}
 				rejectedSamplesCount += int64(rawSamples + rawHistograms)
 				removeIndexes = append(removeIndexes, tsIdx)
@@ -1500,8 +1499,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		if firstSampleValidationErr != nil && validatedSamples > 0 {
-			return newSoftValidationError(firstSampleValidationErr, rejectedSamplesCount)
+		if firstValidationErr != nil && validatedSamples > 0 {
+			return newSoftValidationError(firstValidationErr, rejectedSamplesCount)
 		}
 
 		return firstPartialErr
