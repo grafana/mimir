@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 
+	list "github.com/bahlo/generic-list-go"
 	"github.com/thanos-io/objstore"
 )
 
@@ -34,14 +36,14 @@ func NewBucketReader(
 	}
 }
 
-func (r *BucketReader) Read(p []byte) (n int, err error) {
-	if len(p) == 0 {
+func (r *BucketReader) Read(buf []byte) (n int, err error) {
+	if len(buf) == 0 {
 		return 0, nil
 	}
 	if r.off >= r.length {
 		return 0, io.EOF
 	}
-	toRead := len(p)
+	toRead := len(buf)
 	remaining := r.length - r.off
 	if toRead > remaining {
 		toRead = remaining
@@ -51,7 +53,7 @@ func (r *BucketReader) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 	defer rc.Close()
-	n, err = io.ReadFull(rc, p[:toRead])
+	n, err = io.ReadFull(rc, buf[:toRead])
 	r.off += n
 	if errors.Is(err, io.ErrUnexpectedEOF) {
 		err = io.EOF
@@ -70,12 +72,214 @@ func (r *BucketReader) Seek(offset int64, whence int) (int64, error) {
 	return offset, nil
 }
 
-var bucketBufPool = sync.Pool{
-	New: func() any {
-		// 1MiB buffer chosen as starting point;
-		// we could make this configurable and benchmark.
-		return bufio.NewReaderSize(nil, 1<<20)
-	},
+type BucketReaderAsyncReadAhead struct {
+	ctx    context.Context
+	bkt    objstore.BucketReader
+	name   string
+	base   int
+	length int
+	off    int
+
+	queuedLen atomic.Int64
+	curr      *bucketReadPromise
+	bufQueue  *list.List[*bucketReadPromise]
+}
+
+func NewBucketReaderAsyncReadAhead(
+	ctx context.Context, bkt objstore.BucketReader, name string, base int, length int,
+) *BucketReaderAsyncReadAhead {
+	r := &BucketReaderAsyncReadAhead{
+		ctx:      ctx,
+		bkt:      bkt,
+		name:     name,
+		base:     base,
+		length:   length,
+		bufQueue: list.New[*bucketReadPromise](),
+	}
+	r.queueReadAhead()
+	return r
+}
+
+func (r *BucketReaderAsyncReadAhead) Seek(offset int64, whence int) (int64, error) {
+	if whence != io.SeekStart {
+		return 0, fmt.Errorf("invalid Seek whence: %d", whence)
+	}
+	if offset < 0 {
+		return 0, fmt.Errorf("seek to negative offset %d", offset)
+	}
+	r.off = int(offset)
+	return offset, nil
+}
+
+func (r *BucketReaderAsyncReadAhead) Read(buf []byte) (n int, err error) {
+	if len(buf) == 0 {
+		return 0, nil
+	}
+	if r.off >= r.length {
+		return 0, io.EOF
+	}
+	toRead := len(buf)
+	remaining := r.length - r.off
+	if toRead > remaining {
+		toRead = remaining
+	}
+
+	bytesRead := 0
+	for bytesRead < toRead && err == nil {
+		// Get current read promise if we do not have one.
+		if r.curr == nil {
+			elem := r.bufQueue.Front()
+			if elem != nil {
+				r.curr = elem.Value
+				r.bufQueue.Remove(elem)
+			}
+		}
+
+		// Now read from current read promise
+		bytes, readErr := r.curr.ReadN(toRead)
+		copy(buf, bytes)
+		// Update trackers even if there was an error.
+		r.off += len(bytes)
+		bytesRead += len(bytes)
+		err = readErr
+	}
+	return bytesRead, err
+}
+
+func (r *BucketReaderAsyncReadAhead) queueReadAhead() {
+	inFlight := r.bufQueue.Len()
+	if r.curr != nil {
+		inFlight++
+	}
+	for inFlight < asyncReadAheadMaxInFlight {
+		queued := r.queuedLen.Load()
+		remaining := int64(r.length) - queued
+		if remaining <= 0 {
+			return
+		}
+		chunkLen := int64(asyncReadAheadChunkSize)
+		if chunkLen > remaining {
+			chunkLen = remaining
+		}
+		buf := make([]byte, chunkLen)
+		promise := newBucketReadAheadPromise(
+			r.ctx, r.bkt, r.name,
+			r.base+int(queued), int(chunkLen),
+			buf,
+		)
+		r.bufQueue.PushBack(promise)
+		r.queuedLen.Add(chunkLen)
+		inFlight++
+	}
+}
+
+const (
+	asyncReadAheadMaxInFlight = 4
+	asyncReadAheadChunkSize   = 32 * 1024
+)
+
+type bucketReadPromise struct {
+	ctx       context.Context
+	bkt       objstore.BucketReader
+	name      string
+	base      int
+	length    int
+	wg        sync.WaitGroup
+	resultBuf []byte
+	resultErr error
+	readOff   int
+}
+
+func newBucketReadAheadPromise(
+	ctx context.Context, bkt objstore.BucketReader, name string, base int, length int, buf []byte,
+) *bucketReadPromise {
+
+	promise := &bucketReadPromise{
+		ctx:    ctx,
+		bkt:    bkt,
+		name:   name,
+		base:   base,
+		length: length,
+		wg:     sync.WaitGroup{},
+	}
+	promise.wg.Go(func() {
+		promise.fill(buf)
+	})
+
+	return promise
+}
+
+func (p *bucketReadPromise) ReadN(n int) ([]byte, error) {
+	p.wg.Wait()
+
+	if p.readOff >= len(p.resultBuf) {
+		return nil, io.EOF
+	}
+
+	toRead := n
+	remaining := len(p.resultBuf) - p.readOff
+	if toRead > remaining {
+		toRead = remaining
+	}
+	b := make([]byte, toRead)
+	copy(b, p.resultBuf[p.readOff:])
+	p.readOff += toRead
+	return b, p.resultErr
+}
+
+func (p *bucketReadPromise) fill(buf []byte) {
+	finalize := func(b []byte, e error) {
+		p.resultBuf = b
+		p.resultErr = e
+	}
+
+	toRead := cap(buf)
+	if toRead > p.length {
+		toRead = p.length
+	}
+	buf = buf[:toRead]
+	clear(buf)
+
+	if toRead == 0 {
+		finalize(buf, nil)
+		return
+	}
+
+	rc, err := p.bkt.GetRange(p.ctx, p.name, int64(p.base), int64(toRead))
+	if err != nil {
+		finalize(buf, err)
+		return
+	}
+	defer rc.Close()
+
+	n, err := io.ReadFull(rc, buf)
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		err = io.EOF
+	}
+	buf = buf[:n]
+	finalize(buf, err)
+	return
+}
+
+const DefaultBucketBufPoolSize = 1024 * 1024 // 1 MiB
+
+var (
+	bucketBufPool = sync.Pool{
+		New: func() any {
+			return bufio.NewReaderSize(nil, DefaultBucketBufPoolSize)
+		},
+	}
+	bucketBufPoolOnce sync.Once
+)
+
+func InitBucketBufPool(bufferSizeBytes int) {
+	bucketBufPoolOnce.Do(func() {
+		bucketBufPool = sync.Pool{
+			New: func() any {
+				return bufio.NewReaderSize(nil, bufferSizeBytes)
+			},
+		}
+	})
 }
 
 type BucketBufReader struct {
