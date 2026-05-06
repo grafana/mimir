@@ -121,6 +121,32 @@ func (d *Duplicate) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (
 	return planning.QueryPlanVersionZero, nil
 }
 
+func (d *Duplicate) IsSplittable() bool {
+	splitNode, ok := d.Inner.(planning.SplitNode)
+	if !ok {
+		return false
+	}
+	return splitNode.IsSplittable()
+}
+
+func (d *Duplicate) SplittingCacheKey() string {
+	splitNode, ok := d.Inner.(planning.SplitNode)
+	if !ok {
+		return ""
+	}
+	return splitNode.SplittingCacheKey()
+}
+
+func (d *Duplicate) GetRangeParams() planning.RangeParams {
+	splitNode, ok := d.Inner.(planning.SplitNode)
+	if !ok {
+		return planning.RangeParams{}
+	}
+	return splitNode.GetRangeParams()
+}
+
+var _ planning.SplitNode = &Duplicate{}
+
 func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToOperatorWithSubRange(d.Inner, timeRange, overrideTimeParams)
 	if err != nil {
@@ -252,6 +278,29 @@ func (f *DuplicateFilter) ExpressionPosition() (posrange.PositionRange, error) {
 func (f *DuplicateFilter) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanV7, nil
 }
+
+func (f *DuplicateFilter) IsSplittable() bool {
+	return f.Inner.IsSplittable()
+}
+
+func (f *DuplicateFilter) SplittingCacheKey() string {
+	builder := &strings.Builder{}
+	builder.WriteString("duplicate_filter(")
+	core.FormatMatchers(builder, f.Filters)
+	builder.WriteString(", ")
+	builder.WriteString(strconv.FormatInt(f.SubsetIndex, 10))
+	// Wrap the inner key so commas inside it (e.g. ", skip histogram buckets") don't blur the boundary.
+	builder.WriteString(", (")
+	builder.WriteString(f.Inner.SplittingCacheKey())
+	builder.WriteString("))")
+	return builder.String()
+}
+
+func (f *DuplicateFilter) GetRangeParams() planning.RangeParams {
+	return f.Inner.GetRangeParams()
+}
+
+var _ planning.SplitNode = &DuplicateFilter{}
 
 func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	operator, err := materializer.ConvertNodeToOperatorWithSubRange(f.Inner, timeRange, overrideTimeParams)

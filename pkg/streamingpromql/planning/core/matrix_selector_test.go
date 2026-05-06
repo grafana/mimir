@@ -920,6 +920,31 @@ func TestMatrixSelector_RangeVectorSplittingCacheKey(t *testing.T) {
 			},
 			expected: `{__name__="foo", env!="test", region=~"au-.*"}, skip histogram buckets`,
 		},
+		"one subset": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: singleMatcher,
+					Range:    time.Minute,
+					Subsets: []SubsetMatchers{
+						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
+					},
+				},
+			},
+			expected: `{__name__="foo"}, subsets: {env="prod"}`,
+		},
+		"multiple subsets": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: singleMatcher,
+					Range:    time.Minute,
+					Subsets: []SubsetMatchers{
+						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
+						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}}},
+					},
+				},
+			},
+			expected: `{__name__="foo"}, subsets: {env="prod"}, {env="test"}`,
+		},
 	}
 
 	for name, testCase := range testCases {

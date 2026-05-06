@@ -62,7 +62,7 @@ func (o *OptimizationPass) Name() string {
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	if maximumSupportedQueryPlanVersion < planning.QueryPlanV6 {
+	if maximumSupportedQueryPlanVersion < planning.QueryPlanV13 {
 		return plan, nil
 	}
 
@@ -198,8 +198,7 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 
 	n := &SplitFunctionCall{
 		SplitFunctionCallDetails: &SplitFunctionCallDetails{
-			SplitRanges:       splitRanges,
-			InnerNodeCacheKey: inner.SplittingCacheKey(),
+			SplitRanges: splitRanges,
 		},
 		Inner: functionCall,
 	}

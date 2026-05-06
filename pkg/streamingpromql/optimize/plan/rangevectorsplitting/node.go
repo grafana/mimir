@@ -140,8 +140,7 @@ func (s *SplitFunctionCall) ExpressionPosition() (posrange.PositionRange, error)
 }
 
 func (s *SplitFunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
-	// Query splitting with intermediate result caching requires QueryPlanV6
-	return planning.QueryPlanV6, nil
+	return planning.QueryPlanV13, nil
 }
 
 type Materializer struct {
@@ -188,17 +187,23 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, fmt.Errorf("expected exactly 1 child for range vector splitting function %s, got %d", s.Inner.Function.PromQLName(), s.Inner.ChildCount())
 	}
 
+	innerNode := s.Inner.Child(0)
+	splitNode, ok := innerNode.(planning.SplitNode)
+	if !ok {
+		return nil, fmt.Errorf("inner node of split function call does not implement SplitNode: %T", innerNode)
+	}
+
 	expressionPos, err := s.Inner.ExpressionPosition()
 	if err != nil {
 		return nil, err
 	}
 
 	splitOp, err := splitFactory(
-		s.Inner.Child(0),
+		innerNode,
 		materializer,
 		timeRange,
 		ranges,
-		s.InnerNodeCacheKey,
+		splitNode.SplittingCacheKey(),
 		m.cache,
 		expressionPos,
 		params.Annotations,

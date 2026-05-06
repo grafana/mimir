@@ -478,8 +478,10 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	require.NoError(t, r.Err)
 
 	// With a 4h range at ts=4h and 2h split interval, the single cacheable block is (2h-1ms, 4h-1ms].
-	countKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", job="test"}`, 2*hourInMs-1, 4*hourInMs-1, false)
-	fractionKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", code!="err", job="test"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+	// SSE rewrites the narrow selector into DuplicateFilter -> Duplicate -> broad MatrixSelector,
+	// so the narrow side's cache key reflects the duplicate_filter wrapper computed at materialize time.
+	countKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", job="test"}, subsets: {code!="err"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+	fractionKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `duplicate_filter({code!="err"}, 0, ({__name__="hist", job="test"}, subsets: {code!="err"}))`, 2*hourInMs-1, 4*hourInMs-1, false)
 
 	require.Len(t, backend.items, 2)
 
@@ -516,6 +518,53 @@ func TestQuerySplitting_SkipHistogramBucketsNotApplied(t *testing.T) {
 				- FunctionCall: rate(...)
 					- MatrixSelector: {__name__="some_metric"}[5h0m0s]
 	`), p.String())
+}
+
+// TestQuerySplitting_CacheKeyReflectsPostOptimizationState verifies that the inner-node cache key
+// is derived from the final post-CSE/SSE plan structure. A selector wrapped in a DuplicateFilter by
+// SSE produces a duplicate_filter(...) cache key, while the same logical query without SSE produces
+// a bare matchers cache key.
+func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="prod", region="us"} 0+1x60
+			some_metric{env="prod", region="eu"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(6 * time.Hour)
+	// Narrow selector is a subset of the broad selector, so SSE merges them when enabled:
+	// the narrow side's inner becomes DuplicateFilter[region="us"] -> Duplicate -> MatrixSelector{env="prod"}.
+	expr := `sum_over_time(some_metric{env="prod", region="us"}[5h]) / sum_over_time(some_metric{env="prod"}[5h])`
+
+	// Without SSE: each MatrixSelector keeps its full matchers, so cache keys are just the matchers.
+	withoutSSE := defaultSplittingOpts()
+	withoutSSE.EnableSubsetSelectorElimination = false
+	backendNoSSE, engineNoSSE := setupEngineAndCacheWithOpts(t, withoutSSE)
+
+	require.NoError(t, runInstantQuery(t, engineNoSSE, promStorage, expr, ts).Err)
+
+	narrowKeyNoSSE := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, `{__name__="some_metric", env="prod", region="us"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+	broadKeyNoSSE := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, `{__name__="some_metric", env="prod"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+	require.Contains(t, backendNoSSE.items, narrowKeyNoSSE, "expected bare-matchers cache key for narrow selector when SSE is off")
+	require.Contains(t, backendNoSSE.items, broadKeyNoSSE, "expected bare-matchers cache key for broad selector when SSE is off")
+
+	// With SSE: the narrow MatrixSelector is rewritten into DuplicateFilter -> Duplicate -> broad MatrixSelector.
+	// The cache key is computed at materialize time from the DuplicateFilter.
+	withSSE := defaultSplittingOpts()
+	withSSE.EnableSubsetSelectorElimination = true
+	backendSSE, engineSSE := setupEngineAndCacheWithOpts(t, withSSE)
+
+	require.NoError(t, runInstantQuery(t, engineSSE, promStorage, expr, ts).Err)
+
+	// SSE registers the narrow selector as subset 0 on the broad MatrixSelector, so the
+	// matrix selector key now carries `subsets: ...` and the DuplicateFilter key carries the
+	// subset index it points at.
+	narrowKeySSE := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, `duplicate_filter({region="us"}, 0, ({__name__="some_metric", env="prod"}, subsets: {region="us"}))`, 2*hourInMs-1, 4*hourInMs-1, false)
+	broadKeySSE := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, `{__name__="some_metric", env="prod"}, subsets: {region="us"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+	require.Contains(t, backendSSE.items, narrowKeySSE, "expected duplicate_filter cache key for narrow selector when SSE is on")
+	require.Contains(t, backendSSE.items, broadKeySSE, "expected bare-matchers cache key for broad selector when SSE is on")
 }
 
 func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
@@ -1260,10 +1309,12 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 }
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
+	return setupEngineAndCacheWithOpts(t, defaultSplittingOpts())
+}
+
+func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
 	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
-
-	opts := defaultSplittingOpts()
 
 	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
