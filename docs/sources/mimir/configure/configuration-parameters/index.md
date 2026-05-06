@@ -352,6 +352,11 @@ runtime_config:
   # CLI flag: -runtime-config.http-client-timeout
   [http_client_timeout: <duration> | default = 30s]
 
+  http_client_cluster_validation:
+    # (experimental) Primary cluster validation label.
+    # CLI flag: -runtime-config.http-client-cluster-validation.label
+    [label: <string> | default = ""]
+
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 

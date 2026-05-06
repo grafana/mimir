@@ -135,7 +135,7 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric
 # github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0
 ## explicit; go 1.24.0
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping
-# github.com/alecthomas/chroma/v2 v2.24.0
+# github.com/alecthomas/chroma/v2 v2.24.1
 ## explicit; go 1.22
 github.com/alecthomas/chroma/v2
 github.com/alecthomas/chroma/v2/formatters
@@ -669,7 +669,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20260427162712-0457a92dacc3
+# github.com/grafana/dskit v0.0.0-20260505171221-7f6e6a43e255
 ## explicit; go 1.25.8
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -829,8 +829,8 @@ github.com/hashicorp/vault/api/auth/userpass
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
 github.com/inconshreveable/mousetrap
-# github.com/influxdata/influxdb/v2 v2.8.0
-## explicit; go 1.24.0
+# github.com/influxdata/influxdb/v2 v2.9.0
+## explicit; go 1.25.9
 github.com/influxdata/influxdb/v2/kit/io
 github.com/influxdata/influxdb/v2/models
 github.com/influxdata/influxdb/v2/pkg/escape
@@ -853,7 +853,7 @@ github.com/json-iterator/go
 # github.com/julienschmidt/httprouter v1.3.0
 ## explicit; go 1.7
 github.com/julienschmidt/httprouter
-# github.com/klauspost/compress v1.18.5
+# github.com/klauspost/compress v1.18.6
 ## explicit; go 1.24
 github.com/klauspost/compress
 github.com/klauspost/compress/flate

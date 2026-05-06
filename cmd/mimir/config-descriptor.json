@@ -18720,6 +18720,27 @@
           "fieldFlag": "runtime-config.http-client-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "http_client_cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Primary cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "runtime-config.http-client-cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

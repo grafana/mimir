@@ -232,6 +232,11 @@ func (c *KafkaProducer) updateMetricsLoop() {
 // The admission is all-or-nothing per call (rather than per record) so that a partial in-buffer
 // acceptance does not turn into a wasted full retry from the caller, which fails the whole batch on
 // any error.
+//
+// On context cancellation/timeout after records have been handed to the Kafka client, the returned
+// results carry per-record errors but the Record on each result is a synthetic value with only the
+// input partition set. Callers must not assume Record points back to the original input record or
+// that any field other than Partition is populated in that case.
 func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) kgo.ProduceResults {
 	var (
 		remaining = atomic.NewInt64(int64(len(records)))
@@ -258,7 +263,9 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		c.produceRecordsFailedTotal.WithLabelValues("cancelled-before-producing").Add(recordsCount)
 
 		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
-		return kgo.ProduceResults{{Err: errors.Wrap(context.Cause(ctx), "skipped producing Kafka records because context is already done")}}
+		// Records haven't been handed to the Kafka client yet, so the input record pointers are
+		// still safe to expose on the results.
+		return newFailedProduceResultsFromRecords(records, errors.Wrap(context.Cause(ctx), "skipped producing Kafka records because context is already done"))
 	}
 
 	c.produceRecordsEnqueuedTotal.Add(float64(len(records)))
@@ -282,6 +289,16 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 			}
 			return rejected
 		}
+	}
+
+	// Snapshot each record's partition before handing the records off to the Kafka client.
+	// After Produce() is called, the client may concurrently mutate record fields (e.g. franz-go
+	// writes Record.Partition from its metadata-update goroutine), so we can no longer safely
+	// read from the input records. The snapshot is used to build per-record results on the
+	// post-Produce cancellation path, which is exactly where we abandon the in-flight callbacks.
+	recordPartitions := make([]int32, len(records))
+	for i, r := range records {
+		recordPartitions[i] = r.Partition
 	}
 
 	onProduceDone := func(r *kgo.Record, err error) {
@@ -330,11 +347,36 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	select {
 	case <-ctx.Done():
 		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
-		return kgo.ProduceResults{{Err: errors.Wrap(context.Cause(ctx), "waiting for Kafka records to be produced and acknowledged")}}
+		// Records have already been handed to the Kafka client, so we can't expose the original
+		// record pointers on the results; build fresh records from the partition snapshot taken above.
+		return newFailedProduceResultsFromPartitions(recordPartitions, errors.Wrap(context.Cause(ctx), "waiting for Kafka records to be produced and acknowledged"))
 	case <-done:
 		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return it.
 		return res
 	}
+}
+
+// newFailedProduceResultsFromRecords builds a kgo.ProduceResults that reports the given error
+// for each input record, exposing the input record pointer on each result. Only safe to call
+// while the caller still owns the records (i.e. before handing them to the Kafka client);
+// otherwise use newFailedProduceResultsFromPartitions to avoid racing with the client.
+func newFailedProduceResultsFromRecords(records []*kgo.Record, err error) kgo.ProduceResults {
+	results := make(kgo.ProduceResults, 0, len(records))
+	for _, record := range records {
+		results = append(results, kgo.ProduceResult{Record: record, Err: err})
+	}
+	return results
+}
+
+// newFailedProduceResultsFromPartitions is like newFailedProduceResultsFromRecords but allocates
+// fresh kgo.Record values carrying just the given partition, so it's safe to use when the
+// original records have been handed to the Kafka client and may still be mutated by it.
+func newFailedProduceResultsFromPartitions(partitions []int32, err error) kgo.ProduceResults {
+	results := make(kgo.ProduceResults, 0, len(partitions))
+	for _, partition := range partitions {
+		results = append(results, kgo.ProduceResult{Record: &kgo.Record{Partition: partition}, Err: err})
+	}
+	return results
 }
 
 func produceErrReason(err error) string {

@@ -17,10 +17,10 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20260427162712-0457a92dacc3
+	github.com/grafana/dskit v0.0.0-20260505171221-7f6e6a43e255
 	github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
-	github.com/influxdata/influxdb/v2 v2.8.0
+	github.com/influxdata/influxdb/v2 v2.9.0
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.1.0
 	github.com/mitchellh/go-wordwrap v1.0.1
@@ -49,7 +49,7 @@ require (
 
 require (
 	cloud.google.com/go/storage v1.62.1
-	github.com/alecthomas/chroma/v2 v2.24.0
+	github.com/alecthomas/chroma/v2 v2.24.1
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.100.1
 	github.com/cortexproject/promqlsmith v0.0.0-20260205231645-0c8ef5fe46a5
@@ -303,7 +303,7 @@ require (
 	github.com/jessevdk/go-flags v1.6.1 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	github.com/klauspost/compress v1.18.5
+	github.com/klauspost/compress v1.18.6
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
