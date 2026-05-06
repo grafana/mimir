@@ -65,7 +65,6 @@ blocks_storage:
     #    enabled: true
 
     #index_header_cache:
-    #  enabled: true
     #  backend: memcached
     #  memcached:
     #    addresses: dns+memcached:11211
