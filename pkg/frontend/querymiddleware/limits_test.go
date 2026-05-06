@@ -33,6 +33,7 @@ import (
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -1489,30 +1490,28 @@ func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) 
 # TYPE cortex_querier_inflight_query_sampled_count gauge
 `
 
-	parseExpr := func(t *testing.T, s string) parser.Expr {
-		t.Helper()
-		expr, err := promqlext.NewPromQLParser().ParseExpr(s)
-		require.NoError(t, err)
-		return expr
-	}
+	failingQueryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
+		return nil, apierror.New(apierror.TypeInternal, "boom")
+	})
 
-	const lookbackDelta = 5 * time.Minute
+	successfulQueryable := testdatagen.StorageSeriesQueryable([]storage.Series{
+		testdatagen.NewSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(5)),
+	})
 
 	testCases := map[string]struct {
-		req           MetricsQueryRequest
+		queryable     storage.Queryable
 		expectSuccess bool
 	}{
 		"execution error leaves no tracker registered": {
-			// `some_metric * on(foo) some_other_metric` triggers a duplicate-match
-			// error from Exec — the failure path between Exec and the finalizer
-			// hand-off.
-			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, parseExpr(t, `some_metric * on(foo) some_other_metric`), Options{}, nil, ""),
+			queryable: failingQueryable,
 		},
 		"successful query drains via finalizer": {
-			req:           NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, parseExpr(t, `some_metric`), Options{}, nil, ""),
+			queryable:     successfulQueryable,
 			expectSuccess: true,
 		},
 	}
+
+	req := NewPrometheusInstantQueryRequest("/", nil, util.TimeToMillis(end), lookbackDelta, parseQuery(t, "bar1"), Options{}, nil, "")
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -1529,18 +1528,10 @@ func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) 
 			engine, err := streamingpromql.NewEngine(opts, queryMetrics, planner)
 			require.NoError(t, err)
 
-			testStorage := promqltest.LoadedStorage(t, `
-				load 1s
-					some_metric{foo="bar"} 0+1x50
-					some_other_metric{foo="bar", idx="0"} 0+1x50
-					some_other_metric{foo="bar", idx="1"} 0+1x50
-			`)
-			t.Cleanup(func() { testStorage.Close() })
-
 			handler := NewEngineQueryRequestRoundTripperHandler(engine, newTestCodec(), log.NewNopLogger())
-			handler.(*engineQueryRequestRoundTripperHandler).storage = testStorage
+			handler.(*engineQueryRequestRoundTripperHandler).storage = tc.queryable
 
-			resp, err := handler.Do(context.Background(), tc.req)
+			resp, err := handler.Do(context.Background(), req)
 
 			if tc.expectSuccess {
 				require.NoError(t, err)
