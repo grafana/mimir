@@ -200,6 +200,17 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
+	// Ownership of qry is transferred to the response finalizer on success. On
+	// any failure path before that hand-off we must Close qry ourselves, otherwise
+	// the query's resources (memory consumption tracker, pooled buffers, evaluator
+	// context) leak.
+	shouldCloseQuery := true
+	defer func() {
+		if shouldCloseQuery {
+			qry.Close()
+		}
+	}()
+
 	res := qry.Exec(ctx)
 	extracted, err := promqlResultToSamples(res)
 	if err != nil {
@@ -221,7 +232,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	warn = removeDuplicates(warn)
 	info = removeDuplicates(info)
 
-	return &PrometheusResponseWithFinalizer{
+	resp := &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
@@ -233,5 +244,8 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 			Infos:    info,
 		},
 		finalizer: qry.Close,
-	}, nil
+	}
+
+	shouldCloseQuery = false
+	return resp, nil
 }
