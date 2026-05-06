@@ -2127,6 +2127,15 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_querier_hpa_default_requests_duration_nh
+      query: (sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default"}[1m])))
+        or vector(0))
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "7"
+    name: cortex_querier_hpa_default_requests_duration_nh
+    type: prometheus
+  - metadata:
+      ignoreNullValues: "false"
       metricName: cortex_querier_hpa_default_7d_offset
       query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[30m]
         offset 6d23h30m) >= 0) or vector(0))

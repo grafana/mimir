@@ -6555,6 +6555,15 @@ spec:
       threshold: "6"
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
+  - metadata:
+      ignoreNullValues: "false"
+      metricName: cortex_querier_hpa_default_requests_duration_nh
+      query: (sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default",pod!~"(querier|query-scheduler)-zone.*"}[1m])))
+        or vector(0))
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "6"
+    name: cortex_querier_hpa_default_requests_duration_nh
+    type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -6604,6 +6613,15 @@ spec:
       threshold: "6"
     name: cortex_querier_zone_a_hpa_default_requests_duration
     type: prometheus
+  - metadata:
+      ignoreNullValues: "false"
+      metricName: cortex_querier_zone_a_hpa_default_requests_duration_nh
+      query: (sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-a.*"}[1m])))
+        or vector(0))
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "6"
+    name: cortex_querier_zone_a_hpa_default_requests_duration_nh
+    type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -6652,6 +6670,15 @@ spec:
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_zone_b_hpa_default_requests_duration
+    type: prometheus
+  - metadata:
+      ignoreNullValues: "false"
+      metricName: cortex_querier_zone_b_hpa_default_requests_duration_nh
+      query: (sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-b.*"}[1m])))
+        or vector(0))
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "6"
+    name: cortex_querier_zone_b_hpa_default_requests_duration_nh
     type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
