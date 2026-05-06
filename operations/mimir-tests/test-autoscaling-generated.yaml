@@ -2110,7 +2110,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_hpa_default
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[1m]))
+      query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[1m])
+        >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_hpa_default
@@ -2127,8 +2128,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_hpa_default_7d_offset
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[30m]
-        offset 6d23h30m))
+      query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[30m]
+        offset 6d23h30m) >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_hpa_default_7d_offset

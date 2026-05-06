@@ -207,7 +207,11 @@
             // to have enough querier workers to run the max observed inflight requests 50% of time.
             //
             // This metric covers the case queries are piling up in the query-scheduler queue.
-            query: queryWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(query_scheduler_container_name)s",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % queryParams, weight),
+            //
+            // The Prometheus Summary emits NaN for quantile values before the first Observe() call.
+            // >= 0 drops NaN samples (any comparison with NaN is false) before sum, leaving an empty
+            // vector so that or vector(0) can replace it with 0, giving KEDA a well-defined value.
+            query: queryWithWeight('(sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(query_scheduler_container_name)s",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]) >= 0) or vector(0))' % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
             // We only need to pass ignore_null_values if it's false
@@ -238,7 +242,11 @@
 
             // Scale queriers according to how many queriers would have been sufficient to handle the load $period ago.
             // We use the query scheduler metric which includes active queries and queries in the queue.
-            query: queryWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(query_scheduler_container_name)s",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[%(lookback)s] offset %(period)s))' % (
+            //
+            // >= 0 drops NaN samples (emitted by the Prometheus Summary before the first Observe() call)
+            // before sum; or vector(0) handles the absent case when the zone is newer than the offset
+            // period, or when the lookback window aligns with the first NaN scrape at deployment time.
+            query: queryWithWeight('(sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(query_scheduler_container_name)s",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[%(lookback)s] offset %(period)s) >= 0) or vector(0))' % (
               queryParams {
                 lookback: $._config.autoscaling_querier_predictive_scaling_lookback,
                 period: $._config.autoscaling_querier_predictive_scaling_period,
