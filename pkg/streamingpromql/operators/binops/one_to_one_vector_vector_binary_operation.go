@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -200,33 +199,8 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		// pass are set specifically for each binary operation and include only fields that are
 		// valid to be passed to its RHS. We drop existing extra matchers since they may refer
 		// to labels that don't exist on the RHS of this binary operation.
-		ignored := matchers
-		matchers = BuildMatchers(b.leftMetadata, b.hints)
-
-		sl := spanlogger.FromContext(ctx, b.logger)
-		if b.hints.IsExcludeMatching() {
-			sl.DebugLog(
-				"msg", "binary operator passing exclude-derived matchers to RHS",
-				"excluded_labels", b.hints.Exclude,
-				"hint_matchers", len(matchers),
-				"ignored_matchers", len(ignored),
-			)
-		} else {
-			sl.DebugLog(
-				"msg", "binary operator passing additional matchers to RHS",
-				"fields", b.hints.Include,
-				"hint_matchers", len(matchers),
-				"ignored_matchers", len(ignored),
-			)
-		}
+		matchers = BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints)
 	}
-	// Note: when hints are nil (e.g. during rolling upgrades with an old query-frontend),
-	// we intentionally do NOT fall back to building exclude-derived matchers from
-	// VectorMatching.MatchingLabels. The operator does not have visibility into which
-	// labels are synthesized by label_replace/label_join in the query subtree, so
-	// generating matchers for those labels would incorrectly filter out RHS series whose
-	// raw storage data does not contain the synthesized label. Old plans without hints
-	// will simply not benefit from RHS narrowing — a performance-only regression.
 
 	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)
 	if err != nil {

@@ -3,9 +3,11 @@
 package binops
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
@@ -22,7 +24,7 @@ func TestBuildMatchers(t *testing.T) {
 			Value: "querier",
 		}})
 
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Equal(t, expected, res)
 	})
 
@@ -35,7 +37,7 @@ func TestBuildMatchers(t *testing.T) {
 			Value: "querier|query-frontend|store-gateway",
 		}})
 
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Equal(t, expected, res)
 	})
 
@@ -55,7 +57,7 @@ func TestBuildMatchers(t *testing.T) {
 			},
 		})
 
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Equal(t, expected, res)
 	})
 
@@ -63,7 +65,7 @@ func TestBuildMatchers(t *testing.T) {
 		series := generateSeriesMetadata("http_requests_total", 128)
 		hints := &Hints{Include: []string{"pod"}}
 
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Empty(t, res)
 	})
 
@@ -76,7 +78,7 @@ func TestBuildMatchers(t *testing.T) {
 			Value: "querier|query-frontend|store-gateway",
 		}})
 
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Equal(t, expected, res)
 	})
 
@@ -91,7 +93,7 @@ func TestBuildMatchers(t *testing.T) {
 			{Type: labels.MatchRegexp, Name: "region", Value: "prod-test-1|prod-test-2|prod-test-3"},
 		})
 
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Equal(t, expected, res)
 	})
 
@@ -102,13 +104,13 @@ func TestBuildMatchers(t *testing.T) {
 			{Type: labels.MatchRegexp, Name: "container", Value: "querier|query-frontend|store-gateway"},
 		})
 
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Equal(t, expected, res)
 	})
 
 	t.Run("without matching with empty series: returns nil", func(t *testing.T) {
 		hints := &Hints{}
-		res := BuildMatchers(nil, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), nil, hints)
 		require.Nil(t, res)
 	})
 
@@ -118,7 +120,7 @@ func TestBuildMatchers(t *testing.T) {
 		// region (3 unique) should still produce matchers.
 		series := generateSeriesMetadata("http_requests_total", 128)
 		hints := &Hints{} // exclude-matching mode with no exclusions
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 
 		// pod has 128 unique values → skipped; container and region have ≤64 values → included.
 		require.Len(t, res, 2)
@@ -136,7 +138,7 @@ func TestBuildMatchers(t *testing.T) {
 			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
 		}
 
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		// Only env is present on every series; region is missing from one series and must be skipped.
 		require.Equal(t, expected, res)
 	})
@@ -145,7 +147,7 @@ func TestBuildMatchers(t *testing.T) {
 		series := generateSeriesMetadata("http_requests_total", 3)
 		// Exclude every non-__name__ label that generateSeriesMetadata produces.
 		hints := &Hints{Exclude: []string{"container", "pod", "region"}}
-		res := BuildMatchers(series, hints)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Nil(t, res)
 	})
 }
@@ -179,20 +181,22 @@ func generateSeriesMetadata(name string, num int) []types.SeriesMetadata {
 
 func BenchmarkBuildMatchers(b *testing.B) {
 	series := generateSeriesMetadata("http_requests_total", 1024)
+	ctx := context.Background()
+	logger := log.NewNopLogger()
 
 	b.Run("container", func(b *testing.B) {
 		for b.Loop() {
-			_ = BuildMatchers(series, &Hints{Include: []string{"container"}})
+			_ = BuildMatchers(ctx, logger, series, &Hints{Include: []string{"container"}})
 		}
 	})
 	b.Run("container,region", func(b *testing.B) {
 		for b.Loop() {
-			_ = BuildMatchers(series, &Hints{Include: []string{"container", "region"}})
+			_ = BuildMatchers(ctx, logger, series, &Hints{Include: []string{"container", "region"}})
 		}
 	})
 	b.Run("container,region,pod", func(b *testing.B) {
 		for b.Loop() {
-			_ = BuildMatchers(series, &Hints{Include: []string{"container", "region", "pod"}})
+			_ = BuildMatchers(ctx, logger, series, &Hints{Include: []string{"container", "region", "pod"}})
 		}
 	})
 }

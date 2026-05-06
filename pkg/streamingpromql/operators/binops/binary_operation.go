@@ -3,6 +3,7 @@
 package binops
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -24,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // vectorMatchingGroupKeyFunc returns a function that computes the grouping key of the output group a series belongs to.
@@ -803,14 +806,45 @@ const (
 // When hints.Include is empty, matchers are built from all LHS labels not present in
 // hints.Exclude (exclude-matching semantics). Otherwise, matchers are built from the
 // labels listed in hints.Include.
-func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers {
+//
+// Callers should only call this when hints are non-nil. During rolling upgrades,
+// an older query-frontend may send a plan without hints (nil). In that case,
+// callers should skip narrowing entirely rather than trying to build matchers
+// from VectorMatching.MatchingLabels, because those labels may include names
+// synthesized by label_replace/label_join that don't exist in storage. Matching
+// on them would drop series incorrectly. Skipping narrowing is safe and won't
+// result in correctness issues, it'll just fetch more data than it needs.
+func BuildMatchers(ctx context.Context, logger log.Logger, metadata []types.SeriesMetadata, hints *Hints) types.Matchers {
+	var matchers types.Matchers
 	if hints.IsExcludeMatching() {
-		return buildMatchersForWithout(metadata, hints.Exclude)
+		matchers = buildMatchersForWithout(metadata, hints.Exclude)
+	} else {
+		matchers = buildMatchersForOn(metadata, hints.Include)
 	}
 
+	sl := spanlogger.FromContext(ctx, logger)
+	if hints.IsExcludeMatching() {
+		sl.DebugLog(
+			"msg", "binary operator passing exclude-derived matchers",
+			"excluded_labels", hints.Exclude,
+			"hint_matchers", len(matchers),
+		)
+	} else {
+		sl.DebugLog(
+			"msg", "binary operator passing additional matchers",
+			"fields", hints.Include,
+			"hint_matchers", len(matchers),
+		)
+	}
+
+	return matchers
+}
+
+// buildMatchersForOn builds matchers from an explicit list of label names (on-matching).
+func buildMatchersForOn(metadata []types.SeriesMetadata, include []string) types.Matchers {
 	var matchers []types.Matcher
 
-	for _, label := range hints.Include {
+	for _, label := range include {
 		values := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
 
 		if len(values) > 0 {

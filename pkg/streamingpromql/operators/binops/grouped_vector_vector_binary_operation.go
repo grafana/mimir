@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var errMultipleMatchesOnManySide = errors.New("multiple matches for labels: grouping labels must ensure unique matches")
@@ -278,33 +277,8 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// many side). Otherwise fall back to the same outer matchers used for the "one" side.
 	manySideMatchers := matchers
 	if g.hints != nil {
-		ignored := matchers
-		manySideMatchers = append(BuildMatchers(g.oneSideMetadata, g.hints), includeMatchers...)
-
-		sl := spanlogger.FromContext(ctx, g.logger)
-		if g.hints.IsExcludeMatching() {
-			sl.DebugLog(
-				"msg", "binary operator passing exclude-derived matchers to many side",
-				"excluded_labels", g.hints.Exclude,
-				"hint_matchers", len(manySideMatchers),
-				"ignored_matchers", len(ignored),
-			)
-		} else {
-			sl.DebugLog(
-				"msg", "binary operator passing additional matchers to many side",
-				"fields", g.hints.Include,
-				"hint_matchers", len(manySideMatchers),
-				"ignored_matchers", len(ignored),
-			)
-		}
+		manySideMatchers = append(BuildMatchers(ctx, g.logger, g.oneSideMetadata, g.hints), includeMatchers...)
 	}
-	// Note: when hints are nil (e.g. during rolling upgrades with an old query-frontend),
-	// we intentionally do NOT fall back to building exclude-derived matchers from
-	// VectorMatching.MatchingLabels. The operator does not have visibility into which
-	// labels are synthesized by label_replace/label_join in the query subtree, so
-	// generating matchers for those labels would incorrectly filter out many-side series
-	// whose raw storage data does not contain the synthesized label. Old plans without
-	// hints will simply not benefit from many-side narrowing — a performance-only regression.
 
 	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, manySideMatchers)
 	if err != nil {

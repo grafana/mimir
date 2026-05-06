@@ -11,7 +11,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // AndUnlessBinaryOperation represents a logical 'and' or 'unless' between two vectors.
@@ -98,38 +97,10 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		return nil, nil
 	}
 
-	// Build RHS matchers to narrow the series fetched on the right-hand side.
-	// - When hints are set with non-empty Include (on-matching), build matchers from those labels.
-	// - When hints are set with empty Include (exclude-matching), build matchers from all
-	//   LHS labels except those in Exclude.
-	// - When hints are not set but the operator uses without or default (no on/without)
-	//   matching, fall back to building exclude-derived matchers from VectorMatching labels.
-	// - Otherwise (on matching without hints) we pass nil.
 	var rhsMatchers types.Matchers
 	if a.hints != nil {
-		rhsMatchers = BuildMatchers(leftMetadata, a.hints)
-		sl := spanlogger.FromContext(ctx, a.logger)
-		if a.hints.IsExcludeMatching() {
-			sl.DebugLog(
-				"msg", "binary operator passing exclude-derived matchers to RHS",
-				"excluded_labels", a.hints.Exclude,
-				"hint_matchers", len(rhsMatchers),
-			)
-		} else {
-			sl.DebugLog(
-				"msg", "binary operator passing additional matchers to RHS",
-				"fields", a.hints.Include,
-				"hint_matchers", len(rhsMatchers),
-			)
-		}
+		rhsMatchers = BuildMatchers(ctx, a.logger, leftMetadata, a.hints)
 	}
-	// Note: when hints are nil (e.g. during rolling upgrades with an old query-frontend),
-	// we intentionally do NOT fall back to building exclude-derived matchers from
-	// VectorMatching.MatchingLabels. The operator does not have visibility into which
-	// labels are synthesized by label_replace/label_join in the query subtree, so
-	// generating matchers for those labels would incorrectly filter out RHS series whose
-	// raw storage data does not contain the synthesized label. Old plans without hints
-	// will simply not benefit from RHS narrowing — a performance-only regression.
 	rightMetadata, err := a.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {
 		return nil, err
