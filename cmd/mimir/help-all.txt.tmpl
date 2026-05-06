@@ -3285,6 +3285,8 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
+  -runtime-config.http-client-cluster-validation.label string
+    	[experimental] Primary cluster validation label.
   -runtime-config.http-client-timeout duration
     	HTTP client timeout when fetching runtime config from URLs. (default 30s)
   -runtime-config.reload-period duration

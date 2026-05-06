@@ -241,6 +241,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
 			"usage_tracker_client":             &c.Distributor.UsageTrackerClient.GRPCClientConfig.ClusterValidation,
+			"runtime_config_http_client":       &c.RuntimeConfig.HTTPClientClusterValidation,
 		},
 	}
 }
