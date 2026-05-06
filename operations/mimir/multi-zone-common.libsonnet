@@ -98,15 +98,15 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
         false
       );
 
-    // Extracts the zone letter (a, b, or c) from a deployment name.
-    // Expected format: "*_zone_[abc]_*"
-    // Returns: the zone letter or null if not found
-    local extractZoneLetter(deploymentName) =
-      if std.length(std.findSubstr('_zone_a_', deploymentName)) > 0 then
+    // Extracts the zone letter (a, b, or c) from a Kubernetes deployment name. Matches both
+    // the embedded "-zone-[abc]-" form (e.g. "ingester-zone-a-set-0") and the suffix
+    // "-zone-[abc]" form (e.g. "ingester-zone-a"). Returns the zone letter or null if not found.
+    local extractZoneLetter(name) =
+      if std.length(std.findSubstr('-zone-a-', name)) > 0 || std.endsWith(name, '-zone-a') then
         'a'
-      else if std.length(std.findSubstr('_zone_b_', deploymentName)) > 0 then
+      else if std.length(std.findSubstr('-zone-b-', name)) > 0 || std.endsWith(name, '-zone-b') then
         'b'
-      else if std.length(std.findSubstr('_zone_c_', deploymentName)) > 0 then
+      else if std.length(std.findSubstr('-zone-c-', name)) > 0 || std.endsWith(name, '-zone-c') then
         'c'
       else
         null;
@@ -144,7 +144,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     // This allows backup zones to be included while ensuring each preference targets the correct availability zone.
     local validateContainerPreferAvailabilityZones(deploymentName, expectedZone, container) =
       // Only validate querier and ruler_querier deployments (they use this flag to prefer same-zone ingesters/store-gateways)
-      if std.startsWith(deploymentName, 'querier_') || std.startsWith(deploymentName, 'ruler_querier_') then
+      if std.startsWith(deploymentName, 'querier-') || std.startsWith(deploymentName, 'ruler-querier-') then
         local flagName = '-querier.prefer-availability-zones';
 
         if std.objectHas(container, 'args') then
@@ -241,27 +241,53 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
         null
       );
 
-    local validateDeployment(deploymentName, deployment) =
-      local expectedZone = extractZoneLetter(deploymentName);
-      if expectedZone == null then
-        'Unable to extract zone letter from deployment name "%s". Expected format: "*_zone_[abc]_*"' % deploymentName
-      else if deployment == null then
+    local validateDeployment(deployment) =
+      if deployment == null then
         null
       else
-        local containers = jsonpath.getJSONPath(deployment, 'spec.template.spec.containers', []);
+        local name = deployment.metadata.name;
+        local expectedZone = extractZoneLetter(name);
+        if expectedZone == null then
+          'Unable to extract zone letter from deployment name "%s". Expected the name to contain "-zone-[abc]".' % name
+        else
+          local containers = jsonpath.getJSONPath(deployment, 'spec.template.spec.containers', []);
+          std.foldl(
+            function(firstError, container)
+              if firstError != null then firstError
+              else validateContainer(name, expectedZone, container),
+            containers,
+            null
+          );
+
+    // Returns the metadata.name of a Deployment/StatefulSet, or null if value is not a
+    // Deployment/StatefulSet (e.g. null, a primitive, or a map of Deployments/StatefulSets).
+    local getDeploymentName(value) =
+      if std.isObject(value) && std.objectHas(value, 'metadata') && std.objectHas(value.metadata, 'name') then
+        value.metadata.name
+      else
+        null;
+
+    // Accepts either a single Deployment/StatefulSet or a map of Deployments/StatefulSets
+    // and forwards each one to validateDeployment.
+    local validateDeploymentSet(deploymentOrSet) =
+      if getDeploymentName(deploymentOrSet) != null then
+        validateDeployment(deploymentOrSet)
+      else if std.isObject(deploymentOrSet) then
         std.foldl(
-          function(firstError, container)
+          function(firstError, setKey)
             if firstError != null then firstError
-            else validateContainer(deploymentName, expectedZone, container),
-          containers,
+            else validateDeployment(deploymentOrSet[setKey]),
+          std.objectFields(deploymentOrSet),
           null
-        );
+        )
+      else
+        null;
 
     // Validate all input deployments and return the first error found, or null if all valid.
     std.foldl(
       function(firstError, deploymentName)
         if firstError != null then firstError
-        else validateDeployment(deploymentName, root[deploymentName]),
+        else validateDeploymentSet(root[deploymentName]),
       deploymentNames,
       null
     ),
