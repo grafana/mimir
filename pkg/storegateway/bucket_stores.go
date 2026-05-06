@@ -97,7 +97,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	var err error
 
 	// Init index cache.
-	_, indexCache, err := indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg)
+	indexCache, err := indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg)
 	if err != nil {
 		return nil, err
 	}
