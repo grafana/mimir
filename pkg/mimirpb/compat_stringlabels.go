@@ -64,6 +64,35 @@ func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return r
 }
 
+// AppendFromLabelsToLabelAdapters appends label adapters converted from ls to the
+// dst slice. It reuses the capacity of dst when possible to avoid allocations.
+//
+// When dst has sufficient remaining capacity for all labels, this avoids
+// calling ls.Len() (which is O(n) for stringlabels, as it must traverse
+// the packed label data). In the common case — dst from a pool with
+// pre-allocated space for at least 20 labels — this saves a full traversal.
+//
+// When capacity is exhausted during iteration, it calls ls.Len() once to
+// compute the exact remaining count and re-allocates precisely, avoiding
+// the repeated grow-and-copy overhead of Go's append doubling strategy.
+func AppendFromLabelsToLabelAdapters(dst []LabelAdapter, ls labels.Labels) []LabelAdapter {
+	startLen := len(dst)
+	ls.Range(func(l labels.Label) {
+		if len(dst) == cap(dst) {
+			// Capacity exhausted: compute exact remaining count and
+			// allocate once with the right size. The total number of
+			// labels is ls.Len(); we've already appended (len(dst) - startLen).
+			totalLabels := ls.Len()
+			remaining := totalLabels - (len(dst) - startLen)
+			newDst := make([]LabelAdapter, len(dst), len(dst)+remaining)
+			copy(newDst, dst)
+			dst = newDst
+		}
+		dst = append(dst, LabelAdapter{Name: l.Name, Value: l.Value})
+	})
+	return dst
+}
+
 // CompareLabelAdapters returns be 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
 	l := len(a)

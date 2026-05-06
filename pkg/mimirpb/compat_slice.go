@@ -76,6 +76,12 @@ func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return *(*[]LabelAdapter)(unsafe.Pointer(&ls))
 }
 
+// AppendFromLabelsToLabelAdapters appends label adapters converted from ls to the
+// dst slice. It reuses the capacity of dst when possible to avoid allocations.
+func AppendFromLabelsToLabelAdapters(dst []LabelAdapter, ls labels.Labels) []LabelAdapter {
+	return append(dst, FromLabelsToLabelAdapters(ls)...)
+}
+
 // CompareLabelAdapters returns 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
 	return labels.Compare(FromLabelAdaptersToLabels(a), FromLabelAdaptersToLabels(b))

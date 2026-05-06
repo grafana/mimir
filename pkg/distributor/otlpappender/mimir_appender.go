@@ -141,7 +141,8 @@ func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64,
 
 func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
 	ts := mimirpb.TimeseriesFromPool()
-	ts.Labels = mimirpb.FromLabelsToLabelAdapters(ls)
+	// Reuse the pre-allocated Labels slice from the pool instead of allocating a new one.
+	ts.Labels = mimirpb.AppendFromLabelsToLabelAdapters(ts.Labels[:0], ls)
 	ts.CreatedTimestamp = ct
 	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
 	idx.idx = len(c.series) - 1
