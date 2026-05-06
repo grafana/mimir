@@ -181,7 +181,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 # Don't include config hashes that are still being rolled out.
                 # Kubernetes configmap propagation can be slow,
                 # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
-                (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[%(rate_interval)s:]) > 0)
+                (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[%(rate_interval)s:%(step_interval)s]) > 0)
                 # Don't include configs that didn't exist one minute ago.
                 # changes() == 0 for metrics appearing for the first time,
                 # but this is still a "we're rolling out a new config" scenario.
@@ -190,6 +190,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             )  > 1
           ||| % $._config {
             rate_interval: $.rateInterval('10m'),
+            step_interval: $.stepInterval('30s'),
           },
           'for': '1h',
           labels: {
