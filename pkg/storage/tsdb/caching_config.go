@@ -67,24 +67,20 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 type IndexHeaderCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"  category:"experimental"`
 
-	Enabled       bool          `yaml:"enabled" category:"experimental"`
-	AttributesTTL time.Duration `yaml:"attributes_ttl" category:"experimental"`
-
+	AttributesTTL            time.Duration `yaml:"attributes_ttl" category:"experimental"`
 	SubrangeTTL              time.Duration `yaml:"subrange_ttl" category:"experimental"`
 	SubRangeInMemoryMaxItems int           `yaml:"subrange_in_memory_max_items" category:"experimental"`
 	MaxGetRangeRequests      int           `yaml:"max_get_range_requests" category:"experimental"`
 }
 
 func (cfg *IndexHeaderCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable caching of reads for TSDB index-header sections from object storage, utilizing the index-cache backend.")
-
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for index-header cache. If index-header cache is enabled and backend is empty, defaults to index cache backend. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
 
-	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "How long to cache attributes of the block index as utilized by the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index cache backend.")
+	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual index-header subranges.")
 	f.IntVar(&cfg.SubRangeInMemoryMaxItems, prefix+"subrange-in-memory-max-items", 100000, "Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
-	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header sections. Zero or negative value = unlimited number of sub-requests.")
+	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header ranges. Zero or negative value = unlimited number of sub-requests.")
 }
 
 type ChunksCacheConfig struct {
@@ -236,7 +232,7 @@ func NewStoreCachingBucket(
 		cachingBucketCfg = configureMetadataCaching(metadataCache, cfg.BucketStore.MetadataCache, cachingBucketCfg)
 	}
 
-	if indexHeaderCacheClient != nil && cfg.BucketStore.IndexHeaderCache.Enabled {
+	if indexHeaderCacheClient != nil {
 		cachingConfigured = true
 		indexHeaderCacheClient = cache.NewSpanlessTracingCache(indexHeaderCacheClient, logger, tenant.NewMultiResolver())
 

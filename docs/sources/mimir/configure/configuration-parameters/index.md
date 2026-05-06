@@ -5635,8 +5635,8 @@ bucket_store:
       [max_size_bytes: <int> | default = 1073741824]
 
   index_header_cache:
-    # Backend for index-header cache. If index-header cache is enabled and
-    # backend is empty, defaults to index cache backend. Supported values:
+    # Backend for index-header cache, if not empty. Intended for use with
+    # -blocks-storage.bucket-store.index-header.bucket-reader. Supported values:
     # memcached.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.backend
     [backend: <string> | default = ""]
@@ -5646,15 +5646,10 @@ bucket_store:
     # blocks-storage.bucket-store.index-header-cache
     [memcached: <memcached>]
 
-    # (experimental) Enable caching of reads for TSDB index-header sections from
-    # object storage, utilizing the index-cache backend.
-    # CLI flag: -blocks-storage.bucket-store.index-header-cache.enabled
-    [enabled: <boolean> | default = false]
-
-    # (experimental) How long to cache attributes of the block index as utilized
-    # by the index-header reader.  If the metadata cache is configured,
-    # attributes will be stored in the metadata cache backend, otherwise
-    # attributes are stored in the index cache backend.
+    # (experimental) TTL for caching object attributes of the block index for
+    # the index-header reader.  If the metadata cache is configured, attributes
+    # will be stored in the metadata cache backend, otherwise attributes are
+    # stored in the index-header cache backend.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
@@ -5670,8 +5665,8 @@ bucket_store:
     [subrange_in_memory_max_items: <int> | default = 100000]
 
     # (experimental) Maximum number of sub-GetRange requests that a single
-    # GetRange request can be split into when fetching index-header sections.
-    # Zero or negative value = unlimited number of sub-requests.
+    # GetRange request can be split into when fetching index-header ranges. Zero
+    # or negative value = unlimited number of sub-requests.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.max-get-range-requests
     [max_get_range_requests: <int> | default = 3]
 

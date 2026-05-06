@@ -154,7 +154,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-header-cache.backend string
-    	Backend for index-header cache. If index-header cache is enabled and backend is empty, defaults to index cache backend. Supported values: memcached.
+    	Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: memcached.
   -blocks-storage.bucket-store.index-header-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.index-header-cache.memcached.connect-timeout duration
