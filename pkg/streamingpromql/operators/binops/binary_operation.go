@@ -819,21 +819,18 @@ func BuildMatchers(ctx context.Context, logger log.Logger, metadata []types.Seri
 		return nil
 	}
 
+	sl := spanlogger.FromContext(ctx, logger)
+
 	var matchers types.Matchers
 	if hints.IsExcludeMatching() {
 		matchers = buildMatchersForWithout(metadata, hints.Exclude)
-	} else {
-		matchers = buildMatchersForOn(metadata, hints.Include)
-	}
-
-	sl := spanlogger.FromContext(ctx, logger)
-	if hints.IsExcludeMatching() {
 		sl.DebugLog(
 			"msg", "binary operator passing exclude-derived matchers",
 			"excluded_labels", hints.Exclude,
 			"hint_matchers", len(matchers),
 		)
 	} else {
+		matchers = buildMatchersForOn(metadata, hints.Include)
 		sl.DebugLog(
 			"msg", "binary operator passing additional matchers",
 			"fields", hints.Include,
