@@ -303,4 +303,5 @@ message SearchResultBatch {
     double score = 2;
   }
   repeated Result results = 1 [(gogoproto.nullable) = false];
+  repeated string warnings = 2;
 }

@@ -4,12 +4,15 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -144,4 +147,108 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// fakeSearchResultSet is a test SearchResultSet backed by an in-memory slice
+// plus an optional terminal error and pre-populated annotations. Used to
+// exercise streamSearchResults without spinning up a real TSDB.
+type fakeSearchResultSet struct {
+	results []storage.SearchResult
+	idx     int
+	err     error
+	warns   annotations.Annotations
+}
+
+func (s *fakeSearchResultSet) Next() bool {
+	if s.idx >= len(s.results) {
+		return false
+	}
+	s.idx++
+	return true
+}
+func (s *fakeSearchResultSet) At() storage.SearchResult           { return s.results[s.idx-1] }
+func (s *fakeSearchResultSet) Warnings() annotations.Annotations  { return s.warns }
+func (s *fakeSearchResultSet) Err() error                         { return s.err }
+func (s *fakeSearchResultSet) Close() error                       { return nil }
+
+func TestStreamSearchResultsPropagatesWarnings(t *testing.T) {
+	tests := []struct {
+		name     string
+		results  []storage.SearchResult
+		warns    annotations.Annotations
+		wantSent []*client.SearchResultBatch
+	}{
+		{
+			name:    "results with warnings: warnings ride on the final batch",
+			results: []storage.SearchResult{{Value: "a", Score: 1.0}, {Value: "b", Score: 0.5}},
+			warns:   addAnnotation(nil, "limit reached"),
+			wantSent: []*client.SearchResultBatch{
+				{
+					Results: []client.SearchResultBatch_Result{
+						{Value: "a", Score: 1.0},
+						{Value: "b", Score: 0.5},
+					},
+					Warnings: []string{"limit reached"},
+				},
+			},
+		},
+		{
+			name:    "warnings only, no results: still sends a batch",
+			results: nil,
+			warns:   addAnnotation(nil, "no series matched"),
+			wantSent: []*client.SearchResultBatch{
+				{Results: []client.SearchResultBatch_Result{}, Warnings: []string{"no series matched"}},
+			},
+		},
+		{
+			name:     "no results, no warnings: sends nothing",
+			results:  nil,
+			warns:    nil,
+			wantSent: nil,
+		},
+		{
+			name:    "results, no warnings: warnings field stays nil",
+			results: []storage.SearchResult{{Value: "x", Score: 1.0}},
+			warns:   nil,
+			wantSent: []*client.SearchResultBatch{
+				{Results: []client.SearchResultBatch_Result{{Value: "x", Score: 1.0}}},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rs := &fakeSearchResultSet{results: tc.results, warns: tc.warns}
+			var sent []*client.SearchResultBatch
+			send := func(b *client.SearchResultBatch) error {
+				sent = append(sent, b)
+				return nil
+			}
+			require.NoError(t, streamSearchResults(rs, send))
+			assert.Equal(t, tc.wantSent, sent)
+		})
+	}
+}
+
+func TestStreamSearchResultsPropagatesErrInsteadOfWarnings(t *testing.T) {
+	want := errors.New("boom")
+	rs := &fakeSearchResultSet{
+		results: []storage.SearchResult{{Value: "a", Score: 1.0}},
+		err:     want,
+		warns:   addAnnotation(nil, "should not appear"),
+	}
+	var sent []*client.SearchResultBatch
+	send := func(b *client.SearchResultBatch) error {
+		sent = append(sent, b)
+		return nil
+	}
+	require.ErrorIs(t, streamSearchResults(rs, send), want)
+	// The single result was sent before iteration ended; the trailer batch
+	// (which would carry warnings) is suppressed because rs.Err is non-nil.
+	for _, b := range sent {
+		assert.Empty(t, b.Warnings, "warnings must not be sent when iteration errored")
+	}
+}
+
+func addAnnotation(a annotations.Annotations, msg string) annotations.Annotations {
+	return a.Add(errors.New(msg))
 }
