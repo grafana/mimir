@@ -78,9 +78,8 @@ func (b *BinaryExpression) Describe() string {
 	builder.WriteString(" RHS")
 
 	if b.Hints != nil {
-		builder.WriteString(", hints (")
 		if b.Hints.IsExcludeMatching() {
-			builder.WriteString("exclude (")
+			builder.WriteString(", hints exclude (")
 			for i, l := range b.Hints.Exclude {
 				if i > 0 {
 					builder.WriteString(", ")
@@ -88,8 +87,8 @@ func (b *BinaryExpression) Describe() string {
 
 				builder.WriteString(l)
 			}
-			builder.WriteByte(')')
 		} else {
+			builder.WriteString(", hints include (")
 			for i, l := range b.Hints.Include {
 				if i > 0 {
 					builder.WriteString(", ")
