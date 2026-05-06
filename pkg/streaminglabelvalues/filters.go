@@ -15,6 +15,11 @@ import (
 // 1.0 on prefix match; for non-prefix substrings the score decays linearly
 // with the match position from 1.0 (early match) to 0.1 (latest match).
 // Mirrors Prometheus PR #18573's SubstringFilter score semantics.
+//
+// caseSensitive drives in-Accept folding only for direct callers of
+// NewFilterContains; BuildFilter constructs leaves with caseSensitive=true
+// and lets caseFoldingFilter at the OR root fold each value once. Treat
+// this field as advisory when reading code through BuildFilter.
 type FilterContains struct {
 	term          string
 	caseSensitive bool
@@ -54,6 +59,9 @@ func (f *FilterContains) Accept(value string) (bool, float64) {
 // FilterJaro accepts values whose Jaro-Winkler similarity to a fixed term is
 // at least threshold. The underlying matcher caches term runes lazily on the
 // first Unicode candidate and is therefore not safe for concurrent use.
+//
+// See the note on FilterContains: caseSensitive is advisory under BuildFilter,
+// authoritative for direct NewFilterJaro callers.
 type FilterJaro struct {
 	matcher       *strutil.JaroWinklerMatcher
 	threshold     float64
@@ -93,6 +101,9 @@ func (f *FilterJaro) Accept(value string) (bool, float64) {
 // Prefix matches always score 1.0 (overrides raw subseq score). Score 0 is
 // always rejected (no subsequence match). Mirrors Prometheus PR #18573's
 // SubsequenceFilter semantics. Underlying matcher is not concurrency-safe.
+//
+// See the note on FilterContains: caseSensitive is advisory under BuildFilter,
+// authoritative for direct NewFilterSubsequence callers.
 type FilterSubsequence struct {
 	pattern       string // stored locally for prefix check; matcher does not expose its pattern.
 	matcher       *strutil.SubsequenceMatcher
@@ -180,6 +191,19 @@ func (f *filterFallback) Accept(value string) (bool, float64) {
 	return f.fuzzy.Accept(value)
 }
 
+// caseFoldingFilter wraps a child filter and lowercases each candidate value
+// once before delegating, so a chain of leaf filters constructed with
+// caseSensitive=true can be reused for a case-insensitive search without
+// each leaf re-folding the same value on every Accept call. Mirrors
+// Prometheus PR #18573's caseFoldingFilter.
+type caseFoldingFilter struct {
+	inner storage.Filter
+}
+
+func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
+	return c.inner.Accept(strings.ToLower(value))
+}
+
 // BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)
 // when Params is nil or has zero Terms — a nil storage.Filter accepts every
 // value with score 1.0 by Prometheus convention.
@@ -192,26 +216,42 @@ func (f *filterFallback) Accept(value string) (bool, float64) {
 //
 // Across terms, combines with filterOr (OR-max). FuzzThreshold (int 0-100)
 // is divided by 100 internally.
+//
+// Case folding for !CaseSensitive is applied once per value at the OR root
+// via caseFoldingFilter; per-term filters are built case-sensitive against a
+// pre-lowercased term so they do not re-fold the same value per Accept call.
 func BuildFilter(p *Params) (storage.Filter, error) {
-	if p == nil || len(p.Terms) == 0 {
-		return nil, nil
-	}
+	// Validate before the empty-Terms early-return so callers see invalid
+	// FuzzThreshold/FuzzAlg values rejected even when no terms are supplied.
+	// Params.Validate is nil-safe.
 	if err := p.Validate(); err != nil {
 		return nil, err
+	}
+	if p == nil || len(p.Terms) == 0 {
+		return nil, nil
 	}
 	threshold := float64(p.FuzzThreshold) / 100.0
 	perTerm := make([]storage.Filter, 0, len(p.Terms))
 	for _, term := range p.Terms {
-		f, err := buildPerTermFilter(term, p.CaseSensitive, p.FuzzAlg, p.FuzzThreshold, threshold)
+		if !p.CaseSensitive {
+			term = strings.ToLower(term)
+		}
+		f, err := buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
 		if err != nil {
 			return nil, err
 		}
 		perTerm = append(perTerm, f)
 	}
+	var inner storage.Filter
 	if len(perTerm) == 1 {
-		return perTerm[0], nil
+		inner = perTerm[0]
+	} else {
+		inner = newFilterOr(perTerm...)
 	}
-	return newFilterOr(perTerm...), nil
+	if p.CaseSensitive {
+		return inner, nil
+	}
+	return &caseFoldingFilter{inner: inner}, nil
 }
 
 // buildPerTermFilter composes the per-term filter. fuzzThresholdInt is the

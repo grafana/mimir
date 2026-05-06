@@ -3,12 +3,15 @@
 package ingester
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
@@ -21,6 +24,14 @@ const searchBatchSize = 256
 
 // SearchLabelNames streams label names matching the search filter.
 func (i *Ingester) SearchLabelNames(req *client.SearchLabelNamesRequest, stream client.Ingester_SearchLabelNamesServer) (err error) {
+	// Validate user input ahead of the deferred read-error mapper so request
+	// errors surface as codes.InvalidArgument rather than being re-tagged as
+	// codes.Internal — matching the store-gateway side (bucket_search.go).
+	hints, matchers, err := buildSearchHints(req.Filter, req.Ordering, req.Limit, req.Matchers)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
 	ctx := stream.Context()
@@ -29,11 +40,6 @@ func (i *Ingester) SearchLabelNames(req *client.SearchLabelNamesRequest, stream 
 		return err
 	}
 	if err := i.enforceReadConsistency(ctx, userID); err != nil {
-		return err
-	}
-
-	hints, matchers, err := buildSearchHints(req.Filter, req.Ordering, req.Limit, req.Matchers)
-	if err != nil {
 		return err
 	}
 
@@ -53,11 +59,17 @@ func (i *Ingester) SearchLabelNames(req *client.SearchLabelNamesRequest, stream 
 
 	rs := searcher.SearchLabelNames(ctx, hints, matchers...)
 	defer rs.Close()
-	return streamSearchResults(rs, stream.Send)
+	return streamSearchResults(ctx, rs, stream.Send)
 }
 
 // SearchLabelValues streams label values for req.Name matching the search filter.
 func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, stream client.Ingester_SearchLabelValuesServer) (err error) {
+	// See SearchLabelNames for why validation runs ahead of the deferred mapper.
+	hints, matchers, err := buildSearchHints(req.Filter, req.Ordering, req.Limit, req.Matchers)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
 	ctx := stream.Context()
@@ -66,11 +78,6 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 		return err
 	}
 	if err := i.enforceReadConsistency(ctx, userID); err != nil {
-		return err
-	}
-
-	hints, matchers, err := buildSearchHints(req.Filter, req.Ordering, req.Limit, req.Matchers)
-	if err != nil {
 		return err
 	}
 
@@ -90,7 +97,7 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 
 	rs := searcher.SearchLabelValues(ctx, req.Name, hints, matchers...)
 	defer rs.Close()
-	return streamSearchResults(rs, stream.Send)
+	return streamSearchResults(ctx, rs, stream.Send)
 }
 
 // buildSearchHints constructs storage.SearchHints from the wire request.
@@ -120,7 +127,7 @@ func protoToParams(wf *client.SearchFilter) *streaminglabelvalues.Params {
 	}
 	p := &streaminglabelvalues.Params{
 		Terms:         wf.Terms,
-		CaseSensitive: wf.CaseSensitive,
+		CaseSensitive: !wf.CaseInsensitive,
 		FuzzThreshold: int(wf.FuzzThreshold),
 	}
 	switch wf.FuzzAlg {
@@ -152,10 +159,18 @@ type searchResultSender func(*client.SearchResultBatch) error
 // streamSearchResults reads from rs in batches of searchBatchSize and emits
 // each batch via send. Any warnings accumulated by rs are attached to the
 // final batch (or sent alone if no results were produced). Returns rs.Err()
-// at termination.
-func streamSearchResults(rs storage.SearchResultSet, send searchResultSender) error {
+// at termination. The stream context is checked before iteration starts and
+// at each batch boundary so a cancelled client stops the loop promptly even
+// when rs.Next() does not yet honour context cancellation itself.
+func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send searchResultSender) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	batch := &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
 	for rs.Next() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		v := rs.At()
 		batch.Results = append(batch.Results, client.SearchResultBatch_Result{Value: v.Value, Score: v.Score})
 		if len(batch.Results) >= searchBatchSize {

@@ -121,10 +121,12 @@ enum SearchOrdering {
 message SearchFilter {
   // Terms are the search terms; combined with OR-max by filterOr at the server.
   repeated string terms = 1;
-  // CaseSensitive matches Prometheus's case_sensitive URL param polarity.
-  // Prometheus's HTTP default is true; this proto field's zero value is
-  // false. The HTTP handler in the later PR sets this explicitly.
-  bool case_sensitive = 2;
+  // CaseInsensitive flips the search to be case-insensitive. The proto3 zero
+  // value (false) means case-sensitive — matching Prometheus's HTTP
+  // case_sensitive URL-param default of true. The HTTP handler in the later
+  // PR translates the URL param to this wire bit (case_sensitive=false URL
+  // param → case_insensitive=true wire bit).
+  bool case_insensitive = 2;
 
   enum FuzzAlg {
     FUZZ_ALG_SUBSEQUENCE = 0;

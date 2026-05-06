@@ -4,6 +4,7 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -38,6 +39,9 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 	}
 
 	stats := newSafeQueryStats()
+	// TODO(streaming-search): metrics recorded here are not labelled by RPC,
+	// so search load currently blends into label-{names,values} histograms.
+	// Add an `rpc` label when this RPC becomes user-facing.
 	defer s.recordLabelNamesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
@@ -79,9 +83,16 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 		return status.Error(codes.Internal, err.Error())
 	}
 
+	// TODO(streaming-search): per-block label names are materialised into
+	// memory before the merge/filter/limit step. For tenants with O(10M)
+	// label-name cardinality this is an OOM hazard. The querier-side limit
+	// pushdown (next PR) is expected to bound the worst case via tighter
+	// per-store-gateway limits; if it cannot, revisit per-block early
+	// termination here for OrderByValue{Asc,Desc}. OrderByScoreDesc cannot
+	// be safely truncated per block.
 	merged := util.MergeSlices(sets...)
 	results := storage.ApplySearchHints(merged, hints)
-	return streamBucketSearchResults(results, srv.Send)
+	return streamBucketSearchResults(ctx, results, unfilteredTruncationWarning(merged, hints), srv.Send)
 }
 
 // SearchLabelValues streams label values for req.Label matching the wire search
@@ -100,6 +111,9 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	}
 
 	stats := newSafeQueryStats()
+	// TODO(streaming-search): metrics recorded here are not labelled by RPC,
+	// so search load currently blends into label-{names,values} histograms.
+	// Add an `rpc` label when this RPC becomes user-facing.
 	defer s.recordLabelValuesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
@@ -141,20 +155,46 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 		return status.Error(codes.Internal, err.Error())
 	}
 
+	// TODO(streaming-search): per-block label values are materialised into
+	// memory before the merge/filter/limit step. For tenants with O(10M)
+	// label-value cardinality on a hot label this is an OOM hazard. The
+	// querier-side limit pushdown (next PR) is expected to bound the worst
+	// case via tighter per-store-gateway limits; if it cannot, revisit
+	// per-block early termination here for OrderByValue{Asc,Desc}.
+	// OrderByScoreDesc cannot be safely truncated per block.
 	merged := util.MergeSlices(sets...)
 	results := storage.ApplySearchHints(merged, hints)
-	return streamBucketSearchResults(results, srv.Send)
+	return streamBucketSearchResults(ctx, results, unfilteredTruncationWarning(merged, hints), srv.Send)
+}
+
+// unfilteredTruncationWarning returns a one-element slice with a
+// human-readable warning when ApplySearchHints will clip the merged result
+// set due to the request limit AND no filter is configured. Returns nil in
+// every other case so the wire field is omitted.
+//
+// When a filter is configured we cannot tell, without a second pass over
+// merged, how many values would survive the filter — and ApplySearchHints
+// applies the limit to the post-filter count. To stay honest we suppress
+// the warning whenever a filter is present (false-negative) rather than
+// emit a misleading message based on the pre-filter count. With no filter,
+// the merged count IS the post-filter count and the warning is accurate.
+//
+// TODO(streaming-search): if user feedback wants reliable truncation
+// notification on filtered searches, push a truncation signal upstream into
+// storage.ApplySearchHints (vendored Prometheus change) instead of running
+// the filter twice here on the hot path.
+func unfilteredTruncationWarning(merged []string, hints *storage.SearchHints) []string {
+	if hints == nil || hints.Limit <= 0 || hints.Filter != nil || len(merged) <= hints.Limit {
+		return nil
+	}
+	return []string{fmt.Sprintf("results truncated: %d values matched, returning first %d", len(merged), hints.Limit)}
 }
 
 // buildBucketSearchHints converts the wire filter, ordering, and limit into a
-// storage.SearchHints. Validation errors are returned for the caller to map to
-// gRPC InvalidArgument.
+// storage.SearchHints. Validation errors (delegated to BuildFilter) are
+// returned for the caller to map to gRPC InvalidArgument.
 func buildBucketSearchHints(wf *storepb.SearchFilter, ord storepb.SearchOrdering, limit int64) (*storage.SearchHints, error) {
-	params := storepbToParams(wf)
-	if err := params.Validate(); err != nil {
-		return nil, err
-	}
-	filter, err := streaminglabelvalues.BuildFilter(params)
+	filter, err := streaminglabelvalues.BuildFilter(storepbToParams(wf))
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +213,7 @@ func storepbToParams(wf *storepb.SearchFilter) *streaminglabelvalues.Params {
 	}
 	p := &streaminglabelvalues.Params{
 		Terms:         wf.Terms,
-		CaseSensitive: wf.CaseSensitive,
+		CaseSensitive: !wf.CaseInsensitive,
 		FuzzThreshold: int(wf.FuzzThreshold),
 	}
 	switch wf.FuzzAlg {
@@ -197,10 +237,20 @@ func storepbToOrdering(o storepb.SearchOrdering) storage.Ordering {
 	}
 }
 
-// streamBucketSearchResults sends results in batches of searchBatchSize via send.
-func streamBucketSearchResults(results []storage.SearchResult, send func(*storepb.SearchResultBatch) error) error {
+// streamBucketSearchResults sends results in batches of searchBatchSize via
+// send. Warnings, if any, ride on the final batch (or are sent alone in a
+// trailer batch with no results when the result set is empty). The stream
+// context is checked before iteration starts and at each batch boundary so a
+// cancelled client stops the loop promptly.
+func streamBucketSearchResults(ctx context.Context, results []storage.SearchResult, warnings []string, send func(*storepb.SearchResultBatch) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	batch := &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
 	for _, r := range results {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		batch.Results = append(batch.Results, storepb.SearchResultBatch_Result{Value: r.Value, Score: r.Score})
 		if len(batch.Results) >= searchBatchSize {
 			if err := send(batch); err != nil {
@@ -209,7 +259,8 @@ func streamBucketSearchResults(results []storage.SearchResult, send func(*storep
 			batch = &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
 		}
 	}
-	if len(batch.Results) > 0 {
+	batch.Warnings = warnings
+	if len(batch.Results) > 0 || len(batch.Warnings) > 0 {
 		return send(batch)
 	}
 	return nil

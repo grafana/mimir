@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/grafana/dskit/user"
@@ -15,6 +16,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -45,23 +48,23 @@ func TestIngesterSearchLabelNames(t *testing.T) {
 	tests := []struct {
 		name        string
 		filterTerms []string
-		caseSens    bool
+		caseInsens  bool
 		ordering    client.SearchOrdering
 		limit       int64
 		wantValues  []string
 	}{
-		{name: "no filter returns all", caseSens: true, wantValues: []string{"__name__", "env", "status"}},
-		{name: "substring 'env' case-sensitive", filterTerms: []string{"env"}, caseSens: true, wantValues: []string{"env"}},
-		{name: "case-insensitive 'ENV' matches", filterTerms: []string{"ENV"}, caseSens: false, wantValues: []string{"env"}},
-		{name: "limit 1", caseSens: true, limit: 1, wantValues: []string{"__name__"}},
-		{name: "value desc", caseSens: true, ordering: client.ORDER_BY_VALUE_DESC, wantValues: []string{"status", "env", "__name__"}},
+		{name: "no filter returns all", wantValues: []string{"__name__", "env", "status"}},
+		{name: "substring 'env' case-sensitive", filterTerms: []string{"env"}, wantValues: []string{"env"}},
+		{name: "case-insensitive 'ENV' matches", filterTerms: []string{"ENV"}, caseInsens: true, wantValues: []string{"env"}},
+		{name: "limit 1", limit: 1, wantValues: []string{"__name__"}},
+		{name: "value desc", ordering: client.ORDER_BY_VALUE_DESC, wantValues: []string{"status", "env", "__name__"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &client.SearchLabelNamesRequest{
 				StartTimestampMs: 0,
 				EndTimestampMs:   200_000,
-				Filter:           &client.SearchFilter{Terms: tc.filterTerms, CaseSensitive: tc.caseSens},
+				Filter:           &client.SearchFilter{Terms: tc.filterTerms, CaseInsensitive: tc.caseInsens},
 				Ordering:         tc.ordering,
 				Limit:            tc.limit,
 			}
@@ -106,19 +109,19 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 		name          string
 		labelName     string
 		filterTerms   []string
-		caseSens      bool
+		caseInsens    bool
 		fuzzAlg       client.SearchFilter_FuzzAlg
 		fuzzThreshold int32
 		ordering      client.SearchOrdering
 		limit         int64
 		want          []string
 	}{
-		{name: "all status values", labelName: "status", caseSens: true, want: []string{"200", "300", "500"}},
-		{name: "substring '0'", labelName: "status", filterTerms: []string{"0"}, caseSens: true, want: []string{"200", "300", "500"}},
-		{name: "substring '20'", labelName: "status", filterTerms: []string{"20"}, caseSens: true, want: []string{"200"}},
-		{name: "limit 2", labelName: "status", caseSens: true, limit: 2, want: []string{"200", "300"}},
-		{name: "value desc", labelName: "status", caseSens: true, ordering: client.ORDER_BY_VALUE_DESC, want: []string{"500", "300", "200"}},
-		{name: "missing label returns empty", labelName: "missing", caseSens: true},
+		{name: "all status values", labelName: "status", want: []string{"200", "300", "500"}},
+		{name: "substring '0'", labelName: "status", filterTerms: []string{"0"}, want: []string{"200", "300", "500"}},
+		{name: "substring '20'", labelName: "status", filterTerms: []string{"20"}, want: []string{"200"}},
+		{name: "limit 2", labelName: "status", limit: 2, want: []string{"200", "300"}},
+		{name: "value desc", labelName: "status", ordering: client.ORDER_BY_VALUE_DESC, want: []string{"500", "300", "200"}},
+		{name: "missing label returns empty", labelName: "missing"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -127,10 +130,10 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 				EndTimestampMs:   200_000,
 				Name:             tc.labelName,
 				Filter: &client.SearchFilter{
-					Terms:         tc.filterTerms,
-					CaseSensitive: tc.caseSens,
-					FuzzAlg:       tc.fuzzAlg,
-					FuzzThreshold: tc.fuzzThreshold,
+					Terms:           tc.filterTerms,
+					CaseInsensitive: tc.caseInsens,
+					FuzzAlg:         tc.fuzzAlg,
+					FuzzThreshold:   tc.fuzzThreshold,
 				},
 				Ordering: tc.ordering,
 				Limit:    tc.limit,
@@ -223,7 +226,7 @@ func TestStreamSearchResultsPropagatesWarnings(t *testing.T) {
 				sent = append(sent, b)
 				return nil
 			}
-			require.NoError(t, streamSearchResults(rs, send))
+			require.NoError(t, streamSearchResults(context.Background(), rs, send))
 			assert.Equal(t, tc.wantSent, sent)
 		})
 	}
@@ -241,7 +244,7 @@ func TestStreamSearchResultsPropagatesErrInsteadOfWarnings(t *testing.T) {
 		sent = append(sent, b)
 		return nil
 	}
-	require.ErrorIs(t, streamSearchResults(rs, send), want)
+	require.ErrorIs(t, streamSearchResults(context.Background(), rs, send), want)
 	// The single result was sent before iteration ended; the trailer batch
 	// (which would carry warnings) is suppressed because rs.Err is non-nil.
 	for _, b := range sent {
@@ -251,4 +254,74 @@ func TestStreamSearchResultsPropagatesErrInsteadOfWarnings(t *testing.T) {
 
 func addAnnotation(a annotations.Annotations, msg string) annotations.Annotations {
 	return a.Add(errors.New(msg))
+}
+
+func TestStreamSearchResultsBatching(t *testing.T) {
+	// 257 results forces a batch boundary at 256, producing exactly two batches:
+	// a full one of 256 followed by a trailer of 1.
+	const total = searchBatchSize + 1
+	results := make([]storage.SearchResult, total)
+	for i := 0; i < total; i++ {
+		results[i] = storage.SearchResult{Value: fmt.Sprintf("v%04d", i), Score: 1.0}
+	}
+	rs := &fakeSearchResultSet{results: results}
+	var sent []*client.SearchResultBatch
+	send := func(b *client.SearchResultBatch) error {
+		// Defensive copy: the producer reuses the batch struct between sends.
+		results := make([]client.SearchResultBatch_Result, len(b.Results))
+		copy(results, b.Results)
+		sent = append(sent, &client.SearchResultBatch{Results: results, Warnings: b.Warnings})
+		return nil
+	}
+	require.NoError(t, streamSearchResults(context.Background(), rs, send))
+	require.Len(t, sent, 2, "257 results must split into 2 batches at the searchBatchSize=256 boundary")
+	assert.Len(t, sent[0].Results, searchBatchSize, "first batch is full")
+	assert.Len(t, sent[1].Results, 1, "second batch carries the remainder")
+	// Order preserved end-to-end.
+	assert.Equal(t, "v0000", sent[0].Results[0].Value)
+	assert.Equal(t, fmt.Sprintf("v%04d", searchBatchSize-1), sent[0].Results[searchBatchSize-1].Value)
+	assert.Equal(t, fmt.Sprintf("v%04d", searchBatchSize), sent[1].Results[0].Value)
+}
+
+// TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument
+// locks in the contract that wire-shape errors surface as
+// codes.InvalidArgument rather than codes.Internal. Without this test,
+// moving the validation back below the deferred mapReadErrorToErrorWithStatus
+// would silently downgrade the error code and no other test would notice.
+func TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	req := &client.SearchLabelValuesRequest{
+		StartTimestampMs: 0,
+		EndTimestampMs:   200_000,
+		Name:             "status",
+		Filter:           &client.SearchFilter{Terms: []string{"x"}, FuzzThreshold: 200},
+	}
+	s := &mockSearchLabelValuesStream{ctx: ctx}
+	err := i.SearchLabelValues(req, s)
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
+	assert.Equal(t, codes.InvalidArgument, st.Code(), "wire-shape errors must surface as codes.InvalidArgument, not codes.Internal")
+}
+
+func TestStreamSearchResultsHonoursCtxCancellation(t *testing.T) {
+	// Drive the loop with results, cancel ctx between iterations, and assert
+	// streamSearchResults returns the cancellation error before draining the
+	// rest of the iterator.
+	results := make([]storage.SearchResult, 10)
+	for i := range results {
+		results[i] = storage.SearchResult{Value: fmt.Sprintf("v%d", i), Score: 1.0}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	rs := &fakeSearchResultSet{results: results}
+	send := func(_ *client.SearchResultBatch) error { return nil }
+	cancel()
+	err := streamSearchResults(ctx, rs, send)
+	require.ErrorIs(t, err, context.Canceled)
 }
