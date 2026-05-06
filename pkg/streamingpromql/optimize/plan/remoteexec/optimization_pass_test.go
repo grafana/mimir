@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -610,3 +611,74 @@ func (m *mockLimits) QueryShardingTotalShards(userID string) int        { return
 func (m *mockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int { return 0 }
 func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int  { return 0 }
 func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int    { return 0 }
+
+// TestOptimizationPass_ConflictingMatchersInShardLeg reproduces the production bug observed in r393
+// where a query that contains a sharded sub-expression with conflicting equals matchers triggers
+//
+//	could not find selector for node of type *core.AggregateExpression (this is a bug)
+//
+// when MQE sharding and remote execution are both enabled.
+//
+// Cause: PR #15117 extended RemoveStaticallyEmptyExpressionsOptimizationPass to replace selectors
+// with conflicting equals matchers with NoOp nodes. After AST sharding, a query like
+// `sum(my_metric{x="a", x="b"})` becomes __sharded_concat__(sum(my_metric{...,__query_shard__=N_of_M}), ...).
+// The static-empty pass then rewrites each sharded leg's inner VectorSelector into a NoOp, leaving
+// an AggregateExpression whose subtree contains no VectorSelector or MatrixSelector.
+//
+// If the *whole* query collapses to selectorless (no VectorSelector / MatrixSelector anywhere) then
+// remoteexec's `!HasSelectors` early-return at optimization_pass.go:32-34 saves us. But if the
+// query also contains an unrelated selector elsewhere (so HasSelectors stays true), remoteexec walks
+// the offending __sharded_concat__ and `findSelector` cannot reach a selector under the
+// AggregateExpression — it returns the "this is a bug" error.
+//
+// The reproduction therefore pairs a normal sharded sub-expression with a conflicting one.
+func TestOptimizationPass_ConflictingMatchersInShardLeg(t *testing.T) {
+	const expr = `sum(my_metric_a) + sum(my_metric_b{x="a", x="b"})`
+
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+	observer := streamingpromql.NoopPlanningObserver{}
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	opts := streamingpromql.NewTestEngineOpts()
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(planning.MaximumSupportedQueryPlanVersion))
+	require.NoError(t, err)
+
+	// Match the production pass order around the failure: AST sharding (so the plan contains
+	// __sharded_concat__), then static-empty (which rewrites the conflicting-matcher leg's
+	// selector into NoOp), then CSE, then multi-node remoteexec.
+	planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(true))
+
+	p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+	require.NoError(t, err, "remoteexec pass must tolerate sharded legs whose selectors have been rewritten to NoOp by RemoveStaticallyEmptyExpressionsOptimizationPass")
+
+	// Each leg of the conflicting-matcher __sharded_concat__ (RHS) must be wrapped in its own
+	// RemoteExecutionGroup, exactly like the legs of the normal __sharded_concat__ (LHS) — the
+	// selectorless legs cannot share a group with anything, so each gets a fresh one.
+	const expectedPlan = `
+		- BinaryExpression: LHS + RHS
+			- LHS: AggregateExpression: sum
+				- FunctionCall: __sharded_concat__(...)
+					- param 0: RemoteExecutionConsumer: node 0
+						- RemoteExecutionGroup: eager load
+							- node 0: AggregateExpression: sum
+								- VectorSelector: {__query_shard__="1_of_2", __name__="my_metric_a"}
+					- param 1: RemoteExecutionConsumer: node 0
+						- RemoteExecutionGroup: eager load
+							- node 0: AggregateExpression: sum
+								- VectorSelector: {__query_shard__="2_of_2", __name__="my_metric_a"}
+			- RHS: AggregateExpression: sum
+				- FunctionCall: __sharded_concat__(...)
+					- param 0: RemoteExecutionConsumer: node 0
+						- RemoteExecutionGroup: eager load
+							- node 0: AggregateExpression: sum
+								- NoOp
+					- param 1: RemoteExecutionConsumer: node 0
+						- RemoteExecutionGroup: eager load
+							- node 0: AggregateExpression: sum
+								- NoOp
+	`
+	require.Equal(t, testutils.TrimIndent(expectedPlan), p.String())
+}

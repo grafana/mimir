@@ -4,7 +4,6 @@ package remoteexec
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
@@ -149,7 +148,11 @@ func (s remoteExecutionGroupSet) GetGroupForNode(node planning.Node, eagerLoad b
 	}
 
 	if selector == nil {
-		return nil, fmt.Errorf("could not find selector for node of type %T (this is a bug)", node)
+		// The subtree contains no VectorSelector or MatrixSelector. This happens when
+		// RemoveStaticallyEmptyExpressionsOptimizationPass replaces a sharded leg's selector with a NoOp
+		// (for example, because the selector has conflicting equals matchers like {x="a", x="b"}).
+		// A selectorless leg cannot share a group with any other leg, so give it its own group.
+		return s.createGroup(eagerLoad), nil
 	}
 
 	group, haveGroup := s[selector]
