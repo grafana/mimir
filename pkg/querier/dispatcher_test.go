@@ -518,8 +518,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				enableDelayedNameRemoval,
 				1,
-				[]string{"BinaryExpression: LHS + RHS", `LHS: VectorSelector: {__name__="my_series"}`},
-				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_other_series"}`},
+				[]string{"BinaryExpression: LHS + RHS, hints (exclude ())", `LHS: VectorSelector: {__name__="my_series"}`},
+				[]string{"BinaryExpression: LHS + RHS, hints (exclude ())", `RHS: VectorSelector: {__name__="my_other_series"}`},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
@@ -582,8 +582,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				enableDelayedNameRemoval,
 				2,
-				[]string{"BinaryExpression: LHS + RHS", `LHS: DuplicateFilter: {idx=~"(0|1|2)"}, subset index: 0`},
-				[]string{"BinaryExpression: LHS + RHS", `RHS: Duplicate`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
+				[]string{"BinaryExpression: LHS + RHS, hints (exclude ())", `LHS: DuplicateFilter: {idx=~"(0|1|2)"}, subset index: 0`},
+				[]string{"BinaryExpression: LHS + RHS, hints (exclude ())", `RHS: Duplicate`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
@@ -673,8 +673,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				enableDelayedNameRemoval,
 				1,
-				[]string{"BinaryExpression: LHS + RHS", "LHS: FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
-				[]string{"BinaryExpression: LHS + RHS", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS, hints (exclude ())", "LHS: FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS, hints (exclude ())", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
@@ -835,9 +835,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				enableDelayedNameRemoval,
 				1,
-				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 12"},
-				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_series"}`},
-				[]string{"BinaryExpression: LHS + RHS", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS, hints (exclude ())", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 12"},
+				[]string{"BinaryExpression: LHS + RHS, hints (exclude ())", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_series"}`},
+				[]string{"BinaryExpression: LHS + RHS, hints (exclude ())", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newScalarMessage(0,
