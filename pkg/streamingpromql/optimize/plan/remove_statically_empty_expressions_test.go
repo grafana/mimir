@@ -262,9 +262,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expr:       `avg_over_time(metric{pod="foo", pod="bar"}[5m])`,
 			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
-				- DeduplicateAndMerge
-					- FunctionCall: avg_over_time(...)
-						- NoOp: matrix
+				- NoOp
 			`,
 		},
 		"conflicting equals matchers on LHS of binary expression: should optimize": {
@@ -281,9 +279,61 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
-
-		"empty result ANDed with non-empty result: returns empty result": {
-			expr: `EMPTY_RESULT and metric`,
+		"aggregation over empty result: should optimize": {
+			expr:       `sum(EMPTY_RESULT)`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"aggregation over function over empty result: should optimize": {
+			expr: `sum(rate(EMPTY_RESULT[5m]))`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary add with empty result on right side: should optimize": {
+			expr: `sum(metric_a) + sum(EMPTY_RESULT)`,
+			expectedPlan: `
+				- AggregateExpression: sum
+					- VectorSelector: {__name__="metric_a"}
+			`,
+		},
+		"binary add with empty result on left side: should optimize": {
+			expr: `sum(EMPTY_RESULT) + sum(metric_a)`,
+			expectedPlan: `
+				- AggregateExpression: sum
+					- VectorSelector: {__name__="metric_a"}
+			`,
+		},
+		"absent over empty result: should only optimize selector": {
+			expr: `absent(EMPTY_RESULT)`,
+			expectedPlan: `
+				- FunctionCall: absent(...)
+					- NoOp
+			`,
+		},
+		"absent_over_time over empty result: should only optimize selector": {
+			expr: `absent_over_time(EMPTY_RESULT[5m])`,
+			expectedPlan: `
+				- FunctionCall: absent_over_time(...)
+					- NoOp: matrix
+			`,
+		},
+		"abs over empty result: should optimize": {
+			expr: `abs(EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"histogram_quantile over empty result: should optimize": {
+			expr: `histogram_quantile(0.99, sum(rate(EMPTY_RESULT[5m])))`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"histogram_fraction over empty result: should optimize": {
+			expr: `histogram_fraction(0, 0.2, rate(EMPTY_RESULT[5m]))`,
 			expectedPlan: `
 				- NoOp
 			`,

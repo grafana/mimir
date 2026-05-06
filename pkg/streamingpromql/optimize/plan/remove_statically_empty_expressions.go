@@ -166,8 +166,113 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, 
 	switch node := node.(type) {
 	case *core.NoOp:
 		return true, nil
+	case *core.AggregateExpression:
+		return isAlwaysEmpty(node.Inner, params)
 	case *core.BinaryExpression:
 		return isAlwaysEmptyBinaryExpression(node, params)
+	case *core.FunctionCall:
+		return isAlwaysEmptyFunctionCall(node, params)
+	default:
+		return false, nil
+	}
+}
+
+func isAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryParameters) (bool, error) {
+	switch node.Function {
+	case
+		functions.FUNCTION_ABS,
+		functions.FUNCTION_ACOS,
+		functions.FUNCTION_ACOSH,
+		functions.FUNCTION_ASIN,
+		functions.FUNCTION_ASINH,
+		functions.FUNCTION_ATAN,
+		functions.FUNCTION_ATANH,
+		functions.FUNCTION_AVG_OVER_TIME,
+		functions.FUNCTION_CEIL,
+		functions.FUNCTION_CHANGES,
+		functions.FUNCTION_CLAMP,
+		functions.FUNCTION_CLAMP_MAX,
+		functions.FUNCTION_CLAMP_MIN,
+		functions.FUNCTION_COS,
+		functions.FUNCTION_COSH,
+		functions.FUNCTION_COUNT_OVER_TIME,
+		functions.FUNCTION_DEG,
+		functions.FUNCTION_DELTA,
+		functions.FUNCTION_DERIV,
+		functions.FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING,
+		functions.FUNCTION_EXP,
+		functions.FUNCTION_FLOOR,
+		functions.FUNCTION_HISTOGRAM_AVG,
+		functions.FUNCTION_HISTOGRAM_COUNT,
+		functions.FUNCTION_HISTOGRAM_STDDEV,
+		functions.FUNCTION_HISTOGRAM_STDVAR,
+		functions.FUNCTION_HISTOGRAM_SUM,
+		functions.FUNCTION_IDELTA,
+		functions.FUNCTION_INCREASE,
+		functions.FUNCTION_INFO,
+		functions.FUNCTION_IRATE,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_LN,
+		functions.FUNCTION_LOG10,
+		functions.FUNCTION_LOG2,
+		functions.FUNCTION_MAD_OVER_TIME,
+		functions.FUNCTION_MAX_OVER_TIME,
+		functions.FUNCTION_MIN_OVER_TIME,
+		functions.FUNCTION_PREDICT_LINEAR,
+		functions.FUNCTION_PRESENT_OVER_TIME,
+		functions.FUNCTION_RAD,
+		functions.FUNCTION_RATE,
+		functions.FUNCTION_RESETS,
+		functions.FUNCTION_ROUND,
+		functions.FUNCTION_SGN,
+		functions.FUNCTION_SIN,
+		functions.FUNCTION_SINH,
+		functions.FUNCTION_SORT,
+		functions.FUNCTION_SORT_BY_LABEL,
+		functions.FUNCTION_SORT_BY_LABEL_DESC,
+		functions.FUNCTION_SORT_DESC,
+		functions.FUNCTION_SQRT,
+		functions.FUNCTION_STDDEV_OVER_TIME,
+		functions.FUNCTION_STDVAR_OVER_TIME,
+		functions.FUNCTION_SUM_OVER_TIME,
+		functions.FUNCTION_TAN,
+		functions.FUNCTION_TANH,
+		functions.FUNCTION_TIMESTAMP,
+		functions.FUNCTION_TS_OF_FIRST_OVER_TIME,
+		functions.FUNCTION_TS_OF_LAST_OVER_TIME,
+		functions.FUNCTION_TS_OF_MAX_OVER_TIME,
+		functions.FUNCTION_TS_OF_MIN_OVER_TIME:
+		if len(node.Args) < 1 {
+			return false, fmt.Errorf("expected at least one argument in call to %s, got %d", node.Function, len(node.Args))
+		}
+
+		return isAlwaysEmpty(node.Args[0], params)
+	case functions.FUNCTION_HISTOGRAM_QUANTILE,
+		functions.FUNCTION_QUANTILE_OVER_TIME:
+		if len(node.Args) < 2 {
+			return false, fmt.Errorf("expected at least two arguments in call to %s, got %d", node.Function, len(node.Args))
+		}
+
+		return isAlwaysEmpty(node.Args[1], params)
+
+	case functions.FUNCTION_HISTOGRAM_FRACTION:
+		if len(node.Args) < 3 {
+			return false, fmt.Errorf("expected at least three arguments in call to %s, got %d", node.Function, len(node.Args))
+		}
+
+		return isAlwaysEmpty(node.Args[2], params)
+	case functions.FUNCTION_SHARDING_CONCAT:
+		allChildrenEmpty := true
+		for i := range node.ChildCount() {
+			empty, err := isAlwaysEmpty(node.Child(i), params)
+			if err != nil {
+				return false, err
+			}
+
+			allChildrenEmpty = allChildrenEmpty && empty
+		}
+
+		return allChildrenEmpty, nil
 	default:
 		return false, nil
 	}
@@ -348,14 +453,23 @@ func simplify(node planning.Node) planning.Node {
 		}
 
 	case *core.BinaryExpression:
-		if node.Op != core.BINARY_LUNLESS {
-			return nil
-		}
+		switch node.Op {
+		case core.BINARY_ADD:
+			// If we're adding things and one of them is a no-op, we can get rid of the
+			// entire binary expression and replace it with the other side.
+			if _, lhsNop := node.LHS.(*core.NoOp); lhsNop {
+				return node.RHS
+			}
 
-		// If the LHS is a no-op this means the whole expression is a no-op, and that is
-		// handled by isAlwaysEmptyBinaryExpression.
-		if _, noOp := node.RHS.(*core.NoOp); noOp {
-			return node.LHS
+			if _, rhsNop := node.RHS.(*core.NoOp); rhsNop {
+				return node.LHS
+			}
+		case core.BINARY_LUNLESS:
+			// If the LHS is a no-op this means the whole expression is a no-op, and that is
+			// handled by isAlwaysEmptyBinaryExpression.
+			if _, noOp := node.RHS.(*core.NoOp); noOp {
+				return node.LHS
+			}
 		}
 	}
 
