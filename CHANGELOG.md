@@ -205,7 +205,7 @@
 * [ENHANCEMENT] MQE: Enable narrow selectors optimisation and hints passing for `and`/`unless` binary operation. #15096
 * [ENHANCEMENT] MQE: Add support for common subexpression elimination and subset selector elimination of range vector selectors in range queries. Enable with `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination=true`. #15127
 * [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in one-to-many and many-to-one binary operations (eg. `group_left` and `group_right`). #15137
-* [ENHANCEMENT] MQE: Compute matchers for `without` operators to further optimise data fetching for binary operations. #15178
+* [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in binary operations that use `ignoring` or no `on`/`ignoring` clause. #15178
 * [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
 * [BUGFIX] Alertmanager: Skip empty/zero config. #15184
 * [BUGFIX] Tracing: Respect `OTEL_TRACES_SAMPLER` and `OTEL_TRACES_SAMPLER_ARG` environment variables in `NewOTelFromEnv()`. Previously, the sampler was always hardcoded to `AlwaysSample()` when no Jaeger remote sampler was configured, making it impossible to control trace volume through standard OpenTelemetry configuration. #15128
