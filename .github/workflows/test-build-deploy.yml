@@ -79,7 +79,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           restore-keys: go-build-cache-image-and-lint-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
@@ -195,7 +195,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+          key: go-build-cache-integration-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           lookup-only: true
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
@@ -216,7 +216,7 @@ jobs:
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+          key: go-build-cache-integration-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
 
   # Same as above but for unit tests, which compile with -race (producing different cache
   # entries) and run inside a container.
@@ -237,7 +237,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          key: go-build-cache-unit-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           lookup-only: true
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
@@ -256,7 +256,7 @@ jobs:
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          key: go-build-cache-unit-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
 
   # Same as the other warmup jobs but for image builds and linting, which use
   # CGO_ENABLED=0 (no race) with -tags netgo,stringlabels.
@@ -277,7 +277,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           lookup-only: true
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
@@ -296,7 +296,7 @@ jobs:
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
 
   test:
     runs-on: ubuntu-latest
@@ -326,7 +326,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          key: go-build-cache-unit-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           restore-keys: go-build-cache-unit-
       - name: Install GitHub CLI
         run: ./.github/workflows/scripts/install-gh.sh
@@ -378,7 +378,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
@@ -402,7 +402,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
@@ -426,7 +426,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
@@ -450,7 +450,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
@@ -474,7 +474,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           restore-keys: go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
@@ -514,7 +514,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          key: go-build-cache-unit-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_image }}
           restore-keys: go-build-cache-unit-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
@@ -567,7 +567,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+          key: go-build-cache-integration-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_imag>>>>>>> e0471b17d
           restore-keys: go-build-cache-integration-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
