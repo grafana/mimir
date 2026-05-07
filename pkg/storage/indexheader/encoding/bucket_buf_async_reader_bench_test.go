@@ -117,10 +117,10 @@ func BenchmarkBucketBufAsyncReader_Sequential(b *testing.B) {
 // chunk size. The last read is sized to the remaining bytes so we don't overshoot.
 func readAll(b *testing.B, readInto func([]byte) error, total int) {
 	b.Helper()
-	buf := make([]byte, benchReadChunk)
+	buf := make([]byte, 128) // TODO do something like decbuf UnsafeUvarintBytes where it Peeks, then Skips
 	remaining := total
 	for remaining > 0 {
-		n := benchReadChunk
+		n := 128
 		if n > remaining {
 			n = remaining
 			buf = buf[:n]
