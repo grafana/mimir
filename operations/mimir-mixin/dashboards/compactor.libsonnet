@@ -1,4 +1,3 @@
-local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-compactor.json';
 
 // This applies to the "longest time since successful run queries"
@@ -374,18 +373,10 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         $.aliasColors({ failures: $._colors.failed }),
       )
       .addPanel(
-        local query = utils.ncHistogramSumBy(
-          utils.ncHistogramCountRate(
-            metric='cortex_request_duration_seconds',
-            selector='%s, route=~"/compactorschedulerpb.CompactorScheduler/.*"' % $.jobMatcher($._config.job_names.compactor_scheduler),
-          ),
-          sum_by=['route'],
-        );
-        local stripPrefix(q) = 'label_replace(%s, "method", "$1", "route", "/compactorschedulerpb.CompactorScheduler/(.*)")' % q;
         $.timeseriesPanel('Scheduler RPC') +
         $.queryPanel(
-          [stripPrefix(utils.showNativeHistogramQuery(query)), stripPrefix(utils.showClassicHistogramQuery(query))],
-          ['{{method}}', '{{method}}'],
+          'label_replace(sum by (route) (histogram_count(rate(cortex_request_duration_seconds{%s, route=~"/compactorschedulerpb.CompactorScheduler/.*"}[$__rate_interval]))), "method", "$1", "route", "/compactorschedulerpb.CompactorScheduler/(.*)")' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{method}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }
       )
