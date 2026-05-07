@@ -463,8 +463,14 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 	}
 
 	for _, split := range m.splits {
-		if err := split.Finalize(ctx, shouldCache); err != nil {
+		if err := split.Finalize(ctx); err != nil {
 			return err
+		}
+
+		if shouldCache {
+			if err := split.StoreResultsInCache(ctx); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -527,7 +533,8 @@ type Split[T any] interface {
 	// This is used to make sure annotations emitted when generating the result for an uncached split reference the
 	// correct metric name.
 	AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int)
-	Finalize(ctx context.Context, storeResultsInCache bool) error
+	Finalize(ctx context.Context) error
+	StoreResultsInCache(ctx context.Context) error
 	Close()
 	IsCached() bool
 	RangeCount() int
@@ -600,13 +607,17 @@ func (c *CachedSplit[T]) GetResultsAt(_ context.Context, idx int) ([]T, error) {
 	return []T{c.results[idx]}, nil
 }
 
-func (c *CachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache bool) error {
+func (c *CachedSplit[T]) Finalize(_ context.Context) error {
 	for _, w := range c.annotations.Warnings {
 		c.parent.Annotations.Add(querierpb.NewWarningAnnotation(w))
 	}
 	for _, i := range c.annotations.Infos {
 		c.parent.Annotations.Add(querierpb.NewInfoAnnotation(i))
 	}
+	return nil
+}
+
+func (c *CachedSplit[T]) StoreResultsInCache(_ context.Context) error {
 	return nil
 }
 
@@ -756,7 +767,7 @@ func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, localSeriesIdx
 	p.rangeAnnotations[rangeIdx].Add(annotationErr)
 }
 
-func (p *UncachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache bool) error {
+func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 	if p.finalized {
 		return nil
 	}
@@ -767,10 +778,10 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context, storeResultsInCache boo
 
 	p.finalized = true
 
-	if !storeResultsInCache {
-		return nil
-	}
+	return nil
+}
 
+func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 	for rangeIdx, splitRange := range p.ranges {
 		if !splitRange.Cacheable {
 			continue

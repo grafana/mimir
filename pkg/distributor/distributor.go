@@ -1325,6 +1325,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var droppedNativeHistograms int
 
 		var firstPartialErr error
+		// firstValidationErr holds the first encountered series validation error.
+		// It is kept separately from firstPartialErr (which may also hold a metadata-validation error)
+		// so we can build a soft validationError when the request is partially accepted.
+		var firstValidationErr error
+		var rejectedSamplesCount int64
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
@@ -1359,7 +1364,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				if firstPartialErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
+					firstValidationErr = validationErr
 				}
+				rejectedSamplesCount += int64(rawSamples + rawHistograms)
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
 			}
@@ -1465,8 +1472,35 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		ctx = ingest.ContextWithRecordTimestamp(ctx, now)
 		err = next(ctx, pushReq)
 		if err != nil {
-			// Errors resulting from the pushing to the ingesters have priority over validation errors.
+			// Errors resulting from the pushing to the ingesters have priority over
+			// validation errors, but if a downstream middleware returns a soft
+			// partial-success error we fold this middleware's rejection count into
+			// it. Mirrors what's done for active-series rejections.
+			//
+			// Note: when counts are combined, partial_success.error_message reflects
+			// only the downstream cause; per-reason rejection breakdowns are
+			// available via cortex_discarded_samples_total.
+			//
+			// TODO: if a future soft Error type carries a rejectedSamples count
+			// (e.g., a soft variant of partitionPushError for ingest-storage Kafka),
+			// add a parallel branch here so its count is also combined.
+			if rejectedSamplesCount > 0 {
+				var ingErr ingesterPushError
+				if errors.As(err, &ingErr) && ingErr.IsSoft() {
+					ingErr.rejectedSamples += rejectedSamplesCount
+					return ingErr
+				}
+				var asErr activeSeriesLimitedError
+				if errors.As(err, &asErr) && asErr.IsSoft() {
+					asErr.rejectedSamples += rejectedSamplesCount
+					return asErr
+				}
+			}
 			return err
+		}
+
+		if firstValidationErr != nil && validatedSamples > 0 {
+			return newSoftValidationError(firstValidationErr, rejectedSamplesCount)
 		}
 
 		return firstPartialErr

@@ -200,6 +200,36 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 	return nil
 }
 
+// AddSingleStep adds the statistics from other to this instance.
+//
+// Both instances must have a single step, but may have different time ranges.
+//
+// Both instances must have the same number of subsets.
+//
+// This instance is modified in place.
+func (s *OperatorEvaluationStats) AddSingleStep(other *OperatorEvaluationStats) error {
+	if s.timeRange.StepCount != 1 {
+		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance with %v steps", s.timeRange.StepCount)
+	}
+
+	if other.timeRange.StepCount != 1 {
+		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance from another instance with %v steps", other.timeRange.StepCount)
+	}
+
+	if len(s.subsets) != len(other.subsets) {
+		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance with %v subsets from another instance with %v subsets", len(s.subsets), len(other.subsets))
+	}
+
+	s.allSeries.Add(int64(0), other.allSeries.samplesProcessedPerStep[0], other.allSeries.samplesReadIfSubsequentStep[0], other.allSeries.samplesReadIfFirstStep[0])
+
+	for subsetIdx, subset := range s.subsets {
+		otherSubset := other.subsets[subsetIdx]
+		subset.Add(int64(0), otherSubset.samplesProcessedPerStep[0], otherSubset.samplesReadIfSubsequentStep[0], otherSubset.samplesReadIfFirstStep[0])
+	}
+
+	return nil
+}
+
 func (s *OperatorEvaluationStats) newEmptyInstanceWithSameSubsets(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
 	return NewOperatorEvaluationStatsWithQueryStats(timeRange, s.memoryConsumptionTracker, s.queryStats, len(s.subsets))
 }
@@ -218,6 +248,39 @@ func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
 	}
 
 	return clone, nil
+}
+
+// CloneSingleStep returns a new OperatorEvaluationStats instance containing the sample counts for the single step
+// in the provided time range.
+//
+// The returned instance will have the same subset definitions as the original.
+func (s *OperatorEvaluationStats) CloneSingleStep(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
+	if timeRange.StepCount != 1 {
+		return nil, fmt.Errorf("cannot clone single step of OperatorEvaluationStats for time range with %v steps", timeRange.StepCount)
+	}
+
+	stepIdx := s.timeRange.PointIndex(timeRange.StartT)
+
+	if s.timeRange.IndexTime(stepIdx) != timeRange.StartT {
+		return nil, fmt.Errorf("cannot clone single step of OperatorEvaluationStats because the desired time %v is not aligned with the steps of the source (start time %v, step %v)", timeRange.StartT, s.timeRange.StartT, s.timeRange.IntervalMilliseconds)
+	}
+
+	if stepIdx < 0 || stepIdx >= int64(s.timeRange.StepCount) {
+		return nil, fmt.Errorf("cannot clone single step of OperatorEvaluationStats because the desired time %v is outside the source time range (start time %v, end time %v)", timeRange.StartT, s.timeRange.StartT, s.timeRange.EndT)
+	}
+
+	singleStepStats, err := s.newEmptyInstanceWithSameSubsets(timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	singleStepStats.allSeries.CopySingleStepFrom(s.allSeries, stepIdx)
+
+	for i, subset := range s.subsets {
+		singleStepStats.subsets[i].CopySingleStepFrom(subset, stepIdx)
+	}
+
+	return singleStepStats, nil
 }
 
 // UseSubset replaces the unfiltered statistics on this instance with those from the given subset,
@@ -492,6 +555,12 @@ func (s *subsetStats) CopyFrom(source *subsetStats) {
 	copy(s.samplesProcessedPerStep, source.samplesProcessedPerStep)
 	copy(s.samplesReadIfSubsequentStep, source.samplesReadIfSubsequentStep)
 	copy(s.samplesReadIfFirstStep, source.samplesReadIfFirstStep)
+}
+
+func (s *subsetStats) CopySingleStepFrom(source *subsetStats, stepIdx int64) {
+	s.samplesProcessedPerStep[0] = source.samplesProcessedPerStep[stepIdx]
+	s.samplesReadIfSubsequentStep[0] = source.samplesReadIfSubsequentStep[stepIdx]
+	s.samplesReadIfFirstStep[0] = source.samplesReadIfFirstStep[stepIdx]
 }
 
 func (s *subsetStats) Encode() EncodedSubsetStats {

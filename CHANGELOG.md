@@ -62,7 +62,7 @@
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
 * [FEATURE] Ingest storage: Add `-ingest-storage.ingestion-partition-tenant-write-shard-size` to limit the number of partitions used for writes independently from reads, allowing safely reducing the shard size without losing query coverage during the migration. #14780
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645 #14677 #14788
-* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839 #14952 #15035 #15045 #15179 #15220 #15223 #15232 #15237
+* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839 #14952 #15035 #15045 #15179 #15220 #15223 #15232 #15237 #15255
 * [FEATURE] Compactor: Add `-compactor.ooo-split-and-merge-shards` per-tenant limit to allow a separate shard count for blocks with the out-of-order external label. #14704
 * [FEATURE] Distributor: add experimental support for controlling OTLP metric name suffix addition and translation strategy via `X-Mimir-OTLP-AddSuffixes` and `X-Mimir-OTLP-TranslationStrategy` request headers on the OTLP push path, gated by `-api.otlp-translation-headers-enabled` (off by default). #14782
 * [ENHANCEMENT] Ingest storage: Default to the more efficient `-ingest-storage.kafka.producer-record-version=2` based on Remote-Write 2.0, which reduces Kafka record size and improves write throughput. #15185
@@ -206,6 +206,8 @@
 * [ENHANCEMENT] MQE: Add support for common subexpression elimination and subset selector elimination of range vector selectors in range queries. Enable with `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination=true`. #15127
 * [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in one-to-many and many-to-one binary operations (eg. `group_left` and `group_right`). #15137
 * [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
+* [ENHANCEMENT] MQE: Reduced per-query memory overhead by no longer holding a reference to the HTTP request for the lifetime of a query. #15251
+* [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15251
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Alertmanager: Skip empty/zero config. #15184
 * [BUGFIX] Tracing: Respect `OTEL_TRACES_SAMPLER` and `OTEL_TRACES_SAMPLER_ARG` environment variables in `NewOTelFromEnv()`. Previously, the sampler was always hardcoded to `AlwaysSample()` when no Jaeger remote sampler was configured, making it impossible to control trace volume through standard OpenTelemetry configuration. #15128
@@ -291,6 +293,7 @@
 * [BUGFIX] MQE: Fix `info()` function only retaining one matcher when multiple data label matchers target the same label name. #14832
 * [BUGFIX] MQE: Fix `info()` function silently overwriting conflicting labels from different info metrics instead of returning an error. #14832
 * [BUGFIX] MQE: Fix `info()` function incorrectly grouping labels from replaced info series at the same evaluation timestamp due to lookback. #14832
+* [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
 
 ### Mixin
 
@@ -351,7 +354,7 @@
 * [ENHANCEMENT] Dashboards: Split the "All series" panel in the Tenants dashboard into "Active series" and "Owned & in-memory series" panels, and added the active series limit. #14648 #14771
 * [ENHANCEMENT] Dashboards: Add "In memory series" panel to experimental "Mimir / Block-builder" dashboard. #14700
 * [ENHANCEMENT] Dashboards: Unify object store rows into a single collapsible row across Alertmanager, Compactor, Reads, and Ruler dashboards. #14850
-* [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743 #14933 #15051
+* [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743 #14933 #15051 #15257
 * [ENHANCEMENT] Alerts: Suppress `MimirRingMembersMismatch` alert during ingester rollouts. The alert now uses an `unless` clause to avoid false positives when ingester statefulsets are being updated. #14895
 * [ENHANCEMENT] Recording rules: add a low-cardinality recorded version of usage_tracker_active_series. #14901
 * [ENHANCEMENT] Alerts: Fix `MimirSchedulerQueriesStuck` false positives by only looking for cases where the number of enqueued queries doesn't decrease. #14943 #15193

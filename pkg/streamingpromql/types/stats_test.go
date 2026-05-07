@@ -491,6 +491,67 @@ func TestOperatorEvaluationStats_Add_WithSubsets(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
+func TestOperatorEvaluationStats_AddSingleStep(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	source, err := NewOperatorEvaluationStats(ctx, NewInstantQueryTimeRange(timestamp.Time(1234)), memoryConsumptionTracker, 1)
+	require.NoError(t, err)
+
+	source.allSeries.samplesProcessedPerStep[0] = 10
+	source.allSeries.samplesReadIfSubsequentStep[0] = 1
+	source.allSeries.samplesReadIfFirstStep[0] = 100
+	source.subsets[0].samplesProcessedPerStep[0] = 5
+	source.subsets[0].samplesReadIfSubsequentStep[0] = 3
+	source.subsets[0].samplesReadIfFirstStep[0] = 300
+
+	destination, err := NewOperatorEvaluationStats(ctx, NewInstantQueryTimeRange(timestamp.Time(5678)), memoryConsumptionTracker, 1)
+	require.NoError(t, err)
+
+	destination.allSeries.samplesProcessedPerStep[0] = 20
+	destination.allSeries.samplesReadIfSubsequentStep[0] = 4
+	destination.allSeries.samplesReadIfFirstStep[0] = 200
+	destination.subsets[0].samplesProcessedPerStep[0] = 9
+	destination.subsets[0].samplesReadIfSubsequentStep[0] = 7
+	destination.subsets[0].samplesReadIfFirstStep[0] = 700
+
+	require.NoError(t, destination.AddSingleStep(source))
+
+	// The destination should be updated.
+	require.Equal(t, int64(10+20), destination.allSeries.samplesProcessedPerStep[0])
+	require.Equal(t, int64(1+4), destination.allSeries.samplesReadIfSubsequentStep[0])
+	require.Equal(t, int64(100+200), destination.allSeries.samplesReadIfFirstStep[0])
+	require.Equal(t, int64(5+9), destination.subsets[0].samplesProcessedPerStep[0])
+	require.Equal(t, int64(3+7), destination.subsets[0].samplesReadIfSubsequentStep[0])
+	require.Equal(t, int64(300+700), destination.subsets[0].samplesReadIfFirstStep[0])
+
+	// The source should be unchanged.
+	require.Equal(t, int64(10), source.allSeries.samplesProcessedPerStep[0])
+	require.Equal(t, int64(1), source.allSeries.samplesReadIfSubsequentStep[0])
+	require.Equal(t, int64(100), source.allSeries.samplesReadIfFirstStep[0])
+	require.Equal(t, int64(5), source.subsets[0].samplesProcessedPerStep[0])
+	require.Equal(t, int64(3), source.subsets[0].samplesReadIfSubsequentStep[0])
+	require.Equal(t, int64(300), source.subsets[0].samplesReadIfFirstStep[0])
+
+	source.Close()
+	destination.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestOperatorEvaluationStats_AddSingleStep_MultipleSteps(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	oneStep, err := NewOperatorEvaluationStats(ctx, NewInstantQueryTimeRange(timestamp.Time(0)), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+
+	multipleSteps, err := NewOperatorEvaluationStats(ctx, NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(5*time.Minute), time.Minute), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+
+	require.EqualError(t, oneStep.AddSingleStep(multipleSteps), "cannot add a single step to a OperatorEvaluationStats instance from another instance with 6 steps")
+	require.EqualError(t, multipleSteps.AddSingleStep(oneStep), "cannot add a single step to a OperatorEvaluationStats instance with 6 steps")
+}
+
 func TestOperatorEvaluationStats_Clone(t *testing.T) {
 	start := timestamp.Time(0)
 	step := time.Minute
@@ -578,6 +639,112 @@ func TestOperatorEvaluationStats_Clone_WithSubsets(t *testing.T) {
 	original.Close()
 	clone.Close()
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestOperatorEvaluationStats_CloneSingleStep(t *testing.T) {
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	original, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 1)
+	require.NoError(t, err)
+
+	original.allSeries.samplesProcessedPerStep[0] = 10
+	original.allSeries.samplesProcessedPerStep[1] = 20
+	original.allSeries.samplesProcessedPerStep[2] = 30
+	original.allSeries.samplesReadIfSubsequentStep[0] = 1
+	original.allSeries.samplesReadIfSubsequentStep[1] = 2
+	original.allSeries.samplesReadIfSubsequentStep[2] = 3
+	original.allSeries.samplesReadIfFirstStep[0] = 100
+	original.allSeries.samplesReadIfFirstStep[1] = 200
+	original.allSeries.samplesReadIfFirstStep[2] = 300
+
+	original.subsets[0].samplesProcessedPerStep[0] = 7
+	original.subsets[0].samplesProcessedPerStep[1] = 8
+	original.subsets[0].samplesProcessedPerStep[2] = 9
+	original.subsets[0].samplesReadIfSubsequentStep[0] = 4
+	original.subsets[0].samplesReadIfSubsequentStep[1] = 5
+	original.subsets[0].samplesReadIfSubsequentStep[2] = 6
+	original.subsets[0].samplesReadIfFirstStep[0] = 400
+	original.subsets[0].samplesReadIfFirstStep[1] = 500
+	original.subsets[0].samplesReadIfFirstStep[2] = 600
+
+	singleStepTimeRange := NewInstantQueryTimeRange(start.Add(step))
+	clone, err := original.CloneSingleStep(singleStepTimeRange)
+	require.NoError(t, err)
+
+	require.Equal(t, []int64{20}, clone.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{2}, clone.allSeries.samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{200}, clone.allSeries.samplesReadIfFirstStep)
+	require.Len(t, clone.subsets, 1)
+	require.Equal(t, []int64{8}, clone.subsets[0].samplesProcessedPerStep)
+	require.Equal(t, []int64{5}, clone.subsets[0].samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{500}, clone.subsets[0].samplesReadIfFirstStep)
+
+	// Modifying the clone should not affect the original.
+	clone.allSeries.samplesProcessedPerStep[0] = 99
+	clone.allSeries.samplesReadIfSubsequentStep[0] = 99
+	clone.allSeries.samplesReadIfFirstStep[0] = 99
+	clone.subsets[0].samplesProcessedPerStep[0] = 99
+	clone.subsets[0].samplesReadIfSubsequentStep[0] = 99
+	clone.subsets[0].samplesReadIfFirstStep[0] = 99
+	require.Equal(t, int64(20), original.allSeries.samplesProcessedPerStep[1])
+	require.Equal(t, int64(2), original.allSeries.samplesReadIfSubsequentStep[1])
+	require.Equal(t, int64(200), original.allSeries.samplesReadIfFirstStep[1])
+	require.Equal(t, int64(8), original.subsets[0].samplesProcessedPerStep[1])
+	require.Equal(t, int64(5), original.subsets[0].samplesReadIfSubsequentStep[1])
+	require.Equal(t, int64(500), original.subsets[0].samplesReadIfFirstStep[1])
+
+	original.Close()
+	clone.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestOperatorEvaluationStats_Clone_InvalidTimeRanges(t *testing.T) {
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(2 * step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	original, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+
+	testCases := map[string]struct {
+		timeRange QueryTimeRange
+		err       string
+	}{
+		"multiple steps": {
+			timeRange: NewRangeQueryTimeRange(start, start.Add(3*step), step),
+			err:       `cannot clone single step of OperatorEvaluationStats for time range with 4 steps`,
+		},
+		"not aligned to source time range": {
+			timeRange: NewInstantQueryTimeRange(start.Add(30 * time.Second)),
+			err:       `cannot clone single step of OperatorEvaluationStats because the desired time 30000 is not aligned with the steps of the source (start time 0, step 60000)`,
+		},
+		"after source time range": {
+			timeRange: NewInstantQueryTimeRange(start.Add(5 * step)),
+			err:       `cannot clone single step of OperatorEvaluationStats because the desired time 300000 is outside the source time range (start time 0, end time 120000)`,
+		},
+		"before source time range": {
+			timeRange: NewInstantQueryTimeRange(start.Add(-step)),
+			err:       `cannot clone single step of OperatorEvaluationStats because the desired time -60000 is outside the source time range (start time 0, end time 120000)`,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			_, err := original.CloneSingleStep(testCase.timeRange)
+			require.EqualError(t, err, testCase.err)
+
+		})
+	}
 }
 
 func TestOperatorEvaluationStats_ComputeForSubquery(t *testing.T) {

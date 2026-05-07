@@ -418,6 +418,17 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		return nil, err
 	}
 
+	// Ownership of q is transferred to the response finalizer on success. On any
+	// failure path before that hand-off we must Close q ourselves, otherwise the
+	// query's resources (memory consumption tracker, pooled buffers, evaluator
+	// context) leak.
+	shouldCloseQuery := true
+	defer func() {
+		if shouldCloseQuery {
+			q.Close()
+		}
+	}()
+
 	res := q.Exec(ctx)
 	if res.Err != nil {
 		err := convertToAPIError(res.Err, apierror.TypeExec)
@@ -451,6 +462,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		finalizer: q.Close,
 	}
 
+	shouldCloseQuery = false
 	return resp, nil
 }
 

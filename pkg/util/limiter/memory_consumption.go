@@ -303,7 +303,7 @@ type MemoryConsumptionTracker struct {
 	haveRecordedRejection bool
 	queryDescription      string
 
-	ctx context.Context // Used to retrieve trace ID to include in panic messages.
+	traceID string // Used to include in panic messages. Empty if the query didn't carry a tracing ID.
 
 	// mtx protects all mutable state of the memory consumption tracker. We use a mutex
 	// rather than atomics because we only want to adjust the memory used after checking
@@ -323,12 +323,14 @@ func NewUnlimitedMemoryConsumptionTracker(ctx context.Context) *MemoryConsumptio
 }
 
 func NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
+	traceID, _ := tracing.ExtractTraceID(ctx)
 	return &MemoryConsumptionTracker{
 		maxEstimatedMemoryConsumptionBytes: maxEstimatedMemoryConsumptionBytes,
 
 		rejectionCount:   rejectionCount,
 		queryDescription: queryDescription,
-		ctx:              ctx,
+
+		traceID: traceID,
 	}
 }
 
@@ -371,11 +373,9 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 	defer l.mtx.Unlock()
 
 	if b > l.currentEstimatedMemoryConsumptionBySource[source] {
-		traceID, ok := tracing.ExtractTraceID(l.ctx)
 		traceDescription := ""
-
-		if ok {
-			traceDescription = fmt.Sprintf(" (trace ID: %v)", traceID)
+		if l.traceID != "" {
+			traceDescription = fmt.Sprintf(" (trace ID: %v)", l.traceID)
 		}
 
 		panic(fmt.Sprintf(
