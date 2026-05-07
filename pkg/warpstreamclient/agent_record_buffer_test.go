@@ -3,6 +3,7 @@
 package warpstreamclient
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -204,6 +205,154 @@ func TestAgentRecordBuffer_Add(t *testing.T) {
 		assert.Equal(t, float64(0), testutil.ToFloat64(m.lingerFlushesTotal),
 			"rejected Add must not increment flush metric")
 	})
+}
+
+// TestAgentRecordBuffer_BufferedWireBytes verifies the running wire-byte
+// counter matches the bytes kmsg.RecordBatch.AppendTo produces for the
+// equivalent batch — across varying record counts, varying timestamps (so
+// tsDelta varint widths matter), and varying offsets (so offsetDelta varint
+// widths matter). Drift between the counter and the encoder would manifest
+// here as an inequality.
+func TestAgentRecordBuffer_BufferedWireBytes(t *testing.T) {
+	cases := []struct {
+		name    string
+		records []*kgo.Record
+	}{
+		{
+			name: "single small record",
+			records: []*kgo.Record{
+				{Value: []byte("hello"), Timestamp: time.UnixMilli(1_000_000)},
+			},
+		},
+		{
+			name: "two records, same timestamp",
+			records: []*kgo.Record{
+				{Value: []byte("a"), Timestamp: time.UnixMilli(1_000_000)},
+				{Value: []byte("b"), Timestamp: time.UnixMilli(1_000_000)},
+			},
+		},
+		{
+			name: "many records crossing offsetDelta varint boundary (127→128)",
+			records: func() []*kgo.Record {
+				out := make([]*kgo.Record, 200)
+				for i := range out {
+					out[i] = &kgo.Record{
+						Value:     []byte("v"),
+						Timestamp: time.UnixMilli(1_000_000),
+					}
+				}
+				return out
+			}(),
+		},
+		{
+			name: "records crossing tsDelta varlong boundary",
+			records: []*kgo.Record{
+				{Value: []byte("a"), Timestamp: time.UnixMilli(1_000_000)},
+				{Value: []byte("b"), Timestamp: time.UnixMilli(1_000_000 + 64)},
+				{Value: []byte("c"), Timestamp: time.UnixMilli(1_000_000 + 8192)},
+				{Value: []byte("d"), Timestamp: time.UnixMilli(1_000_000 + 1<<22)},
+			},
+		},
+		{
+			name: "records with key, value and headers",
+			records: []*kgo.Record{
+				{
+					Key:   []byte("k1"),
+					Value: []byte("v1"),
+					Headers: []kgo.RecordHeader{
+						{Key: "h1", Value: []byte("v1")},
+						{Key: "h2", Value: []byte("v2")},
+					},
+					Timestamp: time.UnixMilli(1_000_000),
+				},
+				{
+					Key:       []byte("k2-longer"),
+					Value:     []byte("v2-longer-value"),
+					Timestamp: time.UnixMilli(1_000_050),
+				},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Use a never-firing linger and a large cap so Add never flushes,
+			// letting us read the running counter for the full batch.
+			a := NewAgentRecordBuffer(
+				1,
+				time.Hour,
+				1<<30,
+				func(_ context.Context, _ int32, _ []*kgo.Record, done func(error)) { done(nil) },
+				newMetrics(prometheus.NewPedanticRegistry()),
+			)
+			t.Cleanup(a.Close)
+
+			a.Add(tc.records, func(error) {})
+
+			a.mu.Lock()
+			running := a.bufferedWireBytes
+			a.mu.Unlock()
+
+			actual := actualUncompressedMultiRecordBatchWireSize(tc.records)
+			assert.Equal(t, actual, running,
+				"running bufferedWireBytes must equal the actual on-wire batch size produced by kmsg.RecordBatch.AppendTo")
+		})
+	}
+}
+
+// TestAgentRecordBuffer_BufferedWireBytes_AfterEarlyFlush guards the early-
+// flush + re-cost branch in Add. A regression that drops the second
+// computeAddCostLocked call would silently mis-account every flush boundary
+// (e.g. miss the recordBatchHeaderBytes for the new batch, or use stale
+// offsetDelta values), breaking convergence with the encoder.
+func TestAgentRecordBuffer_BufferedWireBytes_AfterEarlyFlush(t *testing.T) {
+	flushed := make(chan []*kgo.Record, 1)
+	a := NewAgentRecordBuffer(
+		1,
+		// Linger long enough that overflow is the only flush trigger we exercise.
+		time.Hour,
+		// Tight cap: anything beyond ~512 bytes pushes a small batch over.
+		512,
+		func(_ context.Context, _ int32, recs []*kgo.Record, done func(error)) {
+			flushed <- recs
+			done(nil)
+		},
+		newMetrics(prometheus.NewPedanticRegistry()),
+	)
+	t.Cleanup(a.Close)
+
+	// First Add fills most of the cap.
+	first := []*kgo.Record{
+		{Value: bytes.Repeat([]byte("x"), 200), Timestamp: time.UnixMilli(1_000_000)},
+		{Value: bytes.Repeat([]byte("y"), 200), Timestamp: time.UnixMilli(1_000_010)},
+	}
+	a.Add(first, func(error) {})
+
+	// Second Add doesn't fit on top of the first → must trigger an early
+	// flush of `first` and re-cost as a fresh batch anchored on second[0].
+	second := []*kgo.Record{
+		{Value: bytes.Repeat([]byte("z"), 200), Timestamp: time.UnixMilli(2_000_000)},
+	}
+	a.Add(second, func(error) {})
+
+	// First batch must have been flushed with exactly `first`.
+	select {
+	case got := <-flushed:
+		require.Equal(t, len(first), len(got))
+	case <-time.After(time.Second):
+		t.Fatal("early flush did not fire")
+	}
+
+	// Running counter must equal the actual on-wire bytes for the *new* batch
+	// (which only carries `second`, anchored at second[0].Timestamp, offsetDelta=0).
+	a.mu.Lock()
+	running := a.bufferedWireBytes
+	anchor := a.bufferedFirstTimestamp
+	a.mu.Unlock()
+
+	assert.Equal(t, second[0].Timestamp.UnixMilli(), anchor,
+		"firstTimestamp anchor must reset to the first record of the post-flush batch")
+	assert.Equal(t, actualUncompressedMultiRecordBatchWireSize(second), running,
+		"post-flush bufferedWireBytes must be costed from scratch (header + offsetDelta=0 + tsDelta=0)")
 }
 
 func TestAgentRecordBuffer_Close(t *testing.T) {

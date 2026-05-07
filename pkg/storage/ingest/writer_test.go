@@ -549,9 +549,6 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 
 	t.Run("should return error if the WriteRequest contains a timeseries which is larger than the maximum allowed record data size", func(t *testing.T) {
 		t.Parallel()
-		if backend != KafkaBackendKafka {
-			t.Skipf("test asserts ErrWriteRequestDataItemTooLarge surfaced via kgo's record-size enforcement, kafka-backend only")
-		}
 
 		req := &mimirpb.WriteRequest{
 			Timeseries: []mimirpb.PreallocTimeseries{

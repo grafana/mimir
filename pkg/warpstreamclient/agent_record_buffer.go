@@ -55,12 +55,13 @@ type AgentRecordBuffer struct {
 	flush         FlushFunc
 	metrics       *metrics
 
-	mu                 sync.Mutex
-	bufferedRecords    []*kgo.Record
-	bufferedWireBytes  int32
-	bufferedCallbacks  []func(error)
-	bufferedFlushTimer *time.Timer
-	closed             bool
+	mu                     sync.Mutex
+	bufferedFirstTimestamp int64
+	bufferedRecords        []*kgo.Record
+	bufferedWireBytes      int32
+	bufferedCallbacks      []func(error)
+	bufferedFlushTimer     *time.Timer
+	closed                 bool
 
 	flushWG sync.WaitGroup
 	ctx     context.Context
@@ -82,15 +83,14 @@ func NewAgentRecordBuffer(nodeID int32, linger time.Duration, maxBatchBytes int3
 	}
 }
 
-// Add appends records to the pending batch and fires flushDone once after
-// that batch is acked. Overflowing maxBatchBytes flushes the existing batch
-// inline first; closed buffers fail flushDone with errBufferClosed.
+// Add buffers records and fires flushDone once when the batch carrying them
+// has been acked. flushDone fires exactly once; closed buffers fail it
+// synchronously with errBufferClosed.
 func (a *AgentRecordBuffer) Add(records []*kgo.Record, flushDone func(error)) {
 	if len(records) == 0 {
 		flushDone(nil)
 		return
 	}
-	bytes := wireBytesOf(records)
 
 	a.mu.Lock()
 	if a.closed {
@@ -98,16 +98,52 @@ func (a *AgentRecordBuffer) Add(records []*kgo.Record, flushDone func(error)) {
 		flushDone(errBufferClosed)
 		return
 	}
-	if len(a.bufferedRecords) > 0 && a.bufferedWireBytes+bytes > a.maxBatchBytes {
+
+	addBytes, firstTS := a.computeAddCostLocked(records)
+	if len(a.bufferedRecords) > 0 && a.bufferedWireBytes+addBytes > a.maxBatchBytes {
+		// Re-cost after the forced flush: the batch overhead and offsetDelta
+		// values reset, so the original addBytes no longer applies.
 		a.startFlushLocked()
+		addBytes, firstTS = a.computeAddCostLocked(records)
+	}
+
+	if len(a.bufferedRecords) == 0 {
+		// Fresh batch: anchor timestamp.
+		a.bufferedFirstTimestamp = firstTS
 	}
 	a.bufferedRecords = append(a.bufferedRecords, records...)
-	a.bufferedWireBytes += bytes
+	a.bufferedWireBytes += addBytes
 	a.bufferedCallbacks = append(a.bufferedCallbacks, flushDone)
 	if a.bufferedFlushTimer == nil {
 		a.bufferedFlushTimer = time.AfterFunc(a.linger, a.timerFlush)
 	}
 	a.mu.Unlock()
+}
+
+// computeAddCostLocked returns the additional wire bytes records would contribute
+// if appended to the current batch, plus the firstTimestamp that anchors the
+// computation (the batch's existing anchor when non-empty, records[0]'s
+// timestamp otherwise). Includes the recordBatchHeaderBytes overhead when
+// the batch is empty so the caller can simply add the result to a zeroed
+// counter. Caller must hold a.mu.
+func (a *AgentRecordBuffer) computeAddCostLocked(records []*kgo.Record) (int32, int64) {
+	fresh := len(a.bufferedRecords) == 0
+	firstTS := a.bufferedFirstTimestamp
+	if fresh {
+		firstTS = records[0].Timestamp.UnixMilli()
+	}
+
+	var bytes int32
+	if fresh {
+		bytes = recordBatchHeaderBytes
+	}
+	startOffset := int32(len(a.bufferedRecords))
+	for i, r := range records {
+		offsetDelta := startOffset + int32(i)
+		tsDelta := r.Timestamp.UnixMilli() - firstTS
+		bytes += recordEstimateBytes(r, offsetDelta, tsDelta)
+	}
+	return bytes, firstTS
 }
 
 // Close flushes the pending batch and waits for every in-flight FlushFunc
@@ -151,6 +187,7 @@ func (a *AgentRecordBuffer) startFlushLocked() {
 	callbacks := a.bufferedCallbacks
 	a.bufferedRecords = nil
 	a.bufferedWireBytes = 0
+	a.bufferedFirstTimestamp = 0
 	a.bufferedCallbacks = nil
 
 	a.flushWG.Add(1)
@@ -164,19 +201,4 @@ func (a *AgentRecordBuffer) startFlushLocked() {
 		}
 		a.metrics.lingerFlushesTotal.Inc()
 	}()
-}
-
-// wireBytesOf returns an upper-bound estimate of the wire-encoded size of
-// records. Used only for the batch-size cap, where exact accuracy doesn't
-// matter — only that we never significantly under-count.
-func wireBytesOf(records []*kgo.Record) int32 {
-	const recordOverheadEstimate = 24 // ~upper bound on Length+Attributes+TimestampDelta+OffsetDelta+(varint lengths)
-	var n int32
-	for _, r := range records {
-		n += recordOverheadEstimate + int32(len(r.Key)) + int32(len(r.Value))
-		for _, h := range r.Headers {
-			n += 8 + int32(len(h.Key)) + int32(len(h.Value))
-		}
-	}
-	return n
 }

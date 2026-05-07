@@ -3,6 +3,7 @@
 package warpstreamclient
 
 import (
+	"bytes"
 	"hash/crc32"
 	"testing"
 	"time"
@@ -253,6 +254,124 @@ func TestParseProduceResponse(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRecordBatchEstimateBytes verifies that recordBatchEstimateBytes returns
+// the exact uncompressed wire-byte size of a single-record batch. The
+// reference value is computed by actually encoding a RecordBatch with the
+// same record via kmsg.RecordBatch.AppendTo (which is what franz-go itself
+// uses for production traffic): if our estimate matches the real encoder
+// output, drift between the two is impossible.
+func TestRecordBatchEstimateBytes(t *testing.T) {
+	cases := []struct {
+		name string
+		rec  *kgo.Record
+	}{
+		{
+			name: "no key, no value, no headers",
+			rec:  &kgo.Record{},
+		},
+		{
+			name: "small value only",
+			rec:  &kgo.Record{Value: []byte("hello")},
+		},
+		{
+			name: "key and value",
+			rec:  &kgo.Record{Key: []byte("k"), Value: []byte("v")},
+		},
+		{
+			name: "single header",
+			rec: &kgo.Record{
+				Value:   []byte("v"),
+				Headers: []kgo.RecordHeader{{Key: "h1", Value: []byte("v1")}},
+			},
+		},
+		{
+			name: "multiple headers",
+			rec: &kgo.Record{
+				Value: []byte("v"),
+				Headers: []kgo.RecordHeader{
+					{Key: "h1", Value: []byte("v1")},
+					{Key: "longer-header-name", Value: []byte("longer-header-value")},
+					{Key: "h3", Value: nil},
+				},
+			},
+		},
+		{
+			name: "value crosses 1-byte varint boundary (127 / 128)",
+			rec:  &kgo.Record{Value: bytes.Repeat([]byte("x"), 128)},
+		},
+		{
+			name: "value crosses 2-byte varint boundary (16383 / 16384)",
+			rec:  &kgo.Record{Value: bytes.Repeat([]byte("x"), 16384)},
+		},
+		{
+			name: "value crosses 3-byte varint boundary (2097151 / 2097152)",
+			rec:  &kgo.Record{Value: bytes.Repeat([]byte("x"), 1<<21)},
+		},
+		{
+			name: "16 MB value (the producer batch cap)",
+			rec:  &kgo.Record{Value: bytes.Repeat([]byte("x"), 16_000_000)},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			estimate := recordBatchEstimateBytes(tc.rec)
+			actual := actualUncompressedBatchWireSize(tc.rec)
+			assert.Equal(t, actual, estimate,
+				"estimate must match the uncompressed on-wire size produced by kmsg.RecordBatch.AppendTo")
+		})
+	}
+}
+
+// actualUncompressedBatchWireSize encodes r as the only record in a fresh
+// batch and returns the on-wire byte count, including the 4-byte length
+// prefix the surrounding ProduceRequestTopicPartition.Records field adds.
+// No compression — the goal is to compare against
+// recordBatchEstimateBytes' uncompressed estimate.
+func actualUncompressedBatchWireSize(r *kgo.Record) int32 {
+	return actualUncompressedMultiRecordBatchWireSize([]*kgo.Record{r})
+}
+
+// actualUncompressedMultiRecordBatchWireSize encodes records as a single
+// batch (offsetDelta starting at 0, tsDelta anchored at records[0].Timestamp)
+// and returns the on-wire byte count, including the 4-byte records-bytes
+// length prefix that wraps the batch in ProduceRequestTopicPartition.Records.
+func actualUncompressedMultiRecordBatchWireSize(records []*kgo.Record) int32 {
+	firstTS := records[0].Timestamp.UnixMilli()
+	maxTS := firstTS
+	for _, r := range records[1:] {
+		if ts := r.Timestamp.UnixMilli(); ts > maxTS {
+			maxTS = ts
+		}
+	}
+
+	var raw []byte
+	for i, r := range records {
+		raw = encodeRecord(raw, r, int32(i), firstTS)
+	}
+
+	batch := kmsg.RecordBatch{
+		FirstOffset:          0,
+		PartitionLeaderEpoch: -1,
+		Magic:                2,
+		LastOffsetDelta:      int32(len(records) - 1),
+		FirstTimestamp:       firstTS,
+		MaxTimestamp:         maxTS,
+		ProducerID:           -1,
+		ProducerEpoch:        -1,
+		FirstSequence:        -1,
+		NumRecords:           int32(len(records)),
+		Records:              raw,
+	}
+	batch.Length = batchFixedFieldsAfterLength + int32(len(raw))
+
+	var buf []byte
+	buf = batch.AppendTo(buf)
+	// +4 for the int32 length prefix that wraps the batch in the surrounding
+	// ProduceRequestTopicPartition.Records field on the wire — the batch
+	// itself doesn't carry that prefix, the kafka protocol does.
+	return int32(4 + len(buf))
 }
 
 func BenchmarkBuildProduceRequest(b *testing.B) {

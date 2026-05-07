@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -141,25 +142,55 @@ func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registere
 // Produce buffers record and invokes promise once it has been acknowledged
 // or failed. Cancelling ctx detaches the caller from the result; the record
 // is still produced (possibly successfully) in the background.
+//
+// Records whose encoded size exceeds MaxBatchBytes are rejected synchronously
+// via promise with kerr.MessageTooLarge.
 func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, promise func(*kgo.Record, error)) {
+	if recordBatchEstimateBytes(record) > c.cfg.MaxBatchBytes {
+		promise(record, errRecordTooLarge(record))
+		return
+	}
 	c.buffer.Add(ctx, []*kgo.Record{record}, func(err error) { promise(record, err) })
 }
 
 // ProduceSync produces records and blocks until they have been acknowledged
-// or failed. Results are in input order; every record receives the same
-// outcome (transport errors fail the whole batch). Cancelling ctx detaches
-// the caller, not the in-flight produce.
+// or failed. Results are in input order.
+//
+// Records whose encoded size exceeds MaxBatchBytes are rejected per-record
+// with kerr.MessageTooLarge; remaining records share the same outcome from the buffer
+// (transport errors fail the whole batch).
+//
+// Cancelling ctx detaches the caller, not the in-flight produce.
 func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Record) kgo.ProduceResults {
 	if len(records) == 0 {
 		return nil
 	}
+
+	var (
+		okRecords []*kgo.Record
+		// okIndices preserves input order so the single buffer outcome can
+		// be slotted back into results without resorting.
+		okIndices []int
+		results   = make(kgo.ProduceResults, len(records))
+	)
+	for i, r := range records {
+		if recordBatchEstimateBytes(r) > c.cfg.MaxBatchBytes {
+			results[i] = kgo.ProduceResult{Record: r, Err: errRecordTooLarge(r)}
+			continue
+		}
+		okRecords = append(okRecords, r)
+		okIndices = append(okIndices, i)
+	}
+	if len(okRecords) == 0 {
+		return results
+	}
+
 	doneCh := make(chan error, 1)
-	c.buffer.Add(ctx, records, func(err error) { doneCh <- err })
+	c.buffer.Add(ctx, okRecords, func(err error) { doneCh <- err })
 	err := <-doneCh
 
-	results := make(kgo.ProduceResults, len(records))
-	for i, r := range records {
-		results[i] = kgo.ProduceResult{Record: r, Err: err}
+	for _, i := range okIndices {
+		results[i] = kgo.ProduceResult{Record: records[i], Err: err}
 	}
 	return results
 }
@@ -258,4 +289,12 @@ func newKgoClient(cfg Config) (*kgo.Client, error) {
 	}
 	opts = append(opts, cfg.SASLOptions...)
 	return kgo.NewClient(opts...)
+}
+
+// errRecordTooLarge wraps kerr.MessageTooLarge so errors.Is matches. The
+// reported byte count is the wire-encoded estimate — what we actually
+// compared against MaxBatchBytes — to make the value directly comparable
+// to the configured cap.
+func errRecordTooLarge(r *kgo.Record) error {
+	return fmt.Errorf("%w (uncompressed_bytes=%d)", kerr.MessageTooLarge, recordBatchEstimateBytes(r))
 }

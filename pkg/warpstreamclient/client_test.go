@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -139,6 +140,31 @@ func TestWarpstreamClient_ProduceSync(t *testing.T) {
 		require.Len(t, results, 1)
 		require.ErrorIs(t, results[0].Err, context.Canceled)
 	})
+
+	t.Run("oversized record fails per-record while ok records succeed", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+
+		// MaxBatchBytes is set to 1<<20 (see newTestWarpstreamClient); a 2 MB
+		// value exceeds the cap by itself.
+		oversize := make([]byte, 2<<20)
+		small := []byte("v")
+
+		records := []*kgo.Record{
+			{Topic: topic, Partition: 0, Value: oversize, Timestamp: time.Now()},
+			{Topic: topic, Partition: 0, Value: small, Timestamp: time.Now()},
+		}
+		results := c.ProduceSync(context.Background(), records)
+		require.Len(t, results, 2)
+
+		// Per-record outcomes preserve input order.
+		require.Error(t, results[0].Err)
+		assert.ErrorIs(t, results[0].Err, kerr.MessageTooLarge,
+			"oversized record must fail with kerr.MessageTooLarge so callers can detect it via errors.Is")
+		assert.Same(t, records[0], results[0].Record)
+
+		assert.NoError(t, results[1].Err)
+		assert.Same(t, records[1], results[1].Record)
+	})
 }
 
 func TestWarpstreamClient_Produce(t *testing.T) {
@@ -182,6 +208,27 @@ func TestWarpstreamClient_Produce(t *testing.T) {
 			require.Error(t, err)
 		case <-time.After(time.Second):
 			t.Fatal("promise did not fire")
+		}
+	})
+
+	t.Run("rejects oversized record synchronously with kerr.MessageTooLarge", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+
+		// MaxBatchBytes is 1<<20 in the test client; a 2 MB value exceeds it.
+		input := &kgo.Record{Topic: topic, Partition: 0, Value: make([]byte, 2<<20), Timestamp: time.Now()}
+		done := make(chan error, 1)
+		c.Produce(context.Background(), input, func(r *kgo.Record, err error) {
+			assert.Same(t, input, r)
+			done <- err
+		})
+
+		select {
+		case err := <-done:
+			require.Error(t, err)
+			assert.ErrorIs(t, err, kerr.MessageTooLarge,
+				"oversized record must fail with kerr.MessageTooLarge so callers can detect it via errors.Is")
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("promise did not fire — rejection must be synchronous, not buffered")
 		}
 	})
 }

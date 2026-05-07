@@ -43,6 +43,41 @@ const batchFixedFieldsAfterLength = 49
 // FirstOffset(8) + Length(4) + PartitionLeaderEpoch(4) + Magic(1) = 17.
 const crcOffset = 17
 
+// recordBatchHeaderBytes is the wire-byte overhead a RecordBatch carries
+// in a ProduceRequest before any record body — the cap "tryBuffer" must
+// reserve room for. Equals franz-go's recordBatchOverhead. The breakdown
+// is the records-bytes length prefix (4) + FirstOffset (8) + Length (4) +
+// batchFixedFieldsAfterLength.
+const recordBatchHeaderBytes = 4 + 8 + 4 + batchFixedFieldsAfterLength
+
+// recordEstimateBytes returns the on-wire byte size of r encoded at the
+// given offsetDelta and tsDelta — the length-prefix varint plus the
+// length-prefixed body. Used to keep the batch counter aligned with the
+// bytes the encoder will eventually emit.
+func recordEstimateBytes(r *kgo.Record, offsetDelta int32, tsDelta int64) int32 {
+	lengthField := int32(1) + // Attributes (int8, unused)
+		int32(kbin.VarlongLen(tsDelta)) +
+		int32(kbin.VarintLen(offsetDelta)) +
+		int32(kbin.VarintLen(int32(len(r.Key)))) + int32(len(r.Key)) +
+		int32(kbin.VarintLen(int32(len(r.Value)))) + int32(len(r.Value)) +
+		int32(kbin.VarintLen(int32(len(r.Headers))))
+	for _, h := range r.Headers {
+		lengthField += int32(kbin.VarintLen(int32(len(h.Key)))) + int32(len(h.Key)) +
+			int32(kbin.VarintLen(int32(len(h.Value)))) + int32(len(h.Value))
+	}
+	return int32(kbin.VarintLen(lengthField)) + lengthField
+}
+
+// recordBatchEstimateBytes returns the wire-byte size of a fresh single-
+// record batch carrying r. Used as the per-record rejection gate: a record
+// whose batch alone exceeds MaxBatchBytes can never be produced, so we fail
+// it synchronously instead of letting the broker reject the eventual
+// request. The estimate is on the uncompressed payload — Snappy can only
+// shrink it, so the gate stays sound under compression.
+func recordBatchEstimateBytes(r *kgo.Record) int32 {
+	return recordBatchHeaderBytes + recordEstimateBytes(r, 0, 0)
+}
+
 // buildMultiTopicProduceRequest builds a ProduceRequest covering records that
 // may span multiple topics. topicID maps a topic name to its UUID, returning
 // ok=false when the topic is unknown to the caller; an unknown topic fails
