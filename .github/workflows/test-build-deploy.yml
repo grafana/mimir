@@ -567,8 +567,8 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}-${{ needs.prepare.outputs.build_imag>>>>>>> e0471b17d
-          restore-keys: go-build-cache-integration-
+          key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
