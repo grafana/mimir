@@ -1590,7 +1590,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				TimeRange:                instantQueryEncodedTimeRange,
 				LookbackDelta:            lookbackDelta,
 				RootNode:                 2,
-				Version:                  planning.QueryPlanV11,
+				Version:                  planning.QueryPlanV12,
 				EnableDelayedNameRemoval: false,
 				Nodes: []*planning.EncodedNode{
 					{
@@ -1614,7 +1614,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							ExpressionPosition: core.PositionRange{Start: 13, End: 34},
 						}),
 						Type:        "DataLabelSelector",
-						Description: `{__name__="svc_info"}, return sample timestamps preserving histograms`,
+						Description: `{__name__="svc_info"}`,
 					},
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,

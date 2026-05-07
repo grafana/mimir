@@ -71,7 +71,10 @@ const QueryPlanV10 = QueryPlanVersion(10)
 // common subexpression elimination.
 const QueryPlanV11 = QueryPlanVersion(11)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV11
+// QueryPlanV12 introduces a dedicated type for the second argument for the info() function.
+const QueryPlanV12 = QueryPlanVersion(12)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV12
 
 type QueryPlan struct {
 	Root       Node

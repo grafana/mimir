@@ -243,7 +243,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- FunctionCall: info(...)
 					- param 0: NoOp
-					- param 1: DataLabelSelector: {__name__="other_info"}, return sample timestamps preserving histograms
+					- param 1: DataLabelSelector: {__name__="other_info"}
 			`,
 		},
 		"conflicting equals matchers in second info() argument: should not optimize": {

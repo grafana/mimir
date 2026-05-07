@@ -60,7 +60,7 @@ func (t *DataLabelSelector) MergeHints(other planning.Node) error {
 }
 
 func (t *DataLabelSelector) Describe() string {
-	return fmt.Sprintf("%s, return sample timestamps preserving histograms", describeSelector(t.Matchers, nil, 0, nil, false, false, false, false, nil, false, nil))
+	return describeSelector(t.Matchers, nil, 0, nil, false, false, false, false, nil, false, nil)
 }
 
 func (t *DataLabelSelector) ChildrenLabels() []string {
@@ -87,8 +87,8 @@ func (t *DataLabelSelector) ExpressionPosition() (posrange.PositionRange, error)
 	return t.DataLabelSelectorDetails.ExpressionPosition.ToPrometheusType(), nil
 }
 
-func (t *DataLabelSelector) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (planning.QueryPlanVersion, error) {
-	return planning.QueryPlanV11, nil
+func (t *DataLabelSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV12, nil
 }
 
 func MaterializeDataLabelSelector(t *DataLabelSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
