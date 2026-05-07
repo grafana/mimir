@@ -8,11 +8,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 )
 
@@ -34,10 +35,11 @@ func (b *latentBucket) GetRange(ctx context.Context, name string, off, length in
 	return b.InstrumentedBucketReader.GetRange(ctx, name, off, length)
 }
 
-func newLatentBucket(b *testing.B, objectData []byte, latency time.Duration) *latentBucket {
-	b.Helper()
+func newLatentBucket(objectData []byte, latency time.Duration) *latentBucket {
 	inmem := objstore.NewInMemBucket()
-	require.NoError(b, inmem.Upload(context.Background(), testBucketObjectName, bytes.NewReader(objectData)))
+	if err := inmem.Upload(context.Background(), testBucketObjectName, bytes.NewReader(objectData)); err != nil {
+		panic(err)
+	}
 	return &latentBucket{
 		InstrumentedBucketReader: objstore.WithNoopInstr(inmem),
 		latency:                  latency,
@@ -69,36 +71,56 @@ var (
 	}
 )
 
-// benchObjectData returns a deterministic byte slice of the requested size.
-func benchObjectData(size int) []byte {
-	data := make([]byte, size)
-	for i := range data {
-		data[i] = testBucketContents[i%len(testBucketContents)]
-	}
-	return data
-}
-
-// benchReadSizes covers ranges from 1 MiB up to 64 MiB.
+// benchReadSizes covers ranges from 1 MiB up to 1 GiB.
 var benchReadSizes = []int{
 	1 << 20,
 	4 << 20,
 	16 << 20,
 	64 << 20,
+	256 << 20,
+	//1 << 30,
 }
 
-const benchLatency = 10 * time.Millisecond
+const benchLatency = 200 * time.Millisecond
 
-// benchReadChunk is the per-call read size used to drive the readers — small enough that
-// many calls are required, so the difference between sync and async fetches is visible.
-const benchReadChunk = 128 << 10
+// benchBuckets holds a pre-built latent bucket per benchmark read size, so the cost of
+// allocating the underlying object data and uploading to the in-memory bucket does not
+// pollute benchmark profiles.
+var benchBuckets = map[int]*latentBucket{}
+
+func init() {
+	maxSize := 0
+	for _, s := range benchReadSizes {
+		if s > maxSize {
+			maxSize = s
+		}
+	}
+	data := make([]byte, maxSize)
+	for i := range data {
+		data[i] = testBucketContents[i%len(testBucketContents)]
+	}
+	for _, s := range benchReadSizes {
+		benchBuckets[s] = newLatentBucket(data[:s], benchLatency)
+	}
+}
+
+// disableGC turns off garbage collection for the duration of a benchmark so GC pauses do
+// not show up in CPU profiles. It runs a final GC up front to start from a clean slate
+// and restores the previous GOGC on cleanup.
+func disableGC(b *testing.B) {
+	b.Helper()
+	runtime.GC()
+	prev := debug.SetGCPercent(-1)
+	b.Cleanup(func() { debug.SetGCPercent(prev) })
+}
 
 func BenchmarkBucketBufReader_Sequential(b *testing.B) {
 	for _, size := range benchReadSizes {
 		b.Run(fmt.Sprintf("size=%dMiB", size>>20), func(b *testing.B) {
-			data := benchObjectData(size)
-			bkt := newLatentBucket(b, data, benchLatency)
+			bkt := benchBuckets[size]
 			ctx := context.Background()
 
+			disableGC(b)
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
@@ -113,10 +135,10 @@ func BenchmarkBucketBufReader_Sequential(b *testing.B) {
 func BenchmarkBucketBufAsyncReader_Sequential(b *testing.B) {
 	for _, size := range benchReadSizes {
 		b.Run(fmt.Sprintf("size=%dMiB", size>>20), func(b *testing.B) {
-			data := benchObjectData(size)
-			bkt := newLatentBucket(b, data, benchLatency)
+			bkt := benchBuckets[size]
 			ctx := context.Background()
 
+			disableGC(b)
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
