@@ -180,6 +180,8 @@
 * [ENHANCEMENT] Activity tracker: Added `activity_tracker_unfinished_activities_loaded` metric to report the number of unfinished activities detected on startup. #14860
 * [ENHANCEMENT] Distributor now uses record validation time as Kafka record timestamp to reduce rejections among consumers. #14921
 * [ENHANCEMENT] MQE: Add optimisation pass to optimise away expressions containing comparisons with `timestamp()` that can't produce results due to the query time range. #14989
+* [ENHANCEMENT] MQE: Reduced per-query memory overhead by no longer holding a reference to the HTTP request for the lifetime of a query. #15251
+* [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15251
 * [BUGFIX] Distributor: Fix race condition where usage-tracker partition ring may not be initialized before the distributor service starts, causing `usage-tracker partition ring is required` error on startup. #14675
 * [BUGFIX] Store-gateway: Fix `cortex_bucket_store_series_data_touched{data_type="series", stage="returned"}` metric observing negative values when series-for-postings cache is hit and pending matchers filter out some series. #14655
 * [BUGFIX] Mimir: Fix false positive in filesystem path overlap detection when one path is a string prefix of another but not an ancestor directory. #14426
