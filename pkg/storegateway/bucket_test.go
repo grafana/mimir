@@ -613,37 +613,45 @@ func TestBlockLabelValues(t *testing.T) {
 	})
 }
 
-func TestStoreCachedLabelValues_GobDecodeLimit(t *testing.T) {
-	// Limit was a workaround for panics in decoding large responses.
-	// See https://github.com/golang/go/issues/59172
-	const valuesLimit = 655360
-	vals := make([]string, valuesLimit+1)
-	for i := range valuesLimit + 1 {
+func TestCachedLabelValues_NoGobDecodeLimit(t *testing.T) {
+	// storeCachedLabelValues previously skipped caching above a specific value count
+	// as a workaround for panics in decoding large responses - see https://github.com/golang/go/issues/59172.
+	// This was fixed in https://github.com/golang/go/commit/3d5391ed87d813110e10b954c62bf7ed578b591f.
+	// Test that we no longer impose the limit (and do not panic on decode).
+	const oldValuesLimit = 655360
+	vals := make([]string, oldValuesLimit*2)
+	for i := range oldValuesLimit * 2 {
 		vals[i] = "a"
 	}
 
 	ctx, logger := context.Background(), log.NewNopLogger()
-	indexCache := &cacheRecordingStoreLabelValues{}
+	indexCache := &cacheRecordingStoreLabelValues{
+		IndexCache: newInMemoryIndexCache(t),
+	}
 	tenant, id, l := "tenant-a", ulid.Make(), "label_a"
 
-	// Values exceed the limit; the cache should not be called
-	storeCachedLabelValues(ctx, indexCache, tenant, id, l, nil, vals, logger)
-	require.False(t, indexCache.called)
-
-	vals = vals[:len(vals)-1]
-
-	// Values truncated below limit; cache should be called.
+	// Limit has been removed; the cache should be called.
 	storeCachedLabelValues(ctx, indexCache, tenant, id, l, nil, vals, logger)
 	require.True(t, indexCache.called)
+
+	var hit bool
+	var cachedVals []string
+	testFunc := func() {
+		cachedVals, hit = fetchCachedLabelValues(ctx, indexCache, tenant, id, l, nil, logger)
+	}
+	require.NotPanics(t, testFunc)
+	require.True(t, hit)
+	require.Equal(t, vals, cachedVals)
 }
 
 type cacheRecordingStoreLabelValues struct {
-	noopCache
+	indexcache.IndexCache
 	called bool
 }
 
-func (c *cacheRecordingStoreLabelValues) StoreLabelValues(string, ulid.ULID, string, indexcache.LabelMatchersKey, []byte) {
+func (c *cacheRecordingStoreLabelValues) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, key indexcache.LabelMatchersKey, data []byte) {
 	c.called = true
+	c.IndexCache.StoreLabelValues(userID, blockID, labelName, key, data)
 }
 
 type cacheNotExpectingToStoreLabelValues struct {
