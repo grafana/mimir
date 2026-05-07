@@ -590,13 +590,13 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 	}
 
 	encodedStats := make(map[int64]types.EncodedOperatorEvaluationStats, len(stats))
-	for node, stats := range stats {
+	for node, s := range stats {
 		nodeIndex, err := o.nodeToIndex(node)
 		if err != nil {
 			return err
 		}
 
-		encodedStats[nodeIndex] = *stats.Encode()
+		encodedStats[nodeIndex] = *s.Encode()
 	}
 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
