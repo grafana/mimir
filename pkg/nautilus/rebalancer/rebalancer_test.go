@@ -181,7 +181,7 @@ func TestMergeAdjacentCold(t *testing.T) {
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 1}, load: 0.1},
 	}
 
-	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1)
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 0)
 
 	// All three slices are cold and adjacent; the first two merge
 	// (same partition), then the third merges cross-partition onto
@@ -204,7 +204,7 @@ func TestMergeAdjacentCold_CrossPartition(t *testing.T) {
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 0}, load: 0.1},
 	}
 
-	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1)
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 0)
 
 	// Should merge into fewer entries by moving the B slice onto A's partition.
 	require.Less(t, len(result), 3, "cross-partition merge should reduce entry count")
@@ -215,6 +215,73 @@ func TestMergeAdjacentCold_CrossPartition(t *testing.T) {
 				"sandwiched B slice should be moved onto A's partition")
 		}
 	}
+}
+
+// TestMergeAdjacentCold_PerPartitionFloor verifies that
+// cross-partition merges stop draining a partition once it reaches
+// the per-partition floor. Without this guard, a lightly-loaded
+// partition can be fully absorbed by neighbours, leaving its owner
+// ingesters with zero ranges until Phase 3 floods them back.
+func TestMergeAdjacentCold_PerPartitionFloor(t *testing.T) {
+	// 6 alternating cold ranges: A B A B A B. Without a floor,
+	// every B would merge into A, leaving B with 0 entries. With a
+	// floor of 2, the merge must leave B with at least 2 entries.
+	entries := []rangeLoad{
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 0}, load: 0.1},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 1}, load: 0.05},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 0}, load: 0.1},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 300, Hi: 399}, PartitionID: 1}, load: 0.05},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 400, Hi: 499}, PartitionID: 0}, load: 0.1},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 500, Hi: 599}, PartitionID: 1}, load: 0.05},
+	}
+
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 2)
+
+	count := map[int32]int{}
+	for _, rl := range result {
+		count[rl.entry.PartitionID]++
+	}
+	assert.GreaterOrEqual(t, count[1], 2,
+		"per-partition floor should keep partition 1 above %d entries; got %d",
+		2, count[1])
+}
+
+// TestMergeAdjacentCold_FloorPreventsCompleteDrain reproduces the
+// production symptom: a partition whose ranges are all cold-adjacent
+// to neighbours gets drained to zero in a single round. With the
+// floor in place, at least one entry survives.
+func TestMergeAdjacentCold_FloorPreventsCompleteDrain(t *testing.T) {
+	// One donor partition (P=1) with 3 cold ranges, all adjacent to
+	// hotter (still cold relative to mean) ranges on P=0 and P=2.
+	entries := []rangeLoad{
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 0}, load: 0.2},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 1}, load: 0.05},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 2}, load: 0.2},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 300, Hi: 399}, PartitionID: 1}, load: 0.05},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 400, Hi: 499}, PartitionID: 0}, load: 0.2},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 500, Hi: 599}, PartitionID: 1}, load: 0.05},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 600, Hi: 699}, PartitionID: 2}, load: 0.2},
+	}
+
+	// Without floor (==0): partition 1 is fully drained.
+	resultNoFloor, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 0)
+	noFloorCount := 0
+	for _, rl := range resultNoFloor {
+		if rl.entry.PartitionID == 1 {
+			noFloorCount++
+		}
+	}
+	require.Equal(t, 0, noFloorCount, "without floor, partition 1 should be fully drained (this is the bug)")
+
+	// With floor=1: partition 1 retains at least one entry.
+	resultFloor, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 1)
+	floorCount := 0
+	for _, rl := range resultFloor {
+		if rl.entry.PartitionID == 1 {
+			floorCount++
+		}
+	}
+	assert.GreaterOrEqual(t, floorCount, 1, "with floor=1, partition 1 should retain at least one entry")
 }
 
 // TestRunSlicer_Phase1_DistributesAcrossPartitions verifies that Phase 1

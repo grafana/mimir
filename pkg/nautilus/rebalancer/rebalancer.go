@@ -1032,7 +1032,7 @@ func (r *Rebalancer) runSlicer(
 		meanSliceLoad := totalLoad / float64(len(entries))
 		mergeMoveBudget := mergeChurnBudget * float64(uint64(math.MaxUint32)+1)
 		var mergeActions []Action
-		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions)
+		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions, minSlicesPerPartition)
 		actions = append(actions, mergeActions...)
 	}
 
@@ -1513,13 +1513,23 @@ func hashRangesOverlap(a, b assignment.HashRange) bool {
 //   - receiving partition load stays below maxPartitionLoad (target * 1.5)
 //   - total churn stays within churnBudget
 //   - total entries don't drop below minEntries
-func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries int) ([]rangeLoad, []Action) {
+//   - cross-partition merges never push the donor partition below
+//     perPartitionFloor entries. Without this floor the merge phase
+//     can drain a lightly-loaded partition completely (every range is
+//     "cold" relative to meanSliceLoad and gets absorbed by neighbours
+//     over a few rounds), at which point traffic to that partition's
+//     keyspace flips to other ingesters until Phase 3 floods it back.
+func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries, perPartitionFloor int) ([]rangeLoad, []Action) {
 	if len(entries) <= 1 || len(entries) <= minEntries {
 		return entries, nil
 	}
 
 	maxPartitionLoad := targetLoad * 1.5
 	partitionLoads := computePartitionLoads(entries)
+	partitionEntries := make(map[int32]int, len(partitionLoads))
+	for _, rl := range entries {
+		partitionEntries[rl.entry.PartitionID]++
+	}
 	var churned float64
 	var actions []Action
 
@@ -1558,6 +1568,7 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 					prev.load = mergedLoad
 					prev.series += curr.series
 					churned += mergeCost
+					partitionEntries[prev.entry.PartitionID]--
 					continue
 				}
 			}
@@ -1577,9 +1588,22 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 				donorLoad = prev.load
 			}
 
+			// Refuse cross-partition merges that would push the donor
+			// below the per-partition floor. The donor loses one
+			// entry on each cross-merge (its range is transferred to
+			// the receiver), so without this guard a partition whose
+			// ranges all happen to be cold-adjacent to neighbours can
+			// be drained to zero entries over a small number of
+			// rounds.
+			if partitionEntries[donorPID]-1 < perPartitionFloor {
+				result = append(result, curr)
+				continue
+			}
+
 			if partitionLoads[receiverPID]+donorLoad <= maxPartitionLoad && churned+movedSize <= churnBudget {
 				partitionLoads[receiverPID] += donorLoad
 				partitionLoads[donorPID] -= donorLoad
+				partitionEntries[donorPID]--
 
 				merged := assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
 				actions = append(actions, Action{
