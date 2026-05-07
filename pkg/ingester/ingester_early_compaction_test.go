@@ -966,13 +966,13 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenDisabled(
 		Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
 	}}))
 
-	// Simulate non-owned series detection by setting the compaction cutoff directly.
+	// Simulate non-owned series detection by flagging pending compaction directly.
 	db := ingester.getTSDB(userID)
 	require.NotNil(t, db)
-	db.setNonOwnedCompactionMaxTime(db.Head().MaxTime())
+	db.setNonOwnedSeriesPendingCompaction()
 
 	// Should not compact because the feature is disabled.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx, time.Now())
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	require.Empty(t, listBlocksInDir(t, userBlocksDir))
@@ -1001,8 +1001,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPending
 		Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
 	}}))
 
-	// No nonOwnedCompactionMaxTime set: compaction should not run.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx, time.Now())
+	// No pending compaction flag set: compaction should not run.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	require.Empty(t, listBlocksInDir(t, userBlocksDir))
@@ -1037,30 +1037,45 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	db := ingester.getTSDB(userID)
 	require.NotNil(t, db)
 
-	// Simulate non-owned series detection.
-	db.setNonOwnedCompactionMaxTime(db.Head().MaxTime())
+	// Simulate non-owned series detection: clear token ranges and run computeOwnedSeries.
+	// This appends stale-NaN markers to all series in the head and flags pending compaction,
+	// which is exactly what happens after a ring change makes a tenant's series non-owned.
+	db.ownedTokenRanges = nil
+	require.Equal(t, 0, db.computeOwnedSeries())
+	require.True(t, db.nonOwnedSeriesPendingCompaction.Load())
+	require.Equal(t, uint64(1), db.Head().NumStaleSeries())
 
-	now := time.Now()
-	ingester.compactBlocksDueToNonOwnedSeries(ctx, now)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 
-	// A block should have been created with the pushed sample.
+	// A block should have been created containing the stale-marked series.
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	blockIDs := listBlocksInDir(t, userBlocksDir)
 	require.Len(t, blockIDs, 1)
 
-	assert.Equal(t, model.Matrix{{
-		Metric: metricModel,
-		Values: []model.SamplePair{{Timestamp: model.Time(sampleTime.UnixMilli()), Value: 1.0}},
-	}}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[0].String()), metricName))
+	// The block contains the originally-pushed sample plus the stale-NaN marker that
+	// computeOwnedSeries appended at MaxTime+1. Verify the original sample is present.
+	blockSamples := readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[0].String()), metricName)
+	require.Len(t, blockSamples, 1)
+	require.Equal(t, model.Metric(metricModel), blockSamples[0].Metric)
+	require.NotEmpty(t, blockSamples[0].Values)
+	assert.Equal(t, model.Time(sampleTime.UnixMilli()), blockSamples[0].Values[0].Timestamp)
+	assert.Equal(t, model.SampleValue(1.0), blockSamples[0].Values[0].Value)
 
-	// The pending compaction cutoff should have been consumed, so a second call creates no new block.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx, now)
+	// The series should have been evicted from the head.
+	assert.Equal(t, uint64(0), db.Head().NumSeries())
+
+	// The pending flag should have been consumed, so a second call creates no new block.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
-	// lastEarlyCompaction should have been updated.
-	assert.False(t, db.getLastEarlyCompaction().IsZero())
+	// lastEarlyCompaction is intentionally NOT updated by this path (see comment in
+	// compactBlocksDueToNonOwnedSeries): non-owned eviction must not gate the unrelated
+	// per-tenant early compaction.
+	assert.True(t, db.getLastEarlyCompaction().IsZero())
 
-	// Data should still be queryable from the ingester (served from the local block).
+	// Data should still be queryable from the ingester (served from the local block). The
+	// stale-NaN marker is included in the chunk stream because StreamsToMatrixForTests does
+	// not filter stale markers; assert that the original sample is part of the result.
 	s := stream{ctx: ctxWithUser}
 	require.NoError(t, ingester.QueryStream(&client.QueryRequest{
 		StartTimestampMs: math.MinInt64,
@@ -1070,10 +1085,9 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 
 	res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, model.Matrix{{
-		Metric: metricModel,
-		Values: []model.SamplePair{{Timestamp: model.Time(sampleTime.UnixMilli()), Value: 1.0}},
-	}}, res)
+	require.Len(t, res, 1)
+	assert.Equal(t, model.Metric(metricModel), res[0].Metric)
+	require.Contains(t, res[0].Values, model.SamplePair{Timestamp: model.Time(sampleTime.UnixMilli()), Value: 1.0})
 }
 
 func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {

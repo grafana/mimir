@@ -318,7 +318,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		return activeseries.NewActiveSeries(asmodel.NewMatchers(asmodel.CustomTrackersConfig{}), time.Minute, nil)
 	}
 
-	t.Run("computeOwnedSeries with no token ranges sets nonOwnedCompactionMaxTime to head max time", func(t *testing.T) {
+	t.Run("computeOwnedSeries with no token ranges marks all series stale and flags pending compaction", func(t *testing.T) {
 		const userID = "test-user"
 		opts := tsdb.DefaultOptions()
 		opts.SecondaryHashFunction = secondaryTSDBHashFunctionForUser(userID)
@@ -335,10 +335,11 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 0, count)
-		require.Equal(t, tsdbDB.Head().MaxTime(), db.nonOwnedCompactionMaxTime.Load())
+		require.True(t, db.nonOwnedSeriesPendingCompaction.Load())
+		require.Equal(t, uint64(1), tsdbDB.Head().NumStaleSeries())
 	})
 
-	t.Run("computeOwnedSeries with no token ranges and empty head does not set nonOwnedCompactionMaxTime", func(t *testing.T) {
+	t.Run("computeOwnedSeries with no token ranges and empty head does not flag pending compaction", func(t *testing.T) {
 		tsdbDB, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
@@ -347,10 +348,10 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 0, count)
-		require.Equal(t, int64(0), db.nonOwnedCompactionMaxTime.Load())
+		require.False(t, db.nonOwnedSeriesPendingCompaction.Load())
 	})
 
-	t.Run("computeOwnedSeries with all series owned does not set nonOwnedCompactionMaxTime", func(t *testing.T) {
+	t.Run("computeOwnedSeries with all series owned does not flag pending compaction", func(t *testing.T) {
 		const userID = "test-user"
 		opts := tsdb.DefaultOptions()
 		opts.SecondaryHashFunction = secondaryTSDBHashFunctionForUser(userID)
@@ -369,10 +370,11 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 2, count)
-		require.Equal(t, int64(0), db.nonOwnedCompactionMaxTime.Load())
+		require.False(t, db.nonOwnedSeriesPendingCompaction.Load())
+		require.Equal(t, uint64(0), tsdbDB.Head().NumStaleSeries())
 	})
 
-	t.Run("computeOwnedSeries with some series non-owned sets nonOwnedCompactionMaxTime to their max timestamp", func(t *testing.T) {
+	t.Run("computeOwnedSeries with some series non-owned marks them stale and flags pending compaction", func(t *testing.T) {
 		const userID = "test-user"
 		opts := tsdb.DefaultOptions()
 		opts.SecondaryHashFunction = secondaryTSDBHashFunctionForUser(userID)
@@ -401,6 +403,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 1, count)
-		require.Equal(t, tsdbDB.Head().MaxTime(), db.nonOwnedCompactionMaxTime.Load())
+		require.True(t, db.nonOwnedSeriesPendingCompaction.Load())
+		require.Equal(t, uint64(1), tsdbDB.Head().NumStaleSeries())
 	})
 }
