@@ -7,7 +7,6 @@
 * [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #15179 #15220 #15223 #15232 #15237 #15255
 * [ENHANCEMENT] Ingest storage: Reject the whole batch of records of a Kafka write call when the configured `-ingest-storage.kafka.producer-max-buffered-bytes` limit is reached, instead of rejecting individual records. #15227
 * [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
-* [ENHANCEMENT] Upgrade to Go 1.26.2. #15263
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
 
@@ -20,6 +19,8 @@
 ### Documentation
 
 ### Tools
+
+* [ENHANCEMENT] Upgrade build image to Go 1.26.2. #15263
 
 ### Query-tee
 
