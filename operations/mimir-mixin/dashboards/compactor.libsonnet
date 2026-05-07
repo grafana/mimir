@@ -257,35 +257,48 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       $._config.compactor_scheduler_enabled,
       ($.row('Summary (scheduler mode)') + { collapse: true })
       .addPanel(
-        $.timeseriesPanel('Scheduler jobs') +
+        $.timeseriesPanel('Pending jobs') +
         $.queryPanel(
-          [
-            'sum(cortex_compactor_scheduler_pending_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
-            'sum(cortex_compactor_scheduler_active_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
-          ],
-          ['pending', 'active'],
-        ) +
-        $.stack,
-      )
-      .addPanel(
-        $.timeseriesPanel('Jobs completed / sec') +
-        $.queryPanel(
-          'sum by(job_type) (rate(cortex_compactor_scheduler_jobs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          'sum by (job_type) (cortex_compactor_scheduler_pending_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
           '{{job_type}}',
         ) +
-        { fieldConfig+: { defaults+: { unit: 'ops' } } },
+        $.stack +
+        $.panelDescription(
+          'Pending jobs',
+          |||
+            Number of jobs queued waiting for a worker, by type. This is the scheduler's backlog: rising trends indicate
+            workers cannot keep up; falling trends indicate the queue is draining.
+          |||
+        ),
       )
       .addPanel(
-        $.timeseriesPanel('Repeated job failures / sec') +
+        $.timeseriesPanel('Active jobs') +
         $.queryPanel(
-          'sum(rate(cortex_compactor_scheduler_repeated_job_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
-          'failures',
+          'sum by (job_type) (cortex_compactor_scheduler_active_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{job_type}}',
         ) +
-        { fieldConfig+: { defaults+: { unit: 'ops' } } } +
-        $.aliasColors({ failures: $._colors.failed }),
+        $.stack +
+        $.panelDescription(
+          'Active jobs',
+          'Number of jobs currently leased by workers, by type.',
+        ),
       )
       .addPanel(
-        $.panel('Time since last scheduler contact per worker') +
+        $.timeseriesPanel('Incomplete compaction job bytes') +
+        $.queryPanel(
+          'sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{compaction_type}}',
+        ) +
+        $.stack +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } } +
+        $.aliasColors({ split: '#2A66CF', merge: '#FF780A' }) +
+        $.panelDescription(
+          'Incomplete compaction job bytes',
+          'Total bytes of source blocks across compaction jobs that have not yet completed (pending or active), broken down by split vs merge. Job size varies a lot, so this is usually a more accurate gauge of outstanding work than the raw job count.',
+        ),
+      )
+      .addPanel(
+        $.panel('Time since last scheduler contact') +
         $.queryPanel(
           |||
             max by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s}[1h]) > 0))
@@ -343,6 +356,40 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           },
         },
       )
+      .addPanel(
+        $.timeseriesPanel('Jobs completed / sec') +
+        $.queryPanel(
+          'sum by(job_type) (rate(cortex_compactor_scheduler_jobs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{job_type}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } },
+      )
+      .addPanel(
+        $.timeseriesPanel('Repeated job failures / sec') +
+        $.queryPanel(
+          'sum(rate(cortex_compactor_scheduler_repeated_job_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          'failures',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } } +
+        $.aliasColors({ failures: $._colors.failed }),
+      )
+      .addPanel(
+        local query = utils.ncHistogramSumBy(
+          utils.ncHistogramCountRate(
+            metric='cortex_request_duration_seconds',
+            selector='%s, route=~"/compactorschedulerpb.CompactorScheduler/.*"' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          ),
+          sum_by=['route'],
+        );
+        local stripPrefix(q) = 'label_replace(%s, "method", "$1", "route", "/compactorschedulerpb.CompactorScheduler/(.*)")' % q;
+        $.timeseriesPanel('Scheduler RPC') +
+        $.queryPanel(
+          [stripPrefix(utils.showNativeHistogramQuery(query)), stripPrefix(utils.showClassicHistogramQuery(query))],
+          ['{{method}}', '{{method}}'],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+      )
+      .splitIntoLines([4, 3])
     )
     .addRow(
       $.row('Compaction')
