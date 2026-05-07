@@ -3,20 +3,12 @@
 package encoding
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
-
-var testAsyncBufPool = sync.Pool{
-	New: func() any {
-		return bufio.NewReaderSize(nil, testBufPoolSize)
-	},
-}
 
 func newTestBufAsyncReader(t *testing.T, base, length int) (*BucketBufAsyncReader, *trackingBucket) {
 	t.Helper()
@@ -26,13 +18,13 @@ func newTestBufAsyncReader(t *testing.T, base, length int) (*BucketBufAsyncReade
 	objectData = append(objectData, testBucketContents...)
 	bkt := newTrackingBucket(t, objectData)
 
-	return newBucketBufAsyncReader(ctx, &testAsyncBufPool, bkt, testBucketObjectName, base, length), bkt
+	return NewBucketBufAsyncReader(ctx, bkt, testBucketObjectName, base, length), bkt
 }
 
 func newFailingBufAsyncReader(t *testing.T, sentinel error) *BucketBufAsyncReader {
 	t.Helper()
 	bkt := &failingBucket{err: sentinel}
-	return newBucketBufAsyncReader(context.Background(), &testAsyncBufPool, bkt, "obj", 0, 10)
+	return NewBucketBufAsyncReader(context.Background(), bkt, "obj", 0, 10)
 }
 
 func TestBucketBufAsyncReader_Read_Sequential(t *testing.T) {
@@ -239,7 +231,7 @@ func TestBucketBufAsyncReader_Len(t *testing.T) {
 func TestBucketBufAsyncReader_Size(t *testing.T) {
 	r, _ := newTestBufAsyncReader(t, 0, len(testBucketContents))
 	t.Cleanup(func() { _ = r.Close() })
-	require.Equal(t, testBufPoolSize, r.Size())
+	require.Equal(t, asyncReadAheadChunkSize, r.Size())
 }
 
 func TestBucketBufAsyncReader_Close(t *testing.T) {

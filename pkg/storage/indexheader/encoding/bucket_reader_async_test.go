@@ -49,13 +49,13 @@ func TestBucketReaderAsyncReadAhead_Read_Sequential(t *testing.T) {
 	r, _ := newTestAsyncReader(t, 0, len(testBucketContents))
 
 	buf := make([]byte, 5)
-	n, err := r.Read(buf)
+	n, err := r.ReadInto(buf)
 	require.NoError(t, err)
 	require.Equal(t, 5, n)
 	require.Equal(t, testBucketContents[:5], buf)
 
 	buf = make([]byte, 5)
-	n, err = r.Read(buf)
+	n, err = r.ReadInto(buf)
 	require.NoError(t, err)
 	require.Equal(t, 5, n)
 	require.Equal(t, testBucketContents[5:10], buf)
@@ -65,7 +65,7 @@ func TestBucketReaderAsyncReadAhead_Read_ExactLength(t *testing.T) {
 	r, _ := newTestAsyncReader(t, 0, len(testBucketContents))
 
 	buf := make([]byte, len(testBucketContents))
-	n, err := r.Read(buf)
+	n, err := r.ReadInto(buf)
 	require.NoError(t, err)
 	require.Equal(t, len(testBucketContents), n)
 	require.Equal(t, testBucketContents, buf)
@@ -75,11 +75,11 @@ func TestBucketReaderAsyncReadAhead_Read_PastEnd(t *testing.T) {
 	r, _ := newTestAsyncReader(t, 0, len(testBucketContents))
 
 	// Drain the reader.
-	_, err := r.Read(make([]byte, len(testBucketContents)))
+	_, err := r.ReadInto(make([]byte, len(testBucketContents)))
 	require.NoError(t, err)
 
 	// Subsequent reads must report io.EOF without advancing.
-	n, err := r.Read(make([]byte, 1))
+	n, err := r.ReadInto(make([]byte, 1))
 	require.ErrorIs(t, err, io.EOF)
 	require.Equal(t, 0, n)
 }
@@ -88,7 +88,7 @@ func TestBucketReaderAsyncReadAhead_Read_GetRangeError(t *testing.T) {
 	sentinel := errors.New("storage error")
 	r := newFailingAsyncReader(t, sentinel)
 
-	_, err := r.Read(make([]byte, 5))
+	_, err := r.ReadInto(make([]byte, 5))
 	require.ErrorIs(t, err, sentinel)
 }
 
