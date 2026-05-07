@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	promstats "github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 
@@ -57,11 +58,13 @@ func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
 		},
 	}
 
-	result := runInstantQuery(t, mimirEngine, storage, expr, ts)
+	result, stats := runInstantQuery(t, mimirEngine, storage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 6, 6)
 
-	result = runInstantQuery(t, mimirEngine, storage, expr, ts)
+	result, stats = runInstantQuery(t, mimirEngine, storage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 6, 6)
 
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
@@ -105,8 +108,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	}
 
 	// Run query first time (should populate cache)
-	result, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
 		{mint: 2 * hourInMs, maxt: 6*hourInMs - 1},   // Two combined cachable ranges: (2h-1ms, 6h-1ms] -> storage [2h, 6h-1ms]
@@ -115,8 +119,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	verifyCacheStats(t, testCache, 2, 0, 2)
 
 	// Run same query again (should hit cache for aligned blocks)
-	result, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
 		{mint: 6 * hourInMs, maxt: 6 * hourInMs},     // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
@@ -140,8 +145,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 			},
 		},
 	}
-	result, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 10*minuteInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h10m, 2h-1ms] -> storage [1h10m+1ms, 2h-1ms]
 		{mint: 6 * hourInMs, maxt: 6*hourInMs + 10*minuteInMs},       // Tail: (6h-1ms, 6h10m] -> storage [6h, 6h10m]
@@ -165,8 +171,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 			},
 		},
 	}
-	result, ranges4 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges4 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1ms, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
@@ -192,8 +199,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 			},
 		},
 	}
-	result, ranges5 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges5 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 3*hourInMs + 20*minuteInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h20m, 4h-1ms] -> storage [3h20m+1ms, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 8*hourInMs - 1},                   // Uncached: (6h-1ms, 8h-1ms] -> storage [6h, 8h-1ms]
@@ -252,8 +260,9 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 		},
 	}
 
-	result, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 30+6+12+18, 30+6+12+18)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
 		{mint: 2 * hourInMs, maxt: 6*hourInMs - 1},   // Two combined cachable ranges: (2h-1ms, 6h-1ms] -> storage [2h, 6h-1ms]
@@ -262,8 +271,9 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	verifyCacheStats(t, testCache, 2, 0, 2)
 
 	// Run same query again (should hit cache for aligned blocks)
-	result, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 30+6+12+18, 30+6+12+18)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
 		{mint: 6 * hourInMs, maxt: 6 * hourInMs},     // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
@@ -301,8 +311,9 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 			},
 		},
 	}
-	result, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 30+12+18, 30+12+18)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1ms, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
@@ -343,8 +354,9 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 			},
 		},
 	}
-	result, ranges4 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges4 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
+	verifyEvaluationStats(t, stats, 30+12+16, 30+12+16)
 	require.Equal(t, []storageQueryRange{
 		{mint: 3*hourInMs + 20*minuteInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h20m, 4h-1ms] -> storage [3h20m+1ms, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 8*hourInMs - 1},                   // Uncached: (6h-1ms, 8h-1ms] -> storage [6h, 8h-1ms]
@@ -474,8 +486,9 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	query := `
 		histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h]))
 		* histogram_count(last_over_time(hist{job="test"}[4h]))`
-	r := runInstantQuery(t, eng, promStorage, query, ts)
+	r, stats := runInstantQuery(t, eng, promStorage, query, ts)
 	require.NoError(t, r.Err)
+	verifyEvaluationStats(t, stats, 24, 24)
 
 	// With a 4h range at ts=4h and 2h split interval, the single cacheable block is (2h-1ms, 4h-1ms].
 	countKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", job="test"}`, 2*hourInMs-1, 4*hourInMs-1, false)
@@ -554,8 +567,9 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	expr := "sum_over_time(test_metric[5h] offset 1h)"
 
 	ts8h := baseT.Add(8 * time.Hour)
-	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts8h)
+	result1, stats, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts8h)
 	require.Equal(t, expectedScalarResult(ts8h, 825, "env", "prod"), result1)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
 		{mint: 4 * hourInMs, maxt: 6*hourInMs - 1},   // Cacheable range: (4h, 6h-1ms] -> storage [4h, 6h-1ms]
@@ -567,8 +581,9 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	// Cache has block (4h-1ms, 6h-1ms] from Q1, so queries head and tail from storage
 	ts7h := baseT.Add(7 * time.Hour)
 	exprNoOffset := "sum_over_time(test_metric[5h])"
-	result1b, ranges1b := executeQuery(t, mimirEngine, promStorage, exprNoOffset, ts7h)
+	result1b, stats, ranges1b := executeQuery(t, mimirEngine, promStorage, exprNoOffset, ts7h)
 	require.Equal(t, expectedScalarResult(ts7h, 825, "env", "prod"), result1b)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
@@ -581,8 +596,9 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	// Data: first sample @ 4h10m = 25, last sample @ 9h = 54, samples = 30
 	// Sum: (25+54)*(30/2) = 1185
 	ts10h := baseT.Add(10 * time.Hour)
-	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts10h)
+	result2, stats, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts10h)
 	require.Equal(t, expectedScalarResult(ts10h, 1185, "env", "prod"), result2)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 4*hourInMs + 1, maxt: 6*hourInMs - 1}, // Head: (4h, 6h-1ms] -> storage [4h+1ms, 6h-1ms]
 		{mint: 6 * hourInMs, maxt: 8*hourInMs - 1},   // Cacheable range: (6h, 8h-1ms] -> storage [6h, 8h-1ms]
@@ -606,8 +622,9 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 	// Only 1 complete cacheable block in this range
 	expr := "sum_over_time(test_metric[5h] @ 25200)" // 7h in seconds
 	ts8h := baseT.Add(8 * time.Hour)
-	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts8h)
+	result1, stats, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts8h)
 	require.Equal(t, expectedScalarResult(ts8h, 825, "env", "prod"), result1)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
 		{mint: 4 * hourInMs, maxt: 6*hourInMs - 1},   // Cacheable range: (4h, 6h-1ms] -> storage [4h, 6h-1ms]
@@ -619,8 +636,9 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 	// Cache has block (4h-1ms, 6h-1ms] from Q1, so queries head and tail from storage
 	exprNoModifier := "sum_over_time(test_metric[5h])"
 	ts7h := baseT.Add(7 * time.Hour)
-	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, exprNoModifier, ts7h)
+	result2, stats, ranges2 := executeQuery(t, mimirEngine, promStorage, exprNoModifier, ts7h)
 	require.Equal(t, expectedScalarResult(ts7h, 825, "env", "prod"), result2)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
@@ -630,8 +648,9 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 	// Q3: @ 7h at 10h accesses same range (2h, 7h]
 	// Cache has block (4h-1ms, 6h-1ms] from Q1, so queries head and tail from storage
 	ts10h := baseT.Add(10 * time.Hour)
-	result3, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, ts10h)
+	result3, stats, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, ts10h)
 	require.Equal(t, expectedScalarResult(ts10h, 825, "env", "prod"), result3)
+	verifyEvaluationStats(t, stats, 30, 30)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
@@ -657,8 +676,9 @@ func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
 	// Sum: (13+30)*(18/2) = 387
 	expr := "sum_over_time(test_metric[3h])"
 	ts := baseT.Add(5*time.Hour + time.Millisecond)
-	result, ranges := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 387, "env", "prod"), result)
+	verifyEvaluationStats(t, stats, 18, 18)
 
 	// Since query splitting is not applied, should be a single storage query
 	require.Equal(t, []storageQueryRange{
@@ -686,8 +706,9 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	expr := "sum_over_time(test_metric[3h] offset 31m)"
 	ts := baseT.Add(4*time.Hour + 30*time.Minute)
 
-	result, ranges := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats, ranges := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 261, "env", "prod"), result)
+	verifyEvaluationStats(t, stats, 18, 18)
 
 	// Since query splitting is not applied, should be a single storage query
 	require.Equal(t, []storageQueryRange{
@@ -742,8 +763,9 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	// First query: should cache the cacheable blocks, but not the OOO range
 	// Samples at 5h10m (31) to 12h (72) = 42 samples, sum = (31+72)*42/2 = 2163
-	result1, ranges1 := executeQuery(t, mimirEngine, storage, expr, ts)
+	result1, stats, ranges1 := executeQuery(t, mimirEngine, storage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 2163, "env", "prod"), result1)
+	verifyEvaluationStats(t, stats, 42, 42)
 
 	verifyCacheStats(t, backend, 1, 0, 1)
 	require.Equal(t, []storageQueryRange{
@@ -759,8 +781,9 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	result2, ranges2 := executeQuery(t, mimirEngine, storage, expr, ts)
+	result2, stats, ranges2 := executeQuery(t, mimirEngine, storage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 2363, "env", "prod"), result2)
+	verifyEvaluationStats(t, stats, 43, 43)
 
 	verifyCacheStats(t, backend, 2, 1, 1)
 	require.Equal(t, []storageQueryRange{
@@ -768,8 +791,9 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 		{mint: 8 * hourInMs, maxt: 12 * hourInMs},
 	}, ranges2)
 
-	result3, ranges3 := executeQuery(t, mimirEngine, storage, expr, ts)
+	result3, stats, ranges3 := executeQuery(t, mimirEngine, storage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 2363, "env", "prod"), result3)
+	verifyEvaluationStats(t, stats, 43, 43)
 
 	verifyCacheStats(t, backend, 3, 2, 1)
 	require.Equal(t, ranges2, ranges3)
@@ -793,27 +817,31 @@ func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {
 	expectedCountF := 30.0
 
 	// Query sum_over_time — populates cache for sum_over_time's function key.
-	sumResult := runInstantQuery(t, mimirEngine, promStorage, "sum_over_time(some_metric[5h])", ts)
+	sumResult, stats := runInstantQuery(t, mimirEngine, promStorage, "sum_over_time(some_metric[5h])", ts)
 	require.NoError(t, sumResult.Err)
 	require.Equal(t, expectedSumF, sumResult.Value.(promql.Vector)[0].F)
+	verifyEvaluationStats(t, stats, 30, 30)
 	verifyCacheStats(t, testCache, 2, 0, 2)
 
 	// Query count_over_time on the same metric — should NOT hit sum_over_time's cache entries.
-	countResult := runInstantQuery(t, mimirEngine, promStorage, "count_over_time(some_metric[5h])", ts)
+	countResult, stats := runInstantQuery(t, mimirEngine, promStorage, "count_over_time(some_metric[5h])", ts)
 	require.NoError(t, countResult.Err)
 	require.Equal(t, expectedCountF, countResult.Value.(promql.Vector)[0].F)
+	verifyEvaluationStats(t, stats, 30, 30)
 	verifyCacheStats(t, testCache, 4, 0, 4) // 2 new gets (miss), 2 new sets
 
 	// Query sum_over_time again — should hit cache from the first query.
-	sumResult2 := runInstantQuery(t, mimirEngine, promStorage, "sum_over_time(some_metric[5h])", ts)
+	sumResult2, stats := runInstantQuery(t, mimirEngine, promStorage, "sum_over_time(some_metric[5h])", ts)
 	require.NoError(t, sumResult2.Err)
 	require.Equal(t, expectedSumF, sumResult2.Value.(promql.Vector)[0].F)
+	verifyEvaluationStats(t, stats, 30, 30)
 	verifyCacheStats(t, testCache, 6, 2, 4) // 2 hits for sum_over_time blocks
 
 	// Query count_over_time again — should hit cache from the count query, not sum_over_time's.
-	countResult2 := runInstantQuery(t, mimirEngine, promStorage, "count_over_time(some_metric[5h])", ts)
+	countResult2, stats := runInstantQuery(t, mimirEngine, promStorage, "count_over_time(some_metric[5h])", ts)
 	require.NoError(t, countResult2.Err)
 	require.Equal(t, expectedCountF, countResult2.Value.(promql.Vector)[0].F)
+	verifyEvaluationStats(t, stats, 30, 30)
 	verifyCacheStats(t, testCache, 8, 4, 4) // 2 hits for count_over_time blocks
 }
 
@@ -832,28 +860,30 @@ func TestQuerySplitting_StorageError(t *testing.T) {
 	errStorage := &errorStorage{Storage: promStorage}
 
 	// Q1: error storage, empty cache. Query fails, nothing cached.
-	result := runInstantQuery(t, mimirEngine, errStorage, expr, ts)
+	result, _ := runInstantQuery(t, mimirEngine, errStorage, expr, ts)
 	require.Error(t, result.Err)
 	// 2 gets (cached splits check cache during Prepare), 0 hits, 0 sets
 	verifyCacheStats(t, testCache, 2, 0, 0)
 
 	// Q2: real storage. Cache is empty, query succeeds and populates cache.
-	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	expectedValue := result.Value
+	verifyEvaluationStats(t, stats, 30, 30)
 	// Cumulative: 4 gets, 0 hits, 2 sets
 	verifyCacheStats(t, testCache, 4, 0, 2)
 
 	// Q3: error storage again. Cached blocks hit, but uncached ranges fail.
-	result = runInstantQuery(t, mimirEngine, errStorage, expr, ts)
+	result, _ = runInstantQuery(t, mimirEngine, errStorage, expr, ts)
 	require.Error(t, result.Err)
 	// Cumulative: 6 gets, 2 hits (cached blocks found), still 2 sets
 	verifyCacheStats(t, testCache, 6, 2, 2)
 
 	// Q4: real storage. Cached blocks still work correctly.
-	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	require.Equal(t, expectedValue, result.Value)
+	verifyEvaluationStats(t, stats, 30, 30)
 	// Cumulative: 8 gets, 4 hits, still 2 sets
 	verifyCacheStats(t, testCache, 8, 4, 2)
 }
@@ -887,8 +917,9 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 	// First query populates cache for all 3 cacheable blocks.
 	// Data: first sample @ 1h10m (idx 7), last sample @ 8h (idx 48), 42 samples.
 	// Sum: (7+48)*42/2 = 1155
-	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result1, stats, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 1155, "env", "prod"), result1)
+	verifyEvaluationStats(t, stats, 42, 42)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
 		{mint: 2 * hourInMs, maxt: 8*hourInMs - 1},   // Three combined cachable ranges: (2h-1ms, 8h-1ms] -> storage [2h, 8h-1ms]
@@ -904,8 +935,9 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 	delete(testCache.items, block2Key)
 
 	// Second query: Block1 and Block3 are cache hits, Block2 is a miss.
-	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts)
+	result2, stats, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 1155, "env", "prod"), result2)
+	verifyEvaluationStats(t, stats, 42, 42)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head
 		{mint: 4 * hourInMs, maxt: 6*hourInMs - 1},   // Block2 (evicted)
@@ -941,27 +973,31 @@ func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
 	// Delayed name removal is part of the cache key, so enabled and disabled use separate cache entries.
 
 	// Populate cache with delayed name removal disabled (2 splits → 2 misses, 2 sets).
-	result := runInstantQuery(t, engineDisabled, promStorage, expr, ts)
+	result, stats := runInstantQuery(t, engineDisabled, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	require.Equal(t, expectedDisabled, result)
+	verifyEvaluationStats(t, stats, 5, 5)
 	verifyCacheStats(t, sharedCache, 2, 0, 2)
 
 	// Query with delayed name removal enabled: different cache key, so 2 misses and 2 new sets.
-	result = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
+	result, stats = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	require.Equal(t, expectedEnabled, result)
+	verifyEvaluationStats(t, stats, 5, 5)
 	verifyCacheStats(t, sharedCache, 4, 0, 4)
 
 	// Repeat disabled: hits its own cache entries.
-	result = runInstantQuery(t, engineDisabled, promStorage, expr, ts)
+	result, stats = runInstantQuery(t, engineDisabled, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	require.Equal(t, expectedDisabled, result)
+	verifyEvaluationStats(t, stats, 5, 5)
 	verifyCacheStats(t, sharedCache, 6, 2, 4)
 
 	// Repeat enabled: hits its own cache entries.
-	result = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
+	result, stats = runInstantQuery(t, engineEnabled, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	require.Equal(t, expectedEnabled, result)
+	verifyEvaluationStats(t, stats, 5, 5)
 	verifyCacheStats(t, sharedCache, 8, 4, 4)
 }
 
@@ -1007,7 +1043,7 @@ func TestQuerySplitting_AnnotationMetricName(t *testing.T) {
 	expectedWarning := `PromQL warning: encountered a mix of histograms and floats for metric name "aaa_total"`
 
 	// Q1: populates cache, no ordering mismatch yet
-	result1 := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	result1, _ := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.NoError(t, result1.Err)
 	require.Len(t, result1.Warnings.AsErrors(), 1)
 	require.EqualError(t, result1.Warnings.AsErrors()[0], expectedWarning)
@@ -1018,7 +1054,7 @@ func TestQuerySplitting_AnnotationMetricName(t *testing.T) {
 	// - Cached (4h-1ms, 6h-1ms]: [aaa, zzz] → aaa is new → merged = [zzz, aaa]
 	// - Tail (6h-1ms, 7h]: storage returns [aaa, zzz] → differs from merged order
 	//   When processing merged 0 (zzz), first local 0 (aaa) is processed.
-	result2 := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	result2, _ := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.NoError(t, result2.Err)
 	require.Len(t, result2.Warnings.AsErrors(), 1)
 	require.EqualError(t, result2.Warnings.AsErrors()[0], expectedWarning)
@@ -1041,16 +1077,18 @@ func TestQuerySplitting_NoMatchingSeries_CachesEmptyResult(t *testing.T) {
 	ts := baseT.Add(6 * time.Hour)
 
 	// First query: 0 series match. Should still cache the empty result.
-	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	require.Nil(t, result.Value)
+	verifyEvaluationStats(t, stats, 0, 0)
 	// 2 gets (cacheable blocks), 0 hits, 2 sets (empty results cached)
 	verifyCacheStats(t, testCache, 2, 0, 2)
 
 	// Second query: cache hits for both blocks.
-	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	require.Nil(t, result.Value)
+	verifyEvaluationStats(t, stats, 0, 0)
 	// Cumulative: 4 gets, 2 hits, still 2 sets
 	verifyCacheStats(t, testCache, 4, 2, 2)
 }
@@ -1070,9 +1108,10 @@ func TestQuerySplitting_NoMetadataConsumption_DoesNotCache(t *testing.T) {
 	expr := "nonexistent_metric + sum_over_time(test_metric[24h])"
 	ts := baseT.Add(25 * time.Hour)
 
-	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	require.Empty(t, result.Value)
+	verifyEvaluationStats(t, stats, 0, 0)
 	// No cache operations should occur since SeriesMetadata() was never called on the split operator.
 	verifyCacheStats(t, testCache, 11, 0, 0)
 }
@@ -1096,10 +1135,11 @@ func TestQuerySplitting_PartialConsumption_DoesNotCache(t *testing.T) {
 	// finalizing the left side. The second series (env=2) is never consumed.
 	expr := `sum_over_time(some_metric[5h]) and on(env) filter_metric`
 
-	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	result, stats := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 	// The query returns a result for the matched series (env=1).
 	require.Equal(t, expectedScalarResult(ts, 645, "env", "1"), result)
+	verifyEvaluationStats(t, stats, 31, 31)
 	// The split operator's series were not fully consumed, so results should not be cached.
 	verifyCacheStats(t, testCache, 2, 0, 0)
 }
@@ -1115,7 +1155,7 @@ func TestQuerySplitting_SubquerySpinoff_SkipsSplitting(t *testing.T) {
 	baseT := timestamp.Time(0)
 	ts := baseT.Add(6 * time.Hour)
 
-	result := runInstantQuery(t, mimirEngine, storage, `sum_over_time(__subquery_spinoff__{__query__="some_metric",__range__="5h0m0s",__step__="5m0s"}[5h])`, ts)
+	result, _ := runInstantQuery(t, mimirEngine, storage, `sum_over_time(__subquery_spinoff__{__query__="some_metric",__range__="5h0m0s",__step__="5m0s"}[5h])`, ts)
 	require.NoError(t, result.Err)
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
@@ -1141,9 +1181,10 @@ func TestQuerySplitting_SplittingDisabledOnQuerier_FallsBackToRegularNode(t *tes
 	baseT := timestamp.Time(0)
 	ts := baseT.Add(6 * time.Hour)
 
-	result := runInstantQuery(t, engine, promStorage, "sum_over_time(some_metric[5h])", ts)
+	result, stats := runInstantQuery(t, engine, promStorage, "sum_over_time(some_metric[5h])", ts)
 	require.NoError(t, result.Err)
 	require.Equal(t, expectedScalarResult(ts, 645, "env", "1"), result)
+	verifyEvaluationStats(t, stats, 30, 30)
 }
 
 func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
@@ -1192,8 +1233,9 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			testCache, mimirEngine := setupEngineAndCache(t)
 
-			result, _ := executeQuery(t, mimirEngine, promStorage, tc.expr, ts)
+			result, stats, _ := executeQuery(t, mimirEngine, promStorage, tc.expr, ts)
 			require.NoError(t, result.Err)
+			verifyEvaluationStats(t, stats, 13, 13)
 
 			require.Len(t, testCache.items, 4, "unexpected number of entries in cache")
 
@@ -1217,9 +1259,10 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 
 			// Verify results are still correct on cache hit
 			hitsBeforeSecondQuery := testCache.hits
-			cachedResult, _ := executeQuery(t, mimirEngine, promStorage, tc.expr, ts)
+			cachedResult, stats, _ := executeQuery(t, mimirEngine, promStorage, tc.expr, ts)
 			require.NoError(t, cachedResult.Err)
 			require.Equal(t, result.Value, cachedResult.Value)
+			verifyEvaluationStats(t, stats, 13, 13)
 			require.Greater(t, testCache.hits, hitsBeforeSecondQuery, "expected cache to be hit on second query")
 		})
 	}
@@ -1274,23 +1317,24 @@ func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	return backend, mimirEngine
 }
 
-func runInstantQuery(t *testing.T, eng promql.QueryEngine, storage storage.Storage, expr string, ts time.Time) *promql.Result {
+func runInstantQuery(t *testing.T, eng promql.QueryEngine, storage storage.Storage, expr string, ts time.Time) (*promql.Result, *promstats.QuerySamples) {
 	ctx := user.InjectOrgID(context.Background(), "test-user")
 	q, err := eng.NewInstantQuery(ctx, storage, nil, expr, ts)
 	require.NoError(t, err)
 	defer q.Close()
 
-	return q.Exec(ctx)
+	return q.Exec(ctx), q.Stats().Samples
 }
 
-func executeQuery(t *testing.T, engine promql.QueryEngine, storage storage.Storage, expr string, ts time.Time) (*promql.Result, []storageQueryRange) {
+func executeQuery(t *testing.T, engine promql.QueryEngine, storage storage.Storage, expr string, ts time.Time) (*promql.Result, *promstats.QuerySamples, []storageQueryRange) {
 	wrapped := trackRanges(storage)
 	ctx := user.InjectOrgID(context.Background(), "test-user")
 	q, err := engine.NewInstantQuery(ctx, wrapped, nil, expr, ts)
 	require.NoError(t, err)
 	result := q.Exec(ctx)
+	stats := q.Stats().Samples
 	q.Close()
-	return result, wrapped.ranges
+	return result, stats, wrapped.ranges
 }
 
 func expectedScalarResult(ts time.Time, f float64, lbls ...string) *promql.Result {
@@ -1303,6 +1347,12 @@ func expectedScalarResult(ts time.Time, f float64, lbls ...string) *promql.Resul
 			},
 		},
 	}
+}
+
+func verifyEvaluationStats(t *testing.T, stats *promstats.QuerySamples, expectedSamplesProcessed int64, expectedSamplesRead int64) {
+	t.Helper()
+	require.Equal(t, expectedSamplesProcessed, stats.TotalSamples, "Expected %d samples processed, got %d", expectedSamplesProcessed, stats.TotalSamples)
+	require.Equal(t, expectedSamplesRead, stats.SamplesRead, "Expected %d samples read, got %d", expectedSamplesRead, stats.SamplesRead)
 }
 
 func verifyCacheStats(t *testing.T, backend *testCacheBackend, expectedGets, expectedHits, expectedSets int) {

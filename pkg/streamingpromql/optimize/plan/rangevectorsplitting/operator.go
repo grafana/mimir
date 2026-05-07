@@ -69,16 +69,19 @@ type FunctionOverRangeVectorSplit[T any] struct {
 
 	metadataConsumed bool
 	finalized        bool
+	storedInCache    bool
 
 	logger     log.Logger
 	cacheStats *cache.CacheStats
 
-	prepareStart        time.Time
-	prepareEnd          time.Time
-	seriesMetadataStart time.Time
-	seriesMetadataEnd   time.Time
-	finalizeStart       time.Time
-	finalizeEnd         time.Time
+	prepareStart             time.Time
+	prepareEnd               time.Time
+	seriesMetadataStart      time.Time
+	seriesMetadataEnd        time.Time
+	finalizeStart            time.Time
+	finalizeEnd              time.Time
+	storeResultsInCacheStart time.Time
+	storeResultsInCacheEnd   time.Time
 }
 
 var _ types.InstantVectorOperator = (*FunctionOverRangeVectorSplit[any])(nil)
@@ -197,7 +200,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 	for _, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
 			// TODO: considering using a single call to retrieve all the cache entries.
-			metadata, annotations, results, found, err := m.cache.Get(ctx, m.FuncId, m.innerCacheKey, splitRange.Start, splitRange.End, m.enableDelayedNameRemoval, m.cacheStats)
+			metadata, annotations, results, stats, found, err := m.cache.Get(ctx, m.FuncId, m.innerCacheKey, splitRange.Start, splitRange.End, m.enableDelayedNameRemoval, m.cacheStats)
 			if err != nil {
 				return err
 			}
@@ -207,7 +210,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 					return err
 				}
 
-				cachedSplit, err := NewCachedSplit(metadata, annotations, results, m)
+				cachedSplit, err := NewCachedSplit(ctx, metadata, annotations, results, stats, m, splitRange.End)
 				if err != nil {
 					return err
 				}
@@ -444,11 +447,33 @@ func (m *FunctionOverRangeVectorSplit[T]) emitAnnotation(generator types.Annotat
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
+	// Don't finalize again if we have finalized already
+	if m.finalized {
+		return nil
+	}
+
+	m.finalizeStart = time.Now()
+
+	for _, split := range m.splits {
+		if err := split.Finalize(ctx); err != nil {
+			return err
+		}
+	}
+
+	m.finalizeEnd = time.Now()
+	m.finalized = true
+	return nil
+}
+
+func (m *FunctionOverRangeVectorSplit[T]) storeResultsInCache(ctx context.Context) error {
 	logger := spanlogger.FromContext(ctx, m.logger)
 
 	// Don't cache if we have cached already
-	if m.finalized {
-		return nil
+	if m.storedInCache {
+		return errors.New("should not call FunctionOverRangeVectorSplit.storeResultsInCache multiple times")
+	}
+	if !m.finalized {
+		return errors.New("should not call FunctionOverRangeVectorSplit.storeResultsInCache before Finalize")
 	}
 
 	// Don't cache in cases where not all series have been processed. It's possible for not all series to be processed
@@ -465,7 +490,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		shouldCache = false
 	}
 
-	m.finalizeStart = time.Now()
+	m.storeResultsInCacheStart = time.Now()
 
 	var cachedSplitCount, uncachedSplitCount, uncachedRangeCount, cachedRangeCount int
 	for _, split := range m.splits {
@@ -478,19 +503,15 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		}
 	}
 
-	for _, split := range m.splits {
-		if err := split.Finalize(ctx); err != nil {
-			return err
-		}
-
-		if shouldCache {
+	if shouldCache {
+		for _, split := range m.splits {
 			if err := split.StoreResultsInCache(ctx); err != nil {
 				return err
 			}
 		}
 	}
 
-	m.finalizeEnd = time.Now()
+	m.storeResultsInCacheEnd = time.Now()
 
 	// Logging stats at info level while feature is experimental and being tested.
 	// TODO: reduce log level to debug and remove overly detailed stats when feature is mature.
@@ -521,15 +542,44 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"series_metadata_duration", m.seriesMetadataEnd.Sub(m.seriesMetadataStart),
 		"metadata_end_to_finalize_start_duration", m.finalizeStart.Sub(m.seriesMetadataEnd),
 		"finalize_duration", m.finalizeEnd.Sub(m.finalizeStart),
-		"total_duration", m.finalizeEnd.Sub(m.prepareStart),
+		"store_results_in_cache_duration", m.storeResultsInCacheEnd.Sub(m.storeResultsInCacheStart),
+		"total_duration", m.storeResultsInCacheEnd.Sub(m.prepareStart),
 	)
 
-	m.finalized = true
 	return nil
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return nil, errors.New("Stats not implemented for function over range vector split")
+	var finalStats *types.OperatorEvaluationStats
+
+	for _, split := range m.splits {
+		rangeStats, err := split.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// Create finalStats once we have at least one set of stats from the splits, so that we know how many subsets
+		// are needed.
+		if finalStats == nil {
+			finalStats, err = types.NewOperatorEvaluationStats(ctx, m.queryTimeRange, m.MemoryConsumptionTracker, rangeStats[0].GetSubsetCount())
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		for _, s := range rangeStats {
+			if err := finalStats.AddSingleStep(s); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Now that we've retrieved stats for all splits, store the results in the cache.
+	if err := m.storeResultsInCache(ctx); err != nil {
+		return nil, err
+	}
+
+	return finalStats, nil
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) Close() {
@@ -550,6 +600,10 @@ type Split[T any] interface {
 	// correct metric name.
 	AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int)
 	Finalize(ctx context.Context) error
+	// Stats returns the stats for the split, with one OperatorEvaluationStats instance per range.
+	// The caller must not modify the returned slice or the instances within it.
+	// The implementation is responsible for closing the returned stats instances when Close() is called.
+	Stats(ctx context.Context) ([]*types.OperatorEvaluationStats, error)
 	StoreResultsInCache(ctx context.Context) error
 	Close()
 	IsCached() bool
@@ -565,6 +619,7 @@ type CachedSplit[T any] struct {
 	seriesMetadata []types.SeriesMetadata
 	annotations    querierpb.Annotations
 	results        []T
+	stats          *types.OperatorEvaluationStats
 
 	parent *FunctionOverRangeVectorSplit[T]
 }
@@ -574,10 +629,13 @@ func (c *CachedSplit[T]) RangeCount() int {
 }
 
 func NewCachedSplit[T any](
+	ctx context.Context,
 	protoMetadata []querierpb.SeriesMetadata,
 	annotations querierpb.Annotations,
 	results []T,
+	protoStats *types.EncodedOperatorEvaluationStats,
 	parent *FunctionOverRangeVectorSplit[T],
+	endT int64,
 ) (*CachedSplit[T], error) {
 	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(protoMetadata), parent.MemoryConsumptionTracker)
 	if err != nil {
@@ -593,10 +651,33 @@ func NewCachedSplit[T any](
 		}
 	}
 
+	var stats *types.OperatorEvaluationStats
+
+	if protoStats == nil {
+		// The cached split was evaluated before support for stats was introduced.
+		//
+		// For simplicity during upgrades, and for consistency with remote execution's behaviour during the same circumstances,
+		// we use an empty set of stats.
+		logger := spanlogger.FromContext(ctx, parent.logger)
+		level.Warn(logger).Log("msg", "NewCachedSplit expected statistics in the cache entry, but none were present, so using an empty set of statistics. This is expected following an upgrade where the cache contains entries without statistics, but a bug otherwise.")
+
+		stats, err = types.NewOperatorEvaluationStats(ctx, types.NewInstantQueryTimeRange(promts.Time(endT)), parent.MemoryConsumptionTracker, 0)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		stats, err = protoStats.Decode(ctx, parent.MemoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+
+		}
+	}
+
 	return &CachedSplit[T]{
 		seriesMetadata: seriesMetadata,
 		annotations:    annotations,
 		results:        results,
+		stats:          stats,
 		parent:         parent,
 	}, nil
 }
@@ -633,11 +714,16 @@ func (c *CachedSplit[T]) Finalize(_ context.Context) error {
 	return nil
 }
 
+func (c *CachedSplit[T]) Stats(_ context.Context) ([]*types.OperatorEvaluationStats, error) {
+	return []*types.OperatorEvaluationStats{c.stats}, nil
+}
+
 func (c *CachedSplit[T]) StoreResultsInCache(_ context.Context) error {
 	return nil
 }
 
 func (c *CachedSplit[T]) Close() {
+	c.stats.Close()
 }
 
 func (c *CachedSplit[T]) AppendMergedSeriesIndex(_, _ int) {}
@@ -657,6 +743,7 @@ type UncachedSplit[T any] struct {
 	rangeAnnotations    []*annotations.Annotations
 	seriesMetadata      []querierpb.SeriesMetadata
 	rangeSeriesMetadata [][]int // metadata idx per range idx
+	stats               []*types.OperatorEvaluationStats
 
 	// localToMergedIdx maps split-local series index to the parent's merged series index.
 	// Used by emitAndCaptureAnnotation to look up the correct metric name when generating results.
@@ -792,6 +879,27 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 	return nil
 }
 
+func (p *UncachedSplit[T]) Stats(ctx context.Context) ([]*types.OperatorEvaluationStats, error) {
+	combinedStatsForAllRanges, err := p.operator.Stats(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defer combinedStatsForAllRanges.Close()
+
+	p.stats = make([]*types.OperatorEvaluationStats, 0, len(p.ranges))
+	for _, rng := range p.ranges {
+		rangeStats, err := combinedStatsForAllRanges.CloneSingleStep(types.NewInstantQueryTimeRange(promts.Time(rng.End)))
+		if err != nil {
+			return nil, err
+		}
+
+		p.stats = append(p.stats, rangeStats)
+	}
+
+	return p.stats, nil
+}
+
 func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 	for rangeIdx, splitRange := range p.ranges {
 		if !splitRange.Cacheable {
@@ -816,6 +924,7 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			seriesMetadata,
 			ann,
 			p.rangeResults[rangeIdx],
+			p.stats[rangeIdx].Encode(),
 			len(p.seriesMetadata),
 			p.parent.cacheStats,
 		); err != nil {
@@ -828,6 +937,10 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 
 func (p *UncachedSplit[T]) Close() {
 	p.operator.Close()
+
+	for _, s := range p.stats {
+		s.Close()
+	}
 }
 
 func (p *UncachedSplit[T]) AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int) {
