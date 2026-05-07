@@ -613,6 +613,39 @@ func TestBlockLabelValues(t *testing.T) {
 	})
 }
 
+func TestStoreCachedLabelValues_GobDecodeLimit(t *testing.T) {
+	// Limit was a workaround for panics in decoding large responses.
+	// See https://github.com/golang/go/issues/59172
+	const valuesLimit = 655360
+	vals := make([]string, valuesLimit+1)
+	for i := range valuesLimit + 1 {
+		vals[i] = "a"
+	}
+
+	ctx, logger := context.Background(), log.NewNopLogger()
+	indexCache := &cacheRecordingStoreLabelValues{}
+	tenant, id, l := "tenant-a", ulid.Make(), "label_a"
+
+	// Values exceed the limit; the cache should not be called
+	storeCachedLabelValues(ctx, indexCache, tenant, id, l, nil, vals, logger)
+	require.False(t, indexCache.called)
+
+	vals = vals[:len(vals)-1]
+
+	// Values truncated below limit; cache should be called.
+	storeCachedLabelValues(ctx, indexCache, tenant, id, l, nil, vals, logger)
+	require.True(t, indexCache.called)
+}
+
+type cacheRecordingStoreLabelValues struct {
+	noopCache
+	called bool
+}
+
+func (c *cacheRecordingStoreLabelValues) StoreLabelValues(string, ulid.ULID, string, indexcache.LabelMatchersKey, []byte) {
+	c.called = true
+}
+
 type cacheNotExpectingToStoreLabelValues struct {
 	noopCache
 	t *testing.T
