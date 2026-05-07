@@ -45,7 +45,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
-	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -597,18 +596,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	defer s.recordSeriesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
-	var (
-		reqBlockMatchers  []*labels.Matcher
-		projectionInclude bool
-		projectionLabels  []string
-	)
+	var reqBlockMatchers []*labels.Matcher
 	if req.RequestHints != nil {
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
 		if err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
-		projectionInclude = req.RequestHints.ProjectionInclude
-		projectionLabels = req.RequestHints.ProjectionLabels
 	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		// Note that we use a different but equivalent hints type for the opaque field.
 		reqHints := &hintspb.SeriesRequestHints{}
@@ -621,8 +614,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		if err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
-		projectionInclude = reqHints.ProjectionInclude
-		projectionLabels = reqHints.ProjectionLabels
 	}
 
 	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
@@ -672,7 +663,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		return err
 	}
 
-	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(ctx, req, srv, projectionInclude, projectionLabels, stats, seriesSet)
+	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(ctx, req, srv, stats, seriesSet)
 	if err != nil {
 		return err
 	}
@@ -774,13 +765,9 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
 	srv storegatewaypb.StoreGateway_SeriesServer,
-	projectionInclude bool,
-	projectionLabels []string,
 	stats *safeQueryStats,
 	seriesSet storepb.SeriesSet,
 ) (numSeries int, err error) {
-	spanlog := spanlogger.FromContext(ctx, s.logger)
-
 	var (
 		encodeDuration = time.Duration(0)
 		sendDuration   = time.Duration(0)
@@ -789,22 +776,6 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		stats.streamingSeriesEncodeResponseDuration += encodeDuration
 		stats.streamingSeriesSendResponseDuration += sendDuration
 	})
-
-	var (
-		projections *series.ProjectionLabels
-
-		// We keep track of the number of bytes used for the original labels
-		// and the number of bytes saved if we applied the projection optimization.
-		// This allows us to quantify the value of the optimization.
-		originalLabelBytes uint64
-		reducedLabelBytes  uint64
-		skippedLabelBytes  uint64
-	)
-
-	if projectionInclude {
-		spanlog.DebugLog("msg", "applying projections to return subset of series labels", "labels", projectionLabels)
-		projections = series.NewProjectionLabels(projectionLabels)
-	}
 
 	seriesBuffer := make([]*storepb.StreamingSeries, req.StreamingChunksBatchSize)
 	for i := range seriesBuffer {
@@ -820,16 +791,6 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		// Although subsequent call to seriesSet.Next() may release the memory of this series object,
 		// it is safe to hold onto the labels because they are not released.
 		lset, _ = seriesSet.At()
-		if projectionInclude {
-			originalLabelBytes += lset.ByteSize()
-			reduced := projections.Reduce(lset)
-			// Estimate the size of the series hash label and value since we aren't generating
-			// series hash on ingest currently.
-			reducedLabelBytes += reduced.ByteSize() + uint64(len(series.HashLabelName)) + 42 /* 256-bit hash as base64 */
-		} else {
-			skippedLabelBytes += lset.ByteSize()
-		}
-
 		// We are re-using the slice for every batch this way.
 		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
 		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
@@ -842,10 +803,6 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 			seriesBatch.Series = seriesBatch.Series[:0]
 		}
 	}
-
-	s.metrics.originalLabelBytes.Add(float64(originalLabelBytes))
-	s.metrics.reducedLabelBytes.Add(float64(reducedLabelBytes))
-	s.metrics.skippedLabelBytes.Add(float64(skippedLabelBytes))
 
 	if seriesSet.Err() != nil {
 		return 0, errors.Wrap(seriesSet.Err(), "expand series set")

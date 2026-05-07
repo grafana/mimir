@@ -22,7 +22,7 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude, v.Subsets)
 
 	if v.ReturnSampleTimestamps {
 		d = d + ", return sample timestamps"
@@ -72,6 +72,7 @@ func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
+		slices.EqualFunc(v.Subsets, otherVectorSelector.Subsets, subsetsEqual) &&
 		v.EquivalentToIgnoringMatchersAndHints(otherVectorSelector)
 }
 
@@ -112,6 +113,11 @@ func (v *VectorSelector) ChildrenLabels() []string {
 }
 
 func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	subsets, err := SubsetsToSelectorType(v.Subsets)
+	if err != nil {
+		return nil, err
+	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
@@ -126,6 +132,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		Smoothed:                 v.Smoothed,
 		ProjectionInclude:        v.ProjectionInclude,
 		ProjectionLabels:         v.ProjectionLabels,
+		Subsets:                  subsets,
 	}
 
 	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps, v.ReturnSampleTimestampsPreserveHistograms)), nil
@@ -144,9 +151,9 @@ func (v *VectorSelector) ExpressionPosition() (posrange.PositionRange, error) {
 	return v.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (v *VectorSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if v.Smoothed {
-		return planning.QueryPlanV4
+		return planning.QueryPlanV4, nil
 	}
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionZero, nil
 }

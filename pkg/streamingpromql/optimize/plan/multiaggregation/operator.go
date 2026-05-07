@@ -4,7 +4,10 @@ package multiaggregation
 
 import (
 	"context"
+	"errors"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -18,6 +21,8 @@ import (
 type MultiAggregatorGroupEvaluator struct {
 	inner                    types.InstantVectorOperator
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	timeRange                types.QueryTimeRange
+	logger                   log.Logger
 
 	instances []*MultiAggregatorInstanceOperator
 
@@ -26,17 +31,20 @@ type MultiAggregatorGroupEvaluator struct {
 	prepareCalled              bool
 	afterPrepareCalled         bool
 
-	cachedQueryStats    *types.OperatorEvaluationStats
-	queryStatsCallCount int
+	cachedStats *types.OperatorEvaluationStats
 }
 
 func NewMultiAggregatorGroupEvaluator(
 	inner types.InstantVectorOperator,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	timeRange types.QueryTimeRange,
+	logger log.Logger,
 ) *MultiAggregatorGroupEvaluator {
 	return &MultiAggregatorGroupEvaluator{
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
+		timeRange:                timeRange,
+		logger:                   logger,
 	}
 }
 
@@ -134,28 +142,76 @@ func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context) error {
 	return m.inner.Finalize(ctx)
 }
 
-func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	// TODO: handle subsets
+func (m *MultiAggregatorGroupEvaluator) Stats(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, error) {
+	if !m.allInstancesFinalized() {
+		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats when one or more instances are not finalized")
+	}
 
-	if m.queryStatsCallCount == 0 {
+	if instance.hasReadStats {
+		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats twice for the same instance")
+	}
+
+	if m.cachedStats == nil {
 		var err error
-		m.cachedQueryStats, err = m.inner.Stats(ctx)
+		m.cachedStats, err = m.inner.Stats(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	m.queryStatsCallCount++
+	instance.hasReadStats = true
+	stats := m.cachedStats
 
-	if m.queryStatsCallCount == len(m.instances) {
-		// Last call: return the cached stats directly, transferring ownership to the caller.
-		stats := m.cachedQueryStats
-		m.cachedQueryStats = nil
-		return stats, nil
+	if m.allInstancesHaveReadStats() {
+		// Last call: return stats without cloning, and clear reference to existing stats.
+		m.cachedStats = nil
+	} else {
+		var err error
+		stats, err = stats.Clone() // FIXME: this is wasteful, we could just clone the subset needed
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Not the last call: return a clone so the cached copy remains available.
-	return m.cachedQueryStats.Clone()
+	if len(instance.filters) > 0 {
+		// If the inner operator was remotely executed on a querier that does not report stats or subset stats,
+		// then the subset at the requested index won't be present.
+		//
+		// For simplicity during upgrades, and for consistency with remote execution's behaviour during the same circumstances,
+		// we return an empty set of stats.
+		if !stats.HasSubsets() {
+			stats.Close()
+
+			level.Warn(m.logger).Log("msg", "MultiAggregatorGroupEvaluator expected subset statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
+			return types.NewOperatorEvaluationStats(ctx, m.timeRange, m.memoryConsumptionTracker, 0)
+		}
+
+		stats.UseSubset(instance.subsetIndex)
+	} else {
+		stats.RemoveAllSubsets()
+	}
+
+	return stats, nil
+}
+
+func (m *MultiAggregatorGroupEvaluator) allInstancesFinalized() bool {
+	for _, instance := range m.instances {
+		if !instance.finalized {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (m *MultiAggregatorGroupEvaluator) allInstancesHaveReadStats() bool {
+	for _, instance := range m.instances {
+		if !instance.hasReadStats {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (m *MultiAggregatorGroupEvaluator) Close() {
@@ -168,9 +224,9 @@ func (m *MultiAggregatorGroupEvaluator) Close() {
 
 	m.inner.Close()
 
-	if m.cachedQueryStats != nil {
-		m.cachedQueryStats.Close()
-		m.cachedQueryStats = nil
+	if m.cachedStats != nil {
+		m.cachedStats.Close()
+		m.cachedStats = nil
 	}
 }
 
@@ -178,7 +234,9 @@ type MultiAggregatorInstanceOperator struct {
 	group              *MultiAggregatorGroupEvaluator
 	expressionPosition posrange.PositionRange
 	aggregator         *aggregations.Aggregator
-	filters            []*labels.Matcher
+
+	filters     []*labels.Matcher
+	subsetIndex int // If filters is non-empty, the index in the inner operator's stats that we expect to find the subset statistics for this instance.
 
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this instance's filters.
 	// If this instance has no filters, this is nil.
@@ -186,8 +244,9 @@ type MultiAggregatorInstanceOperator struct {
 
 	outputSeriesMetadata []types.SeriesMetadata
 
-	finalized bool
-	closed    bool
+	finalized    bool
+	hasReadStats bool
+	closed       bool
 }
 
 var _ types.InstantVectorOperator = (*MultiAggregatorInstanceOperator)(nil)
@@ -197,6 +256,7 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	grouping []string,
 	without bool,
 	filters []*labels.Matcher,
+	subsetIndex int,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	timeRange types.QueryTimeRange,
@@ -210,6 +270,7 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 
 	m.expressionPosition = expressionPosition
 	m.filters = filters
+	m.subsetIndex = subsetIndex
 
 	return nil
 }
@@ -335,7 +396,7 @@ func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
 }
 
 func (m *MultiAggregatorInstanceOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return m.group.QueryStats(ctx)
+	return m.group.Stats(ctx, m)
 }
 
 func (m *MultiAggregatorInstanceOperator) Close() {

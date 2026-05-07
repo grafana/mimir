@@ -139,9 +139,9 @@ func (s *SplitFunctionCall) ExpressionPosition() (posrange.PositionRange, error)
 	return s.Inner.ExpressionPosition()
 }
 
-func (s *SplitFunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (s *SplitFunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	// Query splitting with intermediate result caching requires QueryPlanV6
-	return planning.QueryPlanV6
+	return planning.QueryPlanV6, nil
 }
 
 type Materializer struct {

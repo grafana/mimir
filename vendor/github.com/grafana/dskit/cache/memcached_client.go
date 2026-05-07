@@ -810,6 +810,12 @@ func (c *MemcachedClient) sortKeysByServer(keys []string) []string {
 		bucketed[addrString] = append(bucketed[addrString], key)
 	}
 
+	// Record the number of servers we've bucketed keys into. Note that this is only
+	// done in the "batching" code path because sorting keys by server doesn't help
+	// when there's only a single batch being used. This is fine since we expect the
+	// number of servers touched to be higher for requests with more keys.
+	c.metrics.serversTouched.WithLabelValues(opGetMulti).Observe(float64(len(bucketed)))
+
 	out := make([]string, 0, len(keys))
 	for srv := range bucketed {
 		out = append(out, bucketed[srv]...)

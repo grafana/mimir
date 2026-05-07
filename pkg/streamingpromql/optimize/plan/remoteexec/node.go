@@ -124,12 +124,12 @@ func (r *RemoteExecutionGroup) ExpressionPosition() (posrange.PositionRange, err
 	return posrange.PositionRange{}, errors.New("cannot call ExpressionPosition on RemoteExecutionGroup node directly, call ExpressionPosition on consumer node instead")
 }
 
-func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if len(r.Nodes) > 1 {
-		return planning.QueryPlanV3
+		return planning.QueryPlanV3, nil
 	}
 
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionZero, nil
 }
 
 type RemoteExecutionConsumer struct {
@@ -251,13 +251,13 @@ func (c *RemoteExecutionConsumer) getEvaluatedNode() (planning.Node, error) {
 	return c.Group.Nodes[c.NodeIndex], nil
 }
 
-func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	// Even though this node type was introduced around the time of query plan v3, this node type is only
 	// ever used in query-frontends, and is needed to support remote execution of single nodes against
 	// queriers supporting v2 or earlier.
 	// So we return v0 here and rely on the RemoteExecutionGroup's MinimumRequiredPlanVersion() to
 	// return the correct version required based on whether one or many nodes are being evaluated.
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionZero, nil
 }
 
 type RemoteExecutionGroupMaterializer struct {

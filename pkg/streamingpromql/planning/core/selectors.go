@@ -11,7 +11,16 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 )
 
-func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets, anchored, smooothed, counterAware bool, projectionLabels []string, projectionInclude bool) string {
+func describeSelector(
+	matchers []*LabelMatcher,
+	ts *time.Time,
+	offset time.Duration,
+	rng *time.Duration,
+	skipHistogramBuckets, anchored, smooothed, counterAware bool,
+	projectionLabels []string,
+	projectionInclude bool,
+	subsets []SubsetMatchers,
+) string {
 	builder := &strings.Builder{}
 	FormatMatchers(builder, matchers)
 
@@ -51,7 +60,6 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 	// If we are excluding by no labels, don't display the projection section
 	// since excluding by no labels is equivalent to not using projections.
 	if len(projectionLabels) > 0 || projectionInclude {
-
 		if projectionInclude {
 			builder.WriteString(`, include (`)
 		} else {
@@ -65,6 +73,18 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 
 		builder.WriteString(strings.Join(quoted, `, `))
 		builder.WriteString(`)`)
+	}
+
+	if len(subsets) > 0 {
+		builder.WriteString(", subsets: ")
+
+		for i, subset := range subsets {
+			if i > 0 {
+				builder.WriteString(", ")
+			}
+
+			FormatMatchers(builder, subset.Matchers)
+		}
 	}
 
 	return builder.String()

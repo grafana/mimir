@@ -65,7 +65,14 @@ const QueryPlanV8 = QueryPlanVersion(8)
 // QueryPlanV9 introduces the NoOp node.
 const QueryPlanV9 = QueryPlanVersion(9)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV9
+// QueryPlanV10 introduces a matrix variant of the NoOp node.
+const QueryPlanV10 = QueryPlanVersion(10)
+
+// QueryPlanV11 introduces support for deduplicating range vector selectors in range queries as part of
+// common subexpression elimination.
+const QueryPlanV11 = QueryPlanVersion(11)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV11
 
 type QueryPlan struct {
 	Root       Node
@@ -167,7 +174,7 @@ type Node interface {
 
 	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes this node.
 	// It does not consider the query plan version required by any of its children (for that, use planning.MinimumRequiredPlanVersion).
-	MinimumRequiredPlanVersion() QueryPlanVersion
+	MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (QueryPlanVersion, error)
 
 	// FIXME: implementations for many of the above methods can be generated automatically
 }
@@ -324,17 +331,30 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 	if p.Root == nil {
 		return errors.New("query plan version can not be determined without a root node")
 	}
-	p.Version = MinimumRequiredPlanVersion(p.Root)
-	return nil
+
+	var err error
+	p.Version, err = MinimumRequiredPlanVersion(p.Root, p.Parameters.TimeRange)
+	return err
 }
 
 // MinimumRequiredPlanVersion returns the minimum required query plan version of node and all its children.
-func MinimumRequiredPlanVersion(node Node) QueryPlanVersion {
-	maxVersion := node.MinimumRequiredPlanVersion()
-	for child := range ChildrenIter(node) {
-		maxVersion = max(maxVersion, MinimumRequiredPlanVersion(child))
+func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (QueryPlanVersion, error) {
+	maxVersion, err := node.MinimumRequiredPlanVersion(timeRange)
+	if err != nil {
+		return 0, err
 	}
-	return maxVersion
+
+	childTimeRange := node.ChildrenTimeRange(timeRange)
+	for child := range ChildrenIter(node) {
+		childVersion, err := MinimumRequiredPlanVersion(child, childTimeRange)
+		if err != nil {
+			return 0, err
+		}
+
+		maxVersion = max(maxVersion, childVersion)
+	}
+
+	return maxVersion, nil
 }
 
 func ToEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {

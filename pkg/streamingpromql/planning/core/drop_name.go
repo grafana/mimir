@@ -94,8 +94,8 @@ func (n *DropName) ExpressionPosition() (posrange.PositionRange, error) {
 	return n.Inner.ExpressionPosition()
 }
 
-func (n *DropName) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanV1
+func (n *DropName) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV1, nil
 }
 
 func MaterializeDropName(n *DropName, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

@@ -1,5 +1,5 @@
 diff --git a/pkg/storegateway/storepb/rpc.pb.go b/pkg/storegateway/storepb/rpc.pb.go
-index 5cc9be0151..8c0ca33942 100644
+index 5d61498352..63a7fa070a 100644
 --- a/pkg/storegateway/storepb/rpc.pb.go
 +++ b/pkg/storegateway/storepb/rpc.pb.go
 @@ -8,8 +8,6 @@ import (
@@ -11,7 +11,7 @@ index 5cc9be0151..8c0ca33942 100644
  	io "io"
  	math "math"
  	math_bits "math/bits"
-@@ -174,9 +172,6 @@ func (m *Stats) XXX_DiscardUnknown() {
+@@ -166,9 +164,6 @@ func (m *Stats) XXX_DiscardUnknown() {
  var xxx_messageInfo_Stats proto.InternalMessageInfo
  
  type SeriesResponse struct {

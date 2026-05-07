@@ -16,18 +16,16 @@ import (
 )
 
 // ToQueryRequest builds a QueryRequest proto.
-func ToQueryRequest(from, to model.Time, projectionInclude bool, projectionLabels []string, matchers []*labels.Matcher) (*QueryRequest, error) {
+func ToQueryRequest(from, to model.Time, matchers []*labels.Matcher) (*QueryRequest, error) {
 	ms, err := ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	return &QueryRequest{
-		StartTimestampMs:  int64(from),
-		EndTimestampMs:    int64(to),
-		Matchers:          ms,
-		ProjectionInclude: projectionInclude,
-		ProjectionLabels:  projectionLabels,
+		StartTimestampMs: int64(from),
+		EndTimestampMs:   int64(to),
+		Matchers:         ms,
 	}, nil
 }
 

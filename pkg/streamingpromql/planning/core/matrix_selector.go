@@ -29,7 +29,7 @@ func (m *MatrixSelector) IsSplittable() bool {
 var _ planning.SplitNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude, m.Subsets)
 }
 
 // RangeVectorSplittingCacheKey returns the cache key for the matrix selector.
@@ -40,7 +40,7 @@ func (m *MatrixSelector) Describe() string {
 // inner node, the range plus the offset and @ modifiers will have to be retained.
 // TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
 func (m *MatrixSelector) SplittingCacheKey() string {
-	return describeSelector(m.Matchers, nil, 0, nil, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude)
+	return describeSelector(m.Matchers, nil, 0, nil, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude, m.Subsets)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -80,6 +80,7 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
+		slices.EqualFunc(m.Subsets, otherMatrixSelector.Subsets, subsetsEqual) &&
 		m.EquivalentToIgnoringMatchersAndHints(otherMatrixSelector)
 }
 
@@ -134,6 +135,11 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		selectorOffset = overrideTimeParams.Offset.Milliseconds()
 	}
 
+	subsets, err := SubsetsToSelectorType(m.Subsets)
+	if err != nil {
+		return nil, err
+	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
@@ -150,6 +156,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		CounterAware:             m.CounterAware,
 		ProjectionInclude:        m.ProjectionInclude,
 		ProjectionLabels:         m.ProjectionLabels,
+		Subsets:                  subsets,
 	}
 
 	if m.Anchored || m.Smoothed {
@@ -178,11 +185,11 @@ func (m *MatrixSelector) ExpressionPosition() (posrange.PositionRange, error) {
 	return m.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (m *MatrixSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if m.Anchored || m.Smoothed {
-		return planning.QueryPlanV4
+		return planning.QueryPlanV4, nil
 	}
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionZero, nil
 }
 
 func (m *MatrixSelector) GetRange() time.Duration {

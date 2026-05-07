@@ -1870,3 +1870,57 @@ load 1m
 
 eval instant at 0m c * on(region) (a unless on(zone) b)
   # a{region=us,zone=1} is suppressed by b{region=eu,zone=1} matching on zone=1 → inner returns empty → no result
+
+clear
+
+# Test that the hints-based narrowing optimisation for 'and'/'unless' produces correct results
+# when the RHS contains series whose matching-label values are absent from the LHS.
+# The optimisation builds a matcher from LHS label values (e.g. env=~"prod") and passes it to
+# the RHS, which should filter out irrelevant RHS series without affecting correctness.
+load 6m
+  left{env="prod",  pod="a"} 1 2 3 4
+  left{env="prod",  pod="b"} 5 6 7 8
+  right{env="prod",    idx="1"} 10 _ 30 _
+  right{env="staging", idx="2"} _  _ _  _
+
+# and on(env): env="staging" RHS series is narrowed away by hint matcher, but the result is
+# identical to what it would be without narrowing (env="staging" would never match LHS anyway).
+# RHS right{env="prod"} has data at t=0 and t=12 only, so those are the only steps returned.
+eval range from 0 to 18m step 6m left and on(env) right
+  left{env="prod", pod="a"} 1 _ 3 _
+  left{env="prod", pod="b"} 5 _ 7 _
+
+# unless on(env): same narrowing applies; env="prod" LHS series are suppressed at steps where
+# env="prod" RHS has data (t=0, t=12), and returned at steps where it doesn't (t=6, t=18).
+eval range from 0 to 18m step 6m left unless on(env) right
+  left{env="prod", pod="a"} _ 2 _ 4
+  left{env="prod", pod="b"} _ 6 _ 8
+
+clear
+
+# Test that the hints-based narrowing optimisation for group_left/group_right produces correct
+# results when the many side contains series whose matching-label values are absent from the one
+# side. The optimisation builds matchers from the one-side label values (env=~"prod|staging") and
+# passes them to the many side, filtering out irrelevant series without affecting correctness.
+load 6m
+  one_side{env="prod"}               10 20 _ _
+  one_side{env="staging"}             2  _  4 _
+  many_side{env="prod",    pod="a"}   1  2  3 4
+  many_side{env="prod",    pod="b"}   5  6  7 8
+  many_side{env="staging", pod="c"}   9  _  _ _
+  many_side{env="dev",     pod="d"}  11 12  _ _
+
+# group_left (many-to-one): one_side is the RHS "one" side, many_side is the LHS "many" side.
+# Hints are set based on the on(env) clause; many_side{env="dev"} is narrowed away by the hint
+# matcher, but the result is the same as without narrowing (env="dev" has no one_side match).
+eval range from 0 to 18m step 6m many_side * on(env) group_left() one_side
+  {env="prod",    pod="a"} 10  40  _  _
+  {env="prod",    pod="b"} 50 120  _  _
+  {env="staging", pod="c"} 18   _  _  _
+
+# group_right (one-to-many): one_side is the LHS "one" side, many_side is the RHS "many" side.
+# Symmetric to group_left above; should produce identical output values.
+eval range from 0 to 18m step 6m one_side * on(env) group_right() many_side
+  {env="prod",    pod="a"} 10  40  _  _
+  {env="prod",    pod="b"} 50 120  _  _
+  {env="staging", pod="c"} 18   _  _  _

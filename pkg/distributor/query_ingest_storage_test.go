@@ -523,7 +523,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 
 			// Query ingesters.
 			queryMetrics := stats.NewQueryMetrics(distributorRegistries[0])
-			resp, err := distributors[0].QueryStream(ctx, queryMetrics, 0, 10, false, nil, testData.matchers...)
+			resp, err := distributors[0].QueryStream(ctx, queryMetrics, 0, 10, testData.matchers...)
 
 			if testData.expectedErr == nil {
 				require.NoError(t, err)
@@ -538,7 +538,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				}
 			}
 
-			responseMatrix, err := ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
+			responseMatrix, err := ingester_client.StreamingSeriesToMatrixForTests(0, 5, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, testData.expectedResponse.String(), responseMatrix.String())
 
@@ -693,14 +693,14 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 				// Query ingesters.
 				queryMetrics := stats.NewQueryMetrics(distributorRegistries[0])
-				resp, err := d.QueryStream(ctx, queryMetrics, 0, 10, false, nil, selectAllSeriesMatcher)
+				resp, err := d.QueryStream(ctx, queryMetrics, 0, 10, selectAllSeriesMatcher)
 
 				if scenario.expectQueryError {
 					require.Error(t, err)
 				} else {
 					require.NoError(t, err)
 
-					responseMatrix, err := ingester_client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
+					responseMatrix, err := ingester_client.StreamingSeriesToMatrixForTests(0, 10, resp.StreamingSeries)
 					require.NoError(t, err)
 
 					// Build expected response based on which partitions are queried.

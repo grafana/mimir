@@ -5,6 +5,7 @@ package commonsubexpressionelimination
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -106,8 +107,18 @@ func (d *Duplicate) ExpressionPosition() (posrange.PositionRange, error) {
 	return d.Inner.ExpressionPosition()
 }
 
-func (d *Duplicate) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanVersionZero
+func (d *Duplicate) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	innerResultType, err := d.Inner.ResultType()
+	if err != nil {
+		return 0, err
+	}
+
+	if !timeRange.IsInstant && innerResultType == parser.ValueTypeMatrix {
+		// Range vector expression in a range query
+		return planning.QueryPlanV11, nil
+	}
+
+	return planning.QueryPlanVersionZero, nil
 }
 
 func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
@@ -119,11 +130,11 @@ func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, tim
 	switch inner := inner.(type) {
 	case types.InstantVectorOperator:
 		return &InstantVectorDuplicationConsumerOperatorFactory{
-			Buffer: NewInstantVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker),
+			Buffer: NewInstantVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker, timeRange, params.Logger),
 		}, nil
 	case types.RangeVectorOperator:
 		return &RangeVectorDuplicationConsumerOperatorFactory{
-			Buffer: NewRangeVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker),
+			Buffer: NewRangeVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker, timeRange, params.Logger),
 		}, nil
 	default:
 		return nil, fmt.Errorf("expected InstantVectorOperator or RangeVectorOperator as child of Duplicate, got %T", inner)
@@ -212,6 +223,9 @@ func (f *DuplicateFilter) Describe() string {
 	builder := &strings.Builder{}
 	core.FormatMatchers(builder, f.Filters)
 
+	builder.WriteString(", subset index: ")
+	builder.WriteString(strconv.FormatInt(f.SubsetIndex, 10))
+
 	return builder.String()
 }
 
@@ -235,8 +249,8 @@ func (f *DuplicateFilter) ExpressionPosition() (posrange.PositionRange, error) {
 	return f.Inner.ExpressionPosition()
 }
 
-func (f *DuplicateFilter) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanV7
+func (f *DuplicateFilter) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV7, nil
 }
 
 func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
@@ -255,11 +269,11 @@ func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Mater
 		return nil, err
 	}
 
-	filterable.SetFilters(filters)
+	filterable.SetFilters(filters, int(f.SubsetIndex))
 
 	return planning.NewSingleUseOperatorFactory(operator), nil
 }
 
 type Filterable interface {
-	SetFilters(filters []*labels.Matcher)
+	SetFilters(filters []*labels.Matcher, subsetIndex int)
 }

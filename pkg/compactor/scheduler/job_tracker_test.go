@@ -277,36 +277,41 @@ func TestJobTracker_PlanJobTracking(t *testing.T) {
 	clk.Set(at(3, 0))
 	jt, reg := newTestJobTracker(clk)
 
-	assertIncompletePlanJobs := func(label string, expected int) {
+	assertPlanJobLocation := func(label string, pending, active int) {
 		t.Helper()
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_compactor_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
-			# TYPE cortex_compactor_incomplete_plan_jobs gauge
-			cortex_compactor_incomplete_plan_jobs %d
-		`, expected)), "cortex_compactor_incomplete_plan_jobs"), label)
+			# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
+			# TYPE cortex_compactor_scheduler_pending_jobs gauge
+			cortex_compactor_scheduler_pending_jobs{job_type="compaction"} 0
+			cortex_compactor_scheduler_pending_jobs{job_type="plan"} %d
+			# HELP cortex_compactor_scheduler_active_jobs The number of jobs active in workers.
+			# TYPE cortex_compactor_scheduler_active_jobs gauge
+			cortex_compactor_scheduler_active_jobs{job_type="compaction"} 0
+			cortex_compactor_scheduler_active_jobs{job_type="plan"} %d
+		`, pending, active)), "cortex_compactor_scheduler_pending_jobs", "cortex_compactor_scheduler_active_jobs"), label)
 	}
 
-	assertIncompletePlanJobs("no plan jobs yet", 0)
+	assertPlanJobLocation("no plan jobs yet", 0, 0)
 
 	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 0)
 	require.NoError(t, err)
-	assertIncompletePlanJobs("plan job pending", 1)
+	assertPlanJobLocation("plan job pending", 1, 0)
 
 	leaseResp, _, err := jt.Lease()
 	require.NoError(t, err)
 	require.Equal(t, planJobId, leaseResp.Key.Id)
-	assertIncompletePlanJobs("plan job active (still incomplete)", 1)
+	assertPlanJobLocation("plan job active", 0, 1)
 
 	canceled, _, err := jt.CancelLease(leaseResp.Key.Id, leaseResp.Key.Epoch)
 	require.NoError(t, err)
 	require.True(t, canceled)
-	assertIncompletePlanJobs("plan job revived to pending (unchanged)", 1)
+	assertPlanJobLocation("plan job revived to pending", 1, 0)
 
 	leaseResp, _, err = jt.Lease()
 	require.NoError(t, err)
 	_, _, err = jt.Remove(leaseResp.Key.Id, leaseResp.Key.Epoch, true)
 	require.NoError(t, err)
-	assertIncompletePlanJobs("plan job complete", 0)
+	assertPlanJobLocation("plan job complete", 0, 0)
 }
 
 func TestJobTracker_Cleanup(t *testing.T) {
@@ -314,7 +319,7 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	sm := newSchedulerMetrics(reg)
 
-	// Two tenants share the same incompleteJobsBytes and incompletePlanJobs gauges.
+	// Two tenants share the same aggregate gauges (incompleteJobsBytes, pendingJobs, activeJobs).
 	jt1 := NewJobTracker(&NopJobPersister{}, "tenant1", clk, infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant1"), log.NewNopLogger())
 	jt2 := NewJobTracker(&NopJobPersister{}, "tenant2", clk, infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant2"), log.NewNopLogger())
 
@@ -333,25 +338,41 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	_, err = jt2.Maintenance(time.Minute, false, true, time.Hour, 0)
 	require.NoError(t, err)
 
+	// Lease both of tenant1's jobs
+	for range 2 {
+		_, _, err := jt1.Lease()
+		require.NoError(t, err)
+	}
+
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_compactor_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
-		# TYPE cortex_compactor_incomplete_plan_jobs gauge
-		cortex_compactor_incomplete_plan_jobs 2
-	`), "cortex_compactor_incomplete_plan_jobs"), "both tenants have a pending plan job")
+		# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
+		# TYPE cortex_compactor_scheduler_pending_jobs gauge
+		cortex_compactor_scheduler_pending_jobs{job_type="compaction"} 1
+		cortex_compactor_scheduler_pending_jobs{job_type="plan"} 1
+		# HELP cortex_compactor_scheduler_active_jobs The number of jobs active in workers.
+		# TYPE cortex_compactor_scheduler_active_jobs gauge
+		cortex_compactor_scheduler_active_jobs{job_type="compaction"} 1
+		cortex_compactor_scheduler_active_jobs{job_type="plan"} 1
+	`), "cortex_compactor_scheduler_pending_jobs", "cortex_compactor_scheduler_active_jobs"), "tenant1 active, tenant2 pending")
 
 	// Cleaning up tenant1 should only subtract its contribution, not zero the shared gauges.
 	jt1.CleanupMetrics()
 	assertTrackerBytes(t, reg, "only tenant1 bytes removed", 0, 200)
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_compactor_scheduler_pending_jobs_by_user The number of queued pending jobs, broken down by user.
+		# TYPE cortex_compactor_scheduler_pending_jobs_by_user gauge
+		cortex_compactor_scheduler_pending_jobs_by_user{user="tenant2"} 2
+	`), "cortex_compactor_scheduler_pending_jobs_by_user"), "only tenant2 pending jobs remain")
+	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_compactor_scheduler_pending_jobs The number of queued pending jobs.
 		# TYPE cortex_compactor_scheduler_pending_jobs gauge
-		cortex_compactor_scheduler_pending_jobs{user="tenant2"} 2
-	`), "cortex_compactor_scheduler_pending_jobs"), "only tenant2 pending jobs remain")
-	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_compactor_incomplete_plan_jobs The total number of plan jobs that have not yet completed (pending or active).
-		# TYPE cortex_compactor_incomplete_plan_jobs gauge
-		cortex_compactor_incomplete_plan_jobs 1
-	`), "cortex_compactor_incomplete_plan_jobs"), "only tenant2 plan job remains")
+		cortex_compactor_scheduler_pending_jobs{job_type="compaction"} 1
+		cortex_compactor_scheduler_pending_jobs{job_type="plan"} 1
+		# HELP cortex_compactor_scheduler_active_jobs The number of jobs active in workers.
+		# TYPE cortex_compactor_scheduler_active_jobs gauge
+		cortex_compactor_scheduler_active_jobs{job_type="compaction"} 0
+		cortex_compactor_scheduler_active_jobs{job_type="plan"} 0
+	`), "cortex_compactor_scheduler_pending_jobs", "cortex_compactor_scheduler_active_jobs"), "tenant1's active contribution removed, tenant2's pending preserved")
 }
 
 func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {

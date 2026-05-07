@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -136,6 +137,24 @@ func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
 	return converted
 }
 
+func SubsetsToSelectorType(subsets []SubsetMatchers) ([]selectors.Subset, error) {
+	if len(subsets) == 0 {
+		return nil, nil
+	}
+
+	converted := make([]selectors.Subset, 0, len(subsets))
+	for _, subset := range subsets {
+		m, err := LabelMatchersToPrometheusType(subset.Matchers)
+		if err != nil {
+			return nil, err
+		}
+
+		converted = append(converted, selectors.Subset{Filter: m})
+	}
+
+	return converted, nil
+}
+
 func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
 	if len(matchers) == 0 {
 		return nil, nil
@@ -153,6 +172,10 @@ func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher,
 	}
 
 	return converted, nil
+}
+
+func subsetsEqual(a, b SubsetMatchers) bool {
+	return slices.EqualFunc(a.Matchers, b.Matchers, matchersEqual)
 }
 
 func matchersEqual(a, b *LabelMatcher) bool {

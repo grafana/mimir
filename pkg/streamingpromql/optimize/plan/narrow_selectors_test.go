@@ -427,19 +427,39 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 0,
 		},
-		"logical unless binary expression should not have hints added": {
+		"logical unless binary expression should have hints added": {
 			expr: `
 				first_metric
 				unless on (env, region)
 				second_metric
 			`,
 			expectedPlan: `
-				- BinaryExpression: LHS unless on (env, region) RHS
+				- BinaryExpression: LHS unless on (env, region) RHS, hints (env, region)
 					- LHS: VectorSelector: {__name__="first_metric"}
 					- RHS: VectorSelector: {__name__="second_metric"}
 			`,
 			expectedAttempts: 1,
-			expectedModified: 0,
+			expectedModified: 1,
+		},
+		"group_left binary expression on raw vector selectors should have hints added": {
+			expr: `many_side * on (env) group_left () one_side`,
+			expectedPlan: `
+				- BinaryExpression: LHS * on (env) group_left () RHS, hints (env)
+					- LHS: VectorSelector: {__name__="many_side"}
+					- RHS: VectorSelector: {__name__="one_side"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"group_right binary expression on raw vector selectors should have hints added": {
+			expr: `one_side * on (env) group_right () many_side`,
+			expectedPlan: `
+				- BinaryExpression: LHS * on (env) group_right () RHS, hints (env)
+					- LHS: VectorSelector: {__name__="one_side"}
+					- RHS: VectorSelector: {__name__="many_side"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 	}
 

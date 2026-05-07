@@ -18,4 +18,5 @@ message DuplicateDetails {
 
 message DuplicateFilterDetails {
   repeated core.LabelMatcher filters = 1;
+  int64 subsetIndex = 2; // If filters is non-empty, the index in the inner operator's stats that we expect to find the subset statistics for this consumer.
 }

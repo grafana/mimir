@@ -40,8 +40,10 @@ import (
 )
 
 var (
-	errCompactionJobHasNoBlocks = errors.New("compaction job has no blocks")
-	errNoBlockMetadataProvided  = errors.New("no block metadata provided")
+	errCompactionJobHasNoBlocks      = errors.New("compaction job has no blocks")
+	errNoBlockMetadataProvided       = errors.New("no block metadata provided")
+	errJobCanceledByScheduler        = errors.New("job canceled by scheduler")
+	errFinalStatusGracePeriodTimeout = errors.New("final status grace period timed out")
 )
 
 // compactionExecutor defines how compaction work is executed.
@@ -81,25 +83,27 @@ func (e *standaloneExecutor) stop() error {
 }
 
 var (
-	errInvalidSchedulerEndpoint          = fmt.Errorf("invalid compactor.scheduler-client.scheduler-endpoint, required when compactor.scheduler-client.enabled is true")
-	errInvalidSchedulerUpdateInterval    = fmt.Errorf("invalid compactor.scheduler-client.update-interval, interval must be positive")
-	errInvalidSchedulerLeasingMinBackoff = fmt.Errorf("invalid compactor.scheduler-client.leasing-min-backoff, must be positive")
-	errInvalidSchedulerLeasingMaxBackoff = fmt.Errorf("invalid compactor.scheduler-client.leasing-max-backoff, must be greater than min backoff")
-	errInvalidSchedulerUpdateMinBackoff  = fmt.Errorf("invalid compactor.scheduler-client.update-min-backoff, must be positive")
-	errInvalidSchedulerUpdateMaxBackoff  = fmt.Errorf("invalid compactor.scheduler-client.update-max-backoff, must be greater than min backoff")
+	errInvalidSchedulerEndpoint                      = fmt.Errorf("invalid compactor.scheduler-client.scheduler-endpoint, required when compactor.scheduler-client.enabled is true")
+	errInvalidSchedulerUpdateInterval                = fmt.Errorf("invalid compactor.scheduler-client.update-interval, interval must be positive")
+	errInvalidSchedulerLeasingMinBackoff             = fmt.Errorf("invalid compactor.scheduler-client.leasing-min-backoff, must be positive")
+	errInvalidSchedulerLeasingMaxBackoff             = fmt.Errorf("invalid compactor.scheduler-client.leasing-max-backoff, must be greater than min backoff")
+	errInvalidSchedulerUpdateMinBackoff              = fmt.Errorf("invalid compactor.scheduler-client.update-min-backoff, must be positive")
+	errInvalidSchedulerUpdateMaxBackoff              = fmt.Errorf("invalid compactor.scheduler-client.update-max-backoff, must be greater than min backoff")
+	errInvalidSchedulerTerminatingFinalStatusTimeout = fmt.Errorf("invalid compactor.scheduler-client.terminating-final-status-timeout, must be positive")
 )
 
 type SchedulerClientConfig struct {
-	Enabled                      bool                           `yaml:"enabled" category:"experimental"`
-	SchedulerEndpoint            string                         `yaml:"scheduler_endpoint" category:"experimental"`
-	GRPCClientConfig             grpcclient.Config              `yaml:"grpc_client_config" category:"experimental"`
-	LeasingMinBackoff            time.Duration                  `yaml:"leasing_min_backoff" category:"experimental"`
-	LeasingMaxBackoff            time.Duration                  `yaml:"leasing_max_backoff" category:"experimental"`
-	UpdateInterval               time.Duration                  `yaml:"update_interval" category:"experimental"`
-	UpdateMinBackoff             time.Duration                  `yaml:"update_min_backoff" category:"experimental"`
-	UpdateMaxBackoff             time.Duration                  `yaml:"update_max_backoff" category:"experimental"`
-	CompactionDirCleanupInterval time.Duration                  `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
-	MetadataCacheConfig          mimir_tsdb.MetadataCacheConfig `yaml:"metadata_cache" category:"experimental"`
+	Enabled                       bool                           `yaml:"enabled" category:"experimental"`
+	SchedulerEndpoint             string                         `yaml:"scheduler_endpoint" category:"experimental"`
+	GRPCClientConfig              grpcclient.Config              `yaml:"grpc_client_config" category:"experimental"`
+	LeasingMinBackoff             time.Duration                  `yaml:"leasing_min_backoff" category:"experimental"`
+	LeasingMaxBackoff             time.Duration                  `yaml:"leasing_max_backoff" category:"experimental"`
+	UpdateInterval                time.Duration                  `yaml:"update_interval" category:"experimental"`
+	UpdateMinBackoff              time.Duration                  `yaml:"update_min_backoff" category:"experimental"`
+	UpdateMaxBackoff              time.Duration                  `yaml:"update_max_backoff" category:"experimental"`
+	CompactionDirCleanupInterval  time.Duration                  `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
+	MetadataCacheConfig           mimir_tsdb.MetadataCacheConfig `yaml:"metadata_cache" category:"experimental"`
+	TerminatingFinalStatusTimeout time.Duration                  `yaml:"terminating_final_status_timeout" category:"experimental"`
 }
 
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -112,6 +116,7 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateMinBackoff, flagPrefix+"update-min-backoff", 1*time.Second, "Minimum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.UpdateMaxBackoff, flagPrefix+"update-max-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
+	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -140,6 +145,9 @@ func (cfg *SchedulerClientConfig) Validate() error {
 	}
 	if err := cfg.MetadataCacheConfig.Validate(); err != nil {
 		return err
+	}
+	if cfg.TerminatingFinalStatusTimeout <= 0 {
+		return errInvalidSchedulerTerminatingFinalStatusTimeout
 	}
 	return nil
 }
@@ -317,7 +325,7 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 				// Check if the job was canceled from the scheduler side (not found response)
 				if grpcutil.ErrorToStatusCode(err) == codes.NotFound {
 					level.Info(e.logger).Log("msg", "job canceled by scheduler, stopping work", "job_id", jobId, "tenant", jobTenant)
-					cancelJob(err) // Cancel the job context to stop the main work
+					cancelJob(errJobCanceledByScheduler) // Cancel the job context to stop the main work
 					return
 				}
 				level.Warn(e.logger).Log("msg", "failed to send keep-alive update", "job_id", jobId, "tenant", jobTenant, "err", err)
@@ -331,9 +339,23 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 	}
 }
 
-// sendFinalJobStatus sends a final status update to the scheduler with retry policy.
+// sendFinalJobStatus sends a final status update to the scheduler with a retry policy.
 // Compaction jobs send final statuses on completion, planning jobs only on failure for reassignment.
+// If ctx is canceled (e.g. during shutdown), attempting to send a final status can continue for up to TerminatingFinalStatusTimeout.
 func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, status compactorschedulerpb.UpdateType) {
+	graceCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	defer cancel(nil)
+	stop := context.AfterFunc(ctx, func() {
+		timer := time.NewTimer(e.cfg.TerminatingFinalStatusTimeout)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			cancel(errFinalStatusGracePeriodTimeout)
+		case <-graceCtx.Done():
+		}
+	})
+	defer stop()
+
 	jobId := key.Id
 	jobTenant := spec.Tenant
 
@@ -341,14 +363,14 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 	switch spec.JobType {
 	case compactorschedulerpb.JOB_TYPE_COMPACTION:
 		req := &compactorschedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
-		err = e.retryable.WithContext(ctx).Run(func() error {
-			_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
+		err = e.retryable.WithContext(graceCtx).Run(func() error {
+			_, err := e.schedulerClient.UpdateCompactionJob(graceCtx, req)
 			return err
 		})
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
 		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
-		err = e.retryable.WithContext(ctx).Run(func() error {
-			_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
+		err = e.retryable.WithContext(graceCtx).Run(func() error {
+			_, err := e.schedulerClient.UpdatePlanJob(graceCtx, req)
 			return err
 		})
 	default:
@@ -418,7 +440,9 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		wg.Wait()
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
-			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+			if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
+				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+			}
 			return true, err
 		}
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
@@ -430,12 +454,14 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		wg.Wait()
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
-			// Planning jobs only send final status updates on failure
-			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+			if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
+				// Only send an update on failure if the scheduler still thinks we own the job.
+				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+			}
 			return true, planErr
 		}
 
-		// For planning jobs, no final status update is sent - results are communicated via PlannedJobs
+		// For planning jobs, no final status update is sent on success. Completion is communicated via PlannedJobs.
 		if err := e.sendPlannedJobs(ctx, resp.Key, resp.Spec, plannedJobs); err != nil {
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			return true, err

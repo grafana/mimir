@@ -147,7 +147,12 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	version := planning.QueryPlanVersionZero
 	for _, state := range g.nodeStreams.streams {
 		nodes = append(nodes, state.node)
-		version = max(version, planning.MinimumRequiredPlanVersion(state.node))
+		nodeVersion, err := planning.MinimumRequiredPlanVersion(state.node, state.timeRange)
+		if err != nil {
+			return err
+		}
+
+		version = max(version, nodeVersion)
 	}
 
 	subsetPlan := &planning.QueryPlan{

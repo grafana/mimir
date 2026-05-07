@@ -30,7 +30,7 @@ type mergeIterator struct {
 	currErr error
 }
 
-func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
+func newMergeIterator(it iterator, cs []chunk.Chunk) *mergeIterator {
 	c, ok := it.(*mergeIterator)
 	if ok {
 		c.currErr = nil
@@ -190,26 +190,26 @@ func (h *iteratorHeap) Pop() interface{} {
 }
 
 // Build a list of lists of non-overlapping chunks.
-func partitionChunks(cs []GenericChunk) [][]GenericChunk {
+func partitionChunks(cs []chunk.Chunk) [][]chunk.Chunk {
 	if len(cs) == 1 {
 		// Fast path for common case of just a single chunk.
-		return [][]GenericChunk{{cs[0]}}
+		return [][]chunk.Chunk{{cs[0]}}
 	}
 
-	slices.SortFunc(cs, func(a, b GenericChunk) int {
-		return cmp.Compare(a.MinTime, b.MinTime)
+	slices.SortFunc(cs, func(a, b chunk.Chunk) int {
+		return cmp.Compare(int64(a.From), int64(b.From))
 	})
 
-	css := [][]GenericChunk{}
+	css := [][]chunk.Chunk{}
 outer:
 	for _, c := range cs {
 		for i, cs := range css {
-			if cs[len(cs)-1].MaxTime < c.MinTime {
+			if cs[len(cs)-1].Through < c.From {
 				css[i] = append(css[i], c)
 				continue outer
 			}
 		}
-		cs := make([]GenericChunk, 0, len(cs)/(len(css)+1))
+		cs := make([]chunk.Chunk, 0, len(cs)/(len(css)+1))
 		cs = append(cs, c)
 		css = append(css, cs)
 	}
