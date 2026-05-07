@@ -4,6 +4,7 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-kit/log"
@@ -16,6 +17,11 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+)
+
+var (
+	ErrInvalidFunctionArgs = errors.New("invalid function arguments")
+	ErrUnknownFunction     = errors.New("unknown function")
 )
 
 // RemoveStaticallyEmptyExpressionsOptimizationPass replaces subexpressions that can be statically
@@ -171,16 +177,20 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, 
 	case *core.BinaryExpression:
 		return isAlwaysEmptyBinaryExpression(node, params)
 	case *core.FunctionCall:
-		return isAlwaysEmptyFunctionCall(node, params)
+		return IsAlwaysEmptyFunctionCall(node, params)
 	default:
 		return false, nil
 	}
 }
 
-func isAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryParameters) (bool, error) {
+func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryParameters) (bool, error) {
+	// This function is exported because there's no easy way to test it without calling
+	// it directly and the tests are in a different package to avoid import cycles.
 	switch node.Function {
 	case
 		functions.FUNCTION_ABS,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2,
 		functions.FUNCTION_ACOS,
 		functions.FUNCTION_ACOSH,
 		functions.FUNCTION_ASIN,
@@ -201,6 +211,7 @@ func isAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		functions.FUNCTION_DERIV,
 		functions.FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING,
 		functions.FUNCTION_EXP,
+		functions.FUNCTION_FIRST_OVER_TIME,
 		functions.FUNCTION_FLOOR,
 		functions.FUNCTION_HISTOGRAM_AVG,
 		functions.FUNCTION_HISTOGRAM_COUNT,
@@ -211,6 +222,8 @@ func isAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		functions.FUNCTION_INCREASE,
 		functions.FUNCTION_INFO,
 		functions.FUNCTION_IRATE,
+		functions.FUNCTION_LABEL_JOIN,
+		functions.FUNCTION_LABEL_REPLACE,
 		functions.FUNCTION_LAST_OVER_TIME,
 		functions.FUNCTION_LN,
 		functions.FUNCTION_LOG10,
@@ -243,38 +256,54 @@ func isAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		functions.FUNCTION_TS_OF_MAX_OVER_TIME,
 		functions.FUNCTION_TS_OF_MIN_OVER_TIME:
 		if len(node.Args) < 1 {
-			return false, fmt.Errorf("expected at least one argument in call to %s, got %d", node.Function, len(node.Args))
+			return false, fmt.Errorf("%w: expected at least one argument in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
 		return isAlwaysEmpty(node.Args[0], params)
 	case functions.FUNCTION_HISTOGRAM_QUANTILE,
 		functions.FUNCTION_QUANTILE_OVER_TIME:
 		if len(node.Args) < 2 {
-			return false, fmt.Errorf("expected at least two arguments in call to %s, got %d", node.Function, len(node.Args))
+			return false, fmt.Errorf("%w: expected at least two arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
 		return isAlwaysEmpty(node.Args[1], params)
-
 	case functions.FUNCTION_HISTOGRAM_FRACTION:
 		if len(node.Args) < 3 {
-			return false, fmt.Errorf("expected at least three arguments in call to %s, got %d", node.Function, len(node.Args))
+			return false, fmt.Errorf("%w: expected at least three arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
 		return isAlwaysEmpty(node.Args[2], params)
 	case functions.FUNCTION_SHARDING_CONCAT:
-		allChildrenEmpty := true
 		for i := range node.ChildCount() {
 			empty, err := isAlwaysEmpty(node.Child(i), params)
 			if err != nil {
 				return false, err
+			} else if !empty {
+				return false, nil
 			}
-
-			allChildrenEmpty = allChildrenEmpty && empty
 		}
 
-		return allChildrenEmpty, nil
-	default:
+		return true, nil
+	case functions.FUNCTION_ABSENT,
+		functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_DAYS_IN_MONTH,
+		functions.FUNCTION_DAY_OF_MONTH,
+		functions.FUNCTION_DAY_OF_WEEK,
+		functions.FUNCTION_DAY_OF_YEAR,
+		functions.FUNCTION_HOUR,
+		functions.FUNCTION_MINUTE,
+		functions.FUNCTION_MONTH,
+		functions.FUNCTION_VECTOR,
+		functions.FUNCTION_YEAR,
+		functions.FUNCTION_PI,
+		functions.FUNCTION_SCALAR,
+		functions.FUNCTION_TIME:
+		// Functions that we know are not valid to replace with a no-op node either
+		// because it would generate incorrect results or because they do not operate
+		// on vectors.
 		return false, nil
+	default:
+		return false, fmt.Errorf("%w: function call %s is unexpected (this is a bug)", ErrUnknownFunction, node.Function)
 	}
 }
 
@@ -302,6 +331,29 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 	}
 
 	switch node.Op {
+	case core.BINARY_ADD,
+		core.BINARY_DIV,
+		core.BINARY_MOD,
+		core.BINARY_MUL,
+		core.BINARY_POW,
+		core.BINARY_SUB:
+		// Arithmetic operations are always no-ops when one side of the operation is a no-op since
+		// they won't have any matching labels.
+		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
+		if err != nil {
+			return false, err
+		} else if lhsEmpty {
+			return true, nil
+		}
+
+		rhsEmpty, err := isAlwaysEmpty(node.RHS, params)
+		if err != nil {
+			return false, err
+		} else if rhsEmpty {
+			return true, nil
+		}
+
+		return false, nil
 	case core.BINARY_LAND:
 		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
 		if err != nil {
@@ -453,23 +505,14 @@ func simplify(node planning.Node) planning.Node {
 		}
 
 	case *core.BinaryExpression:
-		switch node.Op {
-		case core.BINARY_ADD:
-			// If we're adding things and one of them is a no-op, we can get rid of the
-			// entire binary expression and replace it with the other side.
-			if _, lhsNop := node.LHS.(*core.NoOp); lhsNop {
-				return node.RHS
-			}
+		if node.Op != core.BINARY_LUNLESS {
+			return nil
+		}
 
-			if _, rhsNop := node.RHS.(*core.NoOp); rhsNop {
-				return node.LHS
-			}
-		case core.BINARY_LUNLESS:
-			// If the LHS is a no-op this means the whole expression is a no-op, and that is
-			// handled by isAlwaysEmptyBinaryExpression.
-			if _, noOp := node.RHS.(*core.NoOp); noOp {
-				return node.LHS
-			}
+		// If the LHS is a no-op this means the whole expression is a no-op, and that is
+		// handled by isAlwaysEmptyBinaryExpression.
+		if _, noOp := node.RHS.(*core.NoOp); noOp {
+			return node.LHS
 		}
 	}
 

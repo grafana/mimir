@@ -295,16 +295,30 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 		"binary add with empty result on right side: should optimize": {
 			expr: `sum(metric_a) + sum(EMPTY_RESULT)`,
 			expectedPlan: `
-				- AggregateExpression: sum
-					- VectorSelector: {__name__="metric_a"}
+				- NoOp
 			`,
 		},
 		"binary add with empty result on left side: should optimize": {
 			expr: `sum(EMPTY_RESULT) + sum(metric_a)`,
 			expectedPlan: `
-				- AggregateExpression: sum
-					- VectorSelector: {__name__="metric_a"}
+				- NoOp
 			`,
+		},
+		"binary modulo with empty result on right side: should optimize": {
+			expr: `sum(metric_a) % sum(EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary exponent with empty result on left side: should optimize": {
+			expr: `sum(EMPTY_RESULT) ^ sum(metric_a)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary add with results on both sides: should not optimize": {
+			expr:            `sum(metric_a) + sum(metric_b)`,
+			expectUnchanged: true,
 		},
 		"absent over empty result: should only optimize selector": {
 			expr: `absent(EMPTY_RESULT)`,
@@ -513,4 +527,25 @@ func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
 
 		require.Equal(t, "- NoOp", optimizedPlan.String())
 	}
+}
+
+func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_UnknownFunction(t *testing.T) {
+	var currentFunc functions.Function
+	for i := 0; ; i++ {
+		currentFunc = functions.Function(i)
+		// Once there's no nice string representation of the function we know
+		// that we've found the end of the protobuf defined functions.
+		if !strings.HasPrefix(currentFunc.String(), "FUNCTION_") {
+			break
+		}
+	}
+
+	funcCall := &core.FunctionCall{
+		FunctionCallDetails: &core.FunctionCallDetails{
+			Function: currentFunc,
+		},
+	}
+
+	_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, nil)
+	require.ErrorIs(t, err, plan.ErrUnknownFunction)
 }
