@@ -229,26 +229,21 @@
             // received traffic yet (e.g. during a migration before routing is switched).
             // Without it, the histogram counter is absent from Prometheus until the first request,
             // causing KEDA to error with ignoreNullValues=false and triggering MimirAutoscalerKedaFailing.
-            query: queryWithWeight('(sum(rate(cortex_querier_request_duration_seconds_sum{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m])) or vector(0))' % queryParams, weight),
-
-            threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-            // We only need to pass ignore_null_values if it's false
-            [if !ignore_null_values then 'ignore_null_values']: ignore_null_values,
-          },
-          {
-            metric_name: 'cortex_%s_hpa_%s_requests_duration_nh' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-            // The total requests duration / second is a good approximation of the number of querier workers used.
-            // This trigger uses the native histogram variant of the metric.
-            //
-            // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
-            // but queriers are busy.
-            //
-            // or vector(0) ensures KEDA receives a numeric result when queriers exist but have NOT
-            // received traffic yet (e.g. during a migration before routing is switched).
-            // Without it, the native histogram metric is absent from Prometheus until the first request,
-            // causing KEDA to error with ignoreNullValues=false and triggering MimirAutoscalerKedaFailing.
-            query: queryWithWeight('(sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]))) or vector(0))' % queryParams, weight),
+            query: queryWithWeight(|||
+              max without(source) (
+                # classic histograms; label_replace gives each a distinct label so or acts as union
+                label_replace(
+                  sum(rate(cortex_querier_request_duration_seconds_sum{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m])) or vector(0),
+                  "source", "classic", "", ""
+                )
+                or
+                # native histograms
+                label_replace(
+                  sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]))) or vector(0),
+                  "source", "native", "", ""
+                )
+              )
+            ||| % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
             // We only need to pass ignore_null_values if it's false

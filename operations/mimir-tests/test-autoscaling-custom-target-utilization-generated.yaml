@@ -2119,20 +2119,23 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_hpa_default_requests_duration
-      query: (sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default"}[1m]))
-        or vector(0))
+      query: |
+        max without(source) (
+          # classic histograms; label_replace gives each a distinct label so or acts as union
+          label_replace(
+            sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default"}[1m])) or vector(0),
+            "source", "classic", "", ""
+          )
+          or
+          # native histograms
+          label_replace(
+            sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default"}[1m]))) or vector(0),
+            "source", "native", "", ""
+          )
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "7"
     name: cortex_querier_hpa_default_requests_duration
-    type: prometheus
-  - metadata:
-      ignoreNullValues: "false"
-      metricName: cortex_querier_hpa_default_requests_duration_nh
-      query: (sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default"}[1m])))
-        or vector(0))
-      serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "7"
-    name: cortex_querier_hpa_default_requests_duration_nh
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
