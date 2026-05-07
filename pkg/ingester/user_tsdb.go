@@ -153,6 +153,11 @@ type userTSDB struct {
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
+	// nonOwnedCompactionMaxTime is the max sample timestamp (milliseconds) of series found to be
+	// non-owned during the last computeOwnedSeries call. A value of 0 means no non-owned series
+	// were found or the pending compaction has already been consumed by the compaction loop.
+	nonOwnedCompactionMaxTime atomic.Int64
+
 	postingsCache *tsdb.PostingsForMatchersCache
 
 	// plannerProvider is optional; if set, it will be used to generate and cache statistics for the user's head block.
@@ -685,14 +690,33 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 	return !prev.Equal(newTokenRanges)
 }
 
+// setNonOwnedCompactionMaxTime sets the pending compaction max time only when t > 0.
+// Since Mimir timestamps are positive milliseconds since Unix epoch, t <= 0 indicates
+// an empty head or an invalid value that should not trigger compaction.
+func (u *userTSDB) setNonOwnedCompactionMaxTime(t int64) {
+	if t <= 0 {
+		return
+	}
+	u.nonOwnedCompactionMaxTime.Store(t)
+}
+
+// getAndClearNonOwnedCompactionMaxTime atomically returns and clears the pending non-owned
+// compaction max time. Returns 0 if no compaction is pending.
+func (u *userTSDB) getAndClearNonOwnedCompactionMaxTime() int64 {
+	return u.nonOwnedCompactionMaxTime.Swap(0)
+}
+
 func (u *userTSDB) computeOwnedSeries() int {
 	// This can happen if ingester doesn't own this tenant anymore.
 	if len(u.ownedTokenRanges) == 0 {
 		u.activeSeries.Clear()
+		// All series are non-owned; use the head's max time as the compaction cutoff.
+		u.setNonOwnedCompactionMaxTime(u.Head().MaxTime())
 		return 0
 	}
 
 	count := 0
+	hasNonOwned := false
 	idx := u.Head().MustIndex()
 	defer idx.Close()
 
@@ -702,9 +726,15 @@ func (u *userTSDB) computeOwnedSeries() int {
 				count++
 			} else {
 				u.activeSeries.Delete(refs[i], idx)
+				hasNonOwned = true
 			}
 		}
 	})
+
+	if hasNonOwned {
+		u.setNonOwnedCompactionMaxTime(u.Head().MaxTime())
+	}
+
 	return count
 }
 

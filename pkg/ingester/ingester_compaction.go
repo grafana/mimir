@@ -153,6 +153,9 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			// Check if any TSDB Head should be compacted based on per-tenant owned series thresholds.
 			i.compactBlocksToReducePerTenantOwnedSeries(ctx, time.Now())
 
+			// Check if any TSDB Head should be early-compacted to flush non-owned series.
+			i.compactBlocksDueToNonOwnedSeries(ctx, time.Now())
+
 			// Decrement the counter after compaction is complete
 			i.numCompactionsInProgress.Dec()
 
@@ -577,6 +580,40 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 			"before_in_memory_series", userMemorySeries,
 			"after_in_memory_series", db.Head().NumSeries(),
 		)
+	}
+}
+
+// compactBlocksDueToNonOwnedSeries triggers early head compaction for tenants where
+// non-owned series have been detected after a ring change. The compaction covers all
+// series up to the recorded cutoff time, ensuring non-owned series are flushed to
+// blocks and eventually evicted from the head during truncation.
+func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, now time.Time) {
+	if !i.cfg.EarlyCompactionNonOwnedSeriesEnabled {
+		return
+	}
+
+	for _, userID := range i.getTSDBUsers() {
+		if ctx.Err() != nil {
+			return
+		}
+
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+
+		forcedCompactionMaxTime := db.getAndClearNonOwnedCompactionMaxTime()
+		if forcedCompactionMaxTime == 0 {
+			continue
+		}
+
+		level.Info(i.logger).Log("msg", "triggering early head compaction due to non-owned series", "user", userID, "forced_compaction_max_time", forcedCompactionMaxTime)
+
+		seriesBefore := db.Head().NumSeries()
+		i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowList([]string{userID}, nil))
+		db.setLastEarlyCompaction(now)
+
+		level.Info(i.logger).Log("msg", "early head compaction due to non-owned series completed", "user", userID, "before_in_memory_series", seriesBefore, "after_in_memory_series", db.Head().NumSeries())
 	}
 }
 

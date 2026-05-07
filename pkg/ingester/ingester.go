@@ -176,9 +176,10 @@ type Config struct {
 
 	// UseIngesterOwnedSeriesForLimits was added in 2.12, but we keep it experimental until we decide, what is the correct behaviour
 	// when the replication factor and the number of zones don't match. Refer to notes in https://github.com/grafana/mimir/pull/8695 and https://github.com/grafana/mimir/pull/9496
-	UseIngesterOwnedSeriesForLimits bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
-	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
-	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
+	UseIngesterOwnedSeriesForLimits      bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
+	UpdateIngesterOwnedSeries            bool          `yaml:"track_ingester_owned_series" category:"experimental"`
+	OwnedSeriesUpdateInterval            time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
+	EarlyCompactionNonOwnedSeriesEnabled bool          `yaml:"early_compaction_non_owned_series_enabled" category:"experimental"`
 
 	PushCircuitBreaker   CircuitBreakerConfig              `yaml:"push_circuit_breaker"`
 	ReadCircuitBreaker   CircuitBreakerConfig              `yaml:"read_circuit_breaker"`
@@ -219,6 +220,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
+	f.BoolVar(&cfg.EarlyCompactionNonOwnedSeriesEnabled, "ingester.early-compaction-non-owned-series-enabled", false, "When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.")
 	f.IntVar(&cfg.LabelValuesCountRequestMaxConcurrency, "ingester.label-values-count-max-concurrency", 16, "Maximum concurrency used to compute a single label values count request.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
@@ -226,7 +228,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
 }
 
-func (cfg *Config) Validate(log.Logger) error {
+func (cfg *Config) Validate() error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
 	}
@@ -234,6 +236,10 @@ func (cfg *Config) Validate(log.Logger) error {
 	// Tokenless mode requires gRPC push to be disabled.
 	if cfg.IngesterRing.NumTokens == 0 && cfg.PushGrpcMethodEnabled {
 		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
+	}
+
+	if cfg.EarlyCompactionNonOwnedSeriesEnabled && !cfg.UseIngesterOwnedSeriesForLimits && !cfg.UpdateIngesterOwnedSeries {
+		return fmt.Errorf("early compaction of non-owned series requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled")
 	}
 
 	if cfg.LabelValuesCountRequestMaxConcurrency < 1 {

@@ -944,6 +944,138 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RequiresOwnedSeriesForLimits(
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 }
 
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenDisabled(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	// EarlyCompactionNonOwnedSeriesEnabled defaults to false.
+
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1"),
+		Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
+	}}))
+
+	// Simulate non-owned series detection by setting the compaction cutoff directly.
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	db.setNonOwnedCompactionMaxTime(db.Head().MaxTime())
+
+	// Should not compact because the feature is disabled.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, time.Now())
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	require.Empty(t, listBlocksInDir(t, userBlocksDir))
+}
+
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPendingCompaction(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1"),
+		Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
+	}}))
+
+	// No nonOwnedCompactionMaxTime set: compaction should not run.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, time.Now())
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	require.Empty(t, listBlocksInDir(t, userBlocksDir))
+}
+
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *testing.T) {
+	var (
+		ctx          = context.Background()
+		ctxWithUser  = user.InjectOrgID(ctx, userID)
+		metricName   = "metric_1"
+		metricLabels = labels.FromStrings(model.MetricNameLabel, metricName)
+		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  metricLabels,
+		Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
+	}}))
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+
+	// Simulate non-owned series detection.
+	db.setNonOwnedCompactionMaxTime(db.Head().MaxTime())
+
+	now := time.Now()
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, now)
+
+	// A block should have been created with the pushed sample.
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	blockIDs := listBlocksInDir(t, userBlocksDir)
+	require.Len(t, blockIDs, 1)
+
+	assert.Equal(t, model.Matrix{{
+		Metric: metricModel,
+		Values: []model.SamplePair{{Timestamp: model.Time(sampleTime.UnixMilli()), Value: 1.0}},
+	}}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[0].String()), metricName))
+
+	// The pending compaction cutoff should have been consumed, so a second call creates no new block.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, now)
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
+
+	// lastEarlyCompaction should have been updated.
+	assert.False(t, db.getLastEarlyCompaction().IsZero())
+
+	// Data should still be queryable from the ingester (served from the local block).
+	s := stream{ctx: ctxWithUser}
+	require.NoError(t, ingester.QueryStream(&client.QueryRequest{
+		StartTimestampMs: math.MinInt64,
+		EndTimestampMs:   math.MaxInt64,
+		Matchers:         []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName}},
+	}, &s))
+
+	res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, model.Matrix{{
+		Metric: metricModel,
+		Values: []model.SamplePair{{Timestamp: model.Time(sampleTime.UnixMilli()), Value: 1.0}},
+	}}, res)
+}
+
 func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {
 	// Create a shared consul KV store so both ingesters join the same ring.
 	consulClient, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)

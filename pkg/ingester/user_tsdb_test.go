@@ -9,12 +9,16 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -308,5 +312,95 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.Equal(t, 10, db.ownedState.ownedSeriesCount)
 		require.Equal(t, 5, db.ownedState.shardSize)
 		require.Equal(t, math.MaxInt32, db.ownedState.localSeriesLimit)
+	})
+
+	newActiveSeries := func() *activeseries.ActiveSeries {
+		return activeseries.NewActiveSeries(asmodel.NewMatchers(asmodel.CustomTrackersConfig{}), time.Minute, nil)
+	}
+
+	t.Run("computeOwnedSeries with no token ranges sets nonOwnedCompactionMaxTime to head max time", func(t *testing.T) {
+		const userID = "test-user"
+		opts := tsdb.DefaultOptions()
+		opts.SecondaryHashFunction = secondaryTSDBHashFunctionForUser(userID)
+		tsdbDB, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
+
+		app := tsdbDB.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings("__name__", "metric_a"), 100, 1.0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		db := &userTSDB{db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
+		count := db.computeOwnedSeries()
+
+		require.Equal(t, 0, count)
+		require.Equal(t, tsdbDB.Head().MaxTime(), db.nonOwnedCompactionMaxTime.Load())
+	})
+
+	t.Run("computeOwnedSeries with no token ranges and empty head does not set nonOwnedCompactionMaxTime", func(t *testing.T) {
+		tsdbDB, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
+
+		db := &userTSDB{db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
+		count := db.computeOwnedSeries()
+
+		require.Equal(t, 0, count)
+		require.Equal(t, int64(0), db.nonOwnedCompactionMaxTime.Load())
+	})
+
+	t.Run("computeOwnedSeries with all series owned does not set nonOwnedCompactionMaxTime", func(t *testing.T) {
+		const userID = "test-user"
+		opts := tsdb.DefaultOptions()
+		opts.SecondaryHashFunction = secondaryTSDBHashFunctionForUser(userID)
+		tsdbDB, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
+
+		app := tsdbDB.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings("__name__", "metric_a"), 100, 1.0)
+		require.NoError(t, err)
+		_, err = app.Append(0, labels.FromStrings("__name__", "metric_b"), 200, 2.0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		db := &userTSDB{db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, math.MaxUint32}}
+		count := db.computeOwnedSeries()
+
+		require.Equal(t, 2, count)
+		require.Equal(t, int64(0), db.nonOwnedCompactionMaxTime.Load())
+	})
+
+	t.Run("computeOwnedSeries with some series non-owned sets nonOwnedCompactionMaxTime to their max timestamp", func(t *testing.T) {
+		const userID = "test-user"
+		opts := tsdb.DefaultOptions()
+		opts.SecondaryHashFunction = secondaryTSDBHashFunctionForUser(userID)
+		tsdbDB, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
+
+		labelsA := labels.FromStrings("__name__", "metric_a")
+		labelsB := labels.FromStrings("__name__", "metric_b")
+
+		app := tsdbDB.Appender(context.Background())
+		_, err = app.Append(0, labelsA, 100, 1.0)
+		require.NoError(t, err)
+		_, err = app.Append(0, labelsB, 200, 2.0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		hashA := mimirpb.ShardByAllLabels(userID, labelsA)
+		hashB := mimirpb.ShardByAllLabels(userID, labelsB)
+		require.NotEqual(t, hashA, hashB)
+
+		// Own only the series with the lower hash; the other is non-owned.
+		minHash := min(hashA, hashB)
+		db := &userTSDB{db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, minHash}}
+
+		count := db.computeOwnedSeries()
+
+		require.Equal(t, 1, count)
+		require.Equal(t, tsdbDB.Head().MaxTime(), db.nonOwnedCompactionMaxTime.Load())
 	})
 }
