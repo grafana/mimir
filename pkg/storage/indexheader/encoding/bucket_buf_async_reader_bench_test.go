@@ -44,15 +44,30 @@ func newLatentBucket(b *testing.B, objectData []byte, latency time.Duration) *la
 	}
 }
 
-// benchBufPoolSize is sized to the async chunk so the bufio buffer drains in roughly
-// one chunk and we don't add a second layer of small reads on top of the async pipeline.
-const benchBufPoolSize = asyncReadAheadChunkSize
+// We pick pool sizes so both impls keep the same total bytes "in flight" per logical
+// fetch unit (1 MiB):
+//   - the sync reader does one GetRange per bufio fill, so it needs a 1 MiB buffer to
+//     match the async reader's pipelined working set.
+//   - the async reader's own pool is 128 KiB × asyncReadAheadMaxInFlight (8) = 1 MiB,
+//     and the wrapping bufio buffer just needs to be large enough to consume one async
+//     chunk per fill, so we size it to match the async chunk size.
+const (
+	benchSyncBufPoolSize  = 1 << 20
+	benchAsyncBufPoolSize = asyncReadAheadChunkSize
+)
 
-var benchBufPool = sync.Pool{
-	New: func() any {
-		return bufio.NewReaderSize(nil, benchBufPoolSize)
-	},
-}
+var (
+	benchSyncBufPool = sync.Pool{
+		New: func() any {
+			return bufio.NewReaderSize(nil, benchSyncBufPoolSize)
+		},
+	}
+	benchAsyncBufPool = sync.Pool{
+		New: func() any {
+			return bufio.NewReaderSize(nil, benchAsyncBufPoolSize)
+		},
+	}
+)
 
 // benchObjectData returns a deterministic byte slice of the requested size.
 func benchObjectData(size int) []byte {
@@ -87,7 +102,7 @@ func BenchmarkBucketBufReader_Sequential(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				r := newBucketBufReader(ctx, &benchBufPool, bkt, testBucketObjectName, 0, size)
+				r := newBucketBufReader(ctx, &benchSyncBufPool, bkt, testBucketObjectName, 0, size)
 				readAll(b, r.ReadInto, size)
 				_ = r.Close()
 			}
@@ -105,7 +120,7 @@ func BenchmarkBucketBufAsyncReader_Sequential(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				r := newBucketBufAsyncReader(ctx, &benchBufPool, bkt, testBucketObjectName, 0, size)
+				r := newBucketBufAsyncReader(ctx, &benchAsyncBufPool, bkt, testBucketObjectName, 0, size)
 				readAll(b, r.ReadInto, size)
 				_ = r.Close()
 			}

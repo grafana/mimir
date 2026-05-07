@@ -210,7 +210,8 @@ func (r *BucketReaderAsyncReadAhead) queueReadAhead() {
 
 const (
 	asyncReadAheadMaxInFlight = 8
-	asyncReadAheadChunkSize   = 128 * 1024
+
+	asyncReadAheadChunkSize = 128 * 1024
 )
 
 var asyncReadAheadBufPool = sync.Pool{
