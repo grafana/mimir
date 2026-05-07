@@ -573,8 +573,23 @@ func TestRebalancer_NextRoundDelay(t *testing.T) {
 	assert.Equal(t, 3*time.Minute+30*time.Second, r.nextRoundDelay(t0))
 
 	// After we've consumed all but lookahead's worth of runway:
-	// floor kicks in.
+	// floor kicks in. (We haven't queued a successor here; the
+	// chain-end is the original lease's To.)
 	assert.Equal(t, cfg.MinRebalanceInterval, r.nextRoundDelay(t0.Add(cfg.LeaseDuration-10*time.Second)))
+
+	// After a successor has been queued at the lookahead edge, the
+	// chain extends to (original.To + leaseDuration). The next round
+	// must be scheduled relative to the chain end, not to the
+	// soon-to-expire active lease — otherwise the rebalancer would
+	// thrash at MinRebalanceInterval for the entire active-lease tail.
+	tEdge := t0.Add(cfg.LeaseDuration - cfg.LeaseLookahead)
+	require.True(t, r.store.apply(tEdge, assignment.EvenSplit([]int32{0, 1}), cfg.LeaseDuration, cfg.LeaseLookahead, time.Hour))
+	// Chain-end = t0 + 2*lease. delay at tEdge = (t0+2*lease) - tEdge - lookahead = lease.
+	// That equals MaxRebalanceInterval here, so the ceiling clamps it.
+	assert.Equal(t, cfg.MaxRebalanceInterval, r.nextRoundDelay(tEdge))
+	// And one minute later we should still be ~lease - 1m away from
+	// needing to act (modulo the ceiling), well above the floor.
+	assert.Greater(t, r.nextRoundDelay(tEdge.Add(time.Minute)), cfg.MinRebalanceInterval)
 
 	// Hypothetical horizon very far in the future: ceiling kicks in.
 	rFar := &Rebalancer{cfg: cfg, store: newLogStore()}

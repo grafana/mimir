@@ -376,21 +376,39 @@ func TestLog_LeaseHorizon(t *testing.T) {
 	// All initial leases share the same To, so horizon == To.
 	assert.Equal(t, at.Add(testLease), l.LeaseHorizon(at))
 
-	// Pre-issue successors. The active leases still have the
-	// soonest To, so horizon stays at at+lease (those leases are
-	// still in the log and still in the future).
+	// Pre-issue successors. Each (Range, PID) chain now extends to
+	// at + 2*testLease (active.To = at+lease, successor.To = at+2*lease;
+	// chain-end is the latter). Horizon must reflect the chain-end,
+	// not the soon-to-expire active lease — otherwise the rebalancer
+	// would re-fire immediately after queuing the successor.
 	tEdge := at.Add(testLease - testLookahead)
 	l.Apply(tEdge, a, testLease, testLookahead)
-	assert.Equal(t, at.Add(testLease), l.LeaseHorizon(tEdge))
+	assert.Equal(t, at.Add(2*testLease), l.LeaseHorizon(tEdge))
 
-	// At the cutover instant, the original leases have just expired
-	// (To = at+lease) so they no longer count; horizon advances to
+	// At the cutover instant, the originals have just expired but
+	// the successors are still in flight; horizon still points to
 	// the successor's To = at + 2*lease.
 	tCutover := at.Add(testLease)
 	assert.Equal(t, at.Add(2*testLease), l.LeaseHorizon(tCutover))
 
-	// Long after both have expired: zero time.
+	// Long after everything has expired: zero time.
 	assert.True(t, l.LeaseHorizon(at.Add(10*testLease)).IsZero())
+}
+
+func TestLog_LeaseHorizon_TakesMinAcrossChains(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Hand-build entries: two chains with different lengths.
+	// Chain A: just an active lease, ends at at+5m.
+	// Chain B: active + queued successor, ends at at+10m.
+	// Horizon should be the soonest chain-end = at+5m.
+	l.entries = []LogEntry{
+		{Range: HashRange{Lo: 0, Hi: 99}, PartitionID: 1, From: at, To: at.Add(5 * time.Minute)},
+		{Range: HashRange{Lo: 100, Hi: math.MaxUint32}, PartitionID: 2, From: at, To: at.Add(5 * time.Minute)},
+		{Range: HashRange{Lo: 100, Hi: math.MaxUint32}, PartitionID: 2, From: at.Add(5 * time.Minute), To: at.Add(10 * time.Minute)},
+	}
+	assert.Equal(t, at.Add(5*time.Minute), l.LeaseHorizon(at))
 }
 
 func TestLog_ActiveTilesFullSpace_DetectsGap(t *testing.T) {

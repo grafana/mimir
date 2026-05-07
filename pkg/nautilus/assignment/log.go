@@ -268,21 +268,48 @@ func (l *Log) Entries() []LogEntry {
 func (l *Log) Len() int { return len(l.entries) }
 
 // LeaseHorizon returns the soonest moment in the future at which
-// some currently-relevant lease expires, considering both active
-// leases (From <= at < To) and pre-issued future leases
-// (From > at). Returns the zero time if no entry's To is after at.
+// some (Range, PartitionID) ownership chain runs out of coverage —
+// i.e. the soonest at which the tiling will become incomplete
+// unless the rebalancer queues a successor before then. Returns
+// the zero time if no entry has To after at.
+//
+// Concretely: for each (Range, PartitionID) with at least one entry
+// whose To is after at, the chain's end-of-coverage is the latest
+// such To (the active lease's To when no successor is queued, or
+// the successor's To when one is queued). LeaseHorizon returns the
+// minimum chain-end across all chains.
 //
 // Callers (the rebalancer) use this to schedule the next round at
-// horizon - lookahead, ensuring a successor lease is appended
-// before the current one ends.
+// horizon - lookahead. Once a successor is queued, the chain-end
+// reflects the successor (not the active lease that's about to
+// expire), so the next round is scheduled relative to when the
+// successor itself needs its successor — i.e. one full lease
+// duration later.
 func (l *Log) LeaseHorizon(at time.Time) time.Time {
-	var horizon time.Time
+	type chainKey struct {
+		r   HashRange
+		pid int32
+	}
+	// For each (Range, PartitionID), the chain end is the latest
+	// To across entries with To > at. Map cardinality is bounded by
+	// the number of distinct active or pre-issued tiles (typically
+	// a few hundred), so this allocation is cheap relative to a
+	// rebalance round.
+	chainEnd := make(map[chainKey]time.Time)
 	for _, e := range l.entries {
 		if !e.To.After(at) {
 			continue
 		}
-		if horizon.IsZero() || e.To.Before(horizon) {
-			horizon = e.To
+		k := chainKey{e.Range, e.PartitionID}
+		if existing, ok := chainEnd[k]; !ok || e.To.After(existing) {
+			chainEnd[k] = e.To
+		}
+	}
+
+	var horizon time.Time
+	for _, t := range chainEnd {
+		if horizon.IsZero() || t.Before(horizon) {
+			horizon = t
 		}
 	}
 	return horizon
