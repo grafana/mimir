@@ -246,7 +246,6 @@ type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
-	QueryStats               *types.QueryStats
 	EagerLoadSelectors       bool
 	QueryParameters          *QueryParameters
 	Logger                   log.Logger

@@ -292,7 +292,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	operatorParams := &planning.OperatorParameters{
 		Queryable:          queryable,
 		Annotations:        annotations.New(),
-		QueryStats:         types.NewQueryStats(),
 		EagerLoadSelectors: e.eagerLoadSelectors,
 		QueryParameters:    params,
 		Logger:             e.logger,
