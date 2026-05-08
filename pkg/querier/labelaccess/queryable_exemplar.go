@@ -33,6 +33,9 @@ type labelAccessExemplarQueryable struct {
 func (l *labelAccessExemplarQueryable) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	instancePolicyMap, err := shared.ExtractLabelMatchersContext(ctx)
 	if err != nil {
+		if shared.IsNoMatcherSourceError(err) {
+			return l.next.ExemplarQuerier(ctx)
+		}
 		level.Error(l.logger).Log("msg", "unable to find instance policy map", "err", err)
 		return nil, err
 	}

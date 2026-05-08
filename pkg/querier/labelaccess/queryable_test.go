@@ -42,7 +42,7 @@ func newDoubleLabelPolicy(t labels.MatchType, n1 string, v1 string, n2 string, v
 
 func TestLabelAccessQuerier_Select(t *testing.T) {
 	t.Run("label matchers not in context", func(t *testing.T) {
-		ctx := user.InjectOrgID(shared.InjectLabelMatchersContext(context.Background(), nil), "test")
+		ctx := user.InjectOrgID(context.Background(), "test")
 		next := &mockQueryable{
 			querier: func(mint, maxt int64) (storage.Querier, error) {
 				require.Equal(t, int64(0), mint)
@@ -134,7 +134,7 @@ func TestLabelAccessQuerier_Select(t *testing.T) {
 
 func TestLabelAccessChunkQuerier_Select(t *testing.T) {
 	t.Run("label matchers not in context", func(t *testing.T) {
-		ctx := user.InjectOrgID(shared.InjectLabelMatchersContext(context.Background(), nil), "test")
+		ctx := user.InjectOrgID(context.Background(), "test")
 		next := &mockQueryable{
 			chunkQuerier: func(mint, maxt int64) (storage.ChunkQuerier, error) {
 				require.Equal(t, int64(0), mint)

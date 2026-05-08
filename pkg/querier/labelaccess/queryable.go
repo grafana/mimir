@@ -342,6 +342,9 @@ func (l *labelAccessQuerier) mergeMatchers(matchers []*labels.Matcher, lbacMatch
 func (l *labelAccessQuerier) selectors(ctx context.Context) ([]promSelector, error) {
 	instancePolicyMap, err := shared.ExtractLabelMatchersContext(ctx)
 	if err != nil {
+		if shared.IsNoMatcherSourceError(err) {
+			return nil, nil
+		}
 		level.Error(l.logger).Log("msg", "unable to find instance policy map", "err", err)
 		return nil, err
 	}

@@ -176,6 +176,11 @@ func ExtractLabelMatchersContext(ctx context.Context) (LabelPolicySet, error) {
 	return source.GetMatchers(), nil
 }
 
+// IsNoMatcherSourceError reports whether err indicates that no label matcher source was injected in ctx.
+func IsNoMatcherSourceError(err error) bool {
+	return errors.Is(err, errNoMatcherSource)
+}
+
 // InjectLabelMatchersContext returns a derived context containing matchers.
 func InjectLabelMatchersContext(ctx context.Context, matchers LabelPolicySet) context.Context {
 	return context.WithValue(ctx, interface{}(contextKey), &labelMatcherCarrier{matchers})

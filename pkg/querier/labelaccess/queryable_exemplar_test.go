@@ -66,16 +66,17 @@ func newTestExemplarQueryable(next storage.ExemplarQueryable) *labelAccessExempl
 }
 
 func TestLabelAccessExemplarQueryable_ExemplarQuerier(t *testing.T) {
-	t.Run("no instance policy map in context results in error", func(t *testing.T) {
+	t.Run("no instance policy map in context uses fallback queryable", func(t *testing.T) {
 		ctx := context.Background()
 		ctx = user.InjectOrgID(ctx, "team-a")
 
 		next := &mockExemplarQueryable{}
 		next.querier = &mockExemplarQuerier{}
 		queryable := newTestExemplarQueryable(next)
-		_, err := queryable.ExemplarQuerier(ctx)
+		q, err := queryable.ExemplarQuerier(ctx)
 
-		assert.Error(t, err)
+		require.NoError(t, err)
+		assert.IsType(t, &mockExemplarQuerier{}, q)
 	})
 
 	t.Run("no instance ID in context results in error", func(t *testing.T) {
