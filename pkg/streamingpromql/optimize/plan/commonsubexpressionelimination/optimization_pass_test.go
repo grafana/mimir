@@ -677,7 +677,7 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: VectorSelector: {k8s_cluster_name="cluster1"}
 					- RHS: FunctionCall: info(...)
 						- param 0: ref#1 Duplicate ...
-						- param 1: VectorSelector: {k8s_cluster_name="cluster1"}, return sample timestamps preserving histograms
+						- param 1: DataLabelSelector: {k8s_cluster_name="cluster1"}
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 1,
@@ -689,10 +689,10 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS + RHS
 					- LHS: FunctionCall: info(...)
 						- param 0: VectorSelector: {__name__="foo"}
-						- param 1: VectorSelector: {k8s_cluster_name="cluster1"}, return sample timestamps preserving histograms
+						- param 1: DataLabelSelector: {k8s_cluster_name="cluster1"}
 					- RHS: FunctionCall: info(...)
 						- param 0: VectorSelector: {__name__="bar"}
-						- param 1: VectorSelector: {k8s_cluster_name="cluster1"}, return sample timestamps preserving histograms
+						- param 1: DataLabelSelector: {k8s_cluster_name="cluster1"}
 			`,
 			expectedDuplicateNodes:               0,
 			expectedDuplicateSelectorsEliminated: 0,
