@@ -17,7 +17,6 @@ type ScalarRemoteExec struct {
 	TimeRange          types.QueryTimeRange
 	GroupEvaluator     GroupEvaluator
 	Annotations        *annotations.Annotations
-	QueryStats         *types.QueryStats
 	expressionPosition posrange.PositionRange
 
 	resp      ScalarRemoteExecutionResponse
