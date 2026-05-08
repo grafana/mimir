@@ -27,7 +27,7 @@
 
 ### Query-tee
 
-## 3.1.0-rc0
+## 3.1.0-rc.0
 
 ### Grafana Mimir
 
