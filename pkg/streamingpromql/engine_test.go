@@ -4839,6 +4839,28 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			},
 		},
 
+		// Range query + subquery, outer step wider than subquery range.
+		// Subquery materialises 9 samples (T=180,190,...,260) but only the
+		// 3 samples in each outer step's window contribute to that step's
+		// output; the 3 samples in the gap (201,231] between outer windows
+		// are not counted.
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[30s:10s])",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(261, 0),
+			interval:             1 * time.Minute,
+			expectedTotalSamples: 6,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 3,
+				261000: 3,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				201000: 3,
+				261000: 3,
+			},
+		},
+
 		// Histogram subquery: histogram size counting in subquery path.
 		{
 			query:                "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
@@ -4898,6 +4920,31 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 				320000: 9,
 				350000: 9,
 				380000: 9,
+			},
+		},
+
+		// Range query with @ modifier on a matrix selector wrapped in an
+		// at-modifier-unsafe function (predict_linear), so the call is not
+		// hoisted into a step-invariant expression. The @ modifier freezes
+		// the evaluation window, so every parent step consumes the same
+		// matrix. TotalSamples must reflect the full window at every step;
+		// expectedSamplesRead is counted only once (no new I/O after step 0).
+		{
+			query:                "predict_linear(metricWith1SampleEvery10Seconds[60s] @ 100, 60)",
+			start:                time.Unix(100, 0),
+			end:                  time.Unix(300, 0),
+			interval:             100 * time.Second,
+			expectedTotalSamples: 18, // 6 samples per window * 3 steps.
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				100000: 6,
+				200000: 6,
+				300000: 6,
+			},
+			expectedSamplesRead: 6, // @ modifier: single read at step 0; later steps reuse.
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				100000: 6,
+				200000: 0,
+				300000: 0,
 			},
 		},
 
