@@ -509,3 +509,128 @@ func TestLog_LiveEntries_EmptyLog(t *testing.T) {
 	got := l.LiveEntries(time.Now())
 	assert.Empty(t, got)
 }
+
+// TestLog_ApplySplitAfterSuccessorPreIssued is a regression test
+// for a production bug where Apply skipped pre-issued future
+// entries during preemption. If a range was split, merged, or
+// reassigned after its successor had been queued, the orphaned
+// successor would remain in the log and activate on schedule,
+// producing two overlapping active leases for the same partition.
+func TestLog_ApplySplitAfterSuccessorPreIssued(t *testing.T) {
+	l := NewLog()
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Round 1: cold start with one big range.
+	a1 := &Assignment{Entries: []Entry{
+		{Range: HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1},
+	}}
+	require.True(t, l.Apply(t1, a1, testLease, testLookahead))
+
+	// Round 2: still well inside the lookahead window but close
+	// enough that the successor for the full-space lease gets
+	// pre-issued. After this, the log has both an active lease
+	// (To = t1+5m) and a future successor (From = t1+5m, To =
+	// t1+10m) for ([0, MaxUint32], P=1).
+	t2 := t1.Add(testLease - testLookahead)
+	require.True(t, l.Apply(t2, a1, testLease, testLookahead))
+	hasFutureSuccessor := false
+	for _, e := range l.Entries() {
+		if e.From.Equal(t1.Add(testLease)) && e.PartitionID == 1 {
+			hasFutureSuccessor = true
+			break
+		}
+	}
+	require.True(t, hasFutureSuccessor, "round 2 should pre-issue the successor")
+
+	// Round 3: split the full-space range into two pieces. The
+	// pre-issued successor for the full-space range is no longer
+	// wanted and must be invalidated; otherwise it will activate
+	// at t1+5m and overlap with the new sub-range leases.
+	t3 := t2.Add(time.Second)
+	a3 := &Assignment{Entries: []Entry{
+		{Range: HashRange{Lo: 0, Hi: 2_000_000}, PartitionID: 1},
+		{Range: HashRange{Lo: 2_000_001, Hi: math.MaxUint32}, PartitionID: 2},
+	}}
+	require.True(t, l.Apply(t3, a3, testLease, testLookahead))
+
+	// At any point past the original successor's From, the active
+	// set must remain a clean tiling with no overlap. Sample at
+	// the boundary where the bug used to surface (t1+5m), and
+	// also a bit later for good measure.
+	for _, sample := range []time.Time{t1.Add(testLease), t1.Add(testLease).Add(time.Second)} {
+		require.NoErrorf(t, l.ActiveTilesFullSpace(sample),
+			"active tiling must be a clean cover at %s", sample)
+		assn := l.LatestActiveAssignment(sample)
+		require.NotNil(t, assn)
+		require.NoErrorf(t, assn.Validate(),
+			"latest active assignment must validate at %s", sample)
+	}
+}
+
+// TestLog_ApplyMergeAfterSuccessorPreIssued mirrors the split
+// regression but for merges: two adjacent ranges with pre-issued
+// successors get merged into one. Both old successors must be
+// invalidated; otherwise they'll activate and overlap with the
+// merged lease.
+func TestLog_ApplyMergeAfterSuccessorPreIssued(t *testing.T) {
+	l := NewLog()
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	a1 := &Assignment{Entries: []Entry{
+		{Range: HashRange{Lo: 0, Hi: 2_000_000}, PartitionID: 1},
+		{Range: HashRange{Lo: 2_000_001, Hi: math.MaxUint32}, PartitionID: 2},
+	}}
+	require.True(t, l.Apply(t1, a1, testLease, testLookahead))
+
+	t2 := t1.Add(testLease - testLookahead)
+	require.True(t, l.Apply(t2, a1, testLease, testLookahead))
+
+	t3 := t2.Add(time.Second)
+	a3 := &Assignment{Entries: []Entry{
+		{Range: HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1},
+	}}
+	require.True(t, l.Apply(t3, a3, testLease, testLookahead))
+
+	for _, sample := range []time.Time{t1.Add(testLease), t1.Add(testLease).Add(time.Second)} {
+		assn := l.LatestActiveAssignment(sample)
+		require.NotNil(t, assn)
+		require.NoErrorf(t, assn.Validate(),
+			"latest active assignment must validate at %s", sample)
+		require.Lenf(t, assn.Entries, 1,
+			"exactly one merged tile expected at %s, got %v", sample, assn.Entries)
+	}
+}
+
+// TestLog_ApplyReassignAfterSuccessorPreIssued covers the third
+// shape: the same range stays but moves to a different partition
+// after a successor has been pre-issued. The old partition's
+// successor must not activate and overlap with the new
+// partition's lease.
+func TestLog_ApplyReassignAfterSuccessorPreIssued(t *testing.T) {
+	l := NewLog()
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	rng := HashRange{Lo: 0, Hi: math.MaxUint32}
+	a1 := &Assignment{Entries: []Entry{{Range: rng, PartitionID: 1}}}
+	require.True(t, l.Apply(t1, a1, testLease, testLookahead))
+
+	t2 := t1.Add(testLease - testLookahead)
+	require.True(t, l.Apply(t2, a1, testLease, testLookahead))
+
+	t3 := t2.Add(time.Second)
+	a3 := &Assignment{Entries: []Entry{{Range: rng, PartitionID: 9}}}
+	require.True(t, l.Apply(t3, a3, testLease, testLookahead))
+
+	for _, sample := range []time.Time{t1.Add(testLease), t1.Add(testLease).Add(time.Second)} {
+		assn := l.LatestActiveAssignment(sample)
+		require.NotNil(t, assn)
+		require.NoErrorf(t, assn.Validate(),
+			"latest active assignment must validate at %s", sample)
+		// Exactly one entry — the new partition — should cover
+		// the full range. The old partition's pre-issued
+		// successor must not activate.
+		require.Len(t, assn.Entries, 1, "exactly one active tile expected at %s", sample)
+		assert.Equal(t, int32(9), assn.Entries[0].PartitionID,
+			"only the new partition should be active at %s", sample)
+	}
+}

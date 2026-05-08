@@ -115,23 +115,61 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 		wanted[key{r: e.Range, pid: e.PartitionID}] = struct{}{}
 	}
 
-	// First pass: preempt active entries whose (Range, PID) is not
-	// in `wanted`. Mark matched pairs so the second pass can
-	// distinguish "active and continuing" from "absent or just
-	// preempted".
+	// First pass: preempt every still-relevant entry (To > at) whose
+	// (Range, PID) is not in `wanted`. Mark matched pairs so the
+	// second pass can distinguish "chain continuing" from "absent
+	// or just preempted".
+	//
+	// "Still-relevant" means the entry's lease has not already
+	// ended at `at`. That set covers two cases the preemption must
+	// handle:
+	//
+	//  1. Active entries (From <= at < To). These are in use by
+	//     consumers right now; preemption clamps To to at so they
+	//     stop being active immediately.
+	//
+	//  2. Pre-issued future entries (at < From < To). A previous
+	//     round queued a successor for this (Range, PID); if the
+	//     range has since been split, merged, or reassigned, that
+	//     successor is no longer wanted and must not become active
+	//     when wall-clock reaches its From. Clamping To = From
+	//     produces a zero-duration window that ActiveAt will never
+	//     match, killing the chain without leaving an overlap with
+	//     the new lease that replaces it.
+	//
+	// Skipping pre-issued future entries here was the cause of a
+	// production bug where successors of split/merged/reassigned
+	// ranges activated alongside their replacements, creating
+	// overlapping leases for the same partition once wall-clock
+	// reached the successor's From.
 	matched := make(map[key]struct{}, len(next.Entries))
 	for i := range l.entries {
 		e := &l.entries[i]
-		if !e.ActiveAt(at) {
+		if !e.To.After(at) {
 			continue
 		}
 		k := key{r: e.Range, pid: e.PartitionID}
 		if _, ok := wanted[k]; ok {
-			matched[k] = struct{}{}
+			// Only an active entry counts as "matched" for the
+			// second pass — a pre-issued future entry is not yet
+			// the live tile, so the second pass still needs to
+			// observe its To via latestTo when extending the chain.
+			if !e.From.After(at) {
+				matched[k] = struct{}{}
+			}
 			continue
 		}
-		e.To = at
-		changed = true
+		// Preempt: clamp To so this entry can never be returned by
+		// ActiveAt at any t >= at. For active entries that means To
+		// = at; for future entries, To = From (zero-duration).
+		newTo := at
+		if e.From.After(at) {
+			newTo = e.From
+		}
+		if !e.To.Equal(newTo) {
+			e.To = newTo
+			changed = true
+		}
 	}
 
 	// Second pass: for each desired pair, ensure a lease covers
@@ -361,7 +399,10 @@ func (l *Log) ActiveTilesFullSpace(at time.Time) error {
 	for i := 1; i < len(active); i++ {
 		prev := active[i-1].Range.Hi
 		curr := active[i].Range.Lo
-		if curr != prev+1 {
+		// Promote to uint64 before adding 1 so we don't wrap when
+		// prev == MaxUint32 (which would silently match curr == 0
+		// and hide a duplicate tile starting at 0).
+		if uint64(curr) != uint64(prev)+1 {
 			return fmt.Errorf("gap or overlap between active entries: prev.Hi=%d, curr.Lo=%d", prev, curr)
 		}
 	}
