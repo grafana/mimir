@@ -997,6 +997,15 @@ func (r *Rebalancer) runSlicer(
 		activeSet[pid] = true
 	}
 
+	// Validate the input. The slicer's phases assume current tiles
+	// the full hash space without gaps or overlaps; if it doesn't, the
+	// downstream Validate on the round's output will fail and we won't
+	// know whether the bug is in current or in a phase. Logging here
+	// removes that ambiguity.
+	if err := current.Validate(); err != nil {
+		level.Error(r.logger).Log("msg", "slicer received invalid input assignment", "err", err, "num_entries", len(current.Entries))
+	}
+
 	// --- Phase 1: build entries, reassign inactive partitions ----------
 	entries := make([]rangeLoad, len(current.Entries))
 	rrIdx := 0
@@ -1020,6 +1029,13 @@ func (r *Rebalancer) runSlicer(
 			rrIdx++
 		}
 	}
+	if err := validateSlicerPhaseEntries(entries); err != nil {
+		// Phase 1 only mutates PartitionID, so reaching this branch
+		// means current itself was malformed in a way Validate() didn't
+		// catch above (or after the input check). Log; there's no
+		// useful pre-Phase-1 state to revert to.
+		logSlicerPhaseError(r.logger, entries, "phase1-reassign", err)
+	}
 
 	totalLoad := 0.0
 	for _, rl := range entries {
@@ -1028,6 +1044,8 @@ func (r *Rebalancer) runSlicer(
 	targetLoad := totalLoad / float64(numPartitions)
 
 	// --- Phase 2: merge adjacent cold slices (defragment) -------------
+	pre2Entries := snapshotRangeLoads(entries)
+	pre2ActionsLen := len(actions)
 	if len(entries) > minSlicesPerPartition*numPartitions {
 		meanSliceLoad := totalLoad / float64(len(entries))
 		mergeMoveBudget := mergeChurnBudget * float64(uint64(math.MaxUint32)+1)
@@ -1035,10 +1053,22 @@ func (r *Rebalancer) runSlicer(
 		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions, minSlicesPerPartition)
 		actions = append(actions, mergeActions...)
 	}
+	if err := validateSlicerPhaseEntries(entries); err != nil {
+		logSlicerPhaseError(r.logger, entries, "phase2-merge", err)
+		entries = pre2Entries
+		actions = actions[:pre2ActionsLen]
+	}
 
 	// --- Phase 3: weighted-move using L_pid -----------------------------
+	pre3Entries := snapshotRangeLoads(entries)
+	pre3ActionsLen := len(actions)
 	phase3Actions := r.runPhase3(entries, partitionLByPID, recentMoves, activePartitions, now)
 	actions = append(actions, phase3Actions...)
+	if err := validateSlicerPhaseEntries(entries); err != nil {
+		logSlicerPhaseError(r.logger, entries, "phase3-move", err)
+		entries = pre3Entries
+		actions = actions[:pre3ActionsLen]
+	}
 
 	// --- Phase 4: split hot slices ----------------------------------------
 	// Only split ranges on OVERLOADED partitions (>= target load).
@@ -1048,6 +1078,8 @@ func (r *Rebalancer) runSlicer(
 	// The split threshold is computed from ranges with non-zero load
 	// to avoid the feedback loop where zero-load fragments from prior
 	// splits drag down the mean and cause everything to look "hot".
+	pre4Entries := snapshotRangeLoads(entries)
+	pre4ActionsLen := len(actions)
 	maxTotal := maxSlicesPerPartition * numPartitions
 	if len(entries) < maxTotal {
 		partitionLoads := computePartitionLoads(entries)
@@ -1110,6 +1142,11 @@ func (r *Rebalancer) runSlicer(
 		}
 		entries = newEntries
 	}
+	if err := validateSlicerPhaseEntries(entries); err != nil {
+		logSlicerPhaseError(r.logger, entries, "phase4-split", err)
+		entries = pre4Entries
+		actions = actions[:pre4ActionsLen]
+	}
 
 	// --- Build result --------------------------------------------------
 	sort.Slice(entries, func(i, j int) bool {
@@ -1123,6 +1160,121 @@ func (r *Rebalancer) runSlicer(
 		result.Entries[i] = rl.entry
 	}
 	return result, actions
+}
+
+// snapshotRangeLoads returns a defensive copy of entries. Used by
+// runSlicer to enable per-phase rollback when a phase corrupts the
+// invariants Assignment.Validate checks. rangeLoad is a value type
+// (no pointers) so a single slice copy suffices.
+func snapshotRangeLoads(entries []rangeLoad) []rangeLoad {
+	out := make([]rangeLoad, len(entries))
+	copy(out, entries)
+	return out
+}
+
+// validateSlicerPhaseEntries reports whether the snapshot of entries
+// (as a sorted Assignment) tiles [0, MaxUint32] without gaps or
+// overlaps. Returns nil on success; on failure returns the same error
+// shape Assignment.Validate produces, so callers can include it in
+// the round's error log to identify the offending boundary.
+func validateSlicerPhaseEntries(entries []rangeLoad) error {
+	if len(entries) == 0 {
+		return fmt.Errorf("entries is empty")
+	}
+	snapshot := make([]assignment.Entry, len(entries))
+	for i, rl := range entries {
+		snapshot[i] = rl.entry
+	}
+	sort.Slice(snapshot, func(i, j int) bool {
+		return snapshot[i].Range.Lo < snapshot[j].Range.Lo
+	})
+	a := assignment.Assignment{Entries: snapshot}
+	return a.Validate()
+}
+
+// logSlicerPhaseError logs a phase corruption with a small window of
+// context around the offending boundary. The actions list (kept in
+// the round trace) plus the boundary indices usually pin the bug down
+// to a specific phase plus a specific input shape, which is what we
+// need to fix the underlying cause.
+func logSlicerPhaseError(logger log.Logger, entries []rangeLoad, phase string, err error) {
+	snapshot := make([]assignment.Entry, len(entries))
+	for i, rl := range entries {
+		snapshot[i] = rl.entry
+	}
+	sort.Slice(snapshot, func(i, j int) bool {
+		return snapshot[i].Range.Lo < snapshot[j].Range.Lo
+	})
+	ctxLo, ctxHi := slicerInvalidBoundaryWindow(snapshot)
+	level.Error(logger).Log(
+		"msg", "slicer phase produced invalid intermediate state, reverting",
+		"phase", phase,
+		"err", err,
+		"num_entries", len(snapshot),
+		"window_first_idx", ctxLo,
+		"window_last_idx", ctxHi,
+		"window", formatSlicerWindow(snapshot, ctxLo, ctxHi),
+	)
+}
+
+// slicerInvalidBoundaryWindow returns the [first, last] index range
+// of entries to log as context around the first invalid boundary in
+// snapshot. Returns (-1, -1) if no boundary is invalid (caller should
+// have early-returned in that case). The window is small (up to 5
+// entries) to keep log lines bounded.
+func slicerInvalidBoundaryWindow(snapshot []assignment.Entry) (int, int) {
+	if len(snapshot) == 0 {
+		return -1, -1
+	}
+	if snapshot[0].Range.Lo != 0 {
+		// Missing prefix. Show the first few entries to confirm the
+		// gap location.
+		end := 4
+		if end >= len(snapshot) {
+			end = len(snapshot) - 1
+		}
+		return 0, end
+	}
+	for i := 1; i < len(snapshot); i++ {
+		if snapshot[i].Range.Lo != snapshot[i-1].Range.Hi+1 {
+			start := i - 2
+			if start < 0 {
+				start = 0
+			}
+			end := i + 2
+			if end >= len(snapshot) {
+				end = len(snapshot) - 1
+			}
+			return start, end
+		}
+	}
+	if snapshot[len(snapshot)-1].Range.Hi != math.MaxUint32 {
+		start := len(snapshot) - 5
+		if start < 0 {
+			start = 0
+		}
+		return start, len(snapshot) - 1
+	}
+	return -1, -1
+}
+
+// formatSlicerWindow renders [first, last] entries from snapshot as
+// a compact string for logging.
+func formatSlicerWindow(snapshot []assignment.Entry, first, last int) string {
+	if first < 0 || last < 0 || first > last || first >= len(snapshot) {
+		return ""
+	}
+	if last >= len(snapshot) {
+		last = len(snapshot) - 1
+	}
+	var b []byte
+	for i := first; i <= last; i++ {
+		if i > first {
+			b = append(b, ',', ' ')
+		}
+		b = append(b, []byte(fmt.Sprintf("[%d]={Lo=%d,Hi=%d,P=%d}", i, snapshot[i].Range.Lo, snapshot[i].Range.Hi, snapshot[i].PartitionID))...)
+	}
+	return string(b)
 }
 
 // runPhase3 runs the weighted-move phase and appends any resulting

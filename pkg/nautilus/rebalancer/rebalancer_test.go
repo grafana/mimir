@@ -360,6 +360,143 @@ func TestRunSlicer_Phase3_ExhaustsBudget(t *testing.T) {
 		"p1 series should be near target after exhausting budget")
 }
 
+// TestValidateSlicerPhaseEntries covers the helper that runSlicer uses
+// to detect a phase that has produced gaps, overlaps, or a missing
+// prefix/suffix in the tiling. The phase's per-round revert depends on
+// this helper recognising every shape of invalidity Validate flags.
+func TestValidateSlicerPhaseEntries(t *testing.T) {
+	t.Run("valid full tiling returns nil", func(t *testing.T) {
+		entries := []rangeLoad{
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1}},
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 100, Hi: math.MaxUint32}, PartitionID: 2}},
+		}
+		assert.NoError(t, validateSlicerPhaseEntries(entries))
+	})
+
+	t.Run("empty entries returns error", func(t *testing.T) {
+		assert.Error(t, validateSlicerPhaseEntries(nil))
+	})
+
+	t.Run("first entry not starting at 0 returns error", func(t *testing.T) {
+		entries := []rangeLoad{
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 10, Hi: math.MaxUint32}, PartitionID: 1}},
+		}
+		err := validateSlicerPhaseEntries(entries)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "first entry must start at 0")
+	})
+
+	t.Run("gap between adjacent entries returns error", func(t *testing.T) {
+		entries := []rangeLoad{
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1}},
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: math.MaxUint32}, PartitionID: 2}},
+		}
+		err := validateSlicerPhaseEntries(entries)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "gap or overlap")
+	})
+
+	t.Run("overlap between adjacent entries returns error", func(t *testing.T) {
+		entries := []rangeLoad{
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 150}, PartitionID: 1}},
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 100, Hi: math.MaxUint32}, PartitionID: 2}},
+		}
+		err := validateSlicerPhaseEntries(entries)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "gap or overlap")
+	})
+
+	t.Run("last entry not ending at MaxUint32 returns error", func(t *testing.T) {
+		entries := []rangeLoad{
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1}},
+		}
+		err := validateSlicerPhaseEntries(entries)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "last entry must end")
+	})
+
+	t.Run("unsorted but otherwise-valid entries are sorted before validation", func(t *testing.T) {
+		entries := []rangeLoad{
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 100, Hi: math.MaxUint32}, PartitionID: 2}},
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1}},
+		}
+		assert.NoError(t, validateSlicerPhaseEntries(entries))
+	})
+}
+
+// TestSnapshotRangeLoads covers the deep-copy helper used to enable
+// per-phase revert in runSlicer. Mutating the snapshot or the source
+// must not bleed into the other.
+func TestSnapshotRangeLoads(t *testing.T) {
+	src := []rangeLoad{
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1}, load: 10, series: 5},
+		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 100, Hi: math.MaxUint32}, PartitionID: 2}, load: 20, series: 10},
+	}
+	snap := snapshotRangeLoads(src)
+
+	require.Len(t, snap, 2)
+	assert.Equal(t, src[0], snap[0])
+	assert.Equal(t, src[1], snap[1])
+
+	// Mutating src must not affect snap.
+	src[0].entry.PartitionID = 99
+	src[0].load = 0
+	assert.EqualValues(t, 1, snap[0].entry.PartitionID, "snapshot must not see src mutation")
+	assert.EqualValues(t, 10, snap[0].load, "snapshot must not see src mutation")
+
+	// Mutating snap must not affect src.
+	snap[1].entry.PartitionID = 50
+	assert.EqualValues(t, 2, src[1].entry.PartitionID, "src must not see snapshot mutation")
+}
+
+// TestSlicerInvalidBoundaryWindow covers the helper that picks a small
+// context window around the first invalid boundary, so log lines pin
+// the bug down without exploding in size.
+func TestSlicerInvalidBoundaryWindow(t *testing.T) {
+	t.Run("missing prefix windows from index 0", func(t *testing.T) {
+		entries := []assignment.Entry{
+			{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 1},
+			{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 2},
+			{Range: assignment.HashRange{Lo: 300, Hi: math.MaxUint32}, PartitionID: 3},
+		}
+		lo, hi := slicerInvalidBoundaryWindow(entries)
+		assert.Equal(t, 0, lo)
+		assert.Equal(t, 2, hi) // capped at len-1
+	})
+
+	t.Run("interior gap windows around the boundary", func(t *testing.T) {
+		entries := []assignment.Entry{
+			{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1},
+			{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 2},
+			{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 3},
+			{Range: assignment.HashRange{Lo: 500, Hi: 599}, PartitionID: 4}, // gap before this
+			{Range: assignment.HashRange{Lo: 600, Hi: math.MaxUint32}, PartitionID: 5},
+		}
+		lo, hi := slicerInvalidBoundaryWindow(entries)
+		assert.Equal(t, 1, lo) // i-2
+		assert.Equal(t, 4, hi) // i+2 capped at len-1
+	})
+
+	t.Run("missing suffix windows the last few", func(t *testing.T) {
+		entries := []assignment.Entry{
+			{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 1},
+			{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 2},
+		}
+		lo, hi := slicerInvalidBoundaryWindow(entries)
+		assert.Equal(t, 0, lo)
+		assert.Equal(t, 1, hi)
+	})
+
+	t.Run("valid tiling returns sentinel", func(t *testing.T) {
+		entries := []assignment.Entry{
+			{Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1},
+		}
+		lo, hi := slicerInvalidBoundaryWindow(entries)
+		assert.Equal(t, -1, lo)
+		assert.Equal(t, -1, hi)
+	})
+}
+
 // TestRunSlicer_Phase4_SplitsAnyHotSlice verifies that Phase 4 splits
 // hot slices on overloaded partitions. Splitting adds fingrained
 // granularity for the next round's load measurement.
