@@ -939,9 +939,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerMissedEvaluations'),
           expr: |||
             100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(rate_interval)s]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(rate_interval)s]))
               /
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[%(rate_interval)s]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_prometheus_rule_group_iterations_total[%(rate_interval)s]))
             ) > 1
           ||| % $._config {
             rate_interval: $.rateInterval('1m'),
@@ -952,7 +952,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
+              %(product)s Rulers in %(alert_aggregation_variables)s are experiencing {{ printf "%%.2f" $value }}%% missed iterations.
             ||| % $._config,
           },
         },
