@@ -2086,6 +2086,17 @@
           "fieldFlag": "distributor.nautilus-rebalancer-address",
           "fieldType": "string",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "nautilus_required",
+          "required": false,
+          "desc": "If true, the distributor rejects write requests with a 503 Service Unavailable when the nautilus assignment log is unavailable or doesn't cover a series key, instead of falling back to the partition ring's hash-based routing. Use this in deployments where nautilus assignments are load-bearing for query locality.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.nautilus-required",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

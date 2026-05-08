@@ -1301,6 +1301,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
   -distributor.nautilus-rebalancer-address string
     	[experimental] gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.
+  -distributor.nautilus-required
+    	[experimental] If true, the distributor rejects write requests with a 503 Service Unavailable when the nautilus assignment log is unavailable or doesn't cover a series key, instead of falling back to the partition ring's hash-based routing. Use this in deployments where nautilus assignments are load-bearing for query locality.
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
