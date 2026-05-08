@@ -3978,8 +3978,13 @@ func TestQueryStats(t *testing.T) {
 			if testCase.skipCompareWithPrometheus == "" {
 				require.Equalf(t, testCase.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine, per-step results from Prometheus: %v", *prometheusSamplesStats.TotalSamplesPerStepMap())
 				require.Equal(t, &testCase.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStepMap(), "invalid test case: expected total samples per step does not match value from Prometheus' engine")
-				require.Equalf(t, testCase.expectedSamplesRead, prometheusSamplesStats.SamplesRead, "invalid test case: expected samples read does not match value from Prometheus' engine, per-step results from Prometheus: %v", *prometheusSamplesStats.SamplesReadPerStepMap())
-				require.Equal(t, &testCase.expectedSamplesReadPerStep, prometheusSamplesStats.SamplesReadPerStepMap(), "invalid test case: expected samples read does not match value from Prometheus' engine")
+
+				require.Zero(t, prometheusSamplesStats.SamplesRead, "https://github.com/prometheus/prometheus/pull/18081 has been merged and vendored into Mimir, please remove this assertion and uncomment the assertions below")
+				require.Nil(t, prometheusSamplesStats.SamplesReadPerStep, "https://github.com/prometheus/prometheus/pull/18081 has been merged and vendored into Mimir, please remove this assertion and uncomment the assertions below")
+
+				// Enable these assertions once https://github.com/prometheus/prometheus/pull/18081 has been merged and vendored into Mimir:
+				//  require.Equalf(t, testCase.expectedSamplesRead, prometheusSamplesStats.SamplesRead, "invalid test case: expected samples read does not match value from Prometheus' engine, per-step results from Prometheus: %v", *prometheusSamplesStats.SamplesReadPerStepMap())
+				//  require.Equal(t, &testCase.expectedSamplesReadPerStep, prometheusSamplesStats.SamplesReadPerStepMap(), "invalid test case: expected samples read does not match value from Prometheus' engine")
 			}
 
 			if testCase.expectedTotalSamplesWithMQE == 0 {
@@ -4985,10 +4990,16 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.query, func(t *testing.T) {
 			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, testCase.query, testCase.start, testCase.end, testCase.interval)
+
 			require.Equalf(t, testCase.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine, per-step results from Prometheus: %v", *prometheusSamplesStats.TotalSamplesPerStepMap())
 			require.Equal(t, &testCase.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStepMap(), "invalid test case: expected total samples per step does not match value from Prometheus' engine")
-			require.Equalf(t, testCase.expectedSamplesRead, prometheusSamplesStats.SamplesRead, "invalid test case: expected samples read does not match value from Prometheus' engine, per-step results from Prometheus: %v", *prometheusSamplesStats.SamplesReadPerStepMap())
-			require.Equal(t, &testCase.expectedSamplesReadPerStep, prometheusSamplesStats.SamplesReadPerStepMap(), "invalid test case: expected samples read does not match value from Prometheus' engine")
+
+			require.Zero(t, prometheusSamplesStats.SamplesRead, "https://github.com/prometheus/prometheus/pull/18081 has been merged and vendored into Mimir, please remove this assertion and uncomment the assertions below")
+			require.Nil(t, prometheusSamplesStats.SamplesReadPerStep, "https://github.com/prometheus/prometheus/pull/18081 has been merged and vendored into Mimir, please remove this assertion and uncomment the assertions below")
+
+			// Enable these assertions once https://github.com/prometheus/prometheus/pull/18081 has been merged and vendored into Mimir:
+			//  require.Equalf(t, testCase.expectedSamplesRead, prometheusSamplesStats.SamplesRead, "invalid test case: expected samples read does not match value from Prometheus' engine, per-step results from Prometheus: %v", *prometheusSamplesStats.SamplesReadPerStepMap())
+			//  require.Equal(t, &testCase.expectedSamplesReadPerStep, prometheusSamplesStats.SamplesReadPerStepMap(), "invalid test case: expected samples read does not match value from Prometheus' engine")
 
 			if testCase.expectedTotalSamplesWithMQE == 0 {
 				testCase.expectedTotalSamplesWithMQE = testCase.expectedTotalSamples
