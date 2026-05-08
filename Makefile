@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
 .DEFAULT_GOAL := all
 
 # Version number
@@ -173,6 +173,17 @@ print-build-image:
 .PHONY: print-build-image-build-args
 print-build-image-build-args:
 	@printf '%s\n' revision=$(GIT_REVISION) goproxyValue=$(GOPROXY_VALUE)
+
+# Supported operating systems and architectures for dist builds.
+DIST_OSES ?= linux darwin windows freebsd
+DIST_ARCHES ?= amd64 arm64
+
+print-supported-os-arch: ## Print supported OS/arch combinations for dist.
+	@for os in $(DIST_OSES); do \
+		for arch in $(DIST_ARCHES); do \
+			printf '%s\t%s\n' "$$os" "$$arch"; \
+		done; \
+	done
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
@@ -552,8 +563,17 @@ dist: ## Generates binaries for a Mimir release.
 	@mkdir -p ./dist
 	@# Build binaries for various architectures and operating systems. Only
 	@# mimirtool supports Windows for now.
-	@for os in linux darwin windows freebsd; do \
-		for arch in amd64 arm64; do \
+	@# When GOOS and/or GOARCH are passed on the command line, only matching
+	@# targets are built.
+	@set -e; \
+	for os in $(DIST_OSES); do \
+		if [ -n "$(filter command line,$(origin GOOS))" ] && [ "$$os" != "$(GOOS)" ]; then \
+			continue; \
+		fi; \
+		for arch in $(DIST_ARCHES); do \
+			if [ -n "$(filter command line,$(origin GOARCH))" ] && [ "$$arch" != "$(GOARCH)" ]; then \
+				continue; \
+			fi; \
 			suffix="" ; \
 			if [ "$$os" = "windows" ]; then \
 				suffix=".exe" ; \

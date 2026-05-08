@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+* [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
+
 ## 3.1.2
 
 ### Grafana Mimir
