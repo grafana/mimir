@@ -457,3 +457,55 @@ func TestLog_LatestActiveAssignment_Empty(t *testing.T) {
 	l := NewLog()
 	assert.Nil(t, l.LatestActiveAssignment(time.Now()))
 }
+
+func TestLog_LiveEntries_FiltersExpired(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Hand-build entries: one expired, one active, one pre-issued
+	// future. LiveEntries(at) must drop only the expired one.
+	expired := LogEntry{Range: HashRange{Lo: 0, Hi: 99}, PartitionID: 1, From: at.Add(-2 * testLease), To: at.Add(-testLease)}
+	active := LogEntry{Range: HashRange{Lo: 100, Hi: 199}, PartitionID: 2, From: at.Add(-time.Minute), To: at.Add(testLease)}
+	future := LogEntry{Range: HashRange{Lo: 200, Hi: math.MaxUint32}, PartitionID: 3, From: at.Add(testLease), To: at.Add(2 * testLease)}
+	l.entries = []LogEntry{expired, active, future}
+
+	got := l.LiveEntries(at)
+	require.Len(t, got, 2)
+	assert.Contains(t, got, active)
+	assert.Contains(t, got, future)
+	assert.NotContains(t, got, expired)
+}
+
+func TestLog_LiveEntries_BoundaryIsExclusive(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// To == at must be treated as expired (matches Lookup, which
+	// uses at < To); To == at+1ns must be live.
+	atBoundary := LogEntry{Range: HashRange{Lo: 0, Hi: 99}, PartitionID: 1, From: at.Add(-testLease), To: at}
+	justAfter := LogEntry{Range: HashRange{Lo: 100, Hi: math.MaxUint32}, PartitionID: 2, From: at.Add(-testLease), To: at.Add(time.Nanosecond)}
+	l.entries = []LogEntry{atBoundary, justAfter}
+
+	got := l.LiveEntries(at)
+	require.Len(t, got, 1)
+	assert.Equal(t, justAfter, got[0])
+}
+
+func TestLog_LiveEntries_DefensiveCopy(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	l.Apply(at, EvenSplit([]int32{0, 1}), testLease, testLookahead)
+
+	got := l.LiveEntries(at)
+	require.NotEmpty(t, got)
+	got[0].PartitionID = 99
+	// Mutating the returned slice must not affect the log's internal
+	// state — the snapshot is a copy.
+	assert.NotEqual(t, int32(99), l.Entries()[0].PartitionID)
+}
+
+func TestLog_LiveEntries_EmptyLog(t *testing.T) {
+	l := NewLog()
+	got := l.LiveEntries(time.Now())
+	assert.Empty(t, got)
+}

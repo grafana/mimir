@@ -571,7 +571,7 @@ func TestLogStore_SubscribeReceivesUpdates(t *testing.T) {
 	a1 := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(time.Now(), a1, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, updates, unsubscribe := s.subscribe()
+	initial, updates, unsubscribe := s.subscribe(time.Now())
 	defer unsubscribe()
 
 	require.NotEmpty(t, initial)
@@ -590,7 +590,7 @@ func TestLogStore_SubscribeReceivesUpdates(t *testing.T) {
 func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
 	s := newLogStore()
 
-	_, updates, unsubscribe := s.subscribe()
+	_, updates, unsubscribe := s.subscribe(time.Now())
 	defer unsubscribe()
 
 	// Three back-to-back applies; a slow consumer should see exactly
@@ -617,10 +617,76 @@ func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
 
 func TestLogStore_UnsubscribeReleasesSubscriber(t *testing.T) {
 	s := newLogStore()
-	_, _, unsubscribe := s.subscribe()
+	_, _, unsubscribe := s.subscribe(time.Now())
 	require.Equal(t, 1, s.numSubscribers())
 	unsubscribe()
 	require.Equal(t, 0, s.numSubscribers())
+}
+
+func TestLogStore_SubscribeOmitsExpiredEntries(t *testing.T) {
+	s := newLogStore()
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Round 1: install a tiling. Use a short lease so the entries
+	// can be expired by the time we subscribe.
+	a := assignment.EvenSplit([]int32{0, 1})
+	require.True(t, s.apply(t1, a, time.Minute, 10*time.Second, time.Hour))
+	require.Len(t, s.snapshot(), len(a.Entries))
+
+	// Round 2 well past the lease horizon: a fresh tiling appended
+	// for new ranges. The first round's entries are now expired
+	// but still retained in the log (Prune retention is 1h).
+	t2 := t1.Add(time.Hour)
+	require.True(t, s.apply(t2, a, time.Minute, 10*time.Second, time.Hour))
+	full := s.snapshot()
+	require.Greater(t, len(full), len(a.Entries),
+		"unfiltered snapshot must include both rounds")
+
+	// subscribe at t2 must hand back only the live entries from
+	// round 2; the round-1 entries (To = t1+1m) are expired at t2.
+	initial, _, unsubscribe := s.subscribe(t2)
+	defer unsubscribe()
+
+	require.Len(t, initial, len(a.Entries),
+		"subscribe must omit entries whose lease ended before at")
+	for _, e := range initial {
+		assert.True(t, e.To.After(t2),
+			"every entry returned to subscriber must have To > at; got %v <= %v", e.To, t2)
+	}
+}
+
+func TestLogStore_BroadcastOmitsExpiredEntries(t *testing.T) {
+	s := newLogStore()
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Subscribe before any apply so we can observe the broadcast.
+	_, updates, unsubscribe := s.subscribe(t1)
+	defer unsubscribe()
+
+	// Round 1.
+	a := assignment.EvenSplit([]int32{0, 1})
+	require.True(t, s.apply(t1, a, time.Minute, 10*time.Second, time.Hour))
+	select {
+	case <-updates:
+	case <-time.After(time.Second):
+		t.Fatal("did not receive round-1 broadcast")
+	}
+
+	// Round 2 well past the round-1 lease horizon.
+	t2 := t1.Add(time.Hour)
+	require.True(t, s.apply(t2, a, time.Minute, 10*time.Second, time.Hour))
+
+	select {
+	case snap := <-updates:
+		require.NotEmpty(t, snap)
+		// Every entry in the broadcast must be live at t2.
+		for _, e := range snap {
+			assert.True(t, e.To.After(t2),
+				"broadcast included expired entry: %+v at=%v", e, t2)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not receive round-2 broadcast")
+	}
 }
 
 func TestLogStore_ApplyOutsideLookaheadIsNoOp(t *testing.T) {
@@ -804,8 +870,11 @@ func TestRebalancer_NextRoundDelay(t *testing.T) {
 func TestRebalancer_WatchAssignments_SendsInitialAndUpdates(t *testing.T) {
 	r := &Rebalancer{store: newLogStore()}
 
-	// Seed the log so the initial snapshot is non-empty.
-	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Seed the log near wall-clock now so the entries are still
+	// live when WatchAssignments calls subscribe(time.Now()).
+	// testStoreLease is long (1h) so a small skew between this
+	// timestamp and the handler's time.Now() is irrelevant.
+	t0 := time.Now()
 	r.store.apply(t0, assignment.EvenSplit([]int32{0, 1}), testStoreLease, testStoreLookahead, time.Hour)
 
 	ctx, cancel := context.WithCancel(context.Background())

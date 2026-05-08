@@ -46,6 +46,13 @@ func newLogStore() *logStore {
 // pre-issued a successor whose To is comfortably past at+lookahead.
 // Only when the lookahead window catches up does Apply append a new
 // successor and trigger a broadcast.
+//
+// The broadcast snapshot only contains live entries (To > at):
+// expired entries can never be returned by Lookup at any t >= at,
+// so omitting them keeps the gRPC message size proportional to the
+// active+pre-issued tile count rather than the full retention
+// window. The unfiltered log is still available to admin views and
+// (in future) queriers via snapshot().
 func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuration, lookahead, retention time.Duration) bool {
 	s.mu.Lock()
 	changed := s.log.Apply(at, next, leaseDuration, lookahead)
@@ -56,7 +63,7 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 		s.mu.Unlock()
 		return false
 	}
-	snap := s.log.Entries()
+	snap := s.log.LiveEntries(at)
 	subs := make([]*subscription, 0, len(s.subscribers))
 	for sub := range s.subscribers {
 		subs = append(subs, sub)
@@ -95,14 +102,19 @@ func (s *logStore) latestActiveAssignment(at time.Time) *assignment.Assignment {
 	return s.log.LatestActiveAssignment(at)
 }
 
-// subscribe registers a new watcher. It returns the current snapshot
-// (so the caller can prime its consumer atomically with the
-// subscription), a channel that receives subsequent snapshots, and an
-// unsubscribe function the caller MUST invoke when finished.
-func (s *logStore) subscribe() (initial []assignment.LogEntry, updates <-chan []assignment.LogEntry, unsubscribe func()) {
+// subscribe registers a new watcher. It returns a snapshot of the
+// log's live entries (those with To > at) so the caller can prime
+// its consumer atomically with the subscription, a channel that
+// receives subsequent snapshots, and an unsubscribe function the
+// caller MUST invoke when finished. Expired entries are omitted
+// from the initial snapshot and from subsequent broadcasts: a
+// fresh subscriber can never use them and including them would
+// inflate the wire message by the full retention window's worth of
+// history.
+func (s *logStore) subscribe(at time.Time) (initial []assignment.LogEntry, updates <-chan []assignment.LogEntry, unsubscribe func()) {
 	sub := &subscription{ch: make(chan []assignment.LogEntry, 1)}
 	s.mu.Lock()
-	initial = s.log.Entries()
+	initial = s.log.LiveEntries(at)
 	s.subscribers[sub] = struct{}{}
 	s.mu.Unlock()
 	return initial, sub.ch, func() {

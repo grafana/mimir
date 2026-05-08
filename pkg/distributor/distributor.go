@@ -108,6 +108,13 @@ const (
 	ingestionRateLimitCleanupInterval = time.Hour
 	// duration after which ingestion rate limiters are considered stale.
 	ingestionRateLimitStalenessDuration = 24 * time.Hour
+
+	// nautilusRebalancerMaxRecvMsgSize bounds the size of a single
+	// WatchAssignments snapshot the distributor will accept. The
+	// default 4 MiB gRPC cap is too small once the rebalancer's
+	// live-entry snapshot grows past a few thousand tiles. See the
+	// dial-options site for the full rationale.
+	nautilusRebalancerMaxRecvMsgSize = 64 << 20
 )
 
 type usageTrackerGenericClient interface {
@@ -940,6 +947,20 @@ func (d *Distributor) starting(ctx context.Context) error {
 		dialOpts := []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithBlock(),
+			// The WatchAssignments stream snapshot grows with the
+			// number of active hash-range tiles plus pre-issued
+			// successors. With ~6k ranges and a few successors per
+			// range it can comfortably exceed gRPC's 4 MiB default
+			// receive cap. If the cap is hit, the stream errors and
+			// reconnects in a tight loop, leaving this distributor
+			// without an ActiveTable and silently falling back to
+			// the partition ring's hash-mod routing — which both
+			// defeats the slicer's assignment and pegs the
+			// rebalancer re-broadcasting the same snapshot. 64 MiB
+			// is more than 6× the largest snapshot we've observed
+			// in production (~10 MiB) and leaves headroom for
+			// future growth.
+			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(nautilusRebalancerMaxRecvMsgSize)),
 		}
 		if d.clusterValidationLabel != "" {
 			dialOpts = append(dialOpts, grpc.WithUnaryInterceptor(

@@ -249,14 +249,19 @@ func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
 }
 
 // WatchAssignments implements NautilusRebalancerServer. It sends
-// the current full snapshot of the assignment log immediately on
-// connect and then a fresh full snapshot on every subsequent
-// rebalance round that mutates the log (i.e. every round that
-// pre-issues a successor lease, preempts an active lease, or
-// creates a new lease for a reassignment). The store conflates
-// updates so a slow subscriber sees only the most recent snapshot.
+// the live entries (active leases plus pre-issued successors) of
+// the assignment log immediately on connect and then a fresh
+// live-entry snapshot on every subsequent rebalance round that
+// mutates the log (i.e. every round that pre-issues a successor
+// lease, preempts an active lease, or creates a new lease for a
+// reassignment). Expired entries are not transmitted: a fresh
+// subscriber can never use them, and including them would make the
+// gRPC message proportional to the full retention window
+// (currently 24h) rather than the active+successor working set.
+// The store conflates updates so a slow subscriber sees only the
+// most recent snapshot.
 func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream NautilusRebalancer_WatchAssignmentsServer) error {
-	initial, updates, unsubscribe := r.store.subscribe()
+	initial, updates, unsubscribe := r.store.subscribe(time.Now())
 	defer unsubscribe()
 
 	if err := stream.Send(&WatchAssignmentsResponse{Entries: EntriesToProto(initial)}); err != nil {

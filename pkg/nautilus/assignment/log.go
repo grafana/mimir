@@ -263,6 +263,30 @@ func (l *Log) Entries() []LogEntry {
 	return out
 }
 
+// LiveEntries returns a defensive copy of all entries whose lease
+// has not yet ended at `at` — i.e. entries with To > at. This
+// includes both currently-active leases (From <= at < To) and
+// pre-issued future leases (From > at). Expired entries (To <= at)
+// are excluded.
+//
+// This is the appropriate snapshot for streaming consumers that
+// only need to route writes at or after `at`: by construction, an
+// expired entry can never be returned by Lookup at any t >= at, so
+// shipping it costs bytes but adds no information. The active
+// entries plus pre-issued successors give continuous coverage
+// across the next lease boundary, so a consumer that builds an
+// ActiveTable for `at` and rebuilds when its current table
+// expires sees no gap.
+func (l *Log) LiveEntries(at time.Time) []LogEntry {
+	out := make([]LogEntry, 0, len(l.entries))
+	for _, e := range l.entries {
+		if e.To.After(at) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // Len returns the total number of entries (active, pre-issued, and
 // expired) in the log.
 func (l *Log) Len() int { return len(l.entries) }
