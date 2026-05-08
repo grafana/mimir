@@ -3970,6 +3970,29 @@ func TestQueryStats(t *testing.T) {
 				0: 7, 60000: 7, 120000: 7, 180000: 7, 240000: 7, 300000: 7, 360000: 7, 420000: 7, 480000: 7, 540000: 7, 600000: 7,
 			},
 		},
+
+		"step-invariant range vector selector in at-modifier-unsafe function": {
+			expr:                 "predict_linear(dense_series[6m] @ 10m, 60)",
+			expectedTotalSamples: 66,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 6, 60000: 6, 120000: 6, 180000: 6, 240000: 6, 300000: 6, 360000: 6, 420000: 6, 480000: 6, 540000: 6, 600000: 6,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 6, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
+		},
+		"step-invariant subquery in at-modifier-unsafe function": {
+			expr:                 "predict_linear(dense_series[6m:1m] @ 10m, 60)",
+			expectedTotalSamples: 66,
+			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				0: 6, 60000: 6, 120000: 6, 180000: 6, 240000: 6, 300000: 6, 360000: 6, 420000: 6, 480000: 6, 540000: 6, 600000: 6,
+			},
+			expectedSamplesRead: 6,
+			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 6, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
