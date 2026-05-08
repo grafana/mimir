@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
 .DEFAULT_GOAL := all
 
 # Version number
@@ -169,6 +169,17 @@ push-multiarch-build-image: ## Push the docker build image.
 .PHONY: print-build-image
 print-build-image:
 	@echo $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
+
+# Supported operating systems and architectures for dist builds.
+DIST_OSES ?= linux darwin windows freebsd
+DIST_ARCHES ?= amd64 arm64
+
+print-supported-os-arch: ## Print supported OS/arch combinations for dist.
+	@for os in $(DIST_OSES); do \
+		for arch in $(DIST_ARCHES); do \
+			printf '%s\t%s\n' "$$os" "$$arch"; \
+		done; \
+	done
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
@@ -542,36 +553,49 @@ check-license: license
 check-merge-conflicts: ## Check for git merge conflict markers in source files.
 	@./tools/check-merge-conflicts.sh
 
+dist-windows: ## Generates Windows binaries for a Mimir release. Only mimirtool supports Windows for now.
+	@mkdir -p ./dist
+	@rm -f ./dist/*.exe*
+	@for arch in amd64 arm64; do \
+		echo "Building mimirtool for windows/$$arch"; \
+		GOOS=windows GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-windows-$$arch.exe ./cmd/mimirtool; \
+		sha256sum ./dist/mimirtool-windows-$$arch.exe | cut -d ' ' -f 1 > ./dist/mimirtool-windows-$$arch.exe-sha-256; \
+	done
+
 dist: ## Generates binaries for a Mimir release.
 	echo "Cleaning up dist/"
 	@rm -fr ./dist
 	@mkdir -p ./dist
 	@# Build binaries for various architectures and operating systems. Only
 	@# mimirtool supports Windows for now.
-	@for os in linux darwin windows freebsd; do \
-		for arch in amd64 arm64; do \
+	@# When GOOS and/or GOARCH are passed on the command line, only matching
+	@# targets are built.
+	@set -e; \
+	for os in $(DIST_OSES); do \
+		if [ -n "$(filter command line,$(origin GOOS))" ] && [ "$$os" != "$(GOOS)" ]; then \
+			continue; \
+		fi; \
+		for arch in $(DIST_ARCHES); do \
+			if [ -n "$(filter command line,$(origin GOARCH))" ] && [ "$$arch" != "$(GOARCH)" ]; then \
+				continue; \
+			fi; \
 			suffix="" ; \
 			if [ "$$os" = "windows" ]; then \
 				suffix=".exe" ; \
 			fi; \
 			echo "Building mimirtool for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
-			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
-			if [ "$$os" = "windows" ]; then \
-				continue; \
-			fi; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch ./cmd/mimirtool; \
+			sha256sum ./dist/mimirtool-$$os-$$arch | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch-sha-256; \
 			echo "Building Mimir for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
-			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch ./cmd/mimir; \
+			sha256sum ./dist/mimir-$$os-$$arch | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch-sha-256; \
 			echo "Building query-tee for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
-			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch ./cmd/query-tee; \
+			sha256sum ./dist/query-tee-$$os-$$arch | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch-sha-256; \
 			echo "Building metaconvert for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
-			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch ./cmd/metaconvert; \
+			sha256sum ./dist/metaconvert-$$os-$$arch | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch-sha-256; \
 			echo "Building mark-blocks for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mark-blocks-$$os-$$arch$$suffix ./tools/mark-blocks; \
-			sha256sum ./dist/mark-blocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mark-blocks-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
 		touch $@
