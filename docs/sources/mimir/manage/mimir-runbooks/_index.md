@@ -460,9 +460,9 @@ How to **fix** it:
   - If the ruler is logging the gRPC error "trying to send message larger than max", consider increasing `-server.grpc-max-send-msg-size-bytes` in the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
-### MimirRulerMissedEvaluations
+### MimirRulersMissedEvaluations
 
-This alert fires when a significant % of rule group evaluations are missed (skipped).
+This alert fires when a significant % of rule group evaluations are missed (skipped) across all rulers.
 
 How it **works**:
 
@@ -473,6 +473,12 @@ How to **fix** it:
 
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
+
+### MimirRulerMissedEvaluations
+
+This alert fires when a significant % of rule group evaluations are missed (skipped) in a specific ruler instance.
+
+Refer to the [MimirRulersMissedEvaluations](#mimirrulersmissedevaluations) runbook for detailed investigation steps.
 
 ### MimirRulerRemoteEvaluationFailing
 
