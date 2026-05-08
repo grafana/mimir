@@ -37,11 +37,11 @@ func marshalDetails(m proto.Message) []byte {
 
 func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	instantQuery := types.NewInstantQueryTimeRange(timestamp.Time(1000))
-	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
+	instantQueryEncodedTimeRange := types.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
 	rangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(3000), timestamp.Time(5000), time.Second)
-	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
+	rangeQueryEncodedTimeRange := types.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
 	emptyRangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(5000), timestamp.Time(3000), time.Second)
-	emptyRangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 5000, EndT: 3000, IntervalMilliseconds: 1000}
+	emptyRangeQueryEncodedTimeRange := types.EncodedQueryTimeRange{StartT: 5000, EndT: 3000, IntervalMilliseconds: 1000}
 	lookbackDelta := 3 * time.Minute
 
 	testCases := map[string]struct {

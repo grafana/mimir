@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
@@ -292,7 +291,7 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool,
 	encoder := newQueryPlanEncoder(includeDescriptions, includeDetails)
 
 	encoded := &EncodedQueryPlan{
-		TimeRange:                ToEncodedTimeRange(p.Parameters.TimeRange),
+		TimeRange:                p.Parameters.TimeRange.Encode(),
 		OriginalExpression:       p.Parameters.OriginalExpression,
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
 		LookbackDelta:            p.Parameters.LookbackDelta,
@@ -355,23 +354,6 @@ func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (Quer
 	}
 
 	return maxVersion, nil
-}
-
-func ToEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
-	return EncodedQueryTimeRange{
-		StartT:               t.StartT,
-		EndT:                 t.EndT,
-		IntervalMilliseconds: t.IntervalMilliseconds,
-		IsInstant:            t.IsInstant,
-	}
-}
-
-func (e EncodedQueryTimeRange) ToDecodedTimeRange() types.QueryTimeRange {
-	if e.IsInstant {
-		return types.NewInstantQueryTimeRange(timestamp.Time(e.StartT))
-	}
-
-	return types.NewRangeQueryTimeRange(timestamp.Time(e.StartT), timestamp.Time(e.EndT), time.Duration(e.IntervalMilliseconds)*time.Millisecond)
 }
 
 type queryPlanEncoder struct {
@@ -466,7 +448,7 @@ func (p *EncodedQueryPlan) DecodeNodes(nodeIndices ...int64) ([]Node, error) {
 func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 	return &QueryParameters{
 		OriginalExpression:       p.OriginalExpression,
-		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
+		TimeRange:                p.TimeRange.Decode(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		LookbackDelta:            p.LookbackDelta,
 	}

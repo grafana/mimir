@@ -324,6 +324,23 @@ func (q *QueryTimeRange) LastPointIndexAtOrBefore(t int64) int {
 	return idx
 }
 
+func (q *QueryTimeRange) Encode() EncodedQueryTimeRange {
+	return EncodedQueryTimeRange{
+		StartT:               q.StartT,
+		EndT:                 q.EndT,
+		IntervalMilliseconds: q.IntervalMilliseconds,
+		IsInstant:            q.IsInstant,
+	}
+}
+
+func (e *EncodedQueryTimeRange) Decode() QueryTimeRange {
+	if e.IsInstant {
+		return NewInstantQueryTimeRange(timestamp.Time(e.StartT))
+	}
+
+	return NewRangeQueryTimeRange(timestamp.Time(e.StartT), timestamp.Time(e.EndT), time.Duration(e.IntervalMilliseconds)*time.Millisecond)
+}
+
 func MatchersMatch(matchers []*labels.Matcher, lbls labels.Labels) bool {
 	for _, matcher := range matchers {
 		if !matcher.Matches(lbls.Get(matcher.Name)) {
