@@ -13,6 +13,7 @@ option (gogoproto.unmarshaler_all) = true;
 message EncodedOperatorEvaluationStats {
   EncodedSubsetStats allSeries = 1 [(gogoproto.nullable) = false];
   repeated EncodedSubsetStats subsets = 2 [(gogoproto.nullable) = false];
+  EncodedQueryTimeRange timeRange = 3 [(gogoproto.nullable) = false];
 }
 
 message EncodedSubsetStats {

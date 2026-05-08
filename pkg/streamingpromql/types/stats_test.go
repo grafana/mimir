@@ -1288,7 +1288,7 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 			require.NoError(t, encoded.Unmarshal(encodedBytes))
 
 			memoryConsumptionBeforeDecoding := memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes()
-			decoded, err := encoded.Decode(ctx, original.timeRange, memoryConsumptionTracker)
+			decoded, err := encoded.Decode(ctx, memoryConsumptionTracker)
 			require.NoError(t, err)
 			require.Equal(t, original, decoded)
 			require.Equal(t, stats, decoded.queryStats)
@@ -1303,12 +1303,16 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 }
 
 func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
+	startT := timestamp.Time(1000)
+	timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second) // 3 steps
+
 	testCases := map[string]struct {
 		encoded       *EncodedOperatorEvaluationStats
 		expectedError string
 	}{
 		"unfiltered set has different number of samples processed steps": {
 			encoded: &EncodedOperatorEvaluationStats{
+				TimeRange: timeRange.Encode(),
 				AllSeries: EncodedSubsetStats{
 					SamplesProcessedPerStep:     []int64{1, 2},
 					SamplesReadIfSubsequentStep: []int64{4, 5, 6},
@@ -1319,6 +1323,7 @@ func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
 		},
 		"unfiltered set has different number of new samples read steps": {
 			encoded: &EncodedOperatorEvaluationStats{
+				TimeRange: timeRange.Encode(),
 				AllSeries: EncodedSubsetStats{
 					SamplesProcessedPerStep:     []int64{1, 2, 3},
 					SamplesReadIfSubsequentStep: []int64{4, 5},
@@ -1329,6 +1334,7 @@ func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
 		},
 		"unfiltered set has different number of samples read if first step steps": {
 			encoded: &EncodedOperatorEvaluationStats{
+				TimeRange: timeRange.Encode(),
 				AllSeries: EncodedSubsetStats{
 					SamplesProcessedPerStep:     []int64{1, 2, 3},
 					SamplesReadIfSubsequentStep: []int64{4, 5, 6},
@@ -1339,6 +1345,7 @@ func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
 		},
 		"subset has different number of samples processed steps": {
 			encoded: &EncodedOperatorEvaluationStats{
+				TimeRange: timeRange.Encode(),
 				AllSeries: EncodedSubsetStats{
 					SamplesProcessedPerStep:     []int64{1, 2, 3},
 					SamplesReadIfSubsequentStep: []int64{4, 5, 6},
@@ -1356,6 +1363,7 @@ func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
 		},
 		"subset has different number of new samples read steps": {
 			encoded: &EncodedOperatorEvaluationStats{
+				TimeRange: timeRange.Encode(),
 				AllSeries: EncodedSubsetStats{
 					SamplesProcessedPerStep:     []int64{1, 2, 3},
 					SamplesReadIfSubsequentStep: []int64{4, 5, 6},
@@ -1373,6 +1381,7 @@ func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
 		},
 		"subset has different number of samples read if first step steps": {
 			encoded: &EncodedOperatorEvaluationStats{
+				TimeRange: timeRange.Encode(),
 				AllSeries: EncodedSubsetStats{
 					SamplesProcessedPerStep:     []int64{1, 2, 3},
 					SamplesReadIfSubsequentStep: []int64{4, 5, 6},
@@ -1394,10 +1403,8 @@ func TestOperatorEvaluationStats_DecodingInvalidValues(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-			startT := timestamp.Time(1000)
-			timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second) // 3 steps
 
-			_, err := testCase.encoded.Decode(ctx, timeRange, memoryConsumptionTracker)
+			_, err := testCase.encoded.Decode(ctx, memoryConsumptionTracker)
 			require.EqualError(t, err, testCase.expectedError)
 		})
 	}

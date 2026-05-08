@@ -431,6 +431,7 @@ func sum(s []int64) int64 {
 // if this instance is modified, and becomes invalid when this instance is closed.
 func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
 	encoded := &EncodedOperatorEvaluationStats{
+		TimeRange: s.timeRange.Encode(),
 		AllSeries: s.allSeries.Encode(),
 	}
 
@@ -445,7 +446,8 @@ func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
 	return encoded
 }
 
-func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+	timeRange := e.TimeRange.Decode()
 	allSeries, err := e.AllSeries.decode(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
