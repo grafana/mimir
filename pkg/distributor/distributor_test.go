@@ -86,6 +86,7 @@ var (
 
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
+		initCfg    func(*Config)
 		initLimits func(*validation.Limits)
 		expected   error
 	}{
@@ -105,6 +106,21 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: nil,
 		},
+		"should fail if NautilusRequired is set without a rebalancer address": {
+			initCfg: func(cfg *Config) {
+				cfg.NautilusRequired = true
+			},
+			initLimits: func(_ *validation.Limits) {},
+			expected:   errNautilusRequiredWithoutAddress,
+		},
+		"should pass if NautilusRequired is set together with a rebalancer address": {
+			initCfg: func(cfg *Config) {
+				cfg.NautilusRequired = true
+				cfg.NautilusRebalancerAddress = "rebalancer:9095"
+			},
+			initLimits: func(_ *validation.Limits) {},
+			expected:   nil,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -113,6 +129,9 @@ func TestConfig_Validate(t *testing.T) {
 			limits := validation.Limits{}
 			flagext.DefaultValues(&cfg, &limits)
 
+			if testData.initCfg != nil {
+				testData.initCfg(&cfg)
+			}
 			testData.initLimits(&limits)
 
 			assert.Equal(t, testData.expected, cfg.Validate(limits))

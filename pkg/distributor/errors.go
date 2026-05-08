@@ -128,6 +128,37 @@ func (e tooManyClustersError) IsSoft() bool {
 // Ensure that tooManyClustersError implements Error.
 var _ Error = tooManyClustersError{}
 
+// nautilusRoutingUnavailableError is returned when -distributor.nautilus-required
+// is set and the distributor cannot route a write through the nautilus
+// assignment log — either because the WatchAssignments stream has never
+// produced a usable snapshot, every lease has expired, or the live tiling
+// has a gap that does not cover a series key. The cause maps to a 503
+// Service Unavailable so writers retry, rather than silently routing
+// through the partition ring's hash-mod sharding which would defeat
+// nautilus's query-locality contract.
+type nautilusRoutingUnavailableError struct {
+	reason string
+}
+
+func newNautilusRoutingUnavailableError(reason string) nautilusRoutingUnavailableError {
+	return nautilusRoutingUnavailableError{reason: reason}
+}
+
+func (e nautilusRoutingUnavailableError) Error() string {
+	return fmt.Sprintf("nautilus routing required but unavailable: %s", e.reason)
+}
+
+func (e nautilusRoutingUnavailableError) Cause() mimirpb.ErrorCause {
+	return mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE
+}
+
+func (e nautilusRoutingUnavailableError) IsSoft() bool {
+	return false
+}
+
+// Ensure that nautilusRoutingUnavailableError implements Error.
+var _ Error = nautilusRoutingUnavailableError{}
+
 // validationError is an error, used to represent all validation errors from the validation package.
 type validationError struct {
 	error

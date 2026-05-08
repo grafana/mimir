@@ -76,7 +76,8 @@ var tracer = otel.Tracer("pkg/distributor")
 
 var (
 	// Validation errors.
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
+	errInvalidTenantShardSize         = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
+	errNautilusRequiredWithoutAddress = errors.New("-distributor.nautilus-required is set but -distributor.nautilus-rebalancer-address is empty; nautilus routing cannot be enforced without a rebalancer to consult")
 
 	reasonDistributorMaxIngestionRate             = globalerror.DistributorMaxIngestionRate.LabelValue()
 	reasonDistributorMaxInflightPushRequests      = globalerror.DistributorMaxInflightPushRequests.LabelValue()
@@ -270,7 +271,14 @@ type Distributor struct {
 	nautilusStreamConnected      atomic.Bool
 	nautilusAssignmentsReceived  prometheus.Counter
 	nautilusStreamConnectedGauge prometheus.GaugeFunc
-	clusterValidationLabel       string
+	// nautilusRoutingRejected counts series keys that this
+	// distributor refused to route because -distributor.nautilus-required
+	// is set and either the assignment log was unavailable or did
+	// not cover the key. The "reason" label distinguishes the two
+	// failure modes so SREs can alert on a sustained imbalance
+	// between them.
+	nautilusRoutingRejected *prometheus.CounterVec
+	clusterValidationLabel  string
 
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
@@ -379,6 +387,15 @@ type Config struct {
 	// NautilusRebalancerAddress is the gRPC address of the nautilus
 	// rebalancer. When set, the distributor polls it for assignments.
 	NautilusRebalancerAddress string `yaml:"nautilus_rebalancer_address" category:"experimental"`
+
+	// NautilusRequired makes nautilus assignment authoritative for
+	// partition routing: when set, write requests are rejected
+	// (instead of falling back to the partition ring) if the
+	// nautilus assignment log is unavailable or doesn't cover a
+	// key. Used in deployments where the nautilus assignment is
+	// load-bearing for query locality and silent fallback to
+	// hash-mod sharding would defeat the contract.
+	NautilusRequired bool `yaml:"nautilus_required" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -431,6 +448,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
 	f.StringVar(&cfg.NautilusRebalancerAddress, "distributor.nautilus-rebalancer-address", "", "gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.")
+	f.BoolVar(&cfg.NautilusRequired, "distributor.nautilus-required", false, "If true, the distributor rejects write requests with a 503 Service Unavailable when the nautilus assignment log is unavailable or doesn't cover a series key, instead of falling back to the partition ring's hash-based routing. Use this in deployments where nautilus assignments are load-bearing for query locality.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -439,6 +457,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (cfg *Config) Validate(limits validation.Limits) error {
 	if limits.IngestionTenantShardSize < 0 {
 		return errInvalidTenantShardSize
+	}
+
+	if cfg.NautilusRequired && cfg.NautilusRebalancerAddress == "" {
+		return errNautilusRequiredWithoutAddress
 	}
 
 	if err := cfg.ReactiveLimiter.Validate(); err != nil {
@@ -713,6 +735,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_nautilus_assignments_received_total",
 			Help: "Total number of assignment-log snapshots received from the nautilus rebalancer over the WatchAssignments stream.",
 		}),
+
+		nautilusRoutingRejected: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_nautilus_routing_rejected_total",
+			Help: "Total number of write requests rejected because -distributor.nautilus-required is set and the assignment log could not route them. Reason 'table_unavailable' means no live snapshot was available; 'key_not_covered' means the live snapshot had a gap covering the series key.",
+		}, []string{"reason"}),
 
 		PushMetrics: newPushMetrics(reg),
 		now:         defaultNow,
@@ -2553,6 +2580,15 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	now := d.now()
 	if table := d.nautilusActiveTableFor(now); table != nil {
 		partitionKeys, err = d.getKeysByAssignment(ctx, table, keys)
+	} else if d.cfg.NautilusRequired {
+		// Authoritative-nautilus mode: refuse to silently route via
+		// the partition ring's hash-mod sharding, since that would
+		// defeat query locality. The writer will see a 503 and
+		// retry; if the rebalancer outage is sustained the writer's
+		// own retry/backoff is the right place for that to surface,
+		// not silent fallthrough.
+		d.nautilusRoutingRejected.WithLabelValues("table_unavailable").Inc()
+		return errors.Wrap(newNautilusRoutingUnavailableError("no live assignment log snapshot is available"), "send data to partitions")
 	} else {
 		partitionKeys, err = tenantRing.GetKeysByPartition(ctx, keys)
 	}
@@ -2626,11 +2662,17 @@ func (d *Distributor) nautilusActiveTableFor(at time.Time) *assignment.ActiveTab
 }
 
 // getKeysByAssignment groups keys by partition using a nautilus
-// ActiveTable. Falls back per-key to the partition ring's
-// ActivePartitionForKey when the table doesn't cover a given key
-// (e.g. a hash gap, or an unrelated edge case during a transition).
+// ActiveTable. When the table doesn't cover a given key (e.g. a
+// hash gap or a transition edge case) the behaviour depends on
+// d.cfg.NautilusRequired: if false, fall back per-key to the
+// partition ring's ActivePartitionForKey; if true, return a 503
+// nautilusRoutingUnavailableError so the writer retries instead of
+// silently routing through hash-mod sharding.
 func (d *Distributor) getKeysByAssignment(ctx context.Context, table *assignment.ActiveTable, keys []uint32) ([]ring.PartitionKeys, error) {
-	pRing := d.partitionsRing.PartitionRing()
+	// pRing is fetched lazily — a fully-covering table means we
+	// never consult it, and in NautilusRequired mode we never
+	// consult it at all.
+	var pRing *ring.PartitionRing
 
 	partitionIndexes := make(map[int32][]int)
 	for i, key := range keys {
@@ -2642,7 +2684,14 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, table *assignment
 
 		pid, ok := table.Lookup(key)
 		if !ok {
+			if d.cfg.NautilusRequired {
+				d.nautilusRoutingRejected.WithLabelValues("key_not_covered").Inc()
+				return nil, newNautilusRoutingUnavailableError(fmt.Sprintf("assignment log does not cover key %d", key))
+			}
 			level.Warn(d.log).Log("msg", "key not found in assignment log; falling back to partition ring", "key", key)
+			if pRing == nil {
+				pRing = d.partitionsRing.PartitionRing()
+			}
 			var err error
 			pid, err = pRing.ActivePartitionForKey(key)
 			if err != nil {
