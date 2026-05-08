@@ -276,8 +276,8 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// metadata and merge them with any outer matchers for included labels (which belong to the
 	// many side). Otherwise fall back to the same outer matchers used for the "one" side.
 	manySideMatchers := matchers
-	if hintMatchers := BuildMatchers(ctx, g.logger, g.oneSideMetadata, g.hints); hintMatchers != nil {
-		manySideMatchers = append(hintMatchers, includeMatchers...)
+	if g.hints != nil {
+		manySideMatchers = append(BuildMatchers(ctx, g.logger, g.oneSideMetadata, g.hints), includeMatchers...)
 	}
 
 	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, manySideMatchers)

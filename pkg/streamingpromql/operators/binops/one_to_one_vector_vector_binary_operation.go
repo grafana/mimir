@@ -198,8 +198,8 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	// pass are set specifically for each binary operation and include only fields that are
 	// valid to be passed to its RHS. We drop existing extra matchers since they may refer
 	// to labels that don't exist on the RHS of this binary operation.
-	if hintMatchers := BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints); hintMatchers != nil {
-		matchers = hintMatchers
+	if b.hints != nil {
+		matchers = BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints)
 	}
 
 	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)

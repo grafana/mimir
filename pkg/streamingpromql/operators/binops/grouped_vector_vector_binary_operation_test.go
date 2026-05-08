@@ -1120,6 +1120,56 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 	}
 }
 
+func TestGroupedVectorVectorBinaryOperation_DropsParentMatchersWhenHintsProduceNoMatchers(t *testing.T) {
+	// When hints are non-nil but BuildMatchers returns nil (e.g., all labels are excluded),
+	// parent matchers must still be dropped from the many side. Parent matchers may refer
+	// to labels that don't exist on the many side of this binary operation.
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	// group_left: right is "one" side, left is "many" side.
+	// The one side (right) has "cluster" so parent matchers don't filter it out.
+	rightSeries := []labels.Labels{
+		labels.FromStrings("env", "prod", "cluster", "us-east"),
+	}
+	leftSeries := []labels.Labels{
+		labels.FromStrings("env", "prod", "pod", "1"),
+	}
+
+	left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+	// Exclude hints that exclude all one-side labels: BuildMatchers will return nil
+	// because all label names present on the one side are excluded.
+	hints := &Hints{Exclude: []string{"cluster", "env"}}
+	vectorMatching := parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"cluster", "env"}}
+
+	o, err := NewGroupedVectorVectorBinaryOperation(
+		left,
+		right,
+		vectorMatching,
+		parser.ADD,
+		false,
+		memoryConsumptionTracker,
+		nil,
+		posrange.PositionRange{},
+		types.QueryTimeRange{},
+		hints,
+		log.NewNopLogger(),
+	)
+	require.NoError(t, err)
+
+	// Pass non-nil parent matchers that refer to a label ("cluster") not present on the many side.
+	parentMatchers := types.Matchers{
+		{Type: labels.MatchRegexp, Name: "cluster", Value: "us-east"},
+	}
+	_, err = o.SeriesMetadata(ctx, parentMatchers)
+	require.NoError(t, err)
+
+	// Parent matchers must be dropped from the many (left) side when hints are set but produce no matchers.
+	require.Nil(t, left.MatchersProvided, "parent matchers should be dropped from many side when hints are set but produce no matchers")
+}
+
 // BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering measures the benefit of
 // the hints-based optimization introduced for GroupedVectorVectorBinaryOperation.
 //

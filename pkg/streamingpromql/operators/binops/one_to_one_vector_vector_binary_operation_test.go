@@ -857,6 +857,50 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 	}
 }
 
+func TestOneToOneVectorVectorBinaryOperation_DropsParentMatchersWhenHintsProduceNoMatchers(t *testing.T) {
+	// When hints are non-nil but BuildMatchers returns nil (e.g., all labels are excluded),
+	// parent matchers must still be dropped. Parent matchers may refer to labels that don't
+	// exist on the RHS of this binary operation.
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	// Both sides have "cluster" so parent matchers don't filter out the LHS.
+	// The RHS intentionally does NOT have "cluster" — this is the scenario where
+	// forwarding parent matchers to the RHS would be wrong.
+	leftSeries := []labels.Labels{
+		labels.FromStrings("env", "prod", "cluster", "us-east"),
+	}
+	rightSeries := []labels.Labels{
+		labels.FromStrings("env", "prod"),
+	}
+
+	left := &operators.TestOperator{Series: leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+	// Exclude hints that exclude all non-__name__ LHS labels: BuildMatchers will return nil
+	// because all label names present on the LHS are excluded.
+	hints := &Hints{Exclude: []string{"cluster", "env"}}
+	vectorMatching := parser.VectorMatching{On: false, MatchingLabels: []string{"cluster", "env"}}
+
+	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, hints, log.NewNopLogger())
+	require.NoError(t, err)
+
+	// Pass non-nil parent matchers that refer to a label ("cluster") not present on the RHS.
+	parentMatchers := types.Matchers{
+		{Type: labels.MatchRegexp, Name: "cluster", Value: "us-east"},
+	}
+	outputSeries, err := o.SeriesMetadata(ctx, parentMatchers)
+	require.NoError(t, err)
+
+	// Parent matchers must be dropped, not forwarded to RHS.
+	require.Nil(t, right.MatchersProvided, "parent matchers should be dropped when hints are set but produce no matchers")
+
+	types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+	require.NoError(t, o.Finalize(ctx))
+	o.Close()
+}
+
 func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
 	for _, closeAfterFirstSeries := range []bool{true, false} {
 		t.Run(fmt.Sprintf("close after first series=%v", closeAfterFirstSeries), func(t *testing.T) {
