@@ -888,7 +888,7 @@ level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=
 
 When this happens, the affected block(s) will be marked as non-compact by the compactor in order to prevent the next execution from being blocked, which could potentially have a negative impact on the performance of the read path.
 
-If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Mimir guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss.
+If the corruption affects only one block whose compaction `level` is 1 (this information is stored inside block's `meta.json`), and shipment of blocks to the object storage is done from ingesters (default case), then Mimir guarantees no data loss. That is, the data is replicated across blocks shipped from multiple ingester replicas. In all other cases — e.g. when ingester shipment is disabled and blocks are shipped from the block-builder (experimental architecture) — there may be some data loss.
 
 Once this alert has been triggered, it is recommended to follow the following steps:
 
