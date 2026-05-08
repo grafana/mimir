@@ -128,7 +128,7 @@ func TestBuildMatchers(t *testing.T) {
 		require.Equal(t, "region", res[1].Name)
 	})
 
-	t.Run("without matching with heterogeneous labels: label absent from some series is skipped", func(t *testing.T) {
+	t.Run("without matching with heterogeneous labels: absent label matched with empty string", func(t *testing.T) {
 		series := []types.SeriesMetadata{
 			{Labels: labels.FromStrings("env", "prod", "region", "us-east")},
 			{Labels: labels.FromStrings("env", "prod")}, // no region label
@@ -136,10 +136,12 @@ func TestBuildMatchers(t *testing.T) {
 		hints := &Hints{} // exclude-matching, no exclusions
 		expected := types.Matchers{
 			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchRegexp, Name: "region", Value: "|us-east"},
 		}
 
 		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
-		// Only env is present on every series; region is missing from one series and must be skipped.
+		// region is absent from one series, so the matcher includes the empty string
+		// to also match RHS series without a region label.
 		require.Equal(t, expected, res)
 	})
 

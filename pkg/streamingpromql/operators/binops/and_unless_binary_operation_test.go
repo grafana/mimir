@@ -307,7 +307,7 @@ func TestAndUnlessBinaryOperation_PassesExcludeHintMatchersToRHS(t *testing.T) {
 				labels.FromStrings("env", "prod", "region", "us-east"),
 			},
 		},
-		"and op with exclude hints and heterogeneous LHS labels: label absent from some LHS series is skipped": {
+		"and op with exclude hints and heterogeneous LHS labels: absent label matched with empty string": {
 			isUnless:       false,
 			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
 			hints:          &Hints{Exclude: []string{}},
@@ -320,9 +320,11 @@ func TestAndUnlessBinaryOperation_PassesExcludeHintMatchersToRHS(t *testing.T) {
 				labels.FromStrings("env", "prod"),
 				labels.FromStrings("env", "staging", "region", "us-east"),
 			},
-			// Only env is on every LHS series; region is missing from one and must be skipped.
+			// region is absent from one LHS series, so the matcher includes the empty
+			// string to also match RHS series without a region label.
 			expectedRHSMatchers: types.Matchers{
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "|us-east"},
 			},
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "region", "us-east"),
@@ -332,7 +334,7 @@ func TestAndUnlessBinaryOperation_PassesExcludeHintMatchersToRHS(t *testing.T) {
 		"unless op with exclude hints excluding multiple labels": {
 			isUnless:       true,
 			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo", "bar"}},
-			hints:          &Hints{Exclude: []string{"foo", "bar"}},
+			hints:          &Hints{Exclude: []string{"bar", "foo"}},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "foo", "a", "bar", "b", "region", "us-east"),
 			},

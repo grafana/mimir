@@ -101,24 +101,53 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 			// This branch requires On=false, which also excludes "on ()".
 			// This is intentional: "on ()" matches all series regardless of labels,
 			// so no narrowing hint is useful.
-			// "ignoring (labels)" / default (no on/ignoring) matching:
-			// tell the operator to build RHS matchers from all LHS labels at query time,
-			// excluding both the without/ignoring labels and any synthesised labels.
-			// Setting Exclude with an empty Include signals exclude-matching mode.
-			exclude := slices.Clone(e.VectorMatching.MatchingLabels)
-			for lbl := range created {
-				if !slices.Contains(exclude, lbl) {
-					exclude = append(exclude, lbl)
+
+			// "ignoring (labels)" / default (no on/ignoring) matching.
+			// First, try to derive Include hints from LHS aggregation grouping labels.
+			// If the LHS subtree contains an aggregation with a "by" clause, we know the
+			// exact output labels statically and can use them as Include hints (after
+			// filtering out any labels synthesised by label_replace/label_join AND any
+			// labels listed in the ignoring clause, since those labels are not used for
+			// matching and must not be used to narrow the RHS fetch).
+			include := includeFromLHS(e.LHS, created)
+			if len(include) > 0 && len(e.VectorMatching.MatchingLabels) > 0 {
+				// Remove ignoring labels from the include set.
+				filtered := make([]string, 0, len(include))
+				for _, lbl := range include {
+					if !slices.Contains(e.VectorMatching.MatchingLabels, lbl) {
+						filtered = append(filtered, lbl)
+					}
 				}
+				include = filtered
 			}
-			slices.Sort(exclude)
-			if e.Hints == nil {
-				e.Hints = &core.BinaryExpressionHints{}
+			if len(include) > 0 {
+				if e.Hints == nil {
+					e.Hints = &core.BinaryExpressionHints{}
+				}
+				e.Hints.Include = include
+				sl := spanlogger.FromContext(ctx, n.logger)
+				sl.DebugLog("msg", "setting include query hint on binary expression from LHS aggregation", "labels", include)
+				addedHint = true
+			} else {
+				// No LHS aggregation labels found: fall back to exclude-matching mode.
+				// Tell the operator to build RHS matchers from all LHS labels at query time,
+				// excluding both the ignoring labels and any synthesised labels.
+				// Setting Exclude with an empty Include signals exclude-matching mode.
+				exclude := slices.Clone(e.VectorMatching.MatchingLabels)
+				for lbl := range created {
+					if !slices.Contains(exclude, lbl) {
+						exclude = append(exclude, lbl)
+					}
+				}
+				slices.Sort(exclude)
+				if e.Hints == nil {
+					e.Hints = &core.BinaryExpressionHints{}
+				}
+				e.Hints.Exclude = exclude
+				sl := spanlogger.FromContext(ctx, n.logger)
+				sl.DebugLog("msg", "setting exclude-matching query hint on binary expression", "excluded_labels", exclude)
+				addedHint = true
 			}
-			e.Hints.Exclude = exclude
-			sl := spanlogger.FromContext(ctx, n.logger)
-			sl.DebugLog("msg", "setting exclude-matching query hint on binary expression", "excluded_labels", exclude)
-			addedHint = true
 		}
 
 		return nil
@@ -129,6 +158,32 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	}
 
 	return plan, nil
+}
+
+// includeFromLHS walks the LHS subtree of a binary expression looking for an
+// aggregation with a "by" clause. If found, it returns the grouping labels
+// (filtered by created labels) as candidate Include hints. It recurses through
+// nested binary expressions (following their LHS) so that chains like
+// "sum by (region) (X) / (sum(Y) + sum(Z))" still find the aggregation.
+func includeFromLHS(node planning.Node, created map[string]struct{}) []string {
+	switch e := node.(type) {
+	case *core.AggregateExpression:
+		if !e.Without && len(e.Grouping) > 0 {
+			return filterLabels(e.Grouping, created)
+		}
+	case *core.BinaryExpression:
+		return includeFromLHS(e.LHS, created)
+	}
+
+	// If the current node isn't a binary expression or aggregation, look at
+	// children to find a suitable aggregation (e.g. through a function call wrapper).
+	for child := range planning.ChildrenIter(node) {
+		if include := includeFromLHS(child, created); len(include) > 0 {
+			return include
+		}
+	}
+
+	return nil
 }
 
 // filterLabels returns a new slice of labels that does not include any label in the created set.
