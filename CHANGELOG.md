@@ -345,6 +345,7 @@
 * [CHANGE] Alerts: Replaced `MimirCompactorSkippedUnhealthyBlocks` with more generic `MimirCompactorSkippedBlocks`. #13876
 * [CHANGE] Dashboards: replace usage of `container_spec_cpu_quota / container_spec_cpu_period` with `kube_pod_container_resource_limits` for calculation of CPU limits. #14425
 * [CHANGE] Dashboards: The queries used in latency panels no longer convert seconds to milliseconds. The dashboard panels now use "seconds" unit instead of "milliseconds". #14896
+* [CHANGE] Alerts: Changed `MimirRulerMissedEvaluations` alert to monitor the global missed evaluation rate, instead of the per rule groups one. #15290
 * [ENHANCEMENT] Dashboards: Group compactor compaction-related panels into a single collapsible "Compaction" row. #14784
 * [ENHANCEMENT] Dashboards: Merge CPU and memory panels in the "Compactor resources" dashboard into a single collapsible row. #14866
 * [ENHANCEMENT] Alerts: Add more native histogram versions of alerts using classic histograms. #13814

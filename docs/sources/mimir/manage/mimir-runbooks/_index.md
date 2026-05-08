@@ -462,11 +462,11 @@ How to **fix** it:
 
 ### MimirRulerMissedEvaluations
 
-This alert fires when there is a rule group that is taking longer to evaluate than its evaluation interval.
+This alert fires when a significant % of rule group evaluations are missed (skipped).
 
 How it **works**:
 
-- The Mimir ruler will evaluate a rule group according to the evaluation interval on the rule group.
+- The Mimir ruler evaluates each rule group according to the configured evaluation interval.
 - If an evaluation is not finished by the time the next evaluation should happen, the next evaluation is missed.
 
 How to **fix** it:
