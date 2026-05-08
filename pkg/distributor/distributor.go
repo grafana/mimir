@@ -2880,7 +2880,7 @@ func queryIngesterPartitionsRingZoneSorter(preferredZones []string) ring.ZoneSor
 // LabelValuesForLabelName returns the label values associated with the given labelName, among all series with samples
 // timestamp between from and to, and series labels matching the optional matchers.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2925,7 +2925,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 //   - inmemory: in-memory series in ingesters.
 //   - active: in-memory series in ingesters which are also tracked as active ones.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3081,7 +3081,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3305,7 +3305,7 @@ func (d *Distributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers
 }
 
 func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*labels.Matcher, nativeHistograms bool) (*activeSeriesResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3606,7 +3606,7 @@ func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
 // the input optional series label matchers. The returned label names are sorted.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3647,7 +3647,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints
 // MetricsForLabelMatchers returns a list of series with samples timestamps between from and through, and series labels
 // matching the optional label matchers. The returned series are not sorted.
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3759,7 +3759,7 @@ func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string
 
 // MetricsMetadata returns the metrics metadata based on the provided req.
 func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3796,7 +3796,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.CountMethod) (*UserStats, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

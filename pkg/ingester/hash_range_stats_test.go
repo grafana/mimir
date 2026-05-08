@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
@@ -194,4 +195,38 @@ func TestCountSeriesByHashRange_ContextCancellation(t *testing.T) {
 	if err != nil {
 		assert.ErrorIs(t, err, context.Canceled)
 	}
+}
+
+// TestHashRangeStats_QueryLoadFields verifies the HashRangeStats
+// handler emits the per-partition query-load EWMAs and the unnamed
+// bucket EWMA from the queryLoad tracker. The rebalancer pulls these
+// fields and uses them as the per-partition query-load signal; if the
+// handler skips them the entire Phase 1 chain is silently broken.
+func TestHashRangeStats_QueryLoadFields(t *testing.T) {
+	i := &Ingester{
+		hashRangeSeries: newHashRangeSeries(),
+		queryLoad:       newQueryLoadTracker(),
+	}
+	// Configure one owned range so the response also contains a Rates entry.
+	i.hashRangeSeries.SetRanges([]assignment.HashRange{{Lo: 0, Hi: math.MaxUint32}})
+
+	// Bill some samples and tick.
+	i.queryLoad.attribute(nil, 1000)
+	i.queryLoad.attribute(&client.QueryAttributionHint{PartitionId: 0}, 500)
+	i.queryLoad.attribute(&client.QueryAttributionHint{PartitionId: 7}, 9000)
+	i.queryLoad.tick()
+
+	resp, err := i.HashRangeStats(context.Background(), &client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+
+	assert.Greater(t, resp.UnnamedQuerySamplesEwma, 0.0, "unnamed bucket should be reported")
+
+	byPID := map[int32]float64{}
+	for _, p := range resp.PartitionQueryLoads {
+		byPID[p.PartitionId] = p.SamplesEwma
+	}
+	assert.Greater(t, byPID[7], byPID[0], "partition 7 was billed more samples than partition 0")
+	assert.Greater(t, byPID[0], 0.0, "partition 0 should appear with a non-zero EWMA — partition 0 is a real partition, not a sentinel")
+	_, hasZero := byPID[0]
+	require.True(t, hasZero, "partition 0 must be present in PartitionQueryLoads (regression guard for the partition_id=0 vs nil-hint distinction)")
 }

@@ -82,6 +82,20 @@ type Trace struct {
 	Start      []assignment.Entry `json:"start_assignment"`
 	Rates      []RangeRate        `json:"rates"`
 	PartitionL map[int32]int64    `json:"partition_l"`
+	// PartitionQuerySamples is the per-partition EWMA of samples-per-
+	// second scanned by named queries (queries the distributor
+	// resolved to a single partition). Phase 1: observation-only.
+	// Phase 2 actuator (David I et al) consumes this to drive
+	// query-load partition→ingester rebalancing.
+	PartitionQuerySamples map[int32]float64 `json:"partition_query_samples,omitempty"`
+	// UnnamedQuerySamples is the per-ingester EWMA of samples-per-
+	// second scanned by full-fanout queries (no resolvable __name__,
+	// complex regexes). Reported per ingester because the work
+	// scours all owned partitions; the rebalancer cannot move it to
+	// any specific partition. Surfaced for observability so ops can
+	// monitor the unnamed/named ratio and detect when locality-based
+	// rebalancing is hitting its ceiling.
+	UnnamedQuerySamples map[string]float64 `json:"unnamed_query_samples,omitempty"`
 	// RecentMoves is keyed by partition ID (decimal string) so the
 	// JSON map is well-formed.
 	RecentMoves      map[string][]MoveRecord `json:"recent_moves"`

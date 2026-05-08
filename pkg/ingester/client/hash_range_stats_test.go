@@ -41,6 +41,76 @@ func TestHashRangeStatsResponse_MarshalUnmarshal(t *testing.T) {
 	assert.Equal(t, int64(9876543210), restored.Rates[2].ActiveSeries)
 }
 
+func TestHashRangeStatsResponse_QueryLoadFields_RoundTrip(t *testing.T) {
+	original := &HashRangeStatsResponse{
+		Rates: []HashRangeRate{
+			{Lo: 0, Hi: 1000, ActiveSeries: 1},
+		},
+		TotalActiveSeries:       42,
+		UnnamedQuerySamplesEwma: 1234.5,
+		PartitionQueryLoads: []PartitionQueryLoad{
+			{PartitionId: 0, SamplesEwma: 0.0}, // partition 0 is a real partition
+			{PartitionId: 7, SamplesEwma: 7777.7},
+			{PartitionId: -1, SamplesEwma: 1.0}, // negative partitions are tolerated by the wire format
+		},
+	}
+
+	data, err := original.Marshal()
+	require.NoError(t, err)
+
+	restored := &HashRangeStatsResponse{}
+	err = restored.Unmarshal(data)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1234.5, restored.UnnamedQuerySamplesEwma)
+	require.Len(t, restored.PartitionQueryLoads, 3)
+	assert.Equal(t, int32(0), restored.PartitionQueryLoads[0].PartitionId)
+	assert.Equal(t, 0.0, restored.PartitionQueryLoads[0].SamplesEwma)
+	assert.Equal(t, int32(7), restored.PartitionQueryLoads[1].PartitionId)
+	assert.Equal(t, 7777.7, restored.PartitionQueryLoads[1].SamplesEwma)
+	assert.Equal(t, int32(-1), restored.PartitionQueryLoads[2].PartitionId)
+}
+
+func TestQueryRequest_AttributionHint_RoundTrip(t *testing.T) {
+	t.Run("nil hint preserves nil after round-trip", func(t *testing.T) {
+		original := &QueryRequest{StartTimestampMs: 1, EndTimestampMs: 2}
+		data, err := original.Marshal()
+		require.NoError(t, err)
+
+		restored := &QueryRequest{}
+		require.NoError(t, restored.Unmarshal(data))
+		assert.Nil(t, restored.QueryAttributionHint, "nil hint must round-trip as nil so the consumer bills the unnamed bucket")
+	})
+
+	t.Run("partition 0 is preserved as a non-nil hint", func(t *testing.T) {
+		original := &QueryRequest{
+			StartTimestampMs:     1,
+			EndTimestampMs:       2,
+			QueryAttributionHint: &QueryAttributionHint{PartitionId: 0},
+		}
+		data, err := original.Marshal()
+		require.NoError(t, err)
+
+		restored := &QueryRequest{}
+		require.NoError(t, restored.Unmarshal(data))
+		require.NotNil(t, restored.QueryAttributionHint, "non-nil hint pointing at partition 0 must NOT collapse to nil — that would bill the wrong bucket")
+		assert.Equal(t, int32(0), restored.QueryAttributionHint.PartitionId)
+	})
+
+	t.Run("non-zero partition is preserved", func(t *testing.T) {
+		original := &QueryRequest{
+			QueryAttributionHint: &QueryAttributionHint{PartitionId: 42},
+		}
+		data, err := original.Marshal()
+		require.NoError(t, err)
+
+		restored := &QueryRequest{}
+		require.NoError(t, restored.Unmarshal(data))
+		require.NotNil(t, restored.QueryAttributionHint)
+		assert.Equal(t, int32(42), restored.QueryAttributionHint.PartitionId)
+	})
+}
+
 func TestHashRangeStatsResponse_EmptyRoundTrip(t *testing.T) {
 	original := &HashRangeStatsResponse{}
 

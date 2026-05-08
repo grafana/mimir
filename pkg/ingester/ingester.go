@@ -363,6 +363,13 @@ type Ingester struct {
 	// the nautilus rebalancer. Populated by a periodic walk of each
 	// tenant's TSDB head; see updateHashRangeSeriesCounts.
 	hashRangeSeries *hashRangeSeries
+
+	// queryLoad tracks per-partition EWMA samples-scanned rates,
+	// plus a per-ingester unnamed bucket for full-fanout queries.
+	// Read by HashRangeStats and consumed by the rebalancer as the
+	// per-partition query-load signal. Populated from the
+	// QueryAttributionHint that distributors attach to QueryRequest.
+	queryLoad *queryLoadTracker
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -440,6 +447,10 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.activeGroups = activeGroupsCleanupService
 	if cfg.NautilusEnabled {
 		i.hashRangeSeries = newHashRangeSeries()
+		i.queryLoad = newQueryLoadTracker()
+		if registerer != nil {
+			registerer.MustRegister(i.queryLoad)
+		}
 	}
 
 	i.costAttributionMgr = costAttributionMgr

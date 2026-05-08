@@ -67,6 +67,27 @@ message HashRangeStatsResponse {
   // rebalancer can compare this to sum(rates[].active_series) to detect
   // stale post-move cardinality and weight source-side load accordingly.
   int64 total_active_series = 2;
+  // unnamed_query_samples_ewma is the EWMA of samples-per-second
+  // scanned by queries that arrived without an attribution hint
+  // (full-fanout queries: no resolvable __name__, complex regexes,
+  // count({namespace="prod"})-style queries). Reported per ingester;
+  // the rebalancer surfaces it as an observability gauge but does not
+  // feed it into per-partition deltas, because the work is intrinsic
+  // to "scour all owned partitions" and can't be moved to a specific
+  // partition.
+  double unnamed_query_samples_ewma = 3;
+  // partition_query_loads carries per-partition EWMAs of samples-per-
+  // second scanned by queries the distributor attributed to that
+  // partition via QueryRequest.query_attribution_hint. Today an
+  // ingester typically owns one partition (1:1) so this is a single
+  // entry; under the future N:1 architecture (David I) it carries one
+  // entry per owned partition.
+  repeated PartitionQueryLoad partition_query_loads = 4 [(gogoproto.nullable) = false];
+}
+
+message PartitionQueryLoad {
+  int32 partition_id = 1;
+  double samples_ewma = 2;
 }
 
 message HashRangeEntry {
@@ -127,8 +148,24 @@ message QueryRequest {
   bool projection_include = 4;
   repeated string projection_labels = 5;
 
+  // query_attribution_hint records the routing decision the
+  // distributor (or future querier) made for this call. nil means no
+  // single-partition decision (full fan-out, old sender that doesn't
+  // populate the field, or resolution failed). Non-nil names the
+  // partition this call was routed for: the ingester buckets samples-
+  // scanned by partition_id for query-load attribution, and (under
+  // the future per-(tenant, partition) TSDB architecture, David I)
+  // uses it as a TSDB selector. The field is intentionally nullable:
+  // partition 0 is a real partition, so we cannot use a sentinel int
+  // to mean "unset" without conflating it with partition 0.
+  QueryAttributionHint query_attribution_hint = 6;
+
   // Why 100? This QueryRequest message is also used for remote read requests, so we need to avoid any field numbers added in the future.
   uint64 streaming_chunks_batch_size = 100;
+}
+
+message QueryAttributionHint {
+  int32 partition_id = 1;
 }
 
 message ExemplarQueryRequest {

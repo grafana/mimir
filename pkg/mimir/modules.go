@@ -1466,6 +1466,7 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 		t.IngesterRing,
 		t.Distributor.GetIngesterPool(),
 		t.IngesterPartitionInstanceRing,
+		t.Registerer,
 		util_log.Logger,
 	)
 	rebalancer.RegisterNautilusRebalancerServer(t.Server.GRPC, t.NautilusRebalancer)

@@ -678,7 +678,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 				})
 
 				// Verify getIngesterReplicationSetsForQuery returns the expected partitions.
-				replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+				replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 				require.NoError(t, err)
 
 				var actualPartitionIDs []int
@@ -714,6 +714,74 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestDistributor_QueryStream_AttributionHint exercises the named
+// path: an exact __name__ matcher must produce a non-nil
+// partitionByInstance map whose values are the partition IDs the
+// resolution selected, so QueryStream can attach a
+// QueryAttributionHint per call. The full-fanout path (no exact
+// __name__) must still return nil so the ingester bills the unnamed
+// bucket.
+func TestDistributor_QueryStream_AttributionHint(t *testing.T) {
+	const tenantID = "user"
+
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	dedup := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, dedup)
+
+	cfg := prepConfig{
+		numDistributors:         1,
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 4,
+		ingesterStateByZone: map[string]ingesterZoneState{
+			"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateHappy, ingesterStateHappy, ingesterStateHappy}},
+		},
+		ingesterDataByZone:   map[string][]*mimirpb.WriteRequest{},
+		ingesterDataTenantID: tenantID,
+		replicationFactor:    1,
+	}
+
+	distributors, _, _, _ := prepare(t, cfg)
+	require.Len(t, distributors, 1)
+	d := distributors[0]
+	test.Poll(t, 5*time.Second, 4, func() interface{} {
+		return d.partitionsRing.PartitionRing().PartitionsCount()
+	})
+
+	t.Run("named path populates partitionByInstance for every queried instance", func(t *testing.T) {
+		nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
+
+		sets, partitionByInstance, err := d.getIngesterReplicationSetsForQuery(ctx, []*labels.Matcher{nameMatcher})
+		require.NoError(t, err)
+		require.NotEmpty(t, sets, "named path must produce at least one replication set")
+		require.NotNil(t, partitionByInstance, "named path must produce a non-nil hint map")
+
+		// Every instance in every replication set must be mapped,
+		// and the partition the map points to must match the
+		// partition the instance owns.
+		for _, rs := range sets {
+			require.NotEmpty(t, rs.Instances)
+			expected, err := ingest.IngesterPartitionID(rs.Instances[0].Addr)
+			require.NoError(t, err)
+			for _, inst := range rs.Instances {
+				got, ok := partitionByInstance[inst.Id]
+				require.True(t, ok, "instance %q in named-path replication set must appear in the hint map", inst.Id)
+				assert.Equal(t, expected, got, "instance %q hint partition must match the replication set's partition", inst.Id)
+			}
+		}
+	})
+
+	t.Run("full-fanout path returns nil hint map", func(t *testing.T) {
+		// No exact __name__ matcher → falls through to fan-out.
+		barMatcher := mustEqualMatcher("bar", "baz")
+
+		sets, partitionByInstance, err := d.getIngesterReplicationSetsForQuery(ctx, []*labels.Matcher{barMatcher})
+		require.NoError(t, err)
+		require.NotEmpty(t, sets)
+		assert.Nil(t, partitionByInstance, "fan-out queries must leave the hint map nil; the ingester bills the unnamed bucket")
+	})
 }
 
 func countMockIngestersCalls(ingesters []*mockIngester, name string) int {

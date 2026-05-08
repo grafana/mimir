@@ -64,6 +64,13 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 		defer logT.Stop()
 	}
 
+	var queryLoadTickerChan <-chan time.Time
+	if i.queryLoad != nil {
+		qlT := time.NewTicker(queryLoadTickInterval)
+		queryLoadTickerChan = qlT.C
+		defer qlT.Stop()
+	}
+
 	for {
 		select {
 		case <-ingestionRateTicker.C:
@@ -90,6 +97,8 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 			i.updateHashRangeSeriesCounts(ctx)
 		case <-hashRangeLogTickerChan:
 			i.hashRangeSeries.LogSummary(i.logger)
+		case <-queryLoadTickerChan:
+			i.queryLoad.tick()
 		case <-ctx.Done():
 			return nil
 		}

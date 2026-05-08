@@ -37,6 +37,38 @@ func TestParseHashRangeKey_RejectsMalformed(t *testing.T) {
 	}
 }
 
+// TestTrace_QueryLoadFields_JSONRoundTrip checks that the Phase 1
+// query-load observability fields (PartitionQuerySamples,
+// UnnamedQuerySamples) survive JSON serialization. External replay
+// tools persist traces to disk, so any new field must round-trip.
+func TestTrace_QueryLoadFields_JSONRoundTrip(t *testing.T) {
+	tr := Trace{
+		SlicerVersion:    SlicerVersion,
+		Now:              time.Unix(1_000_000, 0),
+		Start:            []assignment.Entry{{Range: assignment.HashRange{Lo: 0, Hi: 100}, PartitionID: 0}},
+		End:              []assignment.Entry{{Range: assignment.HashRange{Lo: 0, Hi: 100}, PartitionID: 0}},
+		ActivePartitions: []int32{0, 1, 2},
+		PartitionL:       map[int32]int64{0: 100, 1: 200, 2: 50},
+		// Partition 0 is a real partition; explicitly include it
+		// to assert the field is not collapsed into the unnamed
+		// bucket.
+		PartitionQuerySamples: map[int32]float64{0: 11.5, 1: 222.0, 2: 33.333},
+		UnnamedQuerySamples:   map[string]float64{"ingester-zone-a-0": 100.0, "ingester-zone-a-1": 0.0},
+		Config:                ConfigSnapshot{MovementBudget: 0.5, MoveCooldown: 90 * time.Second, CompactionInterval: 2 * time.Hour},
+	}
+
+	buf, err := json.Marshal(tr)
+	require.NoError(t, err)
+
+	var decoded Trace
+	require.NoError(t, json.Unmarshal(buf, &decoded))
+
+	assert.Equal(t, tr.PartitionQuerySamples, decoded.PartitionQuerySamples,
+		"PartitionQuerySamples must round-trip including partition 0 (a real partition, not the unnamed bucket)")
+	assert.Equal(t, tr.UnnamedQuerySamples, decoded.UnnamedQuerySamples,
+		"UnnamedQuerySamples must round-trip including instances reporting 0 (idle ingesters)")
+}
+
 // captureTrace builds a Trace as if rebalance() had just run with
 // the given inputs. Mirrors the production capture path so tests
 // exercise the same conversions (ratesToWire, cooldownsToWire,

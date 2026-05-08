@@ -306,8 +306,24 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 	sb.WriteString("],")
 
 	b = b[:0]
+	sb.WriteString("QueryAttributionHint:")
+	queryAttributionHintToString(sb, req.QueryAttributionHint)
+	sb.WriteString(",")
+
+	b = b[:0]
 	sb.WriteString("StreamingChunksBatchSize:")
 	sb.Write(strconv.AppendUint(b, req.StreamingChunksBatchSize, 10))
+	sb.WriteString(",}")
+}
+
+func queryAttributionHintToString(sb *bytes.Buffer, h *client.QueryAttributionHint) {
+	if h == nil {
+		sb.WriteString("nil")
+		return
+	}
+	b := make([]byte, 0, 16)
+	sb.WriteString("&QueryAttributionHint{PartitionId:")
+	sb.Write(strconv.AppendInt(b, int64(h.PartitionId), 10))
 	sb.WriteString(",}")
 }
 

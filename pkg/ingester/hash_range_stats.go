@@ -35,6 +35,12 @@ const hashRangeSeriesWalkInterval = 15 * time.Second
 // the total in-memory series count across all tenants. The rebalancer
 // uses TotalActiveSeries (L_i) to rank source/destination partitions
 // and the per-range counts (R_r) to pick specific ranges to move.
+//
+// Also returns per-partition query-load EWMAs (samples-per-second
+// scanned by named queries) and a per-ingester unnamed bucket EWMA
+// (samples-per-second scanned by full-fanout queries that arrived
+// without a partition hint). The rebalancer surfaces both as
+// observability signals; named loads will drive the Phase 2 actuator.
 func (i *Ingester) HashRangeStats(_ context.Context, _ *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
 	if i.hashRangeSeries == nil {
 		return nil, errNautilusDisabled
@@ -53,6 +59,19 @@ func (i *Ingester) HashRangeStats(_ context.Context, _ *client.HashRangeStatsReq
 			ActiveSeries: snap.Counts[j],
 		}
 	}
+
+	if i.queryLoad != nil {
+		ql := i.queryLoad.Snapshot()
+		resp.UnnamedQuerySamplesEwma = ql.Unnamed
+		resp.PartitionQueryLoads = make([]client.PartitionQueryLoad, len(ql.PerPartition))
+		for j, p := range ql.PerPartition {
+			resp.PartitionQueryLoads[j] = client.PartitionQueryLoad{
+				PartitionId: p.PartitionID,
+				SamplesEwma: p.SamplesEWMA,
+			}
+		}
+	}
+
 	return resp, nil
 }
 

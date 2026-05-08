@@ -589,6 +589,9 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	i.metrics.queriedSeries.WithLabelValues("merged_blocks").Observe(float64(numSeries))
 	i.metrics.queriedSamples.Observe(float64(numSamples))
+	if i.queryLoad != nil {
+		i.queryLoad.attribute(req.QueryAttributionHint, int64(numSamples))
+	}
 	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
 }

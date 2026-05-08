@@ -18,6 +18,7 @@ import (
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
@@ -132,8 +133,9 @@ type Rebalancer struct {
 	pool          *ring_client.Pool
 	partitionRing *ring.PartitionInstanceRing
 
-	store *logStore
-	admin adminState
+	store   *logStore
+	admin   adminState
+	metrics *metrics
 
 	// prevInstanceRanges tracks the last set of ranges pushed to each
 	// ingester, keyed by instance ID, so we can log changes.
@@ -168,7 +170,7 @@ type moveRecord struct {
 }
 
 // New creates and returns a new Rebalancer.
-func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partitionRing *ring.PartitionInstanceRing, logger log.Logger) *Rebalancer {
+func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partitionRing *ring.PartitionInstanceRing, registerer prometheus.Registerer, logger log.Logger) *Rebalancer {
 	r := &Rebalancer{
 		cfg:           cfg,
 		logger:        logger,
@@ -178,6 +180,7 @@ func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partiti
 		store:         newLogStore(),
 		moveCooldowns: make(map[assignment.HashRange]time.Time),
 		recentMoves:   make(map[int32][]moveRecord),
+		metrics:       newMetrics(registerer),
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.running, nil)
@@ -319,11 +322,13 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	rates, instanceTotals, err := r.collectRates(ctx)
+	rates, instanceTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRates(ctx)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect ingester rates", "err", err)
 		return nil
 	}
+
+	r.metrics.updateRound(partitionQuerySamples, unnamedPerInstance)
 
 	now := time.Now()
 	r.pruneExpiredCooldowns(now)
@@ -407,15 +412,17 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	}
 
 	r.admin.addTrace(Trace{
-		SlicerVersion:    SlicerVersion,
-		Round:            round,
-		Now:              now,
-		Start:            startEntries,
-		Rates:            ratesToWire(rates),
-		PartitionL:       partitionLByPID,
-		RecentMoves:      recentMovesSnapshot,
-		ActivePartitions: append([]int32(nil), activePartitions...),
-		Cooldowns:        cooldownsSnapshot,
+		SlicerVersion:         SlicerVersion,
+		Round:                 round,
+		Now:                   now,
+		Start:                 startEntries,
+		Rates:                 ratesToWire(rates),
+		PartitionL:            partitionLByPID,
+		PartitionQuerySamples: partitionQuerySamples,
+		UnnamedQuerySamples:   unnamedPerInstance,
+		RecentMoves:           recentMovesSnapshot,
+		ActivePartitions:      append([]int32(nil), activePartitions...),
+		Cooldowns:             cooldownsSnapshot,
 		Config: ConfigSnapshot{
 			MovementBudget:     r.cfg.MovementBudget,
 			MoveCooldown:       r.cfg.MoveCooldown,
@@ -442,16 +449,30 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 // the total in-memory series count on that ingester (across all
 // tenants and all hash buckets). It is the L_i signal that feeds into
 // partitionL and the movable-budget calculation.
-func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]int64, error) {
+//
+// The third return value is per-partition query-load (samples-per-
+// second EWMA) summed across owners that report the same partition.
+// Today most partitions have one owner so the sum is degenerate, but
+// it generalizes to multi-replica configs.
+//
+// The fourth return value is the per-ingester unnamed query-load
+// EWMA: samples scanned by full-fanout queries that arrived without
+// a partition hint. Reported per ingester (not per partition) because
+// the work intrinsically scours all owned partitions on that
+// ingester. The rebalancer surfaces it as an observability signal but
+// does not feed it into per-partition deltas.
+func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]float64, map[string]float64, error) {
 	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	type result struct {
-		instanceID  string
-		totalSeries int64
-		rates       []rangeRate
+		instanceID    string
+		totalSeries   int64
+		rates         []rangeRate
+		partitionLoad []ingester_client.PartitionQueryLoad
+		unnamedLoad   float64
 	}
 
 	results := make([]result, len(instances.Instances))
@@ -485,9 +506,11 @@ func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]
 			}
 		}
 		results[idx] = result{
-			instanceID:  inst.GetId(),
-			totalSeries: resp.TotalActiveSeries,
-			rates:       rates,
+			instanceID:    inst.GetId(),
+			totalSeries:   resp.TotalActiveSeries,
+			rates:         rates,
+			partitionLoad: resp.PartitionQueryLoads,
+			unnamedLoad:   resp.UnnamedQuerySamplesEwma,
 		}
 		ok.Add(1)
 		return nil
@@ -495,16 +518,24 @@ func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]
 
 	var all []rangeRate
 	instanceTotals := make(map[string]int64, len(instances.Instances))
+	partitionQuerySamples := map[int32]float64{}
+	unnamedPerInstance := map[string]float64{}
 	for _, res := range results {
 		if res.instanceID == "" {
 			continue
 		}
 		instanceTotals[res.instanceID] = res.totalSeries
 		all = append(all, res.rates...)
+		for _, p := range res.partitionLoad {
+			partitionQuerySamples[p.PartitionId] += p.SamplesEwma
+		}
+		if res.unnamedLoad > 0 {
+			unnamedPerInstance[res.instanceID] = res.unnamedLoad
+		}
 	}
 
 	level.Info(r.logger).Log("msg", "collected ingester stats", "healthy", len(instances.Instances), "ok", ok.Load(), "failed", failed.Load())
-	return all, instanceTotals, nil
+	return all, instanceTotals, partitionQuerySamples, unnamedPerInstance, nil
 }
 
 // withRPCTimeout wraps ctx with the configured per-call timeout. When
