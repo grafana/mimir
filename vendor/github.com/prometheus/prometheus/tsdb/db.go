@@ -480,9 +480,13 @@ type dbMetrics struct {
 	maxBytes                        prometheus.Gauge
 	maxPercentage                   prometheus.Gauge
 	retentionDuration               prometheus.Gauge
-	staleSeriesCompactionsTriggered prometheus.Counter
-	staleSeriesCompactionsFailed    prometheus.Counter
-	staleSeriesCompactionDuration   prometheus.Histogram
+	staleSeriesCompactionsTriggered    prometheus.Counter
+	staleSeriesCompactionsFailed       prometheus.Counter
+	staleSeriesCompactionDuration      prometheus.Histogram
+	selectedSeriesCompactionsTriggered  prometheus.Counter
+	selectedSeriesCompactionsFailed     prometheus.Counter
+	selectedSeriesCompactionsSkippedOOO prometheus.Counter
+	selectedSeriesCompactionDuration    prometheus.Histogram
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -587,6 +591,26 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
+	m.selectedSeriesCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_selected_series_compactions_triggered_total",
+		Help: "Total number of triggered selected series compactions (compactions of an explicit, caller-supplied list of series refs).",
+	})
+	m.selectedSeriesCompactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_selected_series_compactions_failed_total",
+		Help: "Total number of selected series compactions that failed.",
+	})
+	m.selectedSeriesCompactionsSkippedOOO = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_selected_series_compactions_skipped_ooo_total",
+		Help: "Total number of series skipped during selected series compaction because they had out-of-order data at the time of compaction.",
+	})
+	m.selectedSeriesCompactionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:                            "prometheus_tsdb_selected_series_compaction_duration_seconds",
+		Help:                            "Duration of selected series compaction runs.",
+		Buckets:                         prometheus.ExponentialBuckets(1, 2, 14),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -608,6 +632,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.staleSeriesCompactionsTriggered,
 			m.staleSeriesCompactionsFailed,
 			m.staleSeriesCompactionDuration,
+			m.selectedSeriesCompactionsTriggered,
+			m.selectedSeriesCompactionsFailed,
+			m.selectedSeriesCompactionsSkippedOOO,
+			m.selectedSeriesCompactionDuration,
 		)
 	}
 	return m
@@ -1872,6 +1900,65 @@ func (db *DB) compactHead(head *RangeHead, truncateMemory bool) error {
 	return nil
 }
 
+// HeadPortionDecorator builds a BlockReader view of a portion of the head, restricted to the
+// closed time range [mint, maxt]. Implementations decide which subset of series the view exposes
+// (for example, by filtering on a list of series refs). The decorator is invoked once per
+// chunk-range slice during compaction.
+type HeadPortionDecorator func(head *Head, mint, maxt int64) BlockReader
+
+// HeadPortionEvictor removes the compacted series from the head after their block has been
+// written and reloaded. It receives the maxt the compaction wrote up to so it can apply any
+// per-series safety check that protects against series receiving fresh samples since ref
+// collection. HeadMinTime is not advanced by this step.
+type HeadPortionEvictor func(maxt int64) error
+
+// CompactHeadPortion writes a block (or sequence of blocks, one per chunk range) covering the
+// portion of the head described by decorator, then runs evictor to remove those series from the
+// head. HeadMinTime is not advanced; series outside the portion are unaffected.
+//
+// This is the engine that powers CompactStaleHead. Callers that maintain their own list of
+// series refs (for example, an external ownership tracker) can invoke it directly with their
+// own decorator/evictor pair.
+func (db *DB) CompactHeadPortion(decorator HeadPortionDecorator, evict HeadPortionEvictor, meta *BlockMeta) error {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+	return db.compactHeadPortionLocked(decorator, evict, meta)
+}
+
+// compactHeadPortionLocked is the body of CompactHeadPortion, intended for internal callers
+// that already hold db.cmtx (for example, CompactStaleHead, which collects the list of stale
+// series refs under the lock before invoking the engine).
+func (db *DB) compactHeadPortionLocked(decorator HeadPortionDecorator, evict HeadPortionEvictor, meta *BlockMeta) error {
+	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
+	for ; mint < maxt; mint += db.head.chunkRange.Load() {
+		view := decorator(db.head, mint, mint+db.head.chunkRange.Load()-1)
+
+		uids, err := db.compactor.Write(db.dir, view, view.Meta().MinTime, view.Meta().MaxTime+1, meta)
+		if err != nil {
+			return fmt.Errorf("persist head portion: %w", err)
+		}
+
+		db.logger.Info("Head portion block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", maxt)
+
+		if err := db.reloadBlocks(); err != nil {
+			errs := []error{fmt.Errorf("reloadBlocks blocks: %w", err)}
+			for _, uid := range uids {
+				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
+					errs = append(errs, fmt.Errorf("delete persisted head portion block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+				}
+			}
+			return errors.Join(errs...)
+		}
+	}
+
+	if err := evict(maxt); err != nil {
+		return fmt.Errorf("head truncate: %w", err)
+	}
+	db.head.RebuildSymbolTable(db.logger)
+
+	return nil
+}
+
 func (db *DB) CompactStaleHead() (err error) {
 	db.cmtx.Lock()
 	defer func() {
@@ -1894,36 +1981,91 @@ func (db *DB) CompactStaleHead() (err error) {
 	}
 	meta := &BlockMeta{}
 	meta.Compaction.SetStaleSeries()
-	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	for ; mint < maxt; mint += db.head.chunkRange.Load() {
-		staleHead := NewStaleHead(db.Head(), mint, mint+db.head.chunkRange.Load()-1, staleSeriesRefs)
 
-		uids, err := db.compactor.Write(db.dir, staleHead, staleHead.MinTime(), staleHead.BlockMaxTime(), meta)
-		if err != nil {
-			return fmt.Errorf("persist stale head: %w", err)
-		}
-
-		db.logger.Info("Stale series block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", maxt)
-
-		if err := db.reloadBlocks(); err != nil {
-			errs := []error{fmt.Errorf("reloadBlocks blocks: %w", err)}
-			for _, uid := range uids {
-				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-					errs = append(errs, fmt.Errorf("delete persisted stale head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
-				}
-			}
-			return errors.Join(errs...)
-		}
+	if err := db.compactHeadPortionLocked(
+		func(h *Head, mint, maxt int64) BlockReader {
+			return NewStaleHead(h, mint, maxt, staleSeriesRefs)
+		},
+		func(maxt int64) error {
+			return db.head.truncateStaleSeries(staleSeriesRefs, maxt)
+		},
+		meta,
+	); err != nil {
+		return err
 	}
-
-	if err := db.head.truncateStaleSeries(staleSeriesRefs, maxt); err != nil {
-		return fmt.Errorf("head truncate: %w", err)
-	}
-	db.head.RebuildSymbolTable(db.logger)
 
 	elapsed := time.Since(start)
 	db.metrics.staleSeriesCompactionDuration.Observe(elapsed.Seconds())
 	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs), "duration", elapsed)
+	return nil
+}
+
+// CompactSelectedSeries writes the given series into a block (one per chunk range) and evicts
+// them from the head without advancing HeadMinTime. The caller is responsible for ensuring the
+// refs identify series that should be removed; no value-based re-validation (such as the
+// stale-NaN check used by CompactStaleHead) is performed. Series that received fresh samples
+// since the caller collected the ref list are skipped during eviction.
+//
+// Because this primitive writes only in-order chunks into the resulting block, any series
+// whose out-of-order state is non-empty at the moment of compaction is skipped — otherwise its
+// out-of-order chunks would be orphaned upon eviction. Such series stay in the head and become
+// candidates again on a subsequent cycle, once their out-of-order state has been cleared by an
+// out-of-order compaction.
+//
+// Intended for callers that maintain their own ownership state and want to evict specific
+// series outside the stale-series flow (for example, a multi-tenant ingester evicting series
+// it no longer owns after a ring change).
+func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) {
+	if len(seriesRefs) == 0 {
+		return nil
+	}
+
+	db.cmtx.Lock()
+	defer func() {
+		db.cmtx.Unlock()
+		if err != nil {
+			db.metrics.selectedSeriesCompactionsFailed.Inc()
+		}
+	}()
+
+	db.metrics.selectedSeriesCompactionsTriggered.Inc()
+	start := time.Now()
+
+	// Skip series with out-of-order data: the ref-list pipeline writes only in-order chunks,
+	// so a series whose OOO state is non-empty would have its OOO chunks orphaned upon
+	// eviction. Such series stay in the head and are picked up on a later cycle.
+	seriesRefs, skipped := db.head.FilterSeriesRefsWithoutOOOData(seriesRefs)
+	if n := len(skipped); n > 0 {
+		db.metrics.selectedSeriesCompactionsSkippedOOO.Add(float64(n))
+	}
+
+	db.logger.Info("Starting selected series compaction", "num_series", len(seriesRefs), "num_skipped_ooo", len(skipped))
+
+	if len(seriesRefs) == 0 {
+		elapsed := time.Since(start)
+		db.metrics.selectedSeriesCompactionDuration.Observe(elapsed.Seconds())
+		db.logger.Info("Ending selected series compaction", "num_series", 0, "num_skipped_ooo", len(skipped), "duration", elapsed)
+		return nil
+	}
+
+	meta := &BlockMeta{}
+	meta.Compaction.SetSelectedSeries()
+
+	if err := db.compactHeadPortionLocked(
+		func(h *Head, mint, maxt int64) BlockReader {
+			return NewStaleHead(h, mint, maxt, seriesRefs)
+		},
+		func(maxt int64) error {
+			return db.head.truncateSelectedSeries(seriesRefs, maxt)
+		},
+		meta,
+	); err != nil {
+		return err
+	}
+
+	elapsed := time.Since(start)
+	db.metrics.selectedSeriesCompactionDuration.Observe(elapsed.Seconds())
+	db.logger.Info("Ending selected series compaction", "num_series", len(seriesRefs), "num_skipped_ooo", len(skipped), "duration", elapsed)
 	return nil
 }
 
@@ -2407,7 +2549,7 @@ func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
 	maxt, ok = int64(math.MinInt64), false
 	// If blocks are overlapping, last block might not have the max time. So check all blocks.
 	for _, b := range db.Blocks() {
-		if !b.meta.OutOfOrder && !b.meta.Compaction.FromOutOfOrder() && !b.meta.Compaction.FromStaleSeries() && b.meta.MaxTime > maxt {
+		if !b.meta.OutOfOrder && !b.meta.Compaction.FromOutOfOrder() && !b.meta.Compaction.FromStaleSeries() && !b.meta.Compaction.FromSelectedSeries() && b.meta.MaxTime > maxt {
 			ok = true
 			maxt = b.meta.MaxTime
 		}

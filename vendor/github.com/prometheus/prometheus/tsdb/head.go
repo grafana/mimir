@@ -1290,8 +1290,42 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	return h.truncateSeriesAndChunkDiskMapper("truncateMemory")
 }
 
+// isStaleSeries reports whether the most recent in-order sample of the series carries a
+// stale-NaN marker (covering float, integer histogram and float histogram samples).
+func isStaleSeries(s *memSeries) bool {
+	return value.IsStaleNaN(s.lastValue) ||
+		(s.lastHistogramValue != nil && value.IsStaleNaN(s.lastHistogramValue.Sum)) ||
+		(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum))
+}
+
+// alwaysEvictSeries is the predicate used by ref-list eviction paths that don't require any
+// per-series value-based check (the caller has already vetted which series should be evicted).
+func alwaysEvictSeries(*memSeries) bool {
+	return true
+}
+
 // truncateStaleSeries removes the provided series as long as they are still stale.
 func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) error {
+	return h.truncateSeries(seriesRefs, maxt, isStaleSeries, true)
+}
+
+// truncateSelectedSeries removes the provided series from the head without requiring them to
+// carry stale-NaN markers. Series which received fresh samples since the caller collected the
+// ref list are skipped.
+//
+// Intended for callers that maintain their own list of series refs (for example, an external
+// ownership tracker) and want to evict specific series outside the stale-series flow.
+func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64) error {
+	return h.truncateSeries(seriesRefs, maxt, alwaysEvictSeries, false)
+}
+
+// truncateSeries removes the provided series from the head, taking the chunk-snapshot lock,
+// waiting for in-flight readers in the affected time range to finish, and recording WAL
+// tombstones so the deleted series are ignored on replay. shouldEvict is the per-series
+// predicate that decides whether each ref is evicted; series that received fresh samples since
+// the caller collected the ref list are skipped before the predicate is consulted. wereStale
+// controls whether Head.numStaleSeries should be decremented by the number of evicted series.
+func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool, wereStale bool) error {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
@@ -1301,9 +1335,9 @@ func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) e
 
 	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
 
-	deleted := h.gcStaleSeries(seriesRefs, maxt)
+	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict, wereStale)
 
-	// Record these stale series refs in the WAL so that we can ignore them during replay.
+	// Record the deleted series refs in the WAL so that we can ignore them during replay.
 	if h.wal != nil {
 		stones := make([]tombstones.Stone, 0, len(seriesRefs))
 		for ref := range deleted {
@@ -1673,8 +1707,13 @@ func (h *RangeHead) String() string {
 	return fmt.Sprintf("range head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
 }
 
-// StaleHead allows querying the stale series in the Head via an IndexReader, ChunkReader and tombstones.Reader.
-// Used only for compactions.
+// StaleHead allows querying a Head restricted to an explicit list of series references via an
+// IndexReader, ChunkReader and tombstones.Reader. Used only for compactions.
+//
+// Despite the name, the filtering is purely by the supplied series refs and does not require
+// the underlying series to carry stale-NaN markers. CompactStaleHead populates the ref list
+// from the head's stale-series enumeration, but the type itself is reusable by any caller
+// (e.g. CompactHeadPortion) that already holds a list of refs to compact and evict.
 type StaleHead struct {
 	RangeHead
 	staleSeriesRefs []storage.SeriesRef
@@ -1696,8 +1735,12 @@ func (h *StaleHead) Index() (_ IndexReader, err error) {
 	return h.head.staleIndex(h.mint, h.maxt, h.staleSeriesRefs)
 }
 
+// NumSeries returns the number of series the view exposes. This is the size of the explicit
+// ref list captured at construction time, which is stable for the lifetime of the view and
+// matches the count of series the resulting block will contain. For the existing stale-series
+// compaction path this is equal to Head.NumStaleSeries() at collection time.
 func (h *StaleHead) NumSeries() uint64 {
-	return h.head.NumStaleSeries()
+	return uint64(len(h.staleSeriesRefs))
 }
 
 var staleHeadULID = ulid.MustParse("0000000000XXXXXXXSTALEHEAD")
@@ -2227,20 +2270,26 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	return deleted, affected, rmChunks, staleSeriesDeleted, actualMint, minOOOTime, minMmapFile
 }
 
-// gcStaleSeries removes all the provided series as long as they are still stale
-// and the series maxt is <= the given max.
+// gcSeries removes the provided series from the head index and updates head metrics,
+// postings, tombstones and WAL expiries accordingly. shouldEvict is the per-series predicate
+// applied after the safety check for series that received fresh samples since the caller
+// collected the ref list. wereStale indicates whether the deleted series were counted in
+// Head.numStaleSeries and the counter should be decremented.
+//
 // The returned references are the series that got deleted.
-func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) map[storage.SeriesRef]struct{} {
+func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool, wereStale bool) map[storage.SeriesRef]struct{} {
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved := h.series.gcStaleSeries(seriesRefs, maxt)
+	deleted, affected, chunksRemoved := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
 	h.numSeries.Sub(uint64(seriesRemoved))
-	h.numStaleSeries.Sub(uint64(seriesRemoved))
+	if wereStale {
+		h.numStaleSeries.Sub(uint64(seriesRemoved))
+	}
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -2328,23 +2377,24 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	h.tombstones.DeleteTombstones(deleted)
 }
 
-// gcStaleSeries removes all the stale series provided that they are still stale
-// and the series maxt is <= the given max.
-func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int) {
+// gcSeries walks all series and removes those whose ref is in seriesRefs, whose maxTime is
+// <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
+// of label-name/value pairs whose postings are affected, and the count of removed chunks.
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int) {
 	var (
 		deleted  = map[storage.SeriesRef]struct{}{}
 		affected = map[labels.Label]struct{}{}
 		rmChunks = 0
 	)
 
-	staleSeriesMap := map[storage.SeriesRef]struct{}{}
+	refsSet := map[storage.SeriesRef]struct{}{}
 	for _, ref := range seriesRefs {
-		staleSeriesMap[ref] = struct{}{}
+		refsSet[ref] = struct{}{}
 	}
 
 	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
-		if _, exists := staleSeriesMap[storage.SeriesRef(series.ref)]; !exists {
-			// This series was not compacted. Skip it.
+		if _, exists := refsSet[storage.SeriesRef(series.ref)]; !exists {
+			// This series was not provided by the caller. Skip it.
 			return
 		}
 
@@ -2355,12 +2405,7 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 			return
 		}
 
-		// Check if the series is still stale.
-		isStale := value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum))
-
-		if !isStale {
+		if !shouldEvict(series) {
 			return
 		}
 

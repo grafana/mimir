@@ -19,7 +19,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -154,10 +153,12 @@ type userTSDB struct {
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
-	// nonOwnedSeriesPendingCompaction is true when the last computeOwnedSeries call detected
-	// non-owned series and successfully appended stale-NaN markers to them, making them eligible
-	// for eviction by the next CompactStaleHead cycle. Cleared when consumed by the compaction loop.
-	nonOwnedSeriesPendingCompaction atomic.Bool
+	// pendingNonOwnedRefs holds the series refs that the last computeOwnedSeries call(s) found
+	// to be non-owned. The compaction loop consumes (and clears) this list and passes it to
+	// CompactSelectedSeries for targeted eviction. The mutex serialises append-time additions
+	// with the take-and-clear performed by the compaction loop.
+	pendingNonOwnedRefsMtx sync.Mutex
+	pendingNonOwnedRefs    []storage.SeriesRef
 
 	postingsCache *tsdb.PostingsForMatchersCache
 
@@ -691,22 +692,31 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 	return !prev.Equal(newTokenRanges)
 }
 
-// setNonOwnedSeriesPendingCompaction flags that non-owned series have been marked stale
-// and are pending eviction by the next CompactStaleHead cycle.
-func (u *userTSDB) setNonOwnedSeriesPendingCompaction() {
-	u.nonOwnedSeriesPendingCompaction.Store(true)
+// addPendingNonOwnedRefs appends the given refs to the per-tenant pending eviction list. The
+// compaction loop consumes the list with takePendingNonOwnedRefs.
+func (u *userTSDB) addPendingNonOwnedRefs(refs []storage.SeriesRef) {
+	if len(refs) == 0 {
+		return
+	}
+	u.pendingNonOwnedRefsMtx.Lock()
+	u.pendingNonOwnedRefs = append(u.pendingNonOwnedRefs, refs...)
+	u.pendingNonOwnedRefsMtx.Unlock()
 }
 
-// getAndClearNonOwnedSeriesPendingCompaction atomically returns and clears the pending flag.
-// Returns false if no compaction is pending.
-func (u *userTSDB) getAndClearNonOwnedSeriesPendingCompaction() bool {
-	return u.nonOwnedSeriesPendingCompaction.Swap(false)
+// takePendingNonOwnedRefs atomically returns and clears the pending eviction list. Returns
+// nil if no eviction is pending.
+func (u *userTSDB) takePendingNonOwnedRefs() []storage.SeriesRef {
+	u.pendingNonOwnedRefsMtx.Lock()
+	refs := u.pendingNonOwnedRefs
+	u.pendingNonOwnedRefs = nil
+	u.pendingNonOwnedRefsMtx.Unlock()
+	return refs
 }
 
 func (u *userTSDB) computeOwnedSeries() int {
-	// If no token ranges are assigned, every series in the head is non-owned. We still iterate
-	// in the loop below to collect refs for stale marking; activeSeries.Clear() handles the
-	// active-series side.
+	// If no token ranges are assigned, every series in the head is non-owned.
+	// activeSeries.Clear() handles the active-series side; the loop below collects refs to
+	// queue for targeted eviction.
 	allNonOwned := len(u.ownedTokenRanges) == 0
 	if allNonOwned {
 		u.activeSeries.Clear()
@@ -716,13 +726,15 @@ func (u *userTSDB) computeOwnedSeries() int {
 	defer idx.Close()
 
 	count := 0
-	var nonOwnedRefs []chunks.HeadSeriesRef
+	var nonOwnedRefs []storage.SeriesRef
 
 	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		// Fast path: when no token range is owned every series in this batch is non-owned.
 		// activeSeries.Clear() above already handled the active-series side.
 		if allNonOwned {
-			nonOwnedRefs = append(nonOwnedRefs, refs...)
+			for _, ref := range refs {
+				nonOwnedRefs = append(nonOwnedRefs, storage.SeriesRef(ref))
+			}
 			return
 		}
 		for i, sh := range secondaryHashes {
@@ -731,87 +743,33 @@ func (u *userTSDB) computeOwnedSeries() int {
 				continue
 			}
 			u.activeSeries.Delete(refs[i], idx)
-			nonOwnedRefs = append(nonOwnedRefs, refs[i])
+			nonOwnedRefs = append(nonOwnedRefs, storage.SeriesRef(refs[i]))
 		}
 	})
 
-	// Append a stale-NaN marker to each non-owned series so the next CompactStaleHead cycle
-	// evicts them from the head without advancing HeadMinTime. This avoids breaking late
-	// owned-series writes, retries, OOO samples and clock-skewed pushes that the previous
-	// time-cut implementation would have rejected.
-	if len(nonOwnedRefs) > 0 && u.markSeriesAsStale(nonOwnedRefs, idx) > 0 {
-		u.setNonOwnedSeriesPendingCompaction()
-	}
+	// Queue the non-owned refs for targeted eviction by the next compaction-loop iteration.
+	// The compaction loop will pass this list to CompactSelectedSeries, which writes the refs
+	// into a block and evicts them from the head without advancing HeadMinTime. No marker is
+	// appended on the series, so PromQL lookback semantics for those series are unaffected.
+	u.addPendingNonOwnedRefs(nonOwnedRefs)
 
 	return count
 }
 
-// markSeriesAsStale appends a stale-NaN sample to each of the given series so the TSDB head
-// flags them as stale (memSeries.lastValue becomes a stale NaN, which is what
-// filterStaleSeriesAndSortPostings looks for). The next CompactStaleHead cycle writes these
-// series to a block and evicts them from the head's index without advancing HeadMinTime.
-//
-// Returns the number of series successfully marked. Native histogram series cannot be marked
-// through this float-only Append path; they will be cleaned up by the regular head compaction
-// cycle instead. The OOO compaction step in compactBlocksDueToNonOwnedSeries clears s.ooo for
-// non-owned series with OOO data so they become candidates for the stale-head pipeline on the
-// next call.
-func (u *userTSDB) markSeriesAsStale(refs []chunks.HeadSeriesRef, idx tsdb.IndexReader) int {
-	if len(refs) == 0 {
-		return 0
-	}
-
-	// Use a timestamp strictly greater than the head's current MaxTime so the stale-NaN becomes
-	// the latest in-order sample for each series. If a concurrent append for one of these series
-	// lands with a higher timestamp before commit, our stale-NaN is OOO and lastValue is not
-	// updated; the series will simply be re-marked on the next computeOwnedSeries call once
-	// distributors have stopped routing writes for it.
-	maxT := u.Head().MaxTime()
-	if maxT == math.MinInt64 {
-		return 0
-	}
-	ts := maxT + 1
-
-	app := u.db.Appender(context.Background())
-
-	var (
-		builder labels.ScratchBuilder
-		chks    []chunks.Meta
-		marked  int
-	)
-
-	for _, ref := range refs {
-		if err := idx.Series(storage.SeriesRef(ref), &builder, &chks); err != nil {
-			continue
-		}
-		if _, err := app.Append(storage.SeriesRef(ref), builder.Labels(), ts, math.Float64frombits(value.StaleNaN)); err == nil {
-			marked++
-		}
-	}
-
-	if marked == 0 {
-		_ = app.Rollback()
-		return 0
-	}
-
-	if err := app.Commit(); err != nil {
-		return 0
-	}
-
-	return marked
-}
-
-// CompactOOOHead compacts the OOO head into blocks. After this call, any series whose OOO
-// chunks were fully compacted and which has no concurrent OOO writes will have its s.ooo
-// cleared, making it eligible for stale-series compaction on the next pass.
+// CompactOOOHead compacts the OOO head into blocks. Mimir runs this immediately before
+// CompactSelectedSeries so the out-of-order data of every series with OOO chunks is persisted
+// to OOO blocks; otherwise CompactSelectedSeries (which writes only in-order chunks) would
+// orphan the OOO chunks of the evicted series.
 func (u *userTSDB) CompactOOOHead(ctx context.Context) error {
 	return u.db.CompactOOOHead(ctx)
 }
 
-// CompactStaleHead writes a block containing all series currently flagged as stale by the
-// TSDB head, then evicts them from the head's index without advancing HeadMinTime.
-func (u *userTSDB) CompactStaleHead() error {
-	return u.db.CompactStaleHead()
+// CompactSelectedSeries writes the given series into a block and evicts them from the head
+// without advancing HeadMinTime. Series that received fresh samples since the caller collected
+// the refs, and series that still hold OOO data at the moment of compaction, are skipped and
+// stay in the head — they become candidates again on a subsequent computeOwnedSeries cycle.
+func (u *userTSDB) CompactSelectedSeries(refs []storage.SeriesRef) error {
+	return u.db.CompactSelectedSeries(refs)
 }
 
 func (u *userTSDB) setLastEarlyCompaction(t time.Time) {

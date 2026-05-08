@@ -584,22 +584,10 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 }
 
 // compactBlocksDueToNonOwnedSeries triggers an early head compaction for tenants whose last
-// computeOwnedSeries call detected non-owned series and appended stale-NaN markers to them.
-//
-// Two TSDB primitives run in sequence:
-//
-//  1. CompactOOOHead flushes all OOO data of all series with OOO chunks into blocks. For each
-//     non-owned series with no concurrent OOO writes, this clears memSeries.ooo as a side
-//     effect of the in-line GC, making the series eligible for the stale-head pipeline.
-//     filterStaleSeriesAndSortPostings explicitly skips series with s.ooo != nil.
-//  2. CompactStaleHead writes a block containing every series currently flagged stale (i.e.
-//     memSeries.lastValue is a stale NaN) and evicts those series from the head's index
-//     without advancing HeadMinTime, so owned-series writes for older timestamps continue
-//     to be accepted.
-//
-// Unlike the previous time-cut implementation, this approach does not advance the head's
-// MinTime or compact the OOO head with a forced cutoff, so it does not create a permanent
-// rejection window for owned-series writes around the ring change moment.
+// computeOwnedSeries call(s) queued non-owned series for eviction. CompactOOOHead runs first
+// to persist OOO data into OOO blocks (the regular block writer's chunk enumerator only sees
+// in-order containers), then CompactSelectedSeries writes the queued series into a block and
+// evicts them from the head's index without advancing HeadMinTime.
 func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 	if !i.cfg.EarlyCompactionNonOwnedSeriesEnabled {
 		return
@@ -615,37 +603,38 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 			continue
 		}
 
-		if !db.getAndClearNonOwnedSeriesPendingCompaction() {
+		refs := db.takePendingNonOwnedRefs()
+		if len(refs) == 0 {
 			continue
 		}
 
 		seriesBefore := db.Head().NumSeries()
-		level.Info(i.logger).Log("msg", "triggering early head compaction due to non-owned series", "user", userID, "before_in_memory_series", seriesBefore)
+		level.Info(i.logger).Log("msg", "triggering early head compaction of non-owned series", "user", userID, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
 
-		// Step 1: compact the OOO head so non-owned series with OOO data have their s.ooo
-		// cleared and become candidates for the stale-head pipeline below. CompactOOOHead
-		// is a no-op for tenants that have never used OOO ingestion (oooWasEnabled == false).
+		// Step 1: compact the OOO head so the out-of-order data of every series with OOO
+		// chunks is persisted before we evict any series in step 2. CompactOOOHead is a no-op
+		// for tenants that have never used OOO ingestion.
 		if err := db.CompactOOOHead(ctx); err != nil {
-			level.Warn(i.logger).Log("msg", "OOO head compaction failed during early compaction for non-owned series", "user", userID, "err", err)
-			// Fall through: the stale-head step still helps for non-owned series without OOO data.
+			level.Warn(i.logger).Log("msg", "OOO head compaction failed during early compaction of non-owned series", "user", userID, "err", err)
+			// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
 		}
 
-		// Step 2: compact stale-flagged series into a block and evict them from the head.
-		if err := db.CompactStaleHead(); err != nil {
-			level.Warn(i.logger).Log("msg", "stale head compaction failed during early compaction for non-owned series", "user", userID, "err", err)
+		// Step 2: write the queued non-owned series into a block and evict them from the head.
+		if err := db.CompactSelectedSeries(refs); err != nil {
+			level.Warn(i.logger).Log("msg", "selected series compaction failed during early compaction of non-owned series", "user", userID, "err", err)
 			continue
 		}
 
 		// Note: lastEarlyCompaction is intentionally not updated here. The cooldown it controls
 		// gates compactBlocksToReducePerTenantOwnedSeries, which targets owned-series memory
 		// pressure via a forced head compaction with a time cutoff. The work this function does
-		// (CompactOOOHead + CompactStaleHead) is targeted at non-owned series only, does not
-		// advance HeadMinTime, and does not compete for the same resource — so suppressing
+		// (CompactOOOHead + CompactSelectedSeries) is targeted at non-owned series only, does
+		// not advance HeadMinTime, and does not compete for the same resource — so suppressing
 		// per-tenant early compaction after a ring-change-driven eviction would block unrelated
 		// owned-series relief.
 		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
 
-		level.Info(i.logger).Log("msg", "early head compaction due to non-owned series completed",
+		level.Info(i.logger).Log("msg", "early head compaction of non-owned series completed",
 			"user", userID,
 			"before_in_memory_series", seriesBefore,
 			"after_in_memory_series", db.Head().NumSeries(),

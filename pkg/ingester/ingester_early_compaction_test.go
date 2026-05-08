@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -28,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -966,10 +968,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenDisabled(
 		Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
 	}}))
 
-	// Simulate non-owned series detection by flagging pending compaction directly.
+	// Simulate non-owned series detection by queueing a ref directly.
 	db := ingester.getTSDB(userID)
 	require.NotNil(t, db)
-	db.setNonOwnedSeriesPendingCompaction()
+	db.addPendingNonOwnedRefs([]storage.SeriesRef{1})
 
 	// Should not compact because the feature is disabled.
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
@@ -1001,7 +1003,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPending
 		Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
 	}}))
 
-	// No pending compaction flag set: compaction should not run.
+	// No pending refs queued: compaction should not run.
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
@@ -1026,45 +1028,52 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	require.NoError(t, err)
 	startAndWaitHealthy(t, ingester, r)
 
+	// Push two samples at different timestamps so the head spans more than a single instant.
 	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
 	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
 
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
 		Labels:  metricLabels,
-		Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
+		Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+	}}))
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  metricLabels,
+		Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
 	}}))
 
 	db := ingester.getTSDB(userID)
 	require.NotNil(t, db)
 
 	// Simulate non-owned series detection: clear token ranges and run computeOwnedSeries.
-	// This appends stale-NaN markers to all series in the head and flags pending compaction,
-	// which is exactly what happens after a ring change makes a tenant's series non-owned.
+	// This queues every series in the head onto the per-tenant pending-eviction list, which
+	// is exactly what happens after a ring change makes a tenant's series non-owned.
 	db.ownedTokenRanges = nil
 	require.Equal(t, 0, db.computeOwnedSeries())
-	require.True(t, db.nonOwnedSeriesPendingCompaction.Load())
-	require.Equal(t, uint64(1), db.Head().NumStaleSeries())
+	require.Equal(t, uint64(1), db.Head().NumSeries())
 
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 
-	// A block should have been created containing the stale-marked series.
+	// A block should have been created containing the queued series.
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	blockIDs := listBlocksInDir(t, userBlocksDir)
 	require.Len(t, blockIDs, 1)
 
-	// The block contains the originally-pushed sample plus the stale-NaN marker that
-	// computeOwnedSeries appended at MaxTime+1. Verify the original sample is present.
-	blockSamples := readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[0].String()), metricName)
-	require.Len(t, blockSamples, 1)
-	require.Equal(t, model.Metric(metricModel), blockSamples[0].Metric)
-	require.NotEmpty(t, blockSamples[0].Values)
-	assert.Equal(t, model.Time(sampleTime.UnixMilli()), blockSamples[0].Values[0].Timestamp)
-	assert.Equal(t, model.SampleValue(1.0), blockSamples[0].Values[0].Value)
+	// The block contains both originally-pushed samples, unmodified (no synthetic samples
+	// are appended on this path).
+	assert.Equal(t, model.Matrix{{
+		Metric: metricModel,
+		Values: []model.SamplePair{
+			{Timestamp: model.Time(t1), Value: 1.0},
+			{Timestamp: model.Time(t2), Value: 2.0},
+		},
+	}}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[0].String()), metricName))
 
 	// The series should have been evicted from the head.
 	assert.Equal(t, uint64(0), db.Head().NumSeries())
 
-	// The pending flag should have been consumed, so a second call creates no new block.
+	// The pending list should have been consumed, so a second call creates no new block.
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
@@ -1073,9 +1082,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	// per-tenant early compaction.
 	assert.True(t, db.getLastEarlyCompaction().IsZero())
 
-	// Data should still be queryable from the ingester (served from the local block). The
-	// stale-NaN marker is included in the chunk stream because StreamsToMatrixForTests does
-	// not filter stale markers; assert that the original sample is part of the result.
+	// Data should still be queryable from the ingester (served from the local block).
 	s := stream{ctx: ctxWithUser}
 	require.NoError(t, ingester.QueryStream(&client.QueryRequest{
 		StartTimestampMs: math.MinInt64,
@@ -1085,9 +1092,277 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 
 	res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 	require.NoError(t, err)
-	require.Len(t, res, 1)
-	assert.Equal(t, model.Metric(metricModel), res[0].Metric)
-	require.Contains(t, res[0].Values, model.SamplePair{Timestamp: model.Time(sampleTime.UnixMilli()), Value: 1.0})
+	assert.Equal(t, model.Matrix{{
+		Metric: metricModel,
+		Values: []model.SamplePair{
+			{Timestamp: model.Time(t1), Value: 1.0},
+			{Timestamp: model.Time(t2), Value: 2.0},
+		},
+	}}, res)
+}
+
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries verifies that
+// when the head holds a mix of owned and non-owned series, compactBlocksDueToNonOwnedSeries
+// flushes only the non-owned ones into a block and evicts them, leaving the owned series in
+// the head untouched. Both series remain queryable through the ingester (owned from the head,
+// non-owned from the local block).
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
+
+	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
+
+	// Designate the series with the lower secondary hash as owned. The ingester's secondary
+	// hash function is mimirpb.ShardByAllLabels(userID, ls).
+	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
+	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
+	require.NotEqual(t, hashA, hashB)
+	var ownedLabels, nonOwnedLabels labels.Labels
+	var minHash uint32
+	if hashA < hashB {
+		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
+	} else {
+		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
+	}
+	ownedName := ownedLabels.Get(model.MetricNameLabel)
+	nonOwnedName := nonOwnedLabels.Get(model.MetricNameLabel)
+
+	// Push two samples per series at different timestamps so the head's MinTime < MaxTime
+	// (required for both the chunk-range loop and the eviction-step early-return guard to
+	// do work). pushSeriesToIngester only pushes the first sample of each series, so we use
+	// two calls per series.
+	for _, lbls := range []labels.Labels{ownedLabels, nonOwnedLabels} {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+		}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+		}}))
+	}
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+
+	// Configure ownership and queue the non-owned ref.
+	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
+	require.Equal(t, 1, db.computeOwnedSeries(), "exactly one series should be owned")
+
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+
+	// The non-owned series should have been evicted; the owned series should remain.
+	assert.Equal(t, uint64(1), db.Head().NumSeries())
+
+	// A single block should have been created, containing only the non-owned series and both
+	// of its samples. The owned series and its samples must not appear in the block.
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	blockIDs := listBlocksInDir(t, userBlocksDir)
+	require.Len(t, blockIDs, 1)
+
+	blockDir := filepath.Join(userBlocksDir, blockIDs[0].String())
+	assert.Equal(t, model.Matrix{{
+		Metric: model.Metric{model.MetricNameLabel: model.LabelValue(nonOwnedName)},
+		Values: []model.SamplePair{
+			{Timestamp: model.Time(t1), Value: 1.0},
+			{Timestamp: model.Time(t2), Value: 2.0},
+		},
+	}}, readMetricSamplesFromBlockDir(t, blockDir, nonOwnedName))
+	assert.Empty(t, readMetricSamplesFromBlockDir(t, blockDir, ownedName))
+
+	// Both series remain queryable from the ingester: the owned one from the head, the
+	// non-owned one from the local block produced by the targeted compaction.
+	queryStream := func(metricName string) model.Matrix {
+		s := stream{ctx: ctxWithUser}
+		require.NoError(t, ingester.QueryStream(&client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers:         []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName}},
+		}, &s))
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err)
+		return res
+	}
+	expected := func(metricName string) model.Matrix {
+		return model.Matrix{{
+			Metric: model.Metric{model.MetricNameLabel: model.LabelValue(metricName)},
+			Values: []model.SamplePair{
+				{Timestamp: model.Time(t1), Value: 1.0},
+				{Timestamp: model.Time(t2), Value: 2.0},
+			},
+		}}
+	}
+
+	assert.Equal(t, expected(ownedName), queryStream(ownedName))
+	assert.Equal(t, expected(nonOwnedName), queryStream(nonOwnedName))
+}
+
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples verifies the two-step
+// flow when both series carry out-of-order data. CompactOOOHead (step 1) flushes the OOO data
+// of both series into an OOO block and clears their s.ooo state; CompactSelectedSeries (step 2)
+// then evicts the non-owned series from the head's index — the OOO filter inside the primitive
+// no longer skips it, because step 1 made s.ooo nil. The owned series stays in the head with
+// its in-order chunks intact and its OOO chunks now persisted on disk.
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+
+	limits := defaultLimitsTestConfig()
+	// Enable OOO ingestion at the tenant level so the ingester accepts samples whose
+	// timestamps are below the head's MaxTime.
+	limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
+
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
+	tOOO := t1 - 100 // out-of-order, well within the configured OOO window
+
+	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
+
+	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
+	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
+	require.NotEqual(t, hashA, hashB)
+	var ownedLabels, nonOwnedLabels labels.Labels
+	var minHash uint32
+	if hashA < hashB {
+		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
+	} else {
+		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
+	}
+	ownedName := ownedLabels.Get(model.MetricNameLabel)
+	nonOwnedName := nonOwnedLabels.Get(model.MetricNameLabel)
+
+	// Push for each series: two in-order samples at t1 and t2, then an OOO sample at tOOO so
+	// the series enters the OOO ingestion path (s.ooo becomes non-nil).
+	pushOne := func(lbls labels.Labels, ts int64, val float64) {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: ts, Val: val}},
+		}}))
+	}
+	for _, lbls := range []labels.Labels{ownedLabels, nonOwnedLabels} {
+		pushOne(lbls, t1, 1.0)
+		pushOne(lbls, t2, 2.0)
+		pushOne(lbls, tOOO, 0.5)
+	}
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+
+	// Configure ownership and queue the non-owned ref.
+	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
+	require.Equal(t, 1, db.computeOwnedSeries(), "exactly one series should be owned")
+
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+
+	// The non-owned series should have been evicted; the owned series should remain.
+	assert.Equal(t, uint64(1), db.Head().NumSeries())
+
+	// Two blocks should be on disk: one OOO block (from step 1, containing the OOO data of
+	// both series) and one selected-series block (from step 2, containing the in-order data of
+	// the non-owned series only).
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	blockIDs := listBlocksInDir(t, userBlocksDir)
+	require.Len(t, blockIDs, 2)
+
+	var oooBlockDir, selectedBlockDir string
+	for _, blockID := range blockIDs {
+		blockDir := filepath.Join(userBlocksDir, blockID.String())
+		block, err := tsdb.OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+		require.NoError(t, err)
+		bm := block.Meta()
+		require.NoError(t, block.Close())
+		switch {
+		case bm.Compaction.FromOutOfOrder():
+			oooBlockDir = blockDir
+		case bm.Compaction.FromSelectedSeries():
+			selectedBlockDir = blockDir
+		default:
+			t.Fatalf("unexpected block hints: %+v", bm.Compaction.Hints)
+		}
+	}
+	require.NotEmpty(t, oooBlockDir, "expected one block tagged FromOutOfOrder")
+	require.NotEmpty(t, selectedBlockDir, "expected one block tagged FromSelectedSeries")
+
+	// The OOO block contains the OOO sample of both series.
+	oooSample := []model.SamplePair{{Timestamp: model.Time(tOOO), Value: 0.5}}
+	assert.Equal(t, model.Matrix{{
+		Metric: model.Metric{model.MetricNameLabel: model.LabelValue(ownedName)},
+		Values: oooSample,
+	}}, readMetricSamplesFromBlockDir(t, oooBlockDir, ownedName))
+	assert.Equal(t, model.Matrix{{
+		Metric: model.Metric{model.MetricNameLabel: model.LabelValue(nonOwnedName)},
+		Values: oooSample,
+	}}, readMetricSamplesFromBlockDir(t, oooBlockDir, nonOwnedName))
+
+	// The selected-series block contains only the non-owned series's in-order samples.
+	assert.Empty(t, readMetricSamplesFromBlockDir(t, selectedBlockDir, ownedName))
+	assert.Equal(t, model.Matrix{{
+		Metric: model.Metric{model.MetricNameLabel: model.LabelValue(nonOwnedName)},
+		Values: []model.SamplePair{
+			{Timestamp: model.Time(t1), Value: 1.0},
+			{Timestamp: model.Time(t2), Value: 2.0},
+		},
+	}}, readMetricSamplesFromBlockDir(t, selectedBlockDir, nonOwnedName))
+
+	// Both series remain queryable end-to-end. The result merges head data (owned series's
+	// in-order samples), the local OOO block, and the local selected-series block.
+	queryStream := func(metricName string) model.Matrix {
+		s := stream{ctx: ctxWithUser}
+		require.NoError(t, ingester.QueryStream(&client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers:         []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName}},
+		}, &s))
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err)
+		return res
+	}
+	expected := func(metricName string) model.Matrix {
+		return model.Matrix{{
+			Metric: model.Metric{model.MetricNameLabel: model.LabelValue(metricName)},
+			Values: []model.SamplePair{
+				{Timestamp: model.Time(tOOO), Value: 0.5},
+				{Timestamp: model.Time(t1), Value: 1.0},
+				{Timestamp: model.Time(t2), Value: 2.0},
+			},
+		}}
+	}
+
+	assert.Equal(t, expected(ownedName), queryStream(ownedName))
+	assert.Equal(t, expected(nonOwnedName), queryStream(nonOwnedName))
 }
 
 func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {

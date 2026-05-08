@@ -336,6 +336,34 @@ func (h *Head) SortedStaleSeriesRefsNoOOOData(ctx context.Context) ([]storage.Se
 	return h.filterStaleSeriesAndSortPostings(h.postings.Postings(ctx, k, v))
 }
 
+// FilterSeriesRefsWithoutOOOData partitions the given series refs into those whose series do not
+// currently carry out-of-order data (kept) and those that do (skipped). Refs whose series cannot
+// be found in the head are silently dropped (matching the pattern used by
+// SortedStaleSeriesRefsNoOOOData).
+//
+// Intended for callers (such as CompactSelectedSeries) that write only in-order chunks into a
+// block: a series with out-of-order data must not be evicted via that path because its OOO
+// chunks would be left unreachable. Skipped refs stay in the head and become candidates again
+// on a subsequent cycle, once their OOO state has been cleared by an out-of-order compaction.
+func (h *Head) FilterSeriesRefsWithoutOOOData(seriesRefs []storage.SeriesRef) (kept, skipped []storage.SeriesRef) {
+	kept = make([]storage.SeriesRef, 0, len(seriesRefs))
+	for _, ref := range seriesRefs {
+		s := h.series.getByID(chunks.HeadSeriesRef(ref))
+		if s == nil {
+			continue
+		}
+		s.Lock()
+		hasOOO := s.ooo != nil
+		s.Unlock()
+		if hasOOO {
+			skipped = append(skipped, ref)
+			continue
+		}
+		kept = append(kept, ref)
+	}
+	return kept, skipped
+}
+
 // appendSeriesChunks appends chunk metadata for s to chks.
 // headChunksBuf is a reusable buffer for collectHeadChunks; the (possibly grown) buffer is returned
 // so callers can pass it back on the next call to avoid per-series allocations.
