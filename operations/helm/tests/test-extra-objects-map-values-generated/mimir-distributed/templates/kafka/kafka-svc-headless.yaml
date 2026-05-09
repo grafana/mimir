@@ -1,0 +1,36 @@
+---
+# Source: mimir-distributed/templates/kafka/kafka-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-extra-objects-map-values-mimir-kafka-headless
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-objects-map-values
+    app.kubernetes.io/component: kafka
+    app.kubernetes.io/managed-by: Helm
+    prometheus.io/service-monitor: "false"
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  # The headless service is used by Kafka brokers for discovering other brokers
+  # during bootstrap. Thus, we don't want to require that they are "ready" to
+  # publish their address - the brokers need to know about each other to become
+  # ready.
+  publishNotReadyAddresses: true
+  clusterIP: None
+  ports:
+    - port: 9092
+      protocol: TCP
+      name: kafka
+      targetPort: kafka
+    - port: 9093
+      protocol: TCP
+      name: controller
+      targetPort: controller
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-objects-map-values
+    app.kubernetes.io/component: kafka

@@ -1,0 +1,39 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/pod-eviction-webhook.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: pod-eviction-citestns
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: "citestns"
+    helm.sh/chart: rollout-operator-0.40.0
+    app.kubernetes.io/name: rollout-operator
+    app.kubernetes.io/instance: test-extra-objects-map-values
+    app.kubernetes.io/version: "v0.33.0"
+    app.kubernetes.io/managed-by: Helm
+webhooks:
+  - name: pod-eviction-citestns.grafana.com
+    clientConfig:
+      service:
+        namespace: "citestns"
+        name: test-extra-objects-map-values-rollout-operator
+        path: /admission/pod-eviction
+        port: 443
+    rules:
+      - operations:
+          - CREATE
+        apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        resources:
+          - pods/eviction
+        scope: Namespaced
+    admissionReviewVersions:
+      - v1
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: "citestns"
+    sideEffects: None
+    failurePolicy: Fail

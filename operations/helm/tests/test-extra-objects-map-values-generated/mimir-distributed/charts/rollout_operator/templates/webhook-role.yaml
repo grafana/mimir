@@ -1,0 +1,23 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/webhook-role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: test-extra-objects-map-values-rollout-operator-webhook-role
+  namespace: "citestns"
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - update
+      - get
+    resourceNames:
+      - certificate
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create

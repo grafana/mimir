@@ -1,0 +1,20 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-extra-objects-map-values-rollout-operator
+  namespace: "citestns"
+  labels:
+    helm.sh/chart: rollout-operator-0.40.0
+    app.kubernetes.io/name: rollout-operator
+    app.kubernetes.io/instance: test-extra-objects-map-values
+    app.kubernetes.io/version: "v0.33.0"
+    app.kubernetes.io/managed-by: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: test-extra-objects-map-values-rollout-operator
+subjects:
+- kind: ServiceAccount
+  name: test-extra-objects-map-values-rollout-operator
