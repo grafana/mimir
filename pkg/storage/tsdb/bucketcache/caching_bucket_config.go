@@ -6,6 +6,7 @@
 package bucketcache
 
 import (
+	"errors"
 	"time"
 
 	"github.com/grafana/dskit/cache"
@@ -214,4 +215,54 @@ func (cfg *CachingBucketConfig) findAttributesConfig(name string) (string, *attr
 		}
 	}
 	return "", nil
+}
+
+// ValidateConfig is a test utility to allow other packages to validate bucket cache configuration
+func ValidateConfig(
+	cfg *CachingBucketConfig,
+	op string,
+	cfgName string,
+	validateFunc func(opCache cache.Cache, attrsCache cache.Cache) error,
+) error {
+	opNotFoundErr := errors.New("operation config not found")
+
+	var opCache cache.Cache
+	var attrsCache cache.Cache
+
+	switch op {
+	case objstore.OpGet:
+		if getCfg, ok := cfg.get[cfgName]; ok {
+			opCache = getCfg.cache
+		} else {
+			return opNotFoundErr
+		}
+	case objstore.OpIter:
+		if iterCfg, ok := cfg.iter[cfgName]; ok {
+			opCache = iterCfg.cache
+		} else {
+			return opNotFoundErr
+		}
+	case objstore.OpExists:
+		if existsCfg, ok := cfg.exists[cfgName]; ok {
+			opCache = existsCfg.cache
+		} else {
+			return opNotFoundErr
+		}
+	case objstore.OpGetRange:
+		if getRangeCfg, ok := cfg.getRange[cfgName]; ok {
+			opCache = getRangeCfg.cache
+			attrsCache = getRangeCfg.attributes.cache
+		} else {
+			return opNotFoundErr
+		}
+	case objstore.OpAttributes:
+		if attrCfg, ok := cfg.attributes[cfgName]; ok {
+			opCache = attrCfg.cache
+		} else {
+			return opNotFoundErr
+		}
+	default:
+		return errors.New("unknown operation " + op)
+	}
+	return validateFunc(opCache, attrsCache)
 }
