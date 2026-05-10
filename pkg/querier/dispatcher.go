@@ -152,7 +152,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	for idx, node := range nodes {
 		nodeRequests = append(nodeRequests, streamingpromql.NodeEvaluationRequest{
 			Node:      node,
-			TimeRange: req.Nodes[idx].TimeRange.ToDecodedTimeRange(),
+			TimeRange: req.Nodes[idx].TimeRange.Decode(),
 		})
 
 		nodeToIndexMap[node] = req.Nodes[idx].NodeIndex

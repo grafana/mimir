@@ -107,14 +107,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		return nil, false, nil
 	}
 
-	// The info function expects an actual selector as its second argument so we can't replace it
-	// with a no-op node or operator even if the matchers would cause it to return no results.
-	if isInfoFunction(node) {
-		return nil, false, nil
-	}
-
 	modified := false
-
 	for idx := range node.ChildCount() {
 		replacement, modifiedInChild, err := s.apply(node.Child(idx), params)
 		if err != nil {
@@ -147,13 +140,6 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 	}
 
 	return nil, modified, nil
-}
-
-func isInfoFunction(node planning.Node) bool {
-	if funcNode, isFunctionCall := node.(*core.FunctionCall); isFunctionCall {
-		return funcNode.Function == functions.FUNCTION_INFO
-	}
-	return false
 }
 
 // isAlwaysEmptySelector returns true if a node is a selector and has matchers that can be

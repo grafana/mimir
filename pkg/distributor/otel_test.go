@@ -1326,6 +1326,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 		},
 	}
 
+	now := time.Now()
+
 	const (
 		jsonContentType = "application/json"
 		pbContentType   = "application/x-protobuf"
@@ -1737,6 +1739,25 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 		},
 		{
+			// Locks in the validationError branch in handlePartialOTLPPush in
+			// isolation from the full distributor pipeline.
+			name:       "Soft validationError with rejected samples",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return newSoftValidationError(fmt.Errorf("some samples rejected"), 3)
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 27,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 3,
+				ErrorMessage:       "some samples rejected",
+			},
+		},
+		{
 			name:       "Soft activeSeriesLimitedError with rejected samples",
 			maxMsgSize: 100000,
 			series:     sampleSeries,
@@ -1767,6 +1788,83 @@ func TestHandlerOTLPPush(t *testing.T) {
 			errMessage:            newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error(),
 			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="` + newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error() + `" insight=true`},
 			expectedRetryHeader:   true,
+		},
+		{
+			// Drives prePushValidationMiddleware end-to-end with one too-old sample
+			// (rejected by validation) and one valid sample. The stub `next` returns
+			// a soft ingesterPushError for an unrelated partial ingester rejection.
+			// The middleware must fold its own rejection count into the ingester
+			// error so the OTLP partial_success body reports the combined total.
+			name:       "Combine validation rejection with soft ingesterPushError",
+			maxMsgSize: 100000,
+			series: []prompb.TimeSeries{
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "too_old"}},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+				},
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "valid"}},
+					Samples: []prompb.Sample{{Value: 2, Timestamp: now.UnixMilli()}},
+				},
+			},
+			metadata: []mimirpb.MetricMetadata{{MetricFamilyName: "too_old"}, {MetricFamilyName: "valid"}},
+			verifyFunc: func(_ *testing.T, ctx context.Context, pushReq *Request, _ testCase) error {
+				var limitsCfg validation.Limits
+				flagext.DefaultValues(&limitsCfg)
+				limitsCfg.PastGracePeriod = model.Duration(time.Hour)
+				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
+				stubNext := func(context.Context, *Request) error {
+					return ingesterPushError{message: "some samples rejected", cause: mimirpb.ERROR_CAUSE_BAD_DATA, soft: true, rejectedSamples: 5}
+				}
+				return distributors[0].prePushValidationMiddleware(stubNext)(ctx, pushReq)
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 27,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 6, // 5 from ingester + 1 from validation
+				ErrorMessage:       "some samples rejected",
+			},
+		},
+		{
+			// Drives prePushValidationMiddleware end-to-end with one too-old sample
+			// (rejected by validation) and one valid sample. The stub `next` mimics
+			// prePushMaxSeriesLimitMiddleware returning a soft activeSeriesLimitedError
+			// for an unrelated partial active-series rejection. The middleware must
+			// fold its own rejection count into the active-series error so the OTLP
+			// partial_success body reports the combined total.
+			name:       "Combine validation rejection with soft activeSeriesLimitedError",
+			maxMsgSize: 100000,
+			series: []prompb.TimeSeries{
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "too_old"}},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+				},
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "valid"}},
+					Samples: []prompb.Sample{{Value: 2, Timestamp: now.UnixMilli()}},
+				},
+			},
+			metadata: []mimirpb.MetricMetadata{{MetricFamilyName: "too_old"}, {MetricFamilyName: "valid"}},
+			verifyFunc: func(_ *testing.T, ctx context.Context, pushReq *Request, _ testCase) error {
+				var limitsCfg validation.Limits
+				flagext.DefaultValues(&limitsCfg)
+				limitsCfg.PastGracePeriod = model.Duration(time.Hour)
+				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
+				stubNext := func(context.Context, *Request) error {
+					return newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5)
+				}
+				return distributors[0].prePushValidationMiddleware(stubNext)(ctx, pushReq)
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 321,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 6, // 5 from active-series + 1 from validation
+				ErrorMessage:       newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5).Error(),
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -1857,6 +1955,102 @@ func TestHandlerOTLPPush(t *testing.T) {
 			assert.Equal(t, tt.expectedRetryHeader, retryAfter != "")
 		})
 	}
+}
+
+// TestOTLPHandler_TooFarInPast covers the OTLP partial-success behavior for
+// distributor-level too_far_in_past validation rejections.
+//
+// Per the OTLP spec (https://opentelemetry.io/docs/specs/otlp/#partial-success-1), a
+// partially-accepted request must respond with HTTP 200 and a partial_success body
+// listing the rejected count; a fully-rejected request keeps HTTP 400.
+func TestOTLPHandler_TooFarInPast(t *testing.T) {
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	limits.PastGracePeriod = model.Duration(time.Hour)
+
+	ds, _, _, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		limits:          &limits,
+	})
+
+	handler := OTLPHandler(
+		100000, nil, nil, false, ds[0].limits,
+		nil, nil, RetryConfig{}, nil,
+		ds[0].PushWithMiddlewares,
+		nil, nil, log.NewNopLogger(),
+	)
+
+	sendOTLP := func(t *testing.T, series []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) *httptest.ResponseRecorder {
+		t.Helper()
+		exportReq := TimeseriesToOTLPRequest(series, metadata)
+		body, err := exportReq.MarshalProto()
+		require.NoError(t, err)
+		httpReq := createOTLPRequest(t, body, "", "application/x-protobuf")
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, httpReq)
+		return resp
+	}
+
+	t.Run("partial rejection returns HTTP 200 with partial_success", func(t *testing.T) {
+		now := time.Now()
+		// One sample 2 hours old → triggers too_far_in_past at the distributor
+		// (past_grace_period=1h, ooo_window=0). One sample at "now" → passes
+		// validation and is pushed to the (mock) ingesters.
+		series := []prompb.TimeSeries{
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "too_old_metric"}},
+				Samples: []prompb.Sample{{Value: 1, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+			},
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "valid_metric"}},
+				Samples: []prompb.Sample{{Value: 2, Timestamp: now.UnixMilli()}},
+			},
+		}
+		metadata := []mimirpb.MetricMetadata{
+			{MetricFamilyName: "too_old_metric"},
+			{MetricFamilyName: "valid_metric"},
+		}
+
+		resp := sendOTLP(t, series, metadata)
+		require.Equal(t, http.StatusOK, resp.Code, "body: %s", resp.Body.String())
+
+		var exportResp colmetricpb.ExportMetricsServiceResponse
+		require.NoError(t, proto.Unmarshal(resp.Body.Bytes(), &exportResp))
+		require.NotNil(t, exportResp.PartialSuccess, "expected partial_success in response, got: %+v", &exportResp)
+		assert.Equal(t, int64(1), exportResp.PartialSuccess.RejectedDataPoints)
+		assert.Contains(t, exportResp.PartialSuccess.ErrorMessage, "too far in the past")
+	})
+
+	t.Run("all samples rejected returns HTTP 400", func(t *testing.T) {
+		// When every sample in an OTLP request is rejected by distributor-level
+		// validation, the response is a hard HTTP 400 (not partial-success).
+		// Guards against regressions where the soft-promotion logic accidentally
+		// treats the all-rejected case as partial.
+		now := time.Now()
+		series := []prompb.TimeSeries{
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "too_old_metric_a"}},
+				Samples: []prompb.Sample{{Value: 1, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+			},
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "too_old_metric_b"}},
+				Samples: []prompb.Sample{{Value: 2, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+			},
+		}
+		metadata := []mimirpb.MetricMetadata{
+			{MetricFamilyName: "too_old_metric_a"},
+			{MetricFamilyName: "too_old_metric_b"},
+		}
+
+		resp := sendOTLP(t, series, metadata)
+		require.Equal(t, http.StatusBadRequest, resp.Code, "body: %s", resp.Body.String())
+
+		respStatus := &status.Status{}
+		require.NoError(t, proto.Unmarshal(resp.Body.Bytes(), respStatus))
+		assert.Contains(t, respStatus.GetMessage(), "too far in the past")
+	})
 }
 
 // TestOTLPHandler_TranslationHeaders tests OTLPHandler with HTTP handlers controlling

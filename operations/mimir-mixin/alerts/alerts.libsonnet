@@ -181,7 +181,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 # Don't include config hashes that are still being rolled out.
                 # Kubernetes configmap propagation can be slow,
                 # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
-                (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[%(rate_interval)s:]) > 0)
+                (changes((count by (%(alert_aggregation_labels)s, sha256) (cortex_runtime_config_hash))[%(rate_interval)s:%(step_interval)s]) > 0)
                 # Don't include configs that didn't exist one minute ago.
                 # changes() == 0 for metrics appearing for the first time,
                 # but this is still a "we're rolling out a new config" scenario.
@@ -190,6 +190,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             )  > 1
           ||| % $._config {
             rate_interval: $.rateInterval('10m'),
+            step_interval: $.stepInterval('30s'),
           },
           'for': '1h',
           labels: {
@@ -940,12 +941,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
                        + $.dashboardURLAnnotation('mimir-remote-ruler-reads.json'),
         },
         {
-          alert: $.alertName('RulerMissedEvaluations'),
+          // Alert firing if the rate of missed rule evaluations across all rulers is > 1%.
+          alert: $.alertName('RulersMissedEvaluations'),
           expr: |||
             100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(rate_interval)s]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(rate_interval)s]))
               /
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[%(rate_interval)s]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_prometheus_rule_group_iterations_total[%(rate_interval)s]))
             ) > 1
           ||| % $._config {
             rate_interval: $.rateInterval('1m'),
@@ -956,7 +958,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
+              %(product)s Rulers in %(alert_aggregation_variables)s are experiencing {{ printf "%%.2f" $value }}%% missed iterations.
+            ||| % $._config,
+          },
+        },
+        {
+          // Alert firing if the rate of missed rule evaluations per-ruler is > 5%.
+          alert: $.alertName('RulerMissedEvaluations'),
+          expr: |||
+            100 * (
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(rate_interval)s]))
+              /
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_prometheus_rule_group_iterations_total[%(rate_interval)s]))
+            ) > 5
+          ||| % $._config {
+            rate_interval: $.rateInterval('1m'),
+          },
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations.
             ||| % $._config,
           },
         },

@@ -278,7 +278,9 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 				blocks:  job.Job.BlockIds,
 				isSplit: job.Job.Split,
 			},
-			uint32(i), // technically this casting could truncate, but that's an unrealistic case
+			// Technically this casting could truncate, but that's an unrealistic case.
+			// The +1 is a minor detail that ensures plan jobs (order of 0) can deterministically sort first in ordering upon recovery if they exist.
+			uint32(i+1),
 			job.Job.TotalBlocksBytes,
 			now,
 		))

@@ -175,6 +175,20 @@ func (qs *QuerySamples) TotalSamplesPerStepMap() *TotalSamplesPerStep {
 	return &ts
 }
 
+// SamplesReadPerStepMap returns the per-step samples read as a map
+// (timestamp -> count), or nil if per-step stats are disabled.
+func (qs *QuerySamples) SamplesReadPerStepMap() *TotalSamplesPerStep {
+	if !qs.EnablePerStepStats || qs.SamplesReadPerStep == nil {
+		return nil
+	}
+
+	ts := TotalSamplesPerStep{}
+	for _, s := range qs.samplesReadPerStepPoints() {
+		ts[s.T] = int(s.V)
+	}
+	return &ts
+}
+
 func (qs *QuerySamples) totalSamplesPerStepPoints() []stepStat {
 	if !qs.EnablePerStepStats {
 		return nil
@@ -182,6 +196,18 @@ func (qs *QuerySamples) totalSamplesPerStepPoints() []stepStat {
 
 	ts := make([]stepStat, len(qs.TotalSamplesPerStep))
 	for i, c := range qs.TotalSamplesPerStep {
+		ts[i] = stepStat{T: qs.StartTimestamp + int64(i)*qs.Interval, V: c}
+	}
+	return ts
+}
+
+func (qs *QuerySamples) samplesReadPerStepPoints() []stepStat {
+	if !qs.EnablePerStepStats || qs.SamplesReadPerStep == nil {
+		return nil
+	}
+
+	ts := make([]stepStat, len(qs.SamplesReadPerStep))
+	for i, c := range qs.SamplesReadPerStep {
 		ts[i] = stepStat{T: qs.StartTimestamp + int64(i)*qs.Interval, V: c}
 	}
 	return ts
@@ -234,8 +260,9 @@ type QuerySamples struct {
 	// configured in the engine.
 	PeakSamples int
 
-	// TotalSamples represents the total number of samples scanned
-	// while evaluating a query.
+	// TotalSamples represents the total number of samples loaded while
+	// evaluating a query. For range-vector functions, each step counts the
+	// full window (points may be counted in multiple steps).
 	TotalSamples int64
 
 	// TotalSamplesPerStep represents the total number of samples scanned
@@ -243,6 +270,7 @@ type QuerySamples struct {
 	// TotalSamples when a step is run as an instant query, which means
 	// we intentionally do not account for optimizations that happen inside the
 	// range query engine that reduce the actual work that happens.
+	// For range-vector functions, each step counts the full window at that step.
 	TotalSamplesPerStep []int64
 
 	// SamplesRead is the number of samples read (I/O). For range-vector functions
@@ -251,7 +279,9 @@ type QuerySamples struct {
 	SamplesRead int64
 
 	// SamplesReadPerStep is the number of samples read per step. For
-	// range-vector functions, step 0 is the full window, later steps only new points.
+	// range-vector functions, step 0 counts the full window and later
+	// steps count only the points not already covered by the previous
+	// step's window.
 	SamplesReadPerStep []int64
 
 	EnablePerStepStats bool

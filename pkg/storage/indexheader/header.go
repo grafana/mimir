@@ -125,7 +125,7 @@ type BucketReaderConfig struct {
 }
 
 func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.")
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, fmt.Sprintf("Enable reading TSDB index-header sections from object storage. When enabled, the configured -%s are not downloaded to local disk.", prefix+"index-sections"))
 	f.StringVar(&cfg.BucketIndexSections, prefix+"index-sections", SectionPostingsOffsetsTable, fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionPostingsOffsetsTable))
 }
 

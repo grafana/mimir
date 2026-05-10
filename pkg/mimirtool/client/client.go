@@ -46,6 +46,7 @@ type Config struct {
 	Address         string `yaml:"address"`
 	ID              string `yaml:"id"`
 	TLS             tls.ClientConfig
+	SigV4           SigV4Config       `yaml:"sigv4"`
 	UseLegacyRoutes bool              `yaml:"use_legacy_routes"`
 	MimirHTTPPrefix string            `yaml:"mimir_http_prefix"`
 	AuthToken       string            `yaml:"auth_token"`
@@ -72,9 +73,14 @@ func New(cfg Config, logger log.Logger) (*MimirClient, error) {
 		return nil, err
 	}
 
+	if err := validateAuthConfig(cfg.User, cfg.Key, cfg.AuthToken, cfg.SigV4.IsConfigured()); err != nil {
+		return nil, err
+	}
+
 	level.Debug(logger).Log("msg", "New Mimir client created", "address", cfg.Address, "id", cfg.ID)
 
 	client := http.Client{}
+	var transport http.RoundTripper
 
 	// Setup TLS client
 	tlsConfig, err := cfg.TLS.GetTLSConfig()
@@ -85,10 +91,19 @@ func New(cfg Config, logger log.Logger) (*MimirClient, error) {
 	}
 
 	if tlsConfig != nil {
-		transport := &http.Transport{
+		transport = &http.Transport{
 			Proxy:           http.ProxyFromEnvironment,
 			TLSClientConfig: tlsConfig,
 		}
+	}
+
+	transport, err = wrapSigV4RoundTripper(cfg.SigV4, transport)
+	if err != nil {
+		level.Error(logger).Log("msg", "error configuring SigV4 for Mimir client", "err", err)
+		return nil, err
+	}
+
+	if transport != nil {
 		client = http.Client{Transport: transport}
 	}
 
@@ -132,11 +147,6 @@ func (c *MimirClient) doRequest(ctx context.Context, path, method string, payloa
 	}
 
 	switch {
-	case (c.user != "" || c.key != "") && c.authToken != "":
-		err := errors.New("at most one of basic auth or auth token should be configured")
-		level.Error(c.logger).Log("msg", "error during setting up request to mimir api", "url", req.URL.String(), "method", req.Method, "err", err)
-		return nil, err
-
 	case c.user != "":
 		req.SetBasicAuth(c.user, c.key)
 
@@ -167,6 +177,26 @@ func (c *MimirClient) doRequest(ctx context.Context, path, method string, payloa
 	}
 
 	return resp, nil
+}
+
+func validateAuthConfig(user, key, authToken string, sigV4Configured bool) error {
+	var authConfigured []string
+
+	if user != "" || key != "" {
+		authConfigured = append(authConfigured, "basic_auth")
+	}
+	if authToken != "" {
+		authConfigured = append(authConfigured, "auth_token")
+	}
+	if sigV4Configured {
+		authConfigured = append(authConfigured, "sigv4")
+	}
+
+	if len(authConfigured) > 1 {
+		return fmt.Errorf("at most one of basic_auth, auth_token or sigv4 must be configured, got: %s", strings.Join(authConfigured, ", "))
+	}
+
+	return nil
 }
 
 // checkResponse checks an API response for errors.

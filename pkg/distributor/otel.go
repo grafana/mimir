@@ -215,10 +215,13 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 	var rejectedDataPoints int64
 	var ingPushErr ingesterPushError
 	var asErr activeSeriesLimitedError
+	var vErr validationError
 	if errors.As(pushErr, &ingPushErr) {
 		rejectedDataPoints = ingPushErr.rejectedSamples
 	} else if errors.As(pushErr, &asErr) {
 		rejectedDataPoints = asErr.rejectedSamples
+	} else if errors.As(pushErr, &vErr) {
+		rejectedDataPoints = vErr.rejectedSamples
 	}
 
 	expResp := colmetricpb.ExportMetricsServiceResponse{
