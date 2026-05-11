@@ -17022,12 +17022,12 @@
             "User": null,
             "Host": "localhost:8080",
             "Path": "/alertmanager",
-            "Fragment": "",
-            "RawQuery": "",
             "RawPath": "",
-            "RawFragment": "",
+            "OmitHost": false,
             "ForceQuery": false,
-            "OmitHost": false
+            "RawQuery": "",
+            "Fragment": "",
+            "RawFragment": ""
           },
           "fieldFlag": "alertmanager.web.external-url",
           "fieldType": "url"

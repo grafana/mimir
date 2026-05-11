@@ -1196,12 +1196,12 @@
     "User": null,
     "Host": "localhost:8080",
     "Path": "/alertmanager",
-    "Fragment": "",
-    "RawQuery": "",
     "RawPath": "",
-    "RawFragment": "",
+    "OmitHost": false,
     "ForceQuery": false,
-    "OmitHost": false
+    "RawQuery": "",
+    "Fragment": "",
+    "RawFragment": ""
   },
   "alertmanager.configs.poll-interval": 15000000000,
   "alertmanager.max-recv-msg-size": 104857600,
