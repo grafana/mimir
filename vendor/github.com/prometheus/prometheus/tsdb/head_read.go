@@ -22,7 +22,6 @@ import (
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -230,21 +229,27 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	return nil
 }
 
-func (h *Head) selectedSeriesIndex(mint, maxt int64, selectedSeriesRefs []storage.SeriesRef) (*headSelectedSeriesIndexReader, error) {
+// seriesPostingsFilter narrows a postings iterator to a sorted, filtered ref slice.
+// Different compaction flows supply different semantics (e.g. stale-NaN enumeration
+// vs. membership in a precomputed selection set).
+type seriesPostingsFilter func(p index.Postings) ([]storage.SeriesRef, error)
+
+func (h *Head) selectedSeriesIndex(mint, maxt int64, selectedSeriesRefs []storage.SeriesRef, filter seriesPostingsFilter) (*headSelectedSeriesIndexReader, error) {
 	return &headSelectedSeriesIndexReader{
 		headIndexReader:    h.indexRange(mint, maxt),
 		selectedSeriesRefs: selectedSeriesRefs,
+		filter:             filter,
 	}, nil
 }
 
 // headSelectedSeriesIndexReader exposes the head index restricted to an explicit list of
-// series refs. Compaction callers (CompactStaleHead, CompactSelectedSeries) only request
-// AllPostings during compaction, so the precomputed ref list is returned directly without
-// re-reading the Head. The non-AllPostings fallback paths apply stale-NaN filtering for
-// historical reasons; they are not exercised by current compaction callers.
+// series refs. Compaction callers only request AllPostings, which is served from the
+// precomputed ref list without re-reading the Head. Other IndexReader methods delegate to
+// the caller-supplied filter, which encodes the compaction flow's notion of "matching series".
 type headSelectedSeriesIndexReader struct {
 	*headIndexReader
 	selectedSeriesRefs []storage.SeriesRef
+	filter             seriesPostingsFilter
 }
 
 func (h *headSelectedSeriesIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
@@ -253,7 +258,7 @@ func (h *headSelectedSeriesIndexReader) Postings(ctx context.Context, name strin
 	if len(h.selectedSeriesRefs) > 0 && name == k && len(values) == 1 && values[0] == v {
 		return index.NewListPostings(h.selectedSeriesRefs), nil
 	}
-	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.Postings(ctx, name, values...))
+	seriesRefs, err := h.filter(h.head.postings.Postings(ctx, name, values...))
 	if err != nil {
 		return index.ErrPostings(err), err
 	}
@@ -262,7 +267,7 @@ func (h *headSelectedSeriesIndexReader) Postings(ctx context.Context, name strin
 
 func (h *headSelectedSeriesIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
 	// Unused for compaction, so we don't need to optimise.
-	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.PostingsForLabelMatching(ctx, name, match))
+	seriesRefs, err := h.filter(h.head.postings.PostingsForLabelMatching(ctx, name, match))
 	if err != nil {
 		return index.ErrPostings(err)
 	}
@@ -271,7 +276,7 @@ func (h *headSelectedSeriesIndexReader) PostingsForLabelMatching(ctx context.Con
 
 func (h *headSelectedSeriesIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
 	// Unused for compaction, so we don't need to optimise.
-	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.PostingsForAllLabelValues(ctx, name))
+	seriesRefs, err := h.filter(h.head.postings.PostingsForAllLabelValues(ctx, name))
 	if err != nil {
 		return index.ErrPostings(err)
 	}
@@ -299,9 +304,7 @@ func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.Ser
 			continue
 		}
 
-		if value.IsStaleNaN(s.lastValue) ||
-			(s.lastHistogramValue != nil && value.IsStaleNaN(s.lastHistogramValue.Sum)) ||
-			(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum)) {
+		if isStaleSeries(s) {
 			series = append(series, s)
 		}
 		s.Unlock()
@@ -324,6 +327,49 @@ func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.Ser
 	return refs, nil
 }
 
+// filterSelectedSeriesAndSortPostings returns the series references from the given postings
+// that do not have any out-of-order data.
+func (h *Head) filterSelectedSeriesAndSortPostings(p index.Postings) ([]storage.SeriesRef, error) {
+	keptSeries := make([]*memSeries, 0, 1024)
+
+	notFoundSeriesCount := 0
+	for p.Next() {
+		ref := p.At()
+		s := h.series.getByID(chunks.HeadSeriesRef(ref))
+		if s == nil {
+			notFoundSeriesCount++
+			continue
+		}
+
+		s.Lock()
+		hasOOO := s.ooo != nil
+		s.Unlock()
+		if hasOOO {
+			// Has out-of-order data; skip it because we cannot determine if a series
+			// is stale when it's getting out-of-order data.
+			continue
+		}
+
+		keptSeries = append(keptSeries, s)
+	}
+	if notFoundSeriesCount > 0 {
+		h.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
+	}
+	if err := p.Err(); err != nil {
+		return nil, fmt.Errorf("expand postings: %w", err)
+	}
+
+	slices.SortFunc(keptSeries, func(a, b *memSeries) int {
+		return labels.Compare(a.labels(), b.labels())
+	})
+
+	kept := make([]storage.SeriesRef, 0, len(keptSeries))
+	for _, s := range keptSeries {
+		kept = append(kept, storage.SeriesRef(s.ref))
+	}
+	return kept, nil
+}
+
 // SortedPostings returns the postings as it is because we expect any postings obtained via
 // headSelectedSeriesIndexReader to be already sorted.
 func (*headSelectedSeriesIndexReader) SortedPostings(p index.Postings) index.Postings {
@@ -337,27 +383,12 @@ func (h *Head) SortedStaleSeriesRefsNoOOOData(ctx context.Context) ([]storage.Se
 	return h.filterStaleSeriesAndSortPostings(h.postings.Postings(ctx, k, v))
 }
 
-// FilterSeriesRefsWithoutOOOData partitions the given series refs into those whose series do not
-// currently carry out-of-order data (kept) and those that do (skipped). Refs whose series cannot
-// be found in the head are silently dropped (matching the pattern used by
-// SortedStaleSeriesRefsNoOOOData).
-func (h *Head) FilterSeriesRefsWithoutOOOData(seriesRefs []storage.SeriesRef) (kept, skipped []storage.SeriesRef) {
-	kept = make([]storage.SeriesRef, 0, len(seriesRefs))
-	for _, ref := range seriesRefs {
-		s := h.series.getByID(chunks.HeadSeriesRef(ref))
-		if s == nil {
-			continue
-		}
-		s.Lock()
-		hasOOO := s.ooo != nil
-		s.Unlock()
-		if hasOOO {
-			skipped = append(skipped, ref)
-			continue
-		}
-		kept = append(kept, ref)
-	}
-	return kept, skipped
+// SortedSelectedSeriesRefNoOOOData partitions the given series refs into those whose series
+// do not currently carry out-of-order data (kept) and those that do (skipped). Kept refs are
+// returned sorted by series labels; refs whose series cannot be found in the head are silently
+// dropped.
+func (h *Head) SortedSelectedSeriesRefNoOOOData(seriesRefs []storage.SeriesRef) ([]storage.SeriesRef, error) {
+	return h.filterSelectedSeriesAndSortPostings(index.NewListPostings(seriesRefs))
 }
 
 // appendSeriesChunks appends chunk metadata for s to chks.

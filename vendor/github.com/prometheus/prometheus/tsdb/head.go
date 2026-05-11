@@ -1708,10 +1708,11 @@ func (h *RangeHead) String() string {
 type SelectedSeriesHead struct {
 	RangeHead
 	selectedSeriesRefs []storage.SeriesRef
+	filter             seriesPostingsFilter
 }
 
 // NewSelectedSeriesHead returns a *SelectedSeriesHead.
-func NewSelectedSeriesHead(head *Head, mint, maxt int64, selectedSeriesRefs []storage.SeriesRef) *SelectedSeriesHead {
+func NewSelectedSeriesHead(head *Head, mint, maxt int64, selectedSeriesRefs []storage.SeriesRef, filter seriesPostingsFilter) *SelectedSeriesHead {
 	return &SelectedSeriesHead{
 		RangeHead: RangeHead{
 			head: head,
@@ -1719,11 +1720,12 @@ func NewSelectedSeriesHead(head *Head, mint, maxt int64, selectedSeriesRefs []st
 			maxt: maxt,
 		},
 		selectedSeriesRefs: selectedSeriesRefs,
+		filter:             filter,
 	}
 }
 
 func (h *SelectedSeriesHead) Index() (_ IndexReader, err error) {
-	return h.head.selectedSeriesIndex(h.mint, h.maxt, h.selectedSeriesRefs)
+	return h.head.selectedSeriesIndex(h.mint, h.maxt, h.selectedSeriesRefs, h.filter)
 }
 
 func (h *SelectedSeriesHead) NumSeries() uint64 {

@@ -588,6 +588,10 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 // to persist OOO data into OOO blocks (the regular block writer's chunk enumerator only sees
 // in-order containers), then CompactSelectedSeries writes the queued series into a block and
 // evicts them from the head's index without advancing HeadMinTime.
+//
+// Per-tenant gate: the eviction is skipped for tenants whose EarlyHeadCompactionOwnedSeriesThreshold
+// is not set, and for tenants whose total in-head series (owned + non-owned) count is below the local
+// threshold.
 func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 	if !i.cfg.EarlyCompactionNonOwnedSeriesEnabled {
 		return
@@ -598,8 +602,19 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 			return
 		}
 
+		// Per-tenant gate.
+		threshold := i.limits.EarlyHeadCompactionOwnedSeriesThreshold(userID)
+		if threshold <= 0 {
+			continue // Per-tenant early compaction disabled for this tenant.
+		}
+
 		db := i.getTSDB(userID)
 		if db == nil {
+			continue
+		}
+
+		localThreshold := i.limiter.ringStrategy.convertGlobalToLocalLimit(userID, threshold)
+		if localThreshold <= 0 || db.Head().NumSeries() < uint64(localThreshold) {
 			continue
 		}
 

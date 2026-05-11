@@ -465,28 +465,27 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks                        prometheus.GaugeFunc
-	symbolTableSize                     prometheus.GaugeFunc
-	reloads                             prometheus.Counter
-	reloadsFailed                       prometheus.Counter
-	compactionsFailed                   prometheus.Counter
-	compactionsTriggered                prometheus.Counter
-	compactionsSkipped                  prometheus.Counter
-	sizeRetentionCount                  prometheus.Counter
-	timeRetentionCount                  prometheus.Counter
-	startTime                           prometheus.GaugeFunc
-	tombCleanTimer                      prometheus.Histogram
-	blocksBytes                         prometheus.Gauge
-	maxBytes                            prometheus.Gauge
-	maxPercentage                       prometheus.Gauge
-	retentionDuration                   prometheus.Gauge
-	staleSeriesCompactionsTriggered     prometheus.Counter
-	staleSeriesCompactionsFailed        prometheus.Counter
-	staleSeriesCompactionDuration       prometheus.Histogram
-	selectedSeriesCompactionsTriggered  prometheus.Counter
-	selectedSeriesCompactionsFailed     prometheus.Counter
-	selectedSeriesCompactionsSkippedOOO prometheus.Counter
-	selectedSeriesCompactionDuration    prometheus.Histogram
+	loadedBlocks                       prometheus.GaugeFunc
+	symbolTableSize                    prometheus.GaugeFunc
+	reloads                            prometheus.Counter
+	reloadsFailed                      prometheus.Counter
+	compactionsFailed                  prometheus.Counter
+	compactionsTriggered               prometheus.Counter
+	compactionsSkipped                 prometheus.Counter
+	sizeRetentionCount                 prometheus.Counter
+	timeRetentionCount                 prometheus.Counter
+	startTime                          prometheus.GaugeFunc
+	tombCleanTimer                     prometheus.Histogram
+	blocksBytes                        prometheus.Gauge
+	maxBytes                           prometheus.Gauge
+	maxPercentage                      prometheus.Gauge
+	retentionDuration                  prometheus.Gauge
+	staleSeriesCompactionsTriggered    prometheus.Counter
+	staleSeriesCompactionsFailed       prometheus.Counter
+	staleSeriesCompactionDuration      prometheus.Histogram
+	selectedSeriesCompactionsTriggered prometheus.Counter
+	selectedSeriesCompactionsFailed    prometheus.Counter
+	selectedSeriesCompactionDuration   prometheus.Histogram
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -599,10 +598,6 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_selected_series_compactions_failed_total",
 		Help: "Total number of compactions triggered for an explicit caller-provided list of series references that failed.",
 	})
-	m.selectedSeriesCompactionsSkippedOOO = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_selected_series_compactions_skipped_ooo_total",
-		Help: "Total number of series skipped during compaction triggered for an explicit caller-provided list of series references because they had out-of-order data at the time of compaction.",
-	})
 	m.selectedSeriesCompactionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:                            "prometheus_tsdb_selected_series_compaction_duration_seconds",
 		Help:                            "Duration of compactions triggered for an explicit caller-provided list of series references.",
@@ -634,7 +629,6 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.staleSeriesCompactionDuration,
 			m.selectedSeriesCompactionsTriggered,
 			m.selectedSeriesCompactionsFailed,
-			m.selectedSeriesCompactionsSkippedOOO,
 			m.selectedSeriesCompactionDuration,
 		)
 	}
@@ -1983,7 +1977,7 @@ func (db *DB) CompactStaleHead() (err error) {
 
 	if err := db.compactHeadPortionLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
-			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs)
+			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs, db.head.filterStaleSeriesAndSortPostings)
 		},
 		func(maxt int64) error {
 			return db.head.truncateStaleSeries(staleSeriesRefs, maxt)
@@ -2026,20 +2020,21 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 	db.metrics.selectedSeriesCompactionsTriggered.Inc()
 	start := time.Now()
 
+	totalSeries := len(seriesRefs)
 	// Skip series with out-of-order data: the ref-list pipeline writes only in-order chunks,
 	// so a series whose OOO state is non-empty would have its OOO chunks orphaned upon
 	// eviction. Such series stay in the head and are picked up on a later cycle.
-	seriesRefs, skipped := db.head.FilterSeriesRefsWithoutOOOData(seriesRefs)
-	if n := len(skipped); n > 0 {
-		db.metrics.selectedSeriesCompactionsSkippedOOO.Add(float64(n))
+	seriesRefs, err = db.head.SortedSelectedSeriesRefNoOOOData(seriesRefs)
+	if err != nil {
+		return err
 	}
-
-	db.logger.Info("Starting selected series compaction", "num_series", len(seriesRefs), "num_skipped_ooo", len(skipped))
+	skippedSeries := totalSeries - len(seriesRefs)
+	db.logger.Info("Starting selected series compaction", "num_series", len(seriesRefs), "num_skipped_ooo", skippedSeries)
 
 	if len(seriesRefs) == 0 {
 		elapsed := time.Since(start)
 		db.metrics.selectedSeriesCompactionDuration.Observe(elapsed.Seconds())
-		db.logger.Info("Ending selected series compaction", "num_series", 0, "num_skipped_ooo", len(skipped), "duration", elapsed)
+		db.logger.Info("Ending selected series compaction", "num_series", 0, "num_skipped_ooo", skippedSeries, "duration", elapsed)
 		return nil
 	}
 
@@ -2048,7 +2043,7 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 
 	if err := db.compactHeadPortionLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
-			return NewSelectedSeriesHead(h, mint, maxt, seriesRefs)
+			return NewSelectedSeriesHead(h, mint, maxt, seriesRefs, db.head.filterSelectedSeriesAndSortPostings)
 		},
 		func(maxt int64) error {
 			return db.head.truncateSelectedSeries(seriesRefs, maxt)
@@ -2060,7 +2055,7 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 
 	elapsed := time.Since(start)
 	db.metrics.selectedSeriesCompactionDuration.Observe(elapsed.Seconds())
-	db.logger.Info("Ending selected series compaction", "num_series", len(seriesRefs), "num_skipped_ooo", len(skipped), "duration", elapsed)
+	db.logger.Info("Ending selected series compaction", "num_series", len(seriesRefs), "num_skipped_ooo", skippedSeries, "duration", elapsed)
 	return nil
 }
 

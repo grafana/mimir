@@ -992,7 +992,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPending
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
 	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
 
-	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
+
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", nil)
 	require.NoError(t, err)
 	startAndWaitHealthy(t, ingester, r)
 
@@ -1013,11 +1016,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPending
 
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *testing.T) {
 	var (
-		ctx          = context.Background()
-		ctxWithUser  = user.InjectOrgID(ctx, userID)
-		metricName   = "metric_1"
-		metricLabels = labels.FromStrings(model.MetricNameLabel, metricName)
-		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
 	)
 
 	cfg := defaultIngesterTestConfig(t)
@@ -1026,54 +1026,78 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
 	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
 
-	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, ingester, r)
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
 
-	// Push two samples at different timestamps so the head spans more than a single instant.
+	// 3 zones x 1 ingester each makes localThreshold == globalThreshold, so threshold=1
+	// gates on at least 1 owned series.
+	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
+	ingester := ingesters[0]
+
+	// Push two samples at different timestamps so the head's MinTime < MaxTime. Push two
+	// series so that one can remain owned to satisfy the per-tenant gate, while the other
+	// is marked non-owned and exercises the eviction path.
 	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
 	require.NoError(t, err)
 	t1 := sampleTime.UnixMilli()
 	t2 := t1 + 1
 
-	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  metricLabels,
-		Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
-	}}))
-	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  metricLabels,
-		Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
-	}}))
+	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
+
+	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
+	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
+	require.NotEqual(t, hashA, hashB)
+	var ownedLabels, nonOwnedLabels labels.Labels
+	var minHash uint32
+	if hashA < hashB {
+		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
+	} else {
+		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
+	}
+	nonOwnedName := nonOwnedLabels.Get(model.MetricNameLabel)
+	nonOwnedMetricModel := model.Metric{model.MetricNameLabel: model.LabelValue(nonOwnedName)}
+
+	for _, lbls := range []labels.Labels{ownedLabels, nonOwnedLabels} {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+		}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+		}}))
+	}
 
 	db := ingester.getTSDB(userID)
 	require.NotNil(t, db)
+	require.Equal(t, uint64(2), db.Head().NumSeries())
 
-	// Simulate non-owned series detection: clear token ranges and run computeOwnedSeries.
-	// This queues every series in the head onto the per-tenant pending-eviction list, which
-	// is exactly what happens after a ring change makes a tenant's series non-owned.
-	db.ownedTokenRanges = nil
-	require.Equal(t, 0, db.computeOwnedSeries())
-	require.Equal(t, uint64(1), db.Head().NumSeries())
+	// Configure ownership: the lower-hash series is owned, the other is non-owned and gets
+	// queued for eviction.
+	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
+	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
 
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 
-	// A block should have been created containing the queued series.
+	// A block should have been created containing the non-owned series.
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	blockIDs := listBlocksInDir(t, userBlocksDir)
 	require.Len(t, blockIDs, 1)
 
-	// The block contains both originally-pushed samples, unmodified (no synthetic samples
+	// The block contains the non-owned series's two samples, unmodified (no synthetic samples
 	// are appended on this path).
 	assert.Equal(t, model.Matrix{{
-		Metric: metricModel,
+		Metric: nonOwnedMetricModel,
 		Values: []model.SamplePair{
 			{Timestamp: model.Time(t1), Value: 1.0},
 			{Timestamp: model.Time(t2), Value: 2.0},
 		},
-	}}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[0].String()), metricName))
+	}}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, blockIDs[0].String()), nonOwnedName))
 
-	// The series should have been evicted from the head.
-	assert.Equal(t, uint64(0), db.Head().NumSeries())
+	// The non-owned series should have been evicted; the owned series should remain.
+	assert.Equal(t, uint64(1), db.Head().NumSeries())
 
 	// The pending list should have been consumed, so a second call creates no new block.
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
@@ -1084,18 +1108,19 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	// per-tenant early compaction.
 	assert.True(t, db.getLastEarlyCompaction().IsZero())
 
-	// Data should still be queryable from the ingester (served from the local block).
+	// Data for the non-owned series should still be queryable from the ingester (served from
+	// the local block).
 	s := stream{ctx: ctxWithUser}
 	require.NoError(t, ingester.QueryStream(&client.QueryRequest{
 		StartTimestampMs: math.MinInt64,
 		EndTimestampMs:   math.MaxInt64,
-		Matchers:         []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName}},
+		Matchers:         []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: nonOwnedName}},
 	}, &s))
 
 	res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 	require.NoError(t, err)
 	assert.Equal(t, model.Matrix{{
-		Metric: metricModel,
+		Metric: nonOwnedMetricModel,
 		Values: []model.SamplePair{
 			{Timestamp: model.Time(t1), Value: 1.0},
 			{Timestamp: model.Time(t2), Value: 2.0},
@@ -1120,9 +1145,14 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
 	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
 
-	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, ingester, r)
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
+
+	// 3 zones x 1 ingester each makes the per-tenant local threshold equal
+	// to the global threshold, so threshold=1 gives localThreshold=1 and the gate passes when
+	// one series is owned. We interact with the first ingester for the rest of the test.
+	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
+	ingester := ingesters[0]
 
 	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
 	require.NoError(t, err)
@@ -1168,7 +1198,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 
 	// Configure ownership and queue the non-owned ref.
 	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
-	require.Equal(t, 1, db.computeOwnedSeries(), "exactly one series should be owned")
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
+	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
 
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 
@@ -1237,13 +1268,15 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
 
 	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
 	// Enable OOO ingestion at the tenant level so the ingester accepts samples whose
 	// timestamps are below the head's MaxTime.
 	limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
 
-	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", nil)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, ingester, r)
+	// 3 zones x 1 ingester makes localThreshold==globalThreshold so threshold=1 gates on 1
+	// owned series.
+	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
+	ingester := ingesters[0]
 
 	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
 	require.NoError(t, err)
@@ -1287,7 +1320,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 
 	// Configure ownership and queue the non-owned ref.
 	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
-	require.Equal(t, 1, db.computeOwnedSeries(), "exactly one series should be owned")
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
+	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
 
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 
@@ -1375,10 +1409,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 // once the per-tenant last-update timestamp is older than the threshold, eviction proceeds.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *testing.T) {
 	var (
-		ctx          = context.Background()
-		ctxWithUser  = user.InjectOrgID(ctx, userID)
-		metricName   = "metric_1"
-		metricLabels = labels.FromStrings(model.MetricNameLabel, metricName)
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
 	)
 
 	cfg := defaultIngesterTestConfig(t)
@@ -1388,58 +1420,169 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	// A long grace period that no real-time elapse can cross during the test.
 	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = time.Hour
 
-	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, ingester, r)
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
+
+	// 3 zones x 1 ingester each makes localThreshold == globalThreshold so threshold=1 gates
+	// on at least 1 owned series.
+	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
+	ingester := ingesters[0]
 
 	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
 	require.NoError(t, err)
 	t1 := sampleTime.UnixMilli()
 	t2 := t1 + 1
 
-	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  metricLabels,
-		Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
-	}}))
-	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  metricLabels,
-		Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
-	}}))
+	// Push two series so one can remain owned (satisfying the per-tenant gate) while the
+	// other is non-owned and exercises the grace-period gating.
+	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
+
+	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
+	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
+	require.NotEqual(t, hashA, hashB)
+	var ownedLabels, nonOwnedLabels labels.Labels
+	var minHash uint32
+	if hashA < hashB {
+		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
+	} else {
+		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
+	}
+
+	for _, lbls := range []labels.Labels{ownedLabels, nonOwnedLabels} {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+		}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+		}}))
+	}
 
 	db := ingester.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Equal(t, uint64(1), db.Head().NumSeries())
+	require.Equal(t, uint64(2), db.Head().NumSeries())
 
-	// Queue the series for eviction. This stamps pendingNonOwnedRefsLastUpdate to time.Now().
-	db.ownedTokenRanges = nil
-	require.Equal(t, 0, db.computeOwnedSeries())
+	// Configure ownership and queue the non-owned ref. This stamps pendingNonOwnedRefsLastUpdate
+	// to time.Now().
+	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
+	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
 	// First call: the grace period is fully in effect, so eviction must be skipped.
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no block should be produced while the grace period is in effect")
-	require.Equal(t, uint64(1), db.Head().NumSeries(), "series should still be in head while the grace period is in effect")
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "both series should still be in head while the grace period is in effect")
 
 	// Backdate the last-update timestamp so the grace period appears to have elapsed.
 	db.pendingNonOwnedRefsMtx.Lock()
 	db.pendingNonOwnedRefsLastUpdate = time.Now().Add(-2 * time.Hour)
 	db.pendingNonOwnedRefsMtx.Unlock()
 
-	// Second call: eviction should now proceed.
+	// Second call: eviction should now proceed for the non-owned series.
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1, "block should be produced after the grace period elapses")
-	require.Equal(t, uint64(0), db.Head().NumSeries(), "series should be evicted from the head after the grace period elapses")
+	require.Equal(t, uint64(1), db.Head().NumSeries(), "non-owned series should be evicted from the head after the grace period elapses")
 }
 
-func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {
-	// Create a shared consul KV store so both ingesters join the same ring.
-	consulClient, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp simulates the HPA scale-up
+// scenario: an ingester accumulates series under one ring topology, more ingesters then join
+// the ring (an HPA scale-up plus a limits-operator shard-size bump), and the existing replica
+// is left holding series that are now non-owned. The test verifies that
+// compactBlocksDueToNonOwnedSeries correctly evicts those series under the smaller post-scale-up
+// per-ingester local threshold, even when the per-ingester owned-series count has dropped along
+// with it.
+//
+// The actual ring transition is simulated by setting up the post-scale-up topology (4 ingesters
+// per zone, 12 total) directly and manipulating ingester[0]'s token ranges to mimic the "I now
+// own only a fraction of what I used to" state. This is deterministic and avoids the timing /
+// token-distribution sensitivity of running the ownership-recomputation service on a live ring
+// transition.
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+	)
 
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0
+
+	limits := defaultLimitsTestConfig()
+	// Threshold = 4. With the post-scale-up topology (4 ingesters/zone, 3 zones, RF=3), the
+	// locally adjusted threshold is (4 * 3) / (3 * 4) = 1. With the pre-scale-up topology
+	// (2 ingesters/zone) it would have been 2. The new gate sees Head().NumSeries() = numSeries
+	// (well above either threshold), so eviction proceeds regardless of how the per-ingester
+	// owned-series count has shifted.
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 4
+
+	zones := []string{"zone-a", "zone-b", "zone-c"}
+
+	// Post-scale-up ring: 4 ingesters per zone (12 total). This sets up the smaller local
+	// threshold the gate will operate against.
+	ingesters := setupTestIngesterRing(t, zones, 4, cfg, limits)
+	ingester := ingesters[0]
+
+	// Push numSeries series, each with two samples at different timestamps so the head's
+	// MinTime < MaxTime.
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
+
+	const numSeries = 20
+	for i := 0; i < numSeries; i++ {
+		lbls := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", i))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+		}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+		}}))
+	}
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Equal(t, uint64(numSeries), db.Head().NumSeries(), "all series should be in the head")
+
+	// Simulate the post-scale-up ownership state by handing ingester[0] a small slice of the
+	// keyspace (the rebalance gave most of what it used to own to the new ingesters). With
+	// ownedTokenRanges = {0, 1} ingester[0] owns only series whose secondary hash is in [0, 1],
+	// which for our randomly-distributed labels is essentially none of them.
+	db.ownedTokenRanges = ring.TokenRanges{0, 1}
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
+	postScaleOwned := db.ownedSeriesState().ownedSeriesCount
+	require.Less(t, postScaleOwned, numSeries, "most series should be non-owned after the simulated scale-up")
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no blocks before eviction runs")
+
+	// Run the eviction. The new gate uses Head().NumSeries() (= numSeries, well above the
+	// post-scale-up localThreshold of 1), so it fires despite the owned-series count having
+	// dropped, and the queued non-owned refs get evicted.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+
+	// A block should have been produced; only the (very few) owned series remain in the head.
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 1, "block should be produced after scale-up")
+	require.Equal(t, uint64(postScaleOwned), db.Head().NumSeries(), "only owned series should remain in the head")
+}
+
+func addIngestersToRing(t *testing.T, consulClient *consul.Client, zones []string, ingestersPerZone, startIdx int, cfg Config, limits validation.Limits) []*Ingester {
 	ingesters := make([]*Ingester, 0, len(zones)*ingestersPerZone)
+	var ring ring.ReadRing
 	for _, zone := range zones {
-		for i := 0; i < ingestersPerZone; i++ {
+		for i := startIdx; i < startIdx+ingestersPerZone; i++ {
+			var (
+				ingester *Ingester
+				err      error
+			)
 			ingesterId := fmt.Sprintf("ingester-%s-%d", zone, i)
 			cfg.IngesterRing.KVStore.Mock = consulClient
 			cfg.IngesterRing.InstanceID = ingesterId
@@ -1447,12 +1590,19 @@ func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, c
 			cfg.IngesterRing.ZoneAwarenessEnabled = true
 			cfg.IngesterRing.InstanceZone = zone
 
-			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, "", nil)
+			ingester, ring, err = prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, ring, "", nil)
 			require.NoError(t, err)
-			startAndWaitHealthy(t, ingester, r)
+			startAndWaitHealthy(t, ingester, ring)
 
 			ingesters = append(ingesters, ingester)
 		}
 	}
 	return ingesters
+}
+
+func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {
+	// Create a shared consul KV store so all ingesters join the same ring.
+	client, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	return addIngestersToRing(t, client, zones, ingestersPerZone, 0, cfg, limitsCfg)
 }
