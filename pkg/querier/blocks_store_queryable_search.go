@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -131,6 +132,11 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 				}
 				return errors.Wrapf(err, "failed to drain SearchLabelNames stream from store %s", c.RemoteAddress())
 			}
+
+			spanLog.DebugLog("msg", "received search label names from store-gateway",
+				"instance", c,
+				"num values", len(values),
+				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "))
 
 			mtx.Lock()
 			nameSets = append(nameSets, values)
