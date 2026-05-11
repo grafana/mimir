@@ -48,14 +48,42 @@ func (m *searchLabelNamesClientMock) Recv() (*storepb.SearchResultBatch, error) 
 	return b, nil
 }
 
-// searchStoreGatewayClientMock implements BlocksStoreClient with a programmable
-// SearchLabelNames stream. Reuses storeGatewayClientMock for unrelated methods.
+// searchLabelValuesClientMock is a narrow stream mock for SG SearchLabelValues.
+// It shares the same batch-injection semantics as searchLabelNamesClientMock.
+type searchLabelValuesClientMock struct {
+	grpc.ClientStream
+	batches []*storepb.SearchResultBatch
+	err     error
+	idx     int
+}
+
+func (m *searchLabelValuesClientMock) Recv() (*storepb.SearchResultBatch, error) {
+	if m.idx >= len(m.batches) {
+		if m.err != nil {
+			return nil, m.err
+		}
+		return nil, io.EOF
+	}
+	b := m.batches[m.idx]
+	m.idx++
+	return b, nil
+}
+
+// searchStoreGatewayClientMock implements BlocksStoreClient with programmable
+// SearchLabelNames and SearchLabelValues streams. Reuses storeGatewayClientMock
+// for unrelated methods.
 type searchStoreGatewayClientMock struct {
 	storeGatewayClientMock
-	searchLabelNamesBatches   []*storepb.SearchResultBatch
-	searchLabelNamesErr       error
-	searchLabelNamesStreamErr error
-	calls                     atomicCounter
+	searchLabelNamesBatches    []*storepb.SearchResultBatch
+	searchLabelNamesErr        error
+	searchLabelNamesStreamErr  error
+	searchLabelValuesBatches   []*storepb.SearchResultBatch
+	searchLabelValuesErr       error
+	searchLabelValuesStreamErr error
+	// lastSearchLabelValuesReq captures the most recent request so tests can
+	// assert the wire request shape (e.g. Label field propagation).
+	lastSearchLabelValuesReq *storepb.SearchLabelValuesRequest
+	calls                    atomicCounter
 }
 
 type atomicCounter struct {
@@ -73,6 +101,19 @@ func (m *searchStoreGatewayClientMock) SearchLabelNames(context.Context, *storep
 		ClientStream: grpcClientStreamMock{ctx: context.Background()},
 		batches:      m.searchLabelNamesBatches,
 		err:          m.searchLabelNamesStreamErr,
+	}, nil
+}
+
+func (m *searchStoreGatewayClientMock) SearchLabelValues(_ context.Context, req *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
+	m.calls.inc()
+	m.lastSearchLabelValuesReq = req
+	if m.searchLabelValuesErr != nil {
+		return nil, m.searchLabelValuesErr
+	}
+	return &searchLabelValuesClientMock{
+		ClientStream: grpcClientStreamMock{ctx: context.Background()},
+		batches:      m.searchLabelValuesBatches,
+		err:          m.searchLabelValuesStreamErr,
 	}, nil
 }
 
@@ -348,4 +389,99 @@ func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
 
 	assert.Equal(t, 1, storeMidStreamErr.calls.n, "failing SG should be tried once")
 	assert.Equal(t, 1, storeOK.calls.n, "retry SG should be tried once")
+}
+
+// TestBlocksStoreQuerier_SearchLabelValues_HappyPath mirrors the SearchLabelNames
+// happy path: two SGs return overlapping values for label "env"; the querier
+// merges, deduplicates and sorts. The retry / warnings / no-tenant /
+// non-retriable / mid-stream-error patterns are inherited transitively from
+// SearchLabelNames — SearchLabelValues reuses the same drain helper,
+// fetch-from-store pattern and queryWithConsistencyCheck plumbing.
+func TestBlocksStoreQuerier_SearchLabelValues_HappyPath(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+
+	store1 := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelValuesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{
+				{Value: "dev", Score: 1.0},
+				{Value: "prod", Score: 0.9},
+			},
+		}},
+	}
+	store2 := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
+		searchLabelValuesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{
+				{Value: "prod", Score: 0.9},
+				{Value: "staging", Score: 0.8},
+			},
+		}},
+	}
+
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{
+			store1: {block1},
+			store2: {block2},
+		},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+		{ID: block2},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelValues(ctx, "env", nil, nil)
+	defer rs.Close()
+	got := drainSearchResults(t, rs)
+
+	require.Len(t, got, 3)
+	assert.Equal(t, "dev", got[0].Value)
+	assert.Equal(t, "prod", got[1].Value)
+	assert.Equal(t, "staging", got[2].Value)
+}
+
+// TestBlocksStoreQuerier_SearchLabelValues_PassesLabelName asserts the label
+// name argument is propagated through to the wire request. This is the only
+// shape difference between SearchLabelNames and SearchLabelValues.
+func TestBlocksStoreQuerier_SearchLabelValues_PassesLabelName(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	store := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelValuesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{
+				{Value: "prod", Score: 1.0},
+			},
+		}},
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelValues(ctx, "env", nil, nil)
+	defer rs.Close()
+	_ = drainSearchResults(t, rs)
+
+	require.NotNil(t, store.lastSearchLabelValuesReq, "SearchLabelValues must be called on the SG client")
+	assert.Equal(t, "env", store.lastSearchLabelValuesReq.Label, "wire request must carry the label name")
 }
