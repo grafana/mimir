@@ -1,0 +1,280 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package querier
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"testing"
+
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/user"
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
+)
+
+// searchLabelNamesClientMock is a narrow stream mock for SG SearchLabelNames.
+type searchLabelNamesClientMock struct {
+	grpc.ClientStream
+	batches []*storepb.SearchResultBatch
+	err     error
+	idx     int
+}
+
+func (m *searchLabelNamesClientMock) Recv() (*storepb.SearchResultBatch, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if m.idx >= len(m.batches) {
+		return nil, io.EOF
+	}
+	b := m.batches[m.idx]
+	m.idx++
+	return b, nil
+}
+
+// searchStoreGatewayClientMock implements BlocksStoreClient with a programmable
+// SearchLabelNames stream. Reuses storeGatewayClientMock for unrelated methods.
+type searchStoreGatewayClientMock struct {
+	storeGatewayClientMock
+	searchLabelNamesBatches   []*storepb.SearchResultBatch
+	searchLabelNamesErr       error
+	searchLabelNamesStreamErr error
+	calls                     atomicCounter
+}
+
+type atomicCounter struct {
+	n int
+}
+
+func (c *atomicCounter) inc() { c.n++ }
+
+func (m *searchStoreGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
+	m.calls.inc()
+	if m.searchLabelNamesErr != nil {
+		return nil, m.searchLabelNamesErr
+	}
+	return &searchLabelNamesClientMock{
+		ClientStream: grpcClientStreamMock{ctx: context.Background()},
+		batches:      m.searchLabelNamesBatches,
+		err:          m.searchLabelNamesStreamErr,
+	}, nil
+}
+
+func newBlocksStoreSearchQuerier(t *testing.T, stores BlocksStoreSet, finder *blocksFinderMock, minT, maxT int64) *blocksStoreQuerier {
+	t.Helper()
+	reg := prometheus.NewPedanticRegistry()
+	return &blocksStoreQuerier{
+		minT:               minT,
+		maxT:               maxT,
+		finder:             finder,
+		stores:             stores,
+		dynamicReplication: newDynamicReplication(),
+		consistency:        NewBlocksConsistency(0, nil),
+		logger:             log.NewNopLogger(),
+		metrics:            newBlocksStoreQueryableMetrics(reg),
+		limits:             &blocksStoreLimitsMock{},
+	}
+}
+
+func drainSearchResults(t *testing.T, rs storage.SearchResultSet) []storage.SearchResult {
+	t.Helper()
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	return got
+}
+
+func TestBlocksStoreQuerier_SearchLabelNames_HappyPath(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+
+	store1 := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{
+				{Value: "__name__", Score: 1.0},
+				{Value: "instance", Score: 0.9},
+			},
+		}},
+	}
+	store2 := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{
+				{Value: "instance", Score: 0.9},
+				{Value: "job", Score: 0.8},
+			},
+		}},
+	}
+
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{
+			store1: {block1},
+			store2: {block2},
+		},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+		{ID: block2},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	got := drainSearchResults(t, rs)
+
+	// MergeSlices yields sorted, deduplicated values; ApplySearchHints scores at 1.0.
+	require.Len(t, got, 3)
+	assert.Equal(t, "__name__", got[0].Value)
+	assert.Equal(t, "instance", got[1].Value)
+	assert.Equal(t, "job", got[2].Value)
+}
+
+func TestBlocksStoreQuerier_SearchLabelNames_PartialReplicaFailureWithRetry(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	// First attempt: a retriable error (Unavailable) — queryWithConsistencyCheck
+	// must retry with another store-gateway.
+	storeRetriable := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesErr:    status.Error(codes.Unavailable, "transient"),
+	}
+	// Second attempt: success.
+	storeOK := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{
+				{Value: "namespace", Score: 1.0},
+			},
+		}},
+	}
+
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{storeRetriable: {block1}},
+		map[BlocksStoreClient][]ulid.ULID{storeOK: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	got := drainSearchResults(t, rs)
+
+	require.Len(t, got, 1)
+	assert.Equal(t, "namespace", got[0].Value)
+	assert.Equal(t, 1, storeRetriable.calls.n, "retriable store should be tried once")
+	assert.Equal(t, 1, storeOK.calls.n, "second store should be queried after retry")
+}
+
+func TestBlocksStoreQuerier_SearchLabelNames_WarningsPropagated(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	store := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{
+			{
+				Results: []storepb.SearchResultBatch_Result{{Value: "env", Score: 1.0}},
+			},
+			{
+				// Trailer batch carries a warning only.
+				Warnings: []string{"sg-warning: partial results"},
+			},
+		},
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	got := drainSearchResults(t, rs)
+
+	require.Len(t, got, 1)
+	assert.Equal(t, "env", got[0].Value)
+	warns := rs.Warnings()
+	require.Len(t, warns, 1)
+	// annotations.Annotations.AsErrors yields the underlying errors.
+	gotWarnings := warns.AsErrors()
+	require.Len(t, gotWarnings, 1)
+	assert.Contains(t, gotWarnings[0].Error(), "sg-warning: partial results")
+}
+
+func TestBlocksStoreQuerier_SearchLabelNames_NoTenant(t *testing.T) {
+	q := newBlocksStoreSearchQuerier(t, &blocksStoreSetMock{}, &blocksFinderMock{}, 10, 20)
+	rs := q.SearchLabelNames(context.Background(), nil, nil)
+	defer rs.Close()
+	assert.False(t, rs.Next())
+	assert.Error(t, rs.Err())
+}
+
+func TestBlocksStoreQuerier_SearchLabelNames_NonRetriableErrorBubblesUp(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+	// A 422 gRPC status is classified non-retriable by shouldRetry — it must
+	// short-circuit queryWithConsistencyCheck rather than retry.
+	store := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesErr:    status.Error(codes.Code(http.StatusUnprocessableEntity), "validation"),
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	assert.False(t, rs.Next())
+	require.Error(t, rs.Err())
+	assert.Contains(t, rs.Err().Error(), "non-retriable")
+}
