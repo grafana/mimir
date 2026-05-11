@@ -83,7 +83,34 @@ func (q *blocksStoreQuerier) SearchLabelNames(
 		return storage.ErrSearchResultSet(err)
 	}
 
-	return storage.NewSearchResultSetFromSlice(mimirstorage.MergeSearchResults(resResultSets, hints), resWarnings)
+	return wrapAsMergingSearchResultSet(resResultSets, resWarnings, hints)
+}
+
+// wrapAsMergingSearchResultSet wraps the per-SG result slices (one per
+// store-gateway, accumulated across consistency-check iterations) as
+// slice-backed SearchResultSets and feeds them to the streaming k-way
+// merger. Any warnings collected outside an SG stream (e.g. retriable open
+// errors logged as warnings) are attached via a synthetic warnings-only
+// source so the merger's Warnings() surfaces them.
+//
+// The merger handles cross-SG dedup, ordering per hints.OrderBy, and limit
+// truncation. Scores are preserved verbatim from the leaf SGs.
+//
+// PR #3+ can replace this with a fully-streaming version that defers drain
+// inside fetchSearch* until the consumer pulls; that requires reshaping the
+// queryWithConsistencyCheck contract (queriedBlocks must be known before
+// drain), which is outside this PR's scope.
+func wrapAsMergingSearchResultSet(perSG [][]storage.SearchResult, extraWarnings annotations.Annotations, hints *storage.SearchHints) storage.SearchResultSet {
+	sources := make([]storage.SearchResultSet, 0, len(perSG)+1)
+	for _, s := range perSG {
+		if len(s) > 0 {
+			sources = append(sources, storage.NewSearchResultSetFromSlice(s, nil))
+		}
+	}
+	if len(extraWarnings) > 0 {
+		sources = append(sources, storage.NewSearchResultSetFromSlice(nil, extraWarnings))
+	}
+	return mimirstorage.NewMergingSearchResultSet(sources, hints)
 }
 
 // fetchSearchLabelNamesFromStore mirrors fetchLabelNamesFromStore but uses the
@@ -285,7 +312,7 @@ func (q *blocksStoreQuerier) SearchLabelValues(
 		return storage.ErrSearchResultSet(err)
 	}
 
-	return storage.NewSearchResultSetFromSlice(mimirstorage.MergeSearchResults(resResultSets, hints), resWarnings)
+	return wrapAsMergingSearchResultSet(resResultSets, resWarnings, hints)
 }
 
 // fetchSearchLabelValuesFromStore mirrors fetchSearchLabelNamesFromStore but
