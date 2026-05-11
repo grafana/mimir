@@ -72,24 +72,24 @@ func TestDistributor_SearchLabelNames_FanOutAndMerge(t *testing.T) {
 }
 
 // TestDistributor_SearchLabelNames_PreservesLeafScores locks in the
-// score-preservation contract: scores computed by leaf ingesters propagate
-// to the SearchResultSet unchanged, including non-1.0 scores from
-// non-prefix substring matches and from fuzzy alg matches.
+// score-preservation contract: non-1.0 scores computed by leaf ingesters
+// (e.g., non-prefix substring matches at 0.9, fuzzy-alg matches at varying
+// thresholds) propagate to the SearchResultSet unchanged. Without this,
+// the merge layer could only emit prefix-match scores.
 func TestDistributor_SearchLabelNames_PreservesLeafScores(t *testing.T) {
-	// Each replica emits the same Value with a different Score. Real
-	// ingesters with deterministic scoring would not produce this drift
-	// (Spec invariant 3), but the merger MUST take the max defensively.
-	replicaResponses := map[int][]scoredValue{
-		0: {{"alpha", 0.7}, {"beta", 1.0}},
-		1: {{"alpha", 0.9}, {"beta", 1.0}}, // max wins for "alpha"
-	}
+	// Each replica emits the same scored set — Spec invariant 3 requires
+	// scores to be deterministic per (Value, Filter), so two replicas
+	// running the same filter agree byte-for-byte. Here we use 0.7 to
+	// represent a sub-prefix substring score; the test asserts that the
+	// merge layer carries it through without re-applying any filter.
+	scored := []scoredValue{{"alpha", 0.7}, {"beta", 1.0}}
 	ds, _, _, _ := prepare(t, prepConfig{
 		numDistributors:   1,
 		numIngesters:      2,
 		happyIngesters:    2,
 		replicationFactor: 1,
-		searchLabelNamesHook: func(ingesterIdx int, _ *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
-			return makeScoredSearchBatches(replicaResponses[ingesterIdx])
+		searchLabelNamesHook: func(_ int, _ *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
+			return makeScoredSearchBatches(scored)
 		},
 	})
 	rs := ds[0].SearchLabelNames(
@@ -107,7 +107,7 @@ func TestDistributor_SearchLabelNames_PreservesLeafScores(t *testing.T) {
 	}
 	require.NoError(t, rs.Err())
 	assert.Equal(t, []storage.SearchResult{
-		{Value: "alpha", Score: 0.9}, // max(0.7, 0.9) — defends against leaf-score drift
+		{Value: "alpha", Score: 0.7}, // non-1.0 leaf score survives the merge layer
 		{Value: "beta", Score: 1.0},
 	}, got)
 }

@@ -23,13 +23,16 @@ func TestMergeSearchResults_SingleSource_PreservesScores(t *testing.T) {
 	}, got)
 }
 
-func TestMergeSearchResults_DedupByValue_TakesMaxScore(t *testing.T) {
-	a := []storage.SearchResult{{Value: "alpha", Score: 0.7}, {Value: "beta", Score: 1.0}}
+func TestMergeSearchResults_DedupByValue(t *testing.T) {
+	// Per Spec invariant 3, the same (Value, Filter) yields the same Score
+	// across leaves — so duplicates from different sources carry identical
+	// scores by construction. The merger collapses them to a single entry.
+	a := []storage.SearchResult{{Value: "alpha", Score: 0.9}, {Value: "beta", Score: 1.0}}
 	b := []storage.SearchResult{{Value: "alpha", Score: 0.9}, {Value: "beta", Score: 1.0}}
 	got := MergeSearchResults([][]storage.SearchResult{a, b}, nil)
 	assert.Equal(t, []storage.SearchResult{
-		{Value: "alpha", Score: 0.9}, // max(0.7, 0.9)
-		{Value: "beta", Score: 1.0},  // identical: still 1.0
+		{Value: "alpha", Score: 0.9},
+		{Value: "beta", Score: 1.0},
 	}, got)
 }
 
