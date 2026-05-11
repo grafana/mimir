@@ -31,6 +31,30 @@ func newTestManager() (manager *Manager, reg, costAttributionReg *prometheus.Reg
 	return manager, reg, costAttributionReg
 }
 
+// getSampleTracker returns the internal SampleTracker for a user (assumes single legacy tracker).
+func getSampleTracker(m *Manager, userID string) *SampleTracker {
+	if trackers, ok := m.sampleTrackersByUserID[userID]; ok {
+		return trackers[defaultTrackerName]
+	}
+	return nil
+}
+
+// getActiveTracker returns the internal ActiveSeriesTracker for a user (assumes single legacy tracker).
+func getActiveTracker(m *Manager, userID string) *ActiveSeriesTracker {
+	if trackers, ok := m.activeTrackersByUserID[userID]; ok {
+		return trackers[defaultTrackerName]
+	}
+	return nil
+}
+
+func withLockedActiveSeriesTracker(m *Manager, userID string, fn func(ast *ActiveSeriesTracker)) {
+	m.ActiveSeriesTracker(userID) // ensure tracker exists
+	ast := getActiveTracker(m, userID)
+	ast.observedMtx.Lock()
+	defer ast.observedMtx.Unlock()
+	fn(ast)
+}
+
 func TestManager_New(t *testing.T) {
 	manager, _, _ := newTestManager()
 	assert.NotNil(t, manager)
@@ -42,17 +66,17 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	manager, reg, costAttributionReg := newTestManager()
 
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
-		user1SampleTracker := manager.SampleTracker("user1")
-		assert.NotNil(t, user1SampleTracker)
-		assert.True(t, user1SampleTracker.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
-		assert.Equal(t, 5, user1SampleTracker.maxCardinality)
+		assert.NotNil(t, manager.SampleTracker("user1"))
+		st := getSampleTracker(manager, "user1")
+		assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
+		assert.Equal(t, 5, st.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
-		user3ActiveTracker := manager.ActiveSeriesTracker("user3")
-		assert.NotNil(t, user3ActiveTracker)
-		assert.True(t, user3ActiveTracker.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
-		assert.Equal(t, 2, user3ActiveTracker.maxCardinality)
+		assert.NotNil(t, manager.ActiveSeriesTracker("user3"))
+		at := getActiveTracker(manager, "user3")
+		assert.True(t, at.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
+		assert.Equal(t, 2, at.maxCardinality)
 	})
 
 	t.Run("Metrics tracking", func(t *testing.T) {
@@ -193,8 +217,12 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.limits = testutils.NewMockCostAttributionLimits(2)
 		manager.purgeInactiveAttributionsUntil(time.Unix(12, 0).Add(manager.inactiveTimeout))
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
-		assert.True(t, manager.SampleTracker("user3").hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
-		assert.True(t, manager.ActiveSeriesTracker("user3").hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
+		manager.SampleTracker("user3")
+		st := getSampleTracker(manager, "user3")
+		assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
+		manager.ActiveSeriesTracker("user3")
+		at := getActiveTracker(manager, "user3")
+		assert.True(t, at.hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
 
 		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
 		expectedMetrics := `
@@ -258,11 +286,9 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 	})
 
 	t.Run("Purge after inactive timeout", func(t *testing.T) {
-		// disable cost attribution for user1 to test purging
 		manager.limits = testutils.NewMockCostAttributionLimits(1)
 		manager.purgeInactiveAttributionsUntil(time.Unix(5, 0).Add(manager.inactiveTimeout))
 
-		// User3's tracker should remain since it's active, user1's tracker should be removed
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID), "Expected one active tracker after purging")
 		assert.Nil(t, manager.SampleTracker("user1"), "Expected user1 tracker to be purged")
 		assert.Nil(t, manager.ActiveSeriesTracker("user1"), "Expected user1 tracker to be purged")
@@ -276,23 +302,19 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 	})
 
 	t.Run("Purge all trackers", func(t *testing.T) {
-		// Trigger a purge that should remove all inactive trackers
 		manager.purgeInactiveAttributionsUntil(time.Unix(20, 0).Add(manager.inactiveTimeout))
 
-		// Tracker would stay at 1 since user1's tracker is disabled
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID), "Expected one active tracker after full purge")
 
-		// No metrics should remain after all purged
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(""), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total"))
 	})
 
 	t.Run("Overflown active series recover only after they are under the limit", func(t *testing.T) {
-		// Track two series, this is under the limit of 2, so no overflow should happen yet.
 		now := time.Unix(10, 0)
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "1"), now, 0)
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "2"), now, 0)
 
-		withLockedActiveSeriesTracker(manager.ActiveSeriesTracker("user7"), func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
 			require.Equal(t, 2, len(ast.observed), "Should have 2 series tracked")
 			require.True(t, ast.overflowSince.IsZero(), "Should not be in overflow state yet")
 			require.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero")
@@ -300,94 +322,76 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "3"), now, 0)
 
-		withLockedActiveSeriesTracker(manager.ActiveSeriesTracker("user7"), func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
 			require.Equal(t, 3, len(ast.observed), "Should have 3 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero")
 		})
 
-		// Track more series, one goes to observed, another two go to overflow.
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "4"), now, 0)
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "5"), now, 0)
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "6"), now, 0)
 
-		withLockedActiveSeriesTracker(manager.ActiveSeriesTracker("user7"), func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
 			require.Equal(t, 4, len(ast.observed), "Should have 4 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(2), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
-		// Run purge after the cooldown, nothing should change since we are still over the limit.
 		now = now.Add(testutils.TestAttributionCooldown)
 		manager.purgeInactiveAttributionsUntil(now)
 
-		// Nothing has changed.
-		withLockedActiveSeriesTracker(manager.ActiveSeriesTracker("user7"), func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
 			require.Equal(t, 4, len(ast.observed), "Should have 4 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(2), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
 		now = now.Add(testutils.TestAttributionCooldown / 10)
-		// Decrement one of the observed series and one of the overflow series.
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "1"), 0)
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "6"), 0)
 
-		// Check the updated state.
-		withLockedActiveSeriesTracker(manager.ActiveSeriesTracker("user7"), func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
 			require.Equal(t, 3, len(ast.observed), "Should have 3 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
-		// Run purge after the cooldown, nothing should change since we are still over the limit.
 		now = now.Add(testutils.TestAttributionCooldown)
 		manager.purgeInactiveAttributionsUntil(now)
 
-		// Nothing has changed.
-		withLockedActiveSeriesTracker(manager.ActiveSeriesTracker("user7"), func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
 			require.Equal(t, 3, len(ast.observed), "Should have 3 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
 		now = now.Add(testutils.TestAttributionCooldown / 10)
-		// Increment a different series, it should go to observed because we have room there now.
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "7"), now, 0)
-		withLockedActiveSeriesTracker(manager.ActiveSeriesTracker("user7"), func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
 			require.Equal(t, 4, len(ast.observed), "Should have 4 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
 		now = now.Add(testutils.TestAttributionCooldown / 10)
-		// Decrement two observed series, this should bring us under the limit and recover from overflow state.
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "3"), 0)
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "4"), 0)
 
-		// NOTE: There are still series in the overflow counter, but can't tell how much cardinality those two add,
-		// The best we can say is "it's at least 1", so we just ignore here (with a limit set to thousands, doing this plus one won't change much).
-		withLockedActiveSeriesTracker(manager.ActiveSeriesTracker("user7"), func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
 			require.Equal(t, 2, len(ast.observed), "Should have 2 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
-		// Purge again, this should remove the tracker.
 		now = now.Add(testutils.TestAttributionCooldown)
 		manager.purgeInactiveAttributionsUntil(now)
-		withLockedActiveSeriesTracker(manager.ActiveSeriesTracker("user7"), func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
 			require.Equal(t, 0, len(ast.observed), "Should have no series tracked")
 			require.True(t, ast.overflowSince.IsZero(), "Should not be in overflow state anymore")
 			require.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero")
 		})
 	})
-}
-
-func withLockedActiveSeriesTracker(ast *ActiveSeriesTracker, fn func(ast *ActiveSeriesTracker)) {
-	ast.observedMtx.Lock()
-	defer ast.observedMtx.Unlock()
-	fn(ast)
 }
 
 func TestManager_OutputLabels(t *testing.T) {
@@ -432,17 +436,17 @@ func TestManager_InvalidTrackers(t *testing.T) {
 	manager, reg, costAttributionReg := newTestManager()
 
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
-		user1SampleTracker := manager.SampleTracker("user1")
-		assert.NotNil(t, user1SampleTracker)
-		assert.True(t, user1SampleTracker.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
-		assert.Equal(t, 5, user1SampleTracker.maxCardinality)
+		assert.NotNil(t, manager.SampleTracker("user1"))
+		st := getSampleTracker(manager, "user1")
+		assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
+		assert.Equal(t, 5, st.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
-		user3ActiveTracker := manager.ActiveSeriesTracker("user3")
-		assert.NotNil(t, user3ActiveTracker)
-		assert.True(t, user3ActiveTracker.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
-		assert.Equal(t, 2, user3ActiveTracker.maxCardinality)
+		assert.NotNil(t, manager.ActiveSeriesTracker("user3"))
+		at := getActiveTracker(manager, "user3")
+		assert.True(t, at.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
+		assert.Equal(t, 2, at.maxCardinality)
 	})
 
 	t.Run("Metrics tracking", func(t *testing.T) {
@@ -547,8 +551,8 @@ func TestManager_InvalidTrackers(t *testing.T) {
 		cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
         # HELP cortex_cost_attribution_tracker_creation_errors_total The total number of errors creating cost attribution trackers for each user.
         # TYPE cortex_cost_attribution_tracker_creation_errors_total counter
-        cortex_cost_attribution_tracker_creation_errors_total{tracker="active-series",user="user1"} 1
-        cortex_cost_attribution_tracker_creation_errors_total{tracker="samples",user="user1"} 1
+        cortex_cost_attribution_tracker_creation_errors_total{tracker_name="cost-attribution",tracker_type="active-series",user="user1"} 1
+        cortex_cost_attribution_tracker_creation_errors_total{tracker_name="cost-attribution",tracker_type="samples",user="user1"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
 			"cortex_cost_attribution_sample_tracker_cardinality",
@@ -602,11 +606,12 @@ func TestManager_InvalidTrackers(t *testing.T) {
 		cortex_cost_attribution_active_series_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
 		# HELP cortex_cost_attribution_sample_tracker_cardinality The cardinality of a cost attribution sample tracker for each user.
 		# TYPE cortex_cost_attribution_sample_tracker_cardinality gauge
+        cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user1"} 0
         cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
         # HELP cortex_cost_attribution_tracker_creation_errors_total The total number of errors creating cost attribution trackers for each user.
         # TYPE cortex_cost_attribution_tracker_creation_errors_total counter
-        cortex_cost_attribution_tracker_creation_errors_total{tracker="active-series",user="user1"} 1
-        cortex_cost_attribution_tracker_creation_errors_total{tracker="samples",user="user1"} 1
+        cortex_cost_attribution_tracker_creation_errors_total{tracker_name="cost-attribution",tracker_type="active-series",user="user1"} 1
+        cortex_cost_attribution_tracker_creation_errors_total{tracker_name="cost-attribution",tracker_type="samples",user="user1"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
 			"cortex_cost_attribution_sample_tracker_cardinality",

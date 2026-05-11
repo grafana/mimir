@@ -31,6 +31,13 @@ const (
 	samplesTracker      = "samples"
 )
 
+// resolvedTrackerConfig is a TrackerConfig with all defaults filled in.
+type resolvedTrackerConfig struct {
+	labels           costattributionmodel.Labels
+	maxCardinality   int
+	cooldownDuration time.Duration
+}
+
 type Manager struct {
 	services.Service
 	logger log.Logger
@@ -44,25 +51,27 @@ type Manager struct {
 
 	inactiveTimeout time.Duration
 
+	// userID → trackerName → *SampleTracker
 	stmtx                  sync.RWMutex
-	sampleTrackersByUserID map[string]*SampleTracker
+	sampleTrackersByUserID map[string]map[string]*SampleTracker
 
+	// userID → trackerName → *ActiveSeriesTracker
 	atmtx                  sync.RWMutex
-	activeTrackersByUserID map[string]*ActiveSeriesTracker
+	activeTrackersByUserID map[string]map[string]*ActiveSeriesTracker
 }
 
 func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg, costAttributionReg prometheus.Registerer) (*Manager, error) {
 	m := &Manager{
 		stmtx:                  sync.RWMutex{},
-		sampleTrackersByUserID: make(map[string]*SampleTracker),
+		sampleTrackersByUserID: make(map[string]map[string]*SampleTracker),
 
 		atmtx:                  sync.RWMutex{},
-		activeTrackersByUserID: make(map[string]*ActiveSeriesTracker),
+		activeTrackersByUserID: make(map[string]map[string]*ActiveSeriesTracker),
 
 		trackerCreationErrors: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_cost_attribution_tracker_creation_errors_total",
 			Help: "The total number of errors creating cost attribution trackers for each user.",
-		}, []string{"user", trackerLabel}),
+		}, []string{"user", "tracker_type", "tracker_name"}),
 
 		limits:          limits,
 		inactiveTimeout: inactiveTimeout,
@@ -87,26 +96,26 @@ func (m *Manager) createAndValidateDescriptors() error {
 	var err error
 	if m.sampleTrackerCardinalityDesc, err = newDescriptor("cortex_cost_attribution_sample_tracker_cardinality",
 		"The cardinality of a cost attribution sample tracker for each user.",
-		[]string{"user"},
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		[]string{"user", trackerLabel},
+		nil); err != nil {
 		return err
 	}
 	if m.sampleTrackerOverflowDesc, err = newDescriptor("cortex_cost_attribution_sample_tracker_overflown",
 		"This metric is exported with value 1 when a sample tracker for a user is overflown. It's not exported otherwise.",
-		[]string{"user"},
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		[]string{"user", trackerLabel},
+		nil); err != nil {
 		return err
 	}
 	if m.activeSeriesTrackerCardinalityDesc, err = newDescriptor("cortex_cost_attribution_active_series_tracker_cardinality",
 		"The cardinality of a cost attribution active series tracker for each user.",
-		[]string{"user"},
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		[]string{"user", trackerLabel},
+		nil); err != nil {
 		return err
 	}
 	if m.activeSeriesTrackerOverflowDesc, err = newDescriptor("cortex_cost_attribution_active_series_tracker_overflown",
 		"This metric is exported with value 1 when an active series tracker for a user is overflown. It's not exported otherwise.",
-		[]string{"user"},
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		[]string{"user", trackerLabel},
+		nil); err != nil {
 		return err
 	}
 	return nil
@@ -121,115 +130,202 @@ func (m *Manager) enabledForUser(userID string) bool {
 	if m == nil {
 		return false
 	}
-
-	return len(m.limits.CostAttributionLabelsStructured(userID)) > 0
+	return len(m.effectiveTrackerConfigs(userID)) > 0
 }
 
-func (m *Manager) labels(userID string) costattributionmodel.Labels {
-	return m.limits.CostAttributionLabelsStructured(userID)
-}
+// effectiveTrackerConfigs resolves the effective tracker configs for a user,
+// merging the legacy single-tracker config with the new multi-tracker map.
+func (m *Manager) effectiveTrackerConfigs(userID string) map[string]resolvedTrackerConfig {
+	legacyLabels := m.limits.CostAttributionLabelsStructured(userID)
+	trackers := m.limits.CostAttributionTrackers(userID)
+	defaultMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
+	defaultCooldown := m.limits.CostAttributionCooldown(userID)
 
-func (m *Manager) SampleTracker(userID string) *SampleTracker {
-	if !m.enabledForUser(userID) {
-		return nil
-	}
+	result := make(map[string]resolvedTrackerConfig, len(trackers)+1)
 
-	// Check if the tracker already exists, if exists return it. Otherwise lock and create a new tracker.
-	m.stmtx.RLock()
-	tracker, exists := m.sampleTrackersByUserID[userID]
-	m.stmtx.RUnlock()
-	if exists {
-		return tracker
-	}
-
-	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
-	labels := m.labels(userID)
-	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
-	cooldownDuration := m.limits.CostAttributionCooldown(userID)
-
-	m.stmtx.Lock()
-	defer m.stmtx.Unlock()
-	if tracker, exists = m.sampleTrackersByUserID[userID]; exists {
-		return tracker
-	}
-
-	// sort the labels to ensure the order is consistent.
-	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
-		return strings.Compare(a.Input, b.Input)
-	})
-
-	tracker, err := newSampleTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
-	if err != nil {
-		m.trackerCreationErrors.WithLabelValues(userID, samplesTracker).Inc()
-		return nil
-	}
-	m.sampleTrackersByUserID[userID] = tracker
-	return tracker
-}
-
-func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
-	if !m.enabledForUser(userID) {
-		return nil
-	}
-
-	// Check if the tracker already exists, if exists return it. Otherwise lock and create a new tracker.
-	m.atmtx.RLock()
-	tracker, exists := m.activeTrackersByUserID[userID]
-	m.atmtx.RUnlock()
-	if exists {
-		return tracker
-	}
-
-	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
-	labels := m.labels(userID)
-	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
-	cooldownDuration := m.limits.CostAttributionCooldown(userID)
-
-	m.atmtx.Lock()
-	defer m.atmtx.Unlock()
-	if tracker, exists = m.activeTrackersByUserID[userID]; exists {
-		return tracker
-	}
-
-	// sort the labels to ensure the order is consistent
-	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
-		return strings.Compare(a.Input, b.Input)
-	})
-
-	tracker, err := NewActiveSeriesTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
-	if err != nil {
-		m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTracker).Inc()
-		return nil
-	}
-	m.activeTrackersByUserID[userID] = tracker
-	return tracker
-}
-
-func (m *Manager) Collect(out chan<- prometheus.Metric) {
-	// Clone both maps to avoid holding the locks while collecting metrics.
-	m.stmtx.RLock()
-	sampleTrackersByUserID := maps.Clone(m.sampleTrackersByUserID)
-	m.stmtx.RUnlock()
-
-	m.atmtx.RLock()
-	activeTrackersByUserID := maps.Clone(m.activeTrackersByUserID)
-	m.atmtx.RUnlock()
-
-	for _, tracker := range sampleTrackersByUserID {
-		cardinality, overflown := tracker.cardinality()
-
-		out <- m.sampleTrackerCardinalityDesc.gauge(float64(cardinality), tracker.userID)
-		if overflown {
-			out <- m.sampleTrackerOverflowDesc.gauge(1, tracker.userID)
+	if len(legacyLabels) > 0 {
+		result[defaultTrackerName] = resolvedTrackerConfig{
+			labels:           legacyLabels,
+			maxCardinality:   defaultMaxCardinality,
+			cooldownDuration: defaultCooldown,
 		}
 	}
 
-	for _, tracker := range activeTrackersByUserID {
-		cardinality, overflown := tracker.cardinality()
+	for name, cfg := range trackers {
+		if len(cfg.Labels) == 0 {
+			continue
+		}
+		maxCard := defaultMaxCardinality
+		if cfg.MaxCardinality > 0 {
+			maxCard = cfg.MaxCardinality
+		}
+		cooldown := defaultCooldown
+		if cfg.Cooldown > 0 {
+			cooldown = time.Duration(cfg.Cooldown)
+		}
+		result[name] = resolvedTrackerConfig{
+			labels:           cfg.Labels,
+			maxCardinality:   maxCard,
+			cooldownDuration: cooldown,
+		}
+	}
 
-		out <- m.activeSeriesTrackerCardinalityDesc.gauge(float64(cardinality), tracker.userID)
-		if overflown {
-			out <- m.activeSeriesTrackerOverflowDesc.gauge(1, tracker.userID)
+	return result
+}
+
+func sortLabels(labels costattributionmodel.Labels) costattributionmodel.Labels {
+	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
+		return strings.Compare(a.Input, b.Input)
+	})
+	return labels
+}
+
+func (m *Manager) SampleTracker(userID string) *CompositeSampleTracker {
+	configs := m.effectiveTrackerConfigs(userID)
+	if len(configs) == 0 {
+		return nil
+	}
+
+	m.stmtx.RLock()
+	userTrackers := m.sampleTrackersByUserID[userID]
+	if userTrackers != nil && len(userTrackers) == len(configs) {
+		allExist := true
+		for name := range configs {
+			if _, ok := userTrackers[name]; !ok {
+				allExist = false
+				break
+			}
+		}
+		if allExist {
+			trackers := make([]*SampleTracker, 0, len(userTrackers))
+			for _, name := range sortedKeys(configs) {
+				trackers = append(trackers, userTrackers[name])
+			}
+			m.stmtx.RUnlock()
+			return newCompositeSampleTracker(trackers)
+		}
+	}
+	m.stmtx.RUnlock()
+
+	m.stmtx.Lock()
+	defer m.stmtx.Unlock()
+
+	if m.sampleTrackersByUserID[userID] == nil {
+		m.sampleTrackersByUserID[userID] = make(map[string]*SampleTracker, len(configs))
+	}
+	userTrackers = m.sampleTrackersByUserID[userID]
+
+	for name, cfg := range configs {
+		if _, exists := userTrackers[name]; exists {
+			continue
+		}
+		labels := sortLabels(cfg.labels)
+		tracker, err := newSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+		if err != nil {
+			m.trackerCreationErrors.WithLabelValues(userID, samplesTracker, name).Inc()
+			continue
+		}
+		userTrackers[name] = tracker
+	}
+
+	trackers := make([]*SampleTracker, 0, len(userTrackers))
+	for _, name := range sortedKeys(configs) {
+		if t, ok := userTrackers[name]; ok {
+			trackers = append(trackers, t)
+		}
+	}
+	return newCompositeSampleTracker(trackers)
+}
+
+func (m *Manager) ActiveSeriesTracker(userID string) *CompositeActiveSeriesTracker {
+	configs := m.effectiveTrackerConfigs(userID)
+	if len(configs) == 0 {
+		return nil
+	}
+
+	m.atmtx.RLock()
+	userTrackers := m.activeTrackersByUserID[userID]
+	if userTrackers != nil && len(userTrackers) == len(configs) {
+		allExist := true
+		for name := range configs {
+			if _, ok := userTrackers[name]; !ok {
+				allExist = false
+				break
+			}
+		}
+		if allExist {
+			trackers := make([]*ActiveSeriesTracker, 0, len(userTrackers))
+			for _, name := range sortedKeys(configs) {
+				trackers = append(trackers, userTrackers[name])
+			}
+			m.atmtx.RUnlock()
+			return NewCompositeActiveSeriesTracker(trackers)
+		}
+	}
+	m.atmtx.RUnlock()
+
+	m.atmtx.Lock()
+	defer m.atmtx.Unlock()
+
+	if m.activeTrackersByUserID[userID] == nil {
+		m.activeTrackersByUserID[userID] = make(map[string]*ActiveSeriesTracker, len(configs))
+	}
+	userTrackers = m.activeTrackersByUserID[userID]
+
+	for name, cfg := range configs {
+		if _, exists := userTrackers[name]; exists {
+			continue
+		}
+		labels := sortLabels(cfg.labels)
+		tracker, err := NewActiveSeriesTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+		if err != nil {
+			m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTracker, name).Inc()
+			continue
+		}
+		userTrackers[name] = tracker
+	}
+
+	trackers := make([]*ActiveSeriesTracker, 0, len(userTrackers))
+	for _, name := range sortedKeys(configs) {
+		if t, ok := userTrackers[name]; ok {
+			trackers = append(trackers, t)
+		}
+	}
+	return NewCompositeActiveSeriesTracker(trackers)
+}
+
+func (m *Manager) Collect(out chan<- prometheus.Metric) {
+	m.stmtx.RLock()
+	sampleTrackersByUserID := make(map[string]map[string]*SampleTracker, len(m.sampleTrackersByUserID))
+	for userID, trackers := range m.sampleTrackersByUserID {
+		sampleTrackersByUserID[userID] = maps.Clone(trackers)
+	}
+	m.stmtx.RUnlock()
+
+	m.atmtx.RLock()
+	activeTrackersByUserID := make(map[string]map[string]*ActiveSeriesTracker, len(m.activeTrackersByUserID))
+	for userID, trackers := range m.activeTrackersByUserID {
+		activeTrackersByUserID[userID] = maps.Clone(trackers)
+	}
+	m.atmtx.RUnlock()
+
+	for userID, trackers := range sampleTrackersByUserID {
+		for trackerName, tracker := range trackers {
+			cardinality, overflown := tracker.cardinality()
+			out <- m.sampleTrackerCardinalityDesc.gauge(float64(cardinality), userID, trackerName)
+			if overflown {
+				out <- m.sampleTrackerOverflowDesc.gauge(1, userID, trackerName)
+			}
+		}
+	}
+
+	for userID, trackers := range activeTrackersByUserID {
+		for trackerName, tracker := range trackers {
+			cardinality, overflown := tracker.cardinality()
+			out <- m.activeSeriesTrackerCardinalityDesc.gauge(float64(cardinality), userID, trackerName)
+			if overflown {
+				out <- m.activeSeriesTrackerOverflowDesc.gauge(1, userID, trackerName)
+			}
 		}
 	}
 }
@@ -240,21 +336,30 @@ func (m *Manager) Describe(chan<- *prometheus.Desc) {
 }
 
 func (m *Manager) collectCostAttribution(out chan<- prometheus.Metric) {
-	// Clone both maps to avoid holding the locks while collecting metrics.
 	m.stmtx.RLock()
-	sampleTrackersByUserID := maps.Clone(m.sampleTrackersByUserID)
+	sampleTrackersByUserID := make(map[string]map[string]*SampleTracker, len(m.sampleTrackersByUserID))
+	for userID, trackers := range m.sampleTrackersByUserID {
+		sampleTrackersByUserID[userID] = maps.Clone(trackers)
+	}
 	m.stmtx.RUnlock()
 
 	m.atmtx.RLock()
-	activeTrackersByUserID := maps.Clone(m.activeTrackersByUserID)
+	activeTrackersByUserID := make(map[string]map[string]*ActiveSeriesTracker, len(m.activeTrackersByUserID))
+	for userID, trackers := range m.activeTrackersByUserID {
+		activeTrackersByUserID[userID] = maps.Clone(trackers)
+	}
 	m.atmtx.RUnlock()
 
-	for _, tracker := range sampleTrackersByUserID {
-		tracker.collectCostAttribution(out)
+	for _, trackers := range sampleTrackersByUserID {
+		for _, tracker := range trackers {
+			tracker.collectCostAttribution(out)
+		}
 	}
 
-	for _, tracker := range activeTrackersByUserID {
-		tracker.Collect(out)
+	for _, trackers := range activeTrackersByUserID {
+		for _, tracker := range trackers {
+			tracker.Collect(out)
+		}
 	}
 }
 
@@ -263,119 +368,170 @@ func (m *Manager) describeCostAttribution(chan<- *prometheus.Desc) {
 	// For more details, refer to the documentation: https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#hdr-Custom_Collectors_and_constant_Metrics
 }
 
-func (m *Manager) deleteSampleTracker(userID string) {
+func (m *Manager) deleteSampleTracker(userID, trackerName string) {
 	m.stmtx.Lock()
-	delete(m.sampleTrackersByUserID, userID)
+	if trackers, ok := m.sampleTrackersByUserID[userID]; ok {
+		delete(trackers, trackerName)
+		if len(trackers) == 0 {
+			delete(m.sampleTrackersByUserID, userID)
+		}
+	}
 	m.stmtx.Unlock()
 }
 
-func (m *Manager) deleteActiveTracker(userID string) {
+func (m *Manager) deleteActiveTracker(userID, trackerName string) {
+	m.atmtx.Lock()
+	if trackers, ok := m.activeTrackersByUserID[userID]; ok {
+		delete(trackers, trackerName)
+		if len(trackers) == 0 {
+			delete(m.activeTrackersByUserID, userID)
+		}
+	}
+	m.atmtx.Unlock()
+}
+
+func (m *Manager) deleteAllTrackersForUser(userID string) {
+	m.stmtx.Lock()
+	delete(m.sampleTrackersByUserID, userID)
+	m.stmtx.Unlock()
+
 	m.atmtx.Lock()
 	delete(m.activeTrackersByUserID, userID)
 	m.atmtx.Unlock()
 }
 
-func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTracker) {
-	if !m.enabledForUser(userID) {
-		m.deleteSampleTracker(userID)
-		m.deleteActiveTracker(userID)
+// updateTrackers ensures trackers for userID match the current config.
+// Returns per-tracker-name sample and active series trackers that are still active.
+func (m *Manager) updateTrackers(userID string) (map[string]*SampleTracker, map[string]*ActiveSeriesTracker) {
+	configs := m.effectiveTrackerConfigs(userID)
+	if len(configs) == 0 {
+		m.deleteAllTrackersForUser(userID)
 		return nil, nil
 	}
 
-	st := m.SampleTracker(userID)
-	at := m.ActiveSeriesTracker(userID)
+	// Ensure all configured trackers exist and are up-to-date.
+	// Force creation via SampleTracker/ActiveSeriesTracker.
+	m.SampleTracker(userID)
+	m.ActiveSeriesTracker(userID)
 
-	if at == nil || st == nil {
-		return nil, nil
-	}
+	// Remove trackers no longer in config.
+	m.stmtx.RLock()
+	existingST := maps.Clone(m.sampleTrackersByUserID[userID])
+	m.stmtx.RUnlock()
 
-	labels := m.labels(userID)
+	m.atmtx.RLock()
+	existingAT := maps.Clone(m.activeTrackersByUserID[userID])
+	m.atmtx.RUnlock()
 
-	// sort the labels to ensure the order is consistent
-	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
-		return strings.Compare(a.Input, b.Input)
-	})
-
-	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
-	newMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
-	newCooldownDuration := m.limits.CostAttributionCooldown(userID)
-
-	if !st.hasSameLabels(labels) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
-		m.stmtx.Lock()
-		var err error
-		st, err = newSampleTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
-		if err != nil {
-			m.trackerCreationErrors.WithLabelValues(userID, samplesTracker).Inc()
-			delete(m.sampleTrackersByUserID, userID)
-		} else {
-			m.sampleTrackersByUserID[userID] = st
+	for name := range existingST {
+		if _, ok := configs[name]; !ok {
+			m.deleteSampleTracker(userID, name)
+			delete(existingST, name)
 		}
-		m.stmtx.Unlock()
 	}
-
-	if !at.hasSameLabels(labels) || at.maxCardinality != newMaxCardinality || at.cooldownDuration != newCooldownDuration {
-		m.atmtx.Lock()
-		var err error
-		at, err = NewActiveSeriesTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
-		if err != nil {
-			m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTracker).Inc()
-			delete(m.activeTrackersByUserID, userID)
-		} else {
-			m.activeTrackersByUserID[userID] = at
+	for name := range existingAT {
+		if _, ok := configs[name]; !ok {
+			m.deleteActiveTracker(userID, name)
+			delete(existingAT, name)
 		}
-		m.atmtx.Unlock()
 	}
 
-	return st, at
+	// Check if config changed for existing trackers; recreate if needed.
+	for name, cfg := range configs {
+		labels := sortLabels(cfg.labels)
+
+		if st, ok := existingST[name]; ok {
+			if !st.hasSameLabels(labels) || st.maxCardinality != cfg.maxCardinality || st.cooldownDuration != cfg.cooldownDuration {
+				m.stmtx.Lock()
+				newST, err := newSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+				if err != nil {
+					m.trackerCreationErrors.WithLabelValues(userID, samplesTracker, name).Inc()
+					delete(m.sampleTrackersByUserID[userID], name)
+					delete(existingST, name)
+				} else {
+					m.sampleTrackersByUserID[userID][name] = newST
+					existingST[name] = newST
+				}
+				m.stmtx.Unlock()
+			}
+		}
+
+		if at, ok := existingAT[name]; ok {
+			if !at.hasSameLabels(labels) || at.maxCardinality != cfg.maxCardinality || at.cooldownDuration != cfg.cooldownDuration {
+				m.atmtx.Lock()
+				newAT, err := NewActiveSeriesTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+				if err != nil {
+					m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTracker, name).Inc()
+					delete(m.activeTrackersByUserID[userID], name)
+					delete(existingAT, name)
+				} else {
+					m.activeTrackersByUserID[userID][name] = newAT
+					existingAT[name] = newAT
+				}
+				m.atmtx.Unlock()
+			}
+		}
+	}
+
+	return existingST, existingAT
 }
 
 func (m *Manager) purgeInactiveAttributionsUntil(now time.Time) {
 	deadline := now.Add(-m.inactiveTimeout)
+
+	// Collect all userIDs that have trackers.
 	m.stmtx.RLock()
 	userIDs := make(map[string]struct{}, len(m.sampleTrackersByUserID)+len(m.activeTrackersByUserID))
 	for userID := range m.sampleTrackersByUserID {
 		userIDs[userID] = struct{}{}
 	}
+	m.stmtx.RUnlock()
+
+	m.atmtx.RLock()
 	for userID := range m.activeTrackersByUserID {
 		userIDs[userID] = struct{}{}
 	}
-	m.stmtx.RUnlock()
+	m.atmtx.RUnlock()
 
 	for userID := range userIDs {
-		st, at := m.updateTracker(userID)
-		if st == nil || at == nil {
+		sampleTrackers, activeTrackers := m.updateTrackers(userID)
+		if sampleTrackers == nil && activeTrackers == nil {
 			continue
 		}
 
-		st.cleanupInactiveObservations(deadline)
-
-		// only sample tracker can recovered from overflow, the activeseries tracker after the cooldown would just be deleted and recreated
-		if st.recoveredFromOverflow(deadline) {
-			m.deleteSampleTracker(userID)
+		for name, st := range sampleTrackers {
+			st.cleanupInactiveObservations(deadline)
+			if st.recoveredFromOverflow(deadline) {
+				m.deleteSampleTracker(userID, name)
+			}
 		}
 
-		at.observedMtx.RLock()
-		// If the activeseries tracker has been in overflow for more than the cooldown duration,
-		// check if it recovered. If it recovered, delete the tracker to reset its state (and account the overflown series correctly),
-		// If it didn't recover, reset the overflowSince to now to start a new cooldown period.
-		isOverflowedAndShouldCheck := !at.overflowSince.IsZero() && at.overflowSince.Add(at.cooldownDuration).Before(deadline)
+		for name, at := range activeTrackers {
+			at.observedMtx.RLock()
+			isOverflowedAndShouldCheck := !at.overflowSince.IsZero() && at.overflowSince.Add(at.cooldownDuration).Before(deadline)
+			recovered := len(at.observed) <= at.maxCardinality
+			at.observedMtx.RUnlock()
 
-		// NOTE: If there are still series in the overflow counter we can't tell how much cardinality those add.
-		// The best we can say is "it's at least 1", so we just ignore here (with a limit set to thousands, doing this plus one won't change much).
-		// If we wanted to be more accurate, we should do "(len(at.observed) + (at.overflowCounter.activeSeries.Load() > 0 ? 1 : 0)) < at.maxCardinality".
-		recovered := len(at.observed) <= at.maxCardinality
-		at.observedMtx.RUnlock()
-
-		if isOverflowedAndShouldCheck {
-			if recovered {
-				m.deleteActiveTracker(userID)
-			} else {
-				at.observedMtx.Lock()
-				at.overflowSince = now
-				at.observedMtx.Unlock()
+			if isOverflowedAndShouldCheck {
+				if recovered {
+					m.deleteActiveTracker(userID, name)
+				} else {
+					at.observedMtx.Lock()
+					at.overflowSince = now
+					at.observedMtx.Unlock()
+				}
 			}
 		}
 	}
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 var _ prometheus.Collector = (*costAttributionCollector)(nil)

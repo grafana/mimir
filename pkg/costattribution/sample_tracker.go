@@ -30,6 +30,7 @@ type observation struct {
 
 type SampleTracker struct {
 	userID                     string
+	trackerName                string
 	receivedSamplesAttribution *descriptor
 	discardedSampleAttribution *descriptor
 	logger                     log.Logger
@@ -47,7 +48,7 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID string, trackedLabels costattributionmodel.Labels, limit int, cooldown time.Duration, logger log.Logger) (*SampleTracker, error) {
+func newSampleTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldown time.Duration, logger log.Logger) (*SampleTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -59,6 +60,7 @@ func newSampleTracker(userID string, trackedLabels costattributionmodel.Labels, 
 
 	tracker := &SampleTracker{
 		userID:           userID,
+		trackerName:      trackerName,
 		labels:           trackedLabels,
 		maxCardinality:   limit,
 		observed:         make(map[string]*observation),
@@ -86,14 +88,14 @@ func (st *SampleTracker) createAndValidateDescriptors(trackedLabels costattribut
 	if st.receivedSamplesAttribution, err = newDescriptor("cortex_distributor_received_attributed_samples_total",
 		"The total number of samples that were received per attribution.",
 		variableLabels[:len(variableLabels)-1],
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: st.trackerName}); err != nil {
 		return err
 	}
 
 	if st.discardedSampleAttribution, err = newDescriptor("cortex_discarded_attributed_samples_total",
 		"The total number of samples that were discarded per attribution.",
 		variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: st.trackerName}); err != nil {
 		return err
 	}
 	return nil

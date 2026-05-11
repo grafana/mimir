@@ -28,6 +28,7 @@ type counters struct {
 
 type ActiveSeriesTracker struct {
 	userID                                         string
+	trackerName                                    string
 	activeSeriesPerUserAttribution                 *descriptor
 	attributedOverflowLabels                       *descriptor
 	activeNativeHistogramSeriesPerUserAttribution  *descriptor
@@ -49,7 +50,7 @@ type ActiveSeriesTracker struct {
 	overflowCounter counters
 }
 
-func NewActiveSeriesTracker(userID string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
+func NewActiveSeriesTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+1)
 	for i := range trackedLabels {
@@ -60,6 +61,7 @@ func NewActiveSeriesTracker(userID string, trackedLabels costattributionmodel.La
 
 	ast := &ActiveSeriesTracker{
 		userID:           userID,
+		trackerName:      trackerName,
 		labels:           trackedLabels,
 		maxCardinality:   limit,
 		observed:         make(map[string]*counters),
@@ -82,22 +84,22 @@ func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels costat
 	var err error
 	if at.activeSeriesPerUserAttribution, err = newDescriptor("cortex_ingester_attributed_active_series",
 		"The total number of active series per user and attribution.", variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: at.trackerName}); err != nil {
 		return err
 	}
 	if at.attributedOverflowLabels, err = newDescriptor("cortex_attributed_series_overflow_labels",
 		"The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.", variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: at.trackerName}); err != nil {
 		return err
 	}
 	if at.activeNativeHistogramSeriesPerUserAttribution, err = newDescriptor("cortex_ingester_attributed_active_native_histogram_series",
 		"The total number of active native histogram series per user and attribution.", variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: at.trackerName}); err != nil {
 		return err
 	}
 	if at.activeNativeHistogramBucketsPerUserAttribution, err = newDescriptor("cortex_ingester_attributed_active_native_histogram_buckets",
 		"The total number of active native histogram buckets per user and attribution.", variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: at.trackerName}); err != nil {
 		return err
 	}
 	return nil
