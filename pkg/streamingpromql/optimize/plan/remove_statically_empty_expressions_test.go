@@ -314,6 +314,12 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
+		"binary atan2 with empty result on right side: should optimize": {
+			expr: `some_metric atan2 EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 		"binary add with results on both sides: should not optimize": {
 			expr:            `sum(metric_a) + sum(metric_b)`,
 			expectUnchanged: true,

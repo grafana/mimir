@@ -333,6 +333,7 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 
 	switch node.Op {
 	case core.BINARY_ADD,
+		core.BINARY_ATAN2,
 		core.BINARY_DIV,
 		core.BINARY_MOD,
 		core.BINARY_MUL,
