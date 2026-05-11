@@ -290,6 +290,18 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
+		"aggregation with grouping over empty result: should optimize": {
+			expr: `count by (namespace) (EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"aggregation without grouping over empty result: should optimize": {
+			expr: `sum without (namespace) (EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 		"binary add with empty result on right side: should optimize": {
 			expr: `sum(metric_a) + sum(EMPTY_RESULT)`,
 			expectedPlan: `

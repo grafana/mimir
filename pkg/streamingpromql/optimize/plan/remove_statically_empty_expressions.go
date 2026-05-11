@@ -344,18 +344,14 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
 		if err != nil {
 			return false, err
-		} else if lhsEmpty {
+		}
+
+		if lhsEmpty {
 			return true, nil
 		}
 
-		rhsEmpty, err := isAlwaysEmpty(node.RHS, params)
-		if err != nil {
-			return false, err
-		} else if rhsEmpty {
-			return true, nil
-		}
+		return isAlwaysEmpty(node.RHS, params)
 
-		return false, nil
 	case core.BINARY_LAND:
 		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
 		if err != nil {
