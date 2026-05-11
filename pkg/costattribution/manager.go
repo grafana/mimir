@@ -133,7 +133,7 @@ func (m *Manager) effectiveTrackerConfigs(userID string) map[string]resolvedTrac
 		return nil
 	}
 	legacyLabels := m.limits.CostAttributionLabelsStructured(userID)
-	trackers := m.limits.CostAttributionTrackers(userID)
+	trackers := m.limits.AdditionalCostAttributionTrackers(userID)
 	defaultMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	defaultCooldown := m.limits.CostAttributionCooldown(userID)
 

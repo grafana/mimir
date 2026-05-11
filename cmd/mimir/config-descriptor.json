@@ -6451,6 +6451,81 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "map",
+          "name": "additional_cost_attribution_trackers",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "string",
+          "fieldCategory": "experimental",
+          "fieldElement": {
+            "kind": "block",
+            "name": "additional_cost_attribution_trackers",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "labels",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "slice",
+                "fieldElement": {
+                  "kind": "block",
+                  "name": "labels",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "input",
+                      "required": false,
+                      "desc": "",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "output",
+                      "required": false,
+                      "desc": "",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              },
+              {
+                "kind": "field",
+                "name": "max_cardinality",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": 0,
+                "fieldType": "int"
+              },
+              {
+                "kind": "field",
+                "name": "cooldown",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "duration"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
+        },
+        {
           "kind": "field",
           "name": "ruler_evaluation_delay_duration",
           "required": false,
@@ -16947,12 +17022,12 @@
             "User": null,
             "Host": "localhost:8080",
             "Path": "/alertmanager",
-            "RawPath": "",
-            "OmitHost": false,
-            "ForceQuery": false,
-            "RawQuery": "",
             "Fragment": "",
-            "RawFragment": ""
+            "RawQuery": "",
+            "RawPath": "",
+            "RawFragment": "",
+            "ForceQuery": false,
+            "OmitHost": false
           },
           "fieldFlag": "alertmanager.web.external-url",
           "fieldType": "url"
