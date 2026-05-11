@@ -15,6 +15,7 @@
 * [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
+* [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147
 * [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
 * [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
 

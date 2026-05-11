@@ -584,3 +584,55 @@ eval instant at 6h avg_over_time(mixed_histo_avg[5h])
   expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_avg"
 
 clear
+
+# Splitting disables skipping buckets.
+# Test queries that would usually skip histogram buckets (e.g. histogram_count()).
+load 1h
+  hist_no_tail{env="prod"} _ _ {{schema:0 sum:3600 count:3600 buckets:[3600]}} {{schema:0 sum:7200 count:7200 buckets:[7200]}} {{schema:0 sum:10800 count:10800 buckets:[10800]}} {{schema:0 sum:14400 count:14400 buckets:[14400]}}
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h]))
+  {env="prod"} 1
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h]))
+  {env="prod"} 1
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h])) + histogram_fraction(0, 10, rate(hist_no_tail[5h]))
+  {env="prod"} 2
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h])) + histogram_fraction(0, 10, rate(hist_no_tail[5h]))
+  {env="prod"} 2
+
+clear
+
+# Resets between all samples, but the resets can only be detected by comparing the buckets.
+# Load three values at 1h, 3h and 5h. There are resets between all samples, but the resets can only be detected by
+# comparing buckets.
+# At ingest time, the resets between the samples will be detected, and a chunk is cut for each reset. However, the
+# CounterReset hint is ignored at read time and instead the hint for the first sample for each chunk is marked as
+# UnknownCounterReset. This is because we don't know if the preceding chunk during ingest is still the preceding chunk
+# during query (e.g. backfill or OOO might insert chunks in-between).
+# This means reset detection must be done again at read time.
+load 1h
+  hist_bucket_only_reset{env="prod"} _ {{schema:0 sum:8 count:4 buckets:[0 4]}} _ {{schema:0 sum:16 count:4 buckets:[0 0 4]}} _ {{schema:0 sum:32 count:4 buckets:[0 0 0 4]}}
+
+# increase() stores the first sample for each split range as part of its intermediate results, so the delta between
+# the last sample in the previous result and the first sample of this result can be taken into account, including any
+# resets.
+# The 3h sample will be the first sample for the (2h-1ms, 4h-1ms] cache entry. Its hint within the cached entry will
+# be UnknownCounterReset, as a) it's the first sample in a chunk, b) it's the first sample being read by the query, so
+# no prior samples to compare with.
+eval instant at 6h histogram_count(increase(hist_bucket_only_reset[5h]))
+  {env="prod"} 10
+
+eval instant at 6h histogram_count(increase(hist_bucket_only_reset[5h]))
+  {env="prod"} 10
+
+# This query will load the (2h-1ms, 4h-1ms] cache entry with the 3h sample with UnknownCounterReset. This means there
+# will be reset detection between the 1h and 3h samples which requires comparing buckets to get the correct reset.
+eval instant at 6h histogram_count(increase(hist_bucket_only_reset[6h]))
+  {env="prod"} 12
+
+eval instant at 6h histogram_count(increase(hist_bucket_only_reset[6h]))
+  {env="prod"} 12
+
+clear
