@@ -7,10 +7,6 @@ weight: 100
 
 # Configure owned series tracking
 
-{{% admonition type="note" %}}
-Owned series tracking is an experimental feature in Grafana Mimir versions 2.12 and later.
-{{% /admonition %}}
-
 In a distributed Grafana Mimir deployment, distributors use consistent hashing to determine which series should be routed to which ingester replicas or Kafka partitions. Because stale in-memory series in ingesters are only cleaned up during TSDB head compaction, the count of in-memory series is not suitable as a metric to drive automated ingester scaling; when a new replica is added, the in-memory series per ingester doesn't drop until the next head compaction, and the scaler has no feedback about the impact of the scaling operation.
 
 Additionally, since each ingester enforces only a fraction of a tenant's in-memory series limits locally, increasing the ingester count, or a tenant's shuffle-shard size, can result in ingesters rejecting samples due to exceeded local limits, even if the global limit isn't breached. For example:

@@ -4765,7 +4765,7 @@
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.use-ingester-owned-series-for-limits",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -4776,7 +4776,7 @@
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.track-ingester-owned-series",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -4787,7 +4787,7 @@
           "fieldDefaultValue": 15000000000,
           "fieldFlag": "ingester.owned-series-update-interval",
           "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "block",

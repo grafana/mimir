@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [FEATURE] Ingester: `-ingester.use-ingester-owned-series-for-limits`, `-ingester.track-ingester-owned-series`, and `-ingester.owned-series-update-interval` are no longer experimental. #15306
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
 * [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #15276
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
