@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -17,7 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -305,7 +305,7 @@ func TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument(t
 	s := &mockSearchLabelValuesStream{ctx: ctx}
 	err := i.SearchLabelValues(req, s)
 	require.Error(t, err)
-	st, ok := status.FromError(err)
+	st, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
 	assert.Equal(t, codes.InvalidArgument, st.Code(), "wire-shape errors must surface as codes.InvalidArgument, not codes.Internal")
 }

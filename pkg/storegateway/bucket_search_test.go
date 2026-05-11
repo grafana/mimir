@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -242,7 +242,7 @@ func TestBucketStoreSearchLabelNamesHonoursCtxCancellation(t *testing.T) {
 	s := &mockSearchLabelNamesServer{ctx: ctx}
 	err := bs.SearchLabelNames(req, s)
 	require.Error(t, err)
-	st, ok := status.FromError(err)
+	st, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
 	assert.Equal(t, codes.Canceled, st.Code())
 }
