@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"slices"
 
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/common/model"
@@ -15,30 +14,34 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // SearchLabelNames fans out the search RPC across the ingester replication
-// set, drains each replica's stream, merges per-replica []string via
-// util.MergeSlices, then re-applies the search filter via
-// storage.ApplySearchHints for deterministic scoring. Returns a
+// set, drains each replica's scored stream into a per-replica
+// []storage.SearchResult, and merges via mimirstorage.MergeSearchResults
+// (value-dedup with max-score, then ordering + limit per hints). Returns a
 // slice-backed storage.SearchResultSet.
 //
-// params is the wire-decoupled form of hints.Filter and is forwarded to the
-// ingesters so each leaf can build its own filter chain. hints.Filter is the
-// already-constructed filter used to re-score the merged result-set on this
-// side; the Querier-side caller (Task 4) holds both and forwards both.
-// Caller must build params and hints.Filter from the same
-// streaminglabelvalues.Params; mismatched filters silently shrink results.
+// Score preservation: leaf-computed scores are propagated end-to-end. We do
+// NOT re-apply the filter at this layer — the ingester applied req.Filter
+// already, so re-running it would burn CPU without changing the result
+// (Spec invariant 3 guarantees Score is deterministic per (Value, Filter)).
+//
+// params is the wire-decoupled form of hints.Filter, forwarded to the
+// ingesters so each leaf builds its own filter chain. hints carries the
+// ordering and limit applied at the merge layer; hints.Filter is NOT used
+// here. Caller must build params and the (unused-here) hints.Filter from
+// the same streaminglabelvalues.Params for cross-layer consistency in
+// PR #4's HTTP path.
 //
 // from/to bound the query time range; PR #4's HTTP handler resolves these
 // from the request and Task 4's distributorQuerier threads them through.
 //
 // Drains run concurrently per replica; this method blocks until every
 // replica has been drained to EOF or has errored. Memory is bounded by
-// replicas * hints.Limit; the eventual HTTP layer (PR #4) is responsible
-// for sane limits.
+// replicas * hints.Limit.
 func (d *Distributor) SearchLabelNames(
 	ctx context.Context,
 	from, to model.Time,
@@ -54,18 +57,18 @@ func (d *Distributor) SearchLabelNames(
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
-	values, warns, err := d.searchLabelNamesFanOut(ctx, replicationSets, req)
+	perReplica, warns, err := d.searchLabelNamesFanOut(ctx, replicationSets, req)
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, hints), warns)
+	return storage.NewSearchResultSetFromSlice(mimirstorage.MergeSearchResults(perReplica, hints), warns)
 }
 
 func (d *Distributor) searchLabelNamesFanOut(
 	ctx context.Context,
 	replicationSets []ring.ReplicationSet,
 	req *ingester_client.SearchLabelNamesRequest,
-) ([]string, annotations.Annotations, error) {
+) ([][]storage.SearchResult, annotations.Annotations, error) {
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, c ingester_client.IngesterClient) (drainResult, error) {
 		stream, err := c.SearchLabelNames(ctx, req)
 		if err != nil {
@@ -76,30 +79,18 @@ func (d *Distributor) searchLabelNamesFanOut(
 	if err != nil {
 		return nil, nil, err
 	}
-	return mergeDrainResults(resps), mergeWarnings(resps), nil
+	return collectResults(resps), mergeWarnings(resps), nil
 }
 
 // SearchLabelValues fans out the search RPC for label name's values across
-// the ingester replication set, drains each replica's stream, merges
-// per-replica []string via util.MergeSlices, then re-applies the search
-// filter via storage.ApplySearchHints for deterministic scoring. Returns a
-// slice-backed storage.SearchResultSet.
+// the ingester replication set, drains each replica's scored stream into a
+// per-replica []storage.SearchResult, and merges via
+// mimirstorage.MergeSearchResults. Mirrors SearchLabelNames; differs only in
+// the wire request shape (carries the Name field for the label whose values
+// are being searched).
 //
-// params is the wire-decoupled form of hints.Filter and is forwarded to the
-// ingesters so each leaf can build its own filter chain. hints.Filter is the
-// already-constructed filter used to re-score the merged result-set on this
-// side; the Querier-side caller (Task 4) holds both and forwards both.
-// Caller must build params and hints.Filter from the same
-// streaminglabelvalues.Params; mismatched filters silently shrink results.
-//
-// from/to bound the query time range; name is the label whose values are
-// being searched. PR #4's HTTP handler resolves these from the request and
-// Task 4's distributorQuerier threads them through.
-//
-// Drains run concurrently per replica; this method blocks until every
-// replica has been drained to EOF or has errored. Memory is bounded by
-// replicas * hints.Limit; the eventual HTTP layer (PR #4) is responsible
-// for sane limits.
+// See SearchLabelNames for the score-preservation / no-re-filter rationale
+// and the params/hints/filter contract.
 func (d *Distributor) SearchLabelValues(
 	ctx context.Context,
 	from, to model.Time,
@@ -116,18 +107,18 @@ func (d *Distributor) SearchLabelValues(
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
-	values, warns, err := d.searchLabelValuesFanOut(ctx, replicationSets, req)
+	perReplica, warns, err := d.searchLabelValuesFanOut(ctx, replicationSets, req)
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, hints), warns)
+	return storage.NewSearchResultSetFromSlice(mimirstorage.MergeSearchResults(perReplica, hints), warns)
 }
 
 func (d *Distributor) searchLabelValuesFanOut(
 	ctx context.Context,
 	replicationSets []ring.ReplicationSet,
 	req *ingester_client.SearchLabelValuesRequest,
-) ([]string, annotations.Annotations, error) {
+) ([][]storage.SearchResult, annotations.Annotations, error) {
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, c ingester_client.IngesterClient) (drainResult, error) {
 		stream, err := c.SearchLabelValues(ctx, req)
 		if err != nil {
@@ -138,7 +129,7 @@ func (d *Distributor) searchLabelValuesFanOut(
 	if err != nil {
 		return nil, nil, err
 	}
-	return mergeDrainResults(resps), mergeWarnings(resps), nil
+	return collectResults(resps), mergeWarnings(resps), nil
 }
 
 func buildSearchLabelValuesRequest(from, to model.Time, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) (*ingester_client.SearchLabelValuesRequest, error) {
@@ -167,10 +158,12 @@ type searchStream interface {
 	Recv() (*ingester_client.SearchResultBatch, error)
 }
 
-// drainResult is the per-replica drain product.
+// drainResult is the per-replica drain product. Scores from the wire are
+// preserved verbatim — the leaf ingester computed them under spec invariant 3
+// (deterministic per (Value, Filter)), and the merge layer does not re-score.
 type drainResult struct {
-	values []string
-	warns  annotations.Annotations
+	results []storage.SearchResult
+	warns   annotations.Annotations
 }
 
 func drainIngesterSearchStream(stream searchStream) (drainResult, error) {
@@ -184,7 +177,7 @@ func drainIngesterSearchStream(stream searchStream) (drainResult, error) {
 			return drainResult{}, err
 		}
 		for _, r := range batch.Results {
-			out.values = append(out.values, r.Value)
+			out.results = append(out.results, storage.SearchResult{Value: r.Value, Score: r.Score})
 		}
 		for _, w := range batch.Warnings {
 			out.warns.Add(errors.New(w))
@@ -192,19 +185,21 @@ func drainIngesterSearchStream(stream searchStream) (drainResult, error) {
 	}
 }
 
-// mergeDrainResults sort-merges every replica's []string and dedups across
-// replicas (mirrors PR #1's BucketStore cross-block pattern).
-func mergeDrainResults(results []drainResult) []string {
+// collectResults returns the per-replica result slices for passing to
+// mimirstorage.MergeSearchResults. Each replica's slice is already filtered
+// and ordered by its leaf ingester; the merger only needs to dedup across
+// replicas, re-order if hints.OrderBy is non-default, and apply the limit.
+func collectResults(results []drainResult) [][]storage.SearchResult {
 	if len(results) == 0 {
 		return nil
 	}
-	sets := make([][]string, 0, len(results))
+	out := make([][]storage.SearchResult, 0, len(results))
 	for _, r := range results {
-		sorted := append([]string(nil), r.values...)
-		slices.Sort(sorted)
-		sets = append(sets, sorted)
+		if len(r.results) > 0 {
+			out = append(out, r.results)
+		}
 	}
-	return util.MergeSlices(sets...)
+	return out
 }
 
 func mergeWarnings(results []drainResult) annotations.Annotations {
@@ -255,8 +250,9 @@ func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter
 }
 
 // orderingToProto translates hints.OrderBy into the wire enum. Defaults to
-// ORDER_BY_VALUE_ASC when hints is nil — the same default applied by
-// storage.ApplySearchHints at the merge side.
+// ORDER_BY_VALUE_ASC when hints is nil — same default applied by
+// mimirstorage.MergeSearchResults at the merge side, keeping leaf-side and
+// merge-side ordering aligned.
 func orderingToProto(hints *storage.SearchHints) ingester_client.SearchOrdering {
 	if hints == nil {
 		return ingester_client.ORDER_BY_VALUE_ASC

@@ -19,10 +19,15 @@ import (
 )
 
 func TestDistributor_SearchLabelNames_FanOutAndMerge(t *testing.T) {
-	replicaResponses := map[int][]string{
-		0: {"foo", "bar"},
-		1: {"foo", "footer"},
-		2: {"bar", "baz", "foobar"},
+	// Each replica returns the values its ingester would actually emit:
+	// already filtered against the wire SearchFilter (no "bar"/"baz"), and
+	// scored at 1.0 because every emitted term is a prefix-match for "fo".
+	// The distributor's job here is cross-replica dedup + ordering, NOT
+	// re-applying the filter.
+	replicaResponses := map[int][]scoredValue{
+		0: {{"foo", 1.0}, {"footer", 1.0}},
+		1: {{"foo", 1.0}, {"foobar", 1.0}},
+		2: {{"foobar", 1.0}},
 	}
 	ds, _, _, _ := prepare(t, prepConfig{
 		numDistributors:   1,
@@ -30,7 +35,7 @@ func TestDistributor_SearchLabelNames_FanOutAndMerge(t *testing.T) {
 		happyIngesters:    3,
 		replicationFactor: 1,
 		searchLabelNamesHook: func(ingesterIdx int, _ *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
-			return makeSearchBatches(replicaResponses[ingesterIdx])
+			return makeScoredSearchBatches(replicaResponses[ingesterIdx])
 		},
 	})
 	params := &streaminglabelvalues.Params{
@@ -57,7 +62,8 @@ func TestDistributor_SearchLabelNames_FanOutAndMerge(t *testing.T) {
 		got = append(got, rs.At())
 	}
 	require.NoError(t, rs.Err())
-	// "fo" rejects "bar"/"baz"; emits "foo"/"footer"/"foobar" at prefix score 1.0.
+	// Cross-replica dedup ("foo"/"foobar" appeared in multiple replicas);
+	// scores carried verbatim from the leaf.
 	assert.Equal(t, []storage.SearchResult{
 		{Value: "foo", Score: 1.0},
 		{Value: "foobar", Score: 1.0},
@@ -65,12 +71,69 @@ func TestDistributor_SearchLabelNames_FanOutAndMerge(t *testing.T) {
 	}, got)
 }
 
-func makeSearchBatches(values []string) []*client.SearchResultBatch {
+// TestDistributor_SearchLabelNames_PreservesLeafScores locks in the
+// score-preservation contract: scores computed by leaf ingesters propagate
+// to the SearchResultSet unchanged, including non-1.0 scores from
+// non-prefix substring matches and from fuzzy alg matches.
+func TestDistributor_SearchLabelNames_PreservesLeafScores(t *testing.T) {
+	// Each replica emits the same Value with a different Score. Real
+	// ingesters with deterministic scoring would not produce this drift
+	// (Spec invariant 3), but the merger MUST take the max defensively.
+	replicaResponses := map[int][]scoredValue{
+		0: {{"alpha", 0.7}, {"beta", 1.0}},
+		1: {{"alpha", 0.9}, {"beta", 1.0}}, // max wins for "alpha"
+	}
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors:   1,
+		numIngesters:      2,
+		happyIngesters:    2,
+		replicationFactor: 1,
+		searchLabelNamesHook: func(ingesterIdx int, _ *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
+			return makeScoredSearchBatches(replicaResponses[ingesterIdx])
+		},
+	})
+	rs := ds[0].SearchLabelNames(
+		user.InjectOrgID(context.Background(), "user-1"),
+		model.Earliest,
+		model.Latest,
+		nil,
+		&storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 10},
+		nil,
+	)
+	defer rs.Close()
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []storage.SearchResult{
+		{Value: "alpha", Score: 0.9}, // max(0.7, 0.9) — defends against leaf-score drift
+		{Value: "beta", Score: 1.0},
+	}, got)
+}
+
+// scoredValue is a tiny test-fixture pair to drive makeScoredSearchBatches.
+type scoredValue struct {
+	value string
+	score float64
+}
+
+func makeScoredSearchBatches(values []scoredValue) []*client.SearchResultBatch {
 	results := make([]client.SearchResultBatch_Result, len(values))
-	for i, v := range values {
-		results[i] = client.SearchResultBatch_Result{Value: v}
+	for i, sv := range values {
+		results[i] = client.SearchResultBatch_Result{Value: sv.value, Score: sv.score}
 	}
 	return []*client.SearchResultBatch{{Results: results}}
+}
+
+// makeSearchBatches is a convenience wrapper that emits each value with
+// Score 1.0, suitable for tests that don't care about per-value scores.
+func makeSearchBatches(values []string) []*client.SearchResultBatch {
+	scored := make([]scoredValue, len(values))
+	for i, v := range values {
+		scored[i] = scoredValue{value: v, score: 1.0}
+	}
+	return makeScoredSearchBatches(scored)
 }
 
 func TestDistributor_SearchLabelNames_AllReplicasFail(t *testing.T) {
@@ -150,10 +213,13 @@ func TestDistributor_SearchLabelNames_QuorumShortCircuit(t *testing.T) {
 }
 
 func TestDistributor_SearchLabelValues_FanOutAndMerge(t *testing.T) {
-	replicaResponses := map[int][]string{
-		0: {"prod-a", "prod-b"},
-		1: {"prod-b", "stage-a"},
-		2: {"prod-c"},
+	// Each replica returns the values its ingester would actually emit —
+	// already filtered against the "prod" SearchFilter and scored 1.0 for
+	// prefix matches.
+	replicaResponses := map[int][]scoredValue{
+		0: {{"prod-a", 1.0}, {"prod-b", 1.0}},
+		1: {{"prod-b", 1.0}},
+		2: {{"prod-c", 1.0}},
 	}
 	ds, _, _, _ := prepare(t, prepConfig{
 		numDistributors:   1,
@@ -161,7 +227,7 @@ func TestDistributor_SearchLabelValues_FanOutAndMerge(t *testing.T) {
 		happyIngesters:    3,
 		replicationFactor: 1,
 		searchLabelValuesHook: func(ingesterIdx int, _ *client.SearchLabelValuesRequest) []*client.SearchResultBatch {
-			return makeSearchBatches(replicaResponses[ingesterIdx])
+			return makeScoredSearchBatches(replicaResponses[ingesterIdx])
 		},
 	})
 	params := &streaminglabelvalues.Params{
@@ -186,7 +252,7 @@ func TestDistributor_SearchLabelValues_FanOutAndMerge(t *testing.T) {
 		got = append(got, rs.At())
 	}
 	require.NoError(t, rs.Err())
-	// "prod" matches "prod-a", "prod-b", "prod-c" as prefix → score 1.0. "stage-a" rejected.
+	// Cross-replica dedup carries scores verbatim from each leaf.
 	assert.Equal(t, []storage.SearchResult{
 		{Value: "prod-a", Score: 1.0},
 		{Value: "prod-b", Score: 1.0},
