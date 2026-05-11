@@ -15,6 +15,20 @@ metadata:
     {{- end }}
   namespace: {{ .namespace | default $.Release.Namespace | quote }}
 spec:
+  {{- if .additionalRuleLabels }}
+  {{- $rulesDict := $.Files.Get "mixins/rules.yaml" | fromYaml }}
+  {{- $extraLabels := .additionalRuleLabels }}
+  {{- range $group := $rulesDict.groups }}
+    {{- range $rule := $group.rules }}
+      {{- if $rule.record }}
+        {{- $currentLabels := default (dict) $rule.labels }}
+        {{- $_ := set $rule "labels" (merge (dict) $extraLabels $currentLabels) }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+    {{- toYaml $rulesDict | nindent 2 }}
+  {{- else }}
     {{- $.Files.Get "mixins/rules.yaml" | nindent 2 }}
+  {{- end }}
 {{- end }}
 {{- end }}
