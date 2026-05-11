@@ -140,7 +140,7 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 // should be added to the corresponding subset.
 //
 // The samples are also recorded in the number of physical samples read in the overall query stats.
-func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, matchesSubsets []bool) {
+func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, haveTimestamp bool, matchesSubsets []bool) {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
 	}
@@ -153,7 +153,13 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 	if s.timeRange.IsInstant {
 		newSampleRangeStart = rangeStart
 	}
-	samplesReadIfSubsequentStep := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
+
+	samplesReadIfSubsequentStep := int64(0)
+
+	// If the subquery has a fixed timestamp, then subsequent steps would not read any samples.
+	if !haveTimestamp {
+		samplesReadIfSubsequentStep = int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
+	}
 
 	s.allSeries.Add(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange)
 
@@ -357,12 +363,13 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 	}
 
 	lastNewSamplesIdxUsed := -1
+	haveTimestamp := subqueryTimestamp != nil
 
 	for parentIdx := range parentTimeRange.StepCount {
 		parentT := parentTimeRange.IndexTime(int64(parentIdx))
 
 		rangeEnd := parentT
-		if subqueryTimestamp != nil {
+		if haveTimestamp {
 			rangeEnd = *subqueryTimestamp
 		}
 		rangeEnd -= subqueryOffsetMilliseconds
@@ -373,10 +380,10 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 		lastInnerIdx := s.timeRange.LastPointIndexAtOrBefore(rangeEnd)
 		firstNewSamplesInnerIdx := max(lastNewSamplesIdxUsed, firstInnerIdx)
 
-		result.allSeries.SetFromSubquery(s.allSeries, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
+		result.allSeries.SetFromSubquery(s.allSeries, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp)
 
 		for i, subset := range result.subsets {
-			subset.SetFromSubquery(s.subsets[i], parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
+			subset.SetFromSubquery(s.subsets[i], parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp)
 		}
 
 		lastNewSamplesIdxUsed = lastInnerIdx + 1
@@ -431,6 +438,7 @@ func sum(s []int64) int64 {
 // if this instance is modified, and becomes invalid when this instance is closed.
 func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
 	encoded := &EncodedOperatorEvaluationStats{
+		TimeRange: s.timeRange.Encode(),
 		AllSeries: s.allSeries.Encode(),
 	}
 
@@ -445,7 +453,8 @@ func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
 	return encoded
 }
 
-func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+	timeRange := e.TimeRange.Decode()
 	allSeries, err := e.AllSeries.decode(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -523,13 +532,16 @@ func (s *subsetStats) Add(pointIndex int64, samplesProcessed int64, samplesReadI
 	s.samplesReadIfFirstStep[pointIndex] += samplesReadIfFirstStep
 }
 
-func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int) {
+func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int, haveTimestamp bool) {
 	for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
 		s.samplesProcessedPerStep[parentIdx] += source.samplesProcessedPerStep[innerIdx]
 	}
 
-	for innerIdx := firstNewSamplesInnerIdx; innerIdx <= lastIdx; innerIdx++ {
-		s.samplesReadIfSubsequentStep[parentIdx] += source.samplesReadIfSubsequentStep[innerIdx]
+	// If the subquery has a fixed timestamp, then subsequent steps would not read any samples.
+	if !haveTimestamp {
+		for innerIdx := firstNewSamplesInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+			s.samplesReadIfSubsequentStep[parentIdx] += source.samplesReadIfSubsequentStep[innerIdx]
+		}
 	}
 
 	for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
@@ -542,9 +554,11 @@ func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInner
 }
 
 func (s *subsetStats) SetFromStepInvariant(samplesProcessed int64, samplesReadIfSubsequentStep int64, samplesReadIfFirstStep int64) {
-	s.samplesReadIfSubsequentStep[0] = samplesReadIfSubsequentStep
 	for idx := range s.samplesProcessedPerStep {
 		s.samplesProcessedPerStep[idx] = samplesProcessed
+	}
+	for idx := range s.samplesReadIfSubsequentStep {
+		s.samplesReadIfSubsequentStep[idx] = samplesReadIfSubsequentStep
 	}
 	for idx := range s.samplesReadIfFirstStep {
 		s.samplesReadIfFirstStep[idx] = samplesReadIfFirstStep

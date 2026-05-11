@@ -941,12 +941,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
                        + $.dashboardURLAnnotation('mimir-remote-ruler-reads.json'),
         },
         {
-          alert: $.alertName('RulerMissedEvaluations'),
+          // Alert firing if the rate of missed rule evaluations across all rulers is > 1%.
+          alert: $.alertName('RulersMissedEvaluations'),
           expr: |||
             100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(rate_interval)s]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(rate_interval)s]))
               /
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[%(rate_interval)s]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_prometheus_rule_group_iterations_total[%(rate_interval)s]))
             ) > 1
           ||| % $._config {
             rate_interval: $.rateInterval('1m'),
@@ -957,7 +958,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
+              %(product)s Rulers in %(alert_aggregation_variables)s are experiencing {{ printf "%%.2f" $value }}%% missed iterations.
+            ||| % $._config,
+          },
+        },
+        {
+          // Alert firing if the rate of missed rule evaluations per-ruler is > 5%.
+          alert: $.alertName('RulerMissedEvaluations'),
+          expr: |||
+            100 * (
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_prometheus_rule_group_iterations_missed_total[%(rate_interval)s]))
+              /
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_prometheus_rule_group_iterations_total[%(rate_interval)s]))
+            ) > 5
+          ||| % $._config {
+            rate_interval: $.rateInterval('1m'),
+          },
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations.
             ||| % $._config,
           },
         },

@@ -177,13 +177,14 @@ func (m *FunctionOverRangeVectorSplit[T]) AfterPrepare(ctx context.Context) erro
 
 func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) error {
 	var currentUncachedRanges []Range
+	var currentRangeLength int64
 
 	flushCurrentUncachedRanges := func() error {
 		if len(currentUncachedRanges) == 0 {
 			return nil
 		}
 
-		split, err := NewUncachedSplit(currentUncachedRanges, m)
+		split, err := NewUncachedSplit(currentUncachedRanges, currentRangeLength, m)
 		if err != nil {
 			return err
 		}
@@ -215,10 +216,17 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 			}
 		}
 
-		if len(currentUncachedRanges) == 0 {
-			currentUncachedRanges = []Range{splitRange}
-		} else {
+		thisRangeLength := splitRange.End - splitRange.Start
+
+		if len(currentUncachedRanges) > 0 && thisRangeLength == currentRangeLength {
 			currentUncachedRanges = append(currentUncachedRanges, splitRange)
+		} else {
+			if err := flushCurrentUncachedRanges(); err != nil {
+				return err
+			}
+
+			currentUncachedRanges = append(currentUncachedRanges, splitRange)
+			currentRangeLength = thisRangeLength
 		}
 	}
 
@@ -226,8 +234,8 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 	return flushCurrentUncachedRanges()
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
-	subRange := time.Duration(end-start) * time.Millisecond
+func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start int64, end int64, step int64) (types.RangeVectorOperator, error) {
+	subRange := time.Duration(step) * time.Millisecond
 
 	overrideTimeParams := planning.RangeParams{
 		IsSet: true,
@@ -238,7 +246,15 @@ func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start 
 		HasTimestamp: false,
 	}
 
-	splitTimeRange := types.NewInstantQueryTimeRange(promts.Time(end))
+	var splitTimeRange types.QueryTimeRange
+
+	if start+step == end {
+		// Only a single range, create an instant query.
+		splitTimeRange = types.NewInstantQueryTimeRange(promts.Time(end))
+	} else {
+		// Multiple ranges, create a range query with steps at the end timestamp of each range.
+		splitTimeRange = types.NewRangeQueryTimeRange(promts.Time(start).Add(subRange), promts.Time(end), subRange)
+	}
 
 	op, err := m.materializer.ConvertNodeToOperatorWithSubRange(m.innerNode, splitTimeRange, overrideTimeParams)
 	if err != nil {
@@ -657,9 +673,10 @@ func (p *UncachedSplit[T]) RangeCount() int {
 
 func NewUncachedSplit[T any](
 	ranges []Range,
+	rangeLength int64,
 	parent *FunctionOverRangeVectorSplit[T],
 ) (*UncachedSplit[T], error) {
-	operator, err := parent.materializeOperatorForTimeRange(ranges[0].Start, ranges[len(ranges)-1].End)
+	operator, err := parent.materializeOperatorForTimeRange(ranges[0].Start, ranges[len(ranges)-1].End, rangeLength)
 	if err != nil {
 		return nil, err
 	}
@@ -724,25 +741,19 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 	if err := p.operator.NextSeries(ctx); err != nil {
 		return nil, err
 	}
-	step, err := p.operator.NextStepSamples(ctx)
-	if err != nil {
-		return nil, err
-	}
+
 	results := make([]T, len(p.ranges))
-	var previousSubStep *types.RangeVectorStepData
-	for rangeIdx, splitRange := range p.ranges {
-		var rangeStep *types.RangeVectorStepData
-		rangeStep, err = step.SubStep(splitRange.Start, splitRange.End, previousSubStep)
+	for rangeIdx := range p.ranges {
+		step, err := p.operator.NextStepSamples(ctx)
 		if err != nil {
 			return nil, err
 		}
-		previousSubStep = rangeStep
 
 		capturingEmitAnnotation := func(generator types.AnnotationGenerator) {
 			p.emitAndCaptureAnnotation(rangeIdx, localSeriesIdx, generator)
 		}
 
-		result, hasValue, err := p.parent.generateFunc(rangeStep, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
+		result, hasValue, err := p.parent.generateFunc(step, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}

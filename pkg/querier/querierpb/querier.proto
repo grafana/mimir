@@ -7,6 +7,7 @@ package querierpb;
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
 import "github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
 import "gogoproto/gogo.proto";
 
 option go_package = "querierpb";
@@ -27,7 +28,7 @@ message EvaluateQueryRequest {
 
 message EvaluationNode {
   int64 nodeIndex = 1;
-  planning.EncodedQueryTimeRange timeRange = 2 [(gogoproto.nullable) = false];
+  types.EncodedQueryTimeRange timeRange = 2 [(gogoproto.nullable) = false];
 }
 
 message EvaluateQueryResponse {

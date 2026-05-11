@@ -265,7 +265,8 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	}
 
 	if planJob != nil {
-		jt.incompleteJobs[planJobId] = jt.pending.PushBack(planJob)
+		// Prefer the plan job at the front of the queue to refresh the view of pending jobs
+		jt.incompleteJobs[planJobId] = jt.pending.PushFront(planJob)
 		jt.metrics.queue.Pending(planJob)
 		// Drop the previous completion time since there is now a pending job that overwrote it
 		jt.completePlanTime = time.Time{}

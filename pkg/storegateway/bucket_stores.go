@@ -17,7 +17,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
@@ -95,12 +94,32 @@ type BucketStores struct {
 
 // NewBucketStores makes a new BucketStores. After starting the returned BucketStores
 func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
-	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	var err error
+
+	// Init index cache.
+	indexCache, err := indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg)
 	if err != nil {
-		return nil, errors.Wrapf(err, "chunks-cache")
+		return nil, err
+	}
+	// Init metadata cache client.
+	metadataCache, err := tsdb.NewMetadataCacheClient(cfg.BucketStore.MetadataCache.BackendConfig, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+	// Init chunks cache client.
+	chunksCacheClient, err := tsdb.NewChunksCacheClient(cfg.BucketStore.ChunksCache.BackendConfig, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+	// Init index-header cache client.
+	indexHeaderCacheClient, err := tsdb.NewIndexHeaderCacheClient(cfg.BucketStore.IndexHeaderCache.BackendConfig, logger, reg)
+	if err != nil {
+		return nil, err
 	}
 
-	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
+	// Configure caching bucket to cover configured metadata, index-header, and chunks caching.
+	// Bucket caches for index-header and chunks share the metadata cache for object attributes.
+	cachingBucket, err := tsdb.NewStoreCachingBucket(cfg, metadataCache, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
@@ -133,6 +152,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		cfg:                cfg,
 		limits:             limits,
 		bucket:             cachingBucket,
+		indexCache:         indexCache,
 		shardingStrategy:   shardingStrategy,
 		allowedTenants:     allowedTenants,
 		stores:             map[string]*BucketStore{},
@@ -182,11 +202,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		"Size in bytes used by loaded blocks of discovered tenants.",
 		[]string{"user"}, nil,
 	)
-
-	// Init the index cache.
-	if u.indexCache, err = indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
-		return nil, errors.Wrap(err, "create index cache")
-	}
 
 	if reg != nil {
 		reg.MustRegister(u.metaFetcherMetrics)
@@ -523,6 +538,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	level.Info(userLogger).Log("msg", "creating user bucket store")
 
 	userBkt := bucket.NewUserBucketClient(userID, u.bucket, u.limits)
+
 	fetcherReg := prometheus.NewRegistry()
 	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(fetcherReg, u.bucketStoreMetrics)
 

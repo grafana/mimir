@@ -22,6 +22,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+type DataLabelSelector struct {
+	*selectors.InstantVectorSelector
+}
+
 // identifyingLabels are the labels we consider as identifying for info metrics.
 // Currently hard coded, so we don't need knowledge of individual info metrics.
 var identifyingLabels = []string{"instance", "job"}
@@ -33,7 +37,7 @@ type labelsTime struct {
 
 type InfoFunction struct {
 	Inner                    types.InstantVectorOperator
-	Info                     *selectors.InstantVectorSelector
+	Info                     *DataLabelSelector
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	timeRange          types.QueryTimeRange
@@ -59,7 +63,7 @@ type InfoFunction struct {
 
 func NewInfoFunction(
 	inner types.InstantVectorOperator,
-	info *selectors.InstantVectorSelector,
+	info *DataLabelSelector,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,

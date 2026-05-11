@@ -4,14 +4,20 @@
 
 ### Grafana Mimir
 
-* [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
-* [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #15179 #15220 #15223 #15232 #15237 #15255
+* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #15276
+* [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
+* [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245
+* [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #15179 #15220 #15223 #15232 #15237 #15255 #15285
 * [ENHANCEMENT] Ingest storage: Reject the whole batch of records of a Kafka write call when the configured `-ingest-storage.kafka.producer-max-buffered-bytes` limit is reached, instead of rejecting individual records. #15227
 * [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
+* [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
+* [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
 * [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147
+* [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
+* [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
 
 ### Mixin
 
@@ -19,13 +25,15 @@
 
 ### Jsonnet
 
+* [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
+
 ### Documentation
 
 ### Tools
 
 ### Query-tee
 
-## 3.1.0-rc0
+## 3.1.0-rc.0
 
 ### Grafana Mimir
 
@@ -87,7 +95,7 @@
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
 * [FEATURE] Ingest storage: Add `-ingest-storage.ingestion-partition-tenant-write-shard-size` to limit the number of partitions used for writes independently from reads, allowing safely reducing the shard size without losing query coverage during the migration. #14780
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645 #14677 #14788
-* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839 #14952 #15035 #15045
+* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839 #14952 #15035 #15045 #15220
 * [FEATURE] Compactor: Add `-compactor.ooo-split-and-merge-shards` per-tenant limit to allow a separate shard count for blocks with the out-of-order external label. #14704
 * [FEATURE] Distributor: add experimental support for controlling OTLP metric name suffix addition and translation strategy via `X-Mimir-OTLP-AddSuffixes` and `X-Mimir-OTLP-TranslationStrategy` request headers on the OTLP push path, gated by `-api.otlp-translation-headers-enabled` (off by default). #14782
 * [ENHANCEMENT] Ingest storage: Default to the more efficient `-ingest-storage.kafka.producer-record-version=2` based on Remote-Write 2.0, which reduces Kafka record size and improves write throughput. #15185
@@ -343,6 +351,7 @@
 * [CHANGE] Alerts: Replaced `MimirCompactorSkippedUnhealthyBlocks` with more generic `MimirCompactorSkippedBlocks`. #13876
 * [CHANGE] Dashboards: replace usage of `container_spec_cpu_quota / container_spec_cpu_period` with `kube_pod_container_resource_limits` for calculation of CPU limits. #14425
 * [CHANGE] Dashboards: The queries used in latency panels no longer convert seconds to milliseconds. The dashboard panels now use "seconds" unit instead of "milliseconds". #14896
+* [CHANGE] Alerts: Changed `MimirRulerMissedEvaluations` alert to monitor the per ruler evaluation rate, instead of the per ruler and rule groups one. Added `MimirRulersMissedEvaluations` alert to monitor the global missed evaluations rate. #15290
 * [ENHANCEMENT] Dashboards: Group compactor compaction-related panels into a single collapsible "Compaction" row. #14784
 * [ENHANCEMENT] Dashboards: Merge CPU and memory panels in the "Compactor resources" dashboard into a single collapsible row. #14866
 * [ENHANCEMENT] Alerts: Add more native histogram versions of alerts using classic histograms. #13814

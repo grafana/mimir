@@ -651,17 +651,31 @@ groups:
           for: 5m
           labels:
             severity: critical
+        - alert: MimirRulersMissedEvaluations
+          annotations:
+            message: |
+                Mimir Rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are experiencing {{ printf "%.2f" $value }}% missed iterations.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulersmissedevaluations
+          expr: |
+            100 * (
+            sum by (cluster, namespace) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
+              /
+            sum by (cluster, namespace) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
+            ) > 1
+          for: 5m
+          labels:
+            severity: warning
         - alert: MimirRulerMissedEvaluations
           annotations:
             message: |
-                Mimir Ruler {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% missed iterations for the rule group {{ $labels.rule_group }}.
+                Mimir Ruler {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% missed iterations.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulermissedevaluations
           expr: |
             100 * (
-            sum by (cluster, namespace, instance, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
+            sum by (cluster, namespace, instance) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
               /
-            sum by (cluster, namespace, instance, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
-            ) > 1
+            sum by (cluster, namespace, instance) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
+            ) > 5
           for: 5m
           labels:
             severity: warning
