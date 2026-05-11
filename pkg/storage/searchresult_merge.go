@@ -10,18 +10,21 @@ import (
 )
 
 // MergeSearchResults merges per-source []storage.SearchResult slices, dedups
-// by Value taking the max Score across sources, sorts the result per
-// hints.OrderBy, and truncates to hints.Limit. It is the slice-based
-// counterpart to Prometheus's (unexported) pairwiseMergeSearchSets, intended
-// for cross-replica / cross-store-gateway fan-out where each leaf has already
-// applied the search filter and emitted scored results.
+// by Value, sorts the result per hints.OrderBy, and truncates to hints.Limit.
+// It is the slice-based counterpart to Prometheus's (unexported)
+// pairwiseMergeSearchSets, intended for cross-replica / cross-store-gateway
+// fan-out where each leaf has already applied the search filter and emitted
+// scored results.
 //
 // Unlike storage.ApplySearchHints (which operates on []string and re-runs the
 // filter to score), this preserves the scores computed by the leaf Searchers.
-// Spec invariant 3 requires Score to be deterministic per (Value, Filter), so
-// duplicates from different sources tie in normal operation; the max defends
-// against drift between leaves that should never happen but is cheap to
-// guard.
+// Per the Searcher contract (Spec invariant 3), Score is deterministic for a
+// given (Value, Filter), so duplicates from different sources carry identical
+// scores by construction — the merger takes the first occurrence and skips
+// subsequent duplicates without comparing. If two leaves ever disagree on the
+// score for a value, that's a bug elsewhere (filter-library drift, wire
+// translation, or determinism violation), not something this layer should
+// silently paper over.
 //
 // hints may be nil; in that case ordering defaults to OrderByValueAsc and no
 // limit is applied.
@@ -30,22 +33,21 @@ func MergeSearchResults(perSource [][]storage.SearchResult, hints *storage.Searc
 		return nil
 	}
 
-	// Hash dedup: value → best (max) score seen across sources. The map
-	// also serves as our cross-source dedup, since each Value collapses to
-	// a single entry. We can lift this to a streaming k-way merge if
-	// memory pressure ever bites — for now, the slice-based path matches
-	// the BucketStore cross-block merge from PR #1.
-	best := make(map[string]float64, len(perSource[0]))
+	// Hash dedup: value → score. Each Value collapses to a single entry;
+	// duplicates from later sources are skipped on the assumption that
+	// their score matches (Spec invariant 3). We can lift this to a
+	// streaming k-way merge if memory pressure ever bites.
+	seen := make(map[string]float64, len(perSource[0]))
 	for _, src := range perSource {
 		for _, r := range src {
-			if cur, seen := best[r.Value]; !seen || r.Score > cur {
-				best[r.Value] = r.Score
+			if _, exists := seen[r.Value]; !exists {
+				seen[r.Value] = r.Score
 			}
 		}
 	}
 
-	out := make([]storage.SearchResult, 0, len(best))
-	for v, s := range best {
+	out := make([]storage.SearchResult, 0, len(seen))
+	for v, s := range seen {
 		out = append(out, storage.SearchResult{Value: v, Score: s})
 	}
 
