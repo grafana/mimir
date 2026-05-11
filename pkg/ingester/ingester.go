@@ -179,7 +179,8 @@ type Config struct {
 	UseIngesterOwnedSeriesForLimits      bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
 	UpdateIngesterOwnedSeries            bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval            time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
-	EarlyCompactionNonOwnedSeriesEnabled bool          `yaml:"early_compaction_non_owned_series_enabled" category:"experimental"`
+	EarlyCompactionNonOwnedSeriesEnabled     bool          `yaml:"early_compaction_non_owned_series_enabled" category:"experimental"`
+	EarlyCompactionNonOwnedSeriesGracePeriod time.Duration `yaml:"early_compaction_non_owned_series_grace_period" category:"experimental"`
 
 	PushCircuitBreaker   CircuitBreakerConfig              `yaml:"push_circuit_breaker"`
 	ReadCircuitBreaker   CircuitBreakerConfig              `yaml:"read_circuit_breaker"`
@@ -221,6 +222,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
 	f.BoolVar(&cfg.EarlyCompactionNonOwnedSeriesEnabled, "ingester.early-compaction-non-owned-series-enabled", false, "When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.")
+	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesGracePeriod, "ingester.early-compaction-non-owned-series-grace-period", 30*time.Second, "Minimum time that must elapse after a non-owned series is detected before it can be evicted by the early compaction. Any further detection that adds refs to the pending list resets the timer. Lets distributors converge on the new ring state before eviction runs. A value of 0 disables the grace period and evicts as soon as possible.")
 	f.IntVar(&cfg.LabelValuesCountRequestMaxConcurrency, "ingester.label-values-count-max-concurrency", 16, "Maximum concurrency used to compute a single label values count request.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 

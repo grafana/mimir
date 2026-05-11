@@ -1298,8 +1298,7 @@ func isStaleSeries(s *memSeries) bool {
 		(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum))
 }
 
-// alwaysEvictSeries is the predicate used by ref-list eviction paths that don't require any
-// per-series value-based check (the caller has already vetted which series should be evicted).
+// alwaysEvictSeries is a predicate that unconditionally marks all series for eviction.
 func alwaysEvictSeries(*memSeries) bool {
 	return true
 }
@@ -1309,12 +1308,8 @@ func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) e
 	return h.truncateSeries(seriesRefs, maxt, isStaleSeries, true)
 }
 
-// truncateSelectedSeries removes the provided series from the head without requiring them to
-// carry stale-NaN markers. Series which received fresh samples since the caller collected the
-// ref list are skipped.
-//
-// Intended for callers that maintain their own list of series refs (for example, an external
-// ownership tracker) and want to evict specific series outside the stale-series flow.
+// truncateSelectedSeries removes the series identified by the provided refs from the head.
+// Series that received fresh samples since the caller collected the ref list are skipped.
 func (h *Head) truncateSelectedSeries(seriesRefs []storage.SeriesRef, maxt int64) error {
 	return h.truncateSeries(seriesRefs, maxt, alwaysEvictSeries, false)
 }
@@ -1707,60 +1702,52 @@ func (h *RangeHead) String() string {
 	return fmt.Sprintf("range head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
 }
 
-// StaleHead allows querying a Head restricted to an explicit list of series references via an
-// IndexReader, ChunkReader and tombstones.Reader. Used only for compactions.
-//
-// Despite the name, the filtering is purely by the supplied series refs and does not require
-// the underlying series to carry stale-NaN markers. CompactStaleHead populates the ref list
-// from the head's stale-series enumeration, but the type itself is reusable by any caller
-// (e.g. CompactHeadPortion) that already holds a list of refs to compact and evict.
-type StaleHead struct {
+// SelectedSeriesHead allows querying a Head restricted to an explicit list of series
+// references via an IndexReader, ChunkReader and tombstones.Reader.
+// Used only for compactions.
+type SelectedSeriesHead struct {
 	RangeHead
-	staleSeriesRefs []storage.SeriesRef
+	selectedSeriesRefs []storage.SeriesRef
 }
 
-// NewStaleHead returns a *StaleHead.
-func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs []storage.SeriesRef) *StaleHead {
-	return &StaleHead{
+// NewSelectedSeriesHead returns a *SelectedSeriesHead.
+func NewSelectedSeriesHead(head *Head, mint, maxt int64, selectedSeriesRefs []storage.SeriesRef) *SelectedSeriesHead {
+	return &SelectedSeriesHead{
 		RangeHead: RangeHead{
 			head: head,
 			mint: mint,
 			maxt: maxt,
 		},
-		staleSeriesRefs: staleSeriesRefs,
+		selectedSeriesRefs: selectedSeriesRefs,
 	}
 }
 
-func (h *StaleHead) Index() (_ IndexReader, err error) {
-	return h.head.staleIndex(h.mint, h.maxt, h.staleSeriesRefs)
+func (h *SelectedSeriesHead) Index() (_ IndexReader, err error) {
+	return h.head.selectedSeriesIndex(h.mint, h.maxt, h.selectedSeriesRefs)
 }
 
-// NumSeries returns the number of series the view exposes. This is the size of the explicit
-// ref list captured at construction time, which is stable for the lifetime of the view and
-// matches the count of series the resulting block will contain. For the existing stale-series
-// compaction path this is equal to Head.NumStaleSeries() at collection time.
-func (h *StaleHead) NumSeries() uint64 {
-	return uint64(len(h.staleSeriesRefs))
+func (h *SelectedSeriesHead) NumSeries() uint64 {
+	return uint64(len(h.selectedSeriesRefs))
 }
 
-var staleHeadULID = ulid.MustParse("0000000000XXXXXXXSTALEHEAD")
+var selectedSeriesHeadULID = ulid.MustParse("0000000000XXSELECTEDSERIES")
 
-func (h *StaleHead) Meta() BlockMeta {
+func (h *SelectedSeriesHead) Meta() BlockMeta {
 	return BlockMeta{
 		MinTime: h.MinTime(),
 		MaxTime: h.MaxTime(),
-		ULID:    staleHeadULID,
+		ULID:    selectedSeriesHeadULID,
 		Stats: BlockStats{
 			NumSeries: h.NumSeries(),
 		},
 	}
 }
 
-// String returns an human readable representation of the stake head. It's important to
+// String returns a human readable representation of the selected-series head. It's important to
 // keep this function in order to avoid the struct dump when the head is stringified in
 // errors or logs.
-func (h *StaleHead) String() string {
-	return fmt.Sprintf("stale head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
+func (h *SelectedSeriesHead) String() string {
+	return fmt.Sprintf("selected-series head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
 }
 
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given

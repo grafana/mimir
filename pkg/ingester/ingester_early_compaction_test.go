@@ -990,6 +990,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPending
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
 
 	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
@@ -1023,6 +1024,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
 
 	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
@@ -1116,6 +1118,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
 
 	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
@@ -1231,6 +1234,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
 
 	limits := defaultLimitsTestConfig()
 	// Enable OOO ingestion at the tenant level so the ingester accepts samples whose
@@ -1363,6 +1367,69 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 
 	assert.Equal(t, expected(ownedName), queryStream(ownedName))
 	assert.Equal(t, expected(nonOwnedName), queryStream(nonOwnedName))
+}
+
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod verifies that the
+// configured grace period gates the eviction: while the period has not elapsed since the last
+// pending-refs update, compactBlocksDueToNonOwnedSeries does not compact or evict anything;
+// once the per-tenant last-update timestamp is older than the threshold, eviction proceeds.
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *testing.T) {
+	var (
+		ctx          = context.Background()
+		ctxWithUser  = user.InjectOrgID(ctx, userID)
+		metricName   = "metric_1"
+		metricLabels = labels.FromStrings(model.MetricNameLabel, metricName)
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	// A long grace period that no real-time elapse can cross during the test.
+	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = time.Hour
+
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
+
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  metricLabels,
+		Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+	}}))
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  metricLabels,
+		Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+	}}))
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Equal(t, uint64(1), db.Head().NumSeries())
+
+	// Queue the series for eviction. This stamps pendingNonOwnedRefsLastUpdate to time.Now().
+	db.ownedTokenRanges = nil
+	require.Equal(t, 0, db.computeOwnedSeries())
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+
+	// First call: the grace period is fully in effect, so eviction must be skipped.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no block should be produced while the grace period is in effect")
+	require.Equal(t, uint64(1), db.Head().NumSeries(), "series should still be in head while the grace period is in effect")
+
+	// Backdate the last-update timestamp so the grace period appears to have elapsed.
+	db.pendingNonOwnedRefsMtx.Lock()
+	db.pendingNonOwnedRefsLastUpdate = time.Now().Add(-2 * time.Hour)
+	db.pendingNonOwnedRefsMtx.Unlock()
+
+	// Second call: eviction should now proceed.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 1, "block should be produced after the grace period elapses")
+	require.Equal(t, uint64(0), db.Head().NumSeries(), "series should be evicted from the head after the grace period elapses")
 }
 
 func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {

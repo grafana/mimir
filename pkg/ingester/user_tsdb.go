@@ -155,10 +155,13 @@ type userTSDB struct {
 
 	// pendingNonOwnedRefs holds the series refs that the last computeOwnedSeries call(s) found
 	// to be non-owned. The compaction loop consumes (and clears) this list and passes it to
-	// CompactSelectedSeries for targeted eviction. The mutex serialises append-time additions
-	// with the take-and-clear performed by the compaction loop.
-	pendingNonOwnedRefsMtx sync.Mutex
-	pendingNonOwnedRefs    []storage.SeriesRef
+	// CompactSelectedSeries for targeted eviction. pendingNonOwnedRefsLastUpdate records the
+	// time of the most recent addition; the compaction loop uses it to enforce the configured
+	// grace period before consuming the list. The mutex serialises append-time additions with
+	// the take-and-clear performed by the compaction loop.
+	pendingNonOwnedRefsMtx        sync.Mutex
+	pendingNonOwnedRefs           []storage.SeriesRef
+	pendingNonOwnedRefsLastUpdate time.Time
 
 	postingsCache *tsdb.PostingsForMatchersCache
 
@@ -692,24 +695,36 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 	return !prev.Equal(newTokenRanges)
 }
 
-// addPendingNonOwnedRefs appends the given refs to the per-tenant pending eviction list. The
-// compaction loop consumes the list with takePendingNonOwnedRefs.
+// addPendingNonOwnedRefs appends the given refs to the per-tenant pending eviction list and
+// updates the list's last-update timestamp to time.Now(). The compaction loop consumes the
+// list with takePendingNonOwnedRefs.
 func (u *userTSDB) addPendingNonOwnedRefs(refs []storage.SeriesRef) {
 	if len(refs) == 0 {
 		return
 	}
 	u.pendingNonOwnedRefsMtx.Lock()
 	u.pendingNonOwnedRefs = append(u.pendingNonOwnedRefs, refs...)
+	u.pendingNonOwnedRefsLastUpdate = time.Now()
 	u.pendingNonOwnedRefsMtx.Unlock()
 }
 
-// takePendingNonOwnedRefs atomically returns and clears the pending eviction list. Returns
-// nil if no eviction is pending.
-func (u *userTSDB) takePendingNonOwnedRefs() []storage.SeriesRef {
+// takePendingNonOwnedRefs atomically returns and clears the pending eviction list, but only
+// if its last-update time is at or before notAfter (the grace-period threshold). Returns nil
+// if no eviction is pending or the grace period has not yet elapsed, in which case the list
+// is left intact.
+func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesRef {
 	u.pendingNonOwnedRefsMtx.Lock()
+	defer u.pendingNonOwnedRefsMtx.Unlock()
+
+	if len(u.pendingNonOwnedRefs) == 0 {
+		return nil
+	}
+	if u.pendingNonOwnedRefsLastUpdate.After(notAfter) {
+		return nil
+	}
 	refs := u.pendingNonOwnedRefs
 	u.pendingNonOwnedRefs = nil
-	u.pendingNonOwnedRefsMtx.Unlock()
+	u.pendingNonOwnedRefsLastUpdate = time.Time{}
 	return refs
 }
 

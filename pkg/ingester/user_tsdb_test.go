@@ -335,7 +335,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 0, count)
-		require.Len(t, db.takePendingNonOwnedRefs(), 1)
+		require.Len(t, db.takePendingNonOwnedRefs(time.Now().Add(time.Hour)), 1)
 		require.Equal(t, uint64(1), tsdbDB.Head().NumSeries())
 	})
 
@@ -348,7 +348,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 0, count)
-		require.Empty(t, db.takePendingNonOwnedRefs())
+		require.Empty(t, db.takePendingNonOwnedRefs(time.Now().Add(time.Hour)))
 	})
 
 	t.Run("computeOwnedSeries with all series owned queues nothing", func(t *testing.T) {
@@ -370,7 +370,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 2, count)
-		require.Empty(t, db.takePendingNonOwnedRefs())
+		require.Empty(t, db.takePendingNonOwnedRefs(time.Now().Add(time.Hour)))
 		require.Equal(t, uint64(0), tsdbDB.Head().NumStaleSeries())
 	})
 
@@ -403,7 +403,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 1, count)
-		require.Len(t, db.takePendingNonOwnedRefs(), 1)
+		require.Len(t, db.takePendingNonOwnedRefs(time.Now().Add(time.Hour)), 1)
 		require.Equal(t, uint64(2), tsdbDB.Head().NumSeries())
 	})
 }

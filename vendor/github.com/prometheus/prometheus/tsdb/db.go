@@ -465,24 +465,24 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks                    prometheus.GaugeFunc
-	symbolTableSize                 prometheus.GaugeFunc
-	reloads                         prometheus.Counter
-	reloadsFailed                   prometheus.Counter
-	compactionsFailed               prometheus.Counter
-	compactionsTriggered            prometheus.Counter
-	compactionsSkipped              prometheus.Counter
-	sizeRetentionCount              prometheus.Counter
-	timeRetentionCount              prometheus.Counter
-	startTime                       prometheus.GaugeFunc
-	tombCleanTimer                  prometheus.Histogram
-	blocksBytes                     prometheus.Gauge
-	maxBytes                        prometheus.Gauge
-	maxPercentage                   prometheus.Gauge
-	retentionDuration               prometheus.Gauge
-	staleSeriesCompactionsTriggered    prometheus.Counter
-	staleSeriesCompactionsFailed       prometheus.Counter
-	staleSeriesCompactionDuration      prometheus.Histogram
+	loadedBlocks                        prometheus.GaugeFunc
+	symbolTableSize                     prometheus.GaugeFunc
+	reloads                             prometheus.Counter
+	reloadsFailed                       prometheus.Counter
+	compactionsFailed                   prometheus.Counter
+	compactionsTriggered                prometheus.Counter
+	compactionsSkipped                  prometheus.Counter
+	sizeRetentionCount                  prometheus.Counter
+	timeRetentionCount                  prometheus.Counter
+	startTime                           prometheus.GaugeFunc
+	tombCleanTimer                      prometheus.Histogram
+	blocksBytes                         prometheus.Gauge
+	maxBytes                            prometheus.Gauge
+	maxPercentage                       prometheus.Gauge
+	retentionDuration                   prometheus.Gauge
+	staleSeriesCompactionsTriggered     prometheus.Counter
+	staleSeriesCompactionsFailed        prometheus.Counter
+	staleSeriesCompactionDuration       prometheus.Histogram
 	selectedSeriesCompactionsTriggered  prometheus.Counter
 	selectedSeriesCompactionsFailed     prometheus.Counter
 	selectedSeriesCompactionsSkippedOOO prometheus.Counter
@@ -593,19 +593,19 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	})
 	m.selectedSeriesCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_selected_series_compactions_triggered_total",
-		Help: "Total number of triggered selected series compactions (compactions of an explicit, caller-supplied list of series refs).",
+		Help: "Total number of compactions triggered for an explicit caller-provided list of series references.",
 	})
 	m.selectedSeriesCompactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_selected_series_compactions_failed_total",
-		Help: "Total number of selected series compactions that failed.",
+		Help: "Total number of compactions triggered for an explicit caller-provided list of series references that failed.",
 	})
 	m.selectedSeriesCompactionsSkippedOOO = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_selected_series_compactions_skipped_ooo_total",
-		Help: "Total number of series skipped during selected series compaction because they had out-of-order data at the time of compaction.",
+		Help: "Total number of series skipped during compaction triggered for an explicit caller-provided list of series references because they had out-of-order data at the time of compaction.",
 	})
 	m.selectedSeriesCompactionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:                            "prometheus_tsdb_selected_series_compaction_duration_seconds",
-		Help:                            "Duration of selected series compaction runs.",
+		Help:                            "Duration of compactions triggered for an explicit caller-provided list of series references.",
 		Buckets:                         prometheus.ExponentialBuckets(1, 2, 14),
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
@@ -1916,7 +1916,7 @@ type HeadPortionEvictor func(maxt int64) error
 // portion of the head described by decorator, then runs evictor to remove those series from the
 // head. HeadMinTime is not advanced; series outside the portion are unaffected.
 //
-// This is the engine that powers CompactStaleHead. Callers that maintain their own list of
+// For example, this engine powers CompactStaleHead. Callers that maintain their own list of
 // series refs (for example, an external ownership tracker) can invoke it directly with their
 // own decorator/evictor pair.
 func (db *DB) CompactHeadPortion(decorator HeadPortionDecorator, evict HeadPortionEvictor, meta *BlockMeta) error {
@@ -1926,8 +1926,7 @@ func (db *DB) CompactHeadPortion(decorator HeadPortionDecorator, evict HeadPorti
 }
 
 // compactHeadPortionLocked is the body of CompactHeadPortion, intended for internal callers
-// that already hold db.cmtx (for example, CompactStaleHead, which collects the list of stale
-// series refs under the lock before invoking the engine).
+// that already hold db.cmtx.
 func (db *DB) compactHeadPortionLocked(decorator HeadPortionDecorator, evict HeadPortionEvictor, meta *BlockMeta) error {
 	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
 	for ; mint < maxt; mint += db.head.chunkRange.Load() {
@@ -1984,7 +1983,7 @@ func (db *DB) CompactStaleHead() (err error) {
 
 	if err := db.compactHeadPortionLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
-			return NewStaleHead(h, mint, maxt, staleSeriesRefs)
+			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs)
 		},
 		func(maxt int64) error {
 			return db.head.truncateStaleSeries(staleSeriesRefs, maxt)
@@ -2000,21 +1999,17 @@ func (db *DB) CompactStaleHead() (err error) {
 	return nil
 }
 
-// CompactSelectedSeries writes the given series into a block (one per chunk range) and evicts
-// them from the head without advancing HeadMinTime. The caller is responsible for ensuring the
-// refs identify series that should be removed; no value-based re-validation (such as the
-// stale-NaN check used by CompactStaleHead) is performed. Series that received fresh samples
-// since the caller collected the ref list are skipped during eviction.
+// CompactSelectedSeries writes the provided series into one or more blocks (one per chunk range)
+// and evicts them from the head without advancing HeadMinTime. The caller is responsible for
+// ensuring that the provided refs identify series eligible for removal.
 //
-// Because this primitive writes only in-order chunks into the resulting block, any series
-// whose out-of-order state is non-empty at the moment of compaction is skipped — otherwise its
-// out-of-order chunks would be orphaned upon eviction. Such series stay in the head and become
-// candidates again on a subsequent cycle, once their out-of-order state has been cleared by an
-// out-of-order compaction.
+// Series that received new samples after the ref list was collected are skipped during eviction
+// and remain in the head. They may be reconsidered during a subsequent compaction cycle.
 //
-// Intended for callers that maintain their own ownership state and want to evict specific
-// series outside the stale-series flow (for example, a multi-tenant ingester evicting series
-// it no longer owns after a ring change).
+// This operation persists only in-order chunks. Series with non-empty out-of-order state at the
+// time of compaction are therefore skipped as well, since evicting them would orphan their
+// out-of-order chunks in memory-mapped files. Such series remain in the head until their
+// out-of-order data has been flushed by an out-of-order compaction.
 func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) {
 	if len(seriesRefs) == 0 {
 		return nil
@@ -2053,7 +2048,7 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 
 	if err := db.compactHeadPortionLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
-			return NewStaleHead(h, mint, maxt, seriesRefs)
+			return NewSelectedSeriesHead(h, mint, maxt, seriesRefs)
 		},
 		func(maxt int64) error {
 			return db.head.truncateSelectedSeries(seriesRefs, maxt)

@@ -278,8 +278,7 @@ const (
 	CompactionHintFromStaleSeries = "from-stale-series"
 
 	// CompactionHintFromSelectedSeries is a hint noting that the block
-	// was created from an explicit, caller-supplied list of series refs
-	// (rather than from stale series or a full head compaction).
+	// was created from an explicit, caller-supplied list of series refs.
 	CompactionHintFromSelectedSeries = "from-selected-series"
 )
 

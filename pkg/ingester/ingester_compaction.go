@@ -603,7 +603,7 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 			continue
 		}
 
-		refs := db.takePendingNonOwnedRefs()
+		refs := db.takePendingNonOwnedRefs(time.Now().Add(-i.cfg.EarlyCompactionNonOwnedSeriesGracePeriod))
 		if len(refs) == 0 {
 			continue
 		}
