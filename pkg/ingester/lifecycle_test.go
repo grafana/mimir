@@ -48,6 +48,10 @@ func defaultIngesterTestConfig(t testing.TB) Config {
 	cfg.IngesterRing.MinReadyDuration = 100 * time.Millisecond
 	cfg.IngesterRing.HeartbeatPeriod = defaultHeartbeatPeriod
 	cfg.ActiveSeriesMetrics.Enabled = true
+	// Owned series tracking is enabled by default but requires zone-aware replication in classic
+	// architecture. Most tests don't need it, so disable it here; tests that need it set it explicitly.
+	cfg.UseIngesterOwnedSeriesForLimits = false
+	cfg.UpdateIngesterOwnedSeries = false
 	return cfg
 }
 

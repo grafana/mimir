@@ -561,6 +561,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	} else {
 		limiterStrategy = newIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
 		ownedSeriesStrategy = newOwnedSeriesIngesterRingStrategy(ingesterID, ingestersRing, i.limits.IngestionTenantShardSize)
+
+		if (cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries) && !cfg.IngesterRing.ZoneAwarenessEnabled {
+			return nil, fmt.Errorf("owned series tracking requires zone-aware replication to be enabled in classic architecture; " +
+				"either enable -ingester.ring.zone-awareness-enabled or disable -ingester.track-ingester-owned-series and -ingester.use-ingester-owned-series-for-limits")
+		}
 	}
 
 	i.limiter = NewLimiter(limits, limiterStrategy)

@@ -7,6 +7,8 @@ weight: 100
 
 # Configure owned series tracking
 
+Owned series tracking is enabled by default. In classic architecture, it requires [zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/) to be enabled. The ingester will fail to start if owned series tracking is enabled without zone-aware replication in classic architecture. To disable owned series tracking, set both `-ingester.track-ingester-owned-series=false` and `-ingester.use-ingester-owned-series-for-limits=false`.
+
 In a distributed Grafana Mimir deployment, distributors use consistent hashing to determine which series should be routed to which ingester replicas or Kafka partitions. Because stale in-memory series in ingesters are only cleaned up during TSDB head compaction, the count of in-memory series is not suitable as a metric to drive automated ingester scaling; when a new replica is added, the in-memory series per ingester doesn't drop until the next head compaction, and the scaler has no feedback about the impact of the scaling operation.
 
 Additionally, since each ingester enforces only a fraction of a tenant's in-memory series limits locally, increasing the ingester count, or a tenant's shuffle-shard size, can result in ingesters rejecting samples due to exceeded local limits, even if the global limit isn't breached. For example:
@@ -49,36 +51,24 @@ Additionally, if the recomputation is triggered by a series limit decrease, the 
   <img src="/media/docs/mimir/scale-up-owned-series.png" alt="Changing limits with owned series" width="700">
 </div>
 
-## Before you begin
+## Prerequisites
 
 {{% admonition type="note" %}}
-These steps are only required to use owned series tracking in classic architecture. They are not required with ingest storage architecture because series replication is handled by the Kafka partitions, rather than writing to multiple ingesters. However, zone-aware replication of ingesters is still recommended for high availability.
+These prerequisites are only required for classic architecture. They are not required with ingest storage architecture because series replication is handled by the Kafka partitions, rather than writing to multiple ingesters. However, zone-aware replication of ingesters is still recommended for high availability.
 {{% /admonition %}}
 
-Due to the way token ranges are calculated, using owned series tracking requires you to complete the following tasks first:
+Due to the way token ranges are calculated, using owned series tracking in classic architecture requires you to complete the following tasks first:
 
 - Enable [zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/).
 - Set the replication factor equal to the number of zones.
 
+If these prerequisites are not met, the ingester will fail to start. To run without zone-aware replication, disable owned series tracking by setting `-ingester.track-ingester-owned-series=false` and `-ingester.use-ingester-owned-series-for-limits=false`.
+
 ## Configure owned series tracking and limits
 
-1.  Enable owned series tracking on ingesters. For example:
+Owned series tracking and limit enforcement are enabled by default via `-ingester.track-ingester-owned-series` and `-ingester.use-ingester-owned-series-for-limits`. You can verify that owned series are being tracked per tenant by checking for `cortex_ingester_owned_series` metrics.
 
-    ```sh
-    # Enable tracking of owned series based on ring state
-    -ingester.track-ingester-owned-series=true
-
-    # How often to check whether owned series need to be recomputed
-    -ingester.owned-series-update-interval=15s
-    ```
-
-1.  Verify that owned series are being tracked per tenant by checking for `cortex_ingester_owned_series` metrics
-
-1.  Use owned series, rather than in-memory series, to enforce per-tenant series limits. For example:
-
-    ```sh
-    -ingester.use-ingester-owned-series-for-limits=true
-    ```
+You can adjust how often the ingester checks for ring changes by setting `-ingester.owned-series-update-interval` (default: 15s).
 
 For more information, refer to [ingester](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#ingester) in [Grafana Mimir configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/).
 

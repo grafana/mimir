@@ -766,7 +766,11 @@ func TestIngester_compactBlocksToReduceOwnedSeries_DisabledByDefault(t *testing.
 	cfg.ActiveSeriesMetrics.Enabled = true
 	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
-	cfg.UseIngesterOwnedSeriesForLimits = true // Enable owned series for limits
+	cfg.UseIngesterOwnedSeriesForLimits = true
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.IngesterRing.ZoneAwarenessEnabled = true
+	cfg.IngesterRing.InstanceZone = "zone-a"
+	cfg.IngesterRing.ReplicationFactor = 1
 
 	limitsCfg := defaultLimitsTestConfig()
 	// EarlyHeadCompactionOwnedSeriesThreshold defaults to 0, which means disabled
