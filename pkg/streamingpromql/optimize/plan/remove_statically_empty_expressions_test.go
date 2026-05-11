@@ -533,25 +533,42 @@ func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
 	}
 }
 
-func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_AllFunctionsHandled(t *testing.T) {
+func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_UnknownFunctionsHandled(t *testing.T) {
 	params := &planning.QueryParameters{
 		TimeRange:     types.NewInstantQueryTimeRange(time.Now()),
 		LookbackDelta: 5 * time.Minute,
 	}
 
-	var currentFunc functions.Function
-	for i := 0; ; i++ {
-		currentFunc = functions.Function(i)
-		// Once there's no nice string representation of the function we know
-		// that we've found the end of the protobuf defined functions.
+	maxFuncOrd := getMaxFunctionOrdinal()
+	funcCall := &core.FunctionCall{
+		FunctionCallDetails: &core.FunctionCallDetails{
+			Function: functions.Function(maxFuncOrd + 1),
+		},
+	}
+
+	_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, params)
+	require.ErrorIs(t, err, plan.ErrUnknownFunction)
+}
+
+func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_AllKnownFunctionsHandled(t *testing.T) {
+	params := &planning.QueryParameters{
+		TimeRange:     types.NewInstantQueryTimeRange(time.Now()),
+		LookbackDelta: 5 * time.Minute,
+	}
+
+	for i := getMaxFunctionOrdinal(); i >= 0; i-- {
+		currentFunc := functions.Function(i)
+
+		// There are gaps in the ordinals used for the protobuf function enum
+		// so if this particular function isn't defined, skip it.
 		if !strings.HasPrefix(currentFunc.String(), "FUNCTION_") {
-			break
+			continue
 		}
 
-		// If this is a known function, ensure that we either get no error when
-		// determining if it is always empty or an error because we haven't passed
-		// the expected arguments (because we don't pass any). The idea is to make
-		// sure we have explicitly handled every defined function.
+		// This is a known function, ensure that we either get no error when determining
+		// if it is always empty or an error because we haven't passed the expected arguments
+		// (because we don't pass any). The idea is to make sure we have explicitly handled
+		// every defined function.
 		funcCall := &core.FunctionCall{
 			FunctionCallDetails: &core.FunctionCallDetails{
 				Function: currentFunc,
@@ -563,13 +580,15 @@ func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_AllFunctions
 			require.ErrorIs(t, err, plan.ErrInvalidFunctionArgs, "expected no error or invalid arguments error for %s, got %s", currentFunc, err)
 		}
 	}
+}
 
-	funcCall := &core.FunctionCall{
-		FunctionCallDetails: &core.FunctionCallDetails{
-			Function: currentFunc,
-		},
+func getMaxFunctionOrdinal() int32 {
+	maxFuncOrd := int32(0)
+	for _, i := range functions.Function_value {
+		if i > maxFuncOrd {
+			maxFuncOrd = i
+		}
 	}
 
-	_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, params)
-	require.ErrorIs(t, err, plan.ErrUnknownFunction)
+	return maxFuncOrd
 }
