@@ -5,6 +5,7 @@ package distributor
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
@@ -117,4 +118,33 @@ func TestDistributor_SearchLabelNames_WarningsPropagated(t *testing.T) {
 		msgs = append(msgs, w.Error())
 	}
 	assert.Equal(t, []string{"replica-warn"}, msgs)
+}
+
+func TestDistributor_SearchLabelNames_QuorumShortCircuit(t *testing.T) {
+	// RF=3 (the default), all 3 ingesters return overlapping data for the SAME shard.
+	// DoUntilQuorum reads the first 2 (quorum=2) and short-circuits the 3rd.
+	// Result must contain every value the first two returned, correctly merged.
+	shared := []string{"alpha", "beta", "gamma"}
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors: 1,
+		numIngesters:    3,
+		happyIngesters:  3,
+		searchLabelNamesHook: func(_ int, _ *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
+			return makeSearchBatches(shared)
+		},
+	})
+	rs := ds[0].SearchLabelNames(
+		user.InjectOrgID(context.Background(), "user-1"),
+		0, model.Time(time.Now().UnixMilli()),
+		nil,
+		&storage.SearchHints{Limit: 100, OrderBy: storage.OrderByValueAsc},
+		nil,
+	)
+	defer rs.Close()
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.ElementsMatch(t, shared, got, "every value returned by the quorum-reached replicas must survive merge+dedup")
 }

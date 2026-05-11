@@ -9,7 +9,6 @@ import (
 	"slices"
 
 	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -30,13 +29,16 @@ import (
 // ingesters so each leaf can build its own filter chain. hints.Filter is the
 // already-constructed filter used to re-score the merged result-set on this
 // side; the Querier-side caller (Task 4) holds both and forwards both.
+// Caller must build params and hints.Filter from the same
+// streaminglabelvalues.Params; mismatched filters silently shrink results.
 //
 // from/to bound the query time range; PR #4's HTTP handler resolves these
 // from the request and Task 4's distributorQuerier threads them through.
 //
-// Drain is synchronous: every replica is read to completion before the
-// SearchResultSet is returned. Memory is bounded by replicas * hints.Limit;
-// the eventual HTTP layer (PR #4) is responsible for sane limits.
+// Drains run concurrently per replica; this method blocks until every
+// replica has been drained to EOF or has errored. Memory is bounded by
+// replicas * hints.Limit; the eventual HTTP layer (PR #4) is responsible
+// for sane limits.
 func (d *Distributor) SearchLabelNames(
 	ctx context.Context,
 	from, to model.Time,
@@ -44,9 +46,6 @@ func (d *Distributor) SearchLabelNames(
 	hints *storage.SearchHints,
 	matchers []*labels.Matcher,
 ) storage.SearchResultSet {
-	if _, err := tenant.TenantID(ctx); err != nil {
-		return storage.ErrSearchResultSet(err)
-	}
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
