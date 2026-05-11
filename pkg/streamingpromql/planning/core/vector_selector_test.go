@@ -109,6 +109,29 @@ func TestVectorSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"} smoothed`,
 		},
+		"one subset": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: singleMatcher,
+					Subsets: []SubsetMatchers{
+						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
+					},
+				},
+			},
+			expected: `{__name__="foo"}, subsets: {env="prod"}`,
+		},
+		"two subsets": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: singleMatcher,
+					Subsets: []SubsetMatchers{
+						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
+						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}}},
+					},
+				},
+			},
+			expected: `{__name__="foo"}, subsets: {env="prod"}, {env="test"}`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -397,6 +420,60 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 				},
 			},
 			expectEquivalent: true,
+		},
+		"same subsets": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Subsets: []SubsetMatchers{
+						{
+							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+						},
+					},
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Subsets: []SubsetMatchers{
+						{
+							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+						},
+					},
+				},
+			},
+			expectEquivalent: true,
+		},
+		"different subsets": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Subsets: []SubsetMatchers{
+						{
+							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+						},
+					},
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Subsets: []SubsetMatchers{
+						{
+							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+						},
+					},
+				},
+			},
+			expectEquivalent: false,
 		},
 	}
 

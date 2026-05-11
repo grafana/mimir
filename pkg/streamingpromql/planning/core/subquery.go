@@ -168,6 +168,6 @@ func (s *Subquery) ExpressionPosition() (posrange.PositionRange, error) {
 	return s.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (s *Subquery) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanVersionZero
+func (s *Subquery) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }

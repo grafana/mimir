@@ -160,6 +160,6 @@ func (f *FunctionCall) ExpressionPosition() (posrange.PositionRange, error) {
 	return f.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (f *FunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanVersionZero
+func (f *FunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }

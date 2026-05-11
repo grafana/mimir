@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
@@ -65,7 +64,17 @@ const QueryPlanV8 = QueryPlanVersion(8)
 // QueryPlanV9 introduces the NoOp node.
 const QueryPlanV9 = QueryPlanVersion(9)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV9
+// QueryPlanV10 introduces a matrix variant of the NoOp node.
+const QueryPlanV10 = QueryPlanVersion(10)
+
+// QueryPlanV11 introduces support for deduplicating range vector selectors in range queries as part of
+// common subexpression elimination.
+const QueryPlanV11 = QueryPlanVersion(11)
+
+// QueryPlanV12 introduces a dedicated type for the second argument for the info() function.
+const QueryPlanV12 = QueryPlanVersion(12)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV12
 
 type QueryPlan struct {
 	Root       Node
@@ -167,7 +176,7 @@ type Node interface {
 
 	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes this node.
 	// It does not consider the query plan version required by any of its children (for that, use planning.MinimumRequiredPlanVersion).
-	MinimumRequiredPlanVersion() QueryPlanVersion
+	MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (QueryPlanVersion, error)
 
 	// FIXME: implementations for many of the above methods can be generated automatically
 }
@@ -285,7 +294,7 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool,
 	encoder := newQueryPlanEncoder(includeDescriptions, includeDetails)
 
 	encoded := &EncodedQueryPlan{
-		TimeRange:                ToEncodedTimeRange(p.Parameters.TimeRange),
+		TimeRange:                p.Parameters.TimeRange.Encode(),
 		OriginalExpression:       p.Parameters.OriginalExpression,
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
 		LookbackDelta:            p.Parameters.LookbackDelta,
@@ -324,34 +333,30 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 	if p.Root == nil {
 		return errors.New("query plan version can not be determined without a root node")
 	}
-	p.Version = MinimumRequiredPlanVersion(p.Root)
-	return nil
+
+	var err error
+	p.Version, err = MinimumRequiredPlanVersion(p.Root, p.Parameters.TimeRange)
+	return err
 }
 
 // MinimumRequiredPlanVersion returns the minimum required query plan version of node and all its children.
-func MinimumRequiredPlanVersion(node Node) QueryPlanVersion {
-	maxVersion := node.MinimumRequiredPlanVersion()
+func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (QueryPlanVersion, error) {
+	maxVersion, err := node.MinimumRequiredPlanVersion(timeRange)
+	if err != nil {
+		return 0, err
+	}
+
+	childTimeRange := node.ChildrenTimeRange(timeRange)
 	for child := range ChildrenIter(node) {
-		maxVersion = max(maxVersion, MinimumRequiredPlanVersion(child))
-	}
-	return maxVersion
-}
+		childVersion, err := MinimumRequiredPlanVersion(child, childTimeRange)
+		if err != nil {
+			return 0, err
+		}
 
-func ToEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
-	return EncodedQueryTimeRange{
-		StartT:               t.StartT,
-		EndT:                 t.EndT,
-		IntervalMilliseconds: t.IntervalMilliseconds,
-		IsInstant:            t.IsInstant,
-	}
-}
-
-func (e EncodedQueryTimeRange) ToDecodedTimeRange() types.QueryTimeRange {
-	if e.IsInstant {
-		return types.NewInstantQueryTimeRange(timestamp.Time(e.StartT))
+		maxVersion = max(maxVersion, childVersion)
 	}
 
-	return types.NewRangeQueryTimeRange(timestamp.Time(e.StartT), timestamp.Time(e.EndT), time.Duration(e.IntervalMilliseconds)*time.Millisecond)
+	return maxVersion, nil
 }
 
 type queryPlanEncoder struct {
@@ -446,7 +451,7 @@ func (p *EncodedQueryPlan) DecodeNodes(nodeIndices ...int64) ([]Node, error) {
 func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 	return &QueryParameters{
 		OriginalExpression:       p.OriginalExpression,
-		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
+		TimeRange:                p.TimeRange.Decode(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		LookbackDelta:            p.LookbackDelta,
 	}

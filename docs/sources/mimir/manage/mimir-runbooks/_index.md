@@ -460,19 +460,25 @@ How to **fix** it:
   - If the ruler is logging the gRPC error "trying to send message larger than max", consider increasing `-server.grpc-max-send-msg-size-bytes` in the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
-### MimirRulerMissedEvaluations
+### MimirRulersMissedEvaluations
 
-This alert fires when there is a rule group that is taking longer to evaluate than its evaluation interval.
+This alert fires when a significant % of rule group evaluations are missed (skipped) across all rulers.
 
 How it **works**:
 
-- The Mimir ruler will evaluate a rule group according to the evaluation interval on the rule group.
+- The Mimir ruler evaluates each rule group according to the configured evaluation interval.
 - If an evaluation is not finished by the time the next evaluation should happen, the next evaluation is missed.
 
 How to **fix** it:
 
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
+
+### MimirRulerMissedEvaluations
+
+This alert fires when a significant % of rule group evaluations are missed (skipped) in a specific ruler instance.
+
+Refer to the [MimirRulersMissedEvaluations](#mimirrulersmissedevaluations) runbook for detailed investigation steps.
 
 ### MimirRulerRemoteEvaluationFailing
 
@@ -888,7 +894,7 @@ level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=
 
 When this happens, the affected block(s) will be marked as non-compact by the compactor in order to prevent the next execution from being blocked, which could potentially have a negative impact on the performance of the read path.
 
-If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Mimir guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss.
+If the corruption affects only one block whose compaction `level` is 1 (this information is stored inside block's `meta.json`), and shipment of blocks to the object storage is done from ingesters (default case), then Mimir guarantees no data loss. That is, the data is replicated across blocks shipped from multiple ingester replicas. In all other cases — e.g. when ingester shipment is disabled and blocks are shipped from the block-builder (experimental architecture) — there may be some data loss.
 
 Once this alert has been triggered, it is recommended to follow the following steps:
 
@@ -3102,11 +3108,12 @@ How to **fix** it:
 
 ### err-mimir-sample-timestamp-too-old
 
-This error occurs when the ingester rejects a sample because its timestamp is too old as compared to the most recent timestamp received for the same tenant across all its time series.
+This error occurs when Mimir rejects a sample because its timestamp is too old.
 
 How it **works**:
 
-- If the incoming timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant, the sample will be rejected.
+- The ingester rejects a sample if its timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant.
+- The distributor can also produce this error when `enforce_out_of_order_window_on_distributor` is enabled and `past_grace_period` is 0. In that case, a sample is rejected if its timestamp is lower than `(now - out_of_order_time_window)`, which matches the rejection the ingester would later perform. To allow older samples, increase `out_of_order_time_window`, or disable `enforce_out_of_order_window_on_distributor`.
 
 {{< admonition type="note" >}}
 If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
@@ -3851,14 +3858,17 @@ Use `evaluation stats` when asking:
 
 When looking at `msg="query stats"` consider the following attributes;
 
-- status, err - indicates success or failure with an error message indicating the failure reason
-- param_query - the PromQL as submitted by the user
-- param_start, param_end, param_step - the query time range and step interval
+- status, err — indicates success or failure with an error message indicating the failure reason
+- param_query — the PromQL as submitted by the user
+- param_start — the start of the query time range
+- param_end — the end of the query time range
+- param_step — the step
 - length — total time window covered by the query (end − start)
 - time_since_min_time — how long ago the query start was relative to now (the oldest data point requested)
-- time_since_max_time - how long ago the query end was relative to now (the most recent data point requested)
-- user_agent - the HTTP User-Agent header value
-- status_code - the http response status code
+- time_since_max_time — how long ago the query end was relative to now (the most recent data point requested)
+- user_agent — the HTTP User-Agent header value
+- header_cache_control — the HTTP Cache-Control header value
+- status_code — the http response status code
 - response_time — total wall-clock time from request received to response sent
 - response_size_bytes — size of the HTTP response body
 - response_series_count — total number of series in the response
@@ -3866,19 +3876,23 @@ When looking at `msg="query stats"` consider the following attributes;
 - queue_time_seconds — time spent waiting in the query scheduler queue
 - query_wall_time_seconds — time spent actually executing the query
 - encode_time_seconds — time spent serialising the result to JSON
-- remote_execution_request_count - number of requests sent to queriers for execution
-- split_queries - the query was split into n sub-queries by the time-splitting middleware
+- remote_execution_request_count — number of requests sent to queriers for execution
+- split_queries — the query was split into n sub-queries by the time-splitting middleware
 - sharded_queries — the number of sharded queries
-- spun_off_subqueries — the number of subquery spin-offs
+- spun_off_subqueries — the number of subqueries spun off
+- split_range_vectors — the number of range vectors split
 - fetched_series_count — number of distinct time series read from store-gateways and ingesters
 - fetched_chunks_count — total chunks fetched
 - fetched_chunk_bytes — raw chunk data transferred
 - fetched_index_bytes — number of index bytes fetched. This can be 0 if the index was fully served from cache or memory
 - estimated_series_count — pre-execution estimate of series count
 - samples_processed — total individual samples evaluated
+- equivalent_samples_read — equivalent number of samples that would have been read from storage to execute a query, if no caching or other optimizations were applied to the query
+- physical_samples_read — the number of samples read from storage. Excludes any samples not read due to caching or other optimizations.
 - results_cache_hit_bytes — the number of bytes returned from the query results cache
-- results_cache_miss_bytes —the number of bytes fetched from storage and written to the query results cache
-- read_consistency — flags if strong read consistency was required
+- results_cache_miss_bytes — the number of bytes fetched from storage and written to the query results cache
+- read_consistency — the read consistency level requested, if any
+- read_consistency_max_delay — the maximum delay / staleness allowed for an eventually consistent request, if any
 
 When looking at `msg="evaluation stats"` consider the following attributes;
 

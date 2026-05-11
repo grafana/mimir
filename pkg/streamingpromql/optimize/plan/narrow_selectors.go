@@ -17,8 +17,7 @@ import (
 )
 
 var disallowedOperations = map[core.BinaryOperation]struct{}{
-	core.BINARY_LOR:     {},
-	core.BINARY_LUNLESS: {},
+	core.BINARY_LOR: {},
 }
 
 // NarrowSelectorsOptimizationPass examines a QueryPlan to determine if there are any

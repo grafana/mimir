@@ -5,8 +5,8 @@ package ast
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -50,6 +50,10 @@ type enrichedVectorSelector struct {
 
 func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	if e.Op == parser.LOR {
+		// Matchers cannot propagate across an `or`, but we still need to recurse into both
+		// sides so that any nested BinaryExprs within each arm are processed.
+		mapper.extractVectorSelectors(e.LHS)
+		mapper.extractVectorSelectors(e.RHS)
 		return nil, nil
 	}
 
@@ -114,6 +118,11 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 			}
 			return mapper.extractVectorSelectors(e.Args[i])
 		}
+		// Even for unsupported functions, recurse into all args to process any nested
+		// BinaryExprs (e.g. `scalar(up{foo="bar"} * down)` nested inside another BinaryExpr).
+		for _, arg := range e.Args {
+			mapper.extractVectorSelectors(arg)
+		}
 		return nil, nil
 	case *parser.AggregateExpr:
 		return mapper.extractVectorSelectorsFromAggregateExpr(e)
@@ -132,7 +141,10 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *parser.AggregateExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	include := !e.Without
 	if len(e.Grouping) == 0 && include {
-		// Shortcut if there are no labels allowed to propagate inwards or outwards.
+		// No labels are allowed to propagate inwards or outwards, but we still need to
+		// recurse into the inner expression so that any nested binary expressions are
+		// processed (e.g. propagating matchers within an "and on(...)" inside the aggregate).
+		mapper.extractVectorSelectors(e.Expr)
 		return nil, nil
 	}
 	vss, labelMatchers := mapper.extractVectorSelectors(e.Expr)
@@ -232,7 +244,7 @@ func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Ma
 	}
 	matchersToAdd := make([]*labels.Matcher, 0, length)
 	for _, m := range matchersSrc {
-		if isMetricNameMatcher(m) {
+		if isInternalMatcher(m) {
 			continue
 		}
 		if include != labelsSet.Contains(m.Name) {
@@ -261,8 +273,8 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet string
 	return matchers, changed
 }
 
-func isMetricNameMatcher(m *labels.Matcher) bool {
-	return m.Name == model.MetricNameLabel
+func isInternalMatcher(m *labels.Matcher) bool {
+	return strings.HasPrefix(m.Name, "__")
 }
 
 type stringSet map[string]struct{}

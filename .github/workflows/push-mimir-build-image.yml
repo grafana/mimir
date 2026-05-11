@@ -54,7 +54,7 @@ jobs:
       - name: Generate GitHub App Token for Membership
         if: steps.check_dockerfile.outputs.modified == 'true'
         id: app-token-for-membership
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
         with:
           app-id: ${{ env.APP_ID }}
           private-key: ${{ env.PRIVATE_KEY }}
@@ -197,7 +197,7 @@ jobs:
       - name: Generate GitHub App Token
         if: steps.check_dockerfile.outputs.modified == 'true'
         id: app-token-for-commit
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
         with:
           app-id: ${{ env.APP_ID }}
           private-key: ${{ env.PRIVATE_KEY }}

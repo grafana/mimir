@@ -35,7 +35,6 @@ func TestFinalize(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(100+456), queryStats.TotalSamples)
 	require.Zero(t, querierStats.SamplesProcessed, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
-	require.Empty(t, querierStats.SamplesProcessedPerStep, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
 	require.Equal(t, uint64(9000), querierStats.FetchedChunkBytes)
 
 	warnings, infos := annos.AsStrings("", 0, 0)
@@ -68,7 +67,6 @@ func TestFinalize_EmptyAnnotationsAndStats(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(100), queryStats.TotalSamples)
 	require.Zero(t, querierStats.SamplesProcessed, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
-	require.Empty(t, querierStats.SamplesProcessedPerStep, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
 
 	warnings, infos := annos.AsStrings("", 0, 0)
 	require.ElementsMatch(t, warnings, []string{

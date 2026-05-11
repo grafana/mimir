@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -17,6 +18,116 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+func TestAndUnlessBinaryOperation_PassesHintMatchersToRHS(t *testing.T) {
+	// Test that when hints are provided, matchers derived from the LHS series' label values are
+	// passed to the RHS SeriesMetadata call to narrow what the RHS fetches. When hints are nil,
+	// the RHS receives nil matchers (which is what happened before).
+	testCases := map[string]struct {
+		isUnless bool
+		hints    *Hints
+
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedRHSMatchers  types.Matchers
+		expectedOutputSeries []labels.Labels
+	}{
+		"and op with hints: RHS receives matcher derived from LHS label values, filtering non-matching RHS series": {
+			isUnless: false,
+			hints:    &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "prod", "series", "left-2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+				labels.FromStrings("env", "staging", "series", "right-2"), // these labels will be filtered out by hint matcher because they're not in RHS
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "prod", "series", "left-2"),
+			},
+		},
+		"unless op with hints: RHS receives matchers for all LHS env values; RHS series not in LHS env values are filtered out": {
+			isUnless: true,
+			hints:    &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+				labels.FromStrings("env", "dev", "series", "right-2"), // filtered out by hint matcher like above
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
+			},
+			// the SeriesMetadata for unless should always returns all of the LHS series, filtering happens in a different part of the pipeline
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+		},
+		"and op with no hints: RHS receives nil matchers": {
+			isUnless: false,
+			hints:    nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+			},
+			expectedRHSMatchers: nil,
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+			},
+		},
+		"unless op with no hints: RHS receives nil matchers": {
+			isUnless: true,
+			hints:    nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "right-1"),
+			},
+			expectedRHSMatchers: nil,
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "series", "left-1"),
+				// the SeriesMetadata for unless should always returns all of the LHS series, filtering happens in a different part of the pipeline
+				labels.FromStrings("env", "staging", "series", "left-2"),
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"env"}}
+			o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{}, testCase.hints, log.NewNopLogger())
+
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedRHSMatchers, right.MatchersProvided, "matchers passed to RHS")
+
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+			require.NoError(t, o.Finalize(ctx))
+			o.Close()
+		})
+	}
+}
 
 func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 	testCases := map[string]struct {
@@ -315,7 +426,7 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
-			o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{})
+			o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{}, nil, log.NewNopLogger())
 
 			outputSeries, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
@@ -450,7 +561,7 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 					left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 					right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 					vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
-					o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, isUnless, timeRange, posrange.PositionRange{})
+					o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, isUnless, timeRange, posrange.PositionRange{}, nil, log.NewNopLogger())
 
 					outputSeries, err := o.SeriesMetadata(ctx, nil)
 					require.NoError(t, err)

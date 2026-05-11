@@ -12,6 +12,10 @@ import (
 )
 
 func TestInstrumentRefLeaks(t *testing.T) {
+	if !refLeaksInstrumentationSupported {
+		t.Skip(errRefLeaksNotAvailable)
+	}
+
 	prev := debug.SetPanicOnFault(true)
 	defer debug.SetPanicOnFault(prev)
 

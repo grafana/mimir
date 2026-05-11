@@ -418,6 +418,17 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		return nil, err
 	}
 
+	// Ownership of q is transferred to the response finalizer on success. On any
+	// failure path before that hand-off we must Close q ourselves, otherwise the
+	// query's resources (memory consumption tracker, pooled buffers, evaluator
+	// context) leak.
+	shouldCloseQuery := true
+	defer func() {
+		if shouldCloseQuery {
+			q.Close()
+		}
+	}()
+
 	res := q.Exec(ctx)
 	if res.Err != nil {
 		err := convertToAPIError(res.Err, apierror.TypeExec)
@@ -435,16 +446,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	if localStats := stats.FromContext(ctx); localStats != nil {
 		engineStats := q.Stats()
 		localStats.AddSamplesProcessed(uint64(engineStats.Samples.TotalSamples))
-
-		stepStats := make([]stats.StepStat, 0, len(engineStats.Samples.TotalSamplesPerStep))
-		for i, count := range engineStats.Samples.TotalSamplesPerStep {
-			stepStats = append(stepStats, stats.StepStat{
-				Timestamp: r.GetStart() + int64(i)*r.GetStep(),
-				Value:     count,
-			})
-		}
-
-		localStats.AddSamplesProcessedPerStep(stepStats)
+		localStats.AddEquivalentSamplesRead(uint64(engineStats.Samples.SamplesRead))
 	}
 
 	resp = &PrometheusResponseWithFinalizer{
@@ -460,6 +462,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		finalizer: q.Close,
 	}
 
+	shouldCloseQuery = false
 	return resp, nil
 }
 

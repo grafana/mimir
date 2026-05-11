@@ -1531,3 +1531,53 @@ eval instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
   {type="mix"} 0
 
 clear
+
+# Test the "remove statically empty expressions" optimization pass doesn't cause incorrect results.
+# Note that these tests aren't sufficient to test that the optimisation pass applies when it should -
+# just that the optimisation pass doesn't apply when it shouldn't.
+
+load 1s
+  metric_1 1+1x2000
+
+load 500ms
+  metric_2 0 0.5 1 1.5 2 2.5 3 3.5 4 4.5 _x600 305
+  metric_3 0 0.5 1 1.5 2 2.5 3 3.5 4 4.5 5 _x599 305
+
+# Test the simple case first: selector wrapped in another function, so timestamp() can only return the evaluation timestamp.
+eval instant at 0s timestamp(abs(metric_1)) < 1000
+  {} 0
+
+eval instant at 999s timestamp(abs(metric_1)) < 1000
+  {} 999
+
+eval instant at 1000s timestamp(abs(metric_1)) < 1000
+  # Should be empty.
+
+eval instant at 999s timestamp(abs(metric_1)) <= 1000
+  {} 999
+
+eval instant at 1000s timestamp(abs(metric_1)) <= 1000
+  {} 1000
+
+eval instant at 1001s timestamp(abs(metric_1)) <= 1000
+  # Should be empty.
+
+# More complex case: timestamp() directly over a selector, so need to consider the lookback window.
+# At T=305s, the range of samples that could be selected is (305-(5*60), 305] = (5, 305] (the lookback window is not inclusive).
+eval instant at 0s timestamp(metric_2) < 5
+  {} 0
+
+eval instant at 304s timestamp(metric_2) < 5
+  {} 4.5
+
+eval instant at 305s timestamp(metric_2) < 5
+  # Should be empty
+
+eval instant at 304s timestamp(metric_3) <= 5
+  {} 5
+
+eval instant at 305s timestamp(metric_3) <= 5
+  # Should be empty
+
+eval instant at 306s timestamp(metric_3) <= 5
+  # Should be empty

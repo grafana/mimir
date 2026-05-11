@@ -352,6 +352,11 @@ runtime_config:
   # CLI flag: -runtime-config.http-client-timeout
   [http_client_timeout: <duration> | default = 30s]
 
+  http_client_cluster_validation:
+    # (experimental) Primary cluster validation label.
+    # CLI flag: -runtime-config.http-client-cluster-validation.label
+    [label: <string> | default = ""]
+
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 
@@ -490,6 +495,25 @@ overrides_exporter:
 # runs, ensuring inactive cost attribution entries are purged.
 # CLI flag: -cost-attribution.cleanup-interval
 [cost_attribution_cleanup_interval: <duration> | default = 3m]
+
+instrument_ref_leaks:
+  # (experimental) Percentage [0-100] of request or message buffers to
+  # instrument for reference leaks. Set to 0 to disable.
+  # CLI flag: -instrument-reference-leaks.percentage
+  [percentage: <float> | default = 0]
+
+  # (experimental) Period after a buffer instrumented for referenced leaks is
+  # nominally freed until the buffer is uninstrumented and effectively freed to
+  # be reused. After this period, any lingering references to the buffer may
+  # potentially be dereferenced again with no detection.
+  # CLI flag: -instrument-reference-leaks.before-reuse-period
+  [before_reuse_period: <duration> | default = 2m]
+
+  # (experimental) Maximum sum of length of buffers instrumented at any given
+  # time, in bytes. When surpassed, incoming buffers will not be instrumented,
+  # regardless of the configured percentage. Zero means no limit.
+  # CLI flag: -instrument-reference-leaks.max-inflight-instrumented-bytes
+  [max_inflight_instrumented_bytes: <int> | default = 0]
 ```
 
 ### common
@@ -532,25 +556,6 @@ client_cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
-
-instrument_ref_leaks:
-  # (experimental) Percentage [0-100] of request or message buffers to
-  # instrument for reference leaks. Set to 0 to disable.
-  # CLI flag: -common.instrument-reference-leaks.percentage
-  [percentage: <float> | default = 0]
-
-  # (experimental) Period after a buffer instrumented for referenced leaks is
-  # nominally freed until the buffer is uninstrumented and effectively freed to
-  # be reused. After this period, any lingering references to the buffer may
-  # potentially be dereferenced again with no detection.
-  # CLI flag: -common.instrument-reference-leaks.before-reuse-period
-  [before_reuse_period: <duration> | default = 2m]
-
-  # (experimental) Maximum sum of length of buffers instrumented at any given
-  # time, in bytes. When surpassed, incoming buffers will not be instrumented,
-  # regardless of the configured percentage. Zero means no limit.
-  # CLI flag: -common.instrument-reference-leaks.max-inflight-instrumented-bytes
-  [max_inflight_instrumented_bytes: <int> | default = 0]
 ```
 
 ### server
@@ -1966,6 +1971,12 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
   [enable_subset_selector_elimination: <boolean> | default = false]
 
+  # (experimental) Enable deduplication of range vector selectors in range
+  # queries as part of common subexpression elimination. Requires common
+  # subexpression elimination to be enabled.
+  # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
+  [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
+
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
   # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
@@ -2257,15 +2268,6 @@ results_cache:
 # planned. 0 to disable cardinality-based hints.
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
-
-# (experimental) True to enable sharding of active series queries.
-# CLI flag: -query-frontend.shard-active-series-queries
-[shard_active_series_queries: <boolean> | default = false]
-
-# (experimental) Set to true to use the zero-allocation response decoder for
-# active series queries.
-# CLI flag: -query-frontend.use-active-series-decoder
-[use_active_series_decoder: <boolean> | default = false]
 
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
@@ -4249,6 +4251,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.past-grace-period
 [past_grace_period: <duration> | default = 0s]
 
+# (experimental) When enabled and past_grace_period is 0, the distributor
+# rejects samples whose timestamp is older than '(now -
+# out_of_order_time_window)'. This matches what the ingester will reject. Has no
+# effect when past_grace_period is greater than 0.
+# CLI flag: -validation.enforce-out-of-order-window-on-distributor
+[enforce_out_of_order_window_on_distributor: <boolean> | default = false]
+
 # (advanced) Enforce every metadata has a metric name.
 # CLI flag: -validation.enforce-metadata-metric-name
 [enforce_metadata_metric_name: <boolean> | default = true]
@@ -5079,8 +5088,9 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
 [otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
 
-# (experimental) Optionally specify OTel resource attributes to promote to
-# labels.
+# (experimental) Optionally specify a comma-separated list of OTel resource
+# attributes to promote to labels. E.g.
+# 'k8s.cluster.name,host.name,cloud.region'
 # CLI flag: -distributor.otel-promote-resource-attributes
 [promote_otel_resource_attributes: <string> | default = ""]
 
@@ -5450,9 +5460,9 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
-  # (experimental) The record version that this producer sends.
+  # The record version that this producer sends.
   # CLI flag: -ingest-storage.kafka.producer-record-version
-  [producer_record_version: <int> | default = 0]
+  [producer_record_version: <int> | default = 2]
 
   # The maximum amount of time a Kafka broker waits for some records before a
   # Fetch response is returned.
@@ -5507,7 +5517,7 @@ kafka:
   # setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than
   # 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
-  [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
+  [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 200]
 
 migration:
   # When both this option and ingest storage are enabled, distributors write to
@@ -5629,6 +5639,42 @@ bucket_store:
       # CLI flag: -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes
       [max_size_bytes: <int> | default = 1073741824]
 
+  index_header_cache:
+    # Backend for index-header cache, if not empty. Intended for use with
+    # -blocks-storage.bucket-store.index-header.bucket-reader. Supported values:
+    # memcached.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.backend
+    [backend: <string> | default = ""]
+
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # blocks-storage.bucket-store.index-header-cache
+    [memcached: <memcached>]
+
+    # (experimental) TTL for caching object attributes of the block index for
+    # the index-header reader.  If the metadata cache is configured, attributes
+    # will be stored in the metadata cache backend, otherwise attributes are
+    # stored in the index-header cache backend.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-ttl
+    [attributes_ttl: <duration> | default = 168h]
+
+    # (experimental) TTL for caching individual index-header subranges.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-ttl
+    [subrange_ttl: <duration> | default = 24h]
+
+    # (experimental) Maximum number of individual subrange items to keep in a
+    # first level in-memory LRU cache. Subranges will be stored and fetched
+    # in-memory before hitting the cache backend. 0 to disable the in-memory
+    # cache.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items
+    [subrange_in_memory_max_items: <int> | default = 100000]
+
+    # (experimental) Maximum number of sub-GetRange requests that a single
+    # GetRange request can be split into when fetching index-header ranges. Zero
+    # or negative value = unlimited number of sub-requests.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.max-get-range-requests
+    [max_get_range_requests: <int> | default = 3]
+
   chunks_cache:
     # Backend for chunks cache, if not empty. Supported values: memcached.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.backend
@@ -5651,9 +5697,10 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
-    # (advanced) Maximum number of object attribute items to keep in a first
-    # level in-memory LRU cache. Metadata will be stored and fetched in-memory
-    # before hitting the cache backend. 0 to disable the in-memory cache.
+    # (advanced) Maximum number of object attribute items to keep in a
+    # first-level in-memory LRU cache. Metadata will be stored and fetched
+    # in-memory before hitting the cache backend. 0 to disable the in-memory
+    # cache.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items
     [attributes_in_memory_max_items: <int> | default = 50000]
 
@@ -6523,6 +6570,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`
+- `blocks-storage.bucket-store.index-header-cache`
 - `blocks-storage.bucket-store.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`

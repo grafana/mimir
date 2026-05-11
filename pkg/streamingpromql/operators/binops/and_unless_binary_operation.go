@@ -5,11 +5,13 @@ package binops
 import (
 	"context"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // AndUnlessBinaryOperation represents a logical 'and' or 'unless' between two vectors.
@@ -22,6 +24,8 @@ type AndUnlessBinaryOperation struct {
 
 	timeRange                  types.QueryTimeRange
 	expressionPosition         posrange.PositionRange
+	hints                      *Hints
+	logger                     log.Logger
 	leftSeriesGroups           []*andGroup
 	rightSeriesGroups          []*andGroup
 	nextRightSeriesIndex       int
@@ -40,6 +44,8 @@ func NewAndUnlessBinaryOperation(
 	isUnless bool,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
+	hints *Hints,
+	logger log.Logger,
 ) *AndUnlessBinaryOperation {
 	return &AndUnlessBinaryOperation{
 		Left:                     left,
@@ -49,6 +55,8 @@ func NewAndUnlessBinaryOperation(
 		IsUnless:                 isUnless,
 		timeRange:                timeRange,
 		expressionPosition:       expressionPosition,
+		hints:                    hints,
+		logger:                   logger,
 
 		lastLeftSeriesIndexToRead:  -1,
 		lastRightSeriesIndexToRead: -1,
@@ -90,12 +98,20 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		return nil, nil
 	}
 
-	// Do not pass the parent's matchers to the RHS. For 'and' and 'unless', the RHS acts as
-	// a presence filter on the LHS: only the LHS series are returned. Passing matchers from a
-	// parent binary operation to the RHS could incorrectly exclude RHS series that would
-	// otherwise filter out (for 'unless') or include (for 'and') LHS series, producing wrong
-	// results when the parent's matchers cover labels not in this operation's matching set.
-	rightMetadata, err := a.Right.SeriesMetadata(ctx, nil)
+	// Build RHS matchers: when hints are set, build matchers from LHS metadata to narrow
+	// the RHS series fetch. When no hints are available, pass nil (do not apply parent matchers
+	// to the RHS — see SeriesMetadata for why).
+	var rhsMatchers types.Matchers
+	if a.hints != nil {
+		rhsMatchers = BuildMatchers(leftMetadata, a.hints)
+		sl := spanlogger.FromContext(ctx, a.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing additional matchers to RHS",
+			"fields", a.hints.Include,
+			"hint_matchers", len(rhsMatchers),
+		)
+	}
+	rightMetadata, err := a.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {
 		return nil, err
 	}

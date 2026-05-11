@@ -141,8 +141,12 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 		return nil, errors.New("cannot enable subset selector elimination without common subexpression elimination")
 	}
 
+	if opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination && !opts.EnableCommonSubexpressionElimination {
+		return nil, errors.New("cannot enable range query range vector common subexpression elimination without common subexpression elimination")
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableMultiAggregation {
@@ -581,8 +585,8 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 
 		args := make([]planning.Node, 0, len(expr.Args))
 
-		for _, arg := range expr.Args {
-			node, err := p.nodeFromExpr(arg, timeRange)
+		for i, arg := range expr.Args {
+			node, err := p.funcArgFromExpr(fnc, i, arg, timeRange)
 			if err != nil {
 				return nil, err
 			}
@@ -646,17 +650,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			vectorSelector, ok := args[0].(*core.VectorSelector)
 			if ok {
 				vectorSelector.ReturnSampleTimestamps = true
-			}
-		case functions.FUNCTION_INFO:
-			// The InsertOmittedTargetInfoSelector AST pass ensures there are always 2 arguments.
-			// Check len(args) == 2 for safety in case the pass doesn't run (e.g., in tests).
-			if len(args) == 2 {
-				vectorSelector, ok := args[1].(*core.VectorSelector)
-				if !ok {
-					return nil, fmt.Errorf("expected second argument of info() to be a VectorSelector, got %T", args[1])
-				}
-				// Override float values to reflect original timestamps.
-				vectorSelector.ReturnSampleTimestampsPreserveHistograms = true
 			}
 		}
 
@@ -772,6 +765,20 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			return inner, nil
 		}
 
+		if resultType, err := inner.ResultType(); err != nil {
+			return nil, err
+		} else if resultType != parser.ValueTypeVector && resultType != parser.ValueTypeScalar {
+			// If the query was wrapped in a step-invariant expression and this branch is reached, the inner expression must be a
+			// subquery or range vector selector that returns a range vector at a fixed evaluation timestamp. For example:
+			// metric[3m:1m] @ 100, metric[3m] @ 100, or the range vector selector in
+			// quantile_over_time(scalar(arg), metric[3m] @ 100).
+			//
+			// Both the range vector selector and subquery operators handle this scenario themselves, and we don't need to
+			// wrap them in a step-invariant expression operator, so we don't bother wrapping them in a step-invariant node
+			// either.
+			return inner, nil
+		}
+
 		p.planningMetricsTracker.StepInvariantTracker.OnStepInvariantExpressionAdded(timeRange.StepCount)
 
 		return &core.StepInvariantExpression{
@@ -782,6 +789,28 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 	default:
 		return nil, fmt.Errorf("unknown expression type: %T", expr)
 	}
+}
+
+func (p *QueryPlanner) funcArgFromExpr(fn functions.Function, idx int, expr parser.Expr, timeRange types.QueryTimeRange) (planning.Node, error) {
+	if fn == functions.FUNCTION_INFO && idx == 1 {
+		return p.dataLabelSelectorFromExpr(expr)
+	}
+
+	return p.nodeFromExpr(expr, timeRange)
+}
+
+func (p *QueryPlanner) dataLabelSelectorFromExpr(expr parser.Expr) (planning.Node, error) {
+	v, ok := expr.(*parser.VectorSelector)
+	if !ok {
+		return nil, fmt.Errorf("expected second argument of info() to be a VectorSelector, got %T", expr)
+	}
+
+	return &core.DataLabelSelector{
+		DataLabelSelectorDetails: &core.DataLabelSelectorDetails{
+			Matchers:           core.LabelMatchersFromPrometheusType(v.LabelMatchers),
+			ExpressionPosition: core.PositionRangeFrom(v.PosRange),
+		},
+	}, nil
 }
 
 func findFunction(name string) (functions.Function, bool) {

@@ -1,4 +1,3 @@
-local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-compactor.json';
 
 // This applies to the "longest time since successful run queries"
@@ -257,43 +256,56 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       $._config.compactor_scheduler_enabled,
       ($.row('Summary (scheduler mode)') + { collapse: true })
       .addPanel(
-        $.timeseriesPanel('Scheduler jobs') +
+        $.timeseriesPanel('Pending jobs') +
         $.queryPanel(
-          [
-            'sum(cortex_compactor_scheduler_pending_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
-            'sum(cortex_compactor_scheduler_active_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
-          ],
-          ['pending', 'active'],
-        ) +
-        $.stack,
-      )
-      .addPanel(
-        $.timeseriesPanel('Jobs completed / sec') +
-        $.queryPanel(
-          'sum by(job_type) (rate(cortex_compactor_scheduler_jobs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          'sum by (job_type) (cortex_compactor_scheduler_pending_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
           '{{job_type}}',
         ) +
-        { fieldConfig+: { defaults+: { unit: 'ops' } } },
+        $.stack +
+        $.panelDescription(
+          'Pending jobs',
+          |||
+            Number of jobs queued waiting for a worker, by type. This is the scheduler's backlog: rising trends indicate
+            workers cannot keep up; falling trends indicate the queue is draining.
+          |||
+        ),
       )
       .addPanel(
-        $.timeseriesPanel('Repeated job failures / sec') +
+        $.timeseriesPanel('Active jobs') +
         $.queryPanel(
-          'sum(rate(cortex_compactor_scheduler_repeated_job_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
-          'failures',
+          'sum by (job_type) (cortex_compactor_scheduler_active_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{job_type}}',
         ) +
-        { fieldConfig+: { defaults+: { unit: 'ops' } } } +
-        $.aliasColors({ failures: $._colors.failed }),
+        $.stack +
+        $.panelDescription(
+          'Active jobs',
+          'Number of jobs currently leased by workers, by type.',
+        ),
       )
       .addPanel(
-        $.panel('Time since last scheduler contact per worker') +
+        $.timeseriesPanel('Incomplete compaction job bytes') +
+        $.queryPanel(
+          'sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{compaction_type}}',
+        ) +
+        $.stack +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } } +
+        $.aliasColors({ split: '#2A66CF', merge: '#FF780A' }) +
+        $.panelDescription(
+          'Incomplete compaction job bytes',
+          'Total bytes of source blocks across compaction jobs that have not yet completed (pending or active), broken down by split vs merge. Job size varies a lot, so this is usually a more accurate gauge of outstanding work than the raw job count.',
+        ),
+      )
+      .addPanel(
+        $.panel('Time since last scheduler contact') +
         $.queryPanel(
           |||
-            max by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s}[1h]) > 0))
+            min by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s}[1h]) > 0))
             and on(%(instance)s) up{%(job)s}
             or
-            max by(%(instance)s) (time() - max_over_time(process_start_time_seconds{%(job)s}[1h]))
+            min by(%(instance)s) (time() - max_over_time(process_start_time_seconds{%(job)s}[1h]))
             and on(%(instance)s) up{%(job)s}
-            and max by(%(instance)s) (cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s} == 0)
+            and min by(%(instance)s) (cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s} == 0)
           ||| % {
             instance: $._config.per_instance_label,
             job: $.jobMatcher($._config.job_names.compactor),
@@ -343,6 +355,32 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           },
         },
       )
+      .addPanel(
+        $.timeseriesPanel('Jobs completed / sec') +
+        $.queryPanel(
+          'sum by(job_type) (rate(cortex_compactor_scheduler_jobs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{job_type}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } },
+      )
+      .addPanel(
+        $.timeseriesPanel('Repeated job failures / sec') +
+        $.queryPanel(
+          'sum(rate(cortex_compactor_scheduler_repeated_job_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          'failures',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } } +
+        $.aliasColors({ failures: $._colors.failed }),
+      )
+      .addPanel(
+        $.timeseriesPanel('Scheduler RPC') +
+        $.queryPanel(
+          'label_replace(sum by (route) (histogram_count(rate(cortex_request_duration_seconds{%s, route=~"/compactorschedulerpb.CompactorScheduler/.*"}[$__rate_interval]))), "method", "$1", "route", "/compactorschedulerpb.CompactorScheduler/(.*)")' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{method}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+      )
+      .splitIntoLines([4, 3])
     )
     .addRow(
       $.row('Compaction')

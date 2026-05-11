@@ -28,6 +28,7 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.16.0  | 2025-03-17 | Nick Pillitteri    |
 | 2.17.0  | 2025-07-07 | Jeanette Tan       |
 | 3.0.0   | 2025-10-20 | Dimitar Dimitrov   |
+| 3.1.0   | 2026-05-18 | Toni Cárdenas      |
 
 ## Release shepherd responsibilities
 

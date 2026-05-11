@@ -5,6 +5,7 @@ package multiaggregation
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -108,8 +109,8 @@ func (g *MultiAggregationGroup) ExpressionPosition() (posrange.PositionRange, er
 	return g.Inner.ExpressionPosition()
 }
 
-func (g *MultiAggregationGroup) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanV5
+func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV5, nil
 }
 
 type MultiAggregationInstance struct {
@@ -166,7 +167,8 @@ func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other pl
 		a.Aggregation.EquivalentTo(otherInstance.Aggregation) &&
 		slices.EqualFunc(a.Filters, otherInstance.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
 			return a.Equal(b)
-		})
+		}) &&
+		a.SubsetIndex == otherInstance.SubsetIndex
 }
 
 func (a *MultiAggregationInstance) MergeHints(other planning.Node) error {
@@ -185,6 +187,9 @@ func (a *MultiAggregationInstance) Describe() string {
 	if len(a.Filters) > 0 {
 		builder.WriteString(", filters: ")
 		core.FormatMatchers(builder, a.Filters)
+
+		builder.WriteString(", subset index: ")
+		builder.WriteString(strconv.FormatInt(a.SubsetIndex, 10))
 	}
 
 	return builder.String()
@@ -210,12 +215,12 @@ func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange,
 	return a.Group.ExpressionPosition()
 }
 
-func (a *MultiAggregationInstance) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (a *MultiAggregationInstance) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if len(a.Filters) > 0 {
-		return planning.QueryPlanV8
+		return planning.QueryPlanV8, nil
 	}
 
-	return planning.QueryPlanV5
+	return planning.QueryPlanV5, nil
 }
 
 func MaterializeMultiAggregationGroup(node *MultiAggregationGroup, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
@@ -224,7 +229,7 @@ func MaterializeMultiAggregationGroup(node *MultiAggregationGroup, materializer 
 		return nil, err
 	}
 
-	evaluator := NewMultiAggregatorGroupEvaluator(inner, params.MemoryConsumptionTracker)
+	evaluator := NewMultiAggregatorGroupEvaluator(inner, params.MemoryConsumptionTracker, timeRange, params.Logger)
 
 	return &MultiAggregationInstanceFactory{group: evaluator}, nil
 }
@@ -263,6 +268,7 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		node.Aggregation.Grouping,
 		node.Aggregation.Without,
 		matchers,
+		int(node.SubsetIndex),
 		params.MemoryConsumptionTracker,
 		params.Annotations,
 		timeRange,

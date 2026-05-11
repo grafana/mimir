@@ -49,6 +49,7 @@ var (
 	reasonDuplicateLabelNames          = globalerror.SeriesWithDuplicateLabelNames.LabelValue()
 	reasonTooFarInFuture               = globalerror.SampleTooFarInFuture.LabelValue()
 	reasonTooFarInPast                 = globalerror.SampleTooFarInPast.LabelValue()
+	reasonSampleTimestampTooOld        = globalerror.SampleTimestampTooOld.LabelValue()
 	reasonDuplicateTimestamp           = globalerror.SampleDuplicateTimestamp.LabelValue()
 
 	// Discarded exemplars reasons.
@@ -115,6 +116,10 @@ var (
 	sampleTimestampTooOldMsgFormat = globalerror.SampleTooFarInPast.MessageWithPerTenantLimitConfig(
 		"received a sample whose timestamp is too far in the past, timestamp: %d series: '%.200s'",
 		validation.PastGracePeriodFlag,
+	)
+	sampleTimestampTooOldOOOMsgFormat = globalerror.SampleTimestampTooOld.MessageWithPerTenantLimitConfig(
+		"received a sample whose timestamp is older than the out-of-order time window, timestamp: %d series: '%.200s'",
+		validation.OutOfOrderTimeWindowFlag,
 	)
 	exemplarEmptyLabelsMsgFormat = globalerror.ExemplarLabelsMissing.Message(
 		"received an exemplar with no valid labels, timestamp: %d series: %s labels: %s",
@@ -208,6 +213,7 @@ func newValidationConfig(userID, limitsKey string, overrides *validation.Overrid
 		samples: sampleValidationConfig{
 			creationGracePeriod:                 overrides.CreationGracePeriod(userID),
 			pastGracePeriod:                     overrides.PastGracePeriod(userID),
+			enforceOOOWindowOnDistributor:       overrides.EnforceOOOWindowOnDistributor(userID),
 			maxNativeHistogramBuckets:           overrides.MaxNativeHistogramBuckets(userID),
 			reduceNativeHistogramOverMaxBuckets: overrides.ReduceNativeHistogramOverMaxBuckets(userID),
 			outOfOrderTimeWindow:                overrides.OutOfOrderTimeWindow(userID),
@@ -231,6 +237,7 @@ func newValidationConfig(userID, limitsKey string, overrides *validation.Overrid
 type sampleValidationConfig struct {
 	creationGracePeriod                 time.Duration
 	pastGracePeriod                     time.Duration
+	enforceOOOWindowOnDistributor       bool
 	maxNativeHistogramBuckets           int
 	reduceNativeHistogramOverMaxBuckets bool
 	outOfOrderTimeWindow                time.Duration
@@ -267,6 +274,7 @@ type sampleValidationMetrics struct {
 	duplicateLabelNames          *prometheus.CounterVec
 	tooFarInFuture               *prometheus.CounterVec
 	tooFarInPast                 *prometheus.CounterVec
+	sampleTimestampTooOld        *prometheus.CounterVec
 	duplicateTimestamp           *prometheus.CounterVec
 }
 
@@ -285,6 +293,7 @@ func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	m.duplicateLabelNames.DeletePartialMatch(filter)
 	m.tooFarInFuture.DeletePartialMatch(filter)
 	m.tooFarInPast.DeletePartialMatch(filter)
+	m.sampleTimestampTooOld.DeletePartialMatch(filter)
 	m.duplicateTimestamp.DeletePartialMatch(filter)
 }
 
@@ -302,6 +311,7 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 	m.duplicateLabelNames.DeleteLabelValues(userID, group)
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
 	m.tooFarInPast.DeleteLabelValues(userID, group)
+	m.sampleTimestampTooOld.DeleteLabelValues(userID, group)
 	m.duplicateTimestamp.DeleteLabelValues(userID, group)
 }
 
@@ -320,6 +330,7 @@ func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetric
 		duplicateLabelNames:          validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
 		tooFarInFuture:               validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
 		tooFarInPast:                 validation.DiscardedSamplesCounter(r, reasonTooFarInPast),
+		sampleTimestampTooOld:        validation.DiscardedSamplesCounter(r, reasonSampleTimestampTooOld),
 		duplicateTimestamp:           validation.DiscardedSamplesCounter(r, reasonDuplicateTimestamp),
 	}
 }
@@ -368,11 +379,18 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
 	}
 
-	if cfg.pastGracePeriod > 0 && model.Time(s.TimestampMs) < now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow) {
-		m.tooFarInPast.WithLabelValues(userID, group).Inc()
-		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
+	if cfg.pastGracePeriod > 0 {
+		if model.Time(s.TimestampMs) < now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow) {
+			m.tooFarInPast.WithLabelValues(userID, group).Inc()
+			cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
+			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
+			return fmt.Errorf(sampleTimestampTooOldMsgFormat, s.TimestampMs, unsafeMetricName)
+		}
+	} else if cfg.enforceOOOWindowOnDistributor && cfg.outOfOrderTimeWindow > 0 && model.Time(s.TimestampMs) < now.Add(-cfg.outOfOrderTimeWindow) {
+		m.sampleTimestampTooOld.WithLabelValues(userID, group).Inc()
+		cat.IncrementDiscardedSamples(ls, 1, reasonSampleTimestampTooOld, now.Time())
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return fmt.Errorf(sampleTimestampTooOldMsgFormat, s.TimestampMs, unsafeMetricName)
+		return fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.TimestampMs, unsafeMetricName)
 	}
 
 	return nil
@@ -389,11 +407,18 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		return false, fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
-	if cfg.pastGracePeriod > 0 && model.Time(s.Timestamp) < now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow) {
-		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
-		m.tooFarInPast.WithLabelValues(userID, group).Inc()
+	if cfg.pastGracePeriod > 0 {
+		if model.Time(s.Timestamp) < now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow) {
+			cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
+			m.tooFarInPast.WithLabelValues(userID, group).Inc()
+			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
+			return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
+		}
+	} else if cfg.enforceOOOWindowOnDistributor && cfg.outOfOrderTimeWindow > 0 && model.Time(s.Timestamp) < now.Add(-cfg.outOfOrderTimeWindow) {
+		cat.IncrementDiscardedSamples(ls, 1, reasonSampleTimestampTooOld, now.Time())
+		m.sampleTimestampTooOld.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
+		return false, fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
 	// Check if schema is either a valid exponential schema or NHCB.

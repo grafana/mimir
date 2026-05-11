@@ -1,4 +1,4 @@
-{
+(import '../utils.libsonnet') {
   // The alert name is prefixed with the product name (eg. AlertName -> MimirAlertName).
   alertName(name)::
     $._config.alert_product + name,
@@ -50,11 +50,6 @@
       }
       for group in groups
     ],
-
-  alertRangeInterval(multiple)::
-    local minutes = $._config.base_alerts_range_interval_minutes * multiple;
-    if minutes >= 1 && minutes == std.floor(minutes) then minutes + 'm'
-    else std.ceil(minutes * 60) + 's',
 
   histogramLabels(labels, histogram_type, nhcb=false)::
     assert histogram_type == 'native' || histogram_type == 'classic';

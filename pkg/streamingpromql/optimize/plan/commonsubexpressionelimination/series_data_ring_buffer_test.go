@@ -198,7 +198,7 @@ func TestSeriesDataRingBuffer_NonContiguousSeries(t *testing.T) {
 	require.Equal(t, s4, buffer.Get(124))
 }
 
-func TestSeriesDataRingBuffer_FindElementPositionForSeriesIndex(t *testing.T) {
+func TestSeriesDataRingBuffer_FindElementPositionForElementIndex(t *testing.T) {
 	t.Run("odd number of elements", func(t *testing.T) {
 		buffer := &SeriesDataRingBuffer[types.InstantVectorSeriesData]{}
 
@@ -213,34 +213,34 @@ func TestSeriesDataRingBuffer_FindElementPositionForSeriesIndex(t *testing.T) {
 		buffer.Append(s5, 125)
 		buffer.Append(s6, 126)
 
-		require.Equal(t, 0, buffer.findElementPositionForSeriesIndex(121))
-		require.Equal(t, 1, buffer.findElementPositionForSeriesIndex(123))
-		require.Equal(t, 2, buffer.findElementPositionForSeriesIndex(124))
-		require.Equal(t, 3, buffer.findElementPositionForSeriesIndex(125))
-		require.Equal(t, 4, buffer.findElementPositionForSeriesIndex(126))
+		require.Equal(t, 0, buffer.findElementPositionForElementIndex(121))
+		require.Equal(t, 1, buffer.findElementPositionForElementIndex(123))
+		require.Equal(t, 2, buffer.findElementPositionForElementIndex(124))
+		require.Equal(t, 3, buffer.findElementPositionForElementIndex(125))
+		require.Equal(t, 4, buffer.findElementPositionForElementIndex(126))
 
-		require.PanicsWithValue(t, "attempted to find element position for series index 120, but it is not present in this buffer (first series index is 121, last series index is 126)", func() {
-			buffer.findElementPositionForSeriesIndex(120)
+		require.PanicsWithValue(t, "attempted to find element position for element index 120, but it is not present in this buffer (first element index is 121, last element index is 126)", func() {
+			buffer.findElementPositionForElementIndex(120)
 		})
 
-		require.PanicsWithValue(t, "attempted to find element position for series index 122, but it is not present in this buffer (first series index is 121, last series index is 126)", func() {
-			buffer.findElementPositionForSeriesIndex(122)
+		require.PanicsWithValue(t, "attempted to find element position for element index 122, but it is not present in this buffer (first element index is 121, last element index is 126)", func() {
+			buffer.findElementPositionForElementIndex(122)
 		})
 
-		require.PanicsWithValue(t, "attempted to find element position for series index 127, but it is not present in this buffer (first series index is 121, last series index is 126)", func() {
-			buffer.findElementPositionForSeriesIndex(127)
+		require.PanicsWithValue(t, "attempted to find element position for element index 127, but it is not present in this buffer (first element index is 121, last element index is 126)", func() {
+			buffer.findElementPositionForElementIndex(127)
 		})
 
 		// Remove an element in the middle, and confirm we correctly handle tombstones.
 		buffer.Remove(123)
 
-		require.Equal(t, 0, buffer.findElementPositionForSeriesIndex(121))
-		require.Equal(t, 2, buffer.findElementPositionForSeriesIndex(124))
-		require.Equal(t, 3, buffer.findElementPositionForSeriesIndex(125))
-		require.Equal(t, 4, buffer.findElementPositionForSeriesIndex(126))
+		require.Equal(t, 0, buffer.findElementPositionForElementIndex(121))
+		require.Equal(t, 2, buffer.findElementPositionForElementIndex(124))
+		require.Equal(t, 3, buffer.findElementPositionForElementIndex(125))
+		require.Equal(t, 4, buffer.findElementPositionForElementIndex(126))
 
-		require.PanicsWithValue(t, "attempted to find element position for series index 123, but this element has been removed", func() {
-			buffer.findElementPositionForSeriesIndex(123)
+		require.PanicsWithValue(t, "attempted to find element position for element index 123, but this element has been removed", func() {
+			buffer.findElementPositionForElementIndex(123)
 		})
 	})
 
@@ -256,10 +256,10 @@ func TestSeriesDataRingBuffer_FindElementPositionForSeriesIndex(t *testing.T) {
 		buffer.Append(s4, 124)
 		buffer.Append(s5, 125)
 
-		require.Equal(t, 0, buffer.findElementPositionForSeriesIndex(121))
-		require.Equal(t, 1, buffer.findElementPositionForSeriesIndex(123))
-		require.Equal(t, 2, buffer.findElementPositionForSeriesIndex(124))
-		require.Equal(t, 3, buffer.findElementPositionForSeriesIndex(125))
+		require.Equal(t, 0, buffer.findElementPositionForElementIndex(121))
+		require.Equal(t, 1, buffer.findElementPositionForElementIndex(123))
+		require.Equal(t, 2, buffer.findElementPositionForElementIndex(124))
+		require.Equal(t, 3, buffer.findElementPositionForElementIndex(125))
 	})
 
 	t.Run("buffer wrapped around", func(t *testing.T) {
@@ -281,21 +281,21 @@ func TestSeriesDataRingBuffer_FindElementPositionForSeriesIndex(t *testing.T) {
 		buffer.Append(s7, 130)
 		require.Equal(t, 4, buffer.Size())
 
-		require.Equal(t, 0, buffer.findElementPositionForSeriesIndex(124))
-		require.Equal(t, 1, buffer.findElementPositionForSeriesIndex(125))
-		require.Equal(t, 2, buffer.findElementPositionForSeriesIndex(126))
-		require.Equal(t, 3, buffer.findElementPositionForSeriesIndex(130))
+		require.Equal(t, 0, buffer.findElementPositionForElementIndex(124))
+		require.Equal(t, 1, buffer.findElementPositionForElementIndex(125))
+		require.Equal(t, 2, buffer.findElementPositionForElementIndex(126))
+		require.Equal(t, 3, buffer.findElementPositionForElementIndex(130))
 
-		require.PanicsWithValue(t, "attempted to find element position for series index 123, but it is not present in this buffer (first series index is 124, last series index is 130)", func() {
-			buffer.findElementPositionForSeriesIndex(123)
+		require.PanicsWithValue(t, "attempted to find element position for element index 123, but it is not present in this buffer (first element index is 124, last element index is 130)", func() {
+			buffer.findElementPositionForElementIndex(123)
 		})
 
-		require.PanicsWithValue(t, "attempted to find element position for series index 127, but it is not present in this buffer (first series index is 124, last series index is 130)", func() {
-			buffer.findElementPositionForSeriesIndex(127)
+		require.PanicsWithValue(t, "attempted to find element position for element index 127, but it is not present in this buffer (first element index is 124, last element index is 130)", func() {
+			buffer.findElementPositionForElementIndex(127)
 		})
 
-		require.PanicsWithValue(t, "attempted to find element position for series index 131, but it is not present in this buffer (first series index is 124, last series index is 130)", func() {
-			buffer.findElementPositionForSeriesIndex(131)
+		require.PanicsWithValue(t, "attempted to find element position for element index 131, but it is not present in this buffer (first element index is 124, last element index is 130)", func() {
+			buffer.findElementPositionForElementIndex(131)
 		})
 	})
 
@@ -334,20 +334,20 @@ func TestSeriesDataRingBuffer_FindElementPositionForSeriesIndex(t *testing.T) {
 		require.Len(t, buffer.elements, 8)
 		require.Equal(t, 7, buffer.Size())
 
-		require.Equal(t, 0, buffer.findElementPositionForSeriesIndex(124))
-		require.Equal(t, 1, buffer.findElementPositionForSeriesIndex(125))
-		require.Equal(t, 2, buffer.findElementPositionForSeriesIndex(126))
-		require.Equal(t, 3, buffer.findElementPositionForSeriesIndex(127))
-		require.Equal(t, 4, buffer.findElementPositionForSeriesIndex(128))
-		require.Equal(t, 5, buffer.findElementPositionForSeriesIndex(129))
-		require.Equal(t, 6, buffer.findElementPositionForSeriesIndex(130))
+		require.Equal(t, 0, buffer.findElementPositionForElementIndex(124))
+		require.Equal(t, 1, buffer.findElementPositionForElementIndex(125))
+		require.Equal(t, 2, buffer.findElementPositionForElementIndex(126))
+		require.Equal(t, 3, buffer.findElementPositionForElementIndex(127))
+		require.Equal(t, 4, buffer.findElementPositionForElementIndex(128))
+		require.Equal(t, 5, buffer.findElementPositionForElementIndex(129))
+		require.Equal(t, 6, buffer.findElementPositionForElementIndex(130))
 
-		require.PanicsWithValue(t, "attempted to find element position for series index 123, but it is not present in this buffer (first series index is 124, last series index is 130)", func() {
-			buffer.findElementPositionForSeriesIndex(123)
+		require.PanicsWithValue(t, "attempted to find element position for element index 123, but it is not present in this buffer (first element index is 124, last element index is 130)", func() {
+			buffer.findElementPositionForElementIndex(123)
 		})
 
-		require.PanicsWithValue(t, "attempted to find element position for series index 131, but it is not present in this buffer (first series index is 124, last series index is 130)", func() {
-			buffer.findElementPositionForSeriesIndex(131)
+		require.PanicsWithValue(t, "attempted to find element position for element index 131, but it is not present in this buffer (first element index is 124, last element index is 130)", func() {
+			buffer.findElementPositionForElementIndex(131)
 		})
 	})
 }
@@ -415,14 +415,14 @@ func TestSeriesDataRingBuffer_GetIfPresent(t *testing.T) {
 	requireNotPresent(t, buffer, 128)
 }
 
-func requirePresent(t *testing.T, buffer *SeriesDataRingBuffer[types.InstantVectorSeriesData], seriesIndex int, expected types.InstantVectorSeriesData) {
-	returnedSeries, found := buffer.GetIfPresent(seriesIndex)
-	require.True(t, found, "should find series in buffer")
+func requirePresent(t *testing.T, buffer *SeriesDataRingBuffer[types.InstantVectorSeriesData], elementIndex int, expected types.InstantVectorSeriesData) {
+	returnedSeries, found := buffer.GetIfPresent(elementIndex)
+	require.True(t, found, "should find element in buffer")
 	require.Equal(t, expected, returnedSeries)
 }
 
-func requireNotPresent(t *testing.T, buffer *SeriesDataRingBuffer[types.InstantVectorSeriesData], seriesIndex int) {
-	_, found := buffer.GetIfPresent(seriesIndex)
+func requireNotPresent(t *testing.T, buffer *SeriesDataRingBuffer[types.InstantVectorSeriesData], elementIndex int) {
+	_, found := buffer.GetIfPresent(elementIndex)
 	require.False(t, found, "should not find series in buffer")
 }
 

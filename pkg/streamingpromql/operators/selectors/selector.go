@@ -51,13 +51,24 @@ type Selector struct {
 	ProjectionInclude bool
 	ProjectionLabels  []string
 
+	// Subsets to report in operator stats.
+	Subsets []Subset
+
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	querier   storage.Querier
 	seriesSet storage.SeriesSet
 	series    *seriesList
 
+	seriesSubsetBitmap []bool // One entry per subset in Subsets. Reused for each call to Next().
+
 	seriesIdx int
+}
+
+type Subset struct {
+	Filter []*labels.Matcher
+
+	matchingSeries []bool // One entry per series. True means the corresponding series matches this subset.
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
@@ -96,12 +107,20 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 		s.series.Add(series)
 	}
 
+	if s.seriesSet.Err() != nil {
+		return nil, s.seriesSet.Err()
+	}
+
 	metadata, err := s.series.ToSeriesMetadata()
 	if err != nil {
 		return nil, err
 	}
 
-	return metadata, s.seriesSet.Err()
+	if err := s.computeSubsetBitmaps(metadata); err != nil {
+		return nil, err
+	}
+
+	return metadata, nil
 }
 
 func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
@@ -127,6 +146,27 @@ func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
 	}
 
 	return out
+}
+
+func (s *Selector) computeSubsetBitmaps(metadata []types.SeriesMetadata) error {
+	if len(s.Subsets) == 0 {
+		return nil
+	}
+
+	for idx, subset := range s.Subsets {
+		bitmap, err := types.BoolSlicePool.Get(len(metadata), s.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		for _, series := range metadata {
+			bitmap = append(bitmap, types.MatchersMatch(subset.Filter, series.Labels))
+		}
+
+		s.Subsets[idx].matchingSeries = bitmap
+	}
+
+	return nil
 }
 
 func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) error {
@@ -170,6 +210,16 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 	}
 
 	s.seriesSet = s.querier.Select(ctx, true, hints, promMatchers...)
+
+	if len(s.Subsets) > 0 {
+		s.seriesSubsetBitmap, err = types.BoolSlicePool.Get(len(s.Subsets), s.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		s.seriesSubsetBitmap = s.seriesSubsetBitmap[:len(s.Subsets)]
+	}
+
 	return nil
 }
 
@@ -195,9 +245,14 @@ func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, s
 	return startTimestamp, endTimestamp
 }
 
-func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {
+// Next returns the iterator and subset bitmap for the next series in this selector.
+//
+// Each entry in the subset bitmap corresponds to an entry in Subsets. True means this series matches the subset.
+// The subset bitmap is only valid until the next call to Next or Close.
+// This Selector instance is responsible for returning it to the pool on Close.
+func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, []bool, error) {
 	if s.series.Len() == 0 {
-		return nil, types.EOS
+		return nil, nil, types.EOS
 	}
 
 	// Only check for cancellation every 128 series. This avoids a (relatively) expensive check on every iteration, but aborts
@@ -205,11 +260,19 @@ func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunke
 	// index so that we check for cancellation at least once for all selectors.
 	// See https://github.com/prometheus/prometheus/pull/14118 for more explanation of why we use 128 (rather than say 100).
 	if s.seriesIdx%128 == 0 && ctx.Err() != nil {
-		return nil, context.Cause(ctx)
+		return nil, nil, context.Cause(ctx)
 	}
 
+	s.updateSeriesSubsetBitmap()
 	s.seriesIdx++
-	return s.series.Pop().Iterator(existing), nil
+
+	return s.series.Pop().Iterator(existing), s.seriesSubsetBitmap, nil
+}
+
+func (s *Selector) updateSeriesSubsetBitmap() {
+	for subsetIdx, subset := range s.Subsets {
+		s.seriesSubsetBitmap[subsetIdx] = subset.matchingSeries[s.seriesIdx]
+	}
 }
 
 func (s *Selector) Close() {
@@ -224,6 +287,13 @@ func (s *Selector) Close() {
 	}
 
 	s.seriesSet = nil
+
+	for idx := range s.Subsets {
+		types.BoolSlicePool.Put(&s.Subsets[idx].matchingSeries, s.MemoryConsumptionTracker)
+	}
+
+	s.Subsets = nil
+	types.BoolSlicePool.Put(&s.seriesSubsetBitmap, s.MemoryConsumptionTracker)
 }
 
 // seriesList is a FIFO queue of storage.Series.

@@ -9,26 +9,47 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func computeFilterBitmap(unfilteredSeries []types.SeriesMetadata, filters []*labels.Matcher, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (nextUnfilteredSeriesIndex int, unfilteredSeriesBitmap []bool, filteredSeriesCount int, err error) {
-	if len(filters) == 0 {
-		return 0, nil, len(unfilteredSeries), nil
+type subset struct {
+	// filters are the matchers that define this subset. If empty, this subset performs no filtering.
+	filters []*labels.Matcher
+
+	// subsetIndex is the index of the subset in the inner operator's stats.
+	subsetIndex int
+
+	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this consumer's filters.
+	// If the subset has no filters (unfiltered), this is nil.
+	unfilteredSeriesBitmap []bool
+
+	filteredSeriesCount int
+}
+
+// applicable returns true if this subset performs any filtering.
+func (s *subset) applicable() bool {
+	return len(s.filters) > 0
+}
+
+func (s *subset) computeFilterBitmap(unfilteredSeries []types.SeriesMetadata, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (nextUnfilteredSeriesIndex int, err error) {
+	if !s.applicable() {
+		s.filteredSeriesCount = len(unfilteredSeries)
+
+		return 0, nil
 	}
 
-	unfilteredSeriesBitmap, err = types.BoolSlicePool.Get(len(unfilteredSeries), memoryConsumptionTracker)
+	s.unfilteredSeriesBitmap, err = types.BoolSlicePool.Get(len(unfilteredSeries), memoryConsumptionTracker)
 	if err != nil {
-		return 0, nil, 0, err
+		return 0, err
 	}
 
 	nextUnfilteredSeriesIndex = len(unfilteredSeries)
-	unfilteredSeriesBitmap = unfilteredSeriesBitmap[:len(unfilteredSeries)]
+	s.unfilteredSeriesBitmap = s.unfilteredSeriesBitmap[:len(unfilteredSeries)]
 
 	for unfilteredSeriesIndex, series := range unfilteredSeries {
-		if !types.MatchersMatch(filters, series.Labels) {
+		if !types.MatchersMatch(s.filters, series.Labels) {
 			continue
 		}
 
-		unfilteredSeriesBitmap[unfilteredSeriesIndex] = true
-		filteredSeriesCount++
+		s.unfilteredSeriesBitmap[unfilteredSeriesIndex] = true
+		s.filteredSeriesCount++
 
 		if nextUnfilteredSeriesIndex == len(unfilteredSeries) {
 			// First unfiltered series that matches.
@@ -36,11 +57,15 @@ func computeFilterBitmap(unfilteredSeries []types.SeriesMetadata, filters []*lab
 		}
 	}
 
-	return nextUnfilteredSeriesIndex, unfilteredSeriesBitmap, filteredSeriesCount, nil
+	return nextUnfilteredSeriesIndex, nil
 }
 
-func applyFiltering(unfilteredSeries []types.SeriesMetadata, bitmap []bool, filteredSeriesCount int, isLastConsumer bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	if bitmap == nil {
+func (s *subset) close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.BoolSlicePool.Put(&s.unfilteredSeriesBitmap, memoryConsumptionTracker)
+}
+
+func applyFiltering(unfilteredSeries []types.SeriesMetadata, subset subset, isLastConsumer bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	if !subset.applicable() {
 		// Fast path: no filters to apply.
 
 		if isLastConsumer {
@@ -62,12 +87,12 @@ func applyFiltering(unfilteredSeries []types.SeriesMetadata, bitmap []bool, filt
 		return metadata, nil
 	}
 
-	filteredSeries, err := types.SeriesMetadataSlicePool.Get(filteredSeriesCount, memoryConsumptionTracker)
+	filteredSeries, err := types.SeriesMetadataSlicePool.Get(subset.filteredSeriesCount, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	for idx, matchesFilter := range bitmap {
+	for idx, matchesFilter := range subset.unfilteredSeriesBitmap {
 		if !matchesFilter {
 			continue
 		}

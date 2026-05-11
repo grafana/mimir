@@ -91,6 +91,19 @@ It is also possible to set TLS-related options with the following environment va
 | `MIMIR_TLS_KEY_PATH`             | `--tls-key-path`             | Sets the path to the private key to use to authenticate to the Grafana Mimir cluster.                                  |
 | `MIMIR_TLS_INSECURE_SKIP_VERIFY` | `--tls-insecure-skip-verify` | If `true`, disables verification of the Grafana Mimir cluster's TLS certificate. This is insecure and not recommended. |
 
+Commands that use Mimirtool's shared Mimir API client (`rules`, `alertmanager`, `alerts`, `backfill`, and `analyze ruler`) also support AWS Signature Version 4 request signing with the following environment variables or CLI flags:
+
+| Environment variable                | Flag                            | Description                                                                                                                                                                            |
+| ----------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MIMIR_SIGV4_REGION`                | `--sigv4-region`                | Sets the AWS region used for SigV4 request signing. This option is required when SigV4 signing is configured.                                                                          |
+| `MIMIR_SIGV4_ACCESS_KEY`            | `--sigv4-access-key`            | Sets the AWS access key used for SigV4 request signing. If unset, the AWS default credential chain is used.                                                                            |
+| `MIMIR_SIGV4_SECRET_KEY`            | `--sigv4-secret-key`            | Sets the AWS secret key used for SigV4 request signing. Must be set together with `MIMIR_SIGV4_ACCESS_KEY`.                                                                            |
+| `MIMIR_SIGV4_PROFILE`               | `--sigv4-profile`               | Sets the AWS shared config profile used for SigV4 request signing.                                                                                                                     |
+| `MIMIR_SIGV4_ASSUME_ROLE_ARN`       | `--sigv4-assume-role-arn`       | Sets the AWS role Amazon Resource Name (ARN) to assume before SigV4 request signing.                                                                                                   |
+| `MIMIR_SIGV4_EXTERNAL_ID`           | `--sigv4-external-id`           | Sets the AWS external ID to use when assuming `MIMIR_SIGV4_ASSUME_ROLE_ARN`.                                                                                                           |
+| `MIMIR_SIGV4_USE_FIPS_STS_ENDPOINT` | `--sigv4-use-fips-sts-endpoint` | If `true`, uses the Federal Information Processing Standards (FIPS) AWS Security Token Service (STS) endpoint when assuming a role for SigV4 request signing.                          |
+| `MIMIR_SIGV4_SERVICE_NAME`          | `--sigv4-service-name`          | Sets the AWS service name used for SigV4 request signing. If SigV4 is enabled and this is unset, the underlying signer defaults to `aps`; use `execute-api` for API Gateway endpoints. |
+
 ## Commands
 
 The following sections outline the commands that you can run against Grafana Mimir and Grafana Cloud Metrics.

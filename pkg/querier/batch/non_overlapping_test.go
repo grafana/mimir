@@ -15,9 +15,9 @@ import (
 )
 
 func TestNonOverlappingIter(t *testing.T) {
-	cs := []GenericChunk(nil)
+	cs := []chunk.Chunk(nil)
 	for i := int64(0); i < 100; i++ {
-		cs = append(cs, mkGenericChunk(t, model.TimeFromUnix(i*10), 10, chunk.PrometheusXorChunk))
+		cs = append(cs, mkChunk(t, model.TimeFromUnix(i*10), 10, chunk.PrometheusXorChunk))
 	}
 	testIter(t, 10*100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
 	it := newNonOverlappingIterator(nil, 0, cs, nil, nil)
@@ -34,13 +34,13 @@ func TestNonOverlappingIter(t *testing.T) {
 }
 
 func TestNonOverlappingIterSparse(t *testing.T) {
-	cs := []GenericChunk{
-		mkGenericChunk(t, model.TimeFromUnix(0), 1, chunk.PrometheusXorChunk),
-		mkGenericChunk(t, model.TimeFromUnix(1), 3, chunk.PrometheusXorChunk),
-		mkGenericChunk(t, model.TimeFromUnix(4), 1, chunk.PrometheusXorChunk),
-		mkGenericChunk(t, model.TimeFromUnix(5), 90, chunk.PrometheusXorChunk),
-		mkGenericChunk(t, model.TimeFromUnix(95), 1, chunk.PrometheusXorChunk),
-		mkGenericChunk(t, model.TimeFromUnix(96), 4, chunk.PrometheusXorChunk),
+	cs := []chunk.Chunk{
+		mkChunk(t, model.TimeFromUnix(0), 1, chunk.PrometheusXorChunk),
+		mkChunk(t, model.TimeFromUnix(1), 3, chunk.PrometheusXorChunk),
+		mkChunk(t, model.TimeFromUnix(4), 1, chunk.PrometheusXorChunk),
+		mkChunk(t, model.TimeFromUnix(5), 90, chunk.PrometheusXorChunk),
+		mkChunk(t, model.TimeFromUnix(95), 1, chunk.PrometheusXorChunk),
+		mkChunk(t, model.TimeFromUnix(96), 4, chunk.PrometheusXorChunk),
 	}
 	testIter(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
 	testSeek(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)

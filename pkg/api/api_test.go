@@ -6,6 +6,7 @@
 package api
 
 import (
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -245,6 +246,60 @@ func TestApiIngesterShutdown(t *testing.T) {
 	}
 }
 
+// TestStaticAssetsRespectPathPrefix verifies that the embedded static assets are reachable
+// both when -server.path-prefix is unset and when it is configured. Without the StripPrefix
+// wrapper, http.FileServer would receive the path-prefixed URL (e.g. /mimir/static/foo.css),
+// fail to find "mimir/static/foo.css" in the embedded FS, and return 404. See #13476.
+func TestStaticAssetsRespectPathPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		pathPrefix string
+		requestURL string
+	}{
+		{
+			name:       "no path prefix",
+			pathPrefix: "",
+			requestURL: "/static/mimir-styles.css",
+		},
+		{
+			name:       "with path prefix",
+			pathPrefix: "/mimir",
+			requestURL: "/mimir/static/mimir-styles.css",
+		},
+		{
+			name:       "with nested path prefix",
+			pathPrefix: "/foo/bar",
+			requestURL: "/foo/bar/static/mimir-styles.css",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{
+				GzipCompressionLevel: gzip.DefaultCompression,
+				ServerPrefix:         tc.pathPrefix,
+			}
+			serverCfg := getServerConfig(t)
+			serverCfg.PathPrefix = tc.pathPrefix
+			federationCfg := tenantfederation.Config{}
+			srv, err := server.New(serverCfg)
+			require.NoError(t, err)
+			t.Cleanup(srv.Shutdown)
+
+			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			api.RegisterAPI(&cfg, &cfg, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+
+			// srv.HTTP is the (sub)router built by dskit; when cfg.PathPrefix is non-empty
+			// it is the subrouter that matches the full path including the prefix.
+			req := httptest.NewRequest(http.MethodGet, tc.requestURL, nil)
+			w := httptest.NewRecorder()
+			srv.HTTP.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code, "static asset should be served at %s", tc.requestURL)
+			require.NotEmpty(t, w.Body.Bytes(), "response body should contain the asset bytes")
+		})
+	}
+}
+
 // Generates server config, with gRPC listening on random port.
 func getServerConfig(t *testing.T) server.Config {
 	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
@@ -377,4 +432,45 @@ func TestNewRouteMaxBodySize(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestActivityTrackingNotAppliedToPushRoute verifies that the activity tracking middleware is not
+// applied to routes registered without a max body size (like /api/v1/push). A remote write v1
+// request with Content-Type: application/x-www-form-urlencoded and a protobuf body containing
+// 0x3B (';') must reach the inner handler. If the middleware ran, it would call r.ParseForm() on
+// the body and Go 1.17+ would reject the semicolon with "invalid semicolon separator in query",
+// returning HTTP 500 before the handler is ever called.
+func TestActivityTrackingNotAppliedToPushRoute(t *testing.T) {
+	activityFile := filepath.Join(t.TempDir(), "activity-tracker")
+	reg := prometheus.NewPedanticRegistry()
+	at, err := activitytracker.NewActivityTracker(activitytracker.Config{Filepath: activityFile, MaxEntries: 1024}, reg)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, at.Close()) })
+
+	cfg := Config{}
+	serverCfg := getServerConfig(t)
+	federationCfg := tenantfederation.Config{}
+	srv, err := server.New(serverCfg)
+	require.NoError(t, err)
+
+	api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger(), at)
+	require.NoError(t, err)
+
+	var innerHandlerCalled bool
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		innerHandlerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// RegisterRoute passes maxBodySizeIfAny=0, matching how /api/v1/push is registered.
+	api.RegisterRoute("/api/v1/push", inner, false, false, http.MethodPost)
+
+	body := []byte{0x0a, 0x12, 0x3B, 0x08, 0x01, 0x12, 0x0e}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/push", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	api.server.HTTP.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, innerHandlerCalled, "activity tracking middleware must not run on routes registered without a max body size")
 }

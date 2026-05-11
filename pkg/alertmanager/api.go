@@ -324,12 +324,13 @@ func (am *MultitenantAlertmanager) ListAllConfigs(w http.ResponseWriter, r *http
 // first error or nil if validation succeeds.
 func validateAlertmanagerConfig(cfg interface{}) error {
 	v := reflect.ValueOf(cfg)
-	t := v.Type()
 
 	// Skip invalid, the zero value or a nil pointer (checked by zero value).
 	if !v.IsValid() || v.IsZero() {
 		return nil
 	}
+
+	t := v.Type()
 
 	// If the input config is a pointer then we need to get its value.
 	// At this point the pointer value can't be nil.
