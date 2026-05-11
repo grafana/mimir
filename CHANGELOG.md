@@ -8,7 +8,7 @@
 * [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #15276
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
 * [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245
-* [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #15179 #15220 #15223 #15232 #15237 #15255
+* [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #15179 #15220 #15223 #15232 #15237 #15255 #15285
 * [ENHANCEMENT] Ingest storage: Reject the whole batch of records of a Kafka write call when the configured `-ingest-storage.kafka.producer-max-buffered-bytes` limit is reached, instead of rejecting individual records. #15227
 * [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
 * [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
