@@ -34,10 +34,13 @@ type searchLabelNamesClientMock struct {
 }
 
 func (m *searchLabelNamesClientMock) Recv() (*storepb.SearchResultBatch, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
+	// Drain batches first; once exhausted, surface err (if set) instead of EOF.
+	// This lets tests inject a mid-stream Recv error after some batches have
+	// been delivered, exercising the streaming-retry branch.
 	if m.idx >= len(m.batches) {
+		if m.err != nil {
+			return nil, m.err
+		}
 		return nil, io.EOF
 	}
 	b := m.batches[m.idx]
@@ -277,4 +280,72 @@ func TestBlocksStoreQuerier_SearchLabelNames_NonRetriableErrorBubblesUp(t *testi
 	assert.False(t, rs.Next())
 	require.Error(t, rs.Err())
 	assert.Contains(t, rs.Err().Error(), "non-retriable")
+}
+
+// TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError pins down the
+// semantics of a retriable error surfaced mid-stream (after some batches have
+// already been received): the partial results from the failing SG are
+// DROPPED, consistency-check sees the failing SG's blocks as missing, and
+// re-runs the query against a different SG.
+//
+// This documents the contract Task 6 (SearchLabelValues) will inherit: the
+// streaming-retry branch is "all-or-nothing" per replica — pre-error data is
+// not preserved because the goroutine bails out before appending to nameSets.
+// Preserving partial results would require richer coordination with
+// queryWithConsistencyCheck (a future enhancement); for now the simple drop
+// keeps the result set correct at the cost of redoing some work.
+func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	// First SG: delivers one batch, then errors with Unavailable on the next
+	// Recv — drainSGSearchLabelStream returns the error, shouldRetry classifies
+	// it retriable, the goroutine logs and returns nil, no result is appended.
+	storeMidStreamErr := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{
+				{Value: "pre_error_value", Score: 1.0},
+			},
+		}},
+		searchLabelNamesStreamErr: status.Error(codes.Unavailable, "transient mid-stream"),
+	}
+	// Retry SG: clean drain with a different value.
+	storeOK := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{
+				{Value: "retry_value", Score: 1.0},
+			},
+		}},
+	}
+
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{storeMidStreamErr: {block1}},
+		map[BlocksStoreClient][]ulid.ULID{storeOK: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	got := drainSearchResults(t, rs)
+
+	// Documented behaviour: the first SG's pre-error batch is DROPPED. Only
+	// the retry SG's value appears in the final result.
+	require.Len(t, got, 1)
+	assert.Equal(t, "retry_value", got[0].Value)
+	assert.NotContains(t, []string{got[0].Value}, "pre_error_value",
+		"pre-error data from failed replica must NOT leak through")
+
+	assert.Equal(t, 1, storeMidStreamErr.calls.n, "failing SG should be tried once")
+	assert.Equal(t, 1, storeOK.calls.n, "retry SG should be tried once")
 }
