@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
+* [FEATURE] Cost attribution: Support multiple named cost attribution trackers per tenant via new `cost_attribution_trackers` config field. #15302
 * [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #15276
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
 * [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245

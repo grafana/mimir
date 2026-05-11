@@ -126,16 +126,12 @@ func (m *Manager) iteration(_ context.Context) error {
 	return nil
 }
 
-func (m *Manager) enabledForUser(userID string) bool {
-	if m == nil {
-		return false
-	}
-	return len(m.effectiveTrackerConfigs(userID)) > 0
-}
-
 // effectiveTrackerConfigs resolves the effective tracker configs for a user,
 // merging the legacy single-tracker config with the new multi-tracker map.
 func (m *Manager) effectiveTrackerConfigs(userID string) map[string]resolvedTrackerConfig {
+	if m == nil {
+		return nil
+	}
 	legacyLabels := m.limits.CostAttributionLabelsStructured(userID)
 	trackers := m.limits.CostAttributionTrackers(userID)
 	defaultMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
