@@ -231,18 +231,19 @@ func TestStreamSearchResultsPropagatesWarnings(t *testing.T) {
 
 func TestStreamSearchResultsPropagatesErrInsteadOfWarnings(t *testing.T) {
 	want := errors.New("boom")
-	rs := &fakeSearchResultSet{
-		results: []storage.SearchResult{{Value: "a", Score: 1.0}},
-		err:     want,
-		warns:   addAnnotation(nil, "should not appear"),
+	// Generate enough results to trigger at least one mid-iteration batch send.
+	results := make([]storage.SearchResult, searchBatchSize)
+	for i := 0; i < searchBatchSize; i++ {
+		results[i] = storage.SearchResult{Value: "a", Score: 1.0}
 	}
+	rs := &fakeSearchResultSet{results: results, err: want, warns: addAnnotation(nil, "should not appear")}
 	var sent []*client.SearchResultBatch
 	send := func(b *client.SearchResultBatch) error {
 		sent = append(sent, b)
 		return nil
 	}
 	require.ErrorIs(t, streamSearchResults(rs, send), want)
-	// The single result was sent before iteration ended; the trailer batch
+	// A batch was sent before iteration ended; the trailer batch
 	// (which would carry warnings) is suppressed because rs.Err is non-nil.
 	for _, b := range sent {
 		assert.Empty(t, b.Warnings, "warnings must not be sent when iteration errored")
