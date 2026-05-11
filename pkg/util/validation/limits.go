@@ -248,10 +248,10 @@ type Limits struct {
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
 
 	// Cost attribution.
-	CostAttributionLabelsStructured costattributionmodel.Labels         `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
-	MaxCostAttributionCardinality   int                                 `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
-	CostAttributionCooldown         model.Duration                      `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
-	AdditionalCostAttributionTrackers         costattributionmodel.TrackerConfigs `yaml:"additional_cost_attribution_trackers,omitempty" json:"additional_cost_attribution_trackers,omitempty" category:"experimental"`
+	CostAttributionLabelsStructured   costattributionmodel.Labels         `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
+	MaxCostAttributionCardinality     int                                 `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
+	CostAttributionCooldown           model.Duration                      `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	AdditionalCostAttributionTrackers costattributionmodel.TrackerConfigs `yaml:"additional_cost_attribution_trackers,omitempty" json:"additional_cost_attribution_trackers,omitempty" category:"experimental"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
