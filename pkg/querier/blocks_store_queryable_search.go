@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
@@ -25,10 +26,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// SearchLabelNames fans the request out across store-gateway replicas owning the
-// blocks in the query window, drains each replica's SearchLabelNames stream,
-// merges per-replica name slices, then re-scores via storage.ApplySearchHints
-// to apply the requested filter, ordering, and limit.
+// SearchLabelNames fans the request out across store-gateway replicas owning
+// the blocks in the query window, drains each replica's SearchLabelNames
+// stream into a scored []storage.SearchResult, and merges via
+// mimirstorage.MergeSearchResults (cross-SG dedup with max-score, then
+// ordering + limit per hints).
+//
+// Score preservation: leaf-computed scores propagate end-to-end. The SG
+// applied req.Filter already, so re-running it would burn CPU without
+// changing the result (Spec invariant 3 requires Score to be deterministic
+// per (Value, Filter)).
 func (q *blocksStoreQuerier) SearchLabelNames(
 	ctx context.Context,
 	params *streaminglabelvalues.Params,
@@ -55,18 +62,18 @@ func (q *blocksStoreQuerier) SearchLabelNames(
 
 	var (
 		mtx               sync.Mutex
-		resNameSets       = [][]string{}
+		resResultSets     = [][]storage.SearchResult{}
 		resWarnings       annotations.Annotations
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 	)
 
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
-		nameSets, warnings, queriedBlocks, err := q.fetchSearchLabelNamesFromStore(ctx, clients, qMinT, qMaxT, tenantID, params, hints, convertedMatchers, indexMeta)
+		resultSets, warnings, queriedBlocks, err := q.fetchSearchLabelNamesFromStore(ctx, clients, qMinT, qMaxT, tenantID, params, hints, convertedMatchers, indexMeta)
 		if err != nil {
 			return nil, err
 		}
 		mtx.Lock()
-		resNameSets = append(resNameSets, nameSets...)
+		resResultSets = append(resResultSets, resultSets...)
 		resWarnings.Merge(warnings)
 		mtx.Unlock()
 		return queriedBlocks, nil
@@ -76,8 +83,7 @@ func (q *blocksStoreQuerier) SearchLabelNames(
 		return storage.ErrSearchResultSet(err)
 	}
 
-	merged := util.MergeSlices(resNameSets...)
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(merged, hints), resWarnings)
+	return storage.NewSearchResultSetFromSlice(mimirstorage.MergeSearchResults(resResultSets, hints), resWarnings)
 }
 
 // fetchSearchLabelNamesFromStore mirrors fetchLabelNamesFromStore but uses the
@@ -100,13 +106,13 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 	hints *storage.SearchHints,
 	wireMatchers []storepb.LabelMatcher,
 	indexMeta *bucketindex.Metadata,
-) ([][]string, annotations.Annotations, []ulid.ULID, error) {
+) ([][]storage.SearchResult, annotations.Annotations, []ulid.ULID, error) {
 	reqCtx := grpcContextWithBucketStoreRequestMeta(ctx, tenantID, indexMeta)
 
 	var (
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
-		nameSets      = [][]string{}
+		resultSets    = [][]storage.SearchResult{}
 		warnings      annotations.Annotations
 		queriedBlocks = []ulid.ULID(nil)
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
@@ -124,7 +130,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 				return errors.Wrapf(err, "non-retriable error while fetching search label names from store %s", c.RemoteAddress())
 			}
 
-			values, sgWarnings, err := drainSGSearchLabelStream(stream)
+			results, sgWarnings, err := drainSGSearchLabelStream(stream)
 			if err != nil {
 				if shouldRetry(err) {
 					level.Warn(spanLog).Log("msg", "failed to drain search label names stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
@@ -135,11 +141,13 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 
 			spanLog.DebugLog("msg", "received search label names from store-gateway",
 				"instance", c,
-				"num values", len(values),
+				"num values", len(results),
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "))
 
 			mtx.Lock()
-			nameSets = append(nameSets, values)
+			if len(results) > 0 {
+				resultSets = append(resultSets, results)
+			}
 			warnings.Merge(sgWarnings)
 			// See caveat in the function doc — the RPC does not echo back the
 			// blocks the SG actually visited; we optimistically credit the
@@ -153,7 +161,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 	if err := g.Wait(); err != nil {
 		return nil, nil, nil, err
 	}
-	return nameSets, warnings, queriedBlocks, nil
+	return resultSets, warnings, queriedBlocks, nil
 }
 
 // buildSGSearchLabelNamesRequest assembles the wire request for the SG
@@ -201,7 +209,7 @@ func paramsToSGProto(p *streaminglabelvalues.Params) *storepb.SearchFilter {
 
 // orderingToSGProto translates hints.OrderBy into the SG wire enum. Defaults
 // to ORDER_BY_VALUE_ASC when hints is nil — same default as
-// storage.ApplySearchHints.
+// mimirstorage.MergeSearchResults at the merge side.
 func orderingToSGProto(hints *storage.SearchHints) storepb.SearchOrdering {
 	if hints == nil {
 		return storepb.ORDER_BY_VALUE_ASC
@@ -224,10 +232,11 @@ type sgSearchStream interface {
 
 // SearchLabelValues fans the request out across store-gateway replicas owning
 // the blocks in the query window, drains each replica's SearchLabelValues
-// stream, merges per-replica value slices, then re-scores via
-// storage.ApplySearchHints to apply the requested filter, ordering, and limit.
-// Mirrors SearchLabelNames; differs only in the wire request, which carries
-// the label whose values are being searched.
+// stream into a scored []storage.SearchResult, and merges via
+// mimirstorage.MergeSearchResults. Mirrors SearchLabelNames; differs only in
+// the wire request, which carries the label whose values are being searched.
+//
+// See SearchLabelNames for the score-preservation / no-re-filter rationale.
 func (q *blocksStoreQuerier) SearchLabelValues(
 	ctx context.Context,
 	name string,
@@ -255,18 +264,18 @@ func (q *blocksStoreQuerier) SearchLabelValues(
 
 	var (
 		mtx               sync.Mutex
-		resValueSets      = [][]string{}
+		resResultSets     = [][]storage.SearchResult{}
 		resWarnings       annotations.Annotations
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 	)
 
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
-		valueSets, warnings, queriedBlocks, err := q.fetchSearchLabelValuesFromStore(ctx, name, clients, qMinT, qMaxT, tenantID, params, hints, convertedMatchers, indexMeta)
+		resultSets, warnings, queriedBlocks, err := q.fetchSearchLabelValuesFromStore(ctx, name, clients, qMinT, qMaxT, tenantID, params, hints, convertedMatchers, indexMeta)
 		if err != nil {
 			return nil, err
 		}
 		mtx.Lock()
-		resValueSets = append(resValueSets, valueSets...)
+		resResultSets = append(resResultSets, resultSets...)
 		resWarnings.Merge(warnings)
 		mtx.Unlock()
 		return queriedBlocks, nil
@@ -276,8 +285,7 @@ func (q *blocksStoreQuerier) SearchLabelValues(
 		return storage.ErrSearchResultSet(err)
 	}
 
-	merged := util.MergeSlices(resValueSets...)
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(merged, hints), resWarnings)
+	return storage.NewSearchResultSetFromSlice(mimirstorage.MergeSearchResults(resResultSets, hints), resWarnings)
 }
 
 // fetchSearchLabelValuesFromStore mirrors fetchSearchLabelNamesFromStore but
@@ -296,13 +304,13 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 	hints *storage.SearchHints,
 	wireMatchers []storepb.LabelMatcher,
 	indexMeta *bucketindex.Metadata,
-) ([][]string, annotations.Annotations, []ulid.ULID, error) {
+) ([][]storage.SearchResult, annotations.Annotations, []ulid.ULID, error) {
 	reqCtx := grpcContextWithBucketStoreRequestMeta(ctx, tenantID, indexMeta)
 
 	var (
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
-		valueSets     = [][]string{}
+		resultSets    = [][]storage.SearchResult{}
 		warnings      annotations.Annotations
 		queriedBlocks = []ulid.ULID(nil)
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
@@ -320,7 +328,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 				return errors.Wrapf(err, "non-retriable error while fetching search label values from store %s", c.RemoteAddress())
 			}
 
-			values, sgWarnings, err := drainSGSearchLabelStream(stream)
+			results, sgWarnings, err := drainSGSearchLabelStream(stream)
 			if err != nil {
 				if shouldRetry(err) {
 					level.Warn(spanLog).Log("msg", "failed to drain search label values stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
@@ -332,11 +340,13 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 			spanLog.DebugLog("msg", "received search label values from store-gateway",
 				"instance", c,
 				"label", name,
-				"num values", len(values),
+				"num values", len(results),
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "))
 
 			mtx.Lock()
-			valueSets = append(valueSets, values)
+			if len(results) > 0 {
+				resultSets = append(resultSets, results)
+			}
 			warnings.Merge(sgWarnings)
 			// See caveat in fetchSearchLabelNamesFromStore — the RPC does not
 			// echo back the blocks the SG actually visited.
@@ -349,7 +359,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 	if err := g.Wait(); err != nil {
 		return nil, nil, nil, err
 	}
-	return valueSets, warnings, queriedBlocks, nil
+	return resultSets, warnings, queriedBlocks, nil
 }
 
 // buildSGSearchLabelValuesRequest assembles the wire request for the SG
@@ -376,23 +386,24 @@ func buildSGSearchLabelValuesRequest(
 	return req
 }
 
-// drainSGSearchLabelStream reads the stream to EOF, accumulating values from
-// each batch's Results and string warnings into annotations.
-func drainSGSearchLabelStream(stream sgSearchStream) ([]string, annotations.Annotations, error) {
+// drainSGSearchLabelStream reads the stream to EOF, copying each batch's
+// scored results into []storage.SearchResult and accumulating warnings into
+// annotations. Scores are preserved verbatim from the leaf SG.
+func drainSGSearchLabelStream(stream sgSearchStream) ([]storage.SearchResult, annotations.Annotations, error) {
 	var (
-		values   []string
+		results  []storage.SearchResult
 		warnings annotations.Annotations
 	)
 	for {
 		batch, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			return values, warnings, nil
+			return results, warnings, nil
 		}
 		if err != nil {
 			return nil, nil, err
 		}
 		for _, r := range batch.Results {
-			values = append(values, r.Value)
+			results = append(results, storage.SearchResult{Value: r.Value, Score: r.Score})
 		}
 		for _, w := range batch.Warnings {
 			warnings.Add(errors.New(w))
