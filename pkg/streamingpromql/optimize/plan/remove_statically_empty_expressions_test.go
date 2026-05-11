@@ -241,9 +241,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expr:       `info(metric{pod="foo", pod="bar"}, {__name__="other_info"})`,
 			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
-				- FunctionCall: info(...)
-					- param 0: NoOp
-					- param 1: DataLabelSelector: {__name__="other_info"}
+				- NoOp
 			`,
 		},
 		"conflicting equals matchers in second info() argument: should not optimize": {
@@ -529,7 +527,12 @@ func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
 	}
 }
 
-func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_UnknownFunction(t *testing.T) {
+func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_AllFunctionsHandled(t *testing.T) {
+	params := &planning.QueryParameters{
+		TimeRange:     types.NewInstantQueryTimeRange(time.Now()),
+		LookbackDelta: 5 * time.Minute,
+	}
+
 	var currentFunc functions.Function
 	for i := 0; ; i++ {
 		currentFunc = functions.Function(i)
@@ -537,6 +540,21 @@ func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_UnknownFunct
 		// that we've found the end of the protobuf defined functions.
 		if !strings.HasPrefix(currentFunc.String(), "FUNCTION_") {
 			break
+		}
+
+		// If this is a known function, ensure that we either get no error when
+		// determining if it is always empty or an error because we haven't passed
+		// the expected arguments (because we don't pass any). The idea is to make
+		// sure we have explicitly handled every defined function.
+		funcCall := &core.FunctionCall{
+			FunctionCallDetails: &core.FunctionCallDetails{
+				Function: currentFunc,
+			},
+		}
+
+		_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, params)
+		if err != nil {
+			require.ErrorIs(t, err, plan.ErrInvalidFunctionArgs, "expected no error or invalid arguments error for %s, got %s", currentFunc, err)
 		}
 	}
 
@@ -546,6 +564,6 @@ func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_UnknownFunct
 		},
 	}
 
-	_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, nil)
+	_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, params)
 	require.ErrorIs(t, err, plan.ErrUnknownFunction)
 }

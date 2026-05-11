@@ -297,7 +297,8 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		functions.FUNCTION_YEAR,
 		functions.FUNCTION_PI,
 		functions.FUNCTION_SCALAR,
-		functions.FUNCTION_TIME:
+		functions.FUNCTION_TIME,
+		functions.FUNCTION_UNKNOWN:
 		// Functions that we know are not valid to replace with a no-op node either
 		// because it would generate incorrect results or because they do not operate
 		// on vectors.
