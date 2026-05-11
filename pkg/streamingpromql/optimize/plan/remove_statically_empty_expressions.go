@@ -341,28 +341,10 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 		core.BINARY_SUB:
 		// Arithmetic operations are always no-ops when one side of the operation is a no-op since
 		// they won't have any matching labels.
-		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
-		if err != nil {
-			return false, err
-		}
-
-		if lhsEmpty {
-			return true, nil
-		}
-
-		return isAlwaysEmpty(node.RHS, params)
+		return isEitherBinaryExpressionSideEmpty(node, params)
 
 	case core.BINARY_LAND:
-		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
-		if err != nil {
-			return false, err
-		}
-
-		if lhsEmpty {
-			return true, nil
-		}
-
-		return isAlwaysEmpty(node.RHS, params)
+		return isEitherBinaryExpressionSideEmpty(node, params)
 
 	case core.BINARY_LOR:
 		// A or B is empty only when both sides are empty.
@@ -383,22 +365,73 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 
 	case core.BINARY_LSS:
 		// Check for timestamp(v) < C.
-		return isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, false, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, false, params)
+		if err != nil {
+			return false, err
+		}
+
+		if empty {
+			return true, nil
+		}
+
+		return isEitherBinaryExpressionSideEmpty(node, params)
 
 	case core.BINARY_LTE:
 		// Check for timestamp(v) <= C.
-		return isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, true, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, true, params)
+		if err != nil {
+			return false, err
+		}
+
+		if empty {
+			return true, nil
+		}
+
+		return isEitherBinaryExpressionSideEmpty(node, params)
 
 	case core.BINARY_GTR:
 		// Check for C > timestamp(v), equivalent to timestamp(v) < C.
-		return isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, false, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, false, params)
+		if err != nil {
+			return false, err
+		}
+
+		if empty {
+			return true, nil
+		}
+
+		return isEitherBinaryExpressionSideEmpty(node, params)
 
 	case core.BINARY_GTE:
 		// Check for C >= timestamp(v), equivalent to timestamp(v) <= C.
-		return isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, true, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, true, params)
+		if err != nil {
+			return false, err
+		}
+
+		if empty {
+			return true, nil
+		}
+
+		return isEitherBinaryExpressionSideEmpty(node, params)
 	}
 
 	return false, nil
+}
+
+// isEitherBinaryExpressionSideEmpty returns true if either side of a binary expression is
+// empty by recursively calling isAlwaysEmpty.
+func isEitherBinaryExpressionSideEmpty(node *core.BinaryExpression, params *planning.QueryParameters) (bool, error) {
+	lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
+	if err != nil {
+		return false, err
+	}
+
+	if lhsEmpty {
+		return true, nil
+	}
+
+	return isAlwaysEmpty(node.RHS, params)
 }
 
 // isAlwaysEmptyTimestampComparison returns true if timestampSide and constantSide represent

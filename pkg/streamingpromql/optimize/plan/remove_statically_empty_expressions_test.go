@@ -332,8 +332,36 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
+		"binary less-than with empty result on right side: should optimize": {
+			expr: `some_metric_a < EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary less-than-or-equal with empty result on right side: should optimize": {
+			expr: `some_metric_a <= EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary greater-than with empty result on right side: should optimize": {
+			expr: `some_metric_a > EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary greater-than-or-equal with empty result on right side: should optimize": {
+			expr: `some_metric_a >= EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 		"binary add with results on both sides: should not optimize": {
 			expr:            `sum(metric_a) + sum(metric_b)`,
+			expectUnchanged: true,
+		},
+		"binary greater-than with results on both sides: should not optimize": {
+			expr:            `some_metric_a > some_metric_b`,
 			expectUnchanged: true,
 		},
 		"absent over empty result: should only optimize selector": {
