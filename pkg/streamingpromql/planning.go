@@ -129,6 +129,11 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 		if splitInterval <= 0 {
 			return nil, errors.New("range vector splitting is enabled but split interval is not greater than 0")
 		}
+
+		if opts.EnableCommonSubexpressionElimination && !opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination {
+			return nil, errors.New("range vector splitting and common subexpression elimination are enabled but range query range vector common subexpression elimination is not enabled")
+		}
+
 		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, timeNow, opts.CommonOpts.Reg, opts.Logger))
 	}
 
