@@ -43,7 +43,7 @@ require (
 	golang.org/x/net v0.53.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
-	google.golang.org/grpc v1.80.0
+	google.golang.org/grpc v1.81.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
@@ -76,7 +76,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20250813080715-4e5fd4289b50
 	github.com/tjhop/slog-gokit v0.2.0
-	github.com/twmb/franz-go v1.21.0
+	github.com/twmb/franz-go v1.21.1
 	github.com/twmb/franz-go/pkg/kadm v1.17.2-0.20251227070528-0c71f7e25fa1
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260121195810-e0832fcbdccb
 	github.com/twmb/franz-go/pkg/kmsg v1.13.1
@@ -120,7 +120,7 @@ require (
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
-	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
+	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/coder/quartz v0.3.0 // indirect
 	github.com/d4l3k/messagediff v1.2.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
@@ -200,7 +200,7 @@ require (
 	go.opentelemetry.io/collector/pipeline v1.54.0 // indirect
 	go.opentelemetry.io/collector/processor v1.54.0 // indirect
 	go.opentelemetry.io/contrib/bridges/prometheus v0.67.0 // indirect
-	go.opentelemetry.io/contrib/detectors/gcp v1.39.0 // indirect
+	go.opentelemetry.io/contrib/detectors/gcp v1.42.0 // indirect
 	go.opentelemetry.io/contrib/exporters/autoexport v0.67.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.67.0 // indirect
 	go.opentelemetry.io/contrib/samplers/jaegerremote v0.36.0 // indirect
@@ -351,7 +351,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260504033849-ef7a650fb3f3
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260508032900-67b920668662
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.

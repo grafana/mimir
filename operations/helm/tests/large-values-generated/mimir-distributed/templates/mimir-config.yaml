@@ -72,7 +72,7 @@ data:
         backend: memcached
         memcached:
           addresses: dnssrvnoa+large-values-mimir-results-cache.citestns.svc.cluster.local.:11211
-          max_item_size: 5242880
+          max_item_size: 26214400
           timeout: 500ms
       scheduler_address: large-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:

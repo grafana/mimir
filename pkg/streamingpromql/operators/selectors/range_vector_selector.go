@@ -163,7 +163,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	// Update query stats before we perform any mutations for the anchored or smoothed modifier.
-	m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, m.matchesSubsets)
+	m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, m.Selector.Timestamp != nil, m.matchesSubsets)
 
 	if m.Selector.Anchored || m.Selector.Smoothed {
 		// Histograms are not supported for these modified range queries
