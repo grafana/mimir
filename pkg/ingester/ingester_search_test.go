@@ -233,23 +233,36 @@ func TestStreamSearchResultsPropagatesWarnings(t *testing.T) {
 }
 
 func TestStreamSearchResultsPropagatesErrInsteadOfWarnings(t *testing.T) {
+	// Use exactly searchBatchSize results so the producer flushes one full
+	// batch mid-iteration before rs.Err() is observed. Without the error,
+	// streamSearchResults would then emit a trailer batch carrying the
+	// warnings (since len(batch.Warnings) > 0 alone triggers a send); with
+	// the error, that trailer must be suppressed. So len(sent)==1 is the
+	// direct observation of suppression, and the single sent batch — being
+	// a mid-iteration flush — must not carry the warnings either.
+	const total = searchBatchSize
+	results := make([]storage.SearchResult, total)
+	for i := 0; i < total; i++ {
+		results[i] = storage.SearchResult{Value: fmt.Sprintf("v%04d", i), Score: 1.0}
+	}
 	want := errors.New("boom")
 	rs := &fakeSearchResultSet{
-		results: []storage.SearchResult{{Value: "a", Score: 1.0}},
+		results: results,
 		err:     want,
 		warns:   addAnnotation(nil, "should not appear"),
 	}
 	var sent []*client.SearchResultBatch
 	send := func(b *client.SearchResultBatch) error {
-		sent = append(sent, b)
+		// Defensive copy: the producer reuses the batch struct between sends.
+		out := make([]client.SearchResultBatch_Result, len(b.Results))
+		copy(out, b.Results)
+		sent = append(sent, &client.SearchResultBatch{Results: out, Warnings: b.Warnings})
 		return nil
 	}
 	require.ErrorIs(t, streamSearchResults(context.Background(), rs, send), want)
-	// The single result was sent before iteration ended; the trailer batch
-	// (which would carry warnings) is suppressed because rs.Err is non-nil.
-	for _, b := range sent {
-		assert.Empty(t, b.Warnings, "warnings must not be sent when iteration errored")
-	}
+	require.Len(t, sent, 1, "trailer batch carrying warnings must be suppressed when rs.Err() is non-nil")
+	assert.Len(t, sent[0].Results, searchBatchSize, "the mid-iteration flush carried the full batch")
+	assert.Empty(t, sent[0].Warnings, "warnings must never ride on mid-iteration batches")
 }
 
 func addAnnotation(a annotations.Annotations, msg string) annotations.Annotations {
