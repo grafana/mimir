@@ -323,6 +323,8 @@
   "ingester.read-path-cpu-utilization-limit": 0,
   "ingester.read-path-memory-utilization-limit": 0,
   "ingester.error-sample-rate": 10,
+  "ingester.use-ingester-owned-series-for-limits": true,
+  "ingester.track-ingester-owned-series": true,
   "ingester.owned-series-update-interval": 15000000000,
   "ingester.push-circuit-breaker.failure-threshold-percentage": 10,
   "ingester.push-circuit-breaker.failure-execution-threshold": 100,

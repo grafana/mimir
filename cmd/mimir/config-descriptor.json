@@ -4762,10 +4762,10 @@
           "required": false,
           "desc": "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.use-ingester-owned-series-for-limits",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -4773,10 +4773,10 @@
           "required": false,
           "desc": "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.track-ingester-owned-series",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -4787,7 +4787,7 @@
           "fieldDefaultValue": 15000000000,
           "fieldFlag": "ingester.owned-series-update-interval",
           "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "block",

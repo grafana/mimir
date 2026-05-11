@@ -730,8 +730,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			c.cfg.IngesterRing.HeartbeatPeriod = defaultHeartbeatPeriod
 			c.cfg.IngesterRing.UnregisterOnShutdown = false
 
-			// Note that we don't start the ingester's owned series service (cfg.UseIngesterOwnedSeriesForLimits and cfg.UpdateIngesterOwnedSeries are false)
-			// because we'll be testing a stand-alone service to better control when it runs.
+			// Disable the ingester's owned series service so we can test a stand-alone service to better control when it runs.
+			c.cfg.UseIngesterOwnedSeriesForLimits = false
+			c.cfg.UpdateIngesterOwnedSeries = false
 
 			// Start the ring watching. We need watcher to be running when we're doing ring updates, otherwise our update-and-watch function will fail.
 			c.ingesterRing = createAndStartRing(t, c.cfg.IngesterRing.ToRingConfig())
@@ -1450,6 +1451,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			c.cfg.IngesterRing.InstanceID = fmt.Sprintf("ingester-%d", tc.registerPartitionID) // Ingester owns partition based on instance ID.
 			c.cfg.IngesterPartitionRing.KVStore.Mock = c.kvStore                               // Set ring with our in-memory KV, that we will use for watching.
 			c.cfg.BlocksStorageConfig.TSDB.Dir = ""                                            // Don't use default value, otherwise
+			// Disable the ingester's owned series service so we can test a stand-alone service to better control when it runs.
+			c.cfg.UseIngesterOwnedSeriesForLimits = false
+			c.cfg.UpdateIngesterOwnedSeries = false
 
 			c.overrides = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
 			// createTestIngesterWithIngestStorage will register partition and ingester into the partition ring.
