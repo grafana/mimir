@@ -79,6 +79,87 @@ func (d *Distributor) searchLabelNamesFanOut(
 	return mergeDrainResults(resps), mergeWarnings(resps), nil
 }
 
+// SearchLabelValues fans out the search RPC for label name's values across
+// the ingester replication set, drains each replica's stream, merges
+// per-replica []string via util.MergeSlices, then re-applies the search
+// filter via storage.ApplySearchHints for deterministic scoring. Returns a
+// slice-backed storage.SearchResultSet.
+//
+// params is the wire-decoupled form of hints.Filter and is forwarded to the
+// ingesters so each leaf can build its own filter chain. hints.Filter is the
+// already-constructed filter used to re-score the merged result-set on this
+// side; the Querier-side caller (Task 4) holds both and forwards both.
+// Caller must build params and hints.Filter from the same
+// streaminglabelvalues.Params; mismatched filters silently shrink results.
+//
+// from/to bound the query time range; name is the label whose values are
+// being searched. PR #4's HTTP handler resolves these from the request and
+// Task 4's distributorQuerier threads them through.
+//
+// Drains run concurrently per replica; this method blocks until every
+// replica has been drained to EOF or has errored. Memory is bounded by
+// replicas * hints.Limit; the eventual HTTP layer (PR #4) is responsible
+// for sane limits.
+func (d *Distributor) SearchLabelValues(
+	ctx context.Context,
+	from, to model.Time,
+	name string,
+	params *streaminglabelvalues.Params,
+	hints *storage.SearchHints,
+	matchers []*labels.Matcher,
+) storage.SearchResultSet {
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	req, err := buildSearchLabelValuesRequest(from, to, name, params, hints, matchers)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	values, warns, err := d.searchLabelValuesFanOut(ctx, replicationSets, req)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, hints), warns)
+}
+
+func (d *Distributor) searchLabelValuesFanOut(
+	ctx context.Context,
+	replicationSets []ring.ReplicationSet,
+	req *ingester_client.SearchLabelValuesRequest,
+) ([]string, annotations.Annotations, error) {
+	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, c ingester_client.IngesterClient) (drainResult, error) {
+		stream, err := c.SearchLabelValues(ctx, req)
+		if err != nil {
+			return drainResult{}, err
+		}
+		return drainIngesterSearchStream(stream)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return mergeDrainResults(resps), mergeWarnings(resps), nil
+}
+
+func buildSearchLabelValuesRequest(from, to model.Time, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) (*ingester_client.SearchLabelValuesRequest, error) {
+	wireMatchers, err := ingester_client.ToLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+	req := &ingester_client.SearchLabelValuesRequest{
+		Name:             name,
+		StartTimestampMs: int64(from),
+		EndTimestampMs:   int64(to),
+		Matchers:         wireMatchers,
+		Filter:           paramsToProto(params),
+		Ordering:         orderingToProto(hints),
+	}
+	if hints != nil {
+		req.Limit = int64(hints.Limit)
+	}
+	return req, nil
+}
+
 // searchStream is the common Recv-only surface of
 // Ingester_SearchLabelNamesClient and Ingester_SearchLabelValuesClient,
 // allowing drainIngesterSearchStream to be reused for both RPCs.

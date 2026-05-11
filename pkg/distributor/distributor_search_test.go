@@ -148,3 +148,76 @@ func TestDistributor_SearchLabelNames_QuorumShortCircuit(t *testing.T) {
 	require.NoError(t, rs.Err())
 	assert.ElementsMatch(t, shared, got, "every value returned by the quorum-reached replicas must survive merge+dedup")
 }
+
+func TestDistributor_SearchLabelValues_FanOutAndMerge(t *testing.T) {
+	replicaResponses := map[int][]string{
+		0: {"prod-a", "prod-b"},
+		1: {"prod-b", "stage-a"},
+		2: {"prod-c"},
+	}
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors:   1,
+		numIngesters:      3,
+		happyIngesters:    3,
+		replicationFactor: 1,
+		searchLabelValuesHook: func(ingesterIdx int, _ *client.SearchLabelValuesRequest) []*client.SearchResultBatch {
+			return makeSearchBatches(replicaResponses[ingesterIdx])
+		},
+	})
+	params := &streaminglabelvalues.Params{
+		Terms:         []string{"prod"},
+		CaseSensitive: true,
+	}
+	filter, err := streaminglabelvalues.BuildFilter(params)
+	require.NoError(t, err)
+	hints := &storage.SearchHints{Filter: filter, OrderBy: storage.OrderByValueAsc, Limit: 100}
+
+	rs := ds[0].SearchLabelValues(
+		user.InjectOrgID(context.Background(), "user-1"),
+		0, model.Time(time.Now().UnixMilli()),
+		"env",
+		params,
+		hints,
+		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric")},
+	)
+	defer rs.Close()
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	// "prod" matches "prod-a", "prod-b", "prod-c" as prefix → score 1.0. "stage-a" rejected.
+	assert.Equal(t, []storage.SearchResult{
+		{Value: "prod-a", Score: 1.0},
+		{Value: "prod-b", Score: 1.0},
+		{Value: "prod-c", Score: 1.0},
+	}, got)
+}
+
+func TestDistributor_SearchLabelValues_PassesLabelName(t *testing.T) {
+	var observedName string
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors:   1,
+		numIngesters:      1,
+		happyIngesters:    1,
+		replicationFactor: 1,
+		searchLabelValuesHook: func(_ int, req *client.SearchLabelValuesRequest) []*client.SearchResultBatch {
+			observedName = req.Name
+			return nil
+		},
+	})
+	rs := ds[0].SearchLabelValues(
+		user.InjectOrgID(context.Background(), "user-1"),
+		0, model.Time(time.Now().UnixMilli()),
+		"env",
+		nil,
+		&storage.SearchHints{Limit: 10},
+		nil,
+	)
+	defer rs.Close()
+	for rs.Next() {
+		_ = rs.At()
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, "env", observedName, "the wire request must carry the label name being searched")
+}
