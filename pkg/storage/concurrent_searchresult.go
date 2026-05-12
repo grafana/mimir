@@ -43,8 +43,18 @@ func NewConcurrentSearchResultSet(ctx context.Context, child storage.SearchResul
 	c := &concurrentSearchResultSet{child: child, cancel: cancel, ch: ch, done: done}
 
 	go func() {
+		// Defer order matters. LIFO: capture runs first (writing c.err and
+		// c.warns), then close(ch) acts as the memory barrier for the
+		// consumer's post-Next reads, then close(done) signals Close.
+		// Capturing inside a defer rather than after the loop ensures we
+		// also surface the child's terminal state when the producer exits
+		// via ctx.Done() rather than a clean child.Next() == false.
 		defer close(done)
 		defer close(ch)
+		defer func() {
+			c.err = child.Err()
+			c.warns = child.Warnings()
+		}()
 		for child.Next() {
 			r := child.At()
 			r.Value = strings.Clone(r.Value)
@@ -54,8 +64,6 @@ func NewConcurrentSearchResultSet(ctx context.Context, child storage.SearchResul
 				return
 			}
 		}
-		c.err = child.Err()
-		c.warns = child.Warnings()
 	}()
 	return c
 }
@@ -76,15 +84,10 @@ func (c *concurrentSearchResultSet) At() storage.SearchResult          { return 
 func (c *concurrentSearchResultSet) Warnings() annotations.Annotations { return c.warns }
 func (c *concurrentSearchResultSet) Err() error                        { return c.err }
 
-// Close cancels the producer, closes the child to unblock any in-flight
-// Next/Recv on the child, waits for the producer to exit, drains the
-// channel, and returns the child's Close error. Idempotent.
-//
-// Closing the child before waiting for the producer is required: ctx
-// cancellation alone does not interrupt a child that doesn't observe our
-// derived context (e.g. a gRPC stream blocked in Recv), so the wait on
-// done would otherwise hang on early termination such as hints.Limit
-// reached.
+// Close cancels the producer and closes the child before waiting for the
+// producer to exit — required because ctx cancellation alone does not
+// unblock a child Recv that doesn't observe our derived context.
+// Idempotent.
 func (c *concurrentSearchResultSet) Close() error {
 	c.closeOnce.Do(func() {
 		c.cancel()

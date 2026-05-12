@@ -80,14 +80,12 @@ func (q *blocksStoreQuerier) SearchLabelNames(
 	return wrapAsMergingSearchResultSet(resResultSets, resWarnings, hints)
 }
 
-// wrapAsMergingSearchResultSet feeds the per-SG result slices into the
-// k-way merger as slice-backed sources. Warnings collected outside an SG
-// stream (e.g. retriable open errors) ride a synthetic warnings-only
-// source so the merger surfaces them.
+// wrapAsMergingSearchResultSet feeds per-SG result slices into the k-way
+// merger as slice-backed sources. Warnings collected outside any SG stream
+// ride a synthetic warnings-only source so the merger surfaces them.
 //
-// This layer drains into slices because queryWithConsistencyCheck requires
-// queriedBlocks to be returned before deciding whether to retry; a
-// fully-streaming alternative would have to reshape that contract first.
+// The slice drain happens because queryWithConsistencyCheck needs
+// queriedBlocks back before it can decide whether to retry.
 func wrapAsMergingSearchResultSet(perSG [][]storage.SearchResult, extraWarnings annotations.Annotations, hints *storage.SearchHints) storage.SearchResultSet {
 	sources := make([]storage.SearchResultSet, 0, len(perSG)+1)
 	for _, s := range perSG {

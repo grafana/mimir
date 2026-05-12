@@ -21,9 +21,8 @@ import (
 // with no limit.
 //
 // Pair gRPC-stream sources with concurrentSearchResultSet so the merger
-// doesn't serialise on a single source's network. Warnings surface via
-// the merger's Warnings() after iteration completes; sources cancelled
-// via Close before exhaustion may not contribute their warnings.
+// doesn't serialise on a single source's network. Warnings from sources
+// cancelled before exhaustion may not contribute.
 func NewMergingSearchResultSet(sources []storage.SearchResultSet, hints *storage.SearchHints) storage.SearchResultSet {
 	if len(sources) == 0 {
 		return storage.EmptySearchResultSet()
@@ -91,9 +90,7 @@ func (m *mergingSearchResultSet) Next() bool {
 		m.done = true
 		return false
 	}
-	// Linear scan; switch to a heap if profiling shows hot. Source count
-	// is bounded by RF × number of replication sets (distributor) or
-	// store-gateway shard size (blocks-store path).
+	// Linear scan; switch to a heap if profiling shows this is hot.
 	bestIdx := -1
 	for i := range m.sources {
 		if !m.refreshHead(i) {

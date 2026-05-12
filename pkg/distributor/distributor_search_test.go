@@ -101,6 +101,23 @@ func TestDistributor_SearchLabelNames_PreservesLeafScores(t *testing.T) {
 	}, got)
 }
 
+func TestIngesterSearchResultSet_AtIsIdempotent(t *testing.T) {
+	stream := &mockSearchStream{batches: []*client.SearchResultBatch{
+		{Results: []client.SearchResultBatch_Result{
+			{Value: "a", Score: 1.0},
+			{Value: "b", Score: 0.9},
+		}},
+	}}
+	rs := newIngesterSearchResultSet(stream, func() {})
+	require.True(t, rs.Next())
+	first := rs.At()
+	second := rs.At()
+	assert.Equal(t, first, second)
+	assert.Equal(t, "a", first.Value)
+	require.True(t, rs.Next())
+	assert.Equal(t, "b", rs.At().Value)
+}
+
 // scoredValue is a {value, score} test-fixture pair.
 type scoredValue struct {
 	value string
@@ -272,4 +289,58 @@ func TestDistributor_SearchLabelValues_PassesLabelName(t *testing.T) {
 	}
 	require.NoError(t, rs.Err())
 	assert.Equal(t, "env", observedName, "the wire request must carry the label name being searched")
+}
+
+func TestParamsToProto(t *testing.T) {
+	cases := []struct {
+		name string
+		in   *streaminglabelvalues.Params
+		want *client.SearchFilter
+	}{
+		{name: "nil", in: nil, want: nil},
+		{name: "empty terms", in: &streaminglabelvalues.Params{}, want: nil},
+		{
+			name: "case-sensitive inverts polarity to CaseInsensitive=false",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE},
+		},
+		{
+			name: "case-insensitive inverts polarity to CaseInsensitive=true",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: false},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: true, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE},
+		},
+		{
+			name: "JaroWinkler fuzz alg",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgJaroWinkler, FuzzThreshold: 70},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_JARO_WINKLER, FuzzThreshold: 70},
+		},
+		{
+			name: "Subsequence is the default (zero-value FuzzAlg)",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzThreshold: 50},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE, FuzzThreshold: 50},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, paramsToProto(tc.in))
+		})
+	}
+}
+
+func TestOrderingToProto(t *testing.T) {
+	cases := []struct {
+		name  string
+		hints *storage.SearchHints
+		want  client.SearchOrdering
+	}{
+		{name: "nil hints defaults to ValueAsc", hints: nil, want: client.ORDER_BY_VALUE_ASC},
+		{name: "ValueAsc", hints: &storage.SearchHints{OrderBy: storage.OrderByValueAsc}, want: client.ORDER_BY_VALUE_ASC},
+		{name: "ValueDesc", hints: &storage.SearchHints{OrderBy: storage.OrderByValueDesc}, want: client.ORDER_BY_VALUE_DESC},
+		{name: "ScoreDesc", hints: &storage.SearchHints{OrderBy: storage.OrderByScoreDesc}, want: client.ORDER_BY_SCORE_DESC},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, orderingToProto(tc.hints))
+		})
+	}
 }

@@ -48,57 +48,70 @@ func TestNewMergingSearchResultSet_DedupByValue(t *testing.T) {
 	}, got)
 }
 
-func TestNewMergingSearchResultSet_OrderByValueAsc(t *testing.T) {
-	// Each source individually sorted ascending; merger preserves the order.
-	a := &staticResultSet{results: []storage.SearchResult{{Value: "alpha", Score: 0.9}, {Value: "gamma", Score: 0.5}}}
-	b := &staticResultSet{results: []storage.SearchResult{{Value: "beta", Score: 0.8}}}
-	rs := NewMergingSearchResultSet([]storage.SearchResultSet{a, b}, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-	defer rs.Close()
-	got := drainTestResults(rs)
-	require.NoError(t, rs.Err())
-	assert.Equal(t, []storage.SearchResult{
-		{Value: "alpha", Score: 0.9},
-		{Value: "beta", Score: 0.8},
-		{Value: "gamma", Score: 0.5},
-	}, got)
-}
+func TestNewMergingSearchResultSet_Orderings(t *testing.T) {
+	// Each case feeds two sources pre-sorted in the requested OrderBy.
+	// OrderByScoreDesc breaks ties on ascending Value per the Prometheus
+	// Searcher contract.
+	cases := []struct {
+		name    string
+		order   storage.Ordering
+		sourceA []storage.SearchResult
+		sourceB []storage.SearchResult
+		want    []storage.SearchResult
+	}{
+		{
+			name:    "ValueAsc",
+			order:   storage.OrderByValueAsc,
+			sourceA: []storage.SearchResult{{Value: "alpha", Score: 0.9}, {Value: "gamma", Score: 0.5}},
+			sourceB: []storage.SearchResult{{Value: "beta", Score: 0.8}},
+			want: []storage.SearchResult{
+				{Value: "alpha", Score: 0.9},
+				{Value: "beta", Score: 0.8},
+				{Value: "gamma", Score: 0.5},
+			},
+		},
+		{
+			name:    "ValueDesc",
+			order:   storage.OrderByValueDesc,
+			sourceA: []storage.SearchResult{{Value: "gamma", Score: 0.5}, {Value: "alpha", Score: 0.9}},
+			sourceB: []storage.SearchResult{{Value: "beta", Score: 0.8}},
+			want: []storage.SearchResult{
+				{Value: "gamma", Score: 0.5},
+				{Value: "beta", Score: 0.8},
+				{Value: "alpha", Score: 0.9},
+			},
+		},
+		{
+			name:  "ScoreDesc_AlphaTiebreak",
+			order: storage.OrderByScoreDesc,
+			sourceA: []storage.SearchResult{
+				{Value: "beta", Score: 1.0},
+				{Value: "alpha", Score: 0.9},
+			},
+			sourceB: []storage.SearchResult{
+				{Value: "delta", Score: 1.0},
+				{Value: "charlie", Score: 0.5},
+			},
+			want: []storage.SearchResult{
+				{Value: "beta", Score: 1.0}, // alpha tiebreak: "beta" before "delta"
+				{Value: "delta", Score: 1.0},
+				{Value: "alpha", Score: 0.9},
+				{Value: "charlie", Score: 0.5},
+			},
+		},
+	}
 
-func TestNewMergingSearchResultSet_OrderByValueDesc(t *testing.T) {
-	// Each source individually sorted descending.
-	a := &staticResultSet{results: []storage.SearchResult{{Value: "gamma", Score: 0.5}, {Value: "alpha", Score: 0.9}}}
-	b := &staticResultSet{results: []storage.SearchResult{{Value: "beta", Score: 0.8}}}
-	rs := NewMergingSearchResultSet([]storage.SearchResultSet{a, b}, &storage.SearchHints{OrderBy: storage.OrderByValueDesc})
-	defer rs.Close()
-	got := drainTestResults(rs)
-	require.NoError(t, rs.Err())
-	assert.Equal(t, []storage.SearchResult{
-		{Value: "gamma", Score: 0.5},
-		{Value: "beta", Score: 0.8},
-		{Value: "alpha", Score: 0.9},
-	}, got)
-}
-
-func TestNewMergingSearchResultSet_OrderByScoreDesc_AlphaTiebreak(t *testing.T) {
-	// Each source pre-sorted by (score desc, value asc) per the Prometheus
-	// contract.
-	a := &staticResultSet{results: []storage.SearchResult{
-		{Value: "beta", Score: 1.0}, // tie with delta
-		{Value: "alpha", Score: 0.9},
-	}}
-	b := &staticResultSet{results: []storage.SearchResult{
-		{Value: "delta", Score: 1.0}, // tie with beta
-		{Value: "charlie", Score: 0.5},
-	}}
-	rs := NewMergingSearchResultSet([]storage.SearchResultSet{a, b}, &storage.SearchHints{OrderBy: storage.OrderByScoreDesc})
-	defer rs.Close()
-	got := drainTestResults(rs)
-	require.NoError(t, rs.Err())
-	assert.Equal(t, []storage.SearchResult{
-		{Value: "beta", Score: 1.0}, // alpha tiebreak: "beta" before "delta"
-		{Value: "delta", Score: 1.0},
-		{Value: "alpha", Score: 0.9},
-		{Value: "charlie", Score: 0.5},
-	}, got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &staticResultSet{results: tc.sourceA}
+			b := &staticResultSet{results: tc.sourceB}
+			rs := NewMergingSearchResultSet([]storage.SearchResultSet{a, b}, &storage.SearchHints{OrderBy: tc.order})
+			defer rs.Close()
+			got := drainTestResults(rs)
+			require.NoError(t, rs.Err())
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestNewMergingSearchResultSet_Limit(t *testing.T) {
