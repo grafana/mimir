@@ -19,26 +19,14 @@ import (
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
-// ingesterSearchPrefetchBuffer bounds how many results each replica's
-// concurrentSearchResultSet pre-fetches ahead of the k-way merger. Sized
-// to match pkg/ingester.searchBatchSize so the channel can absorb one
-// full wire batch's worth of results — once the producer has pushed a
-// batch into the channel, the consumer can drain it during the
-// producer's next gRPC Recv(), hiding approximately one round-trip of
-// network latency per source.
-//
-// The relationship is fundamental and not coincidental: the upstream
-// stream emits results in 256-item batches and blocks for a Recv at
-// each boundary, so 256 is exactly the buffer size that fully covers a
-// round-trip without wasting memory on speculative pre-fetch the stream
-// cannot serve. Above 256 yields no further benefit; below 256 leaves
-// gaps where the merger waits on a source's network.
-//
-// Kept as a literal rather than importing pkg/ingester.searchBatchSize
-// because pkg/distributor currently only depends on pkg/ingester/client,
-// and pulling in the server-side ingester package for a single constant
-// would expand the dependency graph noticeably. If the ingester batch
-// size changes, update this constant in lockstep.
+// ingesterSearchPrefetchBuffer sizes the per-replica prefetch channel to
+// match pkg/ingester.searchBatchSize: one wire batch's worth of results
+// can sit in the channel while the producer is in its next gRPC Recv,
+// hiding ~one round-trip per source. Above this yields no benefit (the
+// upstream stream blocks at batch boundaries); below it leaves gaps where
+// the merger waits on the network. Keep in lockstep with the ingester's
+// batch size — kept as a literal to avoid pulling pkg/ingester into the
+// distributor's import graph for a single constant.
 const ingesterSearchPrefetchBuffer = 256
 
 // SearchLabelNames opens a server-streaming SearchLabelNames RPC against the
