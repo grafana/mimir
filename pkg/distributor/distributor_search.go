@@ -39,10 +39,12 @@ const ingesterSearchPrefetchBuffer = 256
 // (Prometheus's Searcher contract requires Score determinism per
 // (Value, Filter)).
 //
-// Streaming: no slice buffering of results. Per-replica memory is bounded
-// by ingesterSearchPrefetchBuffer; the merger holds at most one head per
-// source. Closing the returned SearchResultSet propagates cancellation
-// through every open stream.
+// Streaming: results flow through the merger without materialising a
+// full per-source slice. Per-replica memory is bounded by the prefetch
+// channel (ingesterSearchPrefetchBuffer entries) plus one in-flight wire
+// batch held by ingesterSearchResultSet; the merger holds at most one
+// head per source. Closing the returned SearchResultSet propagates
+// cancellation through every open stream.
 //
 // params is the wire-decoupled form of hints.Filter, forwarded to the
 // ingesters so each leaf builds its own filter chain. Caller must build
