@@ -15,7 +15,7 @@ option (gogoproto.unmarshaler_all) = true;
 message SplitFunctionCallDetails {
   repeated SplitRange splitRanges = 1 [(gogoproto.nullable) = false];
   // Deprecated: no longer populated as of QueryPlanV13. The cache key is now derived from the inner node at materialize time.
-  string innerNodeCacheKey = 2 [deprecated = true];
+  reserved 2; // was: innerNodeCacheKey
 }
 
 // SplitRange represents a time range within a split.
