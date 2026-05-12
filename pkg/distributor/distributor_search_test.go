@@ -19,11 +19,8 @@ import (
 )
 
 func TestDistributor_SearchLabelNames_FanOutAndMerge(t *testing.T) {
-	// Each replica returns the values its ingester would actually emit:
-	// already filtered against the wire SearchFilter (no "bar"/"baz"), and
-	// scored at 1.0 because every emitted term is a prefix-match for "fo".
-	// The distributor's job here is cross-replica dedup + ordering, NOT
-	// re-applying the filter.
+	// Replicas return pre-filtered, pre-scored results — the distributor
+	// only does cross-replica dedup + ordering.
 	replicaResponses := map[int][]scoredValue{
 		0: {{"foo", 1.0}, {"footer", 1.0}},
 		1: {{"foo", 1.0}, {"foobar", 1.0}},
@@ -62,8 +59,7 @@ func TestDistributor_SearchLabelNames_FanOutAndMerge(t *testing.T) {
 		got = append(got, rs.At())
 	}
 	require.NoError(t, rs.Err())
-	// Cross-replica dedup ("foo"/"foobar" appeared in multiple replicas);
-	// scores carried verbatim from the leaf.
+	// Cross-replica dedup; scores carried verbatim.
 	assert.Equal(t, []storage.SearchResult{
 		{Value: "foo", Score: 1.0},
 		{Value: "foobar", Score: 1.0},
@@ -71,17 +67,10 @@ func TestDistributor_SearchLabelNames_FanOutAndMerge(t *testing.T) {
 	}, got)
 }
 
-// TestDistributor_SearchLabelNames_PreservesLeafScores locks in the
-// score-preservation contract: non-1.0 scores computed by leaf ingesters
-// (e.g., non-prefix substring matches at 0.9, fuzzy-alg matches at varying
-// thresholds) propagate to the SearchResultSet unchanged. Without this,
-// the merge layer could only emit prefix-match scores.
+// TestDistributor_SearchLabelNames_PreservesLeafScores: non-1.0 leaf scores
+// propagate to the SearchResultSet unchanged (no re-filtering at the merge).
 func TestDistributor_SearchLabelNames_PreservesLeafScores(t *testing.T) {
-	// Each replica emits the same scored set — Prometheus's Searcher
-	// contract requires scores to be deterministic per (Value, Filter),
-	// so two replicas running the same filter agree byte-for-byte. Here we use 0.7 to
-	// represent a sub-prefix substring score; the test asserts that the
-	// merge layer carries it through without re-applying any filter.
+	// 0.7 stands in for a sub-prefix substring score.
 	scored := []scoredValue{{"alpha", 0.7}, {"beta", 1.0}}
 	ds, _, _, _ := prepare(t, prepConfig{
 		numDistributors:   1,
@@ -112,7 +101,7 @@ func TestDistributor_SearchLabelNames_PreservesLeafScores(t *testing.T) {
 	}, got)
 }
 
-// scoredValue is a tiny test-fixture pair to drive makeScoredSearchBatches.
+// scoredValue is a {value, score} test-fixture pair.
 type scoredValue struct {
 	value string
 	score float64
@@ -126,8 +115,7 @@ func makeScoredSearchBatches(values []scoredValue) []*client.SearchResultBatch {
 	return []*client.SearchResultBatch{{Results: results}}
 }
 
-// makeSearchBatches is a convenience wrapper that emits each value with
-// Score 1.0, suitable for tests that don't care about per-value scores.
+// makeSearchBatches emits each value with Score 1.0.
 func makeSearchBatches(values []string) []*client.SearchResultBatch {
 	scored := make([]scoredValue, len(values))
 	for i, v := range values {
@@ -184,9 +172,9 @@ func TestDistributor_SearchLabelNames_WarningsPropagated(t *testing.T) {
 }
 
 func TestDistributor_SearchLabelNames_QuorumShortCircuit(t *testing.T) {
-	// RF=3 (the default), all 3 ingesters return overlapping data for the SAME shard.
-	// DoUntilQuorum reads the first 2 (quorum=2) and short-circuits the 3rd.
-	// Result must contain every value the first two returned, correctly merged.
+	// RF=3 with all replicas serving identical shard data — DoUntilQuorum
+	// short-circuits the third. Quorum-reached replicas' values must
+	// survive merge+dedup.
 	shared := []string{"alpha", "beta", "gamma"}
 	ds, _, _, _ := prepare(t, prepConfig{
 		numDistributors: 1,
@@ -213,9 +201,7 @@ func TestDistributor_SearchLabelNames_QuorumShortCircuit(t *testing.T) {
 }
 
 func TestDistributor_SearchLabelValues_FanOutAndMerge(t *testing.T) {
-	// Each replica returns the values its ingester would actually emit —
-	// already filtered against the "prod" SearchFilter and scored 1.0 for
-	// prefix matches.
+	// Replicas return pre-filtered, pre-scored results.
 	replicaResponses := map[int][]scoredValue{
 		0: {{"prod-a", 1.0}, {"prod-b", 1.0}},
 		1: {{"prod-b", 1.0}},

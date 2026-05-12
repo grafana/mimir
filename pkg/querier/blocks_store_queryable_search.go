@@ -26,16 +26,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// SearchLabelNames fans the request out across store-gateway replicas owning
-// the blocks in the query window, drains each replica's SearchLabelNames
-// stream into a scored []storage.SearchResult, and merges via
-// mimirstorage.NewMergingSearchResultSet (cross-SG dedup, then ordering and
-// limit per hints).
-//
-// Score preservation: leaf-computed scores propagate end-to-end. The SG
-// applied req.Filter already, so re-running it would burn CPU without
-// changing the result (Prometheus's Searcher contract requires Score to be
-// deterministic per (Value, Filter)).
+// SearchLabelNames fans out across the store-gateways owning the relevant
+// blocks, drains each stream into a scored []storage.SearchResult, and
+// returns the cross-SG merged set. Leaf scores propagate verbatim — no
+// re-filter at the merge layer.
 func (q *blocksStoreQuerier) SearchLabelNames(
 	ctx context.Context,
 	params *streaminglabelvalues.Params,
@@ -86,22 +80,14 @@ func (q *blocksStoreQuerier) SearchLabelNames(
 	return wrapAsMergingSearchResultSet(resResultSets, resWarnings, hints)
 }
 
-// wrapAsMergingSearchResultSet wraps the per-SG result slices (one per
-// store-gateway, accumulated across consistency-check iterations) as
-// slice-backed SearchResultSets and feeds them to the streaming k-way
-// merger. Any warnings collected outside an SG stream (e.g. retriable open
-// errors logged as warnings) are attached via a synthetic warnings-only
-// source so the merger's Warnings() surfaces them.
+// wrapAsMergingSearchResultSet feeds the per-SG result slices into the
+// k-way merger as slice-backed sources. Warnings collected outside an SG
+// stream (e.g. retriable open errors) ride a synthetic warnings-only
+// source so the merger surfaces them.
 //
-// The merger handles cross-SG dedup, ordering per hints.OrderBy, and limit
-// truncation. Scores are preserved verbatim from the leaf SGs.
-//
-// Why this layer drains into slices instead of streaming end-to-end: the
-// queryWithConsistencyCheck contract requires queryF to return the list of
-// blocks it covered before the loop can decide whether to retry. Deferring
-// drain until the consumer pulls would mean queriedBlocks is not known by
-// the time queryF returns, breaking that contract. A fully-streaming
-// alternative would have to reshape that contract first.
+// This layer drains into slices because queryWithConsistencyCheck requires
+// queriedBlocks to be returned before deciding whether to retry; a
+// fully-streaming alternative would have to reshape that contract first.
 func wrapAsMergingSearchResultSet(perSG [][]storage.SearchResult, extraWarnings annotations.Annotations, hints *storage.SearchHints) storage.SearchResultSet {
 	sources := make([]storage.SearchResultSet, 0, len(perSG)+1)
 	for _, s := range perSG {
@@ -115,16 +101,13 @@ func wrapAsMergingSearchResultSet(perSG [][]storage.SearchResult, extraWarnings 
 	return mimirstorage.NewMergingSearchResultSet(sources, hints)
 }
 
-// fetchSearchLabelNamesFromStore mirrors fetchLabelNamesFromStore but uses the
-// streaming SearchLabelNames RPC. It accumulates the per-client values, merges
-// warnings, and returns the union of blockIDs that were requested.
+// fetchSearchLabelNamesFromStore drains every SG client in parallel.
 //
-// Caveat: the SG SearchLabelNames RPC does not echo back queried block IDs
-// (unlike LabelNames). We optimistically credit the SG with all blockIDs we
-// requested it search — the SG actually searches every block it owns in the
-// time range (see pkg/storegateway/bucket_search.go), so we trust the
-// bucket-index sharding upstream to keep this set tight. If a future RPC
-// revision adds a QueriedBlocks field, wire it up here.
+// Caveat: the SG search RPC does not echo back queried block IDs (unlike
+// LabelNames). We optimistically credit each SG with all blockIDs we asked
+// it to search and rely on bucket-index sharding upstream to keep that set
+// tight. If a future RPC revision adds a QueriedBlocks field, wire it up
+// here.
 func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 	ctx context.Context,
 	clients map[BlocksStoreClient][]ulid.ULID,
@@ -178,9 +161,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 				resultSets = append(resultSets, results)
 			}
 			warnings.Merge(sgWarnings)
-			// See caveat in the function doc — the RPC does not echo back the
-			// blocks the SG actually visited; we optimistically credit the
-			// blocks we asked it to search.
+			// Optimistic queriedBlocks — see function doc.
 			queriedBlocks = append(queriedBlocks, blockIDs...)
 			mtx.Unlock()
 			return nil
@@ -193,9 +174,9 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 	return resultSets, warnings, queriedBlocks, nil
 }
 
-// buildSGSearchLabelNamesRequest assembles the wire request for the SG
-// SearchLabelNames RPC. Unlike LabelNames the request carries no block-ID
-// hints: the SG searches every block it owns in the request's time range.
+// buildSGSearchLabelNamesRequest assembles the wire request. The SG search
+// RPC has no block-ID hints; the SG searches every block it owns in the
+// request's time range.
 func buildSGSearchLabelNamesRequest(
 	minT, maxT int64,
 	params *streaminglabelvalues.Params,
@@ -215,9 +196,7 @@ func buildSGSearchLabelNamesRequest(
 	return req
 }
 
-// paramsToSGProto is the storegateway/storepb twin of distributor's
-// paramsToProto. Returns nil when there are no terms — the SG then scores
-// every value at 1.0.
+// paramsToSGProto is the storepb twin of distributor's paramsToProto.
 func paramsToSGProto(p *streaminglabelvalues.Params) *storepb.SearchFilter {
 	if p == nil || len(p.Terms) == 0 {
 		return nil
@@ -236,9 +215,8 @@ func paramsToSGProto(p *streaminglabelvalues.Params) *storepb.SearchFilter {
 	return wf
 }
 
-// orderingToSGProto translates hints.OrderBy into the SG wire enum. Defaults
-// to ORDER_BY_VALUE_ASC when hints is nil — same default as
-// mimirstorage.MergeSearchResults at the merge side.
+// orderingToSGProto defaults nil hints to ORDER_BY_VALUE_ASC, matching
+// NewMergingSearchResultSet at the merge side.
 func orderingToSGProto(hints *storage.SearchHints) storepb.SearchOrdering {
 	if hints == nil {
 		return storepb.ORDER_BY_VALUE_ASC
@@ -253,19 +231,13 @@ func orderingToSGProto(hints *storage.SearchHints) storepb.SearchOrdering {
 	}
 }
 
-// sgSearchStream is the narrow Recv interface satisfied by both
-// StoreGateway_SearchLabelNamesClient and StoreGateway_SearchLabelValuesClient.
+// sgSearchStream is the Recv surface shared by both SG search streams.
 type sgSearchStream interface {
 	Recv() (*storepb.SearchResultBatch, error)
 }
 
-// SearchLabelValues fans the request out across store-gateway replicas owning
-// the blocks in the query window, drains each replica's SearchLabelValues
-// stream into a scored []storage.SearchResult, and merges via
-// mimirstorage.MergeSearchResults. Mirrors SearchLabelNames; differs only in
-// the wire request, which carries the label whose values are being searched.
-//
-// See SearchLabelNames for the score-preservation / no-re-filter rationale.
+// SearchLabelValues mirrors SearchLabelNames; the wire request additionally
+// carries the label whose values are being searched.
 func (q *blocksStoreQuerier) SearchLabelValues(
 	ctx context.Context,
 	name string,
@@ -317,11 +289,8 @@ func (q *blocksStoreQuerier) SearchLabelValues(
 	return wrapAsMergingSearchResultSet(resResultSets, resWarnings, hints)
 }
 
-// fetchSearchLabelValuesFromStore mirrors fetchSearchLabelNamesFromStore but
-// uses the SearchLabelValues RPC. See that function's caveat for the
-// queriedBlocks accounting: the SG SearchLabelValues RPC does not echo back
-// the visited block IDs, so we optimistically credit the SG with all blockIDs
-// we requested.
+// fetchSearchLabelValuesFromStore mirrors fetchSearchLabelNamesFromStore;
+// see that function for the queriedBlocks caveat.
 func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 	ctx context.Context,
 	name string,
@@ -377,8 +346,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 				resultSets = append(resultSets, results)
 			}
 			warnings.Merge(sgWarnings)
-			// See caveat in fetchSearchLabelNamesFromStore — the RPC does not
-			// echo back the blocks the SG actually visited.
+			// Optimistic queriedBlocks — see fetchSearchLabelNamesFromStore.
 			queriedBlocks = append(queriedBlocks, blockIDs...)
 			mtx.Unlock()
 			return nil
@@ -391,9 +359,8 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 	return resultSets, warnings, queriedBlocks, nil
 }
 
-// buildSGSearchLabelValuesRequest assembles the wire request for the SG
-// SearchLabelValues RPC. Mirrors buildSGSearchLabelNamesRequest with an
-// additional Label field naming the label whose values are being searched.
+// buildSGSearchLabelValuesRequest mirrors buildSGSearchLabelNamesRequest
+// with the additional Label field.
 func buildSGSearchLabelValuesRequest(
 	minT, maxT int64,
 	name string,

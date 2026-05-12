@@ -11,32 +11,19 @@ import (
 
 // NewMergingSearchResultSet returns a SearchResultSet that performs a
 // streaming k-way merge across the given sources. Each source MUST emit
-// results in the order requested by hints.OrderBy; the merger picks the
-// best head across sources per call to Next, advances that source, and
-// dedups by Value across sources (advancing any other source whose head
-// equals the just-emitted Value).
+// results in the order requested by hints.OrderBy. The merger does not
+// re-apply any filter — duplicates from different sources are expected to
+// carry identical scores (Prometheus's Searcher contract). Cross-source
+// duplicates collapse to a single emit.
 //
-// The merger is the slice-of-iterators counterpart to Prometheus's
-// (unexported) pairwiseMergeSearchSets. It does not re-apply any filter —
-// the leaf Searchers already scored their values. Prometheus's Searcher
-// contract requires Score to be deterministic for a given (Value, Filter),
-// so duplicates from different sources carry identical scores by
-// construction; if a leaf reports a different score for the same value,
-// that's a bug elsewhere, not something this layer should silently mask.
+// Limit truncation stops iteration without draining remaining queues;
+// hints.Limit <= 0 means no limit. nil hints defaults to OrderByValueAsc
+// with no limit.
 //
-// Limit truncation stops iteration after hints.Limit results without
-// draining the remaining queue from each source — the sources are
-// cancelled via Close. hints.Limit <= 0 means no limit.
-//
-// Memory: the merger holds at most one head per source plus whatever each
-// source has buffered internally. Pair each gRPC-stream source with
-// concurrentSearchResultSet to pre-fetch concurrently and keep the merger
-// from serialising network round-trips across sources.
-//
-// hints may be nil; in that case ordering defaults to OrderByValueAsc and
-// no limit is applied. Warnings from each source surface via the merger's
-// Warnings() after iteration completes; sources cancelled via Close before
-// they exhaust may not contribute their warnings.
+// Pair gRPC-stream sources with concurrentSearchResultSet so the merger
+// doesn't serialise on a single source's network. Warnings surface via
+// the merger's Warnings() after iteration completes; sources cancelled
+// via Close before exhaustion may not contribute their warnings.
 func NewMergingSearchResultSet(sources []storage.SearchResultSet, hints *storage.SearchHints) storage.SearchResultSet {
 	if len(sources) == 0 {
 		return storage.EmptySearchResultSet()
@@ -57,8 +44,7 @@ func NewMergingSearchResultSet(sources []storage.SearchResultSet, hints *storage
 	}
 }
 
-// searchResultComparator orders two search results per a fixed Ordering.
-// Returns a negative value if a sorts before b, zero on equality.
+// searchResultComparator returns negative if a sorts before b.
 type searchResultComparator func(a, b storage.SearchResult) int
 
 type mergingSearchResultSet struct {
@@ -76,9 +62,8 @@ type mergingSearchResultSet struct {
 	err     error
 }
 
-// refreshHead ensures sources[i] has a valid head ready to peek at heads[i].
-// Returns false if the source is exhausted or has errored. On error sets
-// m.err.
+// refreshHead pulls a new head from sources[i] if needed. Returns false if
+// exhausted or errored; on error sets m.err.
 func (m *mergingSearchResultSet) refreshHead(i int) bool {
 	if m.exhausted[i] || m.err != nil {
 		return false
@@ -106,12 +91,9 @@ func (m *mergingSearchResultSet) Next() bool {
 		m.done = true
 		return false
 	}
-	// Find the best head across all sources. Linear scan is O(N) per
-	// emitted result; switch to a heap (O(log N)) if profiling shows
-	// this as hot. The source count is bounded by the ingester
-	// replication factor times the number of replication sets (for the
-	// distributor) or the tenant's store-gateway shard size (for the
-	// blocks-store path) — whichever shape the caller assembles.
+	// Linear scan; switch to a heap if profiling shows hot. Source count
+	// is bounded by RF × number of replication sets (distributor) or
+	// store-gateway shard size (blocks-store path).
 	bestIdx := -1
 	for i := range m.sources {
 		if !m.refreshHead(i) {
@@ -130,11 +112,10 @@ func (m *mergingSearchResultSet) Next() bool {
 	}
 	m.cur = m.heads[bestIdx]
 	m.hasHead[bestIdx] = false
-	// Cross-source dedup: advance any other source whose head equals the
-	// emitted Value. Correct because each source is pre-sorted in the same
-	// OrderBy, so equal-Value duplicates are at the heads under value
-	// ordering; under OrderByScoreDesc the Searcher contract requires
-	// identical Score for identical Value, so duplicates tie there too.
+	// Cross-source dedup: advance any other source whose head matches the
+	// just-emitted Value. Equal-Value duplicates are guaranteed at the
+	// heads because each source is pre-sorted in the same OrderBy
+	// (Searcher contract).
 	for i := range m.sources {
 		if i == bestIdx || !m.hasHead[i] {
 			continue
@@ -170,15 +151,9 @@ func (m *mergingSearchResultSet) Close() error {
 	return firstErr
 }
 
-// makeSearchResultComparator binds the ordering once at construction so the
-// hot find-best loop in Next does not re-switch on Ordering per comparison.
-// Mirrors Prometheus's (unexported) compareSearchResults:
-//   - OrderByValueAsc:  ascending Value.
-//   - OrderByValueDesc: descending Value.
-//   - OrderByScoreDesc: descending Score with ascending Value as the
-//     deterministic tiebreak — matches storage.compareSearchResults so
-//     Mimir and Prometheus produce identical orderings under the same
-//     hints.
+// makeSearchResultComparator binds the ordering once at construction.
+// OrderByScoreDesc breaks ties on ascending Value, matching Prometheus's
+// compareSearchResults.
 func makeSearchResultComparator(order storage.Ordering) searchResultComparator {
 	switch order {
 	case storage.OrderByValueDesc:

@@ -11,8 +11,7 @@ import (
 )
 
 // SearchStreamBatch is the minimal shape both ingester and store-gateway
-// SearchResultBatch protos satisfy. Each batch carries an ordered slice of
-// {Value, Score} pairs plus zero or more warnings emitted by the producer.
+// SearchResultBatch protos satisfy through a thin adapter.
 type SearchStreamBatch interface {
 	Len() int
 	At(i int) (value string, score float64)
@@ -26,15 +25,9 @@ type gRPCStreamSearcher[B SearchStreamBatch] interface {
 }
 
 // gRPCStreamSearchResultSet adapts a server-streaming gRPC client to
-// Prometheus's storage.SearchResultSet. Buffers one batch at a time,
-// indexing via Next/At, pulling the next batch on exhaustion.
-//
-// Value-string safety: the Value strings in each batch are produced by
-// gRPC unmarshal, which allocates independent string memory. There is no
-// shared backing buffer (unlike the distributor push path which threads
-// request-pool buffers through unsafeMutableString).
-//
-// Concurrency: not safe for concurrent use.
+// storage.SearchResultSet. Value strings come from gRPC proto unmarshal —
+// independent of any request-pool buffer (no unsafeMutableString aliasing).
+// Not safe for concurrent use.
 type gRPCStreamSearchResultSet[B SearchStreamBatch] struct {
 	stream gRPCStreamSearcher[B]
 	cancel func()
@@ -48,8 +41,7 @@ type gRPCStreamSearchResultSet[B SearchStreamBatch] struct {
 	done     bool
 }
 
-// NewGRPCStreamSearchResultSet wraps a server-streaming gRPC client as a
-// storage.SearchResultSet. cancel is invoked from Close().
+// NewGRPCStreamSearchResultSet wraps a stream client; cancel runs on Close.
 func NewGRPCStreamSearchResultSet[B SearchStreamBatch](stream gRPCStreamSearcher[B], cancel func()) storage.SearchResultSet {
 	return &gRPCStreamSearchResultSet[B]{stream: stream, cancel: cancel}
 }

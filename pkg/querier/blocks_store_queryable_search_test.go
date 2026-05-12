@@ -25,7 +25,8 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
-// searchLabelNamesClientMock is a narrow stream mock for SG SearchLabelNames.
+// searchLabelNamesClientMock drains preset batches then surfaces err (if
+// set) instead of EOF, letting tests inject a mid-stream Recv error.
 type searchLabelNamesClientMock struct {
 	grpc.ClientStream
 	batches []*storepb.SearchResultBatch
@@ -34,9 +35,6 @@ type searchLabelNamesClientMock struct {
 }
 
 func (m *searchLabelNamesClientMock) Recv() (*storepb.SearchResultBatch, error) {
-	// Drain batches first; once exhausted, surface err (if set) instead of EOF.
-	// This lets tests inject a mid-stream Recv error after some batches have
-	// been delivered, exercising the streaming-retry branch.
 	if m.idx >= len(m.batches) {
 		if m.err != nil {
 			return nil, m.err
@@ -48,8 +46,6 @@ func (m *searchLabelNamesClientMock) Recv() (*storepb.SearchResultBatch, error) 
 	return b, nil
 }
 
-// searchLabelValuesClientMock is a narrow stream mock for SG SearchLabelValues.
-// It shares the same batch-injection semantics as searchLabelNamesClientMock.
 type searchLabelValuesClientMock struct {
 	grpc.ClientStream
 	batches []*storepb.SearchResultBatch
@@ -69,9 +65,9 @@ func (m *searchLabelValuesClientMock) Recv() (*storepb.SearchResultBatch, error)
 	return b, nil
 }
 
-// searchStoreGatewayClientMock implements BlocksStoreClient with programmable
-// SearchLabelNames and SearchLabelValues streams. Reuses storeGatewayClientMock
-// for unrelated methods.
+// searchStoreGatewayClientMock is a BlocksStoreClient with programmable
+// SearchLabel{Names,Values} streams. lastSearchLabelValuesReq lets tests
+// assert the wire request shape.
 type searchStoreGatewayClientMock struct {
 	storeGatewayClientMock
 	searchLabelNamesBatches    []*storepb.SearchResultBatch
@@ -80,10 +76,8 @@ type searchStoreGatewayClientMock struct {
 	searchLabelValuesBatches   []*storepb.SearchResultBatch
 	searchLabelValuesErr       error
 	searchLabelValuesStreamErr error
-	// lastSearchLabelValuesReq captures the most recent request so tests can
-	// assert the wire request shape (e.g. Label field propagation).
-	lastSearchLabelValuesReq *storepb.SearchLabelValuesRequest
-	calls                    atomicCounter
+	lastSearchLabelValuesReq   *storepb.SearchLabelValuesRequest
+	calls                      atomicCounter
 }
 
 type atomicCounter struct {
@@ -189,7 +183,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_HappyPath(t *testing.T) {
 	defer rs.Close()
 	got := drainSearchResults(t, rs)
 
-	// MergeSlices yields sorted, deduplicated values; ApplySearchHints scores at 1.0.
+	// Merger yields sorted, deduplicated values at score 1.0.
 	require.Len(t, got, 3)
 	assert.Equal(t, "__name__", got[0].Value)
 	assert.Equal(t, "instance", got[1].Value)
@@ -203,8 +197,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_PartialReplicaFailureWithRetry(t *t
 	)
 	block1 := ulid.MustNew(1, nil)
 
-	// First attempt: a retriable error (Unavailable) — queryWithConsistencyCheck
-	// must retry with another store-gateway.
+	// First attempt: retriable error; consistency-check must retry.
 	storeRetriable := &searchStoreGatewayClientMock{
 		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
 		searchLabelNamesErr:    status.Error(codes.Unavailable, "transient"),
@@ -299,8 +292,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_NonRetriableErrorBubblesUp(t *testi
 		maxT = int64(20)
 	)
 	block1 := ulid.MustNew(1, nil)
-	// A 422 gRPC status is classified non-retriable by shouldRetry — it must
-	// short-circuit queryWithConsistencyCheck rather than retry.
+	// 422 is non-retriable per shouldRetry — must short-circuit.
 	store := &searchStoreGatewayClientMock{
 		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
 		searchLabelNamesErr:    status.Error(codes.Code(http.StatusUnprocessableEntity), "validation"),
@@ -323,18 +315,13 @@ func TestBlocksStoreQuerier_SearchLabelNames_NonRetriableErrorBubblesUp(t *testi
 	assert.Contains(t, rs.Err().Error(), "non-retriable")
 }
 
-// TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError pins down the
-// semantics of a retriable error surfaced mid-stream (after some batches have
-// already been received): the partial results from the failing SG are
-// DROPPED, consistency-check sees the failing SG's blocks as missing, and
-// re-runs the query against a different SG.
-//
-// The streaming-retry branch is "all-or-nothing" per replica: pre-error
-// data is not preserved because the goroutine bails out before appending
-// to nameSets. SearchLabelValues inherits the same behaviour through the
-// shared drainSGSearchLabelStream path. Preserving partial results would
-// require richer coordination with queryWithConsistencyCheck; the simple
-// drop keeps the result set correct at the cost of redoing some work.
+// TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError pins the
+// mid-stream-retry contract: a retriable error after partial delivery
+// drops the failing SG's pre-error batches and re-runs against a
+// different SG. This is "all-or-nothing per replica" — the goroutine
+// bails before appending to nameSets, so the consistency tracker sees
+// the blocks as missing and retries. SearchLabelValues inherits the
+// same behaviour via drainSGSearchLabelStream.
 func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
 	const (
 		minT = int64(10)
