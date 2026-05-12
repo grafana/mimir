@@ -35,13 +35,14 @@ const ingesterSearchPrefetchBuffer = 256
 // them.
 //
 // Score preservation: leaf-computed scores propagate end-to-end. The
-// ingester applied req.Filter already; the merger does not re-score (Spec
-// invariant 3 guarantees Score determinism per (Value, Filter)).
+// ingester applied req.Filter already; the merger does not re-score
+// (Prometheus's Searcher contract requires Score determinism per
+// (Value, Filter)).
 //
 // Streaming: no slice buffering of results. Per-replica memory is bounded
-// by ingesterSearchPrefetchBuffer (16 results); the merger holds at most
-// one head per source. Closing the returned SearchResultSet propagates
-// cancellation through every open stream.
+// by ingesterSearchPrefetchBuffer; the merger holds at most one head per
+// source. Closing the returned SearchResultSet propagates cancellation
+// through every open stream.
 //
 // params is the wire-decoupled form of hints.Filter, forwarded to the
 // ingesters so each leaf builds its own filter chain. Caller must build
