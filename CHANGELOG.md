@@ -6,6 +6,7 @@
 
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
 * [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #15276
+* [FEATURE] Ingester: added experimental `-ingest-storage.ingester-partition-metric-label-enabled` flag. When set together with `-ingest-storage.enabled`, every metric emitted by the ingester (and the ingest-storage reader / partition-ring lifecycler it owns) carries an `ingester_partition` label identifying the Kafka partition the ingester consumes. Planned to default to enabled in Mimir 3.2 and to be removed in Mimir 3.5. #15130
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
 * [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245
 * [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #15179 #15220 #15223 #15232 #15237 #15255 #15285

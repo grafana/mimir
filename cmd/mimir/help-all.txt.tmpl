@@ -1495,6 +1495,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants. (default true)
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
+  -ingest-storage.ingester-partition-metric-label-enabled
+    	[experimental] True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
   -ingest-storage.ingestion-partition-tenant-write-shard-size int
