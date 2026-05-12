@@ -5,6 +5,7 @@ package binops
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -874,11 +875,11 @@ func BenchmarkAndUnlessBinaryOperation_ExcludeHintRHSFiltering(b *testing.B) {
 			memTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 
 			left := &operators.TestOperator{
-				Series:                   append([]labels.Labels(nil), lhsSeries...),
+				Series:                   slices.Clone(lhsSeries),
 				MemoryConsumptionTracker: memTracker,
 			}
 			right := &operators.TestOperator{
-				Series:                   append([]labels.Labels(nil), allRHSSeries...),
+				Series:                   slices.Clone(allRHSSeries),
 				Data:                     make([]types.InstantVectorSeriesData, len(allRHSSeries)),
 				MemoryConsumptionTracker: memTracker,
 			}

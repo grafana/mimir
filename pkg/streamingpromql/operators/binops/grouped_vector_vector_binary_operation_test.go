@@ -5,6 +5,7 @@ package binops
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -1236,11 +1237,11 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 			// For CardOneToMany (group_right): left=one, right=many.
 			var leftSeries, rightSeries []labels.Labels
 			if card == parser.CardManyToOne {
-				leftSeries = append([]labels.Labels(nil), allManySeries...)
-				rightSeries = append([]labels.Labels(nil), oneSeries...)
+				leftSeries = slices.Clone(allManySeries)
+				rightSeries = slices.Clone(oneSeries)
 			} else {
-				leftSeries = append([]labels.Labels(nil), oneSeries...)
-				rightSeries = append([]labels.Labels(nil), allManySeries...)
+				leftSeries = slices.Clone(oneSeries)
+				rightSeries = slices.Clone(allManySeries)
 			}
 
 			left := &operators.TestOperator{
