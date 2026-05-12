@@ -1477,6 +1477,21 @@ instance_limits:
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
 
+# (experimental) When enabled, the ingester triggers an early TSDB head
+# compaction for series that are no longer owned by the ingester after a ring
+# change. Requires -ingester.track-ingester-owned-series or
+# -ingester.use-ingester-owned-series-for-limits to be enabled.
+# CLI flag: -ingester.early-compaction-non-owned-series-enabled
+[early_compaction_non_owned_series_enabled: <boolean> | default = false]
+
+# (experimental) Minimum time that must elapse after a non-owned series is
+# detected before it can be evicted by the early compaction. Any further
+# detection that adds refs to the pending list resets the timer. Lets
+# distributors converge on the new ring state before eviction runs. A value of 0
+# disables the grace period and evicts as soon as possible.
+# CLI flag: -ingester.early-compaction-non-owned-series-grace-period
+[early_compaction_non_owned_series_grace_period: <duration> | default = 30s]
+
 push_circuit_breaker:
   # (experimental) Enable circuit breaking when making requests to ingesters
   # CLI flag: -ingester.push-circuit-breaker.enabled

@@ -324,6 +324,7 @@
   "ingester.read-path-memory-utilization-limit": 0,
   "ingester.error-sample-rate": 10,
   "ingester.owned-series-update-interval": 15000000000,
+  "ingester.early-compaction-non-owned-series-grace-period": 30000000000,
   "ingester.push-circuit-breaker.failure-threshold-percentage": 10,
   "ingester.push-circuit-breaker.failure-execution-threshold": 100,
   "ingester.push-circuit-breaker.thresholding-period": 60000000000,

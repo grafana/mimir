@@ -1673,6 +1673,10 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.early-compaction-non-owned-series-enabled
+    	[experimental] When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.
+  -ingester.early-compaction-non-owned-series-grace-period duration
+    	[experimental] Minimum time that must elapse after a non-owned series is detected before it can be evicted by the early compaction. Any further detection that adds refs to the pending list resets the timer. Lets distributors converge on the new ring state before eviction runs. A value of 0 disables the grace period and evicts as soon as possible. (default 30s)
   -ingester.early-head-compaction-min-estimated-series-reduction-percentage int
     	[experimental] Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction. (default 15)
   -ingester.early-head-compaction-owned-series-threshold int
