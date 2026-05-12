@@ -613,19 +613,18 @@ func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_AllKnownFunc
 		LookbackDelta: 5 * time.Minute,
 	}
 
-	for i := getMaxFunctionOrdinal(); i >= 0; i-- {
-		currentFunc := functions.Function(i)
+	// For every known function, ensure that we either get no error when determining if
+	// it is always empty or an error because we haven't passed the expected arguments
+	// (because we don't pass any). The idea is to make sure we have explicitly handled
+	// every defined function.
+	for ord := range functions.Function_name {
+		currentFunc := functions.Function(ord)
 
-		// There are gaps in the ordinals used for the protobuf function enum
-		// so if this particular function isn't defined, skip it.
-		if !strings.HasPrefix(currentFunc.String(), "FUNCTION_") {
+		// Not a real function so it isn't handled by the optimization pass.
+		if currentFunc == functions.FUNCTION_UNKNOWN {
 			continue
 		}
 
-		// This is a known function, ensure that we either get no error when determining
-		// if it is always empty or an error because we haven't passed the expected arguments
-		// (because we don't pass any). The idea is to make sure we have explicitly handled
-		// every defined function.
 		funcCall := &core.FunctionCall{
 			FunctionCallDetails: &core.FunctionCallDetails{
 				Function: currentFunc,
