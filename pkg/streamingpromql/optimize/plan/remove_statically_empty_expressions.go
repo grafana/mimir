@@ -178,6 +178,8 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, 
 		return isAlwaysEmptyBinaryExpression(node, params)
 	case *core.FunctionCall:
 		return IsAlwaysEmptyFunctionCall(node, params)
+	case *core.UnaryExpression:
+		return isAlwaysEmpty(node.Inner, params)
 	default:
 		return false, nil
 	}

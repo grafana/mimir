@@ -227,6 +227,23 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			queryStart:      time.Unix(10000, 0),
 			expectUnchanged: true,
 		},
+		"function over subquery with empty results: should not optimize": {
+			// We short-circuit on subqueries now for simplicity
+			expr:            `max_over_time(EMPTY_RESULT[1d:5m])`,
+			expectUnchanged: true,
+		},
+		"function over subquery binary operation with empty results: should optimize": {
+			expr: `max_over_time(metric_a[1d:5m]) + rate(EMPTY_RESULT[5m])`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"unary operation on empty results: should optimize": {
+			expr: `-rate(EMPTY_RESULT[5m])`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 		"non-conflicting equals matchers: should not optimize": {
 			expr:            `metric{pod="foo", env="bar"}`,
 			queryStart:      time.UnixMilli(selectorThresholdMs),
