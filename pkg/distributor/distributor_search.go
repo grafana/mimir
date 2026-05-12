@@ -20,11 +20,26 @@ import (
 )
 
 // ingesterSearchPrefetchBuffer bounds how many results each replica's
-// concurrentSearchResultSet pre-fetches ahead of the k-way merger. Small
-// enough to bound memory under wide fan-outs; large enough to hide a few
-// round-trips of gRPC latency so the merger doesn't serialise on a single
-// replica's network.
-const ingesterSearchPrefetchBuffer = 16
+// concurrentSearchResultSet pre-fetches ahead of the k-way merger. Sized
+// to match pkg/ingester.searchBatchSize so the channel can absorb one
+// full wire batch's worth of results — once the producer has pushed a
+// batch into the channel, the consumer can drain it during the
+// producer's next gRPC Recv(), hiding approximately one round-trip of
+// network latency per source.
+//
+// The relationship is fundamental and not coincidental: the upstream
+// stream emits results in 256-item batches and blocks for a Recv at
+// each boundary, so 256 is exactly the buffer size that fully covers a
+// round-trip without wasting memory on speculative pre-fetch the stream
+// cannot serve. Above 256 yields no further benefit; below 256 leaves
+// gaps where the merger waits on a source's network.
+//
+// Kept as a literal rather than importing pkg/ingester.searchBatchSize
+// because pkg/distributor currently only depends on pkg/ingester/client,
+// and pulling in the server-side ingester package for a single constant
+// would expand the dependency graph noticeably. If the ingester batch
+// size changes, update this constant in lockstep.
+const ingesterSearchPrefetchBuffer = 256
 
 // SearchLabelNames opens a server-streaming SearchLabelNames RPC against the
 // quorum-many ingesters in the replication set, wraps each stream as a
@@ -117,10 +132,21 @@ type searchStream interface {
 // a pre-fetching storage.SearchResultSet, and returns the slice for
 // feeding into a k-way merger.
 //
-// Uses ring.DoUntilQuorumWithoutSuccessfulContextCancellation so that
-// quorum-survivor streams keep their RPC contexts alive after the fan-out
-// returns. Each returned SearchResultSet's Close() invokes the per-stream
-// CancelCauseFunc, terminating the RPC and freeing the upstream goroutine.
+// Lifecycle: the streams' gRPC contexts and the concurrent prefetcher's
+// goroutine context are both derived from the CALLER's ctx, not from any
+// context owned by ring.DoUntilQuorum or concurrency.ForEachJobMergeResults.
+// Both of those helpers cancel their internal contexts when they return —
+// which is correct for the open-stream phase (cancelling losers) but would
+// be catastrophic for survivors: the prefetcher's `select { case ch <- r:
+// case <-ctx.Done() }` can pick the cancellation branch and silently drop
+// values. By rooting the survivor streams in the caller's ctx we ensure
+// they live as long as the SearchResultSet the caller holds, and die only
+// when the caller cancels or explicitly Closes.
+//
+// Each returned SearchResultSet's Close() does two things: signal the
+// CancelCauseFunc supplied by ring.DoUntilQuorum (to satisfy that helper's
+// resource-tracking contract — failing to call it leaks), AND cancel the
+// stream-specific context to actually terminate the gRPC RPC.
 // Non-quorum streams are closed via the cleanup callback before they ever
 // reach the caller.
 func (d *Distributor) openIngesterSearchStreams(
@@ -130,37 +156,42 @@ func (d *Distributor) openIngesterSearchStreams(
 ) ([]storage.SearchResultSet, error) {
 	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 
-	wrappedF := func(rpcCtx context.Context, ingester *ring.InstanceDesc, cancel context.CancelCauseFunc) (storage.SearchResultSet, error) {
+	wrappedF := func(_ context.Context, ingester *ring.InstanceDesc, dscCancel context.CancelCauseFunc) (storage.SearchResultSet, error) {
 		client, err := d.ingesterPool.GetClientForInstance(*ingester)
 		if err != nil {
-			cancel(err)
+			dscCancel(err)
 			return nil, err
 		}
-		stream, err := open(rpcCtx, client.(ingester_client.IngesterClient))
+		// Root the stream's ctx in the CALLER's ctx, deliberately ignoring
+		// the per-instance ctx supplied by DoUntilQuorum. See the function
+		// godoc for why.
+		streamCtx, streamCancel := context.WithCancel(ctx)
+		stream, err := open(streamCtx, client.(ingester_client.IngesterClient))
 		if err != nil {
-			cancel(err)
+			streamCancel()
+			dscCancel(err)
 			return nil, err
 		}
-		// Build the per-stream SearchResultSet stack:
-		//   gRPC stream → ingesterSearchResultSet → concurrentSearchResultSet
-		// Close() on the outer set cancels the producer, drains the channel,
-		// and calls the inner Close() which invokes cancel() to terminate
-		// the gRPC RPC.
-		inner := newIngesterSearchResultSet(stream, func() { cancel(nil) })
-		return mimirstorage.NewConcurrentSearchResultSet(rpcCtx, inner, ingesterSearchPrefetchBuffer), nil
+		// Close() on the SearchResultSet must (a) terminate the gRPC RPC
+		// and (b) satisfy DoUntilQuorum's CancelCauseFunc contract.
+		inner := newIngesterSearchResultSet(stream, func() {
+			streamCancel()
+			dscCancel(nil)
+		})
+		return mimirstorage.NewConcurrentSearchResultSet(ctx, inner, ingesterSearchPrefetchBuffer), nil
 	}
 
 	// cleanup is called for results that DoUntilQuorum produced but is
 	// discarding (non-quorum or excess). Closing the SearchResultSet
-	// cancels the per-stream context and releases the goroutine.
+	// cancels its stream context and releases the goroutine.
 	cleanup := func(rs storage.SearchResultSet) {
 		_ = rs.Close()
 	}
 
 	return concurrency.ForEachJobMergeResults[ring.ReplicationSet, storage.SearchResultSet](
 		ctx, replicationSets, 0,
-		func(ctx context.Context, set ring.ReplicationSet) ([]storage.SearchResultSet, error) {
-			return ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, set, quorumConfig, wrappedF, cleanup)
+		func(jobCtx context.Context, set ring.ReplicationSet) ([]storage.SearchResultSet, error) {
+			return ring.DoUntilQuorumWithoutSuccessfulContextCancellation(jobCtx, set, quorumConfig, wrappedF, cleanup)
 		})
 }
 
