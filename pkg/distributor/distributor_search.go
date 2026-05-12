@@ -46,13 +46,14 @@ const ingesterSearchPrefetchBuffer = 256
 // head per source. Closing the returned SearchResultSet propagates
 // cancellation through every open stream.
 //
-// params is the wire-decoupled form of hints.Filter, forwarded to the
-// ingesters so each leaf builds its own filter chain. Caller must build
-// params and hints.Filter from the same streaminglabelvalues.Params for
-// cross-layer consistency in PR #4's HTTP path.
+// params is converted to a wire SearchFilter via paramsToProto and sent to
+// each ingester, which builds its own filter chain from the wire shape.
+// hints.OrderBy and hints.Limit are applied at the merge layer; hints.Filter
+// is not read here — the leaf-side filter is reconstructed from params on
+// each ingester.
 //
-// from/to bound the query time range; PR #4's HTTP handler resolves these
-// from the request and Task 4's distributorQuerier threads them through.
+// from/to bound the query time range; the caller supplies them from
+// whichever upstream produced the request.
 func (d *Distributor) SearchLabelNames(
 	ctx context.Context,
 	from, to model.Time,

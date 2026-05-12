@@ -329,12 +329,12 @@ func TestBlocksStoreQuerier_SearchLabelNames_NonRetriableErrorBubblesUp(t *testi
 // DROPPED, consistency-check sees the failing SG's blocks as missing, and
 // re-runs the query against a different SG.
 //
-// This documents the contract Task 6 (SearchLabelValues) will inherit: the
-// streaming-retry branch is "all-or-nothing" per replica — pre-error data is
-// not preserved because the goroutine bails out before appending to nameSets.
-// Preserving partial results would require richer coordination with
-// queryWithConsistencyCheck (a future enhancement); for now the simple drop
-// keeps the result set correct at the cost of redoing some work.
+// The streaming-retry branch is "all-or-nothing" per replica: pre-error
+// data is not preserved because the goroutine bails out before appending
+// to nameSets. SearchLabelValues inherits the same behaviour through the
+// shared drainSGSearchLabelStream path. Preserving partial results would
+// require richer coordination with queryWithConsistencyCheck; the simple
+// drop keeps the result set correct at the cost of redoing some work.
 func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
 	const (
 		minT = int64(10)
