@@ -1492,77 +1492,111 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 // scenario: an ingester accumulates series under one ring topology, more ingesters then join
 // the ring, and the existing replica is left holding series that are now non-owned.
 // The test verifies that compactBlocksDueToNonOwnedSeries correctly evicts those series under
-// the smaller post-scale-up per-ingester local threshold, even when the per-ingester owned-series
-// count has dropped along with it.
+// the smaller post-scale-up per-ingester local threshold, and that the same call would have
+// been a no-op under the pre-scale-up topology (where the local threshold was still above the
+// number of in-head series).
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testing.T) {
-	var (
-		ctx         = context.Background()
-		ctxWithUser = user.InjectOrgID(ctx, userID)
-	)
+	const numSeries = 10000
 
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
 	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0
+	// The post-scale-up sub-test also exercises compactBlocksToReducePerTenantOwnedSeries
+	// (which short-circuits unless both of these flags are set), to show that the older
+	// owned-series gate would not have fired in the post-scale-up state.
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+	cfg.UseIngesterOwnedSeriesForLimits = true
 
 	limits := defaultLimitsTestConfig()
-	// Threshold = 4. With the post-scale-up topology (4 ingesters/zone, 3 zones, RF=3), the
-	// locally adjusted threshold is (4 * 3) / (3 * 4) = 1. With the pre-scale-up topology
-	// (2 ingesters/zone) it would have been 2. The gate sees Head().NumSeries() = numSeries
-	// (well above either threshold), so eviction proceeds regardless of how the per-ingester
-	// owned-series count has shifted.
-	limits.EarlyHeadCompactionOwnedSeriesThreshold = 4
+	// Global threshold = 30000. With 3 zones and RF=3 the per-ingester local threshold is
+	// (30000 * 3) / (3 * ingestersPerZone). Pre-scale-up (2 ingesters/zone) => 15000;
+	// post-scale-up (4 ingesters/zone) => 7500. The head holds numSeries = 10000 series, so
+	// the gate skips against the pre-scale-up threshold (10000 < 15000) and fires against the
+	// post-scale-up threshold (10000 >= 7500): the scale-up itself is what unlocks eviction.
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 30000
 
 	zones := []string{"zone-a", "zone-b", "zone-c"}
 
-	// Post-scale-up ring: 4 ingesters per zone (12 total). This sets up the smaller local
-	// threshold the gate will operate against.
-	ingesters := setupTestIngesterRing(t, zones, 4, cfg, limits)
-	ingester := ingesters[0]
-
-	// Push numSeries series, each with two samples at different timestamps so the head's
-	// MinTime < MaxTime.
 	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
 	require.NoError(t, err)
 	t1 := sampleTime.UnixMilli()
 	t2 := t1 + 1
 
-	const numSeries = 20
-	for i := 0; i < numSeries; i++ {
-		lbls := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", i))
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			Labels:  lbls,
-			Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
-		}}))
-		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			Labels:  lbls,
-			Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
-		}}))
+	// setupScenario builds a ring with the given per-zone fan-out, pushes numSeries series with
+	// two samples each (so the head's MinTime < MaxTime) into ingester[0], and configures the
+	// owned token ranges to cover the lower half of the uint32 keyspace so roughly half the
+	// series end up non-owned and queued for eviction.
+	setupScenario := func(t *testing.T, ingestersPerZone int) (*Ingester, *userTSDB, string, int) {
+		ctxWithUser := user.InjectOrgID(context.Background(), userID)
+
+		ingesters := setupTestIngesterRing(t, zones, ingestersPerZone, cfg, limits)
+		ingester := ingesters[0]
+
+		for i := 0; i < numSeries; i++ {
+			lbls := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", i))
+			require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+				Labels:  lbls,
+				Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+			}}))
+			require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+				Labels:  lbls,
+				Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+			}}))
+		}
+
+		db := ingester.getTSDB(userID)
+		require.NotNil(t, db)
+		require.Equal(t, uint64(numSeries), db.Head().NumSeries(), "all series should be in the head")
+
+		db.ownedTokenRanges = ring.TokenRanges{0, math.MaxUint32 / 2}
+		require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
+		ownedAfterRecompute := db.ownedSeriesState().ownedSeriesCount
+		require.Less(t, ownedAfterRecompute, numSeries, "some series should be non-owned")
+		require.Positive(t, ownedAfterRecompute, "some series should remain owned")
+
+		blocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+		require.Empty(t, listBlocksInDir(t, blocksDir), "no blocks before eviction runs")
+
+		return ingester, db, blocksDir, ownedAfterRecompute
 	}
 
-	db := ingester.getTSDB(userID)
-	require.NotNil(t, db)
-	require.Equal(t, uint64(numSeries), db.Head().NumSeries(), "all series should be in the head")
+	t.Run("pre-scale-up topology skips eviction", func(t *testing.T) {
+		// 2 ingesters/zone => localThreshold = 15000 > 10000, gate skips, no block produced.
+		ingester, db, blocksDir, _ := setupScenario(t, 2)
 
-	// Simulate the post-scale-up ownership state by handing ingester[0] a small slice of the
-	// keyspace (the rebalance gave most of what it used to own to the new ingesters). With
-	// ownedTokenRanges = {0, 1} ingester[0] owns only series whose secondary hash is in [0, 1].
-	db.ownedTokenRanges = ring.TokenRanges{0, 1}
-	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
-	postScaleOwned := db.ownedSeriesState().ownedSeriesCount
-	require.Less(t, postScaleOwned, numSeries, "most series should be non-owned after the simulated scale-up")
+		ingester.compactBlocksDueToNonOwnedSeries(context.Background())
 
-	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
-	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no blocks before eviction runs")
+		assert.Empty(t, listBlocksInDir(t, blocksDir), "gate should skip below the pre-scale-up local threshold")
+		assert.Equal(t, uint64(numSeries), db.Head().NumSeries(), "no series should be evicted from the head")
+	})
 
-	// Run the eviction. The Head().NumSeries() gate is well above the post-scale-up localThreshold of 1,
-	// so it fires despite the owned-series count having dropped, and the queued non-owned refs get evicted.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	t.Run("post-scale-up topology triggers eviction", func(t *testing.T) {
+		// 4 ingesters/zone => localThreshold = 7500. The owned-series count after the simulated
+		// rebalance is ~5000 (half of numSeries), which is below the local threshold. So:
+		//   - compactBlocksToReducePerTenantOwnedSeries gates on ownedSeriesCount >= localThreshold
+		//     => 5000 < 7500 => skip, no block produced.
+		//   - compactBlocksDueToNonOwnedSeries gates on Head().NumSeries() >= localThreshold
+		//     => 10000 >= 7500 => fire, non-owned refs evicted into a block.
+		// This is precisely the gap the new function closes: after the scale-up the older
+		// owned-series gate stops firing even though stale non-owned series are still bloating
+		// the head.
+		ingester, db, blocksDir, postScaleOwned := setupScenario(t, 4)
+		require.Less(t, postScaleOwned,
+			ingester.limiter.ringStrategy.convertGlobalToLocalLimit(userID, limits.EarlyHeadCompactionOwnedSeriesThreshold),
+			"owned-series count should sit below the post-scale-up local threshold so the older gate skips")
 
-	// A block should have been produced; only the (very few) owned series remain in the head.
-	require.Len(t, listBlocksInDir(t, userBlocksDir), 1, "block should be produced after scale-up")
-	require.Equal(t, uint64(postScaleOwned), db.Head().NumSeries(), "only owned series should remain in the head")
+		ingester.compactBlocksToReducePerTenantOwnedSeries(context.Background(), time.Now())
+		require.Empty(t, listBlocksInDir(t, blocksDir), "older owned-series gate should not fire after scale-up")
+		require.Equal(t, uint64(numSeries), db.Head().NumSeries(), "no series should be evicted by the older path")
+
+		ingester.compactBlocksDueToNonOwnedSeries(context.Background())
+
+		require.Len(t, listBlocksInDir(t, blocksDir), 1, "block should be produced after scale-up")
+		require.Equal(t, uint64(postScaleOwned), db.Head().NumSeries(), "only owned series should remain in the head")
+	})
 }
 
 func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {

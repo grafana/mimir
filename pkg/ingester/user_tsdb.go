@@ -153,14 +153,13 @@ type userTSDB struct {
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
-	// pendingNonOwnedRefs holds the series refs that the last computeOwnedSeries call(s) found
-	// to be non-owned. The compaction loop consumes (and clears) this list and passes it to
-	// CompactSelectedSeries for targeted eviction. pendingNonOwnedRefsLastUpdate records the
-	// time of the most recent addition; the compaction loop uses it to enforce the configured
-	// grace period before consuming the list. The mutex serialises append-time additions with
-	// the take-and-clear performed by the compaction loop.
 	pendingNonOwnedRefsMtx        sync.Mutex
+	// pendingNonOwnedRefs holds the series refs that the last computeOwnedSeries call(s) found
+	// to be non-owned. The compaction loop consumes this list and uses it for targeted eviction.
 	pendingNonOwnedRefs           []storage.SeriesRef
+	// pendingNonOwnedRefsLastUpdate records the
+	// time of the most recent addition; the compaction loop uses it to enforce the configured
+	// grace period before consuming the list.
 	pendingNonOwnedRefsLastUpdate time.Time
 
 	postingsCache *tsdb.PostingsForMatchersCache
@@ -763,18 +762,12 @@ func (u *userTSDB) computeOwnedSeries() int {
 	})
 
 	// Queue the non-owned refs for targeted eviction by the next compaction-loop iteration.
-	// The compaction loop will pass this list to CompactSelectedSeries, which writes the refs
-	// into a block and evicts them from the head without advancing HeadMinTime. No marker is
-	// appended on the series, so PromQL lookback semantics for those series are unaffected.
 	u.addPendingNonOwnedRefs(nonOwnedRefs)
 
 	return count
 }
 
-// CompactOOOHead compacts the OOO head into blocks. Mimir runs this immediately before
-// CompactSelectedSeries so the out-of-order data of every series with OOO chunks is persisted
-// to OOO blocks; otherwise CompactSelectedSeries (which writes only in-order chunks) would
-// orphan the OOO chunks of the evicted series.
+// CompactOOOHead compacts the OOO head into blocks.
 func (u *userTSDB) CompactOOOHead(ctx context.Context) error {
 	return u.db.CompactOOOHead(ctx)
 }
