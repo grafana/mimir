@@ -1490,17 +1490,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 
 // TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp simulates the HPA scale-up
 // scenario: an ingester accumulates series under one ring topology, more ingesters then join
-// the ring (an HPA scale-up plus a limits-operator shard-size bump), and the existing replica
-// is left holding series that are now non-owned. The test verifies that
-// compactBlocksDueToNonOwnedSeries correctly evicts those series under the smaller post-scale-up
-// per-ingester local threshold, even when the per-ingester owned-series count has dropped along
-// with it.
-//
-// The actual ring transition is simulated by setting up the post-scale-up topology (4 ingesters
-// per zone, 12 total) directly and manipulating ingester[0]'s token ranges to mimic the "I now
-// own only a fraction of what I used to" state. This is deterministic and avoids the timing /
-// token-distribution sensitivity of running the ownership-recomputation service on a live ring
-// transition.
+// the ring, and the existing replica is left holding series that are now non-owned.
+// The test verifies that compactBlocksDueToNonOwnedSeries correctly evicts those series under
+// the smaller post-scale-up per-ingester local threshold, even when the per-ingester owned-series
+// count has dropped along with it.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testing.T) {
 	var (
 		ctx         = context.Background()
@@ -1516,7 +1509,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	limits := defaultLimitsTestConfig()
 	// Threshold = 4. With the post-scale-up topology (4 ingesters/zone, 3 zones, RF=3), the
 	// locally adjusted threshold is (4 * 3) / (3 * 4) = 1. With the pre-scale-up topology
-	// (2 ingesters/zone) it would have been 2. The new gate sees Head().NumSeries() = numSeries
+	// (2 ingesters/zone) it would have been 2. The gate sees Head().NumSeries() = numSeries
 	// (well above either threshold), so eviction proceeds regardless of how the per-ingester
 	// owned-series count has shifted.
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 4
@@ -1554,8 +1547,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 
 	// Simulate the post-scale-up ownership state by handing ingester[0] a small slice of the
 	// keyspace (the rebalance gave most of what it used to own to the new ingesters). With
-	// ownedTokenRanges = {0, 1} ingester[0] owns only series whose secondary hash is in [0, 1],
-	// which for our randomly-distributed labels is essentially none of them.
+	// ownedTokenRanges = {0, 1} ingester[0] owns only series whose secondary hash is in [0, 1].
 	db.ownedTokenRanges = ring.TokenRanges{0, 1}
 	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
 	postScaleOwned := db.ownedSeriesState().ownedSeriesCount
@@ -1564,9 +1556,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no blocks before eviction runs")
 
-	// Run the eviction. The new gate uses Head().NumSeries() (= numSeries, well above the
-	// post-scale-up localThreshold of 1), so it fires despite the owned-series count having
-	// dropped, and the queued non-owned refs get evicted.
+	// Run the eviction. The Head().NumSeries() gate is well above the post-scale-up localThreshold of 1,
+	// so it fires despite the owned-series count having dropped, and the queued non-owned refs get evicted.
 	ingester.compactBlocksDueToNonOwnedSeries(ctx)
 
 	// A block should have been produced; only the (very few) owned series remain in the head.
@@ -1574,15 +1565,14 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	require.Equal(t, uint64(postScaleOwned), db.Head().NumSeries(), "only owned series should remain in the head")
 }
 
-func addIngestersToRing(t *testing.T, consulClient *consul.Client, zones []string, ingestersPerZone, startIdx int, cfg Config, limits validation.Limits) []*Ingester {
+func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {
+	// Create a shared consul KV store so all ingesters join the same ring.
+	consulClient, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	ingesters := make([]*Ingester, 0, len(zones)*ingestersPerZone)
-	var ring ring.ReadRing
 	for _, zone := range zones {
-		for i := startIdx; i < startIdx+ingestersPerZone; i++ {
-			var (
-				ingester *Ingester
-				err      error
-			)
+		for i := 0; i < ingestersPerZone; i++ {
 			ingesterId := fmt.Sprintf("ingester-%s-%d", zone, i)
 			cfg.IngesterRing.KVStore.Mock = consulClient
 			cfg.IngesterRing.InstanceID = ingesterId
@@ -1590,19 +1580,12 @@ func addIngestersToRing(t *testing.T, consulClient *consul.Client, zones []strin
 			cfg.IngesterRing.ZoneAwarenessEnabled = true
 			cfg.IngesterRing.InstanceZone = zone
 
-			ingester, ring, err = prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, ring, "", nil)
+			ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, "", nil)
 			require.NoError(t, err)
-			startAndWaitHealthy(t, ingester, ring)
+			startAndWaitHealthy(t, ingester, r)
 
 			ingesters = append(ingesters, ingester)
 		}
 	}
 	return ingesters
-}
-
-func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {
-	// Create a shared consul KV store so all ingesters join the same ring.
-	client, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-	return addIngestersToRing(t, client, zones, ingestersPerZone, 0, cfg, limitsCfg)
 }
