@@ -18,8 +18,8 @@ import (
 //
 // The merger is the slice-of-iterators counterpart to Prometheus's
 // (unexported) pairwiseMergeSearchSets. It does not re-apply any filter —
-// the leaf Searchers already scored their values. Per the Searcher contract
-// (Spec invariant 3) Score is deterministic for a given (Value, Filter),
+// the leaf Searchers already scored their values. Prometheus's Searcher
+// contract requires Score to be deterministic for a given (Value, Filter),
 // so duplicates from different sources carry identical scores by
 // construction; if a leaf reports a different score for the same value,
 // that's a bug elsewhere, not something this layer should silently mask.
@@ -133,7 +133,7 @@ func (m *mergingSearchResultSet) Next() bool {
 	// Cross-source dedup: advance any other source whose head equals the
 	// emitted Value. Correct because each source is pre-sorted in the same
 	// OrderBy, so equal-Value duplicates are at the heads under value
-	// ordering; under OrderByScoreDesc, Spec invariant 3 guarantees
+	// ordering; under OrderByScoreDesc the Searcher contract requires
 	// identical Score for identical Value, so duplicates tie there too.
 	for i := range m.sources {
 		if i == bestIdx || !m.hasHead[i] {

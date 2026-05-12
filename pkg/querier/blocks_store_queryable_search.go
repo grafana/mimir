@@ -29,13 +29,13 @@ import (
 // SearchLabelNames fans the request out across store-gateway replicas owning
 // the blocks in the query window, drains each replica's SearchLabelNames
 // stream into a scored []storage.SearchResult, and merges via
-// mimirstorage.MergeSearchResults (cross-SG dedup with max-score, then
-// ordering + limit per hints).
+// mimirstorage.NewMergingSearchResultSet (cross-SG dedup, then ordering and
+// limit per hints).
 //
 // Score preservation: leaf-computed scores propagate end-to-end. The SG
 // applied req.Filter already, so re-running it would burn CPU without
-// changing the result (Spec invariant 3 requires Score to be deterministic
-// per (Value, Filter)).
+// changing the result (Prometheus's Searcher contract requires Score to be
+// deterministic per (Value, Filter)).
 func (q *blocksStoreQuerier) SearchLabelNames(
 	ctx context.Context,
 	params *streaminglabelvalues.Params,

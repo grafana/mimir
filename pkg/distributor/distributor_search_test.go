@@ -77,9 +77,9 @@ func TestDistributor_SearchLabelNames_FanOutAndMerge(t *testing.T) {
 // thresholds) propagate to the SearchResultSet unchanged. Without this,
 // the merge layer could only emit prefix-match scores.
 func TestDistributor_SearchLabelNames_PreservesLeafScores(t *testing.T) {
-	// Each replica emits the same scored set — Spec invariant 3 requires
-	// scores to be deterministic per (Value, Filter), so two replicas
-	// running the same filter agree byte-for-byte. Here we use 0.7 to
+	// Each replica emits the same scored set — Prometheus's Searcher
+	// contract requires scores to be deterministic per (Value, Filter),
+	// so two replicas running the same filter agree byte-for-byte. Here we use 0.7 to
 	// represent a sub-prefix substring score; the test asserts that the
 	// merge layer carries it through without re-applying any filter.
 	scored := []scoredValue{{"alpha", 0.7}, {"beta", 1.0}}

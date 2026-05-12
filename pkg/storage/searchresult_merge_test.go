@@ -34,8 +34,8 @@ func TestNewMergingSearchResultSet_SingleSource_PreservesScores(t *testing.T) {
 }
 
 func TestNewMergingSearchResultSet_DedupByValue(t *testing.T) {
-	// Per Spec invariant 3 duplicates from different sources carry
-	// identical scores; the merger collapses to a single entry.
+	// Per Prometheus's Searcher contract duplicates from different sources
+	// carry identical scores; the merger collapses to a single entry.
 	a := &staticResultSet{results: []storage.SearchResult{{Value: "alpha", Score: 0.9}, {Value: "beta", Score: 1.0}}}
 	b := &staticResultSet{results: []storage.SearchResult{{Value: "alpha", Score: 0.9}, {Value: "beta", Score: 1.0}}}
 	rs := NewMergingSearchResultSet([]storage.SearchResultSet{a, b}, nil)
