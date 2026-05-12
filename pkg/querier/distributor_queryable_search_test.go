@@ -19,8 +19,7 @@ import (
 )
 
 func TestDistributorQuerier_SearchLabelNames_OutOfRetentionWindow(t *testing.T) {
-	// q.maxt strictly older than now-QueryIngestersWithin -> ShouldQueryIngesters
-	// returns false; distributor must NOT be called; result is empty.
+	// Window entirely outside retention — distributor must not be called.
 	nowMs := time.Now().UnixMilli()
 	queryIngestersWithin := 1 * time.Hour
 
@@ -38,7 +37,7 @@ func TestDistributorQuerier_SearchLabelNames_OutOfRetentionWindow(t *testing.T) 
 }
 
 func TestDistributorQuerier_SearchLabelNames_ClampsMinTime(t *testing.T) {
-	// q.mint older than now-QueryIngestersWithin -> distributor sees the clamped value.
+	// q.mint older than retention horizon — distributor sees the clamped from.
 	nowMs := time.Now().UnixMilli()
 	queryIngestersWithin := 1 * time.Hour
 	expectedClampedMin := nowMs - queryIngestersWithin.Milliseconds()
@@ -81,9 +80,8 @@ func TestDistributorQuerier_SearchLabelValues_Passthrough(t *testing.T) {
 	assert.Equal(t, []storage.SearchResult{{Value: "prod", Score: 1.0}}, got)
 }
 
-// newTestDistributorQuerier constructs a distributorQuerier directly without
-// going through the NewDistributorQueryable factory, because we need to set
-// mint/maxt explicitly for retention-window tests.
+// newTestDistributorQuerier sets mint/maxt explicitly for retention-window
+// tests, bypassing the NewDistributorQueryable factory.
 func newTestDistributorQuerier(_ *testing.T, dist *mockDistributor, cfg distributorQueryableConfigProvider, mint, maxt int64) *distributorQuerier {
 	return &distributorQuerier{
 		logger:      log.NewNopLogger(),

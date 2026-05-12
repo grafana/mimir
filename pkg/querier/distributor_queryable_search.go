@@ -15,12 +15,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// SearchLabelNames forwards a streaming label-names search to the Distributor,
-// applying the QueryIngestersWithin retention guard in the same way as
-// distributorQuerier.LabelNames. If the query window ends before the ingester
-// retention horizon, the call short-circuits to an empty result set without
-// touching the Distributor. Otherwise minT is clamped forward to
-// now-QueryIngestersWithin before forwarding.
+// SearchLabelNames forwards to the Distributor with QueryIngestersWithin
+// applied: short-circuit to empty if the window ends before retention,
+// otherwise clamp minT forward to now-QueryIngestersWithin.
 func (q *distributorQuerier) SearchLabelNames(
 	ctx context.Context,
 	params *streaminglabelvalues.Params,
@@ -47,12 +44,7 @@ func (q *distributorQuerier) SearchLabelNames(
 	return q.distributor.SearchLabelNames(ctx, model.Time(q.mint), model.Time(q.maxt), params, hints, matchers)
 }
 
-// SearchLabelValues forwards a streaming label-values search to the Distributor,
-// applying the QueryIngestersWithin retention guard in the same way as
-// distributorQuerier.LabelValues. If the query window ends before the ingester
-// retention horizon, the call short-circuits to an empty result set without
-// touching the Distributor. Otherwise minT is clamped forward to
-// now-QueryIngestersWithin before forwarding.
+// SearchLabelValues mirrors SearchLabelNames with the label name to query.
 func (q *distributorQuerier) SearchLabelValues(
 	ctx context.Context,
 	name string,
