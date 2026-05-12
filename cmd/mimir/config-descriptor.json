@@ -5333,6 +5333,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "label_values_count_request_max_concurrency",
+          "required": false,
+          "desc": "Maximum concurrency used to compute a single label values count request.",
+          "fieldValue": null,
+          "fieldDefaultValue": 16,
+          "fieldFlag": "ingester.label-values-count-max-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
