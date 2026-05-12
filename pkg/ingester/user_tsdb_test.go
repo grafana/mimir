@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,6 +107,199 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		}
 
 		db.releaseAppendLock(stateForcedCompaction)
+	})
+}
+
+func TestUserTSDB_addPendingNonOwnedRefs(t *testing.T) {
+	// asSet copies the pending map into a comparable Go map[ref]bool for assertions.
+	asSet := func(db *userTSDB) map[storage.SeriesRef]bool {
+		out := make(map[storage.SeriesRef]bool, len(db.pendingNonOwnedRefs))
+		for r := range db.pendingNonOwnedRefs {
+			out[r] = true
+		}
+		return out
+	}
+
+	t.Run("initial snapshot populates the set and sets the timestamp", func(t *testing.T) {
+		db := &userTSDB{}
+		before := time.Now()
+
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+
+		assert.Equal(t, map[storage.SeriesRef]bool{1: true, 2: true, 3: true}, asSet(db))
+		assert.False(t, db.pendingNonOwnedRefsLastUpdate.Before(before),
+			"timestamp should be set to now-or-later")
+	})
+
+	t.Run("re-queuing the same snapshot leaves the timestamp anchored", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+		ts1 := db.pendingNonOwnedRefsLastUpdate
+
+		// Sleep just enough that a re-bump would be observable.
+		time.Sleep(2 * time.Millisecond)
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+
+		assert.Equal(t, map[storage.SeriesRef]bool{1: true, 2: true, 3: true}, asSet(db))
+		assert.True(t, db.pendingNonOwnedRefsLastUpdate.Equal(ts1),
+			"timestamp must not move when the snapshot adds no new refs")
+	})
+
+	t.Run("adding a new ref bumps the timestamp", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+		ts1 := db.pendingNonOwnedRefsLastUpdate
+
+		time.Sleep(2 * time.Millisecond)
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3, 4})
+
+		assert.Equal(t, map[storage.SeriesRef]bool{1: true, 2: true, 3: true, 4: true}, asSet(db))
+		assert.True(t, db.pendingNonOwnedRefsLastUpdate.After(ts1),
+			"timestamp must move forward when a new ref is added")
+	})
+
+	t.Run("refs absent from the snapshot are dropped without bumping the timestamp", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+		ts1 := db.pendingNonOwnedRefsLastUpdate
+
+		time.Sleep(2 * time.Millisecond)
+		// Ref 2 became owned again (e.g. ring flipped). Snapshot is {1, 3}.
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 3})
+
+		assert.Equal(t, map[storage.SeriesRef]bool{1: true, 3: true}, asSet(db),
+			"ref 2 should have been dropped from the pending set")
+		assert.True(t, db.pendingNonOwnedRefsLastUpdate.Equal(ts1),
+			"drop-only reconciliation must not bump the timestamp")
+	})
+
+	t.Run("snapshot with both drops and additions bumps the timestamp", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+		ts1 := db.pendingNonOwnedRefsLastUpdate
+
+		time.Sleep(2 * time.Millisecond)
+		// Ref 2 is now owned, ref 4 is newly non-owned.
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 3, 4})
+
+		assert.Equal(t, map[storage.SeriesRef]bool{1: true, 3: true, 4: true}, asSet(db))
+		assert.True(t, db.pendingNonOwnedRefsLastUpdate.After(ts1),
+			"a new ref in the snapshot must bump the timestamp")
+	})
+
+	t.Run("empty snapshot drops everything and resets the timestamp", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+		require.False(t, db.pendingNonOwnedRefsLastUpdate.IsZero())
+
+		db.addPendingNonOwnedRefs(nil)
+
+		assert.Empty(t, db.pendingNonOwnedRefs)
+		assert.True(t, db.pendingNonOwnedRefsLastUpdate.IsZero(),
+			"timestamp must reset once the set is empty")
+	})
+
+	t.Run("empty snapshot on an empty set is a no-op", func(t *testing.T) {
+		db := &userTSDB{}
+
+		db.addPendingNonOwnedRefs(nil)
+
+		assert.Empty(t, db.pendingNonOwnedRefs)
+		assert.True(t, db.pendingNonOwnedRefsLastUpdate.IsZero())
+	})
+
+	t.Run("fully replacing the snapshot drops all old refs and bumps the timestamp", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+		ts1 := db.pendingNonOwnedRefsLastUpdate
+
+		time.Sleep(2 * time.Millisecond)
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{4, 5, 6})
+
+		assert.Equal(t, map[storage.SeriesRef]bool{4: true, 5: true, 6: true}, asSet(db))
+		assert.True(t, db.pendingNonOwnedRefsLastUpdate.After(ts1))
+	})
+
+	t.Run("duplicate refs in a single snapshot are deduplicated", func(t *testing.T) {
+		db := &userTSDB{}
+
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 1, 2, 2, 3})
+
+		assert.Equal(t, map[storage.SeriesRef]bool{1: true, 2: true, 3: true}, asSet(db))
+	})
+}
+
+func TestUserTSDB_takePendingNonOwnedRefs(t *testing.T) {
+	// asSortedSlice copies a returned ref slice into a deterministic order so we can
+	// assert membership without depending on map iteration order.
+	asSortedSlice := func(refs []storage.SeriesRef) []storage.SeriesRef {
+		out := append([]storage.SeriesRef(nil), refs...)
+		slices.Sort(out)
+		return out
+	}
+
+	t.Run("returns nil on an empty queue regardless of notAfter", func(t *testing.T) {
+		db := &userTSDB{}
+
+		assert.Nil(t, db.takePendingNonOwnedRefs(time.Now()))
+		assert.Nil(t, db.takePendingNonOwnedRefs(time.Time{}))
+	})
+
+	t.Run("returns nil and leaves the queue intact when the grace period has not elapsed", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+		ts := db.pendingNonOwnedRefsLastUpdate
+
+		// notAfter strictly before lastUpdate => lastUpdate.After(notAfter) is true => skip.
+		got := db.takePendingNonOwnedRefs(ts.Add(-time.Second))
+
+		assert.Nil(t, got)
+		assert.Len(t, db.pendingNonOwnedRefs, 3, "queue must not be cleared on a skipped take")
+		assert.True(t, db.pendingNonOwnedRefsLastUpdate.Equal(ts), "timestamp must not change on a skipped take")
+	})
+
+	t.Run("returns all refs and resets the queue when the grace period has elapsed", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+
+		got := db.takePendingNonOwnedRefs(time.Now().Add(time.Hour))
+
+		assert.Equal(t, []storage.SeriesRef{1, 2, 3}, asSortedSlice(got))
+		assert.Empty(t, db.pendingNonOwnedRefs, "queue must be empty after a successful take")
+		assert.True(t, db.pendingNonOwnedRefsLastUpdate.IsZero(), "timestamp must reset after a successful take")
+	})
+
+	t.Run("returns refs at the grace-period boundary (notAfter == lastUpdate)", func(t *testing.T) {
+		// Sanity-check the boundary: takePendingNonOwnedRefs skips only when lastUpdate
+		// is strictly after notAfter, so notAfter == lastUpdate must succeed.
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{42})
+		ts := db.pendingNonOwnedRefsLastUpdate
+
+		got := db.takePendingNonOwnedRefs(ts)
+
+		assert.Equal(t, []storage.SeriesRef{42}, got)
+		assert.Empty(t, db.pendingNonOwnedRefs)
+	})
+
+	t.Run("subsequent take after a successful one returns nil", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2})
+		require.NotNil(t, db.takePendingNonOwnedRefs(time.Now().Add(time.Hour)))
+
+		assert.Nil(t, db.takePendingNonOwnedRefs(time.Now().Add(time.Hour)),
+			"second take with no enqueue in between must return nil")
+	})
+
+	t.Run("take then re-enqueue then take returns only the new refs", func(t *testing.T) {
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2, 3})
+		_ = db.takePendingNonOwnedRefs(time.Now().Add(time.Hour))
+
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{4, 5})
+
+		got := db.takePendingNonOwnedRefs(time.Now().Add(time.Hour))
+		assert.Equal(t, []storage.SeriesRef{4, 5}, asSortedSlice(got))
 	})
 }
 
