@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/runutil"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -31,7 +32,9 @@ const searchBatchSize = 256
 // concurrency-safe). The per-block SearchResultSets are then streamed through
 // a pairwise k-way merge that respects the requested ordering, deduplicates
 // across blocks, and stops after the request limit — without materialising
-// the merged set.
+// the merged set. The IDs of every block we consulted are returned on the
+// final batch as response_hints so the querier's consistency check can credit
+// the blocks this store-gateway actually queried.
 func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
 	ctx := srv.Context()
 
@@ -57,14 +60,16 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 	g, gctx := errgroup.WithContext(ctx)
 
 	var (
-		setsMtx sync.Mutex
-		sets    []storage.SearchResultSet
+		setsMtx       sync.Mutex
+		sets          []storage.SearchResultSet
+		queriedBlocks []ulid.ULID
 	)
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 	s.blockSet.filter(req.Start, req.End, nil, func(b *bucketBlock) {
 		// indexReader is created here (outside the goroutine) to hold the block open.
 		indexr := b.indexReader(s.postingsStrategy)
+		blockID := b.meta.ULID
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "search label names")
 
@@ -72,18 +77,18 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 
 			result, err := blockLabelNames(gctx, indexr, matchers, seriesLimiter, s.maxSeriesPerBatch, s.logger, stats)
 			if err != nil {
-				return errors.Wrapf(err, "block %s", b.meta.ULID)
+				return errors.Wrapf(err, "block %s", blockID)
 			}
 
 			set, err := applyPerBlockSearchHints(result, params, order, limit)
 			if err != nil {
-				return errors.Wrapf(err, "block %s", b.meta.ULID)
-			}
-			if set == nil {
-				return nil
+				return errors.Wrapf(err, "block %s", blockID)
 			}
 			setsMtx.Lock()
-			sets = append(sets, set)
+			if set != nil {
+				sets = append(sets, set)
+			}
+			queriedBlocks = append(queriedBlocks, blockID)
 			setsMtx.Unlock()
 			return nil
 		})
@@ -98,13 +103,13 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 
 	merged := mimirstorage.PairwiseMergeSearchSets(sets, order, limit)
 	defer merged.Close()
-	return streamBucketSearchResults(ctx, merged, srv.Send)
+	return streamBucketSearchResults(ctx, merged, queriedBlocks, srv.Send)
 }
 
 // SearchLabelValues streams label values for req.Label matching the wire search
 // filter across all blocks in the request's time range. Implements storegatewaypb.StoreGatewayServer.
 //
-// See SearchLabelNames for the merge structure.
+// See SearchLabelNames for the merge structure and response-hints contract.
 func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
 	ctx := srv.Context()
 
@@ -130,8 +135,9 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	g, gctx := errgroup.WithContext(ctx)
 
 	var (
-		setsMtx sync.Mutex
-		sets    []storage.SearchResultSet
+		setsMtx       sync.Mutex
+		sets          []storage.SearchResultSet
+		queriedBlocks []ulid.ULID
 	)
 
 	s.blockSet.filter(req.Start, req.End, nil, func(b *bucketBlock) {
@@ -142,6 +148,7 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 		// goroutine: that refcount keeps the block from being unloaded
 		// mid-query. Same idiom as BucketStore.LabelValues (bucket.go:1544).
 		indexr := b.indexReader(nil)
+		blockID := b.meta.ULID
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "search label values")
 
@@ -149,18 +156,18 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 
 			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, matchers, s.logger, stats)
 			if err != nil {
-				return errors.Wrapf(err, "block %s", b.meta.ULID)
+				return errors.Wrapf(err, "block %s", blockID)
 			}
 
 			set, err := applyPerBlockSearchHints(result, params, order, limit)
 			if err != nil {
-				return errors.Wrapf(err, "block %s", b.meta.ULID)
-			}
-			if set == nil {
-				return nil
+				return errors.Wrapf(err, "block %s", blockID)
 			}
 			setsMtx.Lock()
-			sets = append(sets, set)
+			if set != nil {
+				sets = append(sets, set)
+			}
+			queriedBlocks = append(queriedBlocks, blockID)
 			setsMtx.Unlock()
 			return nil
 		})
@@ -175,7 +182,7 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 
 	merged := mimirstorage.PairwiseMergeSearchSets(sets, order, limit)
 	defer merged.Close()
-	return streamBucketSearchResults(ctx, merged, srv.Send)
+	return streamBucketSearchResults(ctx, merged, queriedBlocks, srv.Send)
 }
 
 // applyPerBlockSearchHints builds a per-goroutine filter from params, then
@@ -232,10 +239,14 @@ func storepbToOrdering(o storepb.SearchOrdering) storage.Ordering {
 
 // streamBucketSearchResults pulls from the merged SearchResultSet in batches
 // of searchBatchSize and ships each batch over send. Any warnings accumulated
-// by the merge ride on the final batch (or are sent alone in a trailer batch
-// when no results were produced). The stream context is checked at each
-// batch boundary so a cancelled client stops the loop promptly.
-func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, send func(*storepb.SearchResultBatch) error) error {
+// by the merge and the response hints (queried block IDs) ride on the final
+// batch. The stream context is checked at each batch boundary so a cancelled
+// client stops the loop promptly.
+//
+// The trailer batch is always sent — even when results and warnings are both
+// empty — so the querier's consistency check can credit the blocks this
+// store-gateway actually queried via the response_hints field.
+func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, queriedBlocks []ulid.ULID, send func(*storepb.SearchResultBatch) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -257,10 +268,21 @@ func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, 
 		return err
 	}
 	batch.Warnings = warningsToStrings(rs.Warnings())
-	if len(batch.Results) > 0 || len(batch.Warnings) > 0 {
-		return send(batch)
+	batch.ResponseHints = buildSearchResponseHints(queriedBlocks)
+	return send(batch)
+}
+
+// buildSearchResponseHints builds the per-RPC SearchResponseHints. Returns nil
+// if no blocks were queried so the wire field is omitted.
+func buildSearchResponseHints(queriedBlocks []ulid.ULID) *storepb.SearchResponseHints {
+	if len(queriedBlocks) == 0 {
+		return nil
 	}
-	return nil
+	hints := &storepb.SearchResponseHints{QueriedBlocks: make([]storepb.Block, 0, len(queriedBlocks))}
+	for _, id := range queriedBlocks {
+		hints.QueriedBlocks = append(hints.QueriedBlocks, storepb.Block{Id: id.String()})
+	}
+	return hints
 }
 
 // warningsToStrings flattens annotations into a string slice for wire transport.

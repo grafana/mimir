@@ -5,6 +5,8 @@ package storage
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -126,6 +128,50 @@ func TestConcurrentSearchResultSet_CloseIsIdempotent(t *testing.T) {
 	}
 	require.NoError(t, c.Close())
 	require.NoError(t, c.Close(), "second Close must not panic or block")
+}
+
+// blockingResultSet models a child (e.g. a gRPC stream) whose Next blocks on
+// a remote call and only unblocks when Close is invoked. The wrapper must
+// close the child before waiting for the producer; otherwise Close hangs.
+type blockingResultSet struct {
+	closeCh chan struct{}
+	once    sync.Once
+	closed  atomic.Bool
+}
+
+func newBlockingResultSet() *blockingResultSet {
+	return &blockingResultSet{closeCh: make(chan struct{})}
+}
+
+func (b *blockingResultSet) Next() bool {
+	<-b.closeCh
+	return false
+}
+func (b *blockingResultSet) At() storage.SearchResult          { return storage.SearchResult{} }
+func (b *blockingResultSet) Warnings() annotations.Annotations { return nil }
+func (b *blockingResultSet) Err() error                        { return nil }
+func (b *blockingResultSet) Close() error {
+	b.once.Do(func() {
+		b.closed.Store(true)
+		close(b.closeCh)
+	})
+	return nil
+}
+
+func TestConcurrentSearchResultSet_CloseUnblocksProducerBlockedInChildNext(t *testing.T) {
+	src := newBlockingResultSet()
+	c := NewConcurrentSearchResultSet(context.Background(), src, 4)
+
+	done := make(chan error, 1)
+	go func() { done <- c.Close() }()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close hung waiting for producer goroutine; child was not closed first")
+	}
+	assert.True(t, src.closed.Load(), "child must be closed by the wrapper's Close")
 }
 
 // addAnnotation is a small helper shared with searchresult_merge_test.go.

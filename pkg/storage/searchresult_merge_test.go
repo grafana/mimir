@@ -82,7 +82,7 @@ func TestNewMergingSearchResultSet_OrderByScoreDesc_AlphaTiebreak(t *testing.T) 
 	// Each source pre-sorted by (score desc, value asc) per the Prometheus
 	// contract.
 	a := &staticResultSet{results: []storage.SearchResult{
-		{Value: "beta", Score: 1.0},  // tie with delta
+		{Value: "beta", Score: 1.0}, // tie with delta
 		{Value: "alpha", Score: 0.9},
 	}}
 	b := &staticResultSet{results: []storage.SearchResult{

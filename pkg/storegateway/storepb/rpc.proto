@@ -308,4 +308,15 @@ message SearchResultBatch {
   }
   repeated Result results = 1 [(gogoproto.nullable) = false];
   repeated string warnings = 2;
+
+  // response_hints reports which blocks the store-gateway actually queried
+  // for this RPC. The querier feeds these into queryWithConsistencyCheck so
+  // missing blocks (e.g. unloaded on the selected store-gateway) trigger a
+  // retry instead of silently dropping results.
+  SearchResponseHints response_hints = 3;
+}
+
+message SearchResponseHints {
+  // queried_blocks is the list of blocks that have been queried.
+  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
 }

@@ -27,11 +27,15 @@ import (
 
 // searchLabelNamesClientMock drains preset batches then surfaces err (if
 // set) instead of EOF, letting tests inject a mid-stream Recv error.
+//
+// queriedBlockIDs is attached as SearchResponseHints to the final batch on
+// the way out so the querier's consistency check credits the queried blocks.
 type searchLabelNamesClientMock struct {
 	grpc.ClientStream
-	batches []*storepb.SearchResultBatch
-	err     error
-	idx     int
+	batches         []*storepb.SearchResultBatch
+	err             error
+	queriedBlockIDs []ulid.ULID
+	idx             int
 }
 
 func (m *searchLabelNamesClientMock) Recv() (*storepb.SearchResultBatch, error) {
@@ -39,18 +43,28 @@ func (m *searchLabelNamesClientMock) Recv() (*storepb.SearchResultBatch, error) 
 		if m.err != nil {
 			return nil, m.err
 		}
+		if len(m.queriedBlockIDs) > 0 {
+			batch := &storepb.SearchResultBatch{ResponseHints: newSearchResponseHints(m.queriedBlockIDs)}
+			m.queriedBlockIDs = nil
+			return batch, nil
+		}
 		return nil, io.EOF
 	}
 	b := m.batches[m.idx]
 	m.idx++
+	if m.idx == len(m.batches) && len(m.queriedBlockIDs) > 0 && b.ResponseHints == nil {
+		b.ResponseHints = newSearchResponseHints(m.queriedBlockIDs)
+		m.queriedBlockIDs = nil
+	}
 	return b, nil
 }
 
 type searchLabelValuesClientMock struct {
 	grpc.ClientStream
-	batches []*storepb.SearchResultBatch
-	err     error
-	idx     int
+	batches         []*storepb.SearchResultBatch
+	err             error
+	queriedBlockIDs []ulid.ULID
+	idx             int
 }
 
 func (m *searchLabelValuesClientMock) Recv() (*storepb.SearchResultBatch, error) {
@@ -58,16 +72,36 @@ func (m *searchLabelValuesClientMock) Recv() (*storepb.SearchResultBatch, error)
 		if m.err != nil {
 			return nil, m.err
 		}
+		if len(m.queriedBlockIDs) > 0 {
+			batch := &storepb.SearchResultBatch{ResponseHints: newSearchResponseHints(m.queriedBlockIDs)}
+			m.queriedBlockIDs = nil
+			return batch, nil
+		}
 		return nil, io.EOF
 	}
 	b := m.batches[m.idx]
 	m.idx++
+	if m.idx == len(m.batches) && len(m.queriedBlockIDs) > 0 && b.ResponseHints == nil {
+		b.ResponseHints = newSearchResponseHints(m.queriedBlockIDs)
+		m.queriedBlockIDs = nil
+	}
 	return b, nil
+}
+
+func newSearchResponseHints(ids []ulid.ULID) *storepb.SearchResponseHints {
+	hints := &storepb.SearchResponseHints{}
+	for _, id := range ids {
+		hints.AddQueriedBlock(id)
+	}
+	return hints
 }
 
 // searchStoreGatewayClientMock is a BlocksStoreClient with programmable
 // SearchLabel{Names,Values} streams. lastSearchLabelValuesReq lets tests
 // assert the wire request shape.
+//
+// queriedBlockIDs, when set, is attached as SearchResponseHints to the trailer
+// batch so the querier's consistency check credits these blocks.
 type searchStoreGatewayClientMock struct {
 	storeGatewayClientMock
 	searchLabelNamesBatches    []*storepb.SearchResultBatch
@@ -76,6 +110,7 @@ type searchStoreGatewayClientMock struct {
 	searchLabelValuesBatches   []*storepb.SearchResultBatch
 	searchLabelValuesErr       error
 	searchLabelValuesStreamErr error
+	queriedBlockIDs            []ulid.ULID
 	lastSearchLabelValuesReq   *storepb.SearchLabelValuesRequest
 	calls                      atomicCounter
 }
@@ -92,9 +127,10 @@ func (m *searchStoreGatewayClientMock) SearchLabelNames(context.Context, *storep
 		return nil, m.searchLabelNamesErr
 	}
 	return &searchLabelNamesClientMock{
-		ClientStream: grpcClientStreamMock{ctx: context.Background()},
-		batches:      m.searchLabelNamesBatches,
-		err:          m.searchLabelNamesStreamErr,
+		ClientStream:    grpcClientStreamMock{ctx: context.Background()},
+		batches:         m.searchLabelNamesBatches,
+		err:             m.searchLabelNamesStreamErr,
+		queriedBlockIDs: m.queriedBlockIDs,
 	}, nil
 }
 
@@ -105,9 +141,10 @@ func (m *searchStoreGatewayClientMock) SearchLabelValues(_ context.Context, req 
 		return nil, m.searchLabelValuesErr
 	}
 	return &searchLabelValuesClientMock{
-		ClientStream: grpcClientStreamMock{ctx: context.Background()},
-		batches:      m.searchLabelValuesBatches,
-		err:          m.searchLabelValuesStreamErr,
+		ClientStream:    grpcClientStreamMock{ctx: context.Background()},
+		batches:         m.searchLabelValuesBatches,
+		err:             m.searchLabelValuesStreamErr,
+		queriedBlockIDs: m.queriedBlockIDs,
 	}, nil
 }
 
@@ -153,6 +190,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_HappyPath(t *testing.T) {
 				{Value: "instance", Score: 0.9},
 			},
 		}},
+		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	store2 := &searchStoreGatewayClientMock{
 		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
@@ -162,6 +200,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_HappyPath(t *testing.T) {
 				{Value: "job", Score: 0.8},
 			},
 		}},
+		queriedBlockIDs: []ulid.ULID{block2},
 	}
 
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
@@ -190,6 +229,61 @@ func TestBlocksStoreQuerier_SearchLabelNames_HappyPath(t *testing.T) {
 	assert.Equal(t, "job", got[2].Value)
 }
 
+// TestBlocksStoreQuerier_SearchLabelNames_RetriesMissingBlock pins the
+// consistency-check fix from the P1 review: when an SG fails to report a
+// requested block in its SearchResponseHints (e.g. the block hadn't loaded
+// yet on that SG), queryWithConsistencyCheck must retry for the missing
+// block instead of silently returning partial results.
+func TestBlocksStoreQuerier_SearchLabelNames_RetriesMissingBlock(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+
+	// First attempt: asked for {block1, block2}, but the SG only ever loaded
+	// block1, so it credits only block1.
+	storePartial := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{{Value: "from_block1", Score: 1.0}},
+		}},
+		queriedBlockIDs: []ulid.ULID{block1},
+	}
+	// Retry: another SG owns block2 and credits it.
+	storeRetry := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{{Value: "from_block2", Score: 1.0}},
+		}},
+		queriedBlockIDs: []ulid.ULID{block2},
+	}
+
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{storePartial: {block1, block2}},
+		map[BlocksStoreClient][]ulid.ULID{storeRetry: {block2}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+		{ID: block2},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	got := drainSearchResults(t, rs)
+
+	require.Len(t, got, 2)
+	assert.Equal(t, "from_block1", got[0].Value)
+	assert.Equal(t, "from_block2", got[1].Value)
+	assert.Equal(t, 1, storePartial.calls.n, "first SG must be tried once with both blocks")
+	assert.Equal(t, 1, storeRetry.calls.n, "retry SG must be tried once for the missing block")
+}
+
 func TestBlocksStoreQuerier_SearchLabelNames_PartialReplicaFailureWithRetry(t *testing.T) {
 	const (
 		minT = int64(10)
@@ -210,6 +304,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_PartialReplicaFailureWithRetry(t *t
 				{Value: "namespace", Score: 1.0},
 			},
 		}},
+		queriedBlockIDs: []ulid.ULID{block1},
 	}
 
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
@@ -252,6 +347,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_WarningsPropagated(t *testing.T) {
 				Warnings: []string{"sg-warning: partial results"},
 			},
 		},
+		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
 		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
@@ -349,6 +445,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
 				{Value: "retry_value", Score: 1.0},
 			},
 		}},
+		queriedBlockIDs: []ulid.ULID{block1},
 	}
 
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
@@ -400,6 +497,7 @@ func TestBlocksStoreQuerier_SearchLabelValues_HappyPath(t *testing.T) {
 				{Value: "prod", Score: 0.9},
 			},
 		}},
+		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	store2 := &searchStoreGatewayClientMock{
 		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
@@ -409,6 +507,7 @@ func TestBlocksStoreQuerier_SearchLabelValues_HappyPath(t *testing.T) {
 				{Value: "staging", Score: 0.8},
 			},
 		}},
+		queriedBlockIDs: []ulid.ULID{block2},
 	}
 
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
@@ -453,6 +552,7 @@ func TestBlocksStoreQuerier_SearchLabelValues_PassesLabelName(t *testing.T) {
 				{Value: "prod", Score: 1.0},
 			},
 		}},
+		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
 		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
