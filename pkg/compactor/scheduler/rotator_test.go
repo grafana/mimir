@@ -79,7 +79,7 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 	}
 }
 
-func TestRotator_LastEmptyQueueMetric(t *testing.T) {
+func TestRotator_PendingJobsLastEmpty(t *testing.T) {
 	now := time.Now()
 
 	pendingTracker := func(clk clock.Clock) *JobTracker {

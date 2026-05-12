@@ -46,7 +46,7 @@ type Rotator struct {
 	intervalsBeforeColdStartPlanning int
 	clock                            clock.Clock
 	rotationIndexCounter             *atomic.Int32 // only increments, overflow is okay
-	lastPendingEmptyTime             prometheus.Gauge
+	pendingJobsLastEmpty             prometheus.Gauge
 	logger                           log.Logger
 
 	mtx            sync.RWMutex
@@ -59,7 +59,7 @@ type TenantRotationState struct {
 	rotationIndex int
 }
 
-func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lastPendingEmptyTime prometheus.Gauge, logger log.Logger) *Rotator {
+func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, pendingJobsLastEmpty prometheus.Gauge, logger log.Logger) *Rotator {
 	r := &Rotator{
 		leaseDuration:                    leaseDuration,
 		planningInterval:                 planningInterval,
@@ -69,7 +69,7 @@ func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenan
 		intervalsBeforeColdStartPlanning: intervalsBeforeColdStartPlanning,
 		clock:                            clock.New(),
 		rotationIndexCounter:             atomic.NewInt32(0),
-		lastPendingEmptyTime:             lastPendingEmptyTime,
+		pendingJobsLastEmpty:             pendingJobsLastEmpty,
 		mtx:                              sync.RWMutex{},
 		tenantStateMap:                   make(map[string]*TenantRotationState),
 		rotation:                         make([]string, 0, 10), // initial size doesn't really matter
@@ -149,7 +149,7 @@ func (r *Rotator) RecoverFrom(jobTrackers map[string]*JobTracker, creationTime t
 	}
 
 	if len(r.rotation) == 0 {
-		r.lastPendingEmptyTime.Set(float64(r.clock.Now().Unix()))
+		r.pendingJobsLastEmpty.Set(float64(r.clock.Now().Unix()))
 	}
 }
 
@@ -365,7 +365,7 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 		if stayingEmpty && ctx.Err() == nil {
 			// Ensures periodic updates for the time we last saw an empty queue rather than only on transition.
 			// The context check is to ensure we don't update this when mid-shutdown.
-			r.lastPendingEmptyTime.Set(float64(r.clock.Now().Unix()))
+			r.pendingJobsLastEmpty.Set(float64(r.clock.Now().Unix()))
 		}
 		return
 	}
@@ -412,6 +412,6 @@ func (r *Rotator) removeFromRotation(tenantState *TenantRotationState) {
 	tenantState.rotationIndex = outsideRotation
 
 	if len(r.rotation) == 0 {
-		r.lastPendingEmptyTime.Set(float64(r.clock.Now().Unix()))
+		r.pendingJobsLastEmpty.Set(float64(r.clock.Now().Unix()))
 	}
 }
