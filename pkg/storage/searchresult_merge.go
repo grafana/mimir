@@ -49,7 +49,7 @@ func NewMergingSearchResultSet(sources []storage.SearchResultSet, hints *storage
 	}
 	return &mergingSearchResultSet{
 		sources:   sources,
-		order:     order,
+		compare:   makeSearchResultComparator(order),
 		limit:     limit,
 		heads:     make([]storage.SearchResult, len(sources)),
 		hasHead:   make([]bool, len(sources)),
@@ -57,9 +57,13 @@ func NewMergingSearchResultSet(sources []storage.SearchResultSet, hints *storage
 	}
 }
 
+// searchResultComparator orders two search results per a fixed Ordering.
+// Returns a negative value if a sorts before b, zero on equality.
+type searchResultComparator func(a, b storage.SearchResult) int
+
 type mergingSearchResultSet struct {
 	sources []storage.SearchResultSet
-	order   storage.Ordering
+	compare searchResultComparator
 	limit   int
 
 	heads     []storage.SearchResult
@@ -113,7 +117,7 @@ func (m *mergingSearchResultSet) Next() bool {
 			}
 			continue
 		}
-		if bestIdx < 0 || compareSearchResults(m.heads[i], m.heads[bestIdx], m.order) < 0 {
+		if bestIdx < 0 || m.compare(m.heads[i], m.heads[bestIdx]) < 0 {
 			bestIdx = i
 		}
 	}
@@ -163,22 +167,31 @@ func (m *mergingSearchResultSet) Close() error {
 	return firstErr
 }
 
-// compareSearchResults returns negative if a sorts before b under the given
-// ordering. Mirrors Prometheus's (unexported) compareSearchResults:
-//   - OrderByValueAsc:  ascending Value
-//   - OrderByValueDesc: descending Value
+// makeSearchResultComparator binds the ordering once at construction so the
+// hot find-best loop in Next does not re-switch on Ordering per comparison.
+// Mirrors Prometheus's (unexported) compareSearchResults:
+//   - OrderByValueAsc:  ascending Value.
+//   - OrderByValueDesc: descending Value.
 //   - OrderByScoreDesc: descending Score with ascending Value as the
-//     deterministic tiebreak.
-func compareSearchResults(a, b storage.SearchResult, order storage.Ordering) int {
+//     deterministic tiebreak — matches storage.compareSearchResults so
+//     Mimir and Prometheus produce identical orderings under the same
+//     hints.
+func makeSearchResultComparator(order storage.Ordering) searchResultComparator {
 	switch order {
 	case storage.OrderByValueDesc:
-		return cmp.Compare(b.Value, a.Value)
-	case storage.OrderByScoreDesc:
-		if a.Score != b.Score {
-			return cmp.Compare(b.Score, a.Score)
+		return func(a, b storage.SearchResult) int {
+			return cmp.Compare(b.Value, a.Value)
 		}
-		return cmp.Compare(a.Value, b.Value)
+	case storage.OrderByScoreDesc:
+		return func(a, b storage.SearchResult) int {
+			if a.Score != b.Score {
+				return cmp.Compare(b.Score, a.Score)
+			}
+			return cmp.Compare(a.Value, b.Value)
+		}
 	default:
-		return cmp.Compare(a.Value, b.Value)
+		return func(a, b storage.SearchResult) int {
+			return cmp.Compare(a.Value, b.Value)
+		}
 	}
 }
