@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -148,6 +149,11 @@ type InflightMemoryConsumptionTracker struct {
 	currentDesc *prometheus.Desc
 	peakDesc    *prometheus.Desc
 	sampledDesc *prometheus.Desc
+	maxAgeDesc  *prometheus.Desc
+
+	// now returns the current time. It is overridable so unit tests can deterministically
+	// stamp start times and compute ages. Production code uses time.Now.
+	now func() time.Time
 
 	// This is an optional counter which is passed to each MemoryConsumptionTracker instance.
 	// This metric is not registered by this tracker. MemoryConsumptionTrackers may increment this.
@@ -194,6 +200,12 @@ func NewInflightMemoryConsumptionTracker(reg prometheus.Registerer, queriesRejec
 			"Number of in-flight memory consumption trackers accumulated during the last metrics collection.",
 			nil, nil,
 		),
+		maxAgeDesc: prometheus.NewDesc(
+			"cortex_querier_inflight_query_max_age_seconds",
+			"Age in seconds of the oldest in-flight query memory consumption tracker. Zero when there are no in-flight queries.",
+			nil, nil,
+		),
+		now: time.Now,
 		// Note that we do not register this counter. We just keep a reference to this counter so the memory consumption trackers can update it.
 		queriesRejectedDueToPeakMemoryConsumption: queriesRejectedDueToPeakMemoryConsumption,
 	}
@@ -215,6 +227,7 @@ func (t *InflightMemoryConsumptionTracker) NewMemoryConsumptionTracker(ctx conte
 	}
 	tracker := NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionBytes, t.queriesRejectedDueToPeakMemoryConsumption, queryDescription)
 	tracker.producer = t
+	tracker.startTime = t.now()
 	t.inflight.Store(tracker, struct{}{})
 	return tracker
 }
@@ -243,26 +256,37 @@ func (t *InflightMemoryConsumptionTracker) Describe(ch chan<- *prometheus.Desc) 
 	ch <- t.currentDesc
 	ch <- t.peakDesc
 	ch <- t.sampledDesc
+	ch <- t.maxAgeDesc
 }
 
 // Collect implements prometheus.Collector. It aggregates memory consumption across all in-flight
 // queries and emits the gauge values.
 func (t *InflightMemoryConsumptionTracker) Collect(ch chan<- prometheus.Metric) {
 	var maxBytes, currentBytes, peakBytes float64
+	var oldestStart time.Time
 	sampled := 0
 	t.inflight.Range(func(key, _ any) bool {
 		tracker := key.(*MemoryConsumptionTracker)
 		maxBytes += float64(tracker.maxEstimatedMemoryConsumptionBytes)
 		currentBytes += float64(tracker.CurrentEstimatedMemoryConsumptionBytes())
 		peakBytes += float64(tracker.PeakEstimatedMemoryConsumptionBytes())
+		if oldestStart.IsZero() || tracker.startTime.Before(oldestStart) {
+			oldestStart = tracker.startTime
+		}
 		sampled++
 		return true
 	})
+
+	var maxAgeSeconds float64
+	if !oldestStart.IsZero() {
+		maxAgeSeconds = t.now().Sub(oldestStart).Seconds()
+	}
 
 	ch <- prometheus.MustNewConstMetric(t.maxDesc, prometheus.GaugeValue, maxBytes)
 	ch <- prometheus.MustNewConstMetric(t.currentDesc, prometheus.GaugeValue, currentBytes)
 	ch <- prometheus.MustNewConstMetric(t.peakDesc, prometheus.GaugeValue, peakBytes)
 	ch <- prometheus.MustNewConstMetric(t.sampledDesc, prometheus.GaugeValue, float64(sampled))
+	ch <- prometheus.MustNewConstMetric(t.maxAgeDesc, prometheus.GaugeValue, maxAgeSeconds)
 }
 
 // IsTracking returns true if the given tracker is being actively tracked by this InflightMemoryConsumptionTracker.
@@ -314,6 +338,11 @@ type MemoryConsumptionTracker struct {
 	producer *InflightMemoryConsumptionTracker
 
 	parent *MemoryConsumptionTracker
+
+	// startTime is the time at which this tracker became in-flight. It is only set on managed
+	// trackers (those created via InflightMemoryConsumptionTracker.NewMemoryConsumptionTracker)
+	// and is read by InflightMemoryConsumptionTracker.Collect to compute the max in-flight age.
+	startTime time.Time
 }
 
 // NewUnlimitedMemoryConsumptionTracker creates a new MemoryConsumptionTracker that track memory consumption but
