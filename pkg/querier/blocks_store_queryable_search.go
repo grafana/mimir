@@ -96,10 +96,12 @@ func (q *blocksStoreQuerier) SearchLabelNames(
 // The merger handles cross-SG dedup, ordering per hints.OrderBy, and limit
 // truncation. Scores are preserved verbatim from the leaf SGs.
 //
-// PR #3+ can replace this with a fully-streaming version that defers drain
-// inside fetchSearch* until the consumer pulls; that requires reshaping the
-// queryWithConsistencyCheck contract (queriedBlocks must be known before
-// drain), which is outside this PR's scope.
+// Why this layer drains into slices instead of streaming end-to-end: the
+// queryWithConsistencyCheck contract requires queryF to return the list of
+// blocks it covered before the loop can decide whether to retry. Deferring
+// drain until the consumer pulls would mean queriedBlocks is not known by
+// the time queryF returns, breaking that contract. A fully-streaming
+// alternative would have to reshape that contract first.
 func wrapAsMergingSearchResultSet(perSG [][]storage.SearchResult, extraWarnings annotations.Annotations, hints *storage.SearchHints) storage.SearchResultSet {
 	sources := make([]storage.SearchResultSet, 0, len(perSG)+1)
 	for _, s := range perSG {
