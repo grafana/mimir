@@ -1121,54 +1121,119 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 	}
 }
 
-func TestGroupedVectorVectorBinaryOperation_DropsParentMatchersWhenHintsProduceNoMatchers(t *testing.T) {
-	// When hints are non-nil but BuildMatchers returns nil (e.g., all labels are excluded),
-	// parent matchers must still be dropped from the many side. Parent matchers may refer
-	// to labels that don't exist on the many side of this binary operation.
+func TestGroupedVectorVectorBinaryOperation_ManySideMatchersWhenHintsProduceNoMatchers(t *testing.T) {
 	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	// group_left: right is "one" side, left is "many" side.
-	// The one side (right) has "cluster" so parent matchers don't filter it out.
-	rightSeries := []labels.Labels{
-		labels.FromStrings("env", "prod", "cluster", "us-east"),
-	}
-	leftSeries := []labels.Labels{
-		labels.FromStrings("env", "prod", "pod", "1"),
-	}
+	t.Run("non-include-label parent matchers are dropped", func(t *testing.T) {
+		// When hints are non-nil but BuildMatchers returns nil (e.g., all labels are excluded),
+		// parent matchers for non-include labels must still be dropped from the many side.
+		// Parent matchers may refer to labels that don't exist on the many side of this
+		// binary operation.
+		memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
-	left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
-	right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+		// group_left: right is "one" side, left is "many" side.
+		// The one side (right) has "cluster" so parent matchers don't filter it out.
+		rightSeries := []labels.Labels{
+			labels.FromStrings("env", "prod", "cluster", "us-east"),
+		}
+		leftSeries := []labels.Labels{
+			labels.FromStrings("env", "prod", "pod", "1"),
+		}
 
-	// Exclude hints that exclude all one-side labels: BuildMatchers will return nil
-	// because all label names present on the one side are excluded.
-	hints := &Hints{Exclude: []string{"cluster", "env"}}
-	vectorMatching := parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"cluster", "env"}}
+		left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+		right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 
-	o, err := NewGroupedVectorVectorBinaryOperation(
-		left,
-		right,
-		vectorMatching,
-		parser.ADD,
-		false,
-		memoryConsumptionTracker,
-		nil,
-		posrange.PositionRange{},
-		types.QueryTimeRange{},
-		hints,
-		log.NewNopLogger(),
-	)
-	require.NoError(t, err)
+		// Exclude hints that exclude all one-side labels: BuildMatchers will return nil
+		// because all label names present on the one side are excluded.
+		hints := &Hints{Exclude: []string{"cluster", "env"}}
+		vectorMatching := parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"cluster", "env"}}
 
-	// Pass non-nil parent matchers that refer to a label ("cluster") not present on the many side.
-	parentMatchers := types.Matchers{
-		{Type: labels.MatchRegexp, Name: "cluster", Value: "us-east"},
-	}
-	_, err = o.SeriesMetadata(ctx, parentMatchers)
-	require.NoError(t, err)
+		o, err := NewGroupedVectorVectorBinaryOperation(
+			left,
+			right,
+			vectorMatching,
+			parser.ADD,
+			false,
+			memoryConsumptionTracker,
+			nil,
+			posrange.PositionRange{},
+			types.QueryTimeRange{},
+			hints,
+			log.NewNopLogger(),
+		)
+		require.NoError(t, err)
 
-	// Parent matchers must be dropped from the many (left) side when hints are set but produce no matchers.
-	require.Nil(t, left.MatchersProvided, "parent matchers should be dropped from many side when hints are set but produce no matchers")
+		// Pass non-nil parent matchers that refer to a label ("cluster") not present on the many side.
+		parentMatchers := types.Matchers{
+			{Type: labels.MatchRegexp, Name: "cluster", Value: "us-east"},
+		}
+		_, err = o.SeriesMetadata(ctx, parentMatchers)
+		require.NoError(t, err)
+
+		// Parent matchers must be dropped from the many (left) side when hints are set but produce no matchers.
+		require.Nil(t, left.MatchersProvided, "parent matchers should be dropped from many side when hints are set but produce no matchers")
+	})
+
+	t.Run("include-label parent matchers are still forwarded to many side", func(t *testing.T) {
+		// When hints are non-nil but BuildMatchers returns nil, parent matchers for
+		// included labels (from group_left/group_right) should still be forwarded to
+		// the many side, since those labels belong to the many side.
+		memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+		// group_left(region): right is "one" side, left is "many" side.
+		// "region" is an include label that comes from the many (left) side.
+		rightSeries := []labels.Labels{
+			labels.FromStrings("env", "prod"),
+		}
+		leftSeries := []labels.Labels{
+			labels.FromStrings("env", "prod", "region", "us-east"),
+		}
+
+		left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+		right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+		// Exclude hints that exclude all one-side labels: BuildMatchers will return nil.
+		hints := &Hints{Exclude: []string{"env"}}
+		vectorMatching := parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"env"}, Include: []string{"region"}}
+
+		o, err := NewGroupedVectorVectorBinaryOperation(
+			left,
+			right,
+			vectorMatching,
+			parser.ADD,
+			false,
+			memoryConsumptionTracker,
+			nil,
+			posrange.PositionRange{},
+			types.QueryTimeRange{},
+			hints,
+			log.NewNopLogger(),
+		)
+		require.NoError(t, err)
+
+		// Pass parent matchers that include one for the "region" include label and one
+		// for "cluster" which is unrelated.
+		parentMatchers := types.Matchers{
+			{Type: labels.MatchEqual, Name: "cluster", Value: "us-east"},
+			{Type: labels.MatchEqual, Name: "region", Value: "us-east"},
+		}
+		_, err = o.SeriesMetadata(ctx, parentMatchers)
+		require.NoError(t, err)
+
+		// The many (left) side should only receive the include-label matcher ("region"),
+		// not the non-include-label matcher ("cluster").
+		expectedManySideMatchers := types.Matchers{
+			{Type: labels.MatchEqual, Name: "region", Value: "us-east"},
+		}
+		require.Equal(t, expectedManySideMatchers, left.MatchersProvided, "many side should receive only include-label matchers when hints produce no matchers")
+
+		// The one (right) side should receive only the non-include-label matcher ("cluster"),
+		// since "region" belongs to the many side.
+		expectedOneSideMatchers := types.Matchers{
+			{Type: labels.MatchEqual, Name: "cluster", Value: "us-east"},
+		}
+		require.Equal(t, expectedOneSideMatchers, right.MatchersProvided, "one side should not receive include-label matchers")
+	})
 }
 
 // BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering measures the benefit of
