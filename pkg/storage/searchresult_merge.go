@@ -106,9 +106,12 @@ func (m *mergingSearchResultSet) Next() bool {
 		m.done = true
 		return false
 	}
-	// Find the best head across all sources. Linear scan is fine for the
-	// small N we expect (replicas typically <= 16, store-gateways <= ~50);
-	// switch to a heap if profiling shows hot.
+	// Find the best head across all sources. Linear scan is O(N) per
+	// emitted result; switch to a heap (O(log N)) if profiling shows
+	// this as hot. The source count is bounded by the ingester
+	// replication factor times the number of replication sets (for the
+	// distributor) or the tenant's store-gateway shard size (for the
+	// blocks-store path) — whichever shape the caller assembles.
 	bestIdx := -1
 	for i := range m.sources {
 		if !m.refreshHead(i) {
