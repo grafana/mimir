@@ -85,24 +85,93 @@ func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]b
 	return data, ok
 }
 
-func (c *RemoteIndexCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration) {
-	//TODO implement me
-	panic("implement me")
+var postingsOffsetCodec = BigEndianPostingsOffsetCodec{}
+
+func (c *RemoteIndexCache) StorePostingsOffset(
+	tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration,
+) {
+	key := postingsOffsetCacheKey(tenantID, blockID.String(), lbl)
+	val := postingsOffsetCodec.EncodeSingleRange(rng)
+	c.remote.SetAsync(key, val, ttl)
 }
 
-func (c *RemoteIndexCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
-	//TODO implement me
-	panic("implement me")
+func (c *RemoteIndexCache) FetchPostingsOffset(
+	ctx context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label,
+) (index.Range, bool) {
+	key := postingsOffsetCacheKey(tenantID, blockID.String(), lbl)
+
+	results := c.remote.GetMulti(ctx, []string{key})
+	val, ok := results[key]
+	if !ok {
+		return index.Range{}, false
+	}
+
+	rng, err := postingsOffsetCodec.DecodeSingleRange(val)
+	if err != nil {
+		level.Error(c.logger).Log(
+			"msg", "error decoding cache value to index.Range",
+			"key", key,
+			"value", val,
+		)
+		if err := c.remote.Delete(ctx, key); err != nil {
+			level.Error(c.logger).Log(
+				"msg", "error deleting malformed index.Range value from cache",
+				"key", key,
+				"value", val,
+			)
+		}
+		return index.Range{}, false
+	}
+
+	return rng, true
 }
 
-func (c *RemoteIndexCache) StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration) {
-	//TODO implement me
-	panic("implement me")
+func (c *RemoteIndexCache) StorePostingsOffsetsForMatcher(
+	tenantID string,
+	blockID ulid.ULID,
+	m *labels.Matcher,
+	invertMatcher bool,
+	offsets []streamindex.PostingListOffset,
+	ttl time.Duration,
+) {
+	key := postingsOffsetsForMatcherCacheKey(tenantID, blockID.String(), m, invertMatcher)
+	val := postingsOffsetCodec.EncodePostingsOffsets(offsets)
+	c.remote.SetAsync(key, val, ttl)
 }
 
-func (c *RemoteIndexCache) FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool) {
-	//TODO implement me
-	panic("implement me")
+func (c *RemoteIndexCache) FetchPostingsOffsetsForMatcher(
+	ctx context.Context,
+	tenantID string,
+	blockID ulid.ULID,
+	m *labels.Matcher,
+	invertMatcher bool,
+) ([]streamindex.PostingListOffset, bool) {
+	key := postingsOffsetsForMatcherCacheKey(tenantID, blockID.String(), m, invertMatcher)
+
+	results := c.remote.GetMulti(ctx, []string{key})
+	val, ok := results[key]
+	if !ok {
+		return nil, false
+	}
+
+	offsets, err := postingsOffsetCodec.DecodePostingsOffsets(val)
+	if err != nil {
+		level.Error(c.logger).Log(
+			"msg", "error decoding cache value to Postings Offsets",
+			"key", key,
+			"value", val,
+		)
+		if err := c.remote.Delete(ctx, key); err != nil {
+			level.Error(c.logger).Log(
+				"msg", "error deleting malformed Postings Offsets value from cache",
+				"key", key,
+				"value", val,
+			)
+		}
+		return nil, false
+	}
+
+	return offsets, true
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v.
@@ -133,6 +202,62 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 	}
 }
 
+func postingsOffsetCacheKey(tenantID, blockID string, lbl labels.Label) string {
+	const (
+		prefix    = "PO"
+		separator = ":"
+	)
+
+	// Compute the label hash.
+	lblHash, hashLen := cacheKeyLabelID(lbl)
+
+	// Preallocate the byte slice used to store the cache key.
+	encodedHashLen := base64.RawURLEncoding.EncodedLen(hashLen)
+	expectedLen := len(prefix) + len(tenantID) + 1 + ulid.EncodedSize + 1 + encodedHashLen
+	key := make([]byte, expectedLen)
+	offset := 0
+
+	offset += copy(key[offset:], prefix)
+	offset += copy(key[offset:], tenantID)
+	offset += copy(key[offset:], separator)
+	offset += copy(key[offset:], blockID)
+	offset += copy(key[offset:], separator)
+	base64.RawURLEncoding.Encode(key[offset:], lblHash[:hashLen])
+	offset += encodedHashLen
+
+	sizedKey := key[:offset]
+	// Convert []byte to string with no extra allocation.
+	return *(*string)(unsafe.Pointer(&sizedKey))
+}
+
+func postingsOffsetsForMatcherCacheKey(tenantID, blockID string, m *labels.Matcher, invertMatcher bool) string {
+	const (
+		prefix    = "PO"
+		separator = ":"
+	)
+
+	// Compute the matcher hash.
+	lblHash, hashLen := cacheKeyMatcherID(m, invertMatcher)
+
+	// Preallocate the byte slice used to store the cache key.
+	encodedHashLen := base64.RawURLEncoding.EncodedLen(hashLen)
+	expectedLen := len(prefix) + len(tenantID) + 1 + ulid.EncodedSize + 1 + encodedHashLen
+	key := make([]byte, expectedLen)
+	offset := 0
+
+	offset += copy(key[offset:], prefix)
+	offset += copy(key[offset:], tenantID)
+	offset += copy(key[offset:], separator)
+	offset += copy(key[offset:], blockID)
+	offset += copy(key[offset:], separator)
+	base64.RawURLEncoding.Encode(key[offset:], lblHash[:hashLen])
+	offset += encodedHashLen
+
+	sizedKey := key[:offset]
+	// Convert []byte to string with no extra allocation.
+	return *(*string)(unsafe.Pointer(&sizedKey))
+}
+
 // postingsCacheKey returns the cache key used to store postings matching the input
 // label name/value pair in the given block.
 func postingsCacheKey(userID, blockID string, l labels.Label) string {
@@ -142,7 +267,7 @@ func postingsCacheKey(userID, blockID string, l labels.Label) string {
 	)
 
 	// Compute the label hash.
-	lblHash, hashLen := postingsCacheKeyLabelID(l)
+	lblHash, hashLen := cacheKeyLabelID(l)
 
 	// Preallocate the byte slice used to store the cache key.
 	encodedHashLen := base64.RawURLEncoding.EncodedLen(hashLen)
@@ -163,9 +288,11 @@ func postingsCacheKey(userID, blockID string, l labels.Label) string {
 	return *(*string)(unsafe.Pointer(&sizedKey))
 }
 
-// postingsCacheKeyLabelID returns the hash of the input label or the label itself if it is shorter than the size of the hash.
-// This is used as part of the cache key generated by postingsCacheKey().
-func postingsCacheKeyLabelID(l labels.Label) (out [blake2b.Size256]byte, outLen int) {
+// cacheKeyLabelID returns the hash of the input label name/value pair.
+// The unhashed name/value pair string is used if it is shorter than the hash.
+// This forms a section of the larger cache keys generated by
+// postingsOffsetCacheKey, postingsCacheKey, and postingsOffsetsForMatcherCacheKey.
+func cacheKeyLabelID(l labels.Label) (out [blake2b.Size256]byte, outLen int) {
 	const separator = ":"
 
 	// Compute the expected length.
@@ -197,11 +324,54 @@ func postingsCacheKeyLabelID(l labels.Label) (out [blake2b.Size256]byte, outLen 
 
 	// This is expected to be always equal. If it's not, then it's a severe bug.
 	if offset != expectedLen {
-		panic(fmt.Sprintf("postingsCacheKeyLabelID() computed an invalid expected length (expected: %d, actual: %d)", expectedLen, offset))
+		panic(fmt.Sprintf("cacheKeyLabelID() computed an invalid expected length (expected: %d, actual: %d)", expectedLen, offset))
 	}
 
-	// Use cryptographically hash functions to avoid hash collisions
-	// which would end up in wrong query results.
+	// Use cryptographic hash functions to avoid hash collisions and cause incorrect query results.
+	hash := blake2b.Sum256(buf)
+
+	// Reuse the same pointer to put the buffer back into the pool.
+	*bp = buf
+	postingsCacheKeyLabelHashBufferPool.Put(bp)
+
+	return hash, len(hash)
+}
+
+// cacheKeyMatcherID returns the hash the string representation of a label matcher.
+// The unhashed string repr of the label matcher is used if it is shorter than the hash.
+// This forms a section of the larger cache key generated by postingsOffsetsForMatcherCacheKey.
+func cacheKeyMatcherID(m *labels.Matcher, invertMatcher bool) (out [blake2b.Size256]byte, outLen int) {
+	const notPrefix = "not:"
+
+	matcherStr := m.String()
+	if invertMatcher {
+		matcherStr = notPrefix + matcherStr
+	}
+	expectedLen := len(matcherStr)
+
+	// If the matcher string is smaller than the hash, then shortcut hashing and directly write out the result.
+	if expectedLen <= blake2b.Size256 {
+		offset := copy(out[:], matcherStr)
+		return out, offset
+	}
+	// Get a buffer from the pool and fill it with the label name/value pair to hash.
+	bp := postingsCacheKeyLabelHashBufferPool.Get().(*[]byte)
+	buf := *bp
+	if cap(buf) < expectedLen {
+		buf = make([]byte, expectedLen)
+	} else {
+		buf = buf[:expectedLen]
+	}
+
+	offset := 0
+	offset += copy(buf[offset:], matcherStr)
+
+	// This is expected to be always equal. If it's not, then it's a severe bug.
+	if offset != expectedLen {
+		panic(fmt.Sprintf("cacheKeyLabelID() computed an invalid expected length (expected: %d, actual: %d)", expectedLen, offset))
+	}
+
+	// Use cryptographic hash functions to avoid hash collisions and cause incorrect query results.
 	hash := blake2b.Sum256(buf)
 
 	// Reuse the same pointer to put the buffer back into the pool.
