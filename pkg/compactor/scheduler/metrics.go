@@ -16,13 +16,14 @@ const (
 )
 
 type schedulerMetrics struct {
-	pendingJobs         *prometheus.GaugeVec
-	pendingJobsByUser   *prometheus.GaugeVec
-	incompleteJobsBytes *prometheus.GaugeVec
-	activeJobs          *prometheus.GaugeVec
-	activeJobsByUser    *prometheus.GaugeVec
-	jobsCompleted       *prometheus.CounterVec
-	repeatedJobFailures prometheus.Counter
+	pendingJobs          *prometheus.GaugeVec
+	pendingJobsByUser    *prometheus.GaugeVec
+	pendingJobsLastEmpty prometheus.Gauge
+	incompleteJobsBytes  *prometheus.GaugeVec
+	activeJobs           *prometheus.GaugeVec
+	activeJobsByUser     *prometheus.GaugeVec
+	jobsCompleted        *prometheus.CounterVec
+	repeatedJobFailures  prometheus.Counter
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
@@ -35,6 +36,10 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 			Name: "cortex_compactor_scheduler_pending_jobs_by_user",
 			Help: "The number of queued pending jobs, broken down by user.",
 		}, []string{"user"}),
+		pendingJobsLastEmpty: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds",
+			Help: "Unix timestamp of the last time there were no pending jobs remaining.",
+		}),
 		incompleteJobsBytes: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes",
 			Help: "The total bytes of blocks in compaction jobs that have not yet completed (pending or active).",
