@@ -176,9 +176,9 @@ type Config struct {
 
 	// UseIngesterOwnedSeriesForLimits was added in 2.12, but we keep it experimental until we decide, what is the correct behaviour
 	// when the replication factor and the number of zones don't match. Refer to notes in https://github.com/grafana/mimir/pull/8695 and https://github.com/grafana/mimir/pull/9496
-	UseIngesterOwnedSeriesForLimits      bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
-	UpdateIngesterOwnedSeries            bool          `yaml:"track_ingester_owned_series" category:"experimental"`
-	OwnedSeriesUpdateInterval            time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
+	UseIngesterOwnedSeriesForLimits          bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
+	UpdateIngesterOwnedSeries                bool          `yaml:"track_ingester_owned_series" category:"experimental"`
+	OwnedSeriesUpdateInterval                time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 	EarlyCompactionNonOwnedSeriesEnabled     bool          `yaml:"early_compaction_non_owned_series_enabled" category:"experimental"`
 	EarlyCompactionNonOwnedSeriesGracePeriod time.Duration `yaml:"early_compaction_non_owned_series_grace_period" category:"experimental"`
 

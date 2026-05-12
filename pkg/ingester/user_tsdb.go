@@ -153,10 +153,10 @@ type userTSDB struct {
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
-	pendingNonOwnedRefsMtx        sync.Mutex
+	pendingNonOwnedRefsMtx sync.Mutex
 	// pendingNonOwnedRefs holds the series refs that the last computeOwnedSeries call(s) found
 	// to be non-owned. The compaction loop consumes this list and uses it for targeted eviction.
-	pendingNonOwnedRefs           []storage.SeriesRef
+	pendingNonOwnedRefs []storage.SeriesRef
 	// pendingNonOwnedRefsLastUpdate records the
 	// time of the most recent addition; the compaction loop uses it to enforce the configured
 	// grace period before consuming the list.

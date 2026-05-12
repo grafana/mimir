@@ -1551,7 +1551,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 		require.NotNil(t, db)
 		require.Equal(t, uint64(numSeries), db.Head().NumSeries(), "all series should be in the head")
 
-		db.ownedTokenRanges = ring.TokenRanges{0, math.MaxUint32 / 2}
+		db.ownedTokenRanges = ring.TokenRanges{0, math.MaxUint32 / uint32(ingestersPerZone)}
 		require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
 		ownedAfterRecompute := db.ownedSeriesState().ownedSeriesCount
 		require.Less(t, ownedAfterRecompute, numSeries, "some series should be non-owned")
@@ -1559,6 +1559,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 
 		blocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 		require.Empty(t, listBlocksInDir(t, blocksDir), "no blocks before eviction runs")
+		db.pendingNonOwnedRefsMtx.Lock()
+		nonOwned := len(db.pendingNonOwnedRefs)
+		db.pendingNonOwnedRefsMtx.Unlock()
+		t.Log("ingesters-per-zone", ingestersPerZone, "num-series", numSeries, "head-series", db.Head().NumSeries(), "owned-series", ownedAfterRecompute, "non-owned-series", nonOwned)
 
 		return ingester, db, blocksDir, ownedAfterRecompute
 	}
