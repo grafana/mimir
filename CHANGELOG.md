@@ -29,6 +29,7 @@
 ### Jsonnet
 
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
+* [ENHANCEMENT] Rollout-operator: Vendor jsonnet from rollout-operator repository. #15316
 
 ### Documentation
 
