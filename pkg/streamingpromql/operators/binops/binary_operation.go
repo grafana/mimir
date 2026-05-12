@@ -881,7 +881,7 @@ func buildMatchersForIgnoring(metadata []types.SeriesMetadata, excludeLabels []s
 		return nil
 	}
 
-	// Collect all label names that appear on at least one LHS series,
+	// Collect all label names that appear on at least one series,
 	// skipping __name__ (never useful as a narrowing matcher) and any
 	// excluded labels up front to avoid storing them in the map.
 	// excludeLabels must be sorted by the caller so we can use binary search.

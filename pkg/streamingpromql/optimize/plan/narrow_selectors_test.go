@@ -469,7 +469,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
-		"group_left binary expression with ignoring () (without) matching should have without hints added": {
+		"group_left binary expression with ignoring () matching should have exclude hints added": {
 			expr: `many_side * ignoring () group_left () one_side`,
 			expectedPlan: `
 				- BinaryExpression: LHS * group_left () RHS, hints exclude ()
@@ -479,7 +479,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
-		"group_right binary expression with ignoring () (without) matching should have without hints added": {
+		"group_right binary expression with ignoring () matching should have exclude hints added": {
 			expr: `one_side * ignoring () group_right () many_side`,
 			expectedPlan: `
 				- BinaryExpression: LHS * group_right () RHS, hints exclude ()
