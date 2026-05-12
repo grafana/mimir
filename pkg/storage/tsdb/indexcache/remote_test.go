@@ -808,7 +808,7 @@ func TestPostingsCacheKeyLabelHash_ShouldNotAllocateMemory(t *testing.T) {
 	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
 
 	actualAllocs := testing.AllocsPerRun(numRuns, func() {
-		postingsCacheKeyLabelID(lbl)
+		cacheKeyLabelID(lbl)
 	})
 
 	// Allow for 1 extra allocation here, reported when running the test with -race.
@@ -828,7 +828,7 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 	for w := 0; w < numWorkers; w++ {
 		inputPerWorker = append(inputPerWorker, labels.Label{Name: model.MetricNameLabel, Value: fmt.Sprintf("series_%d", w)})
 
-		hash, hashLen := postingsCacheKeyLabelID(inputPerWorker[w])
+		hash, hashLen := cacheKeyLabelID(inputPerWorker[w])
 		expectedPerWorker = append(expectedPerWorker, hash[0:hashLen])
 	}
 
@@ -852,7 +852,7 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 			defer wg.Done()
 
 			for r := 0; r < numRunsPerWorker; r++ {
-				actual, hashLen := postingsCacheKeyLabelID(inputPerWorker[workerID])
+				actual, hashLen := cacheKeyLabelID(inputPerWorker[workerID])
 				assert.Equal(t, expectedPerWorker[workerID], actual[0:hashLen])
 			}
 		}(w)
