@@ -150,6 +150,7 @@ type ingesterSearchResultSet struct {
 
 	batch *ingester_client.SearchResultBatch
 	idx   int
+	cur   storage.SearchResult
 
 	warnings annotations.Annotations
 	err      error
@@ -160,11 +161,17 @@ func newIngesterSearchResultSet(stream searchStream, cancel func()) *ingesterSea
 	return &ingesterSearchResultSet{stream: stream, cancel: cancel}
 }
 
+// Next advances and caches the result in s.cur so At is idempotent (the
+// SearchResultSet contract requires multiple At calls between Next calls
+// to return the same value).
 func (s *ingesterSearchResultSet) Next() bool {
 	if s.done || s.err != nil {
 		return false
 	}
 	if s.batch != nil && s.idx < len(s.batch.Results) {
+		r := s.batch.Results[s.idx]
+		s.cur = storage.SearchResult{Value: r.Value, Score: r.Score}
+		s.idx++
 		return true
 	}
 	for {
@@ -182,18 +189,16 @@ func (s *ingesterSearchResultSet) Next() bool {
 		}
 		if len(batch.Results) > 0 {
 			s.batch = batch
-			s.idx = 0
+			r := batch.Results[0]
+			s.cur = storage.SearchResult{Value: r.Value, Score: r.Score}
+			s.idx = 1
 			return true
 		}
 		// Warning-only batch — keep pulling.
 	}
 }
 
-func (s *ingesterSearchResultSet) At() storage.SearchResult {
-	r := s.batch.Results[s.idx]
-	s.idx++
-	return storage.SearchResult{Value: r.Value, Score: r.Score}
-}
+func (s *ingesterSearchResultSet) At() storage.SearchResult { return s.cur }
 
 func (s *ingesterSearchResultSet) Warnings() annotations.Annotations { return s.warnings }
 func (s *ingesterSearchResultSet) Err() error                        { return s.err }

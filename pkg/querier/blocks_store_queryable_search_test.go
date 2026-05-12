@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -23,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
 // searchLabelNamesClientMock drains preset batches then surfaces err (if
@@ -571,4 +574,103 @@ func TestBlocksStoreQuerier_SearchLabelValues_PassesLabelName(t *testing.T) {
 
 	require.NotNil(t, store.lastSearchLabelValuesReq, "SearchLabelValues must be called on the SG client")
 	assert.Equal(t, "env", store.lastSearchLabelValuesReq.Label, "wire request must carry the label name")
+}
+
+func TestParamsToSGProto(t *testing.T) {
+	cases := []struct {
+		name string
+		in   *streaminglabelvalues.Params
+		want *storepb.SearchFilter
+	}{
+		{name: "nil", in: nil, want: nil},
+		{name: "empty terms", in: &streaminglabelvalues.Params{}, want: nil},
+		{
+			name: "case-sensitive inverts polarity",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true},
+			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE},
+		},
+		{
+			name: "case-insensitive inverts polarity",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: false},
+			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: true, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE},
+		},
+		{
+			name: "JaroWinkler",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgJaroWinkler, FuzzThreshold: 70},
+			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_JARO_WINKLER, FuzzThreshold: 70},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, paramsToSGProto(tc.in))
+		})
+	}
+}
+
+func TestOrderingToSGProto(t *testing.T) {
+	cases := []struct {
+		name  string
+		hints *storage.SearchHints
+		want  storepb.SearchOrdering
+	}{
+		{name: "nil hints defaults to ValueAsc", hints: nil, want: storepb.ORDER_BY_VALUE_ASC},
+		{name: "ValueAsc", hints: &storage.SearchHints{OrderBy: storage.OrderByValueAsc}, want: storepb.ORDER_BY_VALUE_ASC},
+		{name: "ValueDesc", hints: &storage.SearchHints{OrderBy: storage.OrderByValueDesc}, want: storepb.ORDER_BY_VALUE_DESC},
+		{name: "ScoreDesc", hints: &storage.SearchHints{OrderBy: storage.OrderByScoreDesc}, want: storepb.ORDER_BY_SCORE_DESC},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, orderingToSGProto(tc.hints))
+		})
+	}
+}
+
+func TestWrapAsMergingSearchResultSet_ExtraWarningsSurfaceViaSyntheticSource(t *testing.T) {
+	// extraWarnings is for warnings collected outside any SG stream — e.g.
+	// retriable open errors logged as warnings before a stream was ever
+	// established. The merger surfaces them via a warnings-only synthetic
+	// source. Without this path, those warnings would silently disappear.
+	perSG := [][]storage.SearchResult{
+		{{Value: "alpha", Score: 1.0}},
+	}
+	var extra annotations.Annotations
+	extra.Add(errors.New("retried-open-error"))
+	rs := wrapAsMergingSearchResultSet(perSG, extra, &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 10})
+	defer rs.Close()
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []storage.SearchResult{{Value: "alpha", Score: 1.0}}, got)
+	msgs := make([]string, 0, 1)
+	for _, w := range rs.Warnings() {
+		msgs = append(msgs, w.Error())
+	}
+	assert.Equal(t, []string{"retried-open-error"}, msgs)
+}
+
+func TestWrapAsMergingSearchResultSet_NoSourcesNoWarnings(t *testing.T) {
+	// Empty per-SG slice with no extra warnings should yield an empty
+	// SearchResultSet with no warnings.
+	rs := wrapAsMergingSearchResultSet(nil, nil, nil)
+	defer rs.Close()
+	assert.False(t, rs.Next())
+	assert.NoError(t, rs.Err())
+	assert.Empty(t, rs.Warnings())
+}
+
+func TestDrainSGSearchLabelStream_MalformedBlockHintErrorsOut(t *testing.T) {
+	// SearchResponseHints carries an unparseable block ID. The drain must
+	// surface this as an error rather than silently dropping the bad ID
+	// (which would mislead the consistency check).
+	stream := &searchLabelNamesClientMock{
+		batches: []*storepb.SearchResultBatch{{
+			Results:       []storepb.SearchResultBatch_Result{{Value: "a", Score: 1.0}},
+			ResponseHints: &storepb.SearchResponseHints{QueriedBlocks: []storepb.Block{{Id: "not-a-ulid"}}},
+		}},
+	}
+	_, _, _, err := drainSGSearchLabelStream(stream)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "queried block IDs")
 }

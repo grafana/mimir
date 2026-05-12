@@ -35,6 +35,7 @@ type gRPCStreamSearchResultSet[B SearchStreamBatch] struct {
 	batch    B
 	batchLen int
 	idx      int
+	cur      storage.SearchResult
 
 	warnings annotations.Annotations
 	err      error
@@ -46,11 +47,15 @@ func NewGRPCStreamSearchResultSet[B SearchStreamBatch](stream gRPCStreamSearcher
 	return &gRPCStreamSearchResultSet[B]{stream: stream, cancel: cancel}
 }
 
+// Next advances and caches the result in s.cur so At is idempotent.
 func (s *gRPCStreamSearchResultSet[B]) Next() bool {
 	if s.done || s.err != nil {
 		return false
 	}
 	if s.idx < s.batchLen {
+		v, sc := s.batch.At(s.idx)
+		s.cur = storage.SearchResult{Value: v, Score: sc}
+		s.idx++
 		return true
 	}
 	for {
@@ -68,19 +73,17 @@ func (s *gRPCStreamSearchResultSet[B]) Next() bool {
 		}
 		s.batch = batch
 		s.batchLen = batch.Len()
-		s.idx = 0
 		if s.batchLen > 0 {
+			v, sc := batch.At(0)
+			s.cur = storage.SearchResult{Value: v, Score: sc}
+			s.idx = 1
 			return true
 		}
 		// Warning-only batch — keep pulling.
 	}
 }
 
-func (s *gRPCStreamSearchResultSet[B]) At() storage.SearchResult {
-	v, sc := s.batch.At(s.idx)
-	s.idx++
-	return storage.SearchResult{Value: v, Score: sc}
-}
+func (s *gRPCStreamSearchResultSet[B]) At() storage.SearchResult { return s.cur }
 
 func (s *gRPCStreamSearchResultSet[B]) Warnings() annotations.Annotations {
 	return s.warnings

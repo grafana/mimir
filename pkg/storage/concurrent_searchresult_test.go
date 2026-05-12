@@ -158,6 +158,28 @@ func (b *blockingResultSet) Close() error {
 	return nil
 }
 
+func TestConcurrentSearchResultSet_PreservesWarningsAcrossEarlyClose(t *testing.T) {
+	// Producer is blocked in `select { case ch <- r: case <-ctx.Done() }`
+	// when Close fires. The terminal capture of child.Warnings() must
+	// still happen — otherwise warnings accumulated by the child up to
+	// the cancel point are silently lost.
+	src := &staticResultSet{
+		results: []storage.SearchResult{{Value: "a"}, {Value: "b"}},
+		warns:   addAnnotation(nil, "child-warn"),
+	}
+	c := NewConcurrentSearchResultSet(context.Background(), src, 1)
+	// Don't drain. With buf=1 and 2 results, the producer pushes "a",
+	// then blocks trying to push "b" because the consumer never pulls.
+	// Sleep long enough for the producer goroutine to enter the select.
+	time.Sleep(100 * time.Millisecond)
+	require.NoError(t, c.Close())
+	msgs := make([]string, 0, 1)
+	for _, w := range c.Warnings() {
+		msgs = append(msgs, w.Error())
+	}
+	assert.Equal(t, []string{"child-warn"}, msgs, "child warnings must survive early Close")
+}
+
 func TestConcurrentSearchResultSet_CloseUnblocksProducerBlockedInChildNext(t *testing.T) {
 	src := newBlockingResultSet()
 	c := NewConcurrentSearchResultSet(context.Background(), src, 4)

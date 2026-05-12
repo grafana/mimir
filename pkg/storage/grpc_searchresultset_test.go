@@ -41,6 +41,25 @@ func (s *fakeStream) Recv() (*fakeBatch, error) {
 	return b, nil
 }
 
+func TestGRPCStreamSearchResultSet_AtIsIdempotent(t *testing.T) {
+	// At must return the same value across multiple calls between Next
+	// calls — the SearchResultSet contract requires it.
+	stream := &fakeStream{batches: []*fakeBatch{
+		{pairs: []storage.SearchResult{{Value: "a", Score: 1.0}, {Value: "b", Score: 0.9}}},
+	}}
+	rs := NewGRPCStreamSearchResultSet[*fakeBatch](stream, func() {})
+	require.True(t, rs.Next())
+	first := rs.At()
+	second := rs.At()
+	third := rs.At()
+	assert.Equal(t, first, second)
+	assert.Equal(t, first, third)
+	assert.Equal(t, "a", first.Value)
+
+	require.True(t, rs.Next())
+	assert.Equal(t, "b", rs.At().Value)
+}
+
 func TestGRPCStreamSearchResultSet_BatchBoundaries(t *testing.T) {
 	stream := &fakeStream{batches: []*fakeBatch{
 		{pairs: []storage.SearchResult{{Value: "a", Score: 1.0}, {Value: "b", Score: 0.9}}},
