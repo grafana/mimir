@@ -267,7 +267,7 @@ SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
 exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format: fetch-build-image
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) $@;
 
 else
 
@@ -604,7 +604,14 @@ build-mixin: check-mixin-jb
 	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
 		mkdir -p "$(MIXIN_OUT_PATH)$$suffix"; \
 		find "$(MIXIN_OUT_PATH)$$suffix" -type f -delete; \
-		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		input_file="${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		if [ -n "$(DASHBOARDS_HISTOGRAM_MODE)" ]; then \
+			tmp_file="${MIXIN_PATH}/mixin-compiled$$suffix-tmp-latency.libsonnet"; \
+			echo "(import 'mixin-compiled$$suffix.libsonnet') + { _config+:: { dashboards_default_latency_mode: '$(DASHBOARDS_HISTOGRAM_MODE)' } }" > "$$tmp_file"; \
+			input_file="$$tmp_file"; \
+		fi; \
+		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "$$input_file"; \
+		if [ -n "$(DASHBOARDS_HISTOGRAM_MODE)" ]; then rm -f "$$tmp_file"; fi; \
 		./tools/check-rules.sh "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" 20 ; \
 		cd "$(MIXIN_OUT_PATH)$$suffix/.." && zip -q -r "mimir-mixin$$suffix.zip" $$(basename "$(MIXIN_OUT_PATH)$$suffix"); \
 		cd -; \

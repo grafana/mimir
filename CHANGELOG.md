@@ -33,6 +33,8 @@
 
 ### Tools
 
+* [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
+
 ### Query-tee
 
 ## 3.1.0-rc.0
