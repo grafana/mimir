@@ -18,13 +18,16 @@ if [ ! -e "${SCRIPT_DIR}/.config" ]; then
   echo "MIMIR_NAMESPACE=\"<namespace-where-mimir-is-running>\""
   echo "ALERTMANAGER_NAMESPACE=\"<namespace-where-alertmanager-is-running>\""
   echo "MIMIR_USER=\"<mimir-tenant-id>\""
-  echo "DASHBOARDS_HISTOGRAM_MODE=\"native\" # Optional. Leave empty to provision the dashboards as already built."
+  echo "DASHBOARDS_HISTOGRAM_MODE=\"native\" # Optional. Defaults to 'native'. Set to 'inherit' to provision the dashboards as already built."
   echo ""
   exit 1
 fi
 
 # Load config.
 source "${SCRIPT_DIR}/.config"
+
+# Default to native histogram mode if not set in .config.
+DASHBOARDS_HISTOGRAM_MODE="${DASHBOARDS_HISTOGRAM_MODE:-native}"
 
 function cleanup() {
   echo "Cleaning up Docker setup"
@@ -46,8 +49,8 @@ trap cleanup EXIT
 
 DASHBOARDS_DIR="${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards"
 
-# If DASHBOARDS_HISTOGRAM_MODE is set, recompile the mixin with the desired mode.
-if [ -n "${DASHBOARDS_HISTOGRAM_MODE}" ]; then
+# If DASHBOARDS_HISTOGRAM_MODE is set to a real mode (not "inherit"), recompile the mixin with the desired mode.
+if [ "${DASHBOARDS_HISTOGRAM_MODE}" != "inherit" ]; then
   echo "Compiling mixin with dashboards_default_latency_mode='${DASHBOARDS_HISTOGRAM_MODE}'"
 
   TEMP_MIXIN_OUT=$(mktemp -d)
