@@ -82,72 +82,12 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 		// don't exist on the raw series fetched from storage.
 		created := createdLabels(e)
 
-		if e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
-			// "on (labels)" matching: use only the matching labels as Include hints, filtered
-			// by any labels that are synthesised by label_replace/label_join.
-			include := filterLabels(e.VectorMatching.MatchingLabels, created)
-			if len(include) > 0 {
-				if e.Hints == nil {
-					e.Hints = &core.BinaryExpressionHints{}
-				}
-				e.Hints.Include = include
-				sl := spanlogger.FromContext(ctx, n.logger)
-				sl.DebugLog("msg", "setting on-matching query hint on binary expression", "labels", include)
-				addedHint = true
-			}
-		} else if !e.VectorMatching.On {
-			// Note: "on ()" with an empty label list falls through to neither branch.
-			// The first condition requires On=true AND MatchingLabels>0, which excludes "on ()".
-			// This branch requires On=false, which also excludes "on ()".
-			// This is intentional: "on ()" matches all series regardless of labels,
-			// so no narrowing hint is useful.
-
-			// "ignoring (labels)" / default (no on/ignoring) matching.
-			// First, try to derive Include hints from LHS aggregation grouping labels.
-			// If the LHS subtree contains an aggregation with a "by" clause, we know the
-			// exact output labels statically and can use them as Include hints (after
-			// filtering out any labels synthesised by label_replace/label_join AND any
-			// labels listed in the ignoring clause, since those labels are not used for
-			// matching and must not be used to narrow the RHS fetch).
-			include := includeFromLHS(e.LHS, created)
-			if len(include) > 0 && len(e.VectorMatching.MatchingLabels) > 0 {
-				// Remove ignoring labels from the include set.
-				filtered := make([]string, 0, len(include))
-				for _, lbl := range include {
-					if !slices.Contains(e.VectorMatching.MatchingLabels, lbl) {
-						filtered = append(filtered, lbl)
-					}
-				}
-				include = filtered
-			}
-			if len(include) > 0 {
-				if e.Hints == nil {
-					e.Hints = &core.BinaryExpressionHints{}
-				}
-				e.Hints.Include = include
-				sl := spanlogger.FromContext(ctx, n.logger)
-				sl.DebugLog("msg", "setting include query hint on binary expression from LHS aggregation", "labels", include)
-				addedHint = true
-			} else {
-				// No LHS aggregation labels found: fall back to exclude-matching mode.
-				// Tell the operator to build RHS matchers from all LHS labels at query time,
-				// excluding both the ignoring labels and any synthesised labels.
-				// Setting Exclude with an empty Include signals exclude-matching mode.
-				exclude := slices.Clone(e.VectorMatching.MatchingLabels)
-				for lbl := range created {
-					if !slices.Contains(exclude, lbl) {
-						exclude = append(exclude, lbl)
-					}
-				}
-				slices.Sort(exclude)
-				if e.Hints == nil {
-					e.Hints = &core.BinaryExpressionHints{}
-				}
-				e.Hints.Exclude = exclude
-				sl := spanlogger.FromContext(ctx, n.logger)
-				sl.DebugLog("msg", "setting exclude-matching query hint on binary expression", "excluded_labels", exclude)
-				addedHint = true
-			}
+		// Note: "on ()" with an empty label list is intentionally not handled by either
+		// branch. It matches all series regardless of labels, so no narrowing hint is useful.
+		if e.VectorMatching.On {
+			addedHint = n.hintsForOn(ctx, e, created) || addedHint
+		} else {
+			addedHint = n.hintsForIgnoring(ctx, e, created) || addedHint
 		}
 
 		return nil
@@ -158,6 +98,85 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	}
 
 	return plan, nil
+}
+
+// hintsForOn handles "on (labels)" matching: it uses the matching labels as Include
+// hints, filtered by any labels synthesised by label_replace/label_join. Returns true
+// if a hint was set.
+func (n *NarrowSelectorsOptimizationPass) hintsForOn(ctx context.Context, e *core.BinaryExpression, created map[string]struct{}) bool {
+	if len(e.VectorMatching.MatchingLabels) == 0 {
+		return false
+	}
+
+	include := filterLabels(e.VectorMatching.MatchingLabels, created)
+	if len(include) == 0 {
+		return false
+	}
+
+	if e.Hints == nil {
+		e.Hints = &core.BinaryExpressionHints{}
+	}
+	e.Hints.Include = include
+
+	sl := spanlogger.FromContext(ctx, n.logger)
+	sl.DebugLog("msg", "setting on-matching query hint on binary expression", "labels", include)
+	return true
+}
+
+// hintsForIgnoring handles "ignoring (labels)" and default (no on/ignoring) matching.
+// It first tries to derive Include hints from LHS aggregation grouping labels. If that
+// fails, it falls back to exclude-matching mode, telling the operator to build RHS
+// matchers from all LHS labels at query time (excluding ignored and synthesised labels).
+// Returns true if a hint was set.
+func (n *NarrowSelectorsOptimizationPass) hintsForIgnoring(ctx context.Context, e *core.BinaryExpression, created map[string]struct{}) bool {
+	// Try to derive Include hints from LHS aggregation grouping labels.
+	// If the LHS subtree contains an aggregation with a "by" clause, we know the
+	// exact output labels statically and can use them as Include hints (after
+	// filtering out any labels synthesised by label_replace/label_join AND any
+	// labels listed in the ignoring clause, since those are not used for matching).
+	include := includeFromLHS(e.LHS, created)
+	if len(include) > 0 && len(e.VectorMatching.MatchingLabels) > 0 {
+		// Remove ignoring labels from the include set.
+		filtered := make([]string, 0, len(include))
+		for _, lbl := range include {
+			if !slices.Contains(e.VectorMatching.MatchingLabels, lbl) {
+				filtered = append(filtered, lbl)
+			}
+		}
+		include = filtered
+	}
+
+	if len(include) > 0 {
+		if e.Hints == nil {
+			e.Hints = &core.BinaryExpressionHints{}
+		}
+		e.Hints.Include = include
+
+		sl := spanlogger.FromContext(ctx, n.logger)
+		sl.DebugLog("msg", "setting include query hint on binary expression from LHS aggregation", "labels", include)
+		return true
+	}
+
+	// No LHS aggregation labels found: fall back to exclude-matching mode.
+	// Tell the operator to build RHS matchers from all LHS labels at query time,
+	// excluding both the ignoring labels and any synthesised labels.
+	// Setting Exclude with an empty Include signals exclude-matching mode.
+	exclude := slices.Clone(e.VectorMatching.MatchingLabels)
+	for lbl := range created {
+		if !slices.Contains(exclude, lbl) {
+			exclude = append(exclude, lbl)
+		}
+	}
+	slices.Sort(exclude)
+
+	if e.Hints == nil {
+		e.Hints = &core.BinaryExpressionHints{}
+	}
+	e.Hints.Exclude = exclude
+
+	sl := spanlogger.FromContext(ctx, n.logger)
+	sl.DebugLog("msg", "setting exclude-matching query hint on binary expression", "excluded_labels", exclude)
+	return true
 }
 
 // includeFromLHS walks the LHS subtree of a binary expression looking for an
