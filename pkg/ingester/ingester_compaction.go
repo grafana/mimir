@@ -649,6 +649,8 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 		// owned-series relief.
 		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
 
+		i.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID).Inc()
+
 		level.Info(i.logger).Log("msg", "early head compaction of non-owned series completed",
 			"user", userID,
 			"before_in_memory_series", seriesBefore,
