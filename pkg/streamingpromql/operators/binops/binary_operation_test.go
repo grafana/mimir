@@ -82,6 +82,12 @@ func TestBuildMatchers(t *testing.T) {
 		require.Equal(t, expected, res)
 	})
 
+	t.Run("nil hints: returns nil without generating matchers", func(t *testing.T) {
+		series := generateSeriesMetadata("http_requests_total", 3)
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, nil)
+		require.Nil(t, res)
+	})
+
 	t.Run("without matching: generates matchers for all non-excluded labels present on all series", func(t *testing.T) {
 		// generateSeriesMetadata produces series with __name__, container, pod, region.
 		// __name__ is always skipped; container, pod and region each appear on all 3 series.
