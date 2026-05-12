@@ -5,6 +5,7 @@ package storage
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -18,13 +19,15 @@ import (
 // request-pool buffer aliasing the child might use internally (Mimir's
 // unsafeMutableString cross-tenant guard; see CLAUDE.md).
 type concurrentSearchResultSet struct {
-	child  storage.SearchResultSet
-	cancel context.CancelFunc
-	ch     <-chan storage.SearchResult
-	cur    storage.SearchResult
-	done   <-chan struct{}
-	err    error
-	warns  annotations.Annotations
+	child     storage.SearchResultSet
+	cancel    context.CancelFunc
+	ch        <-chan storage.SearchResult
+	cur       storage.SearchResult
+	done      <-chan struct{}
+	err       error
+	warns     annotations.Annotations
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // NewConcurrentSearchResultSet starts a producer goroutine. Cancelling ctx
@@ -69,16 +72,26 @@ func (c *concurrentSearchResultSet) Next() bool {
 	return true
 }
 
-func (c *concurrentSearchResultSet) At() storage.SearchResult         { return c.cur }
+func (c *concurrentSearchResultSet) At() storage.SearchResult          { return c.cur }
 func (c *concurrentSearchResultSet) Warnings() annotations.Annotations { return c.warns }
 func (c *concurrentSearchResultSet) Err() error                        { return c.err }
 
-// Close cancels the producer, drains the channel, and closes the child.
-// Idempotent.
+// Close cancels the producer, closes the child to unblock any in-flight
+// Next/Recv on the child, waits for the producer to exit, drains the
+// channel, and returns the child's Close error. Idempotent.
+//
+// Closing the child before waiting for the producer is required: ctx
+// cancellation alone does not interrupt a child that doesn't observe our
+// derived context (e.g. a gRPC stream blocked in Recv), so the wait on
+// done would otherwise hang on early termination such as hints.Limit
+// reached.
 func (c *concurrentSearchResultSet) Close() error {
-	c.cancel()
-	<-c.done
-	for range c.ch { //nolint:revive // intentional drain
-	}
-	return c.child.Close()
+	c.closeOnce.Do(func() {
+		c.cancel()
+		c.closeErr = c.child.Close()
+		<-c.done
+		for range c.ch { //nolint:revive // intentional drain
+		}
+	})
+	return c.closeErr
 }

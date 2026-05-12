@@ -101,13 +101,10 @@ func wrapAsMergingSearchResultSet(perSG [][]storage.SearchResult, extraWarnings 
 	return mimirstorage.NewMergingSearchResultSet(sources, hints)
 }
 
-// fetchSearchLabelNamesFromStore drains every SG client in parallel.
-//
-// Caveat: the SG search RPC does not echo back queried block IDs (unlike
-// LabelNames). We optimistically credit each SG with all blockIDs we asked
-// it to search and rely on bucket-index sharding upstream to keep that set
-// tight. If a future RPC revision adds a QueriedBlocks field, wire it up
-// here.
+// fetchSearchLabelNamesFromStore drains every SG client in parallel and
+// returns only the blocks that store-gateways report they actually queried
+// (via SearchResponseHints) so queryWithConsistencyCheck can retry against
+// any block still missing.
 func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 	ctx context.Context,
 	clients map[BlocksStoreClient][]ulid.ULID,
@@ -142,7 +139,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 				return errors.Wrapf(err, "non-retriable error while fetching search label names from store %s", c.RemoteAddress())
 			}
 
-			results, sgWarnings, err := drainSGSearchLabelStream(stream)
+			results, sgWarnings, myQueriedBlocks, err := drainSGSearchLabelStream(stream)
 			if err != nil {
 				if shouldRetry(err) {
 					level.Warn(spanLog).Log("msg", "failed to drain search label names stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
@@ -154,15 +151,15 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 			spanLog.DebugLog("msg", "received search label names from store-gateway",
 				"instance", c,
 				"num values", len(results),
-				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "))
+				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
 			mtx.Lock()
 			if len(results) > 0 {
 				resultSets = append(resultSets, results)
 			}
 			warnings.Merge(sgWarnings)
-			// Optimistic queriedBlocks — see function doc.
-			queriedBlocks = append(queriedBlocks, blockIDs...)
+			queriedBlocks = append(queriedBlocks, myQueriedBlocks...)
 			mtx.Unlock()
 			return nil
 		})
@@ -289,8 +286,7 @@ func (q *blocksStoreQuerier) SearchLabelValues(
 	return wrapAsMergingSearchResultSet(resResultSets, resWarnings, hints)
 }
 
-// fetchSearchLabelValuesFromStore mirrors fetchSearchLabelNamesFromStore;
-// see that function for the queriedBlocks caveat.
+// fetchSearchLabelValuesFromStore mirrors fetchSearchLabelNamesFromStore.
 func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 	ctx context.Context,
 	name string,
@@ -326,7 +322,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 				return errors.Wrapf(err, "non-retriable error while fetching search label values from store %s", c.RemoteAddress())
 			}
 
-			results, sgWarnings, err := drainSGSearchLabelStream(stream)
+			results, sgWarnings, myQueriedBlocks, err := drainSGSearchLabelStream(stream)
 			if err != nil {
 				if shouldRetry(err) {
 					level.Warn(spanLog).Log("msg", "failed to drain search label values stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
@@ -339,15 +335,15 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 				"instance", c,
 				"label", name,
 				"num values", len(results),
-				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "))
+				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
 			mtx.Lock()
 			if len(results) > 0 {
 				resultSets = append(resultSets, results)
 			}
 			warnings.Merge(sgWarnings)
-			// Optimistic queriedBlocks — see fetchSearchLabelNamesFromStore.
-			queriedBlocks = append(queriedBlocks, blockIDs...)
+			queriedBlocks = append(queriedBlocks, myQueriedBlocks...)
 			mtx.Unlock()
 			return nil
 		})
@@ -385,24 +381,37 @@ func buildSGSearchLabelValuesRequest(
 // drainSGSearchLabelStream reads the stream to EOF, copying each batch's
 // scored results into []storage.SearchResult and accumulating warnings into
 // annotations. Scores are preserved verbatim from the leaf SG.
-func drainSGSearchLabelStream(stream sgSearchStream) ([]storage.SearchResult, annotations.Annotations, error) {
+//
+// The store-gateway reports the blocks it actually queried via the
+// SearchResponseHints on (at least) the trailer batch; queriedBlocks
+// accumulates them across all batches so the caller can feed only the
+// reported blocks into queryWithConsistencyCheck.
+func drainSGSearchLabelStream(stream sgSearchStream) ([]storage.SearchResult, annotations.Annotations, []ulid.ULID, error) {
 	var (
-		results  []storage.SearchResult
-		warnings annotations.Annotations
+		results       []storage.SearchResult
+		warnings      annotations.Annotations
+		queriedBlocks []ulid.ULID
 	)
 	for {
 		batch, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			return results, warnings, nil
+			return results, warnings, queriedBlocks, nil
 		}
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for _, r := range batch.Results {
 			results = append(results, storage.SearchResult{Value: r.Value, Score: r.Score})
 		}
 		for _, w := range batch.Warnings {
 			warnings.Add(errors.New(w))
+		}
+		if batch.ResponseHints != nil {
+			ids, err := convertBlockHintsToULIDs(batch.ResponseHints.QueriedBlocks)
+			if err != nil {
+				return nil, nil, nil, errors.Wrap(err, "failed to parse queried block IDs from search response hints")
+			}
+			queriedBlocks = append(queriedBlocks, ids...)
 		}
 	}
 }

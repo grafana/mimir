@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/grpcutil"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
@@ -244,17 +245,23 @@ func TestStreamBucketSearchResultsBatching(t *testing.T) {
 	send := func(b *storepb.SearchResultBatch) error {
 		copyResults := make([]storepb.SearchResultBatch_Result, len(b.Results))
 		copy(copyResults, b.Results)
-		sent = append(sent, &storepb.SearchResultBatch{Results: copyResults, Warnings: b.Warnings})
+		sent = append(sent, &storepb.SearchResultBatch{Results: copyResults, Warnings: b.Warnings, ResponseHints: b.ResponseHints})
 		return nil
 	}
-	require.NoError(t, streamBucketSearchResults(context.Background(), rs, send))
+	queried := []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(2, nil)}
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, queried, send))
 
 	require.Len(t, sent, 2, "257 results must split into 2 batches at the searchBatchSize=256 boundary")
 	assert.Len(t, sent[0].Results, searchBatchSize)
 	assert.Empty(t, sent[0].Warnings, "warnings must ride only on the trailer batch")
+	assert.Nil(t, sent[0].ResponseHints, "response_hints must ride only on the trailer batch")
 	assert.Len(t, sent[1].Results, 1)
 	require.Len(t, sent[1].Warnings, 1)
 	assert.Equal(t, "partial-block: index header missing", sent[1].Warnings[0])
+	require.NotNil(t, sent[1].ResponseHints)
+	require.Len(t, sent[1].ResponseHints.QueriedBlocks, 2)
+	assert.Equal(t, queried[0].String(), sent[1].ResponseHints.QueriedBlocks[0].Id)
+	assert.Equal(t, queried[1].String(), sent[1].ResponseHints.QueriedBlocks[1].Id)
 }
 
 // TestStreamBucketSearchResultsHonoursCtxCancellation cancels ctx before
@@ -268,7 +275,7 @@ func TestStreamBucketSearchResultsHonoursCtxCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	send := func(_ *storepb.SearchResultBatch) error { return nil }
-	err := streamBucketSearchResults(ctx, rs, send)
+	err := streamBucketSearchResults(ctx, rs, nil, send)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled), "expected context.Canceled, got %v", err)
 }
