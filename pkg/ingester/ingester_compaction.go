@@ -624,19 +624,19 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 		}
 
 		seriesBefore := db.Head().NumSeries()
-		level.Info(i.logger).Log("msg", "triggering early head compaction of non-owned series", "user", userID, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
+		level.Info(i.logger).Log("msg", "triggering per-tenant early head compaction of non-owned series", "user", userID, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
 
 		// Step 1: compact the OOO head so the out-of-order data of every series with OOO
 		// chunks is persisted before we evict any series in step 2. CompactOOOHead is a no-op
 		// for tenants that have never used OOO ingestion.
 		if err := db.CompactOOOHead(ctx); err != nil {
-			level.Warn(i.logger).Log("msg", "OOO head compaction failed during early compaction of non-owned series", "user", userID, "err", err)
+			level.Warn(i.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
 		}
 
 		// Step 2: write the queued non-owned series into a block and evict them from the head.
 		if err := db.CompactSelectedSeries(refs); err != nil {
-			level.Warn(i.logger).Log("msg", "selected series compaction failed during early compaction of non-owned series", "user", userID, "err", err)
+			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			continue
 		}
 
@@ -651,7 +651,7 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 
 		i.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID).Inc()
 
-		level.Info(i.logger).Log("msg", "early head compaction of non-owned series completed",
+		level.Info(i.logger).Log("msg", "per-tenant early head compaction of non-owned series completed",
 			"user", userID,
 			"before_in_memory_series", seriesBefore,
 			"after_in_memory_series", db.Head().NumSeries(),
