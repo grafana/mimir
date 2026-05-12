@@ -274,7 +274,8 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// Use the "one" side series to narrow the data we need to fetch on the "many" side.
 	// When hints have been set by the optimization pass, build matchers from the "one" side
 	// metadata and merge them with any outer matchers for included labels (which belong to the
-	// many side). Otherwise fall back to the same outer matchers used for the "one" side.
+	// many side). Otherwise fall back to the same outer matchers used for the "one" side, plus those
+	// that apply to the included labels (derived from the "many" side).
 	manySideMatchers := matchers
 	if g.hints != nil {
 		manySideMatchers = append(BuildMatchers(ctx, g.logger, g.oneSideMetadata, g.hints), includeMatchers...)
