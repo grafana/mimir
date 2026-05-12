@@ -198,12 +198,17 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, err
 	}
 
+	innerCacheKey, err := SplittingCacheKey(splitNode, params.QueryParameters)
+	if err != nil {
+		return nil, fmt.Errorf("computing splitting cache key: %w", err)
+	}
+
 	splitOp, err := splitFactory(
 		innerNode,
 		materializer,
 		timeRange,
 		ranges,
-		splitNode.SplittingCacheKey(),
+		innerCacheKey,
 		m.cache,
 		expressionPos,
 		params.Annotations,
@@ -216,4 +221,24 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	}
 
 	return planning.NewSingleUseOperatorFactory(splitOp), nil
+}
+
+func SplittingCacheKey(node planning.SplitNode, params *planning.QueryParameters) (string, error) {
+	// Make a copy of params so we can clear a couple of unnecessary fields before encoding.
+	cacheKeyParams := *params
+	// Clear query time range as queries at different times can share cache entries if the queries overlap.
+	cacheKeyParams.TimeRange = types.QueryTimeRange{}
+	cacheKeyParams.OriginalExpression = ""
+
+	plan := &planning.QueryPlan{Root: node, Parameters: &cacheKeyParams}
+	encoded, _, err := plan.ToEncodedPlan(false, true)
+	if err != nil {
+		return "", fmt.Errorf("encoding %T for splitting cache key: %w", node, err)
+	}
+
+	bytes, err := proto.Marshal(encoded)
+	if err != nil {
+		return "", fmt.Errorf("marshalling encoded plan for splitting cache key: %w", err)
+	}
+	return string(bytes), nil
 }

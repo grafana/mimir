@@ -277,9 +277,6 @@ type SplitNode interface {
 	// be split, there might be some edge cases where it's not possible or not implemented yet.
 	IsSplittable() bool
 
-	// SplittingCacheKey returns a cache key for this node's intermediate results.
-	SplittingCacheKey() string
-
 	GetRangeParams() RangeParams
 }
 

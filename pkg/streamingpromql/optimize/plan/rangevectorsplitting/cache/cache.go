@@ -82,8 +82,8 @@ func NewCacheFactoryWithBackend(backend Backend, ttlProvider TTLProvider, reg pr
 	}
 }
 
-func generateCacheKey(tenant string, function functions.Function, selector string, start, end int64, enableDelayedNameRemoval bool) string {
-	return fmt.Sprintf("%s:%d:%s:%d:%d:%t", tenant, function, selector, start, end, enableDelayedNameRemoval)
+func generateCacheKey(tenant string, function functions.Function, selector string, start, end int64) string {
+	return fmt.Sprintf("%s:%d:%s:%d:%d", tenant, function, selector, start, end)
 }
 
 // hashCacheKey is needed due to memcached key limit
@@ -95,8 +95,8 @@ func hashCacheKey(key string) string {
 
 // TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals.
 // This should only be used in tests.
-func TestGenerateHashedCacheKey(tenant string, function functions.Function, selector string, start, end int64, enableDelayedNameRemoval bool) string {
-	return hashCacheKey(generateCacheKey(tenant, function, selector, start, end, enableDelayedNameRemoval))
+func TestGenerateHashedCacheKey(tenant string, function functions.Function, selector string, start, end int64) string {
+	return hashCacheKey(generateCacheKey(tenant, function, selector, start, end))
 }
 
 // SplitCodec handles serialization of intermediate results for query splitting.
@@ -131,7 +131,6 @@ func (c *Cache[T]) Get(
 	function functions.Function,
 	innerKey string,
 	start, end int64,
-	enableDelayedNameRemoval bool,
 	stats *CacheStats,
 ) (seriesMetadata []querierpb.SeriesMetadata, annotations querierpb.Annotations, results []T, found bool, err error) {
 	tenant, err := user.ExtractOrgID(ctx)
@@ -140,7 +139,7 @@ func (c *Cache[T]) Get(
 	}
 
 	c.metrics.cacheRequests.Inc()
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end, enableDelayedNameRemoval)
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
 	hashedKey := hashCacheKey(cacheKey)
 
 	foundData := c.backend.GetMulti(ctx, []string{hashedKey})
@@ -151,17 +150,17 @@ func (c *Cache[T]) Get(
 
 	var cached CachedSeries
 	if err := cached.Unmarshal(data); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "cache_key", cacheKey, "err", err)
+		level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "err", err)
 		return nil, querierpb.Annotations{}, nil, false, nil
 	}
 
 	if cached.CacheKey != cacheKey {
-		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey, "cache_key", cacheKey)
+		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey)
 		return nil, querierpb.Annotations{}, nil, false, nil
 	}
 
 	c.metrics.cacheHits.Inc()
-	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "innerKey", innerKey, "start", start, "end", end)
+	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "hashed_cache_key", hashedKey, "start", start, "end", end)
 
 	stats.AddReadEntryStat(len(cached.SeriesMetadata), len(data))
 
@@ -178,7 +177,6 @@ func (c *Cache[T]) Set(
 	function functions.Function,
 	innerKey string,
 	start, end int64,
-	enableDelayedNameRemoval bool,
 	seriesMetadata []querierpb.SeriesMetadata,
 	annotations querierpb.Annotations,
 	results []T,
@@ -195,7 +193,7 @@ func (c *Cache[T]) Set(
 		return fmt.Errorf("getting results cache TTL: %w", err)
 	}
 
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end, enableDelayedNameRemoval)
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
 
 	resultBytes, err := c.codec.Marshal(results)
 	if err != nil {
@@ -220,7 +218,7 @@ func (c *Cache[T]) Set(
 	c.backend.SetMultiAsync(map[string][]byte{hashedKey: data}, ttl)
 
 	seriesCount := len(seriesMetadata)
-	level.Debug(c.logger).Log("msg", "cache entry written", "cache_key", cacheKey, "series_count", seriesCount, "entry_size", len(data))
+	level.Debug(c.logger).Log("msg", "cache entry written", "hashed_cache_key", hashedKey, "series_count", seriesCount, "entry_size", len(data))
 
 	stats.AddWriteEntryStat(seriesCount, totalSeriesCount, len(data))
 

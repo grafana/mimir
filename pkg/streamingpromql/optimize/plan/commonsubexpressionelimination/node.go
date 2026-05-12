@@ -129,14 +129,6 @@ func (d *Duplicate) IsSplittable() bool {
 	return splitNode.IsSplittable()
 }
 
-func (d *Duplicate) SplittingCacheKey() string {
-	splitNode, ok := d.Inner.(planning.SplitNode)
-	if !ok {
-		return ""
-	}
-	return splitNode.SplittingCacheKey()
-}
-
 func (d *Duplicate) GetRangeParams() planning.RangeParams {
 	splitNode, ok := d.Inner.(planning.SplitNode)
 	if !ok {
@@ -281,19 +273,6 @@ func (f *DuplicateFilter) MinimumRequiredPlanVersion(types.QueryTimeRange) (plan
 
 func (f *DuplicateFilter) IsSplittable() bool {
 	return f.Inner.IsSplittable()
-}
-
-func (f *DuplicateFilter) SplittingCacheKey() string {
-	builder := &strings.Builder{}
-	builder.WriteString("duplicate_filter(")
-	core.FormatMatchers(builder, f.Filters)
-	builder.WriteString(", ")
-	builder.WriteString(strconv.FormatInt(f.SubsetIndex, 10))
-	// Wrap the inner key so commas inside it (e.g. ", skip histogram buckets") don't blur the boundary.
-	builder.WriteString(", (")
-	builder.WriteString(f.Inner.SplittingCacheKey())
-	builder.WriteString("))")
-	return builder.String()
 }
 
 func (f *DuplicateFilter) GetRangeParams() planning.RangeParams {
