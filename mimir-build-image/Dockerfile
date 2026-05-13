@@ -35,7 +35,9 @@ RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.8.0
+# renovate: depName=github.com/golangci/golangci-lint
+ENV GOLANGCI_LINT_VERSION=2.12.2
+RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/v"${GOLANGCI_LINT_VERSION}"/install.sh| sh -s -- -b /usr/bin v"${GOLANGCI_LINT_VERSION}"
 
 # renovate: depName=github.com/containers/skopeo
 ENV SKOPEO_VERSION=v1.22.2
