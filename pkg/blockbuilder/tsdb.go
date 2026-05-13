@@ -677,18 +677,12 @@ func (u *userTSDB) compactOOOHeadSafe(ctx context.Context) (err error) {
 		if swallowOOOCompactionPanic {
 			msg += "; dropping OOO data for this cycle"
 		}
-		level.Error(u.logger).Log(
-			"msg", msg,
-			"tenant", u.userID,
-			"panic", fmt.Sprintf("%v", r),
-			"elapsed", time.Since(start),
-			"num_series", head.NumSeries(),
-			"min_time", head.MinTime(),
-			"max_time", head.MaxTime(),
-			"min_ooo_time", head.MinOOOTime(),
-			"max_ooo_time", head.MaxOOOTime(),
-			"loaded_blocks", formatLoadedBlocks(u.Blocks()),
-			"stack", string(debug.Stack()),
+		// TODO: prod logger isn't surfacing this — print to stderr as a fallback.
+		fmt.Fprintf(os.Stderr,
+			"msg=%q tenant=%q panic=%q elapsed=%s num_series=%d min_time=%d max_time=%d min_ooo_time=%d max_ooo_time=%d loaded_blocks=%q\nstack:\n%s\n",
+			msg, u.userID, fmt.Sprintf("%v", r), time.Since(start),
+			head.NumSeries(), head.MinTime(), head.MaxTime(), head.MinOOOTime(), head.MaxOOOTime(),
+			formatLoadedBlocks(u.Blocks()), debug.Stack(),
 		)
 		if !swallowOOOCompactionPanic {
 			panic(r)
