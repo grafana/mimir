@@ -20,8 +20,6 @@
 
 ### Tools
 
-* [ENHANCEMENT] Upgrade build image to Go 1.26.2. #15263
-
 ### Query-tee
 
 ## 3.1.0-rc0
