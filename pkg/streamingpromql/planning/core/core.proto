@@ -228,3 +228,8 @@ message VectorMatchFillValues {
   bool rhsSet = 3;
   bool lhsSet = 4;
 }
+
+message DataLabelSelectorDetails {
+  repeated LabelMatcher matchers = 1;
+  PositionRange expressionPosition = 2 [(gogoproto.nullable) = false];
+}

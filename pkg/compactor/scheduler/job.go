@@ -4,7 +4,6 @@ package scheduler
 
 import (
 	"errors"
-	"math"
 	"math/rand"
 	"time"
 
@@ -219,7 +218,7 @@ func (j *TrackedPlanJob) ToLeaseResponse(tenant string) *compactorschedulerpb.Le
 }
 
 func (j *TrackedPlanJob) Order() uint32 {
-	return math.MaxUint32
+	return 0
 }
 
 func deserializePlanJob(content []byte) (*TrackedPlanJob, error) {

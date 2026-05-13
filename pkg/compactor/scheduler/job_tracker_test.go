@@ -128,6 +128,22 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		require.False(t, transition)
 		require.NotContains(t, jt.incompleteJobs, planJobId)
 	})
+
+	t.Run("new plan job is leased ahead of existing pending compactions", func(t *testing.T) {
+		clk := clock.NewMock()
+		clk.Set(at(3, 0))
+		jt, _ := newTestJobTracker(clk)
+		jt.recoverFrom([]*TrackedCompactionJob{
+			NewTrackedCompactionJob("compactionId", &CompactionJob{}, 1, 0, at(1, 0)),
+		}, nil)
+
+		_, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
+		require.NoError(t, err)
+
+		leaseResp, _, err := jt.Lease()
+		require.NoError(t, err)
+		require.Equal(t, planJobId, leaseResp.Key.Id)
+	})
 }
 
 func TestJobTracker_recoverFrom(t *testing.T) {
@@ -199,6 +215,14 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 				newAvailableCompaction("bb", 2),
 			},
 			expectedPending: []string{"aa", "bb", "cc"},
+		},
+		"pending plan job sorts ahead of pending compactions": {
+			compactionJobs: []*TrackedCompactionJob{
+				newAvailableCompaction("aa", 1),
+				newAvailableCompaction("bb", 2),
+			},
+			planJob:         NewTrackedPlanJob(at(1, 0)),
+			expectedPending: []string{planJobId, "aa", "bb"},
 		},
 		"active jobs sorted by status time": {
 			compactionJobs: []*TrackedCompactionJob{

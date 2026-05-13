@@ -13,10 +13,18 @@ option (gogoproto.unmarshaler_all) = true;
 message EncodedOperatorEvaluationStats {
   EncodedSubsetStats allSeries = 1 [(gogoproto.nullable) = false];
   repeated EncodedSubsetStats subsets = 2 [(gogoproto.nullable) = false];
+  EncodedQueryTimeRange timeRange = 3 [(gogoproto.nullable) = false];
 }
 
 message EncodedSubsetStats {
   repeated int64 samplesProcessedPerStep = 1;
   repeated int64 samplesReadIfSubsequentStep = 2;
   repeated int64 samplesReadIfFirstStep = 3;
+}
+
+message EncodedQueryTimeRange {
+  int64 startT = 1; // Start timestamp, in milliseconds since Unix epoch.
+  int64 endT = 2; // End timestamp, in milliseconds since Unix epoch.
+  int64 intervalMilliseconds = 3; // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
+  bool isInstant = 4;
 }

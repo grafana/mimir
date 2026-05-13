@@ -140,7 +140,7 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 // should be added to the corresponding subset.
 //
 // The samples are also recorded in the number of physical samples read in the overall query stats.
-func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, matchesSubsets []bool) {
+func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, haveTimestamp bool, matchesSubsets []bool) {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
 	}
@@ -153,10 +153,21 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 	if s.timeRange.IsInstant {
 		newSampleRangeStart = rangeStart
 	}
-	samplesReadIfSubsequentStep := int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
+
+	samplesReadIfSubsequentStep := int64(0)
+
+	// If the subquery has a fixed timestamp, then subsequent steps would not read any samples.
+	if !haveTimestamp {
+		samplesReadIfSubsequentStep = int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
+	}
 
 	s.allSeries.Add(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange)
-	s.queryStats.AddPhysicalSamplesRead(uint64(samplesReadIfSubsequentStep))
+
+	if pointIdx == 0 {
+		s.queryStats.AddPhysicalSamplesRead(uint64(allSamplesInRange))
+	} else {
+		s.queryStats.AddPhysicalSamplesRead(uint64(samplesReadIfSubsequentStep))
+	}
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {
@@ -171,16 +182,15 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 //
 // Both instances must be for the same time range.
 //
-// At most one of the two instances may have subsets. If both have subsets, an error is returned.
-// When one has subsets and the other does not, the overall statistics from the instance without subsets
-// are added to each subset in the instance with subsets.
+// Only the receiver may have subsets. If the other instance has subsets, an error is returned.
+// The samples from the other instance are added to all the receiver's subsets.
 func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 	if !s.timeRange.Equal(other.timeRange) {
 		return errors.New("cannot add OperatorEvaluationStats with different time ranges")
 	}
 
-	if len(s.subsets) > 0 && len(other.subsets) > 0 {
-		return errors.New("cannot add two OperatorEvaluationStats instances that both have subsets")
+	if len(other.subsets) > 0 {
+		return errors.New("cannot add an OperatorEvaluationStats instance that has subsets")
 	}
 
 	for i := range s.timeRange.StepCount {
@@ -191,6 +201,36 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 		for i := range subset.samplesProcessedPerStep {
 			subset.Add(int64(i), other.allSeries.samplesProcessedPerStep[i], other.allSeries.samplesReadIfSubsequentStep[i], other.allSeries.samplesReadIfFirstStep[i])
 		}
+	}
+
+	return nil
+}
+
+// AddSingleStep adds the statistics from other to this instance.
+//
+// Both instances must have a single step, but may have different time ranges.
+//
+// Both instances must have the same number of subsets.
+//
+// This instance is modified in place.
+func (s *OperatorEvaluationStats) AddSingleStep(other *OperatorEvaluationStats) error {
+	if s.timeRange.StepCount != 1 {
+		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance with %v steps", s.timeRange.StepCount)
+	}
+
+	if other.timeRange.StepCount != 1 {
+		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance from another instance with %v steps", other.timeRange.StepCount)
+	}
+
+	if len(s.subsets) != len(other.subsets) {
+		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance with %v subsets from another instance with %v subsets", len(s.subsets), len(other.subsets))
+	}
+
+	s.allSeries.Add(int64(0), other.allSeries.samplesProcessedPerStep[0], other.allSeries.samplesReadIfSubsequentStep[0], other.allSeries.samplesReadIfFirstStep[0])
+
+	for subsetIdx, subset := range s.subsets {
+		otherSubset := other.subsets[subsetIdx]
+		subset.Add(int64(0), otherSubset.samplesProcessedPerStep[0], otherSubset.samplesReadIfSubsequentStep[0], otherSubset.samplesReadIfFirstStep[0])
 	}
 
 	return nil
@@ -214,6 +254,39 @@ func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
 	}
 
 	return clone, nil
+}
+
+// CloneSingleStep returns a new OperatorEvaluationStats instance containing the sample counts for the single step
+// in the provided time range.
+//
+// The returned instance will have the same subset definitions as the original.
+func (s *OperatorEvaluationStats) CloneSingleStep(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
+	if timeRange.StepCount != 1 {
+		return nil, fmt.Errorf("cannot clone single step of OperatorEvaluationStats for time range with %v steps", timeRange.StepCount)
+	}
+
+	stepIdx := s.timeRange.PointIndex(timeRange.StartT)
+
+	if s.timeRange.IndexTime(stepIdx) != timeRange.StartT {
+		return nil, fmt.Errorf("cannot clone single step of OperatorEvaluationStats because the desired time %v is not aligned with the steps of the source (start time %v, step %v)", timeRange.StartT, s.timeRange.StartT, s.timeRange.IntervalMilliseconds)
+	}
+
+	if stepIdx < 0 || stepIdx >= int64(s.timeRange.StepCount) {
+		return nil, fmt.Errorf("cannot clone single step of OperatorEvaluationStats because the desired time %v is outside the source time range (start time %v, end time %v)", timeRange.StartT, s.timeRange.StartT, s.timeRange.EndT)
+	}
+
+	singleStepStats, err := s.newEmptyInstanceWithSameSubsets(timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	singleStepStats.allSeries.CopySingleStepFrom(s.allSeries, stepIdx)
+
+	for i, subset := range s.subsets {
+		singleStepStats.subsets[i].CopySingleStepFrom(subset, stepIdx)
+	}
+
+	return singleStepStats, nil
 }
 
 // UseSubset replaces the unfiltered statistics on this instance with those from the given subset,
@@ -290,12 +363,13 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 	}
 
 	lastNewSamplesIdxUsed := -1
+	haveTimestamp := subqueryTimestamp != nil
 
 	for parentIdx := range parentTimeRange.StepCount {
 		parentT := parentTimeRange.IndexTime(int64(parentIdx))
 
 		rangeEnd := parentT
-		if subqueryTimestamp != nil {
+		if haveTimestamp {
 			rangeEnd = *subqueryTimestamp
 		}
 		rangeEnd -= subqueryOffsetMilliseconds
@@ -306,10 +380,10 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 		lastInnerIdx := s.timeRange.LastPointIndexAtOrBefore(rangeEnd)
 		firstNewSamplesInnerIdx := max(lastNewSamplesIdxUsed, firstInnerIdx)
 
-		result.allSeries.SetFromSubquery(s.allSeries, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
+		result.allSeries.SetFromSubquery(s.allSeries, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp)
 
 		for i, subset := range result.subsets {
-			subset.SetFromSubquery(s.subsets[i], parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx)
+			subset.SetFromSubquery(s.subsets[i], parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp)
 		}
 
 		lastNewSamplesIdxUsed = lastInnerIdx + 1
@@ -364,6 +438,7 @@ func sum(s []int64) int64 {
 // if this instance is modified, and becomes invalid when this instance is closed.
 func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
 	encoded := &EncodedOperatorEvaluationStats{
+		TimeRange: s.timeRange.Encode(),
 		AllSeries: s.allSeries.Encode(),
 	}
 
@@ -378,7 +453,8 @@ func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
 	return encoded
 }
 
-func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*OperatorEvaluationStats, error) {
+	timeRange := e.TimeRange.Decode()
 	allSeries, err := e.AllSeries.decode(timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -456,13 +532,16 @@ func (s *subsetStats) Add(pointIndex int64, samplesProcessed int64, samplesReadI
 	s.samplesReadIfFirstStep[pointIndex] += samplesReadIfFirstStep
 }
 
-func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int) {
+func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int, haveTimestamp bool) {
 	for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
 		s.samplesProcessedPerStep[parentIdx] += source.samplesProcessedPerStep[innerIdx]
 	}
 
-	for innerIdx := firstNewSamplesInnerIdx; innerIdx <= lastIdx; innerIdx++ {
-		s.samplesReadIfSubsequentStep[parentIdx] += source.samplesReadIfSubsequentStep[innerIdx]
+	// If the subquery has a fixed timestamp, then subsequent steps would not read any samples.
+	if !haveTimestamp {
+		for innerIdx := firstNewSamplesInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+			s.samplesReadIfSubsequentStep[parentIdx] += source.samplesReadIfSubsequentStep[innerIdx]
+		}
 	}
 
 	for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
@@ -475,9 +554,11 @@ func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInner
 }
 
 func (s *subsetStats) SetFromStepInvariant(samplesProcessed int64, samplesReadIfSubsequentStep int64, samplesReadIfFirstStep int64) {
-	s.samplesReadIfSubsequentStep[0] = samplesReadIfSubsequentStep
 	for idx := range s.samplesProcessedPerStep {
 		s.samplesProcessedPerStep[idx] = samplesProcessed
+	}
+	for idx := range s.samplesReadIfSubsequentStep {
+		s.samplesReadIfSubsequentStep[idx] = samplesReadIfSubsequentStep
 	}
 	for idx := range s.samplesReadIfFirstStep {
 		s.samplesReadIfFirstStep[idx] = samplesReadIfFirstStep
@@ -488,6 +569,12 @@ func (s *subsetStats) CopyFrom(source *subsetStats) {
 	copy(s.samplesProcessedPerStep, source.samplesProcessedPerStep)
 	copy(s.samplesReadIfSubsequentStep, source.samplesReadIfSubsequentStep)
 	copy(s.samplesReadIfFirstStep, source.samplesReadIfFirstStep)
+}
+
+func (s *subsetStats) CopySingleStepFrom(source *subsetStats, stepIdx int64) {
+	s.samplesProcessedPerStep[0] = source.samplesProcessedPerStep[stepIdx]
+	s.samplesReadIfSubsequentStep[0] = source.samplesReadIfSubsequentStep[stepIdx]
+	s.samplesReadIfFirstStep[0] = source.samplesReadIfFirstStep[stepIdx]
 }
 
 func (s *subsetStats) Encode() EncodedSubsetStats {

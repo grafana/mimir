@@ -80,6 +80,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	alertCmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSKeyPath+".").Default("").Envar(envVars.TLSKeyPath).StringVar(&a.ClientConfig.TLS.KeyPath)
 	alertCmd.Flag("tls-insecure-skip-verify", "Skip TLS certificate verification; alternatively, set "+envVars.TLSInsecureSkipVerify+".").Default("false").Envar(envVars.TLSInsecureSkipVerify).BoolVar(&a.ClientConfig.TLS.InsecureSkipVerify)
 	alertCmd.Flag("auth-token", "Authentication token bearer authentication; alternatively, set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&a.ClientConfig.AuthToken)
+	registerSigV4Flags(alertCmd, envVars, &a.ClientConfig.SigV4)
 	alertCmd.Flag("utf8-strict-mode", "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts.").Default("false").BoolVar(&a.UTF8StrictMode)
 
 	// Get Alertmanager Configs Command
@@ -280,6 +281,7 @@ func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, l
 	alertCmd.Flag("user", fmt.Sprintf("Basic auth username to use when contacting Grafana Mimir, alternatively set %s. If empty, %s will be used instead. ", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
 	alertCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
 	alertCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&a.ClientConfig.AuthToken)
+	registerSigV4Flags(alertCmd, envVars, &a.ClientConfig.SigV4)
 	a.ClientConfig.ExtraHeaders = map[string]string{}
 	alertCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&a.ClientConfig.ExtraHeaders)
 

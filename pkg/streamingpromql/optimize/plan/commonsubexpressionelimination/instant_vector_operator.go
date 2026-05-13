@@ -333,7 +333,7 @@ func (b *InstantVectorDuplicationBuffer) allConsumersClosed() bool {
 	return true
 }
 
-func (b *InstantVectorDuplicationBuffer) QueryStats(ctx context.Context, consumer *InstantVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
+func (b *InstantVectorDuplicationBuffer) Stats(ctx context.Context, consumer *InstantVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
 	if !b.allConsumersFinalized() {
 		return nil, errors.New("InstantVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
 	}
@@ -460,7 +460,7 @@ func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) error {
 }
 
 func (d *InstantVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return d.Buffer.QueryStats(ctx, d)
+	return d.Buffer.Stats(ctx, d)
 }
 
 func (d *InstantVectorDuplicationConsumer) Close() {

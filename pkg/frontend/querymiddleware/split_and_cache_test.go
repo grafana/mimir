@@ -237,6 +237,9 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		# HELP cortex_querier_inflight_query_current_estimated_memory_consumption_bytes Total current estimated memory consumption across all in-flight queries.
 		# TYPE cortex_querier_inflight_query_current_estimated_memory_consumption_bytes gauge
 		cortex_querier_inflight_query_current_estimated_memory_consumption_bytes 0
+		# HELP cortex_querier_inflight_query_max_age_seconds Age in seconds of the oldest in-flight query memory consumption tracker. Zero when there are no in-flight queries.
+		# TYPE cortex_querier_inflight_query_max_age_seconds gauge
+		cortex_querier_inflight_query_max_age_seconds 0
 		# HELP cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes Total of the max estimated memory consumption limit across all in-flight queries.
 		# TYPE cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes gauge
 		cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes 0
@@ -396,6 +399,9 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		# HELP cortex_querier_inflight_query_current_estimated_memory_consumption_bytes Total current estimated memory consumption across all in-flight queries.
 		# TYPE cortex_querier_inflight_query_current_estimated_memory_consumption_bytes gauge
 		cortex_querier_inflight_query_current_estimated_memory_consumption_bytes 0
+		# HELP cortex_querier_inflight_query_max_age_seconds Age in seconds of the oldest in-flight query memory consumption tracker. Zero when there are no in-flight queries.
+		# TYPE cortex_querier_inflight_query_max_age_seconds gauge
+		cortex_querier_inflight_query_max_age_seconds 0
 		# HELP cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes Total of the max estimated memory consumption limit across all in-flight queries.
 		# TYPE cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes gauge
 		cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes 0

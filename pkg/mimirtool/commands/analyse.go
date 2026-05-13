@@ -119,6 +119,7 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		Default("").
 		Envar(envVars.AuthToken).
 		StringVar(&raCmd.ClientConfig.AuthToken)
+	registerSigV4Flags(rulerAnalyzeCmd, envVars, &raCmd.ClientConfig.SigV4)
 	raCmd.ClientConfig.ExtraHeaders = map[string]string{}
 	rulerAnalyzeCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").
 		Envar(envVars.ExtraHeaders).

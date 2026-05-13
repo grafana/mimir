@@ -31,7 +31,7 @@ type MultiAggregatorGroupEvaluator struct {
 	prepareCalled              bool
 	afterPrepareCalled         bool
 
-	cachedQueryStats *types.OperatorEvaluationStats
+	cachedStats *types.OperatorEvaluationStats
 }
 
 func NewMultiAggregatorGroupEvaluator(
@@ -142,7 +142,7 @@ func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context) error {
 	return m.inner.Finalize(ctx)
 }
 
-func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, error) {
+func (m *MultiAggregatorGroupEvaluator) Stats(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, error) {
 	if !m.allInstancesFinalized() {
 		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats when one or more instances are not finalized")
 	}
@@ -151,20 +151,20 @@ func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context, instance
 		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats twice for the same instance")
 	}
 
-	if m.cachedQueryStats == nil {
+	if m.cachedStats == nil {
 		var err error
-		m.cachedQueryStats, err = m.inner.Stats(ctx)
+		m.cachedStats, err = m.inner.Stats(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	instance.hasReadStats = true
-	stats := m.cachedQueryStats
+	stats := m.cachedStats
 
 	if m.allInstancesHaveReadStats() {
 		// Last call: return stats without cloning, and clear reference to existing stats.
-		m.cachedQueryStats = nil
+		m.cachedStats = nil
 	} else {
 		var err error
 		stats, err = stats.Clone() // FIXME: this is wasteful, we could just clone the subset needed
@@ -224,9 +224,9 @@ func (m *MultiAggregatorGroupEvaluator) Close() {
 
 	m.inner.Close()
 
-	if m.cachedQueryStats != nil {
-		m.cachedQueryStats.Close()
-		m.cachedQueryStats = nil
+	if m.cachedStats != nil {
+		m.cachedStats.Close()
+		m.cachedStats = nil
 	}
 }
 
@@ -396,7 +396,7 @@ func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
 }
 
 func (m *MultiAggregatorInstanceOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return m.group.QueryStats(ctx, m)
+	return m.group.Stats(ctx, m)
 }
 
 func (m *MultiAggregatorInstanceOperator) Close() {

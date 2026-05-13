@@ -27,14 +27,24 @@ jobs:
       # We only want for this workflow to do anything when mimir-build-image/Dockerfile is modified.
       # However, we want for it to be able to run for all PRs, just so it can be made a required check
       # (i.e. so PRs can't be merged until it's done).
+      #
+      # We list changed files via the paginated PR Files API rather than `gh pr diff --name-only`
+      # because the latter caps at 300 files and returns HTTP 406 on larger PRs, in which case the
+      # script would silently fall into the "not modified" branch even when the Dockerfile was
+      # actually modified.
       - name: Check if mimir-build-image/Dockerfile was modified
         id: check_dockerfile
         run: |
-          if gh pr diff ${{ github.event.pull_request.number }} --name-only | grep -q '^mimir-build-image/Dockerfile$'; then
-            echo "modified=true" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          files=$(gh api --paginate \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --jq '.[].filename')
+          if echo "$files" | grep -qx 'mimir-build-image/Dockerfile'; then
+            echo "modified=true" >> "$GITHUB_OUTPUT"
             echo "Dockerfile was modified"
           else
-            echo "modified=false" >> $GITHUB_OUTPUT
+            echo "modified=false" >> "$GITHUB_OUTPUT"
             echo "Dockerfile was not modified"
           fi
         env:

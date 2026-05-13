@@ -352,6 +352,11 @@ runtime_config:
   # CLI flag: -runtime-config.http-client-timeout
   [http_client_timeout: <duration> | default = 30s]
 
+  http_client_cluster_validation:
+    # (experimental) Primary cluster validation label.
+    # CLI flag: -runtime-config.http-client-cluster-validation.label
+    [label: <string> | default = ""]
+
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 
@@ -490,6 +495,25 @@ overrides_exporter:
 # runs, ensuring inactive cost attribution entries are purged.
 # CLI flag: -cost-attribution.cleanup-interval
 [cost_attribution_cleanup_interval: <duration> | default = 3m]
+
+instrument_ref_leaks:
+  # (experimental) Percentage [0-100] of request or message buffers to
+  # instrument for reference leaks. Set to 0 to disable.
+  # CLI flag: -instrument-reference-leaks.percentage
+  [percentage: <float> | default = 0]
+
+  # (experimental) Period after a buffer instrumented for referenced leaks is
+  # nominally freed until the buffer is uninstrumented and effectively freed to
+  # be reused. After this period, any lingering references to the buffer may
+  # potentially be dereferenced again with no detection.
+  # CLI flag: -instrument-reference-leaks.before-reuse-period
+  [before_reuse_period: <duration> | default = 2m]
+
+  # (experimental) Maximum sum of length of buffers instrumented at any given
+  # time, in bytes. When surpassed, incoming buffers will not be instrumented,
+  # regardless of the configured percentage. Zero means no limit.
+  # CLI flag: -instrument-reference-leaks.max-inflight-instrumented-bytes
+  [max_inflight_instrumented_bytes: <int> | default = 0]
 ```
 
 ### common
@@ -532,25 +556,6 @@ client_cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
-
-instrument_ref_leaks:
-  # (experimental) Percentage [0-100] of request or message buffers to
-  # instrument for reference leaks. Set to 0 to disable.
-  # CLI flag: -common.instrument-reference-leaks.percentage
-  [percentage: <float> | default = 0]
-
-  # (experimental) Period after a buffer instrumented for referenced leaks is
-  # nominally freed until the buffer is uninstrumented and effectively freed to
-  # be reused. After this period, any lingering references to the buffer may
-  # potentially be dereferenced again with no detection.
-  # CLI flag: -common.instrument-reference-leaks.before-reuse-period
-  [before_reuse_period: <duration> | default = 2m]
-
-  # (experimental) Maximum sum of length of buffers instrumented at any given
-  # time, in bytes. When surpassed, incoming buffers will not be instrumented,
-  # regardless of the configured percentage. Zero means no limit.
-  # CLI flag: -common.instrument-reference-leaks.max-inflight-instrumented-bytes
-  [max_inflight_instrumented_bytes: <int> | default = 0]
 ```
 
 ### server
@@ -1694,6 +1699,11 @@ read_reactive_limiter:
   # current inflight requests, after which all requests are rejected
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
+
+# (experimental) Maximum concurrency used to compute a single label values count
+# request.
+# CLI flag: -ingester.label-values-count-max-concurrency
+[label_values_count_request_max_concurrency: <int> | default = 16]
 ```
 
 ### querier
@@ -5634,6 +5644,42 @@ bucket_store:
       # CLI flag: -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes
       [max_size_bytes: <int> | default = 1073741824]
 
+  index_header_cache:
+    # Backend for index-header cache, if not empty. Intended for use with
+    # -blocks-storage.bucket-store.index-header.bucket-reader. Supported values:
+    # memcached.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.backend
+    [backend: <string> | default = ""]
+
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # blocks-storage.bucket-store.index-header-cache
+    [memcached: <memcached>]
+
+    # (experimental) TTL for caching object attributes of the block index for
+    # the index-header reader.  If the metadata cache is configured, attributes
+    # will be stored in the metadata cache backend, otherwise attributes are
+    # stored in the index-header cache backend.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-ttl
+    [attributes_ttl: <duration> | default = 168h]
+
+    # (experimental) TTL for caching individual index-header subranges.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-ttl
+    [subrange_ttl: <duration> | default = 24h]
+
+    # (experimental) Maximum number of individual subrange items to keep in a
+    # first level in-memory LRU cache. Subranges will be stored and fetched
+    # in-memory before hitting the cache backend. 0 to disable the in-memory
+    # cache.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items
+    [subrange_in_memory_max_items: <int> | default = 100000]
+
+    # (experimental) Maximum number of sub-GetRange requests that a single
+    # GetRange request can be split into when fetching index-header ranges. Zero
+    # or negative value = unlimited number of sub-requests.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.max-get-range-requests
+    [max_get_range_requests: <int> | default = 3]
+
   chunks_cache:
     # Backend for chunks cache, if not empty. Supported values: memcached.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.backend
@@ -5656,9 +5702,10 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
-    # (advanced) Maximum number of object attribute items to keep in a first
-    # level in-memory LRU cache. Metadata will be stored and fetched in-memory
-    # before hitting the cache backend. 0 to disable the in-memory cache.
+    # (advanced) Maximum number of object attribute items to keep in a
+    # first-level in-memory LRU cache. Metadata will be stored and fetched
+    # in-memory before hitting the cache backend. 0 to disable the in-memory
+    # cache.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items
     [attributes_in_memory_max_items: <int> | default = 50000]
 
@@ -6528,6 +6575,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`
+- `blocks-storage.bucket-store.index-header-cache`
 - `blocks-storage.bucket-store.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`

@@ -37,11 +37,11 @@ func marshalDetails(m proto.Message) []byte {
 
 func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	instantQuery := types.NewInstantQueryTimeRange(timestamp.Time(1000))
-	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
+	instantQueryEncodedTimeRange := types.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
 	rangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(3000), timestamp.Time(5000), time.Second)
-	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
+	rangeQueryEncodedTimeRange := types.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
 	emptyRangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(5000), timestamp.Time(3000), time.Second)
-	emptyRangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 5000, EndT: 3000, IntervalMilliseconds: 1000}
+	emptyRangeQueryEncodedTimeRange := types.EncodedQueryTimeRange{StartT: 5000, EndT: 3000, IntervalMilliseconds: 1000}
 	lookbackDelta := 3 * time.Minute
 
 	testCases := map[string]struct {
@@ -1542,6 +1542,90 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						}),
 						Type:        "MatrixSelector",
 						Description: `{__name__="some_metric"}[1m0s] smoothed`,
+					},
+				},
+			},
+		},
+
+		"info function with no data label selectors": {
+			expr:      `info(metric)`,
+			timeRange: instantQuery,
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                instantQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
+				RootNode:                 1,
+				Version:                  planning.QueryPlanVersionZero,
+				EnableDelayedNameRemoval: false,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric"},
+							},
+							ExpressionPosition:     core.PositionRange{Start: 5, End: 11},
+							ReturnSampleTimestamps: false,
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_INFO,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 12},
+						}),
+						Type:           "FunctionCall",
+						Description:    `info(...)`,
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"info function with data label selectors": {
+			expr:      `info(metric, {__name__="svc_info"})`,
+			timeRange: instantQuery,
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                instantQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
+				RootNode:                 2,
+				Version:                  planning.QueryPlanV12,
+				EnableDelayedNameRemoval: false,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric"},
+							},
+							ExpressionPosition:     core.PositionRange{Start: 5, End: 11},
+							ReturnSampleTimestamps: false,
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_DATA_LABEL_SELECTOR,
+						Details: marshalDetails(&core.DataLabelSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "svc_info"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 13, End: 34},
+						}),
+						Type:        "DataLabelSelector",
+						Description: `{__name__="svc_info"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_INFO,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 35},
+						}),
+						Type:           "FunctionCall",
+						Description:    `info(...)`,
+						Children:       []int64{0, 1},
+						ChildrenLabels: []string{"param 0", "param 1"},
 					},
 				},
 			},

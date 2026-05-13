@@ -358,6 +358,65 @@ func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql
 	panic("unreachable")
 }
 
+// closeCountingEngine wraps a promql.QueryEngine and counts how many queries
+// it has produced and how many of those have had Close() called. It is used
+// by tests that need to verify the close-on-error contract — that callers of
+// NewInstantQuery / NewRangeQuery release the returned promql.Query on every
+// return path, not just the success path that hands ownership to a finalizer.
+type closeCountingEngine struct {
+	inner   promql.QueryEngine
+	queries []*closeCountingQuery
+}
+
+func newCloseCountingEngine(inner promql.QueryEngine) *closeCountingEngine {
+	return &closeCountingEngine{inner: inner}
+}
+
+func (e *closeCountingEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	qry, err := e.inner.NewInstantQuery(ctx, q, opts, qs, ts)
+	if err != nil {
+		return nil, err
+	}
+	wrapped := &closeCountingQuery{Query: qry}
+	e.queries = append(e.queries, wrapped)
+	return wrapped, nil
+}
+
+func (e *closeCountingEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	qry, err := e.inner.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
+	if err != nil {
+		return nil, err
+	}
+	wrapped := &closeCountingQuery{Query: qry}
+	e.queries = append(e.queries, wrapped)
+	return wrapped, nil
+}
+
+// queriesCreated returns the number of queries this engine has produced.
+func (e *closeCountingEngine) queriesCreated() int {
+	return len(e.queries)
+}
+
+// totalCloseCalls returns the sum of Close() invocations across every query
+// this engine has produced.
+func (e *closeCountingEngine) totalCloseCalls() int {
+	total := 0
+	for _, q := range e.queries {
+		total += q.closeCalls
+	}
+	return total
+}
+
+type closeCountingQuery struct {
+	promql.Query
+	closeCalls int
+}
+
+func (q *closeCountingQuery) Close() {
+	q.closeCalls++
+	q.Query.Close()
+}
+
 // runForEngines runs the provided test closure with the Prometheus Engine and Mimir Query Engine.
 func runForEngines(t *testing.T, run func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine)) {
 	t.Helper()
