@@ -10,8 +10,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -324,6 +326,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	udb := &userTSDB{
 		cfg:    &b.cfg,
 		userID: userID,
+		logger: userLogger,
 
 		// Passed by reference because it counts across all tenants.
 		instanceSeriesCount: &b.seriesCount,
@@ -596,6 +599,7 @@ type userTSDB struct {
 
 	cfg    *Config
 	userID string
+	logger log.Logger
 
 	// Shared across all userTSDB instances created by block-builder.
 	instanceSeriesCount *atomic.Int64
@@ -645,11 +649,64 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64,
 	}
 
 	// Compact the out-of-order data.
-	if err := u.CompactOOOHead(ctx); err != nil {
+	if err := u.compactOOOHeadSafe(ctx); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// compactOOOHeadSafe wraps CompactOOOHead with a panic recovery.
+const swallowOOOCompactionPanic = false
+
+func (u *userTSDB) compactOOOHeadSafe(ctx context.Context) (err error) {
+	head := u.Head()
+	start := time.Now()
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		msg := "panic during OOO head compaction"
+		if swallowOOOCompactionPanic {
+			msg += "; dropping OOO data for this cycle"
+		}
+		level.Error(u.logger).Log(
+			"msg", msg,
+			"tenant", u.userID,
+			"panic", fmt.Sprintf("%v", r),
+			"elapsed", time.Since(start),
+			"num_series", head.NumSeries(),
+			"min_time", head.MinTime(),
+			"max_time", head.MaxTime(),
+			"min_ooo_time", head.MinOOOTime(),
+			"max_ooo_time", head.MaxOOOTime(),
+			"loaded_blocks", formatLoadedBlocks(u.Blocks()),
+			"stack", string(debug.Stack()),
+		)
+		if !swallowOOOCompactionPanic {
+			panic(r)
+		}
+		err = nil
+	}()
+	return u.CompactOOOHead(ctx)
+}
+
+// formatLoadedBlocks returns a compact summary of the given blocks for logging.
+func formatLoadedBlocks(blocks []*tsdb.Block) string {
+	if len(blocks) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for i, b := range blocks {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		m := b.Meta()
+		fmt.Fprintf(&sb, "%s(mint=%d,maxt=%d,samples=%d,ooo=%t)",
+			m.ULID, m.MinTime, m.MaxTime, m.Stats.NumSamples, m.Compaction.FromOutOfOrder())
+	}
+	return sb.String()
 }
 
 // buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
