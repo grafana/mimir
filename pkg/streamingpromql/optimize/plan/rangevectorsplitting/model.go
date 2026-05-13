@@ -17,6 +17,7 @@ import (
 
 // Range represents a time range within a query split.
 // Start is exclusive, End is inclusive.
+// Start and End are in data-time, not query-time: any offset/@ modifier on the inner selector has already been applied.
 type Range struct {
 	Start     int64
 	End       int64
