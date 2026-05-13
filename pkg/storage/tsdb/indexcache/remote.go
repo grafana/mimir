@@ -227,7 +227,7 @@ func postingsOffsetCacheKey(tenantID, blockID string, lbl labels.Label) string {
 
 	sizedKey := key[:offset]
 	// Convert []byte to string with no extra allocation.
-	return *(*string)(unsafe.Pointer(&sizedKey))
+	return *(*string)(unsafe.Pointer(&sizedKey)) // #nosec G123 nosemgrep: use-of-unsafe-block
 }
 
 func postingsOffsetsForMatcherCacheKey(tenantID, blockID string, m *labels.Matcher, invertMatcher bool) string {
@@ -255,7 +255,7 @@ func postingsOffsetsForMatcherCacheKey(tenantID, blockID string, m *labels.Match
 
 	sizedKey := key[:offset]
 	// Convert []byte to string with no extra allocation.
-	return *(*string)(unsafe.Pointer(&sizedKey))
+	return *(*string)(unsafe.Pointer(&sizedKey)) // #nosec G123 nosemgrep: use-of-unsafe-block
 }
 
 // postingsCacheKey returns the cache key used to store postings matching the input
@@ -285,7 +285,7 @@ func postingsCacheKey(userID, blockID string, l labels.Label) string {
 
 	sizedKey := key[:offset]
 	// Convert []byte to string with no extra allocation.
-	return *(*string)(unsafe.Pointer(&sizedKey))
+	return *(*string)(unsafe.Pointer(&sizedKey)) // #nosec G123 nosemgrep: use-of-unsafe-block
 }
 
 // cacheKeyLabelID returns the hash of the input label name/value pair.
