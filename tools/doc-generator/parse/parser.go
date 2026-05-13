@@ -186,8 +186,9 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 			continue
 		}
 
-		// Recursively re-iterate if it's a struct and it's not a custom type.
-		if _, custom := getCustomFieldType(field.Type); (field.Type.Kind() == reflect.Struct || field.Type.Kind() == reflect.Pointer) && !custom {
+		// Recursively re-iterate if it's a struct (or pointer to struct) and it's not a custom type.
+		if _, custom := getFieldCustomType(field.Type); !custom &&
+			(field.Type.Kind() == reflect.Struct || (field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct)) {
 			// Check whether the sub-block is a root config block
 			rootName, rootDesc, isRoot := isRootBlock(field.Type, rootBlocks)
 
@@ -449,32 +450,6 @@ func getFieldType(t reflect.Type) (string, error) {
 	}
 }
 
-func getCustomFieldType(t reflect.Type) (string, bool) {
-	// Handle custom data types used in the config
-	switch t.String() {
-	case reflect.TypeOf(flagext.LimitsMap[float64]{}).String():
-		return "map of string to float64", true
-	case reflect.TypeOf(flagext.LimitsMap[int]{}).String():
-		return "map of string to int", true
-	case reflect.TypeOf(flagext.LimitsMap[string]{}).String():
-		return "map of string to string", true
-	case reflect.TypeOf(&url.URL{}).String():
-		return "url", true
-	case reflect.TypeOf(time.Duration(0)).String():
-		return "duration", true
-	case reflect.TypeOf(flagext.StringSliceCSV{}).String():
-		return "string", true
-	case reflect.TypeOf(flagext.CIDRSliceCSV{}).String():
-		return "string", true
-	case reflect.TypeOf([]*relabel.Config{}).String():
-		return "relabel_config...", true
-	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
-		return "map of tracker name (string) to matcher (string)", true
-	default:
-		return "", false
-	}
-}
-
 func ReflectType(typ string) reflect.Type {
 	switch typ {
 	case "string":
@@ -516,7 +491,12 @@ func getFieldFlag(field reflect.StructField, fieldValue reflect.Value, flags map
 	if isAbsentInCLI(field) {
 		return nil, nil
 	}
-	fieldPtr := fieldValue.Addr().Pointer()
+	var fieldPtr uintptr
+	if fieldValue.Kind() == reflect.Pointer && !fieldValue.IsNil() {
+		fieldPtr = fieldValue.Pointer()
+	} else {
+		fieldPtr = fieldValue.Addr().Pointer()
+	}
 	fieldFlag, ok := flags[fieldPtr]
 	if !ok {
 		return nil, nil

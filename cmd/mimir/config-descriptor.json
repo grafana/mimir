@@ -16461,12 +16461,12 @@
             "User": null,
             "Host": "localhost:8080",
             "Path": "/alertmanager",
-            "RawPath": "",
-            "OmitHost": false,
-            "ForceQuery": false,
-            "RawQuery": "",
             "Fragment": "",
-            "RawFragment": ""
+            "RawQuery": "",
+            "RawPath": "",
+            "RawFragment": "",
+            "ForceQuery": false,
+            "OmitHost": false
           },
           "fieldFlag": "alertmanager.web.external-url",
           "fieldType": "url"

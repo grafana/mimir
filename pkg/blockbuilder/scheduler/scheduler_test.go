@@ -256,14 +256,10 @@ func requireGaps(t *testing.T, reg *prometheus.Registry, partition int32, planne
 		# TYPE cortex_blockbuilder_scheduler_job_gap_detected counter
 		`)
 
-		if planned != 0 {
-			b.WriteString(fmt.Sprintf(
-				"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"planned\",partition=\"%d\"} %d\n", partition, planned))
-		}
-		if committed != 0 {
-			b.WriteString(fmt.Sprintf(
-				"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"committed\",partition=\"%d\"} %d\n", partition, committed))
-		}
+		fmt.Fprintf(&b,
+			"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"planned\"} %d\n", planned)
+		fmt.Fprintf(&b,
+			"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"committed\"} %d\n", committed)
 	}
 
 	require.NoError(t,
