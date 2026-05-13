@@ -3607,13 +3607,17 @@ func TestComputeConfig(t *testing.T) {
 	}
 }
 
-func Test_configChanged(t *testing.T) {
-	type tc struct {
-		name    string
-		left    amConfig
-		right   amConfig
-		changed bool
-	}
+func Test_fingerprint(t *testing.T) {
+	const expectedTotalFields = 5 // Total fields: 2 (TemplateDesc) + 3 (AlertConfigDesc)
+	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
+		// Helper function to get field count of a struct
+		getFieldCount := func(v interface{}) int {
+			t := reflect.TypeOf(v)
+			if t.Kind() == reflect.Pointer {
+				t = t.Elem()
+			}
+			return t.NumField()
+		}
 
 	cases := []tc{
 		{

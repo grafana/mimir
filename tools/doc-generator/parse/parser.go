@@ -137,9 +137,9 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 	}
 
 	// The input config is expected to be addressable.
-	if reflect.TypeOf(cfg).Kind() != reflect.Ptr {
+	if reflect.TypeOf(cfg).Kind() != reflect.Pointer {
 		t := reflect.TypeOf(cfg)
-		return nil, fmt.Errorf("%s is a %s while a %s is expected", t, t.Kind(), reflect.Ptr)
+		return nil, fmt.Errorf("%s is a %s while a %s is expected", t, t.Kind(), reflect.Pointer)
 	}
 
 	// The input config is expected to be a pointer to struct.
@@ -186,8 +186,10 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 			continue
 		}
 
-		// Recursively re-iterate if it's a struct and it's not a custom type.
-		if _, custom := getCustomFieldType(field.Type); (field.Type.Kind() == reflect.Struct || field.Type.Kind() == reflect.Ptr) && !custom {
+		// Recursively re-iterate if it's a struct (or pointer to struct) and it's not a custom type.
+		if _, custom := getFieldCustomType(field.Type); !custom &&
+			(field.Type.Kind() == reflect.Struct || (field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct)) {
+
 			// Check whether the sub-block is a root config block
 			rootName, rootDesc, isRoot := isRootBlock(field.Type, rootBlocks)
 
@@ -230,7 +232,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 				subBlock = block
 			}
 
-			if field.Type.Kind() == reflect.Ptr {
+			if field.Type.Kind() == reflect.Pointer {
 				// If this is a pointer, it's probably nil, so we initialize it.
 				fieldValue = reflect.New(field.Type.Elem())
 			} else if field.Type.Kind() == reflect.Struct {
@@ -260,7 +262,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 			// Add ConfigBlock for slices only if the field isn't a custom type,
 			// which shouldn't be inspected because doesn't have YAML tags, flag registrations, etc.
 			_, isCustomType := getFieldCustomType(field.Type)
-			isSliceOfStructs := field.Type.Kind() == reflect.Slice && (field.Type.Elem().Kind() == reflect.Struct || field.Type.Elem().Kind() == reflect.Ptr)
+			isSliceOfStructs := field.Type.Kind() == reflect.Slice && (field.Type.Elem().Kind() == reflect.Struct || field.Type.Elem().Kind() == reflect.Pointer)
 			if !isCustomType && isSliceOfStructs {
 				element = &ConfigBlock{
 					Name: fieldName,
@@ -273,7 +275,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 					return nil, errors.Wrapf(err, "couldn't inspect slice, element_type=%s", field.Type.Elem())
 				}
 			}
-			isMapOfStructs := field.Type.Kind() == reflect.Map && (field.Type.Elem().Kind() == reflect.Struct || field.Type.Elem().Kind() == reflect.Ptr)
+			isMapOfStructs := field.Type.Kind() == reflect.Map && (field.Type.Elem().Kind() == reflect.Struct || field.Type.Elem().Kind() == reflect.Pointer)
 			if !isCustomType && isMapOfStructs {
 				element = &ConfigBlock{
 					Name: fieldName,
@@ -441,7 +443,7 @@ func getFieldType(t reflect.Type) (string, error) {
 
 	case reflect.Struct:
 		return t.Name(), nil
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return getFieldType(t.Elem())
 
 	default:
@@ -516,7 +518,12 @@ func getFieldFlag(field reflect.StructField, fieldValue reflect.Value, flags map
 	if isAbsentInCLI(field) {
 		return nil, nil
 	}
-	fieldPtr := fieldValue.Addr().Pointer()
+	var fieldPtr uintptr
+	if fieldValue.Kind() == reflect.Pointer && !fieldValue.IsNil() {
+		fieldPtr = fieldValue.Pointer()
+	} else {
+		fieldPtr = fieldValue.Addr().Pointer()
+	}
 	fieldFlag, ok := flags[fieldPtr]
 	if !ok {
 		return nil, nil
