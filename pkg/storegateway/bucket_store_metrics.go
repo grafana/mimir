@@ -38,6 +38,8 @@ type BucketStoreMetrics struct {
 	queriesDropped        *prometheus.CounterVec
 	seriesRefetches       prometheus.Counter
 
+	bucketIndexVersionDiffSeconds prometheus.Histogram
+
 	// Metrics tracked when streaming store-gateway is enabled.
 	streamingSeriesRequestDurationByStage      *prometheus.HistogramVec
 	streamingSeriesBatchPreloadingLoadDuration prometheus.Histogram
@@ -81,6 +83,14 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.blockDiscoveryLatency = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name: "cortex_bucket_store_block_discovery_latency_seconds",
 		Help: "Time elapsed from when a block was created, based on its ULID timestamp, to when it was discovered.",
+
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
+	m.bucketIndexVersionDiffSeconds = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_bucket_store_bucket_index_version_diff_seconds",
+		Help: "Difference in seconds between the store-gateway's and the querier's bucket index version (updated_at). Negative values mean the store-gateway has an older version.",
 
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
