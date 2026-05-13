@@ -202,6 +202,9 @@ func newPartitionHandler(
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
 	p.store = newTrackerStore(cfg.IdleTimeout, cfg.UserCloseToLimitPercentageThreshold, logger, lim, eventsPublisher, cfg.EnableVerboseSeriesCreationDeletionPrometheusMetrics)
+	if cfg.UseShardWorkers {
+		p.store.enableShardWorkers(cfg.ShardWorkerCount, cfg.ShardWorkerInboxDepth)
+	}
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
 	return p, nil
 }
@@ -525,6 +528,10 @@ func (p *partitionHandler) stop(_ error) error {
 	p.partitionRegisterer.Unregister(p.store)
 	// Stop dependencies.
 	err := services.StopAndAwaitTerminated(context.Background(), p.partitionLifecycler)
+
+	// Tear down the tracker store after the partition lifecycler has stopped, so
+	// no in-flight track operations are still using shard workers.
+	p.store.stop()
 
 	// Close our read client, don't close the write client.
 	p.eventsKafkaReader.Close()

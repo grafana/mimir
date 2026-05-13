@@ -1363,6 +1363,143 @@ func BenchmarkTrackSeriesBatch(b *testing.B) {
 	}
 }
 
+// BenchmarkTrackSeriesBatchConcurrent reproduces the per-shard mutex convoy seen in
+// production: many concurrent TrackSeriesBatch callers all serialise on the per-tenant
+// per-shard mutex inside trackerStore.trackSeries. Increasing concurrency past the number
+// of shards (NumShards = 16) typically shows ns/op growing roughly linearly, indicating
+// no useful work is added by extra concurrency.
+//
+// The benchmark axes are (workload-shape, concurrency, workers={off,on}) so that ns/op
+// can be compared at matching shape+concurrency between the legacy lock-per-shard
+// implementation and the per-(tenant, shard) worker implementation.
+//
+// To capture an execution trace for visual comparison with production traces, run:
+//
+//	go test -run=^$ -bench=BenchmarkTrackSeriesBatchConcurrent -benchtime=2s -trace=trace.out ./pkg/usagetracker
+//	go tool trace trace.out
+func BenchmarkTrackSeriesBatchConcurrent(b *testing.B) {
+	type benchCase struct {
+		numUsers       int
+		totalHashes    int
+		entriesPerUser int
+	}
+
+	cases := []benchCase{
+		{numUsers: 1, totalHashes: 1500, entriesPerUser: 500},
+		{numUsers: 1, totalHashes: 100_000, entriesPerUser: 5},
+		{numUsers: 50, totalHashes: 100_000, entriesPerUser: 500},
+	}
+
+	concurrencies := []int{1, 2, 4, 8, 16, 32, 64, 128}
+	modes := []struct {
+		name    string
+		workers bool
+	}{
+		{"workers=off", false},
+		{"workers=on", true},
+	}
+
+	for _, tc := range cases {
+		for _, conc := range concurrencies {
+			for _, mode := range modes {
+				name := fmt.Sprintf("users=%d/hashes=%d/entries=%d/conc=%d/%s", tc.numUsers, tc.totalHashes, tc.entriesPerUser, conc, mode.name)
+				b.Run(name, func(b *testing.B) {
+					runTrackSeriesBatchConcurrentBench(b, tc.numUsers, tc.totalHashes, tc.entriesPerUser, conc, mode.workers)
+				})
+			}
+		}
+	}
+}
+
+func runTrackSeriesBatchConcurrentBench(b *testing.B, numUsers, totalHashes, entriesPerUser, conc int, useWorkers bool) {
+	tenantLimits := make(map[string]*validation.Limits, numUsers)
+	for u := 0; u < numUsers; u++ {
+		tenantLimits[strconv.Itoa(u)] = &validation.Limits{
+			MaxActiveSeriesPerUser: testPartitionsCount * 1_000_000,
+			MaxGlobalSeriesPerUser: testPartitionsCount * 1_000_000,
+		}
+	}
+
+	ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(b)
+	tracker := newTestUsageTrackerWithDeps(b, 0, "zone-a", ikv, pkv, cluster, newUsageTrackerDeps{
+		logger:       log.NewNopLogger(),
+		tenantLimits: validation.NewMockTenantLimits(tenantLimits),
+	}, func(cfg *Config) {
+		cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount
+		cfg.UseShardWorkers = useWorkers
+		cfg.ShardWorkerInboxDepth = 256
+	})
+	waitUntilAllTrackersSeeAllInstancesInTheirZones(b, map[string]*UsageTracker{"a0": tracker})
+	require.NoError(b, tracker.reconcilePartitions(b.Context()))
+	require.EventuallyWithT(b, func(t *assert.CollectT) {
+		require.Equal(t, testPartitionsCount, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
+	}, 5*time.Second, 100*time.Millisecond)
+
+	hashesPerUser := totalHashes / numUsers
+	users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, numUsers*entriesPerUser)
+	seq := uint64(0)
+	for u := 0; u < numUsers; u++ {
+		userID := strconv.Itoa(u)
+		n := hashesPerUser
+		if u < totalHashes%numUsers {
+			n++
+		}
+		for e := 0; e < entriesPerUser; e++ {
+			chunk := n / entriesPerUser
+			if e < n%entriesPerUser {
+				chunk++
+			}
+			hashes := make([]uint64, chunk)
+			for j := range hashes {
+				seq++
+				hashes[j] = seq * 0x9E3779B97F4A7C15
+			}
+			users = append(users, &usagetrackerpb.TrackSeriesBatchUser{
+				UserID:       userID,
+				SeriesHashes: hashes,
+			})
+		}
+	}
+
+	rng := rand.New(rand.NewPCG(42, 0))
+	rng.Shuffle(len(users), func(i, j int) { users[i], users[j] = users[j], users[i] })
+
+	req := &usagetrackerpb.TrackSeriesBatchRequest{
+		Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+			{Partition: 0, Users: users},
+		},
+	}
+
+	// Warm up: get all series tracked once so subsequent iterations exercise
+	// the (still-locked) duplicate-update path rather than the create path.
+	// The convoy reproduces in either case because Put always locks the shard.
+	_, err := tracker.TrackSeriesBatch(b.Context(), req)
+	require.NoError(b, err)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	jobs := make(chan struct{}, conc)
+	var wg sync.WaitGroup
+	wg.Add(conc)
+	for w := 0; w < conc; w++ {
+		go func() {
+			defer wg.Done()
+			for range jobs {
+				if _, err := tracker.TrackSeriesBatch(b.Context(), req); err != nil {
+					b.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	for i := 0; i < b.N; i++ {
+		jobs <- struct{}{}
+	}
+	close(jobs)
+	wg.Wait()
+}
+
 func BenchmarkMetricsGathering(b *testing.B) {
 	const partitions = 64
 

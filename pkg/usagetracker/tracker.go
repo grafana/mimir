@@ -90,6 +90,26 @@ type Config struct {
 	UserCloseToLimitPercentageThreshold int `yaml:"user_close_to_limit_percentage_threshold"`
 
 	EnableVerboseSeriesCreationDeletionPrometheusMetrics bool `yaml:"enable_verbose_series_creation_deletion_prometheus_metrics" category:"experimental"`
+
+	// UseShardWorkers enables routing TrackSeriesBatch through a fixed-size
+	// pool of shard workers instead of acquiring the per-shard mutex in the
+	// calling goroutine. Ops are routed to a worker by hashing (tenant, shard),
+	// so each tenantshard.Map still sees a single writer at a time even though
+	// the pool size is bounded.
+	//
+	// This avoids the lock convoy that occurs when many concurrent
+	// TrackSeriesBatch RPCs serialize on the same per-shard mutex of a hot
+	// tenant.
+	UseShardWorkers bool `yaml:"use_shard_workers" category:"experimental"`
+	// ShardWorkerCount is the number of worker goroutines in the shard worker
+	// pool. 0 selects GOMAXPROCS at startup.
+	ShardWorkerCount int `yaml:"shard_worker_count" category:"experimental"`
+	// ShardWorkerInboxDepth is the bounded depth of each shard worker's inbox
+	// channel. When a worker's inbox is full, submitters block (until the
+	// request context is cancelled), giving us a useful "server overloaded"
+	// signal via the cortex_usage_tracker_shard_worker_submit_blocked_total
+	// counter.
+	ShardWorkerInboxDepth int `yaml:"shard_worker_inbox_depth" category:"experimental"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -132,6 +152,10 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&c.UserCloseToLimitPercentageThreshold, "usage-tracker.user-close-to-limit-percentage-threshold", 90, "Percentage of the local series limit after which a user is considered close to the limit. A user is close to the limit if their series count is above this percentage of their local limit.")
 
 	f.BoolVar(&c.EnableVerboseSeriesCreationDeletionPrometheusMetrics, "usage-tracker.enable-verbose-series-creation-deletion-prometheus-metrics", false, "Enable verbose series creation and deletion Prometheus metrics. When enabled, two additional counters per user and partition are exposed (series created and series removed), increasing the cardinality of exposed metrics and impacting the time and resources needed for scraping in deployments with multiple partitions per pod.")
+
+	f.BoolVar(&c.UseShardWorkers, "usage-tracker.shard-workers.enabled", false, "Route TrackSeriesBatch through a fixed-size pool of shard worker goroutines instead of acquiring the per-shard mutex in the calling goroutine. Ops are routed to a worker by hashing (tenant, shard), so each tenantshard.Map still sees a single writer at a time. This avoids the lock convoy that occurs when many concurrent TrackSeriesBatch RPCs serialize on the same per-shard mutex of a hot tenant. Experimental.")
+	f.IntVar(&c.ShardWorkerCount, "usage-tracker.shard-workers.count", 0, "Number of worker goroutines in the shard worker pool. 0 selects GOMAXPROCS at startup. Only used when -usage-tracker.shard-workers.enabled is true.")
+	f.IntVar(&c.ShardWorkerInboxDepth, "usage-tracker.shard-workers.inbox-depth", 256, "Bounded depth of each shard worker's inbox channel. When a worker's inbox is full, submitters block until the request context is cancelled. Only used when -usage-tracker.shard-workers.enabled is true.")
 }
 
 func (c *Config) ValidateForClient() error {

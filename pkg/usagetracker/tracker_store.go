@@ -47,6 +47,18 @@ type trackerStore struct {
 	userCloseToLimitPercentageThreshold int
 	enableVerboseSeriesMetrics          bool
 
+	// shardWorkerPool is non-nil when worker mode is enabled. All track ops are
+	// routed through the pool, which dispatches each op to a worker selected
+	// by hashing (tenant, shard) so that every tenantshard.Map sees a single
+	// writer at a time even though the pool size is bounded (≈ GOMAXPROCS).
+	shardWorkers *shardWorkerPool
+
+	// shard-worker counters; nil when shardWorkers is nil.
+	// Aggregated across tenants and shards so cardinality is fixed.
+	shardWorkerSubmitBlocked   *atomic.Int64
+	shardWorkerSubmitWaitNanos *atomic.Int64
+	shardWorkerOpsTotal        *atomic.Int64
+
 	// misc
 	logger log.Logger
 }
@@ -76,6 +88,34 @@ func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThresh
 	return t
 }
 
+// enableShardWorkers turns on shard-worker mode for trackSeries. The pool
+// holds numWorkers goroutines; each worker has an inbox of inboxDepth.
+// numWorkers <= 0 selects GOMAXPROCS at the time of the call.
+//
+// Must be called before any tenant is created.
+func (t *trackerStore) enableShardWorkers(numWorkers, inboxDepth int) {
+	t.shardWorkerSubmitBlocked = atomic.NewInt64(0)
+	t.shardWorkerSubmitWaitNanos = atomic.NewInt64(0)
+	t.shardWorkerOpsTotal = atomic.NewInt64(0)
+	t.shardWorkers = newShardWorkerPool(
+		numWorkers,
+		inboxDepth,
+		t.shardWorkerSubmitBlocked,
+		t.shardWorkerSubmitWaitNanos,
+		t.shardWorkerOpsTotal,
+	)
+}
+
+// stop tears down resources held by the trackerStore. In particular, it shuts
+// down the shard worker pool so its goroutines do not leak. After stop returns,
+// the trackerStore must not be used.
+func (t *trackerStore) stop() {
+	if t.shardWorkers == nil {
+		return
+	}
+	t.shardWorkers.shutdown()
+}
+
 // trackSeries is used in tests so we can provide custom time.Now() value.
 // trackSeries will modify and reuse the input series slice.
 func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejectedRefs []uint64, err error) {
@@ -86,8 +126,43 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 
 	now := clock.ToMinutes(timeNow)
 
+	var createdRefs, rejected []uint64
+	if t.shardWorkers != nil {
+		createdRefs, rejected, err = t.trackSeriesViaWorkers(ctx, tenant, series, now)
+	} else {
+		createdRefs, rejected = t.trackSeriesLocked(tenant, series, now)
+	}
+	if err != nil {
+		// Match the legacy publish-failure path: on any error we return nil
+		// rejections, since the caller gets an error anyway and a partial
+		// rejection list would be misleading. Series that were accepted by the
+		// workers before the error remain tracked locally and will be picked up
+		// (without re-publication) on the next call from any distributor.
+		return nil, err
+	}
+	rejectedRefs = append(rejectedRefs, rejected...)
+
+	if t.enableVerboseSeriesMetrics && len(createdRefs) > 0 {
+		tenant.seriesCreated.Add(uint64(len(createdRefs)))
+	}
+
+	if len(createdRefs) == 0 {
+		return rejectedRefs, nil
+	}
+
+	if err := t.events.publishCreatedSeries(ctx, tenantID, createdRefs, timeNow); err != nil {
+		level.Error(t.logger).Log("msg", "failed to publish created series", "tenant", tenantID, "err", err, "created_len", len(createdRefs), "now", timeNow.Unix(), "now_minutes", now)
+		return nil, err
+	}
+
+	return rejectedRefs, nil
+}
+
+// trackSeriesLocked is the original lock-per-shard implementation. It assumes
+// series is already grouped by shard via groupByModuloShards.
+func (t *trackerStore) trackSeriesLocked(tenant *trackedTenant, series []uint64, now clock.Minutes) (createdRefs, rejectedRefs []uint64) {
 	// We don't pool rejectedRefs because we don't have full control of its lifecycle.
-	createdRefs := refsPool.Get()[:0]
+	createdRefs = refsPool.Get()[:0]
 	i0 := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
@@ -105,21 +180,56 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 			i0 = i
 		}
 	}
+	return createdRefs, rejectedRefs
+}
 
-	if t.enableVerboseSeriesMetrics && len(createdRefs) > 0 {
-		tenant.seriesCreated.Add(uint64(len(createdRefs)))
+// trackSeriesViaWorkers submits one shardOp per touched shard to the worker
+// pool (routed by tenant hash + shard index), waits for all in-flight ops to
+// complete (even on submission error), and returns the merged created/rejected
+// refs. It assumes series is already grouped by shard via groupByModuloShards.
+//
+// The wait-for-all-on-error behaviour is required for safety: ops already
+// accepted by a worker reference the input series slice, which is owned by the
+// gRPC request. Returning before in-flight workers complete would risk a
+// use-after-free once the gRPC layer recycles the request buffer.
+func (t *trackerStore) trackSeriesViaWorkers(ctx context.Context, tenant *trackedTenant, series []uint64, now clock.Minutes) (createdRefs, rejectedRefs []uint64, err error) {
+	var (
+		ops     [shards]*shardOp
+		touched [shards]bool
+	)
+
+	i0 := 0
+	for i := 1; i <= len(series); i++ {
+		if shard := uint8(series[i0] % shards); i == len(series) || shard != uint8(series[i]%shards) {
+			op := newShardOp(tenant.shards[shard], series[i0:i], now, true, tenant.series, tenant.currentLimit)
+			ops[shard] = op
+			touched[shard] = true
+
+			if submitErr := t.shardWorkers.submit(ctx, tenant.tenantHash, shard, op); submitErr != nil {
+				// Submission failed; this op was not enqueued. Wait for previously
+				// submitted ops, then return the error.
+				ops[shard] = nil
+				touched[shard] = false
+				err = submitErr
+				break
+			}
+			i0 = i
+		}
 	}
 
-	if len(createdRefs) == 0 {
-		return rejectedRefs, nil
+	// Wait for all submitted ops, even if we're returning an error.
+	createdRefs = refsPool.Get()[:0]
+	for s := uint8(0); s < shards; s++ {
+		if !touched[s] {
+			continue
+		}
+		op := ops[s]
+		<-op.done
+		createdRefs = append(createdRefs, op.createdRefs...)
+		rejectedRefs = append(rejectedRefs, op.rejectedRefs...)
 	}
 
-	if err := t.events.publishCreatedSeries(ctx, tenantID, createdRefs, timeNow); err != nil {
-		level.Error(t.logger).Log("msg", "failed to publish created series", "tenant", tenantID, "err", err, "created_len", len(createdRefs), "now", timeNow.Unix(), "now_minutes", now)
-		return nil, err
-	}
-
-	return rejectedRefs, nil
+	return createdRefs, rejectedRefs, err
 }
 
 func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint64, eventTimestamp, timeNow time.Time) {
@@ -208,6 +318,9 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 	for i := range tenant.shards {
 		tenant.shards[i] = tenantshard.New(uint32(capacity))
 	}
+	if t.shardWorkers != nil {
+		tenant.tenantHash = hashTenantID(tenantID)
+	}
 
 	t.tenants[tenantID] = tenant
 	i, found := slices.BinarySearch(t.sortedTenants, tenantID)
@@ -270,6 +383,11 @@ func (t *trackerStore) cleanup(now time.Time) {
 				panic(fmt.Errorf("tenant %s not found in the sorted list: %v", tenantID, t.sortedTenants))
 			}
 			t.sortedTenants = slices.Delete(t.sortedTenants, index, index+1)
+			// Note: with the worker pool design, tenant eviction does not need
+			// any worker teardown — workers are global to the trackerStore and
+			// outlive individual tenants. Any ops in flight for this tenant
+			// completed before we acquired tenant.Lock above, because
+			// trackSeries holds tenant.RLock() for the duration of the call.
 		}
 		tenant.Unlock()
 	}
@@ -333,6 +451,10 @@ type trackedTenant struct {
 	series       *atomic.Uint64
 	currentLimit *atomic.Uint64
 	shards       [shards]*tenantshard.Map
+
+	// tenantHash is the routing key used by the shard worker pool. Computed
+	// once at tenant creation; zero when worker mode is disabled.
+	tenantHash uint64
 
 	seriesCreated *atomic.Uint64
 	seriesRemoved *atomic.Uint64
