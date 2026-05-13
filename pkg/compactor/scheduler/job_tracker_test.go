@@ -140,7 +140,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		jt, _ := newTestJobTracker(clk)
 		jt.completePlanTime = at(2, 3)
 
-		transition, err := jt.Maintenance(time.Minute, false, true, planInterval, waitPeriod)
+		transition, err := jt.Maintenance(leaseDuration, false, true, planInterval, waitPeriod)
 		require.NoError(t, err)
 		require.True(t, transition)
 		require.Contains(t, jt.incompleteJobs, planJobId)
