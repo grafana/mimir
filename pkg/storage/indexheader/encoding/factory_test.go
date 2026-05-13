@@ -190,8 +190,8 @@ func TestDecbufFactory_NewDecbufRaw_HappyPath(t *testing.T) {
 	})
 }
 
-// TestDecbufFactory_NewDecbufInSection_HappyPath only tests BucketDecbufFactory
-// because NewDecbufInSection is not yet implemented for FilePoolDecbufFactory.
+// TestDecbufFactory_NewDecbufInSection_HappyPath tests that creating a new Decbuf for a table section
+// starts the reader in the correct place by placing a test byte at the expected start offset.
 func TestDecbufFactory_NewDecbufInSection_HappyPath(t *testing.T) {
 	testByte := byte(0x02)
 	startOffset := 10
@@ -199,7 +199,8 @@ func TestDecbufFactory_NewDecbufInSection_HappyPath(t *testing.T) {
 	enc := createTestEncoderWithTestByte(testContentSize, startOffset-numLenBytes, testByte)
 	enc.PutHash(crc32.New(table))
 
-	testDecbufFactory(t, testContentSize, enc, false, true, func(t *testing.T, factory DecbufFactory) {
+	testDisk := false // NewDecbufInSection is currently only implemented for BucketDecbufFactory
+	testDecbufFactory(t, testContentSize, enc, testDisk, true, func(t *testing.T, factory DecbufFactory) {
 		d := factory.NewDecbufInSection(0, startOffset, endOffset)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
@@ -211,14 +212,15 @@ func TestDecbufFactory_NewDecbufInSection_HappyPath(t *testing.T) {
 	})
 }
 
-// TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeyondTableLength only tests BucketDecbufFactory
-// because NewDecbufInSection is not yet implemented for FilePoolDecbufFactory.
+// TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeyondTableLength tests that calling NewDecbufInSection
+// with an end offset beyond the end of the table produces a Decbuf that ends at the end of the table.
 func TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeyondTableLength(t *testing.T) {
 	testByte := byte(0x02)
 	enc := createTestEncoderWithTestByte(testContentSize, 10-numLenBytes, testByte)
 	enc.PutHash(crc32.New(table))
 
-	testDecbufFactory(t, testContentSize, enc, false, true, func(t *testing.T, factory DecbufFactory) {
+	testDisk := false // NewDecbufInSection is currently only implemented for BucketDecbufFactory
+	testDecbufFactory(t, testContentSize, enc, testDisk, true, func(t *testing.T, factory DecbufFactory) {
 		d := factory.NewDecbufInSection(0, 10, testContentSize+1000)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
@@ -229,13 +231,14 @@ func TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeyondTableLength(t *t
 	})
 }
 
-// TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeforeStartOffset only tests BucketDecbufFactory
-// because NewDecbufInSection is not yet implemented for FilePoolDecbufFactory.
+// TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeforeStartOffset tests that attempting to call NewDecbufInSection
+// with an end offset before the start offset returns an error.
 func TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeforeStartOffset(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
 
-	testDecbufFactory(t, testContentSize, enc, false, true, func(t *testing.T, factory DecbufFactory) {
+	testDisk := false // NewDecbufInSection is currently only implemented for BucketDecbufFactory
+	testDecbufFactory(t, testContentSize, enc, testDisk, true, func(t *testing.T, factory DecbufFactory) {
 		d := factory.NewDecbufInSection(0, 2500, 30)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())

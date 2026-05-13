@@ -112,17 +112,20 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(name string, value string) (r in
 
 	var d streamencoding.Decbuf
 	if bf, ok := t.decbufFactory.(*streamencoding.BucketDecbufFactory); ok {
-		var sparseTableOffsetsEnd int
-		if i+1 < len(e.SparseTableOffsets)-1 {
-			// We may need to read one extra entry to get the correct range end offset.
-			sparseTableOffsetsEnd = e.SparseTableOffsets[i+2].Offset
+		var sectionEndOffset int
+
+		// In order to correctly set Range.End, we need to read the next entry beyond the one we are looking for.
+		// In the worst case where the value is found right before the next (i+1'th) sparse table offset,
+		// we need to read the entry that starts at the i+1'th offset. To account for this, we create the reader up to the i+2'th sparse table offset.
+		if i+2 < len(e.SparseTableOffsets) {
+			sectionEndOffset = e.SparseTableOffsets[i+2].Offset
 		} else {
 			// Set this to something that will always be greater than the length of the table
-			sparseTableOffsetsEnd = math.MaxInt
+			sectionEndOffset = math.MaxInt
 		}
 		// At this point we know that our value is somewhere between the i-th offset and the next one;
 		// we shouldn't need to read/cache bucket ops beyond that.
-		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[i].Offset, sparseTableOffsetsEnd)
+		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[i].Offset, sectionEndOffset)
 	} else {
 		d = t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
 		d.ResetAt(e.SparseTableOffsets[i].Offset)
@@ -204,17 +207,17 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 
 	var d streamencoding.Decbuf
 	if bf, ok := t.decbufFactory.(*streamencoding.BucketDecbufFactory); ok {
-		var endOffset int
+		var sectionEndOffset int
 
 		if offsetsEnd+1 < len(e.SparseTableOffsets) {
 			// We buffer the end with the distance to one more sparse offset in case the last matching entry is right at the end of the section.
-			endOffset = e.SparseTableOffsets[offsetsEnd+1].Offset
+			sectionEndOffset = e.SparseTableOffsets[offsetsEnd+1].Offset
 		} else {
-			endOffset = math.MaxInt
+			sectionEndOffset = math.MaxInt
 		}
 		// For the BucketDecbufFactory, we only read the section we care about to optimize
 		// the size of cached GetRange bucket ops.
-		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[offsetsStart].Offset, endOffset)
+		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[offsetsStart].Offset, sectionEndOffset)
 	} else {
 		// Don't Crc32 the entire postings offset table, this is very slow
 		// so hope any issues were caught at startup.
