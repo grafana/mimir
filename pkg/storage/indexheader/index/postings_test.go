@@ -37,43 +37,41 @@ func TestPostingsOffsetsTableV2_PostingsOffset(t *testing.T) {
 	// where the found entry is the last one before the next sparse offset.
 	sparseSampleFactor := 2
 
+	tests := []struct {
+		labelName  string
+		labelValue string
+		found      bool
+		expected   index.Range
+	}{
+		// Sparse offset entry exactly
+		{"job", "foo", true, index.Range{Start: 500 + postingLengthFieldSize, End: 600 - crc32.Size}},
+		// Value between sparse offset entries
+		{"__name__", "baz", true, index.Range{Start: 200 + postingLengthFieldSize, End: 300 - crc32.Size}},
+		// Nonexistent values
+		{"__name__", "aaa", false, index.Range{}},
+		{"__name__", "zzz", false, index.Range{}},
+		{"__name__", "bzz", false, index.Range{}},
+		// Nonexistent label
+		{"pod", "foo", false, index.Range{}},
+	}
+
 	for factoryName, factory := range factories {
-		t.Run(fmt.Sprintf("DecbufFactory=%s", factoryName), func(t *testing.T) {
-			sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(factory, tableStart, postingsListEnd, sparseSampleFactor, true)
-			require.NoError(t, err)
+		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(factory, tableStart, postingsListEnd, sparseSampleFactor, true)
+		require.NoError(t, err)
 
-			tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
-			require.NoError(t, err)
+		tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
+		require.NoError(t, err)
 
-			tests := []struct {
-				labelName  string
-				labelValue string
-				found      bool
-				expected   index.Range
-			}{
-				// Sparse offset entry exactly
-				{"job", "foo", true, index.Range{Start: 500 + postingLengthFieldSize, End: 600 - crc32.Size}},
-				// Value between sparse offset entries
-				{"__name__", "baz", true, index.Range{Start: 200 + postingLengthFieldSize, End: 300 - crc32.Size}},
-				// Nonexistent values
-				{"__name__", "aaa", false, index.Range{}},
-				{"__name__", "zzz", false, index.Range{}},
-				{"__name__", "bzz", false, index.Range{}},
-				// Nonexistent label
-				{"pod", "foo", false, index.Range{}},
-			}
-
-			for _, tt := range tests {
-				t.Run(fmt.Sprintf("%s=%s", tt.labelName, tt.labelValue), func(t *testing.T) {
-					rng, found, err := tbl.PostingsOffset(tt.labelName, tt.labelValue)
-					require.NoError(t, err)
-					require.Equal(t, tt.found, found)
-					if tt.found {
-						require.Equal(t, tt.expected, rng)
-					}
-				})
-			}
-		})
+		for _, tt := range tests {
+			t.Run(fmt.Sprintf("DecbufFactory=%s/%s=%s", factoryName, tt.labelName, tt.labelValue), func(t *testing.T) {
+				rng, found, err := tbl.PostingsOffset(tt.labelName, tt.labelValue)
+				require.NoError(t, err)
+				require.Equal(t, tt.found, found)
+				if tt.found {
+					require.Equal(t, tt.expected, rng)
+				}
+			})
+		}
 	}
 }
 
@@ -82,79 +80,93 @@ func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
 	factories := setupFactoriesWithPostingsOffsetsTable(t, encBuf)
 	sparseSampleFactor := 2
 
+	tests := []struct {
+		testName    string
+		labelName   string
+		prefix      string
+		filter      func(string) bool
+		expected    []PostingListOffset
+		expectedErr bool
+	}{
+		{
+			testName:  "fetch all values without prefix or filter",
+			labelName: "__name__",
+			expected: []PostingListOffset{
+				{LabelValue: "bar", Off: index.Range{Start: 100 + postingLengthFieldSize, End: 200 - crc32.Size}},
+				{LabelValue: "baz", Off: index.Range{Start: 204, End: 296}},
+				{LabelValue: "foo", Off: index.Range{Start: 304, End: 396}},
+				{LabelValue: "zip", Off: index.Range{Start: 404, End: 496}},
+			},
+		},
+		{
+			testName:  "fetch all values with prefix",
+			labelName: "__name__",
+			prefix:    "b",
+			expected: []PostingListOffset{
+				{LabelValue: "bar", Off: index.Range{Start: 104, End: 196}},
+				{LabelValue: "baz", Off: index.Range{Start: 204, End: 296}},
+			},
+		},
+		{
+			testName:  "prefix matches last value for name",
+			labelName: "__name__",
+			prefix:    "z",
+			expected: []PostingListOffset{
+				{LabelValue: "zip", Off: index.Range{Start: 404, End: 496}},
+			},
+		},
+		{
+			testName:  "prefix matches no value for name",
+			labelName: "__name__",
+			prefix:    "q",
+			expected:  []PostingListOffset{},
+		},
+		{
+			testName:  "filter matches single value",
+			labelName: "__name__",
+			filter: func(v string) bool {
+				r, err := regexp.Compile("..o")
+				require.NoError(t, err)
+				return r.MatchString(v)
+			},
+			expected: []PostingListOffset{
+				{LabelValue: "foo", Off: index.Range{Start: 304, End: 396}},
+			},
+		},
+		{
+			testName:  "filter matches no value",
+			labelName: "__name__",
+			filter: func(v string) bool {
+				r, err := regexp.Compile(".*q.*")
+				require.NoError(t, err)
+				return r.MatchString(v)
+			},
+			expected: []PostingListOffset{},
+		},
+		{
+			testName:  "nonexistent label",
+			labelName: "pod",
+			expected:  nil,
+		},
+	}
+
 	for factoryName, factory := range factories {
-		t.Run(fmt.Sprintf("DecbufFactory=%s", factoryName), func(t *testing.T) {
-			sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(factory, tableStart, postingsListEnd, sparseSampleFactor, true)
-			require.NoError(t, err)
+		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(factory, tableStart, postingsListEnd, sparseSampleFactor, true)
+		require.NoError(t, err)
 
-			tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
-			require.NoError(t, err)
+		tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
+		require.NoError(t, err)
 
-			tests := []struct {
-				testName    string
-				labelName   string
-				prefix      string
-				filter      func(string) bool
-				expected    []PostingListOffset
-				expectedErr bool
-			}{
-				{
-					testName:  "fetch all values without prefix or filter",
-					labelName: "__name__",
-					expected: []PostingListOffset{
-						{LabelValue: "bar", Off: index.Range{Start: 100 + postingLengthFieldSize, End: 200 - crc32.Size}},
-						{LabelValue: "baz", Off: index.Range{Start: 204, End: 296}},
-						{LabelValue: "foo", Off: index.Range{Start: 304, End: 396}},
-						{LabelValue: "zip", Off: index.Range{Start: 404, End: 496}},
-					},
-				},
-				{
-					testName:  "fetch all values with prefix",
-					labelName: "__name__",
-					prefix:    "b",
-					expected: []PostingListOffset{
-						{LabelValue: "bar", Off: index.Range{Start: 104, End: 196}},
-						{LabelValue: "baz", Off: index.Range{Start: 204, End: 296}},
-					},
-				},
-				{
-					testName:  "prefix matches last value for name",
-					labelName: "__name__",
-					prefix:    "z",
-					expected: []PostingListOffset{
-						{LabelValue: "zip", Off: index.Range{Start: 404, End: 496}},
-					},
-				},
-				{
-					testName:  "filter matches single value",
-					labelName: "__name__",
-					filter: func(v string) bool {
-						r, err := regexp.Compile("fo.*")
-						require.NoError(t, err)
-						return r.MatchString(v)
-					},
-					expected: []PostingListOffset{
-						{LabelValue: "foo", Off: index.Range{Start: 304, End: 396}},
-					},
-				},
-				{
-					testName:  "nonexistent label",
-					labelName: "pod",
-					expected:  nil,
-				},
-			}
+		for _, tt := range tests {
+			t.Run(fmt.Sprintf("DecbufFactory=%s/%s", factoryName, tt.testName), func(t *testing.T) {
+				result, err := tbl.LabelValuesOffsets(context.Background(), tt.labelName, tt.prefix, tt.filter)
+				if tt.expectedErr {
+					require.Error(t, err)
+				}
 
-			for _, tt := range tests {
-				t.Run(tt.testName, func(t *testing.T) {
-					result, err := tbl.LabelValuesOffsets(context.Background(), tt.labelName, tt.prefix, tt.filter)
-					if tt.expectedErr {
-						require.Error(t, err)
-					}
-
-					require.Equal(t, tt.expected, result)
-				})
-			}
-		})
+				require.Equal(t, tt.expected, result)
+			})
+		}
 	}
 }
 
