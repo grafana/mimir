@@ -21,8 +21,10 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
@@ -425,6 +427,67 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	assert.Equal(t, float64(2), promtest.ToFloat64(cache.requests.WithLabelValues(cacheTypeSeriesForRef)))
 	assert.Equal(t, float64(5), promtest.ToFloat64(cache.hits.WithLabelValues(cacheTypePostings)))
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.hits.WithLabelValues(cacheTypeSeriesForRef)))
+}
+
+func testFetchPostingsOffsets(
+	ctx context.Context,
+	t *testing.T,
+	cache IndexCache,
+	tenantID string,
+	blockID ulid.ULID,
+	keys []labels.Label,
+	expectedHits map[labels.Label]index.Range,
+) {
+	t.Helper()
+
+	hits := make(map[labels.Label]index.Range)
+	for _, key := range keys {
+		if rng, ok := cache.FetchPostingsOffset(ctx, tenantID, blockID, key); ok {
+			hits[key] = rng
+		}
+	}
+
+	if len(expectedHits) == 0 {
+		assert.Equal(t, len(hits), 0)
+	} else {
+		assert.Equal(t, expectedHits, hits)
+	}
+}
+
+func testFetchPostingsOffsetsForMatcher(
+	ctx context.Context,
+	t *testing.T,
+	cache IndexCache,
+	keys []mockedPostingsOffsetsForMatcher,
+	expectedHits map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset,
+	expectedMisses []mockedPostingsOffsetsForMatcher,
+) {
+	t.Helper()
+
+	hits := make(map[mockedPostingsOffsetsForMatcher][]streamindex.PostingListOffset)
+	misses := make([]mockedPostingsOffsetsForMatcher, 0, len(keys))
+	for _, key := range keys {
+		offsets, ok := cache.FetchPostingsOffsetsForMatcher(
+			ctx, key.tenantID, key.blockID, key.m, key.isSubtract,
+		)
+		if ok {
+			hits[key] = offsets
+		} else {
+			misses = append(misses, key)
+		}
+	}
+
+	assert.Equal(t, len(expectedHits), len(hits))
+	assert.Equal(t, len(expectedMisses), len(misses))
+	assert.Equal(t, len(keys)-len(expectedHits), len(expectedMisses))
+
+	if len(expectedHits) != 0 {
+		assert.Equal(t, len(expectedHits), len(hits))
+		for k, expectedV := range expectedHits {
+			assert.EqualValues(t, expectedV, hits[k])
+		}
+	}
+
 }
 
 func testFetchMultiPostings(ctx context.Context, t *testing.T, cache IndexCache, user string, id ulid.ULID, keys []labels.Label, expectedHits map[labels.Label][]byte) {
