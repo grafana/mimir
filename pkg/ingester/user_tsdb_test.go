@@ -227,6 +227,31 @@ func TestUserTSDB_addPendingNonOwnedRefs(t *testing.T) {
 
 		assert.Equal(t, map[storage.SeriesRef]bool{1: true, 2: true, 3: true}, asSet(db))
 	})
+
+	t.Run("jitter pushes lastUpdate into [now, now+grace*0.25] when cfg has a grace period", func(t *testing.T) {
+		grace := 4 * time.Second // variance = 1s, so jitter in [0, 1s)
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesGracePeriod: grace}}
+		before := time.Now()
+
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1, 2})
+
+		maxExpected := before.Add(time.Duration(float64(grace) * 0.25))
+		assert.False(t, db.pendingNonOwnedRefsLastUpdate.Before(before),
+			"timestamp must be at or after detection time")
+		assert.False(t, db.pendingNonOwnedRefsLastUpdate.After(maxExpected),
+			"timestamp must not exceed now + grace*0.25")
+	})
+
+	t.Run("no jitter is applied when grace period is zero", func(t *testing.T) {
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesGracePeriod: 0}}
+		before := time.Now()
+
+		db.addPendingNonOwnedRefs([]storage.SeriesRef{1})
+
+		assert.False(t, db.pendingNonOwnedRefsLastUpdate.Before(before))
+		assert.False(t, db.pendingNonOwnedRefsLastUpdate.After(time.Now()),
+			"with zero grace, timestamp must be exactly now (no future offset)")
+	})
 }
 
 func TestUserTSDB_takePendingNonOwnedRefs(t *testing.T) {

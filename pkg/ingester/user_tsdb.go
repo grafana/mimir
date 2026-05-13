@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -747,7 +748,16 @@ func (u *userTSDB) addPendingNonOwnedRefs(refs []storage.SeriesRef) {
 		}
 	}
 	if addedAny {
-		u.pendingNonOwnedRefsLastUpdate = time.Now()
+		// Push lastUpdate into the future by a random offset in [0, grace*0.25]. This per-event,
+		// per-replica randomness spreads evictions across replicas after a ring change: the effective
+		// wait before take is grace + jitterOffset, independently randomized on each replica.
+		var jitterOffset time.Duration
+		if u.cfg != nil {
+			if variance := int64(float64(u.cfg.EarlyCompactionNonOwnedSeriesGracePeriod) * 0.25); variance > 0 {
+				jitterOffset = time.Duration(rand.Int63n(variance))
+			}
+		}
+		u.pendingNonOwnedRefsLastUpdate = time.Now().Add(jitterOffset)
 	}
 }
 
