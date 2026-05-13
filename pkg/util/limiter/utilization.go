@@ -279,7 +279,7 @@ func (b *cpuSampleBuffer) String() string {
 	var sb strings.Builder
 	for i := range b.samples {
 		s := b.samples[(b.head+i)%len(b.samples)]
-		sb.WriteString(fmt.Sprintf("%.2f", s))
+		fmt.Fprintf(&sb, "%.2f", s)
 		if i < len(b.samples)-1 {
 			sb.WriteByte(',')
 		}
