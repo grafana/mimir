@@ -657,7 +657,13 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64,
 }
 
 // compactOOOHeadSafe wraps CompactOOOHead with a panic recovery.
-const swallowOOOCompactionPanic = false
+// When MIMIR_BLOCKBUILDER_SWALLOW_OOO_COMPACTION_PANIC is set to a truthy value
+// ("1", "t", "true", etc., as parsed by strconv.ParseBool), the panic is logged
+// and OOO data is dropped for this cycle; otherwise the panic is re-raised.
+var swallowOOOCompactionPanic = func() bool {
+	v, _ := strconv.ParseBool(os.Getenv("MIMIR_BLOCKBUILDER_SWALLOW_OOO_COMPACTION_PANIC"))
+	return v
+}()
 
 func (u *userTSDB) compactOOOHeadSafe(ctx context.Context) (err error) {
 	head := u.Head()
