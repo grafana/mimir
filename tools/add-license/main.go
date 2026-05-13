@@ -88,7 +88,7 @@ func addLicense(dir string) error {
 		// Add the default license directory if none exists.
 		if !strings.Contains(string(b), commentStyle+" "+licenseDirective+":") {
 			log.Printf("adding the license directive to %s\n", path)
-			_, _ = bb.WriteString(fmt.Sprintf("%s %s: %s\n", commentStyle, licenseDirective, defaultLicense))
+			_, _ = fmt.Fprintf(&bb, "%s %s: %s\n", commentStyle, licenseDirective, defaultLicense)
 		}
 
 		// Add the provenance from Cortex for forked files. This has been run just once

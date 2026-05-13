@@ -255,10 +255,10 @@ func requireGaps(t *testing.T, reg *prometheus.Registry, planned, committed int,
 		# TYPE cortex_blockbuilder_scheduler_job_gap_detected counter
 		`)
 
-	b.WriteString(fmt.Sprintf(
-		"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"planned\"} %d\n", planned))
-	b.WriteString(fmt.Sprintf(
-		"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"committed\"} %d\n", committed))
+	fmt.Fprintf(&b,
+		"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"planned\"} %d\n", planned)
+	fmt.Fprintf(&b,
+		"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"committed\"} %d\n", committed)
 
 	require.NoError(t,
 		promtest.GatherAndCompare(reg, strings.NewReader(b.String()),
