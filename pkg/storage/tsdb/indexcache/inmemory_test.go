@@ -85,6 +85,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 
 	metrics := prometheus.NewRegistry()
 	cfg := IndexCacheConfig{
+		CachePostingsOffsets: true,
 		InMemory: InMemoryIndexCacheConfig{
 			MaxItemSizeBytes:  maxSize,
 			MaxCacheSizeBytes: maxSize,
@@ -287,6 +288,41 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			assert.Equal(t, []string(nil), errorLogs)
 		})
 	}
+}
+
+func TestInMemoryIndexCache_PostingsOffsetsDisabled(t *testing.T) {
+	tenant := "tenant-0"
+	block := ulid.MustNew(1, nil)
+	lbl := labels.Label{Name: "instance", Value: "a"}
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "instance", "a")
+	offsets := []streamindex.PostingListOffset{
+		{LabelValue: "a", Off: index.Range{Start: 1, End: 2}},
+	}
+
+	cfg := IndexCacheConfig{
+		InMemory: InMemoryIndexCacheConfig{
+			MaxItemSizeBytes:  1024,
+			MaxCacheSizeBytes: 1024,
+		},
+	}
+	cache, err := NewInMemoryIndexCacheWithConfig(cfg, prometheus.NewRegistry(), log.NewNopLogger())
+	assert.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Stores must no-op: nothing should land in the underlying LRU.
+	cache.StorePostingsOffset(tenant, block, lbl, index.Range{Start: 4, End: 16}, time.Hour)
+	cache.StorePostingsOffsetsForMatcher(tenant, block, matcher, false, offsets, time.Hour)
+	assert.Equal(t, 0, cache.lru.Len())
+
+	// Fetches must return zero values without consulting the LRU.
+	rng, ok := cache.FetchPostingsOffset(ctx, tenant, block, lbl)
+	assert.False(t, ok)
+	assert.Equal(t, index.Range{}, rng)
+
+	gotOffsets, ok := cache.FetchPostingsOffsetsForMatcher(ctx, tenant, block, matcher, false)
+	assert.False(t, ok)
+	assert.Nil(t, gotOffsets)
 }
 
 // This should not happen as we hardcode math.MaxInt, but we still add test to check this out.

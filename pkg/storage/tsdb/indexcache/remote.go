@@ -85,9 +85,33 @@ func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]b
 	return data, ok
 }
 
+// getDecoded wraps RemoteIndexCache.get with cache value decoding and error logging
+func getDecodedRemote[T any](
+	ctx context.Context, c *RemoteIndexCache, typ, key string, decode func([]byte) (T, error),
+) (T, bool) {
+	var zero T
+	val, ok := c.get(ctx, typ, key)
+	if !ok {
+		return zero, false
+	}
+
+	out, err := decode(val)
+	if err != nil {
+		level.Error(c.logger).Log(
+			"msg", "error decoding cached value",
+			"key", key, "type", typ, "err", err,
+		)
+		return zero, false
+	}
+	return out, true
+}
+
 func (c *RemoteIndexCache) StorePostingsOffset(
 	tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration,
 ) {
+	if !c.cachePostingsOffsets {
+		return
+	}
 	key := postingsOffsetCacheKey(tenantID, blockID.String(), lbl)
 	val := encodeSingleRange(rng)
 	c.remote.SetAsync(key, val, ttl)
@@ -96,8 +120,11 @@ func (c *RemoteIndexCache) StorePostingsOffset(
 func (c *RemoteIndexCache) FetchPostingsOffset(
 	ctx context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label,
 ) (index.Range, bool) {
+	if !c.cachePostingsOffsets {
+		return index.Range{}, false
+	}
 	key := postingsOffsetCacheKey(tenantID, blockID.String(), lbl)
-	return getDecodedFromRemote(ctx, c, cacheTypePostingsOffset, key, decodeSingleRange)
+	return getDecodedRemote(ctx, c, cacheTypePostingsOffset, key, decodeSingleRange)
 }
 
 func (c *RemoteIndexCache) StorePostingsOffsetsForMatcher(
@@ -108,6 +135,9 @@ func (c *RemoteIndexCache) StorePostingsOffsetsForMatcher(
 	offsets []streamindex.PostingListOffset,
 	ttl time.Duration,
 ) {
+	if !c.cachePostingsOffsets {
+		return
+	}
 	key := postingsOffsetsForMatcherCacheKey(tenantID, blockID.String(), m, invertMatcher)
 	val := encodePostingsOffsets(offsets)
 	c.remote.SetAsync(key, val, ttl)
@@ -120,35 +150,11 @@ func (c *RemoteIndexCache) FetchPostingsOffsetsForMatcher(
 	m *labels.Matcher,
 	invertMatcher bool,
 ) ([]streamindex.PostingListOffset, bool) {
+	if !c.cachePostingsOffsets {
+		return nil, false
+	}
 	key := postingsOffsetsForMatcherCacheKey(tenantID, blockID.String(), m, invertMatcher)
-	return getDecodedFromRemote(ctx, c, cacheTypePostingsOffsetsForMatcher, key, decodePostingsOffsets)
-}
-
-// getDecoded wraps InMemoryIndexCache.get with cache value decoding and error logging
-func getDecodedFromRemote[T any](
-	ctx context.Context,
-	c *RemoteIndexCache,
-	typ string,
-	key string,
-	decode func([]byte) (T, error),
-) (T, bool) {
-	var zero T
-	val, ok := c.get(ctx, typ, key)
-	if !ok {
-		return zero, false
-	}
-
-	out, err := decode(val)
-	if err != nil {
-		level.Error(c.logger).Log(
-			"msg", "error decoding cached value",
-			"key", key,
-			"type", typ,
-			"err", err,
-		)
-		return zero, false
-	}
-	return out, true
+	return getDecodedRemote(ctx, c, cacheTypePostingsOffsetsForMatcher, key, decodePostingsOffsets)
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v.
