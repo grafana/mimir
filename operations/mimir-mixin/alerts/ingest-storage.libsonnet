@@ -364,6 +364,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
 
+        // Alert immediately if block-builder-scheduler detects a persistently failing job.
         {
           alert: $.alertName('BlockBuilderPersistentJobFailure'),
           expr: |||
