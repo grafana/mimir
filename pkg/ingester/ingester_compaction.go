@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/timeutil"
+	"github.com/prometheus/prometheus/storage"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
@@ -613,12 +614,21 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 			continue
 		}
 
+		now := time.Now()
+
+		// Fast path: threshold gate is satisfied and min grace period has elapsed.
+		var refs []storage.SeriesRef
 		localThreshold := i.limiter.ringStrategy.convertGlobalToLocalLimit(userID, threshold)
-		if localThreshold <= 0 || db.Head().NumSeries() < uint64(localThreshold) {
-			continue
+		if localThreshold > 0 && db.Head().NumSeries() >= uint64(localThreshold) {
+			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod))
 		}
 
-		refs := db.takePendingNonOwnedRefs(time.Now().Add(-i.cfg.EarlyCompactionNonOwnedSeriesGracePeriod))
+		// Slow path: max grace period elapsed — evict regardless of the threshold gate to
+		// guarantee eventual cleanup even for tenants well below their series limit.
+		if len(refs) == 0 && i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod > 0 {
+			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod))
+		}
+
 		if len(refs) == 0 {
 			continue
 		}

@@ -753,7 +753,7 @@ func (u *userTSDB) addPendingNonOwnedRefs(refs []storage.SeriesRef) {
 		// wait before take is grace + jitterOffset, independently randomized on each replica.
 		var jitterOffset time.Duration
 		if u.cfg != nil {
-			if variance := int64(float64(u.cfg.EarlyCompactionNonOwnedSeriesGracePeriod) * 0.25); variance > 0 {
+			if variance := int64(float64(u.cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod) * 0.25); variance > 0 {
 				jitterOffset = time.Duration(rand.Int63n(variance))
 			}
 		}

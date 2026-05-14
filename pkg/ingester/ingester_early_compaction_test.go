@@ -990,7 +990,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPending
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
-	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = 0 // run eviction immediately for tests
 
 	limits := defaultLimitsTestConfig()
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
@@ -1024,7 +1024,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
-	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = 0 // run eviction immediately for tests
 
 	limits := defaultLimitsTestConfig()
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
@@ -1143,7 +1143,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
-	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = 0 // run eviction immediately for tests
 
 	limits := defaultLimitsTestConfig()
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
@@ -1265,7 +1265,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
-	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0 // run eviction immediately for tests
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = 0 // run eviction immediately for tests
 
 	limits := defaultLimitsTestConfig()
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
@@ -1417,8 +1417,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
-	// A long grace period that no real-time elapse can cross during the test.
-	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = time.Hour
+	// A long min grace period that no real-time elapse can cross during the test; max grace
+	// period is disabled so only the min-grace path is exercised.
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = time.Hour
+	cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = 0
 
 	limits := defaultLimitsTestConfig()
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
@@ -1502,7 +1504,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
-	cfg.EarlyCompactionNonOwnedSeriesGracePeriod = 0
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = 0
+	cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = 0 // this test exercises the threshold gate, not the max-grace fallback
 	// The post-scale-up sub-test also exercises compactBlocksToReducePerTenantOwnedSeries
 	// (which short-circuits unless both of these flags are set), to show that the older
 	// owned-series gate would not have fired in the post-scale-up state.
@@ -1600,6 +1603,33 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 
 		require.Len(t, listBlocksInDir(t, blocksDir), 1, "block should be produced after scale-up")
 		require.Equal(t, uint64(postScaleOwned), db.Head().NumSeries(), "only owned series should remain in the head")
+	})
+
+	t.Run("max grace period triggers eviction when threshold gate is closed", func(t *testing.T) {
+		// Pre-scale-up topology (2 ingesters/zone): localThreshold = 15000 > Head() = 10000,
+		// so the threshold gate is closed and the fast path (minGrace=0 + gate) cannot fire.
+		// This simulates a tenant well below its series limit that would never be served by
+		// the fast path alone, regardless of how long min grace runs.
+		// After the max grace period elapses the slow path bypasses the gate and evicts the
+		// non-owned series, guaranteeing eventual cleanup.
+		cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = time.Minute
+		ingester, db, blocksDir, _ := setupScenario(t, 2)
+
+		// First call: min grace has elapsed (minGrace=0) but the threshold gate is closed
+		// and the max grace period has not yet elapsed — no eviction.
+		ingester.compactBlocksDueToNonOwnedSeries(context.Background())
+		assert.Empty(t, listBlocksInDir(t, blocksDir), "closed gate should block eviction before max grace elapses")
+		assert.Equal(t, uint64(numSeries), db.Head().NumSeries(), "all series should remain in the head")
+
+		// Backdate lastUpdate so the max grace period appears to have elapsed.
+		db.pendingNonOwnedRefsMtx.Lock()
+		db.pendingNonOwnedRefsLastUpdate = time.Now().Add(-2 * time.Minute)
+		db.pendingNonOwnedRefsMtx.Unlock()
+
+		// Second call: max grace elapsed, gate bypassed — non-owned series are evicted.
+		ingester.compactBlocksDueToNonOwnedSeries(context.Background())
+		assert.Len(t, listBlocksInDir(t, blocksDir), 1, "block should be produced once max grace elapses")
+		assert.Less(t, db.Head().NumSeries(), uint64(numSeries), "non-owned series should be evicted from the head")
 	})
 }
 
