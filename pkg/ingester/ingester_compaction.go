@@ -618,15 +618,22 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 
 		// Fast path: threshold gate is satisfied and min grace period has elapsed.
 		var refs []storage.SeriesRef
+		var trigger string
 		localThreshold := i.limiter.ringStrategy.convertGlobalToLocalLimit(userID, threshold)
 		if localThreshold > 0 && db.Head().NumSeries() >= uint64(localThreshold) {
 			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod))
+			if len(refs) > 0 {
+				trigger = "in-memory series count exceeds local threshold"
+			}
 		}
 
 		// Slow path: max grace period elapsed — evict regardless of the threshold gate to
 		// guarantee eventual cleanup even for tenants well below their series limit.
 		if len(refs) == 0 && i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod > 0 {
 			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod))
+			if len(refs) > 0 {
+				trigger = "max grace period elapsed"
+			}
 		}
 
 		if len(refs) == 0 {
@@ -634,7 +641,7 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 		}
 
 		seriesBefore := db.Head().NumSeries()
-		level.Info(i.logger).Log("msg", "triggering per-tenant early head compaction of non-owned series", "user", userID, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
+		level.Info(i.logger).Log("msg", "triggering per-tenant early head compaction of non-owned series", "user", userID, "trigger", trigger, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
 
 		// Step 1: compact the OOO head so the out-of-order data of every series with OOO
 		// chunks is persisted before we evict any series in step 2. CompactOOOHead is a no-op
@@ -663,6 +670,7 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 
 		level.Info(i.logger).Log("msg", "per-tenant early head compaction of non-owned series completed",
 			"user", userID,
+			"trigger", trigger,
 			"before_in_memory_series", seriesBefore,
 			"after_in_memory_series", db.Head().NumSeries(),
 		)
