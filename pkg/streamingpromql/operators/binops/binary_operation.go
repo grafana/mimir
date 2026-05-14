@@ -885,7 +885,7 @@ func buildMatchersForIgnoring(metadata []types.SeriesMetadata, excludeLabels []s
 	// skipping __name__ (never useful as a narrowing matcher) and any
 	// excluded labels up front to avoid storing them in the map.
 	// excludeLabels must be sorted by the caller so we can use binary search.
-	labelNames := make(map[string]bool)
+	labelNames := make(map[string]struct{})
 	for _, s := range metadata {
 		s.Labels.Range(func(l labels.Label) {
 			if l.Name == model.MetricNameLabel {
@@ -894,7 +894,7 @@ func buildMatchersForIgnoring(metadata []types.SeriesMetadata, excludeLabels []s
 			if _, found := slices.BinarySearch(excludeLabels, l.Name); found {
 				return
 			}
-			labelNames[l.Name] = true
+			labelNames[l.Name] = struct{}{}
 		})
 	}
 
@@ -928,8 +928,8 @@ func buildMatchersForIgnoring(metadata []types.SeriesMetadata, excludeLabels []s
 	return matchers
 }
 
-func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]bool {
-	values := make(map[string]bool)
+func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]struct{} {
+	values := make(map[string]struct{})
 
 	for _, series := range metadata {
 		// Stop getting values from each series if we're past the max number of
@@ -939,7 +939,7 @@ func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValu
 			return nil
 		}
 
-		values[series.Labels.Get(label)] = true
+		values[series.Labels.Get(label)] = struct{}{}
 	}
 
 	return values
