@@ -1678,7 +1678,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.early-compaction-non-owned-series-max-grace-period duration
     	[experimental] Maximum time after which non-owned series are evicted regardless of the local threshold gate. This guarantees eventual eviction even for tenants well below their series limit. A value of 0 disables the maximum grace period, relying solely on the threshold gate. (default 5m0s)
   -ingester.early-compaction-non-owned-series-min-grace-period duration
-    	[experimental] Minimum time that must elapse after a non-owned series is detected before it can be evicted, provided the in-memory series count exceeds the local threshold derived from -ingester.early-head-compaction-owned-series-threshold. Any detection that adds new refs resets the timer. A value of 0 evicts as soon as the threshold gate is satisfied. Up to 25% jitter is added to spread evictions across replicas. (default 30s)
+    	[experimental] Minimum time that must elapse after a non-owned series is detected before it can be evicted, provided the in-memory series count exceeds the local threshold derived from -ingester.early-head-compaction-owned-series-threshold. Any detection that adds new refs resets the timer. A value of 0 evicts as soon as the threshold gate is satisfied. A jitter in [0, 2×min-grace-period] is added so that effective eviction times are spread across [min-grace-period, 3×min-grace-period] to avoid thundering-herd compactions across replicas. (default 30s)
   -ingester.early-head-compaction-min-estimated-series-reduction-percentage int
     	[experimental] Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction. (default 15)
   -ingester.early-head-compaction-owned-series-threshold int
