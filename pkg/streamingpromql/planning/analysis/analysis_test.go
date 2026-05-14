@@ -140,7 +140,7 @@ func TestHandler(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"}
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z, from start()/end())"}
 					],
 					"originalExpression": "up @ start()",
 					"version": 0
@@ -153,7 +153,7 @@ func TestHandler(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"}
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z, from start()/end())"}
 					],
 					"originalExpression": "up @ start()",
 					"version": 0

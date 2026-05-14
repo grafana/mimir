@@ -458,11 +458,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
-				Matchers:           core.LabelMatchersFromPrometheusType(expr.LabelMatchers),
-				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
-				Offset:             expr.OriginalOffset,
-				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
-				Smoothed:           expr.Smoothed,
+				Matchers:                        core.LabelMatchersFromPrometheusType(expr.LabelMatchers),
+				Timestamp:                       core.TimeFromTimestamp(expr.Timestamp),
+				TimestampFromStartOrEndModifier: hasStartOrEndModifier(expr),
+				Offset:                          expr.OriginalOffset,
+				ExpressionPosition:              core.PositionRangeFrom(expr.PositionRange()),
+				Smoothed:                        expr.Smoothed,
 				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here.
 				// This is done in the skip histogram buckets optimization pass, after common subexpression elimination is applied,
 				// to simplify the logic in the common subexpression elimination optimization pass. Otherwise it would have to deal
@@ -478,13 +479,14 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 
 		return &core.MatrixSelector{
 			MatrixSelectorDetails: &core.MatrixSelectorDetails{
-				Matchers:           core.LabelMatchersFromPrometheusType(vs.LabelMatchers),
-				Timestamp:          core.TimeFromTimestamp(vs.Timestamp),
-				Offset:             vs.OriginalOffset,
-				Range:              expr.Range,
-				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
-				Anchored:           vs.Anchored,
-				Smoothed:           vs.Smoothed,
+				Matchers:                        core.LabelMatchersFromPrometheusType(vs.LabelMatchers),
+				Timestamp:                       core.TimeFromTimestamp(vs.Timestamp),
+				TimestampFromStartOrEndModifier: hasStartOrEndModifier(vs),
+				Offset:                          vs.OriginalOffset,
+				Range:                           expr.Range,
+				ExpressionPosition:              core.PositionRangeFrom(expr.PositionRange()),
+				Anchored:                        vs.Anchored,
+				Smoothed:                        vs.Smoothed,
 				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here. See the explanation above.
 			},
 		}, nil
@@ -814,6 +816,10 @@ func (p *QueryPlanner) dataLabelSelectorFromExpr(expr parser.Expr) (planning.Nod
 			ExpressionPosition: core.PositionRangeFrom(v.PosRange),
 		},
 	}, nil
+}
+
+func hasStartOrEndModifier(vs *parser.VectorSelector) bool {
+	return vs.StartOrEnd == parser.START || vs.StartOrEnd == parser.END
 }
 
 func findFunction(name string) (functions.Function, bool) {

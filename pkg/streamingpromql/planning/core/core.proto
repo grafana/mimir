@@ -143,6 +143,7 @@ enum UnaryOperation {
 message VectorSelectorDetails {
   repeated LabelMatcher matchers = 1;
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
+  bool timestampFromStartOrEndModifier = 12; // true if the timestamp above was derived from start() or end()
   google.protobuf.Duration offset = 3 [
     (gogoproto.stdduration) = true,
     (gogoproto.nullable) = false
@@ -161,6 +162,7 @@ message VectorSelectorDetails {
 message MatrixSelectorDetails {
   repeated LabelMatcher matchers = 1;
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
+  bool timestampFromStartOrEndModifier = 13; // true if the timestamp above was derived from start() or end()
   google.protobuf.Duration offset = 3 [
     (gogoproto.stdduration) = true,
     (gogoproto.nullable) = false

@@ -62,6 +62,16 @@ func TestVectorSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"} @ 123456 (1970-01-01T00:02:03.456Z)`,
 		},
+		"one matcher, has timestamp from start()/end()": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers:                        singleMatcher,
+					Timestamp:                       timestampOf(123456),
+					TimestampFromStartOrEndModifier: true,
+				},
+			},
+			expected: `{__name__="foo"} @ 123456 (1970-01-01T00:02:03.456Z, from start()/end())`,
+		},
 		"one matcher, has timestamp and offset": {
 			node: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{

@@ -14,6 +14,7 @@ import (
 func describeSelector(
 	matchers []*LabelMatcher,
 	ts *time.Time,
+	timestampFromStartOrEndModifier bool,
 	offset time.Duration,
 	rng *time.Duration,
 	skipHistogramBuckets, anchored, smooothed, counterAware bool,
@@ -35,6 +36,11 @@ func describeSelector(
 		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*ts), 10))
 		builder.WriteString(" (")
 		builder.WriteString(ts.Format(time.RFC3339Nano))
+
+		if timestampFromStartOrEndModifier {
+			builder.WriteString(", from start()/end()")
+		}
+
 		builder.WriteRune(')')
 	}
 
