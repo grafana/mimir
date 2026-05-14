@@ -11,7 +11,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // AndUnlessBinaryOperation represents a logical 'and' or 'unless' between two vectors.
@@ -98,19 +97,7 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		return nil, nil
 	}
 
-	// Build RHS matchers: when hints are set, build matchers from LHS metadata to narrow
-	// the RHS series fetch. When no hints are available, pass nil (do not apply parent matchers
-	// to the RHS — see SeriesMetadata for why).
-	var rhsMatchers types.Matchers
-	if a.hints != nil {
-		rhsMatchers = BuildMatchers(leftMetadata, a.hints)
-		sl := spanlogger.FromContext(ctx, a.logger)
-		sl.DebugLog(
-			"msg", "binary operator passing additional matchers to RHS",
-			"fields", a.hints.Include,
-			"hint_matchers", len(rhsMatchers),
-		)
-	}
+	rhsMatchers := BuildMatchers(ctx, a.logger, leftMetadata, a.hints)
 	rightMetadata, err := a.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {
 		return nil, err

@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -194,22 +193,13 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	// If there are labels that this binary operation selects on or aggregations being done
 	// on the LHS, we can use the series and their values for those labels to reduce the amount
 	// of data fetched on the RHS.
+	// Note we are reassigning `matchers` here before passing to the RHS and dropping any
+	// other extra matchers passed to this binary operation. Hints from the optimization
+	// pass are set specifically for each binary operation and include only fields that are
+	// valid to be passed to its RHS. We drop existing extra matchers since they may refer
+	// to labels that don't exist on the RHS of this binary operation.
 	if b.hints != nil {
-		// Note we are reassigning `matchers` here before passing to the RHS and dropping any
-		// other extra matchers passed to this binary operation. Hints from the optimization
-		// pass are set specifically for each binary operation and include only fields that are
-		// valid to be passed to its RHS. We drop existing extra matchers since they may refer
-		// to labels that don't exist on the RHS of this binary operation.
-		ignored := matchers
-		matchers = BuildMatchers(b.leftMetadata, b.hints)
-
-		sl := spanlogger.FromContext(ctx, b.logger)
-		sl.DebugLog(
-			"msg", "binary operator passing additional matchers to RHS",
-			"fields", b.hints.Include,
-			"hint_matchers", len(matchers),
-			"ignored_matchers", len(ignored),
-		)
+		matchers = BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints)
 	}
 
 	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)
