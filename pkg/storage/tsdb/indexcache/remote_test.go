@@ -125,7 +125,7 @@ func TestRemotePostingsOffsetTableCache_FetchPostingsOffset(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
+			c, err := NewRemoteIndexCache(IndexCacheConfig{CachePostingsOffsets: true}, log.NewNopLogger(), client, nil)
 			require.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -259,7 +259,7 @@ func TestRemotePostingsOffsetTableCache_FetchPostingsOffsetsForMatcher(t *testin
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			client := newMockedRemoteCacheClient(testData.mockedErr)
-			c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
+			c, err := NewRemoteIndexCache(IndexCacheConfig{CachePostingsOffsets: true}, log.NewNopLogger(), client, nil)
 			require.NoError(t, err)
 
 			ctx := context.Background()
@@ -275,6 +275,38 @@ func TestRemotePostingsOffsetTableCache_FetchPostingsOffsetsForMatcher(t *testin
 			)
 		})
 	}
+}
+
+func TestRemoteIndexCache_PostingsOffsetsDisabled(t *testing.T) {
+	t.Parallel()
+
+	tenant := "tenant-0"
+	block := ulid.MustNew(1, nil)
+	lbl := labels.Label{Name: "instance", Value: "a"}
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "instance", "a")
+	offsets := []streamindex.PostingListOffset{
+		{LabelValue: "a", Off: index.Range{Start: 1, End: 2}},
+	}
+
+	client := newMockedRemoteCacheClient(nil)
+	c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Stores must no-op: nothing should land in the underlying client.
+	c.StorePostingsOffset(tenant, block, lbl, index.Range{Start: 4, End: 16}, time.Hour)
+	c.StorePostingsOffsetsForMatcher(tenant, block, matcher, false, offsets, time.Hour)
+	assert.Empty(t, client.cache)
+
+	// Fetches must return zero values without consulting the client.
+	rng, ok := c.FetchPostingsOffset(ctx, tenant, block, lbl)
+	assert.False(t, ok)
+	assert.Equal(t, index.Range{}, rng)
+
+	gotOffsets, ok := c.FetchPostingsOffsetsForMatcher(ctx, tenant, block, matcher, false)
+	assert.False(t, ok)
+	assert.Nil(t, gotOffsets)
 }
 
 func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {

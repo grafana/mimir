@@ -174,8 +174,10 @@ func (c *InMemoryIndexCache) get(key cacheKey) ([]byte, bool) {
 	return v, true
 }
 
-// getDecodedFromInMemory wraps InMemoryIndexCache.get with cache value decoding and error logging
-func getDecodedFromInMemory[T any](c *InMemoryIndexCache, key cacheKey, decode func([]byte) (T, error)) (T, bool) {
+// getDecodedInMemory wraps InMemoryIndexCache.get with cache value decoding and error logging
+func getDecodedInMemory[T any](
+	c *InMemoryIndexCache, key cacheKey, decode func([]byte) (T, error),
+) (T, bool) {
 	var zero T
 	val, ok := c.get(key)
 	if !ok {
@@ -186,9 +188,7 @@ func getDecodedFromInMemory[T any](c *InMemoryIndexCache, key cacheKey, decode f
 	if err != nil {
 		level.Error(c.logger).Log(
 			"msg", "error decoding cached value",
-			"key", key,
-			"type", key.typ(),
-			"err", err,
+			"key", key, "type", key.typ(), "err", err,
 		)
 		return zero, false
 	}
@@ -275,6 +275,9 @@ func (c *InMemoryIndexCache) StorePostingsOffset(
 	rng index.Range,
 	_ time.Duration,
 ) {
+	if !c.cachePostingsOffsets {
+		return
+	}
 	key := PostingsOffsetsCacheKey{tenantID, blockID, lbl}
 	val := encodeSingleRange(rng)
 	c.set(key, val)
@@ -286,8 +289,11 @@ func (c *InMemoryIndexCache) FetchPostingsOffset(
 	blockID ulid.ULID,
 	lbl labels.Label,
 ) (index.Range, bool) {
+	if !c.cachePostingsOffsets {
+		return index.Range{}, false
+	}
 	key := PostingsOffsetsCacheKey{tenantID, blockID, lbl}
-	return getDecodedFromInMemory(c, key, decodeSingleRange)
+	return getDecodedInMemory(c, key, decodeSingleRange)
 }
 
 func (c *InMemoryIndexCache) StorePostingsOffsetsForMatcher(
@@ -298,6 +304,9 @@ func (c *InMemoryIndexCache) StorePostingsOffsetsForMatcher(
 	offsets []streamindex.PostingListOffset,
 	_ time.Duration,
 ) {
+	if !c.cachePostingsOffsets {
+		return
+	}
 	key := PostingsOffsetsForMatcherCacheKey{
 		tenantID:   tenantID,
 		blockID:    blockID,
@@ -315,13 +324,16 @@ func (c *InMemoryIndexCache) FetchPostingsOffsetsForMatcher(
 	m *labels.Matcher,
 	isSubtract bool,
 ) ([]streamindex.PostingListOffset, bool) {
+	if !c.cachePostingsOffsets {
+		return nil, false
+	}
 	key := PostingsOffsetsForMatcherCacheKey{
 		tenantID:   tenantID,
 		blockID:    blockID,
 		matcherStr: m.String(),
 		isSubtract: isSubtract,
 	}
-	return getDecodedFromInMemory(c, key, decodePostingsOffsets)
+	return getDecodedInMemory(c, key, decodePostingsOffsets)
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v,
