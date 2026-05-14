@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -971,50 +973,89 @@ func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 }
 
 func TestLimitNPolicy(t *testing.T) {
+	existing := func(specs ...*schedulerpb.JobSpec) iter.Seq[*schedulerpb.JobSpec] {
+		return slices.Values(specs)
+	}
+
 	allow1 := limitPerPartitionJobCreationPolicy{partitionLimit: 1}
 
-	ok := allow1.canCreateJob(jobKey{id: "job1"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 0}, []*schedulerpb.JobSpec{})
-	require.True(t, ok)
+	require.NoError(t, allow1.canCreateJob(jobKey{id: "job1"},
+		&schedulerpb.JobSpec{Topic: "topic", Partition: 0}, existing()))
 
-	ok = allow1.canCreateJob(jobKey{id: "job4"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 0}, []*schedulerpb.JobSpec{
-		{Topic: "topic", Partition: 1},
-	})
-	require.True(t, ok)
+	require.NoError(t, allow1.canCreateJob(jobKey{id: "job4"},
+		&schedulerpb.JobSpec{Topic: "topic", Partition: 0},
+		existing(&schedulerpb.JobSpec{Topic: "topic", Partition: 1})))
 
-	ok = allow1.canCreateJob(jobKey{id: "job5"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
-		{Topic: "topic", Partition: 1},
-	})
-	require.False(t, ok)
+	require.Error(t, allow1.canCreateJob(jobKey{id: "job5"},
+		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		existing(&schedulerpb.JobSpec{Topic: "topic", Partition: 1})))
 
-	ok = allow1.canCreateJob(jobKey{id: "job5"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
-		{Topic: "topic", Partition: 2},
-		{Topic: "topic", Partition: 3},
-		{Topic: "topic", Partition: 3},
-	})
-	require.True(t, ok)
+	require.NoError(t, allow1.canCreateJob(jobKey{id: "job5"},
+		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		existing(
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 2},
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 3},
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 3},
+		)))
 
 	allow2 := limitPerPartitionJobCreationPolicy{partitionLimit: 2}
-	ok = allow2.canCreateJob(jobKey{id: "job6"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
-		{Topic: "topic", Partition: 2},
-		{Topic: "topic", Partition: 3},
-	})
-	require.True(t, ok)
-	ok = allow2.canCreateJob(jobKey{id: "job6"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
-		{Topic: "topic", Partition: 1},
-		{Topic: "topic", Partition: 2},
-	})
-	require.True(t, ok)
-	ok = allow2.canCreateJob(jobKey{id: "job6"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
-		{Topic: "topic", Partition: 1},
-		{Topic: "topic", Partition: 1},
-	})
-	require.False(t, ok)
-	ok = allow2.canCreateJob(jobKey{id: "job6"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
-		{Topic: "topic", Partition: 1},
-		{Topic: "topic", Partition: 1},
-		{Topic: "topic", Partition: 1},
-	})
-	require.False(t, ok)
+	require.NoError(t, allow2.canCreateJob(jobKey{id: "job6"},
+		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		existing(
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 2},
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 3},
+		)))
+	require.NoError(t, allow2.canCreateJob(jobKey{id: "job6"},
+		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		existing(
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 2},
+		)))
+	require.Error(t, allow2.canCreateJob(jobKey{id: "job6"},
+		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		existing(
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		)))
+	require.Error(t, allow2.canCreateJob(jobKey{id: "job6"},
+		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		existing(
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		)))
+}
+
+func TestLimitNPolicyShortCircuits(t *testing.T) {
+	// Verify that the policy stops iterating as soon as it has counted enough
+	// matches to reject: with partitionLimit=2 we are about to add one, so the
+	// second matching existing job is what trips rejection. The iterator must
+	// not be advanced beyond that point.
+	policy := limitPerPartitionJobCreationPolicy{partitionLimit: 2}
+	spec := &schedulerpb.JobSpec{Topic: "topic", Partition: 0}
+
+	visited := 0
+	existing := func(yield func(*schedulerpb.JobSpec) bool) {
+		matching := []*schedulerpb.JobSpec{
+			{Topic: "topic", Partition: 0},
+			{Topic: "topic", Partition: 0},
+		}
+		for _, s := range matching {
+			visited++
+			if !yield(s) {
+				return
+			}
+		}
+		for i := 0; i < 1000; i++ {
+			visited++
+			if !yield(&schedulerpb.JobSpec{Topic: "topic", Partition: 99}) {
+				return
+			}
+		}
+	}
+
+	require.Error(t, policy.canCreateJob(jobKey{id: "job1"}, spec, existing))
+	require.Equal(t, 2, visited, "policy should stop iterating once it has decided to reject")
 }
 
 func TestPartitionState(t *testing.T) {
