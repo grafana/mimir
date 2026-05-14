@@ -164,6 +164,68 @@ func TestCheckMeta_MaxBlockSize(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf(MaxBlockSizeBytesFormat, int64(299)), err.Error())
 }
 
+// Test_checkMaxBlockSize exercises the unexported helper directly so we can
+// cover negative-size and overflow paths that are otherwise short-circuited
+// by CheckMeta's earlier file checks. The compactor previously owned an
+// equivalent TestMultitenantCompactor_ValidateMaximumBlockSize test which
+// became redundant once the helper moved here.
+func Test_checkMaxBlockSize(t *testing.T) {
+	const maxInt64 = int64(1<<63 - 1)
+
+	tests := map[string]struct {
+		maxBlockSizeBytes int64
+		files             []block.File
+		expectErr         bool
+	}{
+		"no limit": {
+			maxBlockSizeBytes: 0,
+			files:             []block.File{{SizeBytes: maxInt64}},
+			expectErr:         false,
+		},
+		"under limit": {
+			maxBlockSizeBytes: 4,
+			files:             []block.File{{SizeBytes: 1}, {SizeBytes: 2}},
+			expectErr:         false,
+		},
+		"exact limit": {
+			maxBlockSizeBytes: 3,
+			files:             []block.File{{SizeBytes: 1}, {SizeBytes: 2}},
+			expectErr:         false,
+		},
+		"under limit with zero-size file": {
+			maxBlockSizeBytes: 2,
+			files:             []block.File{{SizeBytes: 1}, {SizeBytes: 0}},
+			expectErr:         false,
+		},
+		"over limit": {
+			maxBlockSizeBytes: 1,
+			files:             []block.File{{SizeBytes: 1}, {SizeBytes: 1}},
+			expectErr:         true,
+		},
+		"negative file size": {
+			maxBlockSizeBytes: 2,
+			files:             []block.File{{SizeBytes: 2}, {SizeBytes: -1}},
+			expectErr:         true,
+		},
+		"overflow": {
+			maxBlockSizeBytes: maxInt64,
+			files:             []block.File{{SizeBytes: maxInt64}, {SizeBytes: maxInt64}, {SizeBytes: maxInt64}},
+			expectErr:         true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := checkMaxBlockSize(tc.files, tc.maxBlockSizeBytes)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestCheckMeta_Version(t *testing.T) {
 	m := newValidMeta()
 	m.Version = 99
