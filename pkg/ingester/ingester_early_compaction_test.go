@@ -1633,6 +1633,108 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	})
 }
 
+// TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction verifies that
+// compactBlocksDueToNonOwnedSeries handles stale series refs gracefully. This covers the
+// scenario where the old path (compactBlocksToReducePerTenantOwnedSeries) already evicted a
+// series that is still cached in pendingNonOwnedRefs: the stale refs must be silently dropped
+// without error or panic, and no spurious block must be produced.
+func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t *testing.T) {
+	ctx := context.Background()
+	ctxWithUser := user.InjectOrgID(ctx, userID)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = 0
+	cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = 0
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.UseIngesterOwnedSeriesForLimits = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
+	limits.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+
+	// 3 zones × 1 ingester each → localThreshold = 1, so the gate opens on any non-zero head.
+	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
+	ingester := ingesters[0]
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
+
+	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
+
+	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
+	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
+	require.NotEqual(t, hashA, hashB)
+
+	var ownedLabels, nonOwnedLabels labels.Labels
+	var minHash uint32
+	if hashA < hashB {
+		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
+	} else {
+		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
+	}
+
+	for _, lbls := range []labels.Labels{ownedLabels, nonOwnedLabels} {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels: lbls, Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+		}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels: lbls, Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+		}}))
+	}
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+
+	// Configure ownership so one series is non-owned and gets queued in pendingNonOwnedRefs.
+	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()))
+	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount)
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	require.Len(t, db.pendingNonOwnedRefs, 1, "exactly one non-owned ref should be queued")
+	db.pendingNonOwnedRefsMtx.Unlock()
+
+	// Push a recent sample to the owned series so it survives the old path's forced compaction
+	// (its chunk extends past forcedCompactionMaxTime = now − idleTimeout = now − 20 min).
+	// The non-owned series has no data after the cutoff and will be removed from the head.
+	tRecent := time.Now().UnixMilli()
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels: ownedLabels, Samples: []util_test.Sample{{TS: tRecent, Val: 3.0}},
+	}}))
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+
+	// Run the old path. It evicts the non-owned series (all data before forcedCompactionMaxTime)
+	// while keeping the owned series (recent chunk survives the cutoff). The stale ref remains in
+	// pendingNonOwnedRefs because the old path does not clear it.
+	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, time.Now())
+	require.NotEmpty(t, listBlocksInDir(t, userBlocksDir), "old path should have produced at least one block")
+	require.Equal(t, uint64(1), db.Head().NumSeries(), "non-owned series should be evicted by old path")
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	require.Len(t, db.pendingNonOwnedRefs, 1, "stale ref should still be in pendingNonOwnedRefs")
+	db.pendingNonOwnedRefsMtx.Unlock()
+
+	blocksAfterOldPath := listBlocksInDir(t, userBlocksDir)
+
+	// Now run the new path. The cached refs in pendingNonOwnedRefs are stale — the series
+	// they point to no longer exist in the head. filterSelectedSeriesAndSortPostings silently
+	// drops refs whose series cannot be found, so CompactSelectedSeries returns nil without
+	// writing a block or panicking.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+
+	require.Equal(t, blocksAfterOldPath, listBlocksInDir(t, userBlocksDir), "no additional block should be produced for stale refs")
+	require.Equal(t, uint64(1), db.Head().NumSeries(), "head should still contain only the owned series")
+}
+
 func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {
 	// Create a shared consul KV store so all ingesters join the same ring.
 	consulClient, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
