@@ -75,6 +75,51 @@ type adminState struct {
 	lastStats      map[assignment.HashRange]rangeStatsView
 	lastPartitionL map[int32]int64
 	lastMovable    map[int32]int64
+
+	// lastReadcacheRound is the most recent readcache slicer round's
+	// output. Empty before the first round, or when the readcache
+	// slicer is disabled.
+	lastReadcacheRound readcacheRoundView
+}
+
+// readcacheRoundView is the admin-side snapshot of a single
+// readcache slicer round. Used by the trace JSON and (eventually)
+// the HTML rounds page.
+type readcacheRoundView struct {
+	PerInstance  map[string]float64        `json:"per_instance"`
+	PerPartition []readcachePartitionEntry `json:"per_partition"`
+	Moves        []readcacheMove           `json:"moves"`
+}
+
+type readcachePartitionEntry struct {
+	PartitionID    int32  `json:"partition_id"`
+	CurrentOwner   string `json:"current_owner"`
+	PlannedOwner   string `json:"planned_owner"`
+}
+
+// setLastReadcachePlan snapshots the most recent readcache slicer
+// round into the admin state. Called from runReadcacheSlicer after
+// the plan has been applied to the store.
+func (s *adminState) setLastReadcachePlan(plan readcachePlan, currentOwner map[int32]string) {
+	view := readcacheRoundView{
+		PerInstance:  make(map[string]float64, len(plan.LoadByInstance)),
+		PerPartition: make([]readcachePartitionEntry, 0, len(plan.Assignment.Entries)),
+		Moves:        append([]readcacheMove(nil), plan.Moves...),
+	}
+	for inst, l := range plan.LoadByInstance {
+		view.PerInstance[inst] = l
+	}
+	for _, e := range plan.Assignment.Entries {
+		view.PerPartition = append(view.PerPartition, readcachePartitionEntry{
+			PartitionID:  e.PartitionID,
+			CurrentOwner: currentOwner[e.PartitionID],
+			PlannedOwner: e.InstanceID,
+		})
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastReadcacheRound = view
 }
 
 func (s *adminState) addTrace(tr Trace) {

@@ -57,6 +57,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -264,6 +265,18 @@ type Distributor struct {
 	nautilusActiveTable   syncatomic.Pointer[assignment.ActiveTable]
 	nautilusActiveTableMu sync.Mutex
 
+	// readcacheLog mirrors nautilusLog for the (partition -> readcache
+	// instance) log streamed from the rebalancer's
+	// WatchReadcacheAssignments RPC. Used by the read path to route
+	// queries to the readcache pod currently owning the partition.
+	readcacheLog syncatomic.Pointer[readcacheassignment.Log]
+
+	// readcachePool dials readcache pods by instance ID. Until a
+	// readcache ring exists, addresses are resolved from a static
+	// flag-driven map (see ReadcacheConfig.Addresses). nil if no
+	// readcache addresses are configured.
+	readcachePool *readcachePool
+
 	// nautilusRebalancerConn is the gRPC connection to the rebalancer.
 	nautilusRebalancerConn io.Closer
 	// nautilusStreamConnected is 1 while a WatchAssignments stream is
@@ -396,6 +409,24 @@ type Config struct {
 	// load-bearing for query locality and silent fallback to
 	// hash-mod sharding would defeat the contract.
 	NautilusRequired bool `yaml:"nautilus_required" category:"experimental"`
+
+	// NautilusIngestTopic is the Kafka topic to which the
+	// distributor forwards writes for tenants whose
+	// nautilus_ingest_routing runtime knob is set to "nautilus-only".
+	// Other tenants continue to write to the production
+	// IngestStorageConfig.KafkaConfig.Topic.
+	//
+	// Default is "nautilus_ingest", matching the topic name
+	// auto-created by the nautilus rebalancer. Override only when
+	// running against a manually-created topic with a different
+	// name (e.g. shared-cluster experiments).
+	NautilusIngestTopic string `yaml:"nautilus_ingest_topic" category:"experimental"`
+
+	// Readcache configures dialing readcache pods for the read path.
+	// Independent from NautilusRebalancerAddress because a
+	// distributor may know about readcache pods without itself
+	// subscribing to the rebalancer (e.g. in tests).
+	Readcache ReadcacheConfig `yaml:"readcache" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -449,6 +480,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
 	f.StringVar(&cfg.NautilusRebalancerAddress, "distributor.nautilus-rebalancer-address", "", "gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.")
 	f.BoolVar(&cfg.NautilusRequired, "distributor.nautilus-required", false, "If true, the distributor rejects write requests with a 503 Service Unavailable when the nautilus assignment log is unavailable or doesn't cover a series key, instead of falling back to the partition ring's hash-based routing. Use this in deployments where nautilus assignments are load-bearing for query locality.")
+	f.StringVar(&cfg.NautilusIngestTopic, "distributor.nautilus-ingest-topic", "nautilus_ingest", "Kafka topic to which writes for tenants in nautilus_ingest_routing=nautilus-only are forwarded. The production -ingest-storage.kafka.topic is unaffected. Must match the topic the readcache pods consume from.")
+	cfg.Readcache.RegisterFlagsWithPrefix("distributor.readcache.", f)
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -893,6 +926,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	// Some queries in the mixin use the presence of these metrics as indication whether Mimir is running with ingest storage or not.
 	exportStorageModeMetrics(reg, cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled || !cfg.IngestStorageConfig.Enabled, cfg.IngestStorageConfig.Enabled, ingestersRing.ReplicationFactor())
 
+	if cfg.Readcache.Addresses != "" {
+		pool, err := newReadcachePool(cfg.Readcache, log)
+		if err != nil {
+			return nil, err
+		}
+		d.readcachePool = pool
+	}
+
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
@@ -1012,6 +1053,7 @@ func (d *Distributor) running(ctx context.Context) error {
 
 	if d.nautilusRebalancerConn != nil {
 		go d.watchNautilusAssignments(ctx)
+		go d.watchReadcacheAssignments(ctx)
 	}
 
 	for {
@@ -1175,6 +1217,9 @@ func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 func (d *Distributor) stopping(_ error) error {
 	if d.nautilusRebalancerConn != nil {
 		_ = d.nautilusRebalancerConn.Close()
+	}
+	if d.readcachePool != nil {
+		_ = d.readcachePool.Close()
 	}
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
@@ -2605,9 +2650,22 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 		})
 	}
 
+	// Choose the Kafka topic based on the tenant's
+	// nautilus_ingest_routing runtime knob: nautilus-only tenants
+	// land on the experimental topic consumed by readcache;
+	// everyone else uses the production ingest topic. Topic-
+	// isolation (rather than per-message routing keys) keeps the
+	// experimental rollout cleanly separable: if readcache misbehaves
+	// the production ingest path is untouched, and a single
+	// pkg/storage/ingest.Writer pool stays sufficient.
+	topic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
+	if d.limits != nil && d.limits.NautilusIngestRouting(tenantID) == validation.NautilusIngestRoutingNautilus && d.cfg.NautilusIngestTopic != "" {
+		topic = d.cfg.NautilusIngestTopic
+	}
+
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
-	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests)
+	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, topic, tenantID, partitionRequests)
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)
 

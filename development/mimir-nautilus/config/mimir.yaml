@@ -1,0 +1,98 @@
+multitenancy_enabled: true
+
+common:
+  storage:
+    backend: s3
+    s3:
+      endpoint:          minio:9000
+      access_key_id:     mimir
+      secret_access_key: supersecret
+      insecure:          true
+
+ingest_storage:
+  enabled: true
+  kafka:
+    address: kafka_1:9092
+    topic:   mimir-ingest
+    last_produced_offset_poll_interval: 500ms
+    fetch_concurrency_max: 15
+    auto_create_topic_enabled: true
+    auto_create_topic_default_partitions: 8
+
+ingester:
+  push_grpc_method_enabled: false
+  track_ingester_owned_series: true
+  active_series_metrics_update_period: 10s
+  active_series_metrics_idle_timeout: 1m
+
+  ring:
+    num_tokens: 0
+
+  partition_ring:
+    min_partition_owners_count: 1
+    min_partition_owners_duration: 10s
+    delete_inactive_partition_after: 1m
+
+distributor:
+  nautilus_rebalancer_address: nautilus-rebalancer:9095
+  nautilus_ingest_topic: nautilus_ingest
+  readcache:
+    addresses: readcache-1=readcache-1:9095,readcache-2=readcache-2:9095
+
+nautilus_rebalancer:
+  data_dir: /data/nautilus-rebalancer
+  kafka_topic: nautilus_ingest
+  partition_count: 8
+  readcache_slicer:
+    enabled: true
+    instances: readcache-1,readcache-2
+    alpha: 1.0
+    beta: 0.0
+    movement_budget: 0.5
+    move_cooldown: 30s
+
+readcache:
+  data_dir: /data/readcache
+  kafka_topic: nautilus_ingest
+  owned_partitions: ""
+  head_compaction_interval: 1m
+  local_block_retention: 1h
+
+block_builder:
+  scheduler_config:
+    address: block-builder-scheduler-0:9095
+    update_interval: 5s
+    max_update_age: 30m
+
+block_builder_scheduler:
+  scheduling_interval: 30s
+  job_size: 1m
+  startup_observe_time: 5s
+
+blocks_storage:
+  s3:
+    bucket_name: mimir-blocks
+  tsdb:
+    dir: /data/tsdb
+    ship_interval: 0s
+    head_postings_for_matchers_cache_force: true
+    block_postings_for_matchers_cache_force: true
+
+memberlist:
+  join_members:
+    - distributor-1
+    - localhost
+  rejoin_interval: 10s
+
+query_scheduler:
+  service_discovery_mode: "ring"
+
+limits:
+  native_histograms_ingestion_enabled: true
+  ingestion_rate: 100000
+
+runtime_config:
+  file: ./config/runtime.yaml
+
+server:
+  log_level: info

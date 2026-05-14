@@ -28,6 +28,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/readcache"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -338,12 +339,15 @@ type ingesterQueryResult struct {
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
 //
-// partitionByInstance is non-nil on the named path: it maps each
-// owner instance ID to the partition that resolution selected. The
-// per-instance request has its QueryAttributionHint populated from
-// this map so the ingester can bucket samples-scanned per partition.
-// On the full-fanout path partitionByInstance is nil and the hint is
-// left nil too (the ingester bills to the unnamed bucket).
+// When partitionByInstance is non-nil and a readcache pool is
+// configured, each ingester instance is opportunistically remapped
+// to the readcache pod currently owning its partition (per the log
+// streamed from the rebalancer); on lookup miss, expired lease, or
+// transport error during dial, the call falls back transparently to
+// the ingester. Once the per-tenant runtime-config knob (see
+// phase2c-feature-flag) is added, this routing will be gated on
+// tenant opt-in; until then, the swap is "best effort" and only
+// fires when an address is configured.
 func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, partitionByInstance map[string]int32, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
@@ -380,25 +384,30 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 		var result ingesterQueryResult
 
-		client, err := d.ingesterPool.GetClientForInstance(*ing)
+		queryClient, err := d.queryClientForInstance(ctx, *ing, partitionByInstance, log)
 		if err != nil {
 			return result, err
 		}
 
-		// On the named path, attach a QueryAttributionHint with the
-		// partition ID this instance was selected for. Cloning here
-		// (rather than mutating the shared req) avoids a data race
-		// between concurrent worker goroutines.
-		perCallReq := req
-		if pid, ok := partitionByInstance[ing.Id]; ok {
-			cloned := *req
-			cloned.QueryAttributionHint = &ingester_client.QueryAttributionHint{PartitionId: pid}
-			perCallReq = &cloned
-		}
-
-		stream, err = client.(ingester_client.IngesterClient).QueryStream(ctx, perCallReq)
+		stream, err = queryClient.QueryStream(ctx, req)
 		if err != nil {
-			return result, err
+			// If readcache says it's still warming, try the
+			// partition's previous lease owner before giving up.
+			// For experimental tenants there is no ingester
+			// fallback (see plan section 2C.4); a failure here
+			// surfaces as 503 to the caller, matching the
+			// failure semantics of a full ingester outage.
+			if readcache.IsStillWarming(err) {
+				if partID, hasPart := partitionByInstance[ing.Id]; hasPart {
+					if prev, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
+						level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
+						stream, err = prev.QueryStream(ctx, req)
+					}
+				}
+			}
+			if err != nil {
+				return result, err
+			}
 		}
 
 		// Why retain the batches rather than iteratively build a single slice?

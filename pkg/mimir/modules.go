@@ -52,6 +52,7 @@ import (
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
+	"github.com/grafana/mimir/pkg/readcache"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
@@ -128,6 +129,7 @@ const (
 	UsageTrackerInstanceRing         string = "usage-tracker-instance-ring"
 	UsageTrackerPartitionRing        string = "usage-tracker-partition-ring"
 	NautilusRebalancer               string = "nautilus-rebalancer"
+	Readcache                        string = "readcache"
 	Vault                            string = "vault"
 
 	All string = "all"
@@ -321,10 +323,19 @@ func (t *Mimir) initServer() (services.Service, error) {
 
 	ingFn := func() ingesterReceiver {
 		// Return explicit nil if there's no ingester. We don't want to return typed-nil as interface value.
-		if t.Ingester == nil {
-			return nil
+		if t.Ingester != nil {
+			return t.Ingester
 		}
-		return t.Ingester
+		// Readcache pods register on the same `/cortex.Ingester/*`
+		// gRPC namespace so distributors can dial them
+		// interchangeably with ingesters. Surface them to the
+		// limiter so read RPCs aren't rejected as "no ingester".
+		// Readcache's push-side stubs return Unimplemented, matching
+		// the Push RPC itself.
+		if t.Readcache != nil {
+			return t.Readcache
+		}
+		return nil
 	}
 
 	distFn := func() pushReceiver {
@@ -1461,6 +1472,7 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 }
 
 func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
+	t.Cfg.NautilusRebalancer.Kafka = t.Cfg.IngestStorage.KafkaConfig
 	t.NautilusRebalancer = rebalancer.New(
 		t.Cfg.NautilusRebalancer,
 		t.IngesterRing,
@@ -1477,6 +1489,19 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 	t.API.RegisterRoutesWithPrefix("/nautilus/rebalancer", t.NautilusRebalancer, false, true, 0, "GET")
 
 	return t.NautilusRebalancer, nil
+}
+
+func (t *Mimir) initReadcache() (services.Service, error) {
+	t.Cfg.Readcache.Kafka = t.Cfg.IngestStorage.KafkaConfig
+	t.Cfg.Readcache.BlocksStorage = t.Cfg.BlocksStorage
+
+	r, err := readcache.New(t.Cfg.Readcache, t.Overrides, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "readcache init")
+	}
+	t.Readcache = r
+	t.API.RegisterReadcache(r)
+	return r, nil
 }
 
 func (t *Mimir) setupModuleManager() error {
@@ -1516,6 +1541,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
+	mm.RegisterModule(Readcache, t.initReadcache)
 	mm.RegisterModule(Ruler, t.initRuler)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
@@ -1563,6 +1589,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
+		Readcache:                        {API, Overrides, MemberlistKV},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QuerierQueryPlanner},
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},

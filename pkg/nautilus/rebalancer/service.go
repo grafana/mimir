@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
@@ -21,6 +24,16 @@ type logStore struct {
 	mu          sync.Mutex
 	log         *assignment.Log
 	subscribers map[*subscription]struct{}
+
+	// persistFn, if non-nil, is called inside apply() under the mutex
+	// after the log is mutated but before the broadcast. A non-nil
+	// error is logged at error level and otherwise ignored — the
+	// broadcast proceeds with the in-memory state regardless so a
+	// failed write to a degraded volume doesn't stall live routing.
+	// The rebalancer's next changed apply() retries; durability is
+	// best-effort during volume degradation.
+	persistFn func([]assignment.LogEntry) error
+	logger    log.Logger
 }
 
 // subscription holds a single watcher's conflated update channel.
@@ -64,6 +77,14 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 		return false
 	}
 	snap := s.log.LiveEntries(at)
+	if s.persistFn != nil {
+		// Persist while still holding the mutex so a concurrent
+		// subscribe()'s initial snapshot can't see a state that
+		// hasn't been durably committed yet.
+		if err := s.persistFn(snap); err != nil && s.logger != nil {
+			level.Error(s.logger).Log("msg", "failed to persist assignment log", "err", err)
+		}
+	}
 	subs := make([]*subscription, 0, len(s.subscribers))
 	for sub := range s.subscribers {
 		subs = append(subs, sub)
@@ -74,6 +95,24 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 		conflateSend(sub.ch, snap)
 	}
 	return true
+}
+
+// setPersistFn installs a persist callback. Safe to call once at
+// startup before the rebalancer's running loop has started.
+func (s *logStore) setPersistFn(fn func([]assignment.LogEntry) error, logger log.Logger) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.persistFn = fn
+	s.logger = logger
+}
+
+// seedFromEntries replaces the in-memory log with the provided
+// entries. Used to load on-disk state during rebalancer startup
+// before any apply() runs.
+func (s *logStore) seedFromEntries(entries []assignment.LogEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.log = assignment.NewLogFromEntries(entries)
 }
 
 // leaseHorizon returns the soonest moment in the future at which

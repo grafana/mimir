@@ -20,6 +20,15 @@ service NautilusRebalancer {
   // round that changes the log. Slow subscribers receive only the
   // most recent snapshot; intermediate ones are conflated.
   rpc WatchAssignments(WatchAssignmentsRequest) returns (stream WatchAssignmentsResponse);
+
+  // WatchReadcacheAssignments is the readcache-side analogue of
+  // WatchAssignments: instead of (hash range -> partition) leases it
+  // streams (partition -> readcache instance) leases. Distributors
+  // and readcache pods both subscribe — distributors so they can
+  // route reads, readcache pods so they know which partitions to
+  // own. The stream contract (snapshot on connect, conflated
+  // updates) matches WatchAssignments.
+  rpc WatchReadcacheAssignments(WatchReadcacheAssignmentsRequest) returns (stream WatchReadcacheAssignmentsResponse);
 }
 
 message WatchAssignmentsRequest {}
@@ -51,4 +60,31 @@ message LogEntry {
   // leases by comparing to_unix_ms against their local clock.
   int64 from_unix_ms = 4;
   int64 to_unix_ms = 5;
+}
+
+message WatchReadcacheAssignmentsRequest {}
+
+// WatchReadcacheAssignmentsResponse is a full snapshot of the
+// rebalancer's readcache-assignment log at the time of the
+// broadcast.
+message WatchReadcacheAssignmentsResponse {
+  repeated ReadcacheLogEntry entries = 1 [(gogoproto.nullable) = false];
+}
+
+// ReadcacheLogEntry is the wire representation of a single
+// (partition -> readcache instance) ownership lease valid during
+// [from_unix_ms, to_unix_ms). The schema mirrors LogEntry except the
+// "what is owned" side is a partition (rather than a hash range)
+// and the "by whom" side is a readcache instance ID (rather than a
+// Kafka partition ID).
+//
+// Multiple entries for the same partition_id may be active
+// simultaneously, in which case the partition is multi-owned by
+// every active instance_id. The Phase 2 rebalancer publishes single-
+// owner mode but the wire schema is permissive.
+message ReadcacheLogEntry {
+  int32 partition_id = 1;
+  string instance_id = 2;
+  int64 from_unix_ms = 3;
+  int64 to_unix_ms = 4;
 }

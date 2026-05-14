@@ -188,8 +188,6 @@ type Config struct {
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
-	NautilusEnabled bool `yaml:"nautilus_enabled" category:"experimental"`
-
 	WipeTSDBDirOnStartup bool `yaml:"wipe_tsdb_dir_on_startup" category:"experimental" doc:"hidden"`
 
 	// This config is dynamically injected because defined outside the ingester config.
@@ -223,7 +221,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 	f.BoolVar(&cfg.WipeTSDBDirOnStartup, "ingester.wipe-tsdb-dir-on-startup", false, "If true, the ingester will delete all data in the TSDB directory on startup before re-initializing it. Only intended for development and testing.")
-	f.BoolVar(&cfg.NautilusEnabled, "ingester.nautilus-enabled", false, "Enable nautilus hash-range tracking. When enabled, the ingester accepts SetHashRanges/HashRangeStats RPCs and tracks per-range ingestion rates.")
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
@@ -358,18 +355,6 @@ type Ingester struct {
 
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
-
-	// hashRangeSeries tracks per-hash-range active-series counts for
-	// the nautilus rebalancer. Populated by a periodic walk of each
-	// tenant's TSDB head; see updateHashRangeSeriesCounts.
-	hashRangeSeries *hashRangeSeries
-
-	// queryLoad tracks per-partition EWMA samples-scanned rates,
-	// plus a per-ingester unnamed bucket for full-fanout queries.
-	// Read by HashRangeStats and consumed by the rebalancer as the
-	// per-partition query-load signal. Populated from the
-	// QueryAttributionHint that distributors attach to QueryRequest.
-	queryLoad *queryLoadTracker
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -445,13 +430,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
-	if cfg.NautilusEnabled {
-		i.hashRangeSeries = newHashRangeSeries()
-		i.queryLoad = newQueryLoadTracker()
-		if registerer != nil {
-			registerer.MustRegister(i.queryLoad)
-		}
-	}
 
 	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.

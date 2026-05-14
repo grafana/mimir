@@ -415,6 +415,13 @@ func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
 	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
 }
 
+// RegisterReadcache registers the gRPC server for the readcache service.
+// Readcache implements the same read RPCs as the ingester (minus Push)
+// so a distributor can dial it interchangeably with an ingester.
+func (a *API) RegisterReadcache(r client.IngesterServer) {
+	client.RegisterIngesterServer(a.server.GRPC, r)
+}
+
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.
 func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)

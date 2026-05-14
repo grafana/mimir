@@ -719,10 +719,10 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 // TestDistributor_QueryStream_AttributionHint exercises the named
 // path: an exact __name__ matcher must produce a non-nil
 // partitionByInstance map whose values are the partition IDs the
-// resolution selected, so QueryStream can attach a
-// QueryAttributionHint per call. The full-fanout path (no exact
-// __name__) must still return nil so the ingester bills the unnamed
-// bucket.
+// resolution selected. The map drives readcache routing (Phase 2C)
+// and the per-call QueryAttributionHint that the readcache pod uses
+// for load attribution. The full-fanout path (no exact __name__)
+// returns nil so the read recipient bills the unnamed bucket.
 func TestDistributor_QueryStream_AttributionHint(t *testing.T) {
 	const tenantID = "user"
 
@@ -780,7 +780,7 @@ func TestDistributor_QueryStream_AttributionHint(t *testing.T) {
 		sets, partitionByInstance, err := d.getIngesterReplicationSetsForQuery(ctx, []*labels.Matcher{barMatcher})
 		require.NoError(t, err)
 		require.NotEmpty(t, sets)
-		assert.Nil(t, partitionByInstance, "fan-out queries must leave the hint map nil; the ingester bills the unnamed bucket")
+		assert.Nil(t, partitionByInstance, "fan-out queries must leave the hint map nil; the read recipient bills the unnamed bucket")
 	})
 }
 

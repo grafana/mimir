@@ -7,7 +7,10 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +25,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 // Config holds the configuration for the nautilus ingestion rebalancer.
@@ -104,6 +108,48 @@ type Config struct {
 	// primarily caps the rebalancer's memory footprint and the size
 	// of the streaming snapshots.
 	EntryRetention time.Duration `yaml:"entry_retention"`
+
+	// ReadcacheSlicer configures the second slicer round that
+	// balances partition->readcache-instance assignments. The first
+	// round (above) balances hash-range->partition; the second round
+	// balances partition->readcache-instance.
+	ReadcacheSlicer ReadcacheSlicerConfig `yaml:"readcache_slicer"`
+
+	// DataDir is a local-disk directory where the rebalancer
+	// persists both the (hash-range -> partition) and the (partition
+	// -> readcache instance) logs. On restart the rebalancer seeds
+	// the in-memory logs from disk so the very first round after a
+	// crash doesn't reset routing to FineEvenSplit, which would
+	// shuffle every partition's owner and stall every readcache for
+	// the duration of a warm-up.
+	//
+	// Empty string disables persistence (logs are seeded from
+	// FineEvenSplit / GetHashRanges as before).
+	DataDir string `yaml:"data_dir"`
+
+	// KafkaTopic is the Kafka topic the rebalancer asks Kafka to
+	// auto-create on startup (subject to the global
+	// -ingest-storage.kafka.auto-create-topic-enabled gate). It
+	// matches the topic distributors forward writes to for tenants
+	// in nautilus_ingest_routing=nautilus-only and the topic
+	// readcache pods consume from. Default "nautilus_ingest".
+	KafkaTopic string `yaml:"kafka_topic"`
+
+	// PartitionCount is the number of partitions on KafkaTopic.
+	// Used both for the auto-create call and to size the slicer's
+	// partition-set when seeding the in-memory log. A higher
+	// partition count widens the rebalancer's redistribution budget
+	// (more, smaller chunks); a lower one reduces gRPC fan-out per
+	// round.
+	PartitionCount int32 `yaml:"partition_count"`
+
+	// Kafka is the shared ingest-storage Kafka config, injected by
+	// pkg/mimir so this package doesn't depend on the global Mimir
+	// configuration tree. It is consulted for connection/auth
+	// settings when auto-creating KafkaTopic; the Topic and
+	// AutoCreateTopicDefaultPartitions fields are overridden with
+	// KafkaTopic/PartitionCount before the create call.
+	Kafka ingest.KafkaConfig `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -117,6 +163,30 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.LeaseDuration, prefix+"lease-duration", 5*time.Minute, "Duration of each freshly-issued or pre-issued successor assignment-log lease. Consumers fall back to the partition ring once a lease expires, so this caps how long stale routing can persist after a rebalancer outage.")
 	f.DurationVar(&cfg.LeaseLookahead, prefix+"lease-lookahead", 90*time.Second, "How far before an active lease's expiry the rebalancer pre-issues its successor. Steady-state rebalance interval is approximately LeaseDuration; LeaseLookahead is the safety buffer to disseminate the successor to all consumers before the active lease ends.")
 	f.DurationVar(&cfg.EntryRetention, prefix+"entry-retention", 24*time.Hour, "How long expired assignment-log entries are retained after their lease ended. Active and pre-issued leases are never pruned. Must exceed querier QueryIngestersWithin plus a drain buffer once queriers consume the log; today the value chiefly caps the rebalancer's snapshot size sent to distributor stream subscribers.")
+	f.StringVar(&cfg.DataDir, prefix+"data-dir", "", "Directory where the rebalancer persists its assignment logs. Empty disables persistence; on restart the log is seeded from FineEvenSplit / ingester reports as before. Set this to a persistent volume in production so rebalancer restarts don't shuffle routing.")
+	f.StringVar(&cfg.KafkaTopic, prefix+"kafka-topic", "nautilus_ingest", "Name of the Kafka topic the nautilus pipeline runs on. The rebalancer auto-creates this topic on startup (gated by -ingest-storage.kafka.auto-create-topic-enabled); distributors forward nautilus-only tenant writes here; readcache pods consume from it.")
+	f.Var(asInt32Var{&cfg.PartitionCount}, prefix+"partition-count", "Number of partitions on -nautilus.rebalancer.kafka-topic. Used both for auto-creation and to size the slicer's initial partition set when seeding the in-memory log. Must be > 0 when persistence is empty; otherwise the seeded value from disk wins.")
+	cfg.ReadcacheSlicer.RegisterFlagsWithPrefix(prefix+"readcache-slicer.", f)
+}
+
+// asInt32Var adapts an *int32 to flag.Value, which only ships with
+// IntVar by default.
+type asInt32Var struct{ v *int32 }
+
+func (a asInt32Var) String() string {
+	if a.v == nil {
+		return "0"
+	}
+	return fmt.Sprintf("%d", *a.v)
+}
+
+func (a asInt32Var) Set(s string) error {
+	n, err := strconv.ParseInt(s, 10, 32)
+	if err != nil {
+		return err
+	}
+	*a.v = int32(n)
+	return nil
 }
 
 // Rebalancer is a Mimir module that periodically queries ingesters for
@@ -133,9 +203,10 @@ type Rebalancer struct {
 	pool          *ring_client.Pool
 	partitionRing *ring.PartitionInstanceRing
 
-	store   *logStore
-	admin   adminState
-	metrics *metrics
+	store          *logStore
+	readcacheStore *readcacheLogStore
+	admin          adminState
+	metrics        *metrics
 
 	// prevInstanceRanges tracks the last set of ranges pushed to each
 	// ingester, keyed by instance ID, so we can log changes.
@@ -155,6 +226,11 @@ type Rebalancer struct {
 	// scrape interval as distributors route writes to it. Mutated only
 	// by rebalance().
 	recentMoves map[int32][]moveRecord
+
+	// readcacheCooldowns tracks per-partition cooldowns for the
+	// second slicer round (partition -> readcache instance). Mutated
+	// only by rebalance() / planReadcacheAssignment.
+	readcacheCooldowns readcacheMoveCooldowns
 }
 
 // moveRecord tracks one past move off a source partition during the
@@ -172,15 +248,17 @@ type moveRecord struct {
 // New creates and returns a new Rebalancer.
 func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partitionRing *ring.PartitionInstanceRing, registerer prometheus.Registerer, logger log.Logger) *Rebalancer {
 	r := &Rebalancer{
-		cfg:           cfg,
-		logger:        logger,
-		ingesterRing:  ingesterRing,
-		pool:          pool,
-		partitionRing: partitionRing,
-		store:         newLogStore(),
-		moveCooldowns: make(map[assignment.HashRange]time.Time),
-		recentMoves:   make(map[int32][]moveRecord),
-		metrics:       newMetrics(registerer),
+		cfg:                cfg,
+		logger:             logger,
+		ingesterRing:       ingesterRing,
+		pool:               pool,
+		partitionRing:      partitionRing,
+		store:              newLogStore(),
+		readcacheStore:     newReadcacheLogStore(),
+		moveCooldowns:      make(map[assignment.HashRange]time.Time),
+		recentMoves:        make(map[int32][]moveRecord),
+		readcacheCooldowns: make(readcacheMoveCooldowns),
+		metrics:            newMetrics(registerer),
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.running, nil)
@@ -192,7 +270,48 @@ func (r *Rebalancer) starting(_ context.Context) error {
 		"lease_duration", r.cfg.LeaseDuration,
 		"lease_lookahead", r.cfg.LeaseLookahead,
 		"min_rebalance_interval", r.cfg.MinRebalanceInterval,
-		"max_rebalance_interval", r.cfg.MaxRebalanceInterval)
+		"max_rebalance_interval", r.cfg.MaxRebalanceInterval,
+		"data_dir", r.cfg.DataDir)
+
+	if r.cfg.DataDir != "" {
+		if err := os.MkdirAll(r.cfg.DataDir, 0o755); err != nil {
+			return fmt.Errorf("creating rebalancer data dir %q: %w", r.cfg.DataDir, err)
+		}
+
+		assignmentFile := newLogFile(filepath.Join(r.cfg.DataDir, assignmentLogFilename), log.With(r.logger, "component", "assignment_log_file"))
+		if entries, ok := assignmentFile.readAssignmentLog(); ok {
+			level.Info(r.logger).Log("msg", "seeded assignment log from disk", "entries", len(entries))
+			r.store.seedFromEntries(entries)
+		}
+		r.store.setPersistFn(assignmentFile.writeAssignmentLog, r.logger)
+
+		readcacheFile := newLogFile(filepath.Join(r.cfg.DataDir, readcacheLogFilename), log.With(r.logger, "component", "readcache_log_file"))
+		if entries, ok := readcacheFile.readReadcacheLog(); ok {
+			level.Info(r.logger).Log("msg", "seeded readcache assignment log from disk", "entries", len(entries))
+			r.readcacheStore.seedFromEntries(entries)
+		}
+		r.readcacheStore.setPersistFn(readcacheFile.writeReadcacheLog, r.logger)
+	}
+
+	// Auto-create the nautilus_ingest topic on startup so the dev-cell
+	// boot order doesn't require a manual kafka-topics --create step.
+	// Gated on the global -ingest-storage.kafka.auto-create-topic-enabled
+	// so the symmetry with the production topic is exact: if you
+	// opt into auto-creation there, you also get it here.
+	//
+	// CreateTopic is idempotent (TopicAlreadyExists is swallowed),
+	// so it's safe to call on every restart. The override below
+	// touches only the fields specific to the nautilus topic; all
+	// connection/auth/TLS/SASL/etc. comes from the production
+	// ingest-storage Kafka config.
+	if r.cfg.Kafka.AutoCreateTopicEnabled && r.cfg.KafkaTopic != "" && r.cfg.PartitionCount > 0 {
+		topicCfg := r.cfg.Kafka
+		topicCfg.Topic = r.cfg.KafkaTopic
+		topicCfg.AutoCreateTopicDefaultPartitions = int(r.cfg.PartitionCount)
+		if err := ingest.CreateTopic(topicCfg, log.With(r.logger, "component", "rebalancer_topic_bootstrap")); err != nil {
+			return fmt.Errorf("auto-creating nautilus kafka topic %q: %w", r.cfg.KafkaTopic, err)
+		}
+	}
 	return nil
 }
 
@@ -286,6 +405,34 @@ func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream Nautilu
 	}
 }
 
+// WatchReadcacheAssignments is the readcache-side analogue of
+// WatchAssignments: instead of (hash range -> ingester partition) it
+// streams (Kafka partition -> readcache instance) leases. The wire
+// contract is identical (snapshot on connect, conflated updates,
+// only live entries transmitted).
+func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
+	initial, updates, unsubscribe := r.readcacheStore.subscribe(time.Now())
+	defer unsubscribe()
+
+	if err := stream.Send(&WatchReadcacheAssignmentsResponse{Entries: ReadcacheEntriesToProto(initial)}); err != nil {
+		return err
+	}
+	ctx := stream.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case snap, ok := <-updates:
+			if !ok {
+				return nil
+			}
+			if err := stream.Send(&WatchReadcacheAssignmentsResponse{Entries: ReadcacheEntriesToProto(snap)}); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// The ingester client pool requires an org ID in the context
 	// (ClientUserHeaderInterceptor). Inject a synthetic one since
@@ -361,6 +508,16 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 
 	r.store.apply(now, newAssignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
 	r.pushRangesToIngesters(ctx, newAssignment)
+
+	// Second slicer round: balance partition -> readcache instance
+	// using the per-partition load signal we just collected. Only
+	// runs when explicitly enabled and an instance set is configured;
+	// disabling either gate is the production default during the
+	// Phase 2A bring-up so the rebalancer's existing behaviour is
+	// preserved.
+	if r.cfg.ReadcacheSlicer.Enabled && len(r.cfg.ReadcacheSlicer.Instances) > 0 {
+		r.runReadcacheSlicer(now, activePartitions, partitionLByPID, partitionQuerySamples)
+	}
 
 	// Compute round summary stats using L (memory series) so the admin
 	// view tracks the same quantity the slicer balances.

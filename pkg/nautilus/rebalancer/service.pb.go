@@ -6,17 +6,16 @@ package rebalancer
 import (
 	context "context"
 	fmt "fmt"
-	io "io"
-	math "math"
-	math_bits "math/bits"
-	reflect "reflect"
-	strings "strings"
-
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	io "io"
+	math "math"
+	math_bits "math/bits"
+	reflect "reflect"
+	strings "strings"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -200,39 +199,207 @@ func (m *LogEntry) GetToUnixMs() int64 {
 	return 0
 }
 
+type WatchReadcacheAssignmentsRequest struct {
+}
+
+func (m *WatchReadcacheAssignmentsRequest) Reset()      { *m = WatchReadcacheAssignmentsRequest{} }
+func (*WatchReadcacheAssignmentsRequest) ProtoMessage() {}
+func (*WatchReadcacheAssignmentsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a0b84a42fa06f626, []int{3}
+}
+func (m *WatchReadcacheAssignmentsRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *WatchReadcacheAssignmentsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_WatchReadcacheAssignmentsRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *WatchReadcacheAssignmentsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_WatchReadcacheAssignmentsRequest.Merge(m, src)
+}
+func (m *WatchReadcacheAssignmentsRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *WatchReadcacheAssignmentsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_WatchReadcacheAssignmentsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_WatchReadcacheAssignmentsRequest proto.InternalMessageInfo
+
+// WatchReadcacheAssignmentsResponse is a full snapshot of the
+// rebalancer's readcache-assignment log at the time of the
+// broadcast.
+type WatchReadcacheAssignmentsResponse struct {
+	Entries []ReadcacheLogEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries"`
+}
+
+func (m *WatchReadcacheAssignmentsResponse) Reset()      { *m = WatchReadcacheAssignmentsResponse{} }
+func (*WatchReadcacheAssignmentsResponse) ProtoMessage() {}
+func (*WatchReadcacheAssignmentsResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a0b84a42fa06f626, []int{4}
+}
+func (m *WatchReadcacheAssignmentsResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *WatchReadcacheAssignmentsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_WatchReadcacheAssignmentsResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *WatchReadcacheAssignmentsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_WatchReadcacheAssignmentsResponse.Merge(m, src)
+}
+func (m *WatchReadcacheAssignmentsResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *WatchReadcacheAssignmentsResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_WatchReadcacheAssignmentsResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_WatchReadcacheAssignmentsResponse proto.InternalMessageInfo
+
+func (m *WatchReadcacheAssignmentsResponse) GetEntries() []ReadcacheLogEntry {
+	if m != nil {
+		return m.Entries
+	}
+	return nil
+}
+
+// ReadcacheLogEntry is the wire representation of a single
+// (partition -> readcache instance) ownership lease valid during
+// [from_unix_ms, to_unix_ms). The schema mirrors LogEntry except the
+// "what is owned" side is a partition (rather than a hash range)
+// and the "by whom" side is a readcache instance ID (rather than a
+// Kafka partition ID).
+//
+// Multiple entries for the same partition_id may be active
+// simultaneously, in which case the partition is multi-owned by
+// every active instance_id. The Phase 2 rebalancer publishes single-
+// owner mode but the wire schema is permissive.
+type ReadcacheLogEntry struct {
+	PartitionId int32  `protobuf:"varint,1,opt,name=partition_id,json=partitionId,proto3" json:"partition_id,omitempty"`
+	InstanceId  string `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	FromUnixMs  int64  `protobuf:"varint,3,opt,name=from_unix_ms,json=fromUnixMs,proto3" json:"from_unix_ms,omitempty"`
+	ToUnixMs    int64  `protobuf:"varint,4,opt,name=to_unix_ms,json=toUnixMs,proto3" json:"to_unix_ms,omitempty"`
+}
+
+func (m *ReadcacheLogEntry) Reset()      { *m = ReadcacheLogEntry{} }
+func (*ReadcacheLogEntry) ProtoMessage() {}
+func (*ReadcacheLogEntry) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a0b84a42fa06f626, []int{5}
+}
+func (m *ReadcacheLogEntry) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ReadcacheLogEntry) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ReadcacheLogEntry.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ReadcacheLogEntry) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ReadcacheLogEntry.Merge(m, src)
+}
+func (m *ReadcacheLogEntry) XXX_Size() int {
+	return m.Size()
+}
+func (m *ReadcacheLogEntry) XXX_DiscardUnknown() {
+	xxx_messageInfo_ReadcacheLogEntry.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ReadcacheLogEntry proto.InternalMessageInfo
+
+func (m *ReadcacheLogEntry) GetPartitionId() int32 {
+	if m != nil {
+		return m.PartitionId
+	}
+	return 0
+}
+
+func (m *ReadcacheLogEntry) GetInstanceId() string {
+	if m != nil {
+		return m.InstanceId
+	}
+	return ""
+}
+
+func (m *ReadcacheLogEntry) GetFromUnixMs() int64 {
+	if m != nil {
+		return m.FromUnixMs
+	}
+	return 0
+}
+
+func (m *ReadcacheLogEntry) GetToUnixMs() int64 {
+	if m != nil {
+		return m.ToUnixMs
+	}
+	return 0
+}
+
 func init() {
 	proto.RegisterType((*WatchAssignmentsRequest)(nil), "nautilus.rebalancer.WatchAssignmentsRequest")
 	proto.RegisterType((*WatchAssignmentsResponse)(nil), "nautilus.rebalancer.WatchAssignmentsResponse")
 	proto.RegisterType((*LogEntry)(nil), "nautilus.rebalancer.LogEntry")
+	proto.RegisterType((*WatchReadcacheAssignmentsRequest)(nil), "nautilus.rebalancer.WatchReadcacheAssignmentsRequest")
+	proto.RegisterType((*WatchReadcacheAssignmentsResponse)(nil), "nautilus.rebalancer.WatchReadcacheAssignmentsResponse")
+	proto.RegisterType((*ReadcacheLogEntry)(nil), "nautilus.rebalancer.ReadcacheLogEntry")
 }
 
 func init() { proto.RegisterFile("service.proto", fileDescriptor_a0b84a42fa06f626) }
 
 var fileDescriptor_a0b84a42fa06f626 = []byte{
-	// 358 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x91, 0xcf, 0x4e, 0x2a, 0x31,
-	0x18, 0xc5, 0xe7, 0xe3, 0xcf, 0xbd, 0xa4, 0xc0, 0xcd, 0x4d, 0xef, 0x4d, 0x1c, 0x89, 0xd6, 0x91,
-	0xd5, 0x2c, 0x74, 0x34, 0xb8, 0x36, 0x51, 0x12, 0x17, 0x26, 0xea, 0x62, 0x12, 0x63, 0x74, 0x43,
-	0x06, 0xa8, 0x43, 0x93, 0xa1, 0x85, 0xb6, 0x63, 0x70, 0xe7, 0xce, 0x95, 0x89, 0x8f, 0xe1, 0xa3,
-	0xb0, 0x64, 0xc9, 0xca, 0x48, 0xd9, 0xb8, 0xe4, 0x11, 0x0c, 0x8c, 0x60, 0xa2, 0x98, 0xb8, 0xeb,
-	0x77, 0x7e, 0xa7, 0xed, 0xe9, 0x29, 0x2a, 0x2a, 0x2a, 0x6f, 0x58, 0x83, 0x7a, 0x1d, 0x29, 0xb4,
-	0xc0, 0xff, 0x78, 0x10, 0x6b, 0x16, 0xc5, 0xca, 0x93, 0xb4, 0x1e, 0x44, 0x01, 0x6f, 0x50, 0x59,
-	0xfa, 0x1f, 0x8a, 0x50, 0xcc, 0xf8, 0xce, 0x74, 0x95, 0x58, 0xcb, 0xab, 0x68, 0xe5, 0x22, 0xd0,
-	0x8d, 0xd6, 0xa1, 0x52, 0x2c, 0xe4, 0x6d, 0xca, 0xb5, 0xf2, 0x69, 0x37, 0xa6, 0x4a, 0x97, 0x2f,
-	0x91, 0xfd, 0x15, 0xa9, 0x8e, 0xe0, 0x8a, 0xe2, 0x7d, 0xf4, 0x9b, 0x72, 0x2d, 0x19, 0x55, 0x36,
-	0x38, 0x69, 0x37, 0x5f, 0x59, 0xf7, 0x96, 0xdc, 0xe9, 0x9d, 0x88, 0xf0, 0x88, 0x6b, 0x79, 0x5b,
-	0xcd, 0xf4, 0x9f, 0x37, 0x2c, 0x7f, 0xbe, 0xa7, 0xfc, 0x00, 0x28, 0x37, 0x67, 0xf8, 0x0f, 0x4a,
-	0x45, 0xc2, 0x06, 0x07, 0xdc, 0xa2, 0x9f, 0x8a, 0xc4, 0x74, 0x6e, 0x31, 0x3b, 0x95, 0xcc, 0x2d,
-	0x86, 0x37, 0x51, 0xa1, 0x13, 0x48, 0xcd, 0x34, 0x13, 0xbc, 0xc6, 0x9a, 0x76, 0xda, 0x01, 0x37,
-	0xeb, 0xe7, 0x17, 0xda, 0x71, 0x13, 0x3b, 0xa8, 0x70, 0x2d, 0x45, 0xbb, 0x16, 0x73, 0xd6, 0xab,
-	0xb5, 0x95, 0x9d, 0x71, 0xc0, 0x4d, 0xfb, 0x68, 0xaa, 0x9d, 0x73, 0xd6, 0x3b, 0x55, 0x78, 0x0d,
-	0x21, 0x2d, 0x16, 0x3c, 0x3b, 0xe3, 0x39, 0x2d, 0x12, 0x5a, 0xb9, 0x07, 0x84, 0xcf, 0xde, 0xf3,
-	0xfb, 0x8b, 0xf8, 0xb8, 0x8b, 0xfe, 0x7e, 0x6e, 0x00, 0x6f, 0x2d, 0x7d, 0xe8, 0x37, 0x1d, 0x96,
-	0xb6, 0x7f, 0xe8, 0x4e, 0x6a, 0xdd, 0x85, 0xea, 0xc1, 0x60, 0x44, 0xac, 0xe1, 0x88, 0x58, 0x93,
-	0x11, 0x81, 0x3b, 0x43, 0xe0, 0xc9, 0x10, 0xe8, 0x1b, 0x02, 0x03, 0x43, 0xe0, 0xc5, 0x10, 0x78,
-	0x35, 0xc4, 0x9a, 0x18, 0x02, 0x8f, 0x63, 0x62, 0x0d, 0xc6, 0xc4, 0x1a, 0x8e, 0x89, 0x75, 0x85,
-	0x3e, 0x0e, 0xaf, 0xff, 0x9a, 0x7d, 0xec, 0xde, 0x5b, 0x00, 0x00, 0x00, 0xff, 0xff, 0x88, 0x7f,
-	0x35, 0x4b, 0x14, 0x02, 0x00, 0x00,
+	// 452 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x93, 0x41, 0x6f, 0xd3, 0x30,
+	0x14, 0xc7, 0xf3, 0xda, 0x0e, 0xc6, 0xeb, 0x86, 0xc0, 0x20, 0x91, 0x55, 0xe0, 0x65, 0x39, 0xa0,
+	0x1e, 0xa0, 0xa0, 0x21, 0xb8, 0x21, 0xc1, 0x24, 0x90, 0x90, 0x80, 0x83, 0x25, 0x84, 0xe0, 0x52,
+	0x65, 0xa9, 0x69, 0x2d, 0x52, 0xbb, 0xb3, 0x1d, 0x34, 0x6e, 0x7c, 0x00, 0x90, 0x38, 0xc1, 0x57,
+	0xe0, 0xa3, 0xec, 0xd8, 0xe3, 0x4e, 0x88, 0xa6, 0x17, 0x8e, 0xfb, 0x08, 0x28, 0xc9, 0x12, 0xc4,
+	0x92, 0x0c, 0xb8, 0xc5, 0xef, 0xff, 0xb7, 0x5f, 0xfe, 0x3f, 0x3f, 0xe3, 0xba, 0xe1, 0xfa, 0x9d,
+	0x08, 0xf9, 0x60, 0xa6, 0x95, 0x55, 0xe4, 0x92, 0x0c, 0x62, 0x2b, 0xa2, 0xd8, 0x0c, 0x34, 0xdf,
+	0x0d, 0xa2, 0x40, 0x86, 0x5c, 0xf7, 0x2e, 0x8f, 0xd5, 0x58, 0x65, 0xfa, 0xad, 0xf4, 0x2b, 0xb7,
+	0xfa, 0x1b, 0x78, 0xe5, 0x65, 0x60, 0xc3, 0xc9, 0x43, 0x63, 0xc4, 0x58, 0x4e, 0xb9, 0xb4, 0x86,
+	0xf1, 0xbd, 0x98, 0x1b, 0xeb, 0xbf, 0x42, 0xb7, 0x2a, 0x99, 0x99, 0x92, 0x86, 0x93, 0xfb, 0x78,
+	0x96, 0x4b, 0xab, 0x05, 0x37, 0x2e, 0x78, 0xed, 0x7e, 0x77, 0xfb, 0xda, 0xa0, 0xa6, 0xe7, 0xe0,
+	0xa9, 0x1a, 0x3f, 0x92, 0x56, 0xbf, 0xdf, 0xe9, 0x1c, 0x7c, 0xdf, 0x74, 0x58, 0xb1, 0xc7, 0xff,
+	0x04, 0xb8, 0x5a, 0x68, 0xe4, 0x3c, 0xb6, 0x22, 0xe5, 0x82, 0x07, 0xfd, 0x75, 0xd6, 0x8a, 0x54,
+	0xba, 0x9e, 0x08, 0xb7, 0x95, 0xaf, 0x27, 0x82, 0x6c, 0xe1, 0xda, 0x2c, 0xd0, 0x56, 0x58, 0xa1,
+	0xe4, 0x50, 0x8c, 0xdc, 0xb6, 0x07, 0xfd, 0x15, 0xd6, 0x2d, 0x6b, 0x4f, 0x46, 0xc4, 0xc3, 0xb5,
+	0x37, 0x5a, 0x4d, 0x87, 0xb1, 0x14, 0xfb, 0xc3, 0xa9, 0x71, 0x3b, 0x1e, 0xf4, 0xdb, 0x0c, 0xd3,
+	0xda, 0x0b, 0x29, 0xf6, 0x9f, 0x19, 0x72, 0x15, 0xd1, 0xaa, 0x52, 0x5f, 0xc9, 0xf4, 0x55, 0xab,
+	0x72, 0xd5, 0xf7, 0xd1, 0xcb, 0xa2, 0x32, 0x1e, 0x8c, 0xc2, 0x20, 0x9c, 0xf0, 0x1a, 0x1c, 0x6f,
+	0x71, 0xeb, 0x14, 0xcf, 0x31, 0x97, 0xc7, 0x27, 0xb9, 0x5c, 0xaf, 0xe5, 0x52, 0x9e, 0xd1, 0x04,
+	0xe8, 0x2b, 0xe0, 0xc5, 0x8a, 0xa9, 0x42, 0x02, 0xaa, 0x24, 0x36, 0xb1, 0x2b, 0xa4, 0xb1, 0x69,
+	0x9b, 0xd4, 0x91, 0x52, 0x3c, 0xc7, 0xb0, 0x28, 0xd5, 0xa0, 0x6a, 0xff, 0x05, 0x55, 0xe7, 0x4f,
+	0x54, 0xdb, 0x5f, 0x5a, 0x48, 0x9e, 0x1f, 0x47, 0x62, 0x65, 0x22, 0xb2, 0x87, 0x17, 0x4e, 0x0e,
+	0x0b, 0xb9, 0x51, 0x9b, 0xbd, 0x61, 0xdc, 0x7a, 0x37, 0xff, 0xd1, 0x9d, 0x93, 0xbe, 0x0d, 0xe4,
+	0x23, 0xe0, 0x46, 0xe3, 0x8d, 0x90, 0xbb, 0xcd, 0xc7, 0x9d, 0x72, 0xcb, 0xbd, 0x7b, 0xff, 0xbb,
+	0xad, 0xf8, 0x9d, 0x9d, 0x07, 0xf3, 0x05, 0x75, 0x0e, 0x17, 0xd4, 0x39, 0x5a, 0x50, 0xf8, 0x90,
+	0x50, 0xf8, 0x96, 0x50, 0x38, 0x48, 0x28, 0xcc, 0x13, 0x0a, 0x3f, 0x12, 0x0a, 0x3f, 0x13, 0xea,
+	0x1c, 0x25, 0x14, 0x3e, 0x2f, 0xa9, 0x33, 0x5f, 0x52, 0xe7, 0x70, 0x49, 0x9d, 0xd7, 0xf8, 0xbb,
+	0xcb, 0xee, 0x99, 0xec, 0x49, 0xde, 0xf9, 0x15, 0x00, 0x00, 0xff, 0xff, 0xa8, 0x6f, 0xa0, 0xa7,
+	0xce, 0x03, 0x00, 0x00,
 }
 
 func (this *WatchAssignmentsRequest) Equal(that interface{}) bool {
@@ -321,6 +488,89 @@ func (this *LogEntry) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *WatchReadcacheAssignmentsRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*WatchReadcacheAssignmentsRequest)
+	if !ok {
+		that2, ok := that.(WatchReadcacheAssignmentsRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	return true
+}
+func (this *WatchReadcacheAssignmentsResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*WatchReadcacheAssignmentsResponse)
+	if !ok {
+		that2, ok := that.(WatchReadcacheAssignmentsResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Entries) != len(that1.Entries) {
+		return false
+	}
+	for i := range this.Entries {
+		if !this.Entries[i].Equal(&that1.Entries[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *ReadcacheLogEntry) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ReadcacheLogEntry)
+	if !ok {
+		that2, ok := that.(ReadcacheLogEntry)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.PartitionId != that1.PartitionId {
+		return false
+	}
+	if this.InstanceId != that1.InstanceId {
+		return false
+	}
+	if this.FromUnixMs != that1.FromUnixMs {
+		return false
+	}
+	if this.ToUnixMs != that1.ToUnixMs {
+		return false
+	}
+	return true
+}
 func (this *WatchAssignmentsRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -360,6 +610,44 @@ func (this *LogEntry) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *WatchReadcacheAssignmentsRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&rebalancer.WatchReadcacheAssignmentsRequest{")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *WatchReadcacheAssignmentsResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rebalancer.WatchReadcacheAssignmentsResponse{")
+	if this.Entries != nil {
+		vs := make([]ReadcacheLogEntry, len(this.Entries))
+		for i := range vs {
+			vs[i] = this.Entries[i]
+		}
+		s = append(s, "Entries: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ReadcacheLogEntry) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&rebalancer.ReadcacheLogEntry{")
+	s = append(s, "PartitionId: "+fmt.Sprintf("%#v", this.PartitionId)+",\n")
+	s = append(s, "InstanceId: "+fmt.Sprintf("%#v", this.InstanceId)+",\n")
+	s = append(s, "FromUnixMs: "+fmt.Sprintf("%#v", this.FromUnixMs)+",\n")
+	s = append(s, "ToUnixMs: "+fmt.Sprintf("%#v", this.ToUnixMs)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringService(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -387,6 +675,14 @@ type NautilusRebalancerClient interface {
 	// round that changes the log. Slow subscribers receive only the
 	// most recent snapshot; intermediate ones are conflated.
 	WatchAssignments(ctx context.Context, in *WatchAssignmentsRequest, opts ...grpc.CallOption) (NautilusRebalancer_WatchAssignmentsClient, error)
+	// WatchReadcacheAssignments is the readcache-side analogue of
+	// WatchAssignments: instead of (hash range -> partition) leases it
+	// streams (partition -> readcache instance) leases. Distributors
+	// and readcache pods both subscribe — distributors so they can
+	// route reads, readcache pods so they know which partitions to
+	// own. The stream contract (snapshot on connect, conflated
+	// updates) matches WatchAssignments.
+	WatchReadcacheAssignments(ctx context.Context, in *WatchReadcacheAssignmentsRequest, opts ...grpc.CallOption) (NautilusRebalancer_WatchReadcacheAssignmentsClient, error)
 }
 
 type nautilusRebalancerClient struct {
@@ -429,6 +725,38 @@ func (x *nautilusRebalancerWatchAssignmentsClient) Recv() (*WatchAssignmentsResp
 	return m, nil
 }
 
+func (c *nautilusRebalancerClient) WatchReadcacheAssignments(ctx context.Context, in *WatchReadcacheAssignmentsRequest, opts ...grpc.CallOption) (NautilusRebalancer_WatchReadcacheAssignmentsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_NautilusRebalancer_serviceDesc.Streams[1], "/nautilus.rebalancer.NautilusRebalancer/WatchReadcacheAssignments", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &nautilusRebalancerWatchReadcacheAssignmentsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type NautilusRebalancer_WatchReadcacheAssignmentsClient interface {
+	Recv() (*WatchReadcacheAssignmentsResponse, error)
+	grpc.ClientStream
+}
+
+type nautilusRebalancerWatchReadcacheAssignmentsClient struct {
+	grpc.ClientStream
+}
+
+func (x *nautilusRebalancerWatchReadcacheAssignmentsClient) Recv() (*WatchReadcacheAssignmentsResponse, error) {
+	m := new(WatchReadcacheAssignmentsResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // NautilusRebalancerServer is the server API for NautilusRebalancer service.
 type NautilusRebalancerServer interface {
 	// WatchAssignments subscribes to the rebalancer's assignment log.
@@ -437,6 +765,14 @@ type NautilusRebalancerServer interface {
 	// round that changes the log. Slow subscribers receive only the
 	// most recent snapshot; intermediate ones are conflated.
 	WatchAssignments(*WatchAssignmentsRequest, NautilusRebalancer_WatchAssignmentsServer) error
+	// WatchReadcacheAssignments is the readcache-side analogue of
+	// WatchAssignments: instead of (hash range -> partition) leases it
+	// streams (partition -> readcache instance) leases. Distributors
+	// and readcache pods both subscribe — distributors so they can
+	// route reads, readcache pods so they know which partitions to
+	// own. The stream contract (snapshot on connect, conflated
+	// updates) matches WatchAssignments.
+	WatchReadcacheAssignments(*WatchReadcacheAssignmentsRequest, NautilusRebalancer_WatchReadcacheAssignmentsServer) error
 }
 
 // UnimplementedNautilusRebalancerServer can be embedded to have forward compatible implementations.
@@ -445,6 +781,9 @@ type UnimplementedNautilusRebalancerServer struct {
 
 func (*UnimplementedNautilusRebalancerServer) WatchAssignments(req *WatchAssignmentsRequest, srv NautilusRebalancer_WatchAssignmentsServer) error {
 	return status.Errorf(codes.Unimplemented, "method WatchAssignments not implemented")
+}
+func (*UnimplementedNautilusRebalancerServer) WatchReadcacheAssignments(req *WatchReadcacheAssignmentsRequest, srv NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
+	return status.Errorf(codes.Unimplemented, "method WatchReadcacheAssignments not implemented")
 }
 
 func RegisterNautilusRebalancerServer(s *grpc.Server, srv NautilusRebalancerServer) {
@@ -472,6 +811,27 @@ func (x *nautilusRebalancerWatchAssignmentsServer) Send(m *WatchAssignmentsRespo
 	return x.ServerStream.SendMsg(m)
 }
 
+func _NautilusRebalancer_WatchReadcacheAssignments_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchReadcacheAssignmentsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(NautilusRebalancerServer).WatchReadcacheAssignments(m, &nautilusRebalancerWatchReadcacheAssignmentsServer{stream})
+}
+
+type NautilusRebalancer_WatchReadcacheAssignmentsServer interface {
+	Send(*WatchReadcacheAssignmentsResponse) error
+	grpc.ServerStream
+}
+
+type nautilusRebalancerWatchReadcacheAssignmentsServer struct {
+	grpc.ServerStream
+}
+
+func (x *nautilusRebalancerWatchReadcacheAssignmentsServer) Send(m *WatchReadcacheAssignmentsResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 var _NautilusRebalancer_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "nautilus.rebalancer.NautilusRebalancer",
 	HandlerType: (*NautilusRebalancerServer)(nil),
@@ -480,6 +840,11 @@ var _NautilusRebalancer_serviceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchAssignments",
 			Handler:       _NautilusRebalancer_WatchAssignments_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchReadcacheAssignments",
+			Handler:       _NautilusRebalancer_WatchReadcacheAssignments_Handler,
 			ServerStreams: true,
 		},
 	},
@@ -594,6 +959,111 @@ func (m *LogEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *WatchReadcacheAssignmentsRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *WatchReadcacheAssignmentsRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *WatchReadcacheAssignmentsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *WatchReadcacheAssignmentsResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *WatchReadcacheAssignmentsResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *WatchReadcacheAssignmentsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Entries) > 0 {
+		for iNdEx := len(m.Entries) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Entries[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintService(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ReadcacheLogEntry) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ReadcacheLogEntry) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ReadcacheLogEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.ToUnixMs != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.ToUnixMs))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.FromUnixMs != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.FromUnixMs))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.InstanceId) > 0 {
+		i -= len(m.InstanceId)
+		copy(dAtA[i:], m.InstanceId)
+		i = encodeVarintService(dAtA, i, uint64(len(m.InstanceId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.PartitionId != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.PartitionId))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintService(dAtA []byte, offset int, v uint64) int {
 	offset -= sovService(v)
 	base := offset
@@ -653,6 +1123,52 @@ func (m *LogEntry) Size() (n int) {
 	return n
 }
 
+func (m *WatchReadcacheAssignmentsRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *WatchReadcacheAssignmentsResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Entries) > 0 {
+		for _, e := range m.Entries {
+			l = e.Size()
+			n += 1 + l + sovService(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *ReadcacheLogEntry) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.PartitionId != 0 {
+		n += 1 + sovService(uint64(m.PartitionId))
+	}
+	l = len(m.InstanceId)
+	if l > 0 {
+		n += 1 + l + sovService(uint64(l))
+	}
+	if m.FromUnixMs != 0 {
+		n += 1 + sovService(uint64(m.FromUnixMs))
+	}
+	if m.ToUnixMs != 0 {
+		n += 1 + sovService(uint64(m.ToUnixMs))
+	}
+	return n
+}
+
 func sovService(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -691,6 +1207,43 @@ func (this *LogEntry) String() string {
 		`Lo:` + fmt.Sprintf("%v", this.Lo) + `,`,
 		`Hi:` + fmt.Sprintf("%v", this.Hi) + `,`,
 		`PartitionId:` + fmt.Sprintf("%v", this.PartitionId) + `,`,
+		`FromUnixMs:` + fmt.Sprintf("%v", this.FromUnixMs) + `,`,
+		`ToUnixMs:` + fmt.Sprintf("%v", this.ToUnixMs) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *WatchReadcacheAssignmentsRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&WatchReadcacheAssignmentsRequest{`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *WatchReadcacheAssignmentsResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForEntries := "[]ReadcacheLogEntry{"
+	for _, f := range this.Entries {
+		repeatedStringForEntries += strings.Replace(strings.Replace(f.String(), "ReadcacheLogEntry", "ReadcacheLogEntry", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForEntries += "}"
+	s := strings.Join([]string{`&WatchReadcacheAssignmentsResponse{`,
+		`Entries:` + repeatedStringForEntries + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ReadcacheLogEntry) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ReadcacheLogEntry{`,
+		`PartitionId:` + fmt.Sprintf("%v", this.PartitionId) + `,`,
+		`InstanceId:` + fmt.Sprintf("%v", this.InstanceId) + `,`,
 		`FromUnixMs:` + fmt.Sprintf("%v", this.FromUnixMs) + `,`,
 		`ToUnixMs:` + fmt.Sprintf("%v", this.ToUnixMs) + `,`,
 		`}`,
@@ -945,6 +1498,279 @@ func (m *LogEntry) Unmarshal(dAtA []byte) error {
 				}
 			}
 		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ToUnixMs", wireType)
+			}
+			m.ToUnixMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ToUnixMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipService(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthService
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *WatchReadcacheAssignmentsRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowService
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: WatchReadcacheAssignmentsRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: WatchReadcacheAssignmentsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipService(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthService
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *WatchReadcacheAssignmentsResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowService
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: WatchReadcacheAssignmentsResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: WatchReadcacheAssignmentsResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Entries", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Entries = append(m.Entries, ReadcacheLogEntry{})
+			if err := m.Entries[len(m.Entries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipService(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthService
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ReadcacheLogEntry) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowService
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ReadcacheLogEntry: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ReadcacheLogEntry: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PartitionId", wireType)
+			}
+			m.PartitionId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.PartitionId |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field InstanceId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.InstanceId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FromUnixMs", wireType)
+			}
+			m.FromUnixMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.FromUnixMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ToUnixMs", wireType)
 			}
