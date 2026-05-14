@@ -9,11 +9,11 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
@@ -179,7 +179,7 @@ func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send s
 	if err := rs.Err(); err != nil {
 		return err
 	}
-	batch.Warnings = warningsToStrings(rs.Warnings())
+	batch.Warnings = mimirstorage.WarningsToStrings(rs.Warnings())
 	if len(batch.Results) > 0 || len(batch.Warnings) > 0 {
 		if err := send(batch); err != nil {
 			return err
@@ -188,15 +188,4 @@ func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send s
 	return nil
 }
 
-// warningsToStrings flattens annotations into a string slice for wire transport.
-// Returns nil for empty input so the proto field is omitted on the wire.
-func warningsToStrings(a annotations.Annotations) []string {
-	if len(a) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(a))
-	for _, w := range a {
-		out = append(out, w.Error())
-	}
-	return out
-}
+ 
