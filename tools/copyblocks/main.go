@@ -30,7 +30,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/objtools"
 )
@@ -49,10 +51,13 @@ type config struct {
 	dryRun                          bool
 	skipNoCompactBlockDurationCheck bool
 	httpListen                      string
+
+	backfill backfillConfig
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
-	c.copyConfig.RegisterFlags(f)
+	c.copyConfig.RegisterFlags(f, true)
+	c.backfill.RegisterFlags(f)
 	f.DurationVar(&c.minBlockDuration, "min-block-duration", 0, "If non-zero, ignore blocks that cover block range smaller than this.")
 	f.Var(&c.minTime, "min-time", fmt.Sprintf("If set, only blocks with MinTime >= this value are copied. The supported time format is %q.", time.RFC3339))
 	f.Var(&c.maxTime, "max-time", fmt.Sprintf("If set, only blocks with MaxTime <= this value are copied. The supported time format is %q.", time.RFC3339))
@@ -68,7 +73,17 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 }
 
 func (c *config) validate() error {
-	if err := c.copyConfig.Validate(); err != nil {
+	if c.isBackfill() {
+		if err := c.copyConfig.ValidateSource(); err != nil {
+			return err
+		}
+		if err := c.backfill.Validate(); err != nil {
+			return err
+		}
+		if len(c.userMapping) > 0 {
+			return fmt.Errorf("-user-mapping cannot be used with -destination.backend=backfill")
+		}
+	} else if err := c.copyConfig.Validate(); err != nil {
 		return err
 	}
 	if c.tenantConcurrency < 1 {
@@ -81,6 +96,10 @@ func (c *config) validate() error {
 		return fmt.Errorf("-copy-period must be non-negative")
 	}
 	return nil
+}
+
+func (c *config) isBackfill() bool {
+	return c.copyConfig.DestinationBackend() == backfillBackend
 }
 
 func (c *config) parseUserMapping() (map[string]string, error) {
@@ -102,6 +121,31 @@ func (c *config) parseUserMapping() (map[string]string, error) {
 		m[source] = splitMapping[1]
 	}
 	return m, nil
+}
+
+const backfillBackend = "backfill"
+
+type backfillConfig struct {
+	clientConfig client.Config
+	sleepTime    time.Duration
+}
+
+func (c *backfillConfig) RegisterFlags(f *flag.FlagSet) {
+	c.clientConfig.RegisterConnectionFlagsWithPrefix(backfillBackend, f)
+	f.DurationVar(&c.sleepTime, backfillBackend+".sleep-time", 20*time.Second, "How long to sleep between checking the state of block upload.")
+}
+
+func (c *backfillConfig) Validate() error {
+	if c.clientConfig.Address == "" {
+		return fmt.Errorf("-backfill.address is required when -destination.backend is set to backfill")
+	}
+	if c.clientConfig.ID == "" {
+		return fmt.Errorf("-backfill.id is required when -destination.backend is set to backfill")
+	}
+	if c.clientConfig.Key != "" && c.clientConfig.AuthToken != "" {
+		return fmt.Errorf("at most one of -backfill.key and -backfill.auth-token can be set")
+	}
+	return nil
 }
 
 type metrics struct {
@@ -211,8 +255,55 @@ func runCopy(ctx context.Context, cfg config, userMapping map[string]string, log
 	return true
 }
 
-func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, logger log.Logger, m *metrics) error {
+type blockCopier struct {
+	name      string
+	copyBlock func(ctx context.Context, srcTenant, dstTenant string, blockID ulid.ULID, markers blockMarkers) error
+}
+
+func newBucketBlockCopier(ctx context.Context, cfg config) (objtools.Bucket, *blockCopier, error) {
 	sourceBucket, destBucket, copyFunc, err := cfg.copyConfig.ToBuckets(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sourceBucket, &blockCopier{
+		name: destBucket.Name(),
+		copyBlock: func(ctx context.Context, srcTenant, dstTenant string, blockID ulid.ULID, markers blockMarkers) error {
+			return copySingleBlock(ctx, srcTenant, dstTenant, blockID, markers, sourceBucket, copyFunc)
+		},
+	}, nil
+}
+
+func newBackfillBlockCopier(ctx context.Context, cfg config, logger log.Logger) (objtools.Bucket, *blockCopier, error) {
+	sourceBucket, err := cfg.copyConfig.SourceBucket(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	objstoreBkt, err := cfg.copyConfig.SourceObjstoreBucket(ctx, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	mimirClient, err := client.New(cfg.backfill.clientConfig, logger)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to create Mimir client for backfill")
+	}
+	return sourceBucket, &blockCopier{
+		name: "backfill",
+		copyBlock: func(ctx context.Context, srcTenant, _ string, blockID ulid.ULID, _ blockMarkers) error {
+			prefixedBkt := objstore.NewPrefixedBucket(objstoreBkt, srcTenant)
+			return mimirClient.BackfillBlock(ctx, prefixedBkt, blockID, cfg.backfill.sleepTime)
+		},
+	}, nil
+}
+
+func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, logger log.Logger, m *metrics) error {
+	var sourceBucket objtools.Bucket
+	var copier *blockCopier
+	var err error
+	if cfg.isBackfill() {
+		sourceBucket, copier, err = newBackfillBlockCopier(ctx, cfg, logger)
+	} else {
+		sourceBucket, copier, err = newBucketBlockCopier(ctx, cfg)
+	}
 	if err != nil {
 		return err
 	}
@@ -249,7 +340,7 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 			return errors.Wrapf(err, "failed to list blocks for tenant %v", sourceTenantID)
 		}
 
-		markers, err := listBlockMarkersForTenant(ctx, sourceBucket, sourceTenantID, destBucket.Name())
+		markers, err := listBlockMarkersForTenant(ctx, sourceBucket, sourceTenantID, copier.name)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to list blocks markers for tenant", "err", err)
 			return errors.Wrapf(err, "failed to list block markers for tenant %v", sourceTenantID)
@@ -326,7 +417,7 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 
 			level.Info(logger).Log("msg", "copying block")
 
-			err = copySingleBlock(ctx, sourceTenantID, destinationTenantID, blockID, markers[blockID], sourceBucket, copyFunc)
+			err = copier.copyBlock(ctx, sourceTenantID, destinationTenantID, blockID, markers[blockID])
 			if err != nil {
 				m.blocksCopyFailed.Inc()
 				level.Error(logger).Log("msg", "failed to copy block", "err", err)
@@ -338,7 +429,7 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 
 			// Note that only the blockID and destination bucket are considered in the copy marker.
 			// If multiple tenants in the same destination bucket are copied to from the same source tenant the markers will currently clash.
-			err = uploadCopiedMarkerFile(ctx, sourceBucket, sourceTenantID, blockID, destBucket.Name())
+			err = uploadCopiedMarkerFile(ctx, sourceBucket, sourceTenantID, blockID, copier.name)
 			if err != nil {
 				level.Error(logger).Log("msg", "failed to upload copied-marker file for block", "block", blockID.String(), "err", err)
 				return err

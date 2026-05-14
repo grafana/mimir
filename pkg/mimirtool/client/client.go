@@ -7,6 +7,7 @@ package client
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,6 +52,17 @@ type Config struct {
 	MimirHTTPPrefix string            `yaml:"mimir_http_prefix"`
 	AuthToken       string            `yaml:"auth_token"`
 	ExtraHeaders    map[string]string `yaml:"extra_headers"`
+}
+
+// RegisterConnectionFlagsWithPrefix registers address, key, auth-token, id,
+// and TLS flags under the given prefix.
+func (cfg *Config) RegisterConnectionFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	prefix = strings.TrimRight(prefix, ".") + "."
+	f.StringVar(&cfg.Address, prefix+"address", "", "Address of the Mimir instance.")
+	f.StringVar(&cfg.Key, prefix+"key", "", "Basic auth password. The tenant ID is used as the username.")
+	f.StringVar(&cfg.AuthToken, prefix+"auth-token", "", "Bearer token for authentication.")
+	f.StringVar(&cfg.ID, prefix+"id", "", "Tenant ID (X-Scope-OrgID header).")
+	cfg.TLS.RegisterFlagsWithPrefix(strings.TrimRight(prefix, "."), f)
 }
 
 // MimirClient is a client to the Mimir API.

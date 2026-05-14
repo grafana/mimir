@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -237,8 +238,10 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 
 	// Initiate new block upload.
 	{
-		// client.GetBlockMeta will generate correct meta.json file ready for initiating upload of our block.
-		meta, err := client.GetBlockMeta(fmt.Sprintf("%s/%s", tmpDir, block.String()))
+		// client.GetBlockMetaFromBucket will generate correct meta.json file ready for initiating upload of our block.
+		fsBkt, err := filesystem.NewBucket(tmpDir)
+		require.NoError(t, err)
+		meta, err := client.GetBlockMetaFromBucket(context.Background(), fsBkt, block)
 		require.NoError(t, err)
 
 		buf := bytes.NewBuffer(nil)
