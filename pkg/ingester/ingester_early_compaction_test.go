@@ -974,7 +974,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenDisabled(
 	db.addPendingNonOwnedRefs([]storage.SeriesRef{1})
 
 	// Should not compact because the feature is disabled.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	require.Empty(t, listBlocksInDir(t, userBlocksDir))
@@ -1008,7 +1008,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenNoPending
 	}}))
 
 	// No pending refs queued: compaction should not run.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	require.Empty(t, listBlocksInDir(t, userBlocksDir))
@@ -1079,7 +1079,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
 	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
 
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 
 	// A block should have been created containing the non-owned series.
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
@@ -1100,7 +1100,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	assert.Equal(t, uint64(1), db.Head().NumSeries())
 
 	// The pending list should have been consumed, so a second call creates no new block.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
 	// lastEarlyCompaction is intentionally NOT updated by this path (see comment in
@@ -1201,7 +1201,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
 	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
 
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 
 	// The non-owned series should have been evicted; the owned series should remain.
 	assert.Equal(t, uint64(1), db.Head().NumSeries())
@@ -1323,7 +1323,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
 	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
 
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 
 	// The non-owned series should have been evicted; the owned series should remain.
 	assert.Equal(t, uint64(1), db.Head().NumSeries())
@@ -1475,7 +1475,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
 	// First call: the grace period is fully in effect, so eviction must be skipped.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no block should be produced while the grace period is in effect")
 	require.Equal(t, uint64(2), db.Head().NumSeries(), "both series should still be in head while the grace period is in effect")
 
@@ -1485,7 +1485,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Second call: eviction should now proceed for the non-owned series.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1, "block should be produced after the grace period elapses")
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "non-owned series should be evicted from the head after the grace period elapses")
 }
@@ -1574,7 +1574,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 		// 2 ingesters/zone => localThreshold = 15000 > 10000, gate skips, no block produced.
 		ingester, db, blocksDir, _ := setupScenario(t, 2)
 
-		ingester.compactBlocksDueToNonOwnedSeries(context.Background())
+		ingester.compactBlocksDueToNonOwnedSeries(context.Background(), 0)
 
 		assert.Empty(t, listBlocksInDir(t, blocksDir), "gate should skip below the pre-scale-up local threshold")
 		assert.Equal(t, uint64(numSeries), db.Head().NumSeries(), "no series should be evicted from the head")
@@ -1599,7 +1599,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 		require.Empty(t, listBlocksInDir(t, blocksDir), "older owned-series gate should not fire after scale-up")
 		require.Equal(t, uint64(numSeries), db.Head().NumSeries(), "no series should be evicted by the older path")
 
-		ingester.compactBlocksDueToNonOwnedSeries(context.Background())
+		ingester.compactBlocksDueToNonOwnedSeries(context.Background(), 0)
 
 		require.Len(t, listBlocksInDir(t, blocksDir), 1, "block should be produced after scale-up")
 		require.Equal(t, uint64(postScaleOwned), db.Head().NumSeries(), "only owned series should remain in the head")
@@ -1617,7 +1617,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 
 		// First call: min grace has elapsed (minGrace=0) but the threshold gate is closed
 		// and the max grace period has not yet elapsed — no eviction.
-		ingester.compactBlocksDueToNonOwnedSeries(context.Background())
+		ingester.compactBlocksDueToNonOwnedSeries(context.Background(), 0)
 		assert.Empty(t, listBlocksInDir(t, blocksDir), "closed gate should block eviction before max grace elapses")
 		assert.Equal(t, uint64(numSeries), db.Head().NumSeries(), "all series should remain in the head")
 
@@ -1627,7 +1627,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 		db.pendingNonOwnedRefsMtx.Unlock()
 
 		// Second call: max grace elapsed, gate bypassed — non-owned series are evicted.
-		ingester.compactBlocksDueToNonOwnedSeries(context.Background())
+		ingester.compactBlocksDueToNonOwnedSeries(context.Background(), 0)
 		assert.Len(t, listBlocksInDir(t, blocksDir), 1, "block should be produced once max grace elapses")
 		assert.Less(t, db.Head().NumSeries(), uint64(numSeries), "non-owned series should be evicted from the head")
 	})
@@ -1729,7 +1729,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 	// they point to no longer exist in the head. filterSelectedSeriesAndSortPostings silently
 	// drops refs whose series cannot be found, so CompactSelectedSeries returns nil without
 	// writing a block or panicking.
-	ingester.compactBlocksDueToNonOwnedSeries(ctx)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 
 	require.Equal(t, blocksAfterOldPath, listBlocksInDir(t, userBlocksDir), "no additional block should be produced for stale refs")
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "head should still contain only the owned series")

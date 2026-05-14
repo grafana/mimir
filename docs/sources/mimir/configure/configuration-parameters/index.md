@@ -1489,9 +1489,10 @@ instance_limits:
 # the local threshold derived from
 # -ingester.early-head-compaction-owned-series-threshold. Any detection that
 # adds new refs resets the timer. A value of 0 evicts as soon as the threshold
-# gate is satisfied. A jitter in [0, 2×min-grace-period] is added so that
-# effective eviction times are spread across [min-grace-period,
-# 3×min-grace-period] to avoid thundering-herd compactions across replicas.
+# gate is satisfied. A per-replica jitter in [0, 2×min-grace-period] is chosen
+# at startup and added to every eviction check, so effective eviction times are
+# spread across [min-grace-period, 3×min-grace-period] to avoid thundering-herd
+# compactions across replicas.
 # CLI flag: -ingester.early-compaction-non-owned-series-min-grace-period
 [early_compaction_non_owned_series_min_grace_period: <duration> | default = 30s]
 

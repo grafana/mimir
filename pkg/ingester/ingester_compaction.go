@@ -126,6 +126,15 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// effectively spreading the compactions over the configured interval.
 	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.instanceRing.Zones())
 
+	// Compute a fixed per-replica jitter for non-owned series eviction. Using a value that is
+	// stable for the lifetime of this service instance ensures that two replicas which detect
+	// the same non-owned refs at the same time will consistently evict at different offsets:
+	// effective wait = minGracePeriod + jitter, uniformly distributed in [minGrace, 3×minGrace].
+	var nonOwnedSeriesJitter time.Duration
+	if variance := 2 * int64(i.cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod); variance > 0 {
+		nonOwnedSeriesJitter = time.Duration(rand.Int63n(variance))
+	}
+
 	// After the first interval, we want the compaction to run at a specified interval for the zone if we have multiple zones,
 	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
 	// If the criteria to have staggered compactions are not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
@@ -155,7 +164,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			i.compactBlocksToReducePerTenantOwnedSeries(ctx, time.Now())
 
 			// Check if any TSDB Head should be early-compacted to flush non-owned series.
-			i.compactBlocksDueToNonOwnedSeries(ctx)
+			i.compactBlocksDueToNonOwnedSeries(ctx, nonOwnedSeriesJitter)
 
 			// Decrement the counter after compaction is complete
 			i.numCompactionsInProgress.Dec()
@@ -593,7 +602,7 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 // Per-tenant gate: the eviction is skipped for tenants whose EarlyHeadCompactionOwnedSeriesThreshold
 // is not set, and for tenants whose total in-head series (owned + non-owned) count is below the local
 // threshold.
-func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
+func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter time.Duration) {
 	if !i.cfg.EarlyCompactionNonOwnedSeriesEnabled {
 		return
 	}
@@ -621,7 +630,7 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 		var trigger string
 		localThreshold := i.limiter.ringStrategy.convertGlobalToLocalLimit(userID, threshold)
 		if localThreshold > 0 && db.Head().NumSeries() >= uint64(localThreshold) {
-			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod))
+			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod - jitter))
 			if len(refs) > 0 {
 				trigger = "in-memory series count exceeds local threshold"
 			}
@@ -630,7 +639,7 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context) {
 		// Slow path: max grace period elapsed — evict regardless of the threshold gate to
 		// guarantee eventual cleanup even for tenants well below their series limit.
 		if len(refs) == 0 && i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod > 0 {
-			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod))
+			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod - jitter))
 			if len(refs) > 0 {
 				trigger = "max grace period elapsed"
 			}
