@@ -128,24 +128,21 @@ func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error
 	if wf == nil {
 		return nil, nil
 	}
-	alg := streaminglabelvalues.FuzzAlgSubsequence
-	if wf.FuzzAlg == client.FUZZ_ALG_JARO_WINKLER {
-		alg = streaminglabelvalues.FuzzAlgJaroWinkler
-	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	return streaminglabelvalues.ParamsFromWire(
+		wf.Terms,
+		wf.CaseInsensitive,
+		wf.FuzzAlg == client.FUZZ_ALG_JARO_WINKLER,
+		int(wf.FuzzThreshold),
+	)
 }
 
 // protoToOrdering maps the wire SearchOrdering enum onto the Prometheus
 // storage.Ordering enum.
 func protoToOrdering(o client.SearchOrdering) storage.Ordering {
-	switch o {
-	case client.ORDER_BY_VALUE_DESC:
-		return storage.OrderByValueDesc
-	case client.ORDER_BY_SCORE_DESC:
-		return storage.OrderByScoreDesc
-	default:
-		return storage.OrderByValueAsc
-	}
+	return streaminglabelvalues.OrderingFromWire(
+		o == client.ORDER_BY_VALUE_DESC,
+		o == client.ORDER_BY_SCORE_DESC,
+	)
 }
 
 // searchResultSender is the minimal interface satisfied by both

@@ -214,23 +214,20 @@ func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, er
 	if wf == nil {
 		return nil, nil
 	}
-	alg := streaminglabelvalues.FuzzAlgSubsequence
-	if wf.FuzzAlg == storepb.FUZZ_ALG_JARO_WINKLER {
-		alg = streaminglabelvalues.FuzzAlgJaroWinkler
-	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	return streaminglabelvalues.ParamsFromWire(
+		wf.Terms,
+		wf.CaseInsensitive,
+		wf.FuzzAlg == storepb.FUZZ_ALG_JARO_WINKLER,
+		int(wf.FuzzThreshold),
+	)
 }
 
 // storepbToOrdering maps the wire SearchOrdering enum onto storage.Ordering.
 func storepbToOrdering(o storepb.SearchOrdering) storage.Ordering {
-	switch o {
-	case storepb.ORDER_BY_VALUE_DESC:
-		return storage.OrderByValueDesc
-	case storepb.ORDER_BY_SCORE_DESC:
-		return storage.OrderByScoreDesc
-	default:
-		return storage.OrderByValueAsc
-	}
+	return streaminglabelvalues.OrderingFromWire(
+		o == storepb.ORDER_BY_VALUE_DESC,
+		o == storepb.ORDER_BY_SCORE_DESC,
+	)
 }
 
 // streamBucketSearchResults sends results in batches of searchBatchSize via
