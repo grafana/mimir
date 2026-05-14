@@ -166,7 +166,7 @@ func TestCheckMeta_MaxBlockSize(t *testing.T) {
 
 	// The size error must remain inspectable via errors.As so that callers
 	// (e.g. the compactor) can recover the observed total for logging.
-	var sizeErr *MaxBlockSizeExceededError
+	var sizeErr *MaxBlockInvalidSizeError
 	require.True(t, errors.As(err, &sizeErr))
 	assert.Equal(t, int64(299), sizeErr.LimitBytes)
 	assert.Equal(t, int64(300), sizeErr.SizeBytes)
