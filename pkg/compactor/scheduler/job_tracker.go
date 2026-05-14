@@ -324,7 +324,7 @@ func (jt *JobTracker) computePlan(planningInterval, compactionWaitPeriod time.Du
 
 	// L1 blocks are expected on even UTC hours and the planning for them is affected by the compaction wait period.
 	// Instead of only accounting for that wait period on even hours, account for it all the time for a better spread.
-	nextPlanningWindow := jt.completePlanTime.Add(planningInterval).UTC().Truncate(planningInterval).Add(compactionWaitPeriod)
+	nextPlanningWindow := jt.completePlanTime.UTC().Add(-compactionWaitPeriod).Truncate(planningInterval).Add(planningInterval).Add(compactionWaitPeriod)
 
 	if now.Before(nextPlanningWindow) {
 		// This window has already been planned
