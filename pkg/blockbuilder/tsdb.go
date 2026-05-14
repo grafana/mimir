@@ -324,6 +324,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	udb := &userTSDB{
 		cfg:    &b.cfg,
 		userID: userID,
+		logger: userLogger,
 
 		// Passed by reference because it counts across all tenants.
 		instanceSeriesCount: &b.seriesCount,
@@ -596,6 +597,7 @@ type userTSDB struct {
 
 	cfg    *Config
 	userID string
+	logger log.Logger
 
 	// Shared across all userTSDB instances created by block-builder.
 	instanceSeriesCount *atomic.Int64
@@ -627,8 +629,24 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 }
 
 func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64, truncateMemory bool) error {
+	compactionBegin := time.Now()
+
 	// Compact all in-order data.
 	mint, maxt := u.Head().MinTime(), u.Head().MaxTime()
+	originalMint, originalMaxt := mint, maxt
+
+	if mint == math.MinInt64 && maxt == math.MinInt64 {
+		level.Debug(u.logger).Log("msg", "no in-order data to compact")
+	} else {
+		level.Info(u.logger).Log(
+			"msg", "compacting in-order head data",
+			"mint", mint,
+			"maxt", maxt,
+			"num_series", u.Head().NumSeries(),
+			"truncate_memory", truncateMemory,
+		)
+	}
+
 	mint = (mint / blockRange) * blockRange
 	for blockMint := mint; blockMint <= maxt; blockMint += blockRange {
 		blockMaxt := min(blockMint+blockRange-1, maxTime)
@@ -645,9 +663,33 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64,
 	}
 
 	// Compact the out-of-order data.
+	oooMint, oooMaxt := u.Head().MinOOOTime(), u.Head().MaxOOOTime()
+	if oooMint == math.MinInt64 && oooMaxt == math.MinInt64 {
+		level.Debug(u.logger).Log("msg", "no out-of-order data to compact")
+	} else {
+		level.Info(u.logger).Log(
+			"msg", "compacting out-of-order head data",
+			"ooo_mint", oooMint,
+			"ooo_maxt", oooMaxt,
+		)
+	}
+
 	if err := u.CompactOOOHead(ctx); err != nil {
 		return err
 	}
+
+	compactionDuration := time.Since(compactionBegin)
+	level.Info(u.logger).Log(
+		"msg", "head compaction completed",
+		"duration", compactionDuration,
+		"duration_ms", compactionDuration.Milliseconds(),
+		"in_order_mint", originalMint,
+		"in_order_maxt", originalMaxt,
+		"ooo_mint", oooMint,
+		"ooo_maxt", oooMaxt,
+		"num_blocks", len(u.Blocks()),
+		"num_series_after", u.Head().NumSeries(),
+	)
 
 	return nil
 }
