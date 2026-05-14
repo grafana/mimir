@@ -25,6 +25,21 @@ import (
 // it in tests.
 const MaxBlockSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
 
+// MaxBlockSizeExceededError reports that the sum of declared file sizes in a
+// block exceeded the configured maximum. Callers can errors.As against it to
+// recover the limit and the observed total for logging or metrics.
+//
+// SizeBytes may be negative when the sum overflowed int64; this matches the
+// raw value the compactor previously logged before the move.
+type MaxBlockSizeExceededError struct {
+	LimitBytes int64
+	SizeBytes  int64
+}
+
+func (e *MaxBlockSizeExceededError) Error() string {
+	return fmt.Sprintf(MaxBlockSizeBytesFormat, e.LimitBytes)
+}
+
 // uploadSource is the value written to meta.Thanos.Source by
 // SanitizeForUpload to mark a block as having entered the cluster via the
 // block-upload API.
@@ -172,7 +187,7 @@ func CheckMaxBlockSize(files []block.File, maxBlockSizeBytes int64) error {
 	}
 
 	if blockSizeBytes > maxBlockSizeBytes || blockSizeBytes < 0 {
-		return fmt.Errorf(MaxBlockSizeBytesFormat, maxBlockSizeBytes)
+		return &MaxBlockSizeExceededError{LimitBytes: maxBlockSizeBytes, SizeBytes: blockSizeBytes}
 	}
 	return nil
 }

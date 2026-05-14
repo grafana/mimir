@@ -440,6 +440,11 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, bl
 		MaxBlockSizeBytes: c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID),
 	})
 	if err != nil {
+		// Specifically log for oversized blocks.
+		var sizeErr *blockvalidation.MaxBlockSizeExceededError
+		if errors.As(err, &sizeErr) {
+			level.Error(logger).Log("msg", "rejecting block upload for exceeding maximum size", "limit", sizeErr.LimitBytes, "size", sizeErr.SizeBytes)
+		}
 		return err.Error()
 	}
 	return ""
@@ -508,7 +513,11 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, blockMetadata *block.Meta, userBkt objstore.Bucket, userID string) error {
 	maxBlockSizeBytes := c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID)
 	if err := blockvalidation.CheckMaxBlockSize(blockMetadata.Thanos.Files, maxBlockSizeBytes); err != nil {
-		level.Error(logger).Log("msg", "rejecting block upload for exceeding maximum size", "limit", maxBlockSizeBytes)
+		// Specifically log for oversized blocks.
+		var sizeErr *blockvalidation.MaxBlockSizeExceededError
+		if errors.As(err, &sizeErr) {
+			level.Error(logger).Log("msg", "rejecting block upload for exceeding maximum size", "limit", sizeErr.LimitBytes, "size", sizeErr.SizeBytes)
+		}
 		return err
 	}
 

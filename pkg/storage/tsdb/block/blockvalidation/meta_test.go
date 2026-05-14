@@ -4,6 +4,7 @@ package blockvalidation
 
 import (
 	crypto_rand "crypto/rand"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -162,6 +163,13 @@ func TestCheckMeta_MaxBlockSize(t *testing.T) {
 	err := CheckMeta(m, CheckMetaOptions{MaxBlockSizeBytes: 299})
 	require.Error(t, err)
 	assert.Equal(t, fmt.Sprintf(MaxBlockSizeBytesFormat, int64(299)), err.Error())
+
+	// The size error must remain inspectable via errors.As so that callers
+	// (e.g. the compactor) can recover the observed total for logging.
+	var sizeErr *MaxBlockSizeExceededError
+	require.True(t, errors.As(err, &sizeErr))
+	assert.Equal(t, int64(299), sizeErr.LimitBytes)
+	assert.Equal(t, int64(300), sizeErr.SizeBytes)
 }
 
 // TestCheckMaxBlockSize exercises the size helper directly so we can
