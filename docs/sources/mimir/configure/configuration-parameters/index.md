@@ -1485,12 +1485,21 @@ instance_limits:
 [early_compaction_non_owned_series_enabled: <boolean> | default = false]
 
 # (experimental) Minimum time that must elapse after a non-owned series is
-# detected before it can be evicted by the early compaction. Any further
-# detection that adds refs to the pending list resets the timer. Lets
-# distributors converge on the new ring state before eviction runs. A value of 0
-# disables the grace period and evicts as soon as possible.
-# CLI flag: -ingester.early-compaction-non-owned-series-grace-period
-[early_compaction_non_owned_series_grace_period: <duration> | default = 30s]
+# detected before it can be evicted, provided the in-memory series count exceeds
+# the local threshold derived from
+# -ingester.early-head-compaction-owned-series-threshold. Any detection that
+# adds new refs resets the timer. A value of 0 evicts as soon as the threshold
+# gate is satisfied. Up to 25% jitter is added to spread evictions across
+# replicas.
+# CLI flag: -ingester.early-compaction-non-owned-series-min-grace-period
+[early_compaction_non_owned_series_min_grace_period: <duration> | default = 30s]
+
+# (experimental) Maximum time after which non-owned series are evicted
+# regardless of the local threshold gate. This guarantees eventual eviction even
+# for tenants well below their series limit. A value of 0 disables the maximum
+# grace period, relying solely on the threshold gate.
+# CLI flag: -ingester.early-compaction-non-owned-series-max-grace-period
+[early_compaction_non_owned_series_max_grace_period: <duration> | default = 5m]
 
 push_circuit_breaker:
   # (experimental) Enable circuit breaking when making requests to ingesters
