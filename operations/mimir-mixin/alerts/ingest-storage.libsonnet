@@ -368,10 +368,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('BlockBuilderPersistentJobFailure'),
           expr: |||
-            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[%(range)s]) > 0
-          ||| % {
-            range: $.rateInterval('1m'),
-          },
+            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[20m]) > 0
+          |||,
           labels: {
             severity: 'critical',
           },
