@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -107,7 +108,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	result, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
-		{mint: 1*hourInMs + 1, maxt: 6 * hourInMs},
+		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
+		{mint: 2 * hourInMs, maxt: 6*hourInMs - 1},   // Two combined cachable ranges: (2h-1ms, 6h-1ms] -> storage [2h, 6h-1ms]
+		{mint: 6 * hourInMs, maxt: 6 * hourInMs},     // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
 	}, ranges1)
 	verifyCacheStats(t, testCache, 2, 0, 2)
 
@@ -193,7 +196,8 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
 		{mint: 3*hourInMs + 20*minuteInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h20m, 4h-1ms] -> storage [3h20m+1ms, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 8*hourInMs + 20*minuteInMs},       // Merged uncached: (6h-1ms, 8h20m] -> storage [6h, 8h20m]
+		{mint: 6 * hourInMs, maxt: 8*hourInMs - 1},                   // Uncached: (6h-1ms, 8h-1ms] -> storage [6h, 8h-1ms]
+		{mint: 8 * hourInMs, maxt: 8*hourInMs + 20*minuteInMs},       // Tail: (8h-1ms, 8h20m] -> storage [8h, 8h20m]
 	}, ranges5)
 	// Cache stats: Q1: 2 gets (miss), 2 sets | Q2: 2 gets/hits | Q3: 2 gets/hits | Q4: 1 get/hit | Q5: 2 gets, 1 hit, 1 set
 	verifyCacheStats(t, testCache, 9, 6, 3) // Total: 9 gets, 6 hits, 3 sets
@@ -251,7 +255,9 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	result, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
-		{mint: 1*hourInMs + 1, maxt: 6 * hourInMs},
+		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
+		{mint: 2 * hourInMs, maxt: 6*hourInMs - 1},   // Two combined cachable ranges: (2h-1ms, 6h-1ms] -> storage [2h, 6h-1ms]
+		{mint: 6 * hourInMs, maxt: 6 * hourInMs},     // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
 	}, ranges1)
 	verifyCacheStats(t, testCache, 2, 0, 2)
 
@@ -341,7 +347,8 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
 		{mint: 3*hourInMs + 20*minuteInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h20m, 4h-1ms] -> storage [3h20m+1ms, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 8*hourInMs + 20*minuteInMs},       // Merged uncached: (6h-1ms, 8h20m] -> storage [6h, 8h20m]
+		{mint: 6 * hourInMs, maxt: 8*hourInMs - 1},                   // Uncached: (6h-1ms, 8h-1ms] -> storage [6h, 8h-1ms]
+		{mint: 8 * hourInMs, maxt: 8*hourInMs + 20*minuteInMs},       // Tail: (8h-1ms, 8h20m] -> storage [8h, 8h20m]
 	}, ranges4)
 	// Cache stats: Q1: 2 gets (miss), 2 sets | Q2: 2 gets/hits | Q3: 1 get/hit | Q4: 2 gets, 1 hit, 1 set
 	verifyCacheStats(t, testCache, 7, 4, 3) // Total: 7 gets, 4 hits, 3 sets
@@ -372,7 +379,7 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	require.NotNil(t, plan)
 
 	expectedPlan := `
-		- BinaryExpression: LHS / RHS
+		- BinaryExpression: LHS / RHS, hints exclude ()
 			- LHS: SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
 				- FunctionCall: sum_over_time(...)
 					- ref#1 Duplicate
@@ -411,7 +418,9 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	// Verify CSE is working: with CSE, the MatrixSelector is shared between sum_over_time
 	// and count_over_time via Duplicate, so we should only query storage once, not twice
 	require.Equal(t, []storageQueryRange{
-		{mint: 1*hourInMs + 1, maxt: 6 * hourInMs},
+		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
+		{mint: 2 * hourInMs, maxt: 6*hourInMs - 1},   // Two combined cachable ranges: (2h-1ms, 6h-1ms] -> storage [2h, 6h-1ms]
+		{mint: 6 * hourInMs, maxt: 6 * hourInMs},     // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
 	}, trackingStorage.ranges)
 
 	// Query 2 at 8h: middle (4h-6h) cached from query 1, head (3h-4h) and tail (6h-8h) uncached
@@ -434,8 +443,79 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	// Verify CSE with partial cache: only 2 storage queries (not 4), one for each uncached range
 	require.Equal(t, []storageQueryRange{
 		{mint: 3*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h, 4h-1ms] -> storage [3h+1, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 8 * hourInMs},     // Tail: (6h-1ms, 8h] -> storage [6h, 8h]
+		{mint: 6 * hourInMs, maxt: 8*hourInMs - 1},   // Cacheable range: (6h-1ms, 8h-1ms] -> storage [6h, 8h-1ms]
+		{mint: 8 * hourInMs, maxt: 8 * hourInMs},     // Tail: (8h-1ms, 8h] -> storage [8h, 8h]
 	}, trackingStorage.ranges)
+}
+
+func TestQuerySplitting_WithSSE(t *testing.T) {
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(4 * time.Hour)
+
+	// Histogram at t=3h within the single cacheable block (2h-1ms, 4h-1ms].
+	promStorage := teststorage.New(t)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+	app := promStorage.Appender(context.Background())
+	lbls := labels.FromStrings("__name__", "hist", "job", "test", "code", "ok")
+	h := &histogram.FloatHistogram{
+		Schema:          0,
+		Count:           3,
+		Sum:             2,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{2},
+	}
+	_, err := app.AppendHistogram(0, lbls, timestamp.FromTime(baseT.Add(3*time.Hour)), nil, h)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	backend, eng := setupEngineAndCache(t)
+	// With SSE, the hist{job="test"}[4h] nodes will be merged.
+	// Additionally, skipping histogram buckets is disabled if a node is being split.
+	query := `
+		histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h]))
+		* histogram_count(last_over_time(hist{job="test"}[4h]))`
+	r := runInstantQuery(t, eng, promStorage, query, ts)
+	require.NoError(t, r.Err)
+
+	// With a 4h range at ts=4h and 2h split interval, the single cacheable block is (2h-1ms, 4h-1ms].
+	countKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", job="test"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+	fractionKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", code!="err", job="test"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+
+	require.Len(t, backend.items, 2)
+
+	// Both countKey and fractionKey must contain the full histogram (skip=false fetches buckets).
+	expectedH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+	expectedIntermediate := rangevectorsplitting.FirstLastOverTimeIntermediate{H: &expectedH}
+
+	var countEntry cache.CachedSeries
+	require.NoError(t, countEntry.Unmarshal(backend.items[countKey]))
+	var noSkipList rangevectorsplitting.FirstLastOverTimeIntermediateList
+	require.NoError(t, noSkipList.Unmarshal(countEntry.Results))
+	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, noSkipList.Results)
+
+	var fractionEntry cache.CachedSeries
+	require.NoError(t, fractionEntry.Unmarshal(backend.items[fractionKey]))
+	var fractionList rangevectorsplitting.FirstLastOverTimeIntermediateList
+	require.NoError(t, fractionList.Unmarshal(fractionEntry.Results))
+	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, fractionList.Results)
+}
+
+func TestQuerySplitting_SkipHistogramBucketsNotApplied(t *testing.T) {
+	ctx := context.Background()
+	evalTime := timestamp.Time(0).Add(6 * time.Hour)
+
+	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	p, err := planner.NewQueryPlan(ctx, `histogram_count(rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	require.Equal(t, testutils.TrimIndent(`
+		- FunctionCall: histogram_count(...)
+			- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+				- FunctionCall: rate(...)
+					- MatrixSelector: {__name__="some_metric"}[5h0m0s]
+	`), p.String())
 }
 
 func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
@@ -477,7 +557,9 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts8h)
 	require.Equal(t, expectedScalarResult(ts8h, 825, "env", "prod"), result1)
 	require.Equal(t, []storageQueryRange{
-		{mint: 2*hourInMs + 1, maxt: 7 * hourInMs}, // PromQL range (2h, 7h] converts to storage [2h+1, 7h]
+		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
+		{mint: 4 * hourInMs, maxt: 6*hourInMs - 1},   // Cacheable range: (4h, 6h-1ms] -> storage [4h, 6h-1ms]
+		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges1)
 	verifyCacheStats(t, testCache, 1, 0, 1) // 1 cacheable block
 
@@ -502,7 +584,9 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts10h)
 	require.Equal(t, expectedScalarResult(ts10h, 1185, "env", "prod"), result2)
 	require.Equal(t, []storageQueryRange{
-		{mint: 4*hourInMs + 1, maxt: 9 * hourInMs}, // Merged: (4h, 9h] -> storage [4h+1, 9h]
+		{mint: 4*hourInMs + 1, maxt: 6*hourInMs - 1}, // Head: (4h, 6h-1ms] -> storage [4h+1ms, 6h-1ms]
+		{mint: 6 * hourInMs, maxt: 8*hourInMs - 1},   // Cacheable range: (6h, 8h-1ms] -> storage [6h, 8h-1ms]
+		{mint: 8 * hourInMs, maxt: 9 * hourInMs},     // Tail: (8h-1ms, 9h] -> storage [8h, 9h]
 	}, ranges2)
 	verifyCacheStats(t, testCache, 3, 1, 2) // Q1: 1 get/1 set, Q1b: 1 get/1 hit, Q2: 1 get/1 set
 }
@@ -525,7 +609,9 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts8h)
 	require.Equal(t, expectedScalarResult(ts8h, 825, "env", "prod"), result1)
 	require.Equal(t, []storageQueryRange{
-		{mint: 2*hourInMs + 1, maxt: 7 * hourInMs},
+		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
+		{mint: 4 * hourInMs, maxt: 6*hourInMs - 1},   // Cacheable range: (4h, 6h-1ms] -> storage [4h, 6h-1ms]
+		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges1)
 	verifyCacheStats(t, testCache, 1, 0, 1) // 1 cacheable block
 
@@ -661,7 +747,9 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	verifyCacheStats(t, backend, 1, 0, 1)
 	require.Equal(t, []storageQueryRange{
-		{mint: 5*hourInMs + 1, maxt: 12 * hourInMs},
+		{mint: 5*hourInMs + 1, maxt: 6*hourInMs - 1},
+		{mint: 6 * hourInMs, maxt: 8*hourInMs - 1},
+		{mint: 8 * hourInMs, maxt: 12 * hourInMs},
 	}, ranges1)
 
 	app = storage.Appender(ctx)
@@ -802,7 +890,10 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 	result1, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 1155, "env", "prod"), result1)
 	require.Equal(t, []storageQueryRange{
-		{mint: 1*hourInMs + 1, maxt: 8 * hourInMs},
+		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
+		{mint: 2 * hourInMs, maxt: 8*hourInMs - 1},   // Three combined cachable ranges: (2h-1ms, 8h-1ms] -> storage [2h, 8h-1ms]
+		{mint: 8 * hourInMs, maxt: 8 * hourInMs},     // Tail: (8h-1ms, 8h] -> storage [8h, 8h]
+
 	}, ranges1)
 	verifyCacheStats(t, testCache, 3, 0, 3)
 

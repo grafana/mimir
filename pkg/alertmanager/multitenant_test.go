@@ -2569,7 +2569,7 @@ func Test_fingerprint(t *testing.T) {
 		// Helper function to get field count of a struct
 		getFieldCount := func(v interface{}) int {
 			t := reflect.TypeOf(v)
-			if t.Kind() == reflect.Ptr {
+			if t.Kind() == reflect.Pointer {
 				t = t.Elem()
 			}
 			return t.NumField()

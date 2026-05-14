@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
 .DEFAULT_GOAL := all
 
 # Version number
@@ -170,6 +170,17 @@ push-multiarch-build-image: ## Push the docker build image.
 print-build-image:
 	@echo $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 
+# Supported operating systems and architectures for dist builds.
+DIST_OSES ?= linux darwin windows freebsd
+DIST_ARCHES ?= amd64 arm64
+
+print-supported-os-arch: ## Print supported OS/arch combinations for dist.
+	@for os in $(DIST_OSES); do \
+		for arch in $(DIST_ARCHES); do \
+			printf '%s\t%s\n' "$$os" "$$arch"; \
+		done; \
+	done
+
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
@@ -224,7 +235,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr15213-51d8941fe0
+LATEST_BUILD_IMAGE_TAG ?= pr15263-b90faf9665
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -256,7 +267,7 @@ SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
 exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format: fetch-build-image
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) $@;
 
 else
 
@@ -548,8 +559,17 @@ dist: ## Generates binaries for a Mimir release.
 	@mkdir -p ./dist
 	@# Build binaries for various architectures and operating systems. Only
 	@# mimirtool supports Windows for now.
-	@for os in linux darwin windows freebsd; do \
-		for arch in amd64 arm64; do \
+	@# When GOOS and/or GOARCH are passed on the command line, only matching
+	@# targets are built.
+	@set -e; \
+	for os in $(DIST_OSES); do \
+		if [ -n "$(filter command line,$(origin GOOS))" ] && [ "$$os" != "$(GOOS)" ]; then \
+			continue; \
+		fi; \
+		for arch in $(DIST_ARCHES); do \
+			if [ -n "$(filter command line,$(origin GOARCH))" ] && [ "$$arch" != "$(GOARCH)" ]; then \
+				continue; \
+			fi; \
 			suffix="" ; \
 			if [ "$$os" = "windows" ]; then \
 				suffix=".exe" ; \
@@ -584,7 +604,14 @@ build-mixin: check-mixin-jb
 	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
 		mkdir -p "$(MIXIN_OUT_PATH)$$suffix"; \
 		find "$(MIXIN_OUT_PATH)$$suffix" -type f -delete; \
-		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		input_file="${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		if [ -n "$(DASHBOARDS_HISTOGRAM_MODE)" ]; then \
+			tmp_file="${MIXIN_PATH}/mixin-compiled$$suffix-tmp-latency.libsonnet"; \
+			echo "(import 'mixin-compiled$$suffix.libsonnet') + { _config+:: { dashboards_default_latency_mode: '$(DASHBOARDS_HISTOGRAM_MODE)' } }" > "$$tmp_file"; \
+			input_file="$$tmp_file"; \
+		fi; \
+		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "$$input_file"; \
+		if [ -n "$(DASHBOARDS_HISTOGRAM_MODE)" ]; then rm -f "$$tmp_file"; fi; \
 		./tools/check-rules.sh "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" 20 ; \
 		cd "$(MIXIN_OUT_PATH)$$suffix/.." && zip -q -r "mimir-mixin$$suffix.zip" $$(basename "$(MIXIN_OUT_PATH)$$suffix"); \
 		cd -; \

@@ -428,7 +428,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.bucket-index.update-on-error-interval duration
     	How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier. (default 1m0s)
   -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
-    	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
+    	Maximum number of object attribute items to keep in a first-level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
     	TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.chunks-cache.backend string
@@ -519,6 +519,52 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-header-cache.attributes-ttl duration
+    	[experimental] TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend. (default 168h0m0s)
+  -blocks-storage.bucket-store.index-header-cache.backend string
+    	Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: memcached.
+  -blocks-storage.bucket-store.index-header-cache.max-get-range-requests int
+    	[experimental] Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header ranges. Zero or negative value = unlimited number of sub-requests. (default 3)
+  -blocks-storage.bucket-store.index-header-cache.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.index-header-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-item-size int
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.index-header-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -blocks-storage.bucket-store.index-header-cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items int
+    	[experimental] Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 100000)
+  -blocks-storage.bucket-store.index-header-cache.subrange-ttl duration
+    	[experimental] TTL for caching individual index-header subranges. (default 24h0m0s)
   -blocks-storage.bucket-store.index-header.bucket-reader.enabled
     	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.
   -blocks-storage.bucket-store.index-header.bucket-reader.index-sections string
@@ -1647,6 +1693,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.label-values-count-max-concurrency int
+    	[experimental] Maximum concurrency used to compute a single label values count request. (default 16)
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int

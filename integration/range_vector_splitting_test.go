@@ -27,10 +27,11 @@ func TestQuerySplittingWithRangeVectorFunction(t *testing.T) {
 
 	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 		"-querier.query-engine": "mimir",
-		"-querier.mimir-query-engine.range-vector-splitting.enabled":             "true",
-		"-querier.mimir-query-engine.range-vector-splitting.split-interval":      "5m",
-		"-querier.mimir-query-engine.range-vector-splitting.backend":             "memcached",
-		"-querier.mimir-query-engine.range-vector-splitting.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-querier.mimir-query-engine.range-vector-splitting.enabled":                                   "true",
+		"-querier.mimir-query-engine.range-vector-splitting.split-interval":                            "5m",
+		"-querier.mimir-query-engine.range-vector-splitting.backend":                                   "memcached",
+		"-querier.mimir-query-engine.range-vector-splitting.memcached.addresses":                       "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination": "true",
 	})
 
 	consul := e2edb.NewConsul()

@@ -5,6 +5,7 @@ package binops
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -878,6 +879,363 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 	}
 }
 
+func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySide(t *testing.T) {
+	// Verifies that exclude-style matchers are forwarded to the many side via explicit
+	// exclude hints (set by an up-to-date query-frontend). When hints are nil (old
+	// query-frontend plans), no matchers are generated to avoid incorrect filtering
+	// of labels synthesized by label_replace/label_join.
+	testCases := map[string]struct {
+		card           parser.VectorMatchCardinality
+		vectorMatching parser.VectorMatching
+		hints          *Hints
+		leftSeries     []labels.Labels
+		rightSeries    []labels.Labels
+
+		expectedLeftMatchers  types.Matchers
+		expectedRightMatchers types.Matchers
+	}{
+		"group_left with exclude hints: left (many) side receives exclude-derived matchers from right (one) side": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "2"), // should be filtered by env hint
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			// one side (right) gets nil outer matchers
+			expectedRightMatchers: nil,
+			// many side (left) gets exclude-derived matchers built from right (one) metadata
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_right with exclude hints: right (many) side receives exclude-derived matchers from left (one) side": {
+			card:           parser.CardOneToMany,
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToMany, On: false, MatchingLabels: []string{}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "2"), // should be filtered by env hint
+			},
+			// one side (left) gets nil outer matchers
+			expectedLeftMatchers: nil,
+			// many side (right) gets exclude-derived matchers built from left (one) metadata
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_left with exclude hints and ignoring label: excluded label does not appear in matchers": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"pod"}},
+			hints:          &Hints{Exclude: []string{"pod"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "prod", "pod", "2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			expectedRightMatchers: nil,
+			// pod is excluded; only env matcher is generated
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_left with exclude hints and non-empty Include: Include label from many side does not appear in exclude-derived matchers": {
+			// region is a VectorMatching.Include label: it comes from the many (left) side, not the one (right) side.
+			// buildMatchersForWithout runs on the one-side metadata, which does not carry "region",
+			// so "region" must not appear in the generated matchers even though the many side has it.
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}, Include: []string{"region"}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+				labels.FromStrings("env", "prod", "region", "eu"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"), // one side: does NOT carry "region"
+			},
+			expectedRightMatchers: nil,
+			// many side gets only env matcher (derived from one-side metadata); no region matcher
+			// since region is absent from the one side
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_left with exclude hints excluding multiple labels: only non-excluded labels produce matchers": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"pod", "container"}},
+			hints:          &Hints{Exclude: []string{"container", "pod"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1", "container", "web"),
+				labels.FromStrings("env", "prod", "pod", "2", "container", "api"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			expectedRightMatchers: nil,
+			// pod and container are excluded; only env matcher is generated
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_right with exclude hints and heterogeneous one-side labels: absent label matched with empty string": {
+			card:           parser.CardOneToMany,
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToMany, On: false, MatchingLabels: []string{}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"), // no region label
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "2"), // should be filtered by env matcher
+			},
+			// region is absent from one LHS series, so the matcher includes the empty
+			// string to also match RHS series without a region label.
+			expectedLeftMatchers: nil,
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "|us-east"},
+			},
+		},
+		"group_left with exclude hints and include-label outer matchers: include-label matchers merged onto many side with exclude-derived matchers": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}, Include: []string{"region"}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+				labels.FromStrings("env", "prod", "region", "eu"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"), // one side: does NOT carry "region"
+			},
+			expectedRightMatchers: nil,
+			// many side gets exclude-derived env matcher from one-side metadata merged with include-label outer matchers
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_left nil hints (!On): left (many) side receives nil matchers (no fallback)": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{}},
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			expectedRightMatchers: nil,
+			expectedLeftMatchers:  nil,
+		},
+		"group_right nil hints (!On): right (many) side receives nil matchers (no fallback)": {
+			card:           parser.CardOneToMany,
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToMany, On: false, MatchingLabels: []string{}},
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "1"),
+				labels.FromStrings("env", "staging", "pod", "2"),
+			},
+			expectedLeftMatchers:  nil,
+			expectedRightMatchers: nil,
+		},
+		"group_left on matching with include hints: many side receives include-derived matchers": {
+			card:           parser.CardManyToOne,
+			vectorMatching: parser.VectorMatching{Card: parser.CardManyToOne, On: true, MatchingLabels: []string{"env"}, Include: []string{"region"}},
+			hints:          &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+				labels.FromStrings("env", "prod", "region", "eu"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging"), // filtered by env hint
+			},
+			// one side (right) gets nil outer matchers
+			expectedRightMatchers: nil,
+			// many side (left) gets include-derived matcher for env from one-side (right) metadata
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
+			},
+		},
+		"group_right on matching with include hints: many side receives include-derived matchers": {
+			card:           parser.CardOneToMany,
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToMany, On: true, MatchingLabels: []string{"env"}, Include: []string{"region"}},
+			hints:          &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging"), // filtered by env hint
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+				labels.FromStrings("env", "prod", "region", "eu"),
+			},
+			// one side (left) gets nil matchers
+			expectedLeftMatchers: nil,
+			// many side (right) gets include-derived matcher for env from one-side (left) metadata
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod|staging"},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			o, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				testCase.vectorMatching,
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				nil,
+				posrange.PositionRange{},
+				types.QueryTimeRange{},
+				testCase.hints,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			_, err = o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedLeftMatchers, left.MatchersProvided, "left side received unexpected matchers")
+			require.Equal(t, testCase.expectedRightMatchers, right.MatchersProvided, "right side received unexpected matchers")
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_ManySideMatchersWhenHintsProduceNoMatchers(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("non-include-label parent matchers are dropped", func(t *testing.T) {
+		// When hints are non-nil but BuildMatchers returns nil (e.g., all labels are excluded),
+		// parent matchers for non-include labels must still be dropped from the many side.
+		// Parent matchers may refer to labels that don't exist on the many side of this
+		// binary operation.
+		memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+		// group_left: right is "one" side, left is "many" side.
+		// The one side (right) has "cluster" so parent matchers don't filter it out.
+		rightSeries := []labels.Labels{
+			labels.FromStrings("env", "prod", "cluster", "us-east"),
+		}
+		leftSeries := []labels.Labels{
+			labels.FromStrings("env", "prod", "pod", "1"),
+		}
+
+		left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+		right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+		// Exclude hints that exclude all one-side labels: BuildMatchers will return nil
+		// because all label names present on the one side are excluded.
+		hints := &Hints{Exclude: []string{"cluster", "env"}}
+		vectorMatching := parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"cluster", "env"}}
+
+		o, err := NewGroupedVectorVectorBinaryOperation(
+			left,
+			right,
+			vectorMatching,
+			parser.ADD,
+			false,
+			memoryConsumptionTracker,
+			nil,
+			posrange.PositionRange{},
+			types.QueryTimeRange{},
+			hints,
+			log.NewNopLogger(),
+		)
+		require.NoError(t, err)
+
+		// Pass non-nil parent matchers that refer to a label ("cluster") not present on the many side.
+		parentMatchers := types.Matchers{
+			{Type: labels.MatchRegexp, Name: "cluster", Value: "us-east"},
+		}
+		_, err = o.SeriesMetadata(ctx, parentMatchers)
+		require.NoError(t, err)
+
+		// Parent matchers must be dropped from the many (left) side when hints are set but produce no matchers.
+		require.Nil(t, left.MatchersProvided, "parent matchers should be dropped from many side when hints are set but produce no matchers")
+	})
+
+	t.Run("include-label parent matchers are still forwarded to many side", func(t *testing.T) {
+		// When hints are non-nil but BuildMatchers returns nil, parent matchers for
+		// included labels (from group_left/group_right) should still be forwarded to
+		// the many side, since those labels belong to the many side.
+		memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+		// group_left(region): right is "one" side, left is "many" side.
+		// "region" is an include label that comes from the many (left) side.
+		rightSeries := []labels.Labels{
+			labels.FromStrings("env", "prod"),
+		}
+		leftSeries := []labels.Labels{
+			labels.FromStrings("env", "prod", "region", "us-east"),
+		}
+
+		left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+		right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+		// Exclude hints that exclude all one-side labels: BuildMatchers will return nil.
+		hints := &Hints{Exclude: []string{"env"}}
+		vectorMatching := parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"env"}, Include: []string{"region"}}
+
+		o, err := NewGroupedVectorVectorBinaryOperation(
+			left,
+			right,
+			vectorMatching,
+			parser.ADD,
+			false,
+			memoryConsumptionTracker,
+			nil,
+			posrange.PositionRange{},
+			types.QueryTimeRange{},
+			hints,
+			log.NewNopLogger(),
+		)
+		require.NoError(t, err)
+
+		// Pass parent matchers that include one for the "region" include label and one
+		// for "cluster" which is unrelated.
+		parentMatchers := types.Matchers{
+			{Type: labels.MatchEqual, Name: "cluster", Value: "us-east"},
+			{Type: labels.MatchEqual, Name: "region", Value: "us-east"},
+		}
+		_, err = o.SeriesMetadata(ctx, parentMatchers)
+		require.NoError(t, err)
+
+		// The many (left) side should only receive the include-label matcher ("region"),
+		// not the non-include-label matcher ("cluster").
+		expectedManySideMatchers := types.Matchers{
+			{Type: labels.MatchEqual, Name: "region", Value: "us-east"},
+		}
+		require.Equal(t, expectedManySideMatchers, left.MatchersProvided, "many side should receive only include-label matchers when hints produce no matchers")
+
+		// The one (right) side should receive only the non-include-label matcher ("cluster"),
+		// since "region" belongs to the many side.
+		expectedOneSideMatchers := types.Matchers{
+			{Type: labels.MatchEqual, Name: "cluster", Value: "us-east"},
+		}
+		require.Equal(t, expectedOneSideMatchers, right.MatchersProvided, "one side should not receive include-label matchers")
+	})
+}
+
 // BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering measures the benefit of
 // the hints-based optimization introduced for GroupedVectorVectorBinaryOperation.
 //
@@ -944,11 +1302,11 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 			// For CardOneToMany (group_right): left=one, right=many.
 			var leftSeries, rightSeries []labels.Labels
 			if card == parser.CardManyToOne {
-				leftSeries = append([]labels.Labels(nil), allManySeries...)
-				rightSeries = append([]labels.Labels(nil), oneSeries...)
+				leftSeries = slices.Clone(allManySeries)
+				rightSeries = slices.Clone(oneSeries)
 			} else {
-				leftSeries = append([]labels.Labels(nil), oneSeries...)
-				rightSeries = append([]labels.Labels(nil), allManySeries...)
+				leftSeries = slices.Clone(oneSeries)
+				rightSeries = slices.Clone(allManySeries)
 			}
 
 			left := &operators.TestOperator{

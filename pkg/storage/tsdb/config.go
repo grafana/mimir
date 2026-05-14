@@ -439,6 +439,7 @@ type BucketStoreConfig struct {
 	BlockSyncConcurrency                   int                         `yaml:"block_sync_concurrency" category:"advanced"`
 	MetaSyncConcurrency                    int                         `yaml:"meta_sync_concurrency" category:"advanced"`
 	IndexCache                             indexcache.IndexCacheConfig `yaml:"index_cache"`
+	IndexHeaderCache                       IndexHeaderCacheConfig      `yaml:"index_header_cache"`
 	ChunksCache                            ChunksCacheConfig           `yaml:"chunks_cache"`
 	MetadataCache                          MetadataCacheConfig         `yaml:"metadata_cache"`
 	IgnoreDeletionMarksInStoreGatewayDelay time.Duration               `yaml:"ignore_deletion_mark_delay" category:"advanced"`
@@ -472,6 +473,7 @@ type BucketStoreConfig struct {
 // RegisterFlags registers the BucketStore flags
 func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.IndexCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-cache.")
+	cfg.IndexHeaderCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header-cache.")
 	cfg.ChunksCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.chunks-cache.")
 	cfg.MetadataCache.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.metadata-cache.")
 	cfg.BucketIndex.RegisterFlagsWithPrefix(f, bucketIndexFlagPrefix)
@@ -517,6 +519,9 @@ func (cfg *BucketStoreConfig) Validate() error {
 	}
 	if err := cfg.ChunksCache.Validate(); err != nil {
 		return errors.Wrap(err, "chunks-cache configuration")
+	}
+	if err := cfg.IndexHeaderCache.Validate(); err != nil {
+		return errors.Wrap(err, "index-header-cache configuration")
 	}
 	if err := cfg.MetadataCache.Validate(); err != nil {
 		return errors.Wrap(err, "metadata-cache configuration")

@@ -19,7 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different included labels")
+var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different hints")
 
 type BinaryExpression struct {
 	*BinaryExpressionDetails
@@ -78,13 +78,24 @@ func (b *BinaryExpression) Describe() string {
 	builder.WriteString(" RHS")
 
 	if b.Hints != nil {
-		builder.WriteString(", hints (")
-		for i, l := range b.Hints.Include {
-			if i > 0 {
-				builder.WriteString(", ")
-			}
+		if b.Hints.IsExcludeMatching() {
+			builder.WriteString(", hints exclude (")
+			for i, l := range b.Hints.Exclude {
+				if i > 0 {
+					builder.WriteString(", ")
+				}
 
-			builder.WriteString(l)
+				builder.WriteString(l)
+			}
+		} else {
+			builder.WriteString(", hints include (")
+			for i, l := range b.Hints.Include {
+				if i > 0 {
+					builder.WriteString(", ")
+				}
+
+				builder.WriteString(l)
+			}
 		}
 
 		builder.WriteByte(')')
@@ -152,27 +163,49 @@ func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.N
 		b.ReturnBool == otherBinaryExpression.ReturnBool
 }
 
+// MergeHints merges the hints from other into b. It returns an error if the
+// hints are incompatible.
+//
+// nil hints and non-nil hints with an empty Include (exclude-matching mode)
+// are intentionally treated as distinct, incompatible states:
+//   - nil hints means no optimization was applied (e.g. from an older query-frontend).
+//   - Non-nil hints with empty Include means exclude-matching mode (without/ignoring/default).
+//
+// Merging these two would be incorrect because nil hints signal that the sender
+// did not compute any narrowing information, so we cannot assume exclude-matching
+// semantics. See IsExcludeMatching for the full convention.
 func (b *BinaryExpression) MergeHints(other planning.Node) error {
 	otherBinaryExpression, ok := other.(*BinaryExpression)
 	if !ok {
 		return fmt.Errorf("cannot merge hints from %T into %T", other, b)
 	}
 
-	var thisLabels []string
-	var otherLabels []string
+	thisExclude := b.Hints.IsExcludeMatching()
+	otherExclude := otherBinaryExpression.Hints.IsExcludeMatching()
 
+	if thisExclude != otherExclude {
+		return errCannotMergeBinaryExpressionHints
+	}
+
+	if thisExclude {
+		// When thisExclude is true, b.Hints != nil and otherBinaryExpression.Hints != nil
+		// are guaranteed by the expressions above that set thisExclude/otherExclude.
+		if slices.Equal(b.Hints.Exclude, otherBinaryExpression.Hints.Exclude) {
+			return nil
+		}
+		return errCannotMergeBinaryExpressionHints
+	}
+
+	var thisInclude, otherInclude []string
 	if b.Hints != nil {
-		thisLabels = b.Hints.Include
+		thisInclude = b.Hints.Include
 	}
-
 	if otherBinaryExpression.Hints != nil {
-		otherLabels = otherBinaryExpression.Hints.Include
+		otherInclude = otherBinaryExpression.Hints.Include
 	}
-
-	if slices.Equal(thisLabels, otherLabels) {
+	if slices.Equal(thisInclude, otherInclude) {
 		return nil
 	}
-
 	return errCannotMergeBinaryExpressionHints
 }
 

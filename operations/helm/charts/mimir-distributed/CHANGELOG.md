@@ -35,6 +35,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Update minimum supported Kubernetes version to 1.32. This reflects the fact that Grafana does not test with older versions of Kubernetes. #14335
 * [CHANGE] Set default memory ballast for ruler to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Set docker.io as the default registry for mimir image. #13267
+* [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Upgrade rollout-operator chart to [0.37.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #13245
@@ -55,6 +56,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Upgrade rollout-operator chart to 0.38.1, which fixes an issue with permissions preventing the rollout-operator from starting when webhooks are not enabled. #13754.
 * [BUGFIX] Fix Kafka image reference to include the registry in the StatefulSet template. #14211.
 * [BUGFIX] Helm: Removed helm's empty selector for the smoke-test-job file that is throwing errors in ArgoCD #14684
+* [BUGFIX] Meta-monitoring: Do not emit `spec.clients: null` on `LogsInstance` or `basicAuth: null` on `MetricsInstance.spec.remoteWrite[*]` when the corresponding `metaMonitoring.grafanaAgent.{logs,metrics}.remote.url` / `auth` fields are empty. The resulting manifests failed CRD validation under ArgoCD ServerSideApply. #15135
 
 ## 6.0.6
 

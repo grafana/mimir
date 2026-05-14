@@ -65,7 +65,7 @@ func TestScalarExecutionResponse(t *testing.T) {
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -115,7 +115,7 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -193,7 +193,7 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -260,7 +260,7 @@ func TestInstantVectorExecutionResponse_BatchedSeriesMetadata(t *testing.T) {
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -296,7 +296,7 @@ func TestRangeVectorExecutionResponse_BatchedSeriesMetadata(t *testing.T) {
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -334,7 +334,7 @@ func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -368,7 +368,7 @@ func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testin
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -457,7 +457,7 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -529,7 +529,7 @@ func TestRangeVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -585,7 +585,7 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -643,7 +643,7 @@ func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.
 	}
 
 	frontend := &mockFrontend{stream: stream}
-	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
@@ -845,12 +845,14 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 	}
 }
 
-func TestExecutionResponses_Finalize(t *testing.T) {
+func TestExecutionResponses_FinalizeAndStats(t *testing.T) {
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
 	responseCreators := map[string]func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
 		"scalar": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
 			frontend := &mockFrontend{stream: stream}
-			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
-			resp, err := group.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
+			resp, err := group.CreateScalarExecution(ctx, createDummyNode(), timeRange)
 			require.NoError(t, err)
 			require.NoError(t, resp.Start(ctx))
 
@@ -858,8 +860,8 @@ func TestExecutionResponses_Finalize(t *testing.T) {
 		},
 		"instant vector": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
 			frontend := &mockFrontend{stream: stream}
-			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
-			resp, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
+			resp, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), timeRange)
 			require.NoError(t, err)
 			require.NoError(t, resp.Start(ctx))
 
@@ -867,8 +869,8 @@ func TestExecutionResponses_Finalize(t *testing.T) {
 		},
 		"range vector": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
 			frontend := &mockFrontend{stream: stream}
-			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
-			resp, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
+			resp, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), timeRange)
 			require.NoError(t, err)
 			require.NoError(t, resp.Start(ctx))
 
@@ -880,8 +882,18 @@ func TestExecutionResponses_Finalize(t *testing.T) {
 	expectedTotalSamples := uint64(1234)
 	expectedWarnings := []string{"warning #1", "warning #2"}
 	expectedInfos := []string{"info #1", "info #2"}
+	expectedNodeStats := map[int64]types.EncodedOperatorEvaluationStats{
+		0: {
+			TimeRange: timeRange.Encode(),
+			AllSeries: types.EncodedSubsetStats{
+				SamplesProcessedPerStep:     []int64{123},
+				SamplesReadIfSubsequentStep: []int64{123},
+				SamplesReadIfFirstStep:      []int64{123},
+			},
+		},
+	}
 
-	runScenario := func(t *testing.T, expectSuccess bool, responses ...mockResponse) {
+	runScenario := func(t *testing.T, expectSuccess bool, expectPerNodeStats bool, responses ...mockResponse) {
 		for name, responseCreator := range responseCreators {
 			t.Run(name, func(t *testing.T) {
 				stream := &mockResponseStream{
@@ -889,45 +901,65 @@ func TestExecutionResponses_Finalize(t *testing.T) {
 				}
 
 				ctx := context.Background()
-				memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+				memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 				response := responseCreator(t, ctx, stream, memoryConsumptionTracker)
 
-				annos, stats, err := response.Finalize(ctx)
-				if expectSuccess {
-					require.NoError(t, err)
-					require.Equal(t, expectedTotalSamples, stats.SamplesProcessed)
-
-					warnings, infos := annos.AsStrings("", 0, 0)
-					require.ElementsMatch(t, expectedWarnings, warnings)
-					require.ElementsMatch(t, expectedInfos, infos)
-				} else {
+				annos, overallStats, err := response.Finalize(ctx)
+				if !expectSuccess {
 					require.Equal(t, expectedError, err)
+					return
 				}
+
+				require.NoError(t, err)
+				require.Equal(t, expectedTotalSamples, overallStats.SamplesProcessed)
+
+				warnings, infos := annos.AsStrings("", 0, 0)
+				require.ElementsMatch(t, expectedWarnings, warnings)
+				require.ElementsMatch(t, expectedInfos, infos)
+
+				expectedOperatorStats, err := types.NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
+				require.NoError(t, err)
+
+				// If the query-frontend is talking to a querier that sends per-node stats, we expect to receive them.
+				// If the query-frontend is talking to a querier that is too old to send per-node stats, we expect to receive an empty set of stats for the node's time range.
+				if expectPerNodeStats {
+					expectedOperatorStats.TrackSampleForInstantVectorSelector(timeRange.StartT, 123, nil)
+				}
+
+				operatorStats, err := response.Stats(ctx)
+				require.NoError(t, err)
+				require.Equal(t, expectedOperatorStats, operatorStats)
 			})
 		}
 	}
 
 	t.Run("next message to read is an error", func(t *testing.T) {
-		runScenario(t, false, mockResponse{err: expectedError})
+		runScenario(t, false, false, mockResponse{err: expectedError})
 	})
 
-	t.Run("next message to read is EvaluationCompleted", func(t *testing.T) {
-		runScenario(t, true, mockResponse{msg: newEvaluationCompleted(expectedTotalSamples, expectedWarnings, expectedInfos)})
+	t.Run("next message to read is EvaluationCompleted, and contains per-node stats", func(t *testing.T) {
+		runScenario(t, true, true, mockResponse{msg: newEvaluationCompletedWithPerNodeStats(expectedTotalSamples, expectedWarnings, expectedInfos, expectedNodeStats)})
 	})
 
-	t.Run("next message to read is not EvaluationCompleted, eventually stream returns EvaluationCompleted", func(t *testing.T) {
+	t.Run("next message to read is EvaluationCompleted, and does not contain per-node stats", func(t *testing.T) {
+		runScenario(t, true, false, mockResponse{msg: newEvaluationCompleted(expectedTotalSamples, expectedWarnings, expectedInfos)})
+	})
+
+	t.Run("next message to read is not EvaluationCompleted, eventually stream returns EvaluationCompleted with per-node stats", func(t *testing.T) {
 		runScenario(
 			t,
 			true,
+			true,
 			mockResponse{msg: newScalarValue(mimirpb.Sample{TimestampMs: 1000, Value: 2})},
 			mockResponse{msg: newScalarValue(mimirpb.Sample{TimestampMs: 4000, Value: 2})},
-			mockResponse{msg: newEvaluationCompleted(expectedTotalSamples, expectedWarnings, expectedInfos)},
+			mockResponse{msg: newEvaluationCompletedWithPerNodeStats(expectedTotalSamples, expectedWarnings, expectedInfos, expectedNodeStats)},
 		)
 	})
 
 	t.Run("next message to read is not EvaluationCompleted, eventually stream returns error", func(t *testing.T) {
 		runScenario(
 			t,
+			false,
 			false,
 			mockResponse{msg: newScalarValue(mimirpb.Sample{TimestampMs: 1000, Value: 2})},
 			mockResponse{msg: newScalarValue(mimirpb.Sample{TimestampMs: 4000, Value: 2})},
@@ -985,10 +1017,20 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 		Stats: stats.Stats{
 			SamplesProcessed: 1234,
 		},
+		PerNodeStats: map[int64]types.EncodedOperatorEvaluationStats{
+			123: {
+				AllSeries: types.EncodedSubsetStats{
+					SamplesProcessedPerStep:     []int64{100},
+					SamplesReadIfSubsequentStep: []int64{200},
+					SamplesReadIfFirstStep:      []int64{300},
+				},
+			},
+		},
 	}
 
-	annos, stats := decodeEvaluationCompletedMessage(msg)
-	require.Equal(t, msg.Stats, stats)
+	annos, overallStats, perNodeStats := decodeEvaluationCompletedMessage(msg)
+	require.Equal(t, msg.Stats, overallStats)
+	require.Equal(t, msg.PerNodeStats, perNodeStats)
 
 	// If these tests fail, then the errors we're adding to the set of annotations likely
 	// don't wrap PromQLInfo / PromQLWarning correctly.
@@ -1093,6 +1135,10 @@ func newRangeVectorStepData(seriesIndex int64, stepT int64, rangeStart int64, ra
 }
 
 func newEvaluationCompleted(totalSamples uint64, warnings []string, infos []string) *frontendv2pb.QueryResultStreamRequest {
+	return newEvaluationCompletedWithPerNodeStats(totalSamples, warnings, infos, nil)
+}
+
+func newEvaluationCompletedWithPerNodeStats(totalSamples uint64, warnings []string, infos []string, perNodeStats map[int64]types.EncodedOperatorEvaluationStats) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -1105,6 +1151,7 @@ func newEvaluationCompleted(totalSamples uint64, warnings []string, infos []stri
 						Stats: stats.Stats{
 							SamplesProcessed: totalSamples,
 						},
+						PerNodeStats: perNodeStats,
 					},
 				},
 			},
@@ -1189,7 +1236,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 
 	frontend := &mockFrontend{stream: stream}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	// Queue up evaluation of two nodes.
 	resp1, err := evaluator.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
@@ -1303,7 +1350,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 
 	frontend := &mockFrontend{stream: stream}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	// Queue up evaluation of two nodes.
 	node1 := createDummyNode()
@@ -1416,7 +1463,7 @@ func TestRemoteExecutionGroupEvaluator_ReceiveMessageForUnexpectedNode(t *testin
 
 	frontend := &mockFrontend{stream: stream}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	node := createDummyNode()
 	resp, err := evaluator.CreateInstantVectorExecution(ctx, node, types.NewInstantQueryTimeRange(time.Now()))
@@ -1446,7 +1493,7 @@ func TestRemoteExecutionGroupEvaluator_ReceiveUnexpectedMessageWithoutNodeIndex(
 
 	frontend := &mockFrontend{stream: stream}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	node := createDummyNode()
 	resp, err := evaluator.CreateInstantVectorExecution(ctx, node, types.NewInstantQueryTimeRange(time.Now()))
@@ -1503,7 +1550,7 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing
 
 	frontend := &mockFrontend{stream: stream}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	// Queue up evaluation of two nodes.
 	node1 := createDummyNode()
@@ -1599,7 +1646,7 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 
 	frontend := &mockFrontend{stream: stream}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	// Queue up evaluation of two nodes.
 	node1 := createDummyNode()
@@ -1692,7 +1739,7 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithCloseCalls(t *testi
 
 	frontend := &mockFrontend{stream: stream}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	// Queue up evaluation of two nodes.
 	node1 := createDummyNode()
@@ -1751,7 +1798,7 @@ func TestRemoteExecutionGroupEvaluator_AllNodesClosedBeforeRequestSent(t *testin
 
 	frontend := &mockFrontend{stream: stream}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	// Queue up evaluation of two nodes.
 	node1 := createDummyNode()
@@ -1816,7 +1863,7 @@ func TestRemoteExecutionGroupEvaluator_SomeNodesClosedBeforeRequestSent(t *testi
 
 	frontend := &mockFrontend{stream: stream}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	// Queue up evaluation of two nodes.
 	node1 := createDummyNode()
@@ -1851,7 +1898,7 @@ func TestRemoteExecutionGroupEvaluator_AddingNodesAfterRequestSent(t *testing.T)
 	ctx := context.Background()
 	frontend := &mockFrontend{}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	// Queue up evaluation of two nodes.
 	resp1, err := evaluator.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
@@ -1881,7 +1928,7 @@ func TestRemoteExecutionGroupEvaluator_CorrectlyPassesQueriedTimeRangeAndUpdates
 	frontendMock := &timeRangeCapturingFrontend{}
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontendMock, cfg, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontendMock, cfg, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	stats, ctx := stats.ContextWithEmptyStats(context.Background())
 	stats.AddRemoteExecutionRequests(12)
@@ -1917,7 +1964,7 @@ func (m *timeRangeCapturingFrontend) DoProtobufRequest(ctx context.Context, req 
 func TestRemoteExecutionGroupEvaluator_SendsQueryPlanVersion(t *testing.T) {
 	frontendMock := &requestCapturingFrontendMock{}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-	evaluator := NewRemoteExecutionGroupEvaluator(frontendMock, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontendMock, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	ctx := context.Background()
 	timeRange := types.NewInstantQueryTimeRange(time.Now())

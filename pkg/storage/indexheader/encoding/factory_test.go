@@ -57,7 +57,7 @@ func TestDecbufFactory_NewDecbufAtChecked_InvalidCRC(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutBytes([]byte{0, 0, 0, 0})
 
-	testDecbufFactory(t, testContentSize, enc, true, func(t *testing.T, factory DecbufFactory) {
+	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
 		d := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
@@ -71,7 +71,7 @@ func TestDecbufFactory_NewDecbufAtChecked_InvalidLength(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
 
-	testDecbufFactory(t, testContentSize+1000, enc, true, func(t *testing.T, factory DecbufFactory) {
+	testDecbufFactory(t, testContentSize+1000, enc, true, true, func(t *testing.T, factory DecbufFactory) {
 		d := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
@@ -85,7 +85,7 @@ func TestDecbufFactory_NewDecbufAtChecked_HappyPath(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
 
-	testDecbufFactory(t, testContentSize, enc, true, func(t *testing.T, factory DecbufFactory) {
+	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
 		d := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
@@ -134,7 +134,7 @@ func TestDecbufFactory_NewDecbufAtChecked_Concurrent(t *testing.T) {
 		concurrency = 10
 	)
 
-	testDecbufFactory(t, testContentSize, enc, true, func(t *testing.T, factory DecbufFactory) {
+	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
 		g, _ := errgroup.WithContext(context.Background())
 
 		for i := 0; i < concurrency; i++ {
@@ -164,7 +164,7 @@ func TestDecbufFactory_NewDecbufAtUnchecked_HappyPath(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
 
-	testDecbufFactory(t, testContentSize, enc, true, func(t *testing.T, factory DecbufFactory) {
+	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
 		d := factory.NewDecbufAtUnchecked(0)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
@@ -179,7 +179,7 @@ func TestDecbufFactory_NewDecbufRaw_HappyPath(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
 
-	testDecbufFactory(t, testContentSize, enc, true, func(t *testing.T, factory DecbufFactory) {
+	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
 		d := factory.NewRawDecbuf()
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
@@ -190,12 +190,69 @@ func TestDecbufFactory_NewDecbufRaw_HappyPath(t *testing.T) {
 	})
 }
 
+// TestDecbufFactory_NewDecbufInSection_HappyPath tests that creating a new Decbuf for a table section
+// starts the reader in the correct place by placing a test byte at the expected start offset.
+func TestDecbufFactory_NewDecbufInSection_HappyPath(t *testing.T) {
+	testByte := byte(0x02)
+	startOffset := 10
+	endOffset := 25
+	enc := createTestEncoderWithTestByte(testContentSize, startOffset-numLenBytes, testByte)
+	enc.PutHash(crc32.New(table))
+
+	testDisk := false // NewDecbufInSection is currently only implemented for BucketDecbufFactory
+	testDecbufFactory(t, testContentSize, enc, testDisk, true, func(t *testing.T, factory DecbufFactory) {
+		d := factory.NewDecbufInSection(0, startOffset, endOffset)
+		t.Cleanup(func() {
+			require.NoError(t, d.Close())
+		})
+		require.NoError(t, d.Err())
+		require.Equal(t, endOffset-startOffset, d.Len())
+		// Make sure our start offset is placed where we expected by reading the first byte
+		require.Equal(t, testByte, d.Byte())
+	})
+}
+
+// TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeyondTableLength tests that calling NewDecbufInSection
+// with an end offset beyond the end of the table produces a Decbuf that ends at the end of the table.
+func TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeyondTableLength(t *testing.T) {
+	testByte := byte(0x02)
+	enc := createTestEncoderWithTestByte(testContentSize, 10-numLenBytes, testByte)
+	enc.PutHash(crc32.New(table))
+
+	testDisk := false // NewDecbufInSection is currently only implemented for BucketDecbufFactory
+	testDecbufFactory(t, testContentSize, enc, testDisk, true, func(t *testing.T, factory DecbufFactory) {
+		d := factory.NewDecbufInSection(0, 10, testContentSize+1000)
+		t.Cleanup(func() {
+			require.NoError(t, d.Close())
+		})
+		require.NoError(t, d.Err())
+		require.Equal(t, testContentSize+numLenBytes-10, d.Len())
+		require.Equal(t, testByte, d.Byte())
+	})
+}
+
+// TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeforeStartOffset tests that attempting to call NewDecbufInSection
+// with an end offset before the start offset returns an error.
+func TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeforeStartOffset(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+
+	testDisk := false // NewDecbufInSection is currently only implemented for BucketDecbufFactory
+	testDecbufFactory(t, testContentSize, enc, testDisk, true, func(t *testing.T, factory DecbufFactory) {
+		d := factory.NewDecbufInSection(0, 2500, 30)
+		t.Cleanup(func() {
+			require.NoError(t, d.Close())
+		})
+		require.Error(t, d.Err())
+	})
+}
+
 func TestDecbufFactory_Stop(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
 
 	testBucket := false // bucket-based factory does not do anything on close and will not error
-	testDecbufFactory(t, testContentSize, enc, testBucket, func(t *testing.T, factory DecbufFactory) {
+	testDecbufFactory(t, testContentSize, enc, true, testBucket, func(t *testing.T, factory DecbufFactory) {
 		require.NoError(t, factory.Close())
 
 		d := factory.NewRawDecbuf()
@@ -211,18 +268,21 @@ func testDecbufFactory(
 	t *testing.T,
 	len int,
 	enc promencoding.Encbuf,
+	testDisk bool,
 	testBucket bool,
 	test func(t *testing.T, factory DecbufFactory),
 ) {
-	t.Run("DecbufFactory=Disk-Pooled", func(t *testing.T) {
-		diskFactory, _ := createDecbufFactoriesWithBytes(t, 1, len, enc)
-		test(t, diskFactory)
-	})
+	if testDisk {
+		t.Run("DecbufFactory=Disk-Pooled", func(t *testing.T) {
+			diskFactory, _ := createDecbufFactoriesWithBytes(t, 1, len, enc)
+			test(t, diskFactory)
+		})
 
-	t.Run("DecbufFactory=Disk-NoPool", func(t *testing.T) {
-		diskFactory, _ := createDecbufFactoriesWithBytes(t, 0, len, enc)
-		test(t, diskFactory)
-	})
+		t.Run("DecbufFactory=Disk-NoPool", func(t *testing.T) {
+			diskFactory, _ := createDecbufFactoriesWithBytes(t, 0, len, enc)
+			test(t, diskFactory)
+		})
+	}
 
 	if testBucket {
 		t.Run("DecbufFactory=Bucket", func(t *testing.T) {
@@ -231,6 +291,19 @@ func testDecbufFactory(
 		})
 	}
 
+}
+
+func createTestEncoderWithTestByte(numBytes, testByteOffset int, testByte byte) promencoding.Encbuf {
+	enc := promencoding.Encbuf{}
+
+	for i := 0; i < testByteOffset; i++ {
+		enc.PutByte(0x01)
+	}
+	enc.PutByte(testByte)
+	for i := testByteOffset + 1; i < numBytes; i++ {
+		enc.PutByte(0x01)
+	}
+	return enc
 }
 
 func createTestEncoder(numBytes int) promencoding.Encbuf {

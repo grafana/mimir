@@ -460,19 +460,25 @@ How to **fix** it:
   - If the ruler is logging the gRPC error "trying to send message larger than max", consider increasing `-server.grpc-max-send-msg-size-bytes` in the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
-### MimirRulerMissedEvaluations
+### MimirRulersMissedEvaluations
 
-This alert fires when there is a rule group that is taking longer to evaluate than its evaluation interval.
+This alert fires when a significant % of rule group evaluations are missed (skipped) across all rulers.
 
 How it **works**:
 
-- The Mimir ruler will evaluate a rule group according to the evaluation interval on the rule group.
+- The Mimir ruler evaluates each rule group according to the configured evaluation interval.
 - If an evaluation is not finished by the time the next evaluation should happen, the next evaluation is missed.
 
 How to **fix** it:
 
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
+
+### MimirRulerMissedEvaluations
+
+This alert fires when a significant % of rule group evaluations are missed (skipped) in a specific ruler instance.
+
+Refer to the [MimirRulersMissedEvaluations](#mimirrulersmissedevaluations) runbook for detailed investigation steps.
 
 ### MimirRulerRemoteEvaluationFailing
 
@@ -888,7 +894,7 @@ level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=
 
 When this happens, the affected block(s) will be marked as non-compact by the compactor in order to prevent the next execution from being blocked, which could potentially have a negative impact on the performance of the read path.
 
-If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Mimir guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss.
+If the corruption affects only one block whose compaction `level` is 1 (this information is stored inside block's `meta.json`), and shipment of blocks to the object storage is done from ingesters (default case), then Mimir guarantees no data loss. That is, the data is replicated across blocks shipped from multiple ingester replicas. In all other cases — e.g. when ingester shipment is disabled and blocks are shipped from the block-builder (experimental architecture) — there may be some data loss.
 
 Once this alert has been triggered, it is recommended to follow the following steps:
 

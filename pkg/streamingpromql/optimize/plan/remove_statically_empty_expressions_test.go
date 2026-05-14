@@ -227,6 +227,23 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			queryStart:      time.Unix(10000, 0),
 			expectUnchanged: true,
 		},
+		"function over subquery with empty results: should not optimize": {
+			// We short-circuit on subqueries now for simplicity
+			expr:            `max_over_time(EMPTY_RESULT[1d:5m])`,
+			expectUnchanged: true,
+		},
+		"function over subquery binary operation with empty results: should optimize": {
+			expr: `max_over_time(metric_a[1d:5m]) + rate(EMPTY_RESULT[5m])`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"unary operation on empty results: should optimize": {
+			expr: `-rate(EMPTY_RESULT[5m])`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 		"non-conflicting equals matchers: should not optimize": {
 			expr:            `metric{pod="foo", env="bar"}`,
 			queryStart:      time.UnixMilli(selectorThresholdMs),
@@ -237,7 +254,14 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			queryStart:      time.UnixMilli(selectorThresholdMs),
 			expectUnchanged: true,
 		},
-		"conflicting equals matchers in info function: should not optimize": {
+		"conflicting equals matchers in first info() argument: should optimize": {
+			expr:       `info(metric{pod="foo", pod="bar"}, {__name__="other_info"})`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"conflicting equals matchers in second info() argument: should not optimize": {
 			expr:            `info(metric, {env="prod", env="dev"})`,
 			queryStart:      time.UnixMilli(selectorThresholdMs),
 			expectUnchanged: true,
@@ -253,9 +277,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expr:       `avg_over_time(metric{pod="foo", pod="bar"}[5m])`,
 			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
-				- DeduplicateAndMerge
-					- FunctionCall: avg_over_time(...)
-						- NoOp: matrix
+				- NoOp
 			`,
 		},
 		"conflicting equals matchers on LHS of binary expression: should optimize": {
@@ -272,9 +294,121 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
-
-		"empty result ANDed with non-empty result: returns empty result": {
-			expr: `EMPTY_RESULT and metric`,
+		"aggregation over empty result: should optimize": {
+			expr:       `sum(EMPTY_RESULT)`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"aggregation over function over empty result: should optimize": {
+			expr: `sum(rate(EMPTY_RESULT[5m]))`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"aggregation with grouping over empty result: should optimize": {
+			expr: `count by (namespace) (EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"aggregation without grouping over empty result: should optimize": {
+			expr: `sum without (namespace) (EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary add with empty result on right side: should optimize": {
+			expr: `sum(metric_a) + sum(EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary add with empty result on left side: should optimize": {
+			expr: `sum(EMPTY_RESULT) + sum(metric_a)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary modulo with empty result on right side: should optimize": {
+			expr: `sum(metric_a) % sum(EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary exponent with empty result on left side: should optimize": {
+			expr: `sum(EMPTY_RESULT) ^ sum(metric_a)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary atan2 with empty result on right side: should optimize": {
+			expr: `some_metric atan2 EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary less-than with empty result on right side: should optimize": {
+			expr: `some_metric_a < EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary less-than-or-equal with empty result on right side: should optimize": {
+			expr: `some_metric_a <= EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary greater-than with empty result on right side: should optimize": {
+			expr: `some_metric_a > EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary greater-than-or-equal with empty result on right side: should optimize": {
+			expr: `some_metric_a >= EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary add with results on both sides: should not optimize": {
+			expr:            `sum(metric_a) + sum(metric_b)`,
+			expectUnchanged: true,
+		},
+		"binary greater-than with results on both sides: should not optimize": {
+			expr:            `some_metric_a > some_metric_b`,
+			expectUnchanged: true,
+		},
+		"absent over empty result: should only optimize selector": {
+			expr: `absent(EMPTY_RESULT)`,
+			expectedPlan: `
+				- FunctionCall: absent(...)
+					- NoOp
+			`,
+		},
+		"absent_over_time over empty result: should only optimize selector": {
+			expr: `absent_over_time(EMPTY_RESULT[5m])`,
+			expectedPlan: `
+				- FunctionCall: absent_over_time(...)
+					- NoOp: matrix
+			`,
+		},
+		"abs over empty result: should optimize": {
+			expr: `abs(EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"histogram_quantile over empty result: should optimize": {
+			expr: `histogram_quantile(0.99, sum(rate(EMPTY_RESULT[5m])))`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"histogram_fraction over empty result: should optimize": {
+			expr: `histogram_fraction(0, 0.2, rate(EMPTY_RESULT[5m]))`,
 			expectedPlan: `
 				- NoOp
 			`,
@@ -454,4 +588,63 @@ func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
 
 		require.Equal(t, "- NoOp", optimizedPlan.String())
 	}
+}
+
+func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_UnknownFunctionsHandled(t *testing.T) {
+	params := &planning.QueryParameters{
+		TimeRange:     types.NewInstantQueryTimeRange(time.Now()),
+		LookbackDelta: 5 * time.Minute,
+	}
+
+	maxFuncOrd := getMaxFunctionOrdinal()
+	funcCall := &core.FunctionCall{
+		FunctionCallDetails: &core.FunctionCallDetails{
+			Function: functions.Function(maxFuncOrd + 1),
+		},
+	}
+
+	_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, params)
+	require.ErrorIs(t, err, plan.ErrUnknownFunction)
+}
+
+func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_AllKnownFunctionsHandled(t *testing.T) {
+	params := &planning.QueryParameters{
+		TimeRange:     types.NewInstantQueryTimeRange(time.Now()),
+		LookbackDelta: 5 * time.Minute,
+	}
+
+	// For every known function, ensure that we either get no error when determining if
+	// it is always empty or an error because we haven't passed the expected arguments
+	// (because we don't pass any). The idea is to make sure we have explicitly handled
+	// every defined function.
+	for ord := range functions.Function_name {
+		currentFunc := functions.Function(ord)
+
+		// Not a real function so it isn't handled by the optimization pass.
+		if currentFunc == functions.FUNCTION_UNKNOWN {
+			continue
+		}
+
+		funcCall := &core.FunctionCall{
+			FunctionCallDetails: &core.FunctionCallDetails{
+				Function: currentFunc,
+			},
+		}
+
+		_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, params)
+		if err != nil {
+			require.ErrorIs(t, err, plan.ErrInvalidFunctionArgs, "expected no error or invalid arguments error for %s, got %s", currentFunc, err)
+		}
+	}
+}
+
+func getMaxFunctionOrdinal() int32 {
+	maxFuncOrd := int32(0)
+	for _, i := range functions.Function_value {
+		if i > maxFuncOrd {
+			maxFuncOrd = i
+		}
+	}
+
+	return maxFuncOrd
 }

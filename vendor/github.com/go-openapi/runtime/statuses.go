@@ -3,7 +3,7 @@
 
 package runtime
 
-// Statuses lists the most common HTTP status codes to default message
+// Statuses lists the most common HTTP status codes to default message.
 // taken from https://httpstatuses.com/
 var Statuses = map[int]string{
 	100: "Continue",
@@ -60,7 +60,7 @@ var Statuses = map[int]string{
 	444: "No Response",
 	449: "Retry With",
 	450: "Blocked by Windows Parental Controls",
-	451: "Wrong Exchange Server",
+	451: "Unavailable For Legal Reasons",
 	499: "Client Closed Request",
 	500: "Internal Server Error",
 	501: "Not Implemented",

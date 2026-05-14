@@ -5333,6 +5333,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "label_values_count_request_max_concurrency",
+          "required": false,
+          "desc": "Maximum concurrency used to compute a single label values count request.",
+          "fieldValue": null,
+          "fieldDefaultValue": 16,
+          "fieldFlag": "ingester.label-values-count-max-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -10788,6 +10799,275 @@
             },
             {
               "kind": "block",
+              "name": "index_header_cache",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "backend",
+                  "required": false,
+                  "desc": "Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.backend",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "block",
+                  "name": "memcached",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "addresses",
+                      "required": false,
+                      "desc": "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.addresses",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "timeout",
+                      "required": false,
+                      "desc": "The socket read/write timeout.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 200000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "connect_timeout",
+                      "required": false,
+                      "desc": "The connection timeout.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 200000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.connect-timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "min_idle_connections_headroom_percentage",
+                      "required": false,
+                      "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": -1,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.min-idle-connections-headroom-percentage",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections",
+                      "required": false,
+                      "desc": "The maximum number of idle connections that will be maintained per address.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.max-idle-connections",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_async_concurrency",
+                      "required": false,
+                      "desc": "The maximum number of concurrent asynchronous operations can occur.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 50,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.max-async-concurrency",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_async_buffer_size",
+                      "required": false,
+                      "desc": "The maximum number of enqueued asynchronous operations allowed.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 25000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.max-async-buffer-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_get_multi_concurrency",
+                      "required": false,
+                      "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.max-get-multi-concurrency",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_get_multi_batch_size",
+                      "required": false,
+                      "desc": "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.max-get-multi-batch-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_item_size",
+                      "required": false,
+                      "desc": "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1048576,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.max-item-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_enabled",
+                      "required": false,
+                      "desc": "Enable connecting to Memcached with TLS.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.tls-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_insecure_skip_verify",
+                      "required": false,
+                      "desc": "Skip validating server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.tls-insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cipher_suites",
+                      "required": false,
+                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.tls-cipher-suites",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_min_version",
+                      "required": false,
+                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.tls-min-version",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "attributes_ttl",
+                  "required": false,
+                  "desc": "TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.attributes-ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "subrange_ttl",
+                  "required": false,
+                  "desc": "TTL for caching individual index-header subranges.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 86400000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.subrange-ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "subrange_in_memory_max_items",
+                  "required": false,
+                  "desc": "Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_range_requests",
+                  "required": false,
+                  "desc": "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header ranges. Zero or negative value = unlimited number of sub-requests.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.max-get-range-requests",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
               "name": "chunks_cache",
               "required": false,
               "desc": "",
@@ -11033,7 +11313,7 @@
                   "kind": "field",
                   "name": "attributes_in_memory_max_items",
                   "required": false,
-                  "desc": "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.",
+                  "desc": "Maximum number of object attribute items to keep in a first-level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.",
                   "fieldValue": null,
                   "fieldDefaultValue": 50000,
                   "fieldFlag": "blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items",
@@ -16678,12 +16958,12 @@
             "User": null,
             "Host": "localhost:8080",
             "Path": "/alertmanager",
-            "RawPath": "",
-            "OmitHost": false,
-            "ForceQuery": false,
-            "RawQuery": "",
             "Fragment": "",
-            "RawFragment": ""
+            "RawQuery": "",
+            "RawPath": "",
+            "RawFragment": "",
+            "ForceQuery": false,
+            "OmitHost": false
           },
           "fieldFlag": "alertmanager.web.external-url",
           "fieldType": "url"

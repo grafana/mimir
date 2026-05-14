@@ -21,7 +21,15 @@ message PositionRange {
 }
 
 message BinaryExpressionHints {
+  // include lists label names to use as extra selectors on the RHS of a binary
+  // operation. Used for "on (labels)" matching. When include is non-empty, only
+  // these labels are used to build matchers.
   repeated string include = 1;
+  // exclude lists label names that should not be used as extra selectors on
+  // the RHS of a binary operation. Used for "ignoring (labels)" / default
+  // (no on/ignoring) matching. When include is empty and hints is non-nil,
+  // matchers are built from all LHS labels except those in exclude.
+  repeated string exclude = 2;
 }
 
 message AggregateExpressionDetails {
@@ -219,4 +227,9 @@ message VectorMatchFillValues {
   double lhs = 2;
   bool rhsSet = 3;
   bool lhsSet = 4;
+}
+
+message DataLabelSelectorDetails {
+  repeated LabelMatcher matchers = 1;
+  PositionRange expressionPosition = 2 [(gogoproto.nullable) = false];
 }

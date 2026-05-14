@@ -265,7 +265,8 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	}
 
 	if planJob != nil {
-		jt.incompleteJobs[planJobId] = jt.pending.PushBack(planJob)
+		// Prefer the plan job at the front of the queue to refresh the view of pending jobs
+		jt.incompleteJobs[planJobId] = jt.pending.PushFront(planJob)
 		jt.metrics.queue.Pending(planJob)
 		// Drop the previous completion time since there is now a pending job that overwrote it
 		jt.completePlanTime = time.Time{}
@@ -323,7 +324,7 @@ func (jt *JobTracker) computePlan(planningInterval, compactionWaitPeriod time.Du
 
 	// L1 blocks are expected on even UTC hours and the planning for them is affected by the compaction wait period.
 	// Instead of only accounting for that wait period on even hours, account for it all the time for a better spread.
-	nextPlanningWindow := jt.completePlanTime.Add(planningInterval).UTC().Truncate(planningInterval).Add(compactionWaitPeriod)
+	nextPlanningWindow := jt.completePlanTime.UTC().Add(-compactionWaitPeriod).Truncate(planningInterval).Add(planningInterval).Add(compactionWaitPeriod)
 
 	if now.Before(nextPlanningWindow) {
 		// This window has already been planned

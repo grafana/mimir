@@ -1239,15 +1239,8 @@ func (s *BucketStore) recordBucketIndexDiscoveryDiff(ctx context.Context) {
 		level.Warn(spanlogger.FromContext(ctx, s.logger)).Log("msg", "can't get bucket index versions (updated_at) from request", "err", err)
 		return
 	}
-
-	meta := s.bucketIndexMeta.Metadata()
-	diff := meta.UpdatedAt - reqUpdatedAt
-
-	logger := log.With(spanlogger.FromContext(ctx, s.logger), "ours", meta.UpdatedAt, "requested", reqUpdatedAt, "diff", diff)
-	if diff < 0 {
-		level.Warn(logger).Log("msg", "bucket index version (updated_at) is older than requested")
-	} else {
-		level.Debug(logger).Log("msg", "bucket index versions (updated_at)")
+	if reqUpdatedAt > 0 {
+		s.metrics.bucketIndexVersionDiffSeconds.Observe(float64(s.bucketIndexMeta.Metadata().UpdatedAt - reqUpdatedAt))
 	}
 }
 
@@ -1740,12 +1733,6 @@ func fetchCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 }
 
 func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, labelName string, matchers []*labels.Matcher, values []string, logger log.Logger) {
-	// This limit is a workaround for panics in decoding large responses. See https://github.com/golang/go/issues/59172
-	const valuesLimit = 655360
-	if len(values) > valuesLimit {
-		spanlogger.FromContext(ctx, logger).DebugLog("msg", "skipping storing label values response to cache because it exceeds number of values limit", "limit", valuesLimit, "values_count", len(values))
-		return
-	}
 	entry := labelValuesCacheEntry{
 		Values:      values,
 		LabelName:   labelName,

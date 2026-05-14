@@ -17,11 +17,9 @@ import (
 func TestFinalize(t *testing.T) {
 	querierStats, ctx := stats.ContextWithEmptyStats(context.Background())
 	annos := annotations.New()
-	queryStats := types.NewQueryStats()
 
 	annos.Add(annotations.NewBadBucketLabelWarning("the_metric", "x", posrange.PositionRange{Start: 1, End: 2}))
 	annos.Add(annotations.NewPossibleNonCounterInfo("not_a_counter", posrange.PositionRange{Start: 3, End: 4}))
-	queryStats.TotalSamples = 100
 
 	resp := &mockResponse{
 		stats: stats.Stats{SamplesProcessed: 456, FetchedChunkBytes: 9000},
@@ -31,9 +29,8 @@ func TestFinalize(t *testing.T) {
 	resp.annos.Add(annotations.NewMixedFloatsHistogramsWarning("mixed_metric", posrange.PositionRange{Start: 5, End: 6}))
 	resp.annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo("another_mixed_metric", posrange.PositionRange{Start: 5, End: 6}))
 
-	err := finalize(ctx, resp, annos, queryStats)
+	err := finalize(ctx, resp, annos)
 	require.NoError(t, err)
-	require.Equal(t, int64(100+456), queryStats.TotalSamples)
 	require.Zero(t, querierStats.SamplesProcessed, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
 	require.Equal(t, uint64(9000), querierStats.FetchedChunkBytes)
 
@@ -52,20 +49,17 @@ func TestFinalize(t *testing.T) {
 func TestFinalize_EmptyAnnotationsAndStats(t *testing.T) {
 	querierStats, ctx := stats.ContextWithEmptyStats(context.Background())
 	annos := annotations.New()
-	queryStats := types.NewQueryStats()
 
 	annos.Add(annotations.NewBadBucketLabelWarning("the_metric", "x", posrange.PositionRange{Start: 1, End: 2}))
 	annos.Add(annotations.NewPossibleNonCounterInfo("not_a_counter", posrange.PositionRange{Start: 3, End: 4}))
-	queryStats.TotalSamples = 100
 
 	resp := &mockResponse{
 		stats: stats.Stats{},
 		annos: nil,
 	}
 
-	err := finalize(ctx, resp, annos, queryStats)
+	err := finalize(ctx, resp, annos)
 	require.NoError(t, err)
-	require.Equal(t, int64(100), queryStats.TotalSamples)
 	require.Zero(t, querierStats.SamplesProcessed, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
 
 	warnings, infos := annos.AsStrings("", 0, 0)
@@ -91,6 +85,10 @@ func (m *mockResponse) Finalize(ctx context.Context) (*annotations.Annotations, 
 	return m.annos, m.stats, nil
 }
 
+func (m *mockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	panic("not supported")
+}
+
 func (m *mockResponse) Close() {
 	panic("should not be called")
 }
@@ -107,6 +105,10 @@ func (m *finalizationTestMockResponse) Start(ctx context.Context) error {
 func (m *finalizationTestMockResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
 	m.Finalized = true
 	return annotations.New(), stats.Stats{}, nil
+}
+
+func (m *finalizationTestMockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+	panic("not supported")
 }
 
 func (m *finalizationTestMockResponse) Close() {

@@ -4,6 +4,7 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-kit/log"
@@ -16,6 +17,11 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+)
+
+var (
+	ErrInvalidFunctionArgs = errors.New("invalid function arguments")
+	ErrUnknownFunction     = errors.New("unknown function")
 )
 
 // RemoveStaticallyEmptyExpressionsOptimizationPass replaces subexpressions that can be statically
@@ -107,14 +113,7 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		return nil, false, nil
 	}
 
-	// The info function expects an actual selector as its second argument so we can't replace it
-	// with a no-op node or operator even if the matchers would cause it to return no results.
-	if isInfoFunction(node) {
-		return nil, false, nil
-	}
-
 	modified := false
-
 	for idx := range node.ChildCount() {
 		replacement, modifiedInChild, err := s.apply(node.Child(idx), params)
 		if err != nil {
@@ -149,13 +148,6 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 	return nil, modified, nil
 }
 
-func isInfoFunction(node planning.Node) bool {
-	if funcNode, isFunctionCall := node.(*core.FunctionCall); isFunctionCall {
-		return funcNode.Function == functions.FUNCTION_INFO
-	}
-	return false
-}
-
 // isAlwaysEmptySelector returns true if a node is a selector and has matchers that can be
 // determined to produce an empty result and a boolean indicating if the selector is a matrix
 // selector or not.
@@ -180,10 +172,140 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, 
 	switch node := node.(type) {
 	case *core.NoOp:
 		return true, nil
+	case *core.AggregateExpression:
+		return isAlwaysEmpty(node.Inner, params)
 	case *core.BinaryExpression:
 		return isAlwaysEmptyBinaryExpression(node, params)
+	case *core.FunctionCall:
+		return IsAlwaysEmptyFunctionCall(node, params)
+	case *core.UnaryExpression:
+		return isAlwaysEmpty(node.Inner, params)
 	default:
 		return false, nil
+	}
+}
+
+func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryParameters) (bool, error) {
+	// This function is exported because there's no easy way to test it without calling
+	// it directly and the tests are in a different package to avoid import cycles.
+	switch node.Function {
+	case
+		functions.FUNCTION_ABS,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2,
+		functions.FUNCTION_ACOS,
+		functions.FUNCTION_ACOSH,
+		functions.FUNCTION_ASIN,
+		functions.FUNCTION_ASINH,
+		functions.FUNCTION_ATAN,
+		functions.FUNCTION_ATANH,
+		functions.FUNCTION_AVG_OVER_TIME,
+		functions.FUNCTION_CEIL,
+		functions.FUNCTION_CHANGES,
+		functions.FUNCTION_CLAMP,
+		functions.FUNCTION_CLAMP_MAX,
+		functions.FUNCTION_CLAMP_MIN,
+		functions.FUNCTION_COS,
+		functions.FUNCTION_COSH,
+		functions.FUNCTION_COUNT_OVER_TIME,
+		functions.FUNCTION_DEG,
+		functions.FUNCTION_DELTA,
+		functions.FUNCTION_DERIV,
+		functions.FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING,
+		functions.FUNCTION_EXP,
+		functions.FUNCTION_FIRST_OVER_TIME,
+		functions.FUNCTION_FLOOR,
+		functions.FUNCTION_HISTOGRAM_AVG,
+		functions.FUNCTION_HISTOGRAM_COUNT,
+		functions.FUNCTION_HISTOGRAM_STDDEV,
+		functions.FUNCTION_HISTOGRAM_STDVAR,
+		functions.FUNCTION_HISTOGRAM_SUM,
+		functions.FUNCTION_IDELTA,
+		functions.FUNCTION_INCREASE,
+		functions.FUNCTION_INFO,
+		functions.FUNCTION_IRATE,
+		functions.FUNCTION_LABEL_JOIN,
+		functions.FUNCTION_LABEL_REPLACE,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_LN,
+		functions.FUNCTION_LOG10,
+		functions.FUNCTION_LOG2,
+		functions.FUNCTION_MAD_OVER_TIME,
+		functions.FUNCTION_MAX_OVER_TIME,
+		functions.FUNCTION_MIN_OVER_TIME,
+		functions.FUNCTION_PREDICT_LINEAR,
+		functions.FUNCTION_PRESENT_OVER_TIME,
+		functions.FUNCTION_RAD,
+		functions.FUNCTION_RATE,
+		functions.FUNCTION_RESETS,
+		functions.FUNCTION_ROUND,
+		functions.FUNCTION_SGN,
+		functions.FUNCTION_SIN,
+		functions.FUNCTION_SINH,
+		functions.FUNCTION_SORT,
+		functions.FUNCTION_SORT_BY_LABEL,
+		functions.FUNCTION_SORT_BY_LABEL_DESC,
+		functions.FUNCTION_SORT_DESC,
+		functions.FUNCTION_SQRT,
+		functions.FUNCTION_STDDEV_OVER_TIME,
+		functions.FUNCTION_STDVAR_OVER_TIME,
+		functions.FUNCTION_SUM_OVER_TIME,
+		functions.FUNCTION_TAN,
+		functions.FUNCTION_TANH,
+		functions.FUNCTION_TIMESTAMP,
+		functions.FUNCTION_TS_OF_FIRST_OVER_TIME,
+		functions.FUNCTION_TS_OF_LAST_OVER_TIME,
+		functions.FUNCTION_TS_OF_MAX_OVER_TIME,
+		functions.FUNCTION_TS_OF_MIN_OVER_TIME:
+		if len(node.Args) < 1 {
+			return false, fmt.Errorf("%w: expected at least one argument in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
+		}
+
+		return isAlwaysEmpty(node.Args[0], params)
+	case functions.FUNCTION_HISTOGRAM_QUANTILE,
+		functions.FUNCTION_QUANTILE_OVER_TIME:
+		if len(node.Args) < 2 {
+			return false, fmt.Errorf("%w: expected at least two arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
+		}
+
+		return isAlwaysEmpty(node.Args[1], params)
+	case functions.FUNCTION_HISTOGRAM_FRACTION:
+		if len(node.Args) < 3 {
+			return false, fmt.Errorf("%w: expected at least three arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
+		}
+
+		return isAlwaysEmpty(node.Args[2], params)
+	case functions.FUNCTION_SHARDING_CONCAT:
+		for i := range node.ChildCount() {
+			empty, err := isAlwaysEmpty(node.Child(i), params)
+			if err != nil {
+				return false, err
+			} else if !empty {
+				return false, nil
+			}
+		}
+
+		return true, nil
+	case functions.FUNCTION_ABSENT,
+		functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_DAYS_IN_MONTH,
+		functions.FUNCTION_DAY_OF_MONTH,
+		functions.FUNCTION_DAY_OF_WEEK,
+		functions.FUNCTION_DAY_OF_YEAR,
+		functions.FUNCTION_HOUR,
+		functions.FUNCTION_MINUTE,
+		functions.FUNCTION_MONTH,
+		functions.FUNCTION_VECTOR,
+		functions.FUNCTION_YEAR,
+		functions.FUNCTION_PI,
+		functions.FUNCTION_SCALAR,
+		functions.FUNCTION_TIME:
+		// Functions that we know are not valid to replace with a no-op node either
+		// because it would generate incorrect results or because they do not operate
+		// on vectors.
+		return false, nil
+	default:
+		return false, fmt.Errorf("%w: function call %s is unexpected (this is a bug)", ErrUnknownFunction, node.Function)
 	}
 }
 
@@ -211,17 +333,19 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 	}
 
 	switch node.Op {
+	case core.BINARY_ADD,
+		core.BINARY_ATAN2,
+		core.BINARY_DIV,
+		core.BINARY_MOD,
+		core.BINARY_MUL,
+		core.BINARY_POW,
+		core.BINARY_SUB:
+		// Arithmetic operations are always no-ops when one side of the operation is a no-op since
+		// they won't have any matching labels.
+		return isEitherBinaryExpressionSideEmpty(node, params)
+
 	case core.BINARY_LAND:
-		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
-		if err != nil {
-			return false, err
-		}
-
-		if lhsEmpty {
-			return true, nil
-		}
-
-		return isAlwaysEmpty(node.RHS, params)
+		return isEitherBinaryExpressionSideEmpty(node, params)
 
 	case core.BINARY_LOR:
 		// A or B is empty only when both sides are empty.
@@ -242,22 +366,73 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 
 	case core.BINARY_LSS:
 		// Check for timestamp(v) < C.
-		return isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, false, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, false, params)
+		if err != nil {
+			return false, err
+		}
+
+		if empty {
+			return true, nil
+		}
+
+		return isEitherBinaryExpressionSideEmpty(node, params)
 
 	case core.BINARY_LTE:
 		// Check for timestamp(v) <= C.
-		return isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, true, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, true, params)
+		if err != nil {
+			return false, err
+		}
+
+		if empty {
+			return true, nil
+		}
+
+		return isEitherBinaryExpressionSideEmpty(node, params)
 
 	case core.BINARY_GTR:
 		// Check for C > timestamp(v), equivalent to timestamp(v) < C.
-		return isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, false, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, false, params)
+		if err != nil {
+			return false, err
+		}
+
+		if empty {
+			return true, nil
+		}
+
+		return isEitherBinaryExpressionSideEmpty(node, params)
 
 	case core.BINARY_GTE:
 		// Check for C >= timestamp(v), equivalent to timestamp(v) <= C.
-		return isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, true, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, true, params)
+		if err != nil {
+			return false, err
+		}
+
+		if empty {
+			return true, nil
+		}
+
+		return isEitherBinaryExpressionSideEmpty(node, params)
 	}
 
 	return false, nil
+}
+
+// isEitherBinaryExpressionSideEmpty returns true if either side of a binary expression is
+// empty by recursively calling isAlwaysEmpty.
+func isEitherBinaryExpressionSideEmpty(node *core.BinaryExpression, params *planning.QueryParameters) (bool, error) {
+	lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
+	if err != nil {
+		return false, err
+	}
+
+	if lhsEmpty {
+		return true, nil
+	}
+
+	return isAlwaysEmpty(node.RHS, params)
 }
 
 // isAlwaysEmptyTimestampComparison returns true if timestampSide and constantSide represent

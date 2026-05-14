@@ -186,6 +186,8 @@ type Config struct {
 	PushReactiveLimiter  reactivelimiter.Config            `yaml:"push_reactive_limiter"`
 	ReadReactiveLimiter  reactivelimiter.Config            `yaml:"read_reactive_limiter"`
 
+	LabelValuesCountRequestMaxConcurrency int `yaml:"label_values_count_request_max_concurrency" category:"experimental"`
+
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
 	// This config is dynamically injected because defined outside the ingester config.
@@ -217,6 +219,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
+	f.IntVar(&cfg.LabelValuesCountRequestMaxConcurrency, "ingester.label-values-count-max-concurrency", 16, "Maximum concurrency used to compute a single label values count request.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
 	// Hardcoded config (can only be overridden in tests).
@@ -231,6 +234,10 @@ func (cfg *Config) Validate(log.Logger) error {
 	// Tokenless mode requires gRPC push to be disabled.
 	if cfg.IngesterRing.NumTokens == 0 && cfg.PushGrpcMethodEnabled {
 		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
+	}
+
+	if cfg.LabelValuesCountRequestMaxConcurrency < 1 {
+		return errors.New("label values count request max concurrency must be greater than 0")
 	}
 
 	if err := cfg.PushReactiveLimiter.Validate(); err != nil {

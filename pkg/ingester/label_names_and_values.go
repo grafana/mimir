@@ -119,6 +119,7 @@ func labelValuesCardinality(
 	idxReader tsdb.IndexReader,
 	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 	msgSizeThreshold int,
+	concurrency int,
 	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
 	ctx := srv.Context()
@@ -139,7 +140,7 @@ func labelValuesCardinality(
 		// For each value count total number of series storing the result into cardinality response item.
 		var respItem *client.LabelValueSeriesCount
 
-		resultCh := computeLabelValuesSeriesCount(ctx, lblName, lblValues, matchers, idxReader, postingsForMatchersFn)
+		resultCh := computeLabelValuesSeriesCount(ctx, lblName, lblValues, matchers, idxReader, postingsForMatchersFn, concurrency)
 
 		for countRes := range resultCh {
 			if countRes.err != nil {
@@ -185,8 +186,8 @@ func computeLabelValuesSeriesCount(
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
 	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
+	maxConcurrency int,
 ) <-chan labelValueCountResult {
-	maxConcurrency := 16
 	if len(lblValues) < maxConcurrency {
 		maxConcurrency = len(lblValues)
 	}

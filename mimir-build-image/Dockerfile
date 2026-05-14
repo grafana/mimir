@@ -5,7 +5,7 @@
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
 FROM alpine/helm:4.1.4@sha256:4b0bdd2cf18ff6bca12aba0b2c5671384dab5035c19c57f0c58b854a0baf65be AS helm
-FROM golang:1.25.9-trixie@sha256:091e6099f4a58e9393b8cc5615622a59c1cef64481b0ffcf349ec1574449059e
+FROM golang:1.26.3-trixie@sha256:d08bf3ed2bd263088ca8e23fefaf10f1b71769f6932f0a4017ba28d2a5baf001
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -35,7 +35,9 @@ RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.8.0
+# renovate: depName=github.com/golangci/golangci-lint
+ENV GOLANGCI_LINT_VERSION=2.12.2
+RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/v"${GOLANGCI_LINT_VERSION}"/install.sh| sh -s -- -b /usr/bin v"${GOLANGCI_LINT_VERSION}"
 
 # renovate: depName=github.com/containers/skopeo
 ENV SKOPEO_VERSION=v1.22.2
