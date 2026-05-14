@@ -1615,7 +1615,7 @@ groups:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has detected a persistently failing job.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderpersistentjobfailure
           expr: |
-            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[1m]) > 0
+            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[20m]) > 0
           labels:
             severity: critical
         - alert: MimirFewerIngestersConsumingThanActivePartitions
