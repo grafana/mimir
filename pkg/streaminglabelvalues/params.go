@@ -26,10 +26,9 @@ const (
 // Field names and defaults match Prometheus PR #18573's HTTP URL params so
 // the eventual HTTP layer is a verbatim translation.
 //
-// Use NewParams to construct a Params from untrusted (wire) input — it
-// validates every field. Direct struct literals are permitted for callers
-// that have already validated their inputs (in-package tests, for example),
-// but bypass the construction-time check.
+// Use NewParams to construct a Params — it validates every field. Struct
+// literals are permitted (Go allows it) but bypass validation; callers that
+// take that path are responsible for ensuring fields are in range.
 type Params struct {
 	// Terms are the search terms. An empty slice (or nil) yields a nil filter.
 	// Multiple terms are combined with OR semantics by filterOr.
@@ -59,15 +58,16 @@ func NewParams(terms []string, caseSensitive bool, alg FuzzAlg, threshold int) (
 		FuzzAlg:       alg,
 		FuzzThreshold: threshold,
 	}
-	if err := p.Validate(); err != nil {
+	if err := p.validate(); err != nil {
 		return nil, err
 	}
 	return p, nil
 }
 
-// Validate returns a non-nil error if Params has fields outside their
+// validate returns a non-nil error if Params has fields outside their
 // permitted ranges. Empty Terms is permitted (yields a nil filter).
-func (p *Params) Validate() error {
+// Internal to the package — external callers should construct via NewParams.
+func (p *Params) validate() error {
 	if p == nil {
 		return nil
 	}
