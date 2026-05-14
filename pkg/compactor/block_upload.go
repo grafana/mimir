@@ -429,10 +429,6 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 // sanitizeMeta normalises an uploaded block's meta in place and validates
 // it against the cluster's acceptance rules. It returns an empty string on
 // success or a human-readable error message on failure.
-//
-// The actual mutation and validation logic lives in
-// pkg/storage/tsdb/block/blockvalidation so the same rules apply to the
-// mimirtool backfill pre-upload verifier.
 func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, blockID ulid.ULID, meta *block.Meta) string {
 	if meta == nil {
 		return "missing block metadata"
