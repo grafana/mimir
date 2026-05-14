@@ -65,50 +65,50 @@ func TestSplittingCacheKey_FieldSensitivity(t *testing.T) {
 	require.NotEmpty(t, baseKey)
 
 	testCases := map[string]struct {
-		node     planning.SplitNode
-		params   *planning.QueryParameters
-		shareKey bool // true: same cache key as baseKey; false: different
+		node                planning.SplitNode
+		params              *planning.QueryParameters
+		expectSameKeyAsBase bool
 	}{
 		"identical node and params share the cache key": {
-			node:     matrixSelectorA(),
-			params:   &planning.QueryParameters{},
-			shareKey: true,
+			node:                matrixSelectorA(),
+			params:              &planning.QueryParameters{},
+			expectSameKeyAsBase: true,
 		},
 		"different matchers produce a different cache key": {
 			node: &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
 				Matchers: []*core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "b"}},
 				Range:    time.Hour,
 			}},
-			params:   &planning.QueryParameters{},
-			shareKey: false,
+			params:              &planning.QueryParameters{},
+			expectSameKeyAsBase: false,
 		},
 		"different range produces a different cache key": {
 			node: &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
 				Matchers: []*core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "a"}},
 				Range:    2 * time.Hour,
 			}},
-			params:   &planning.QueryParameters{},
-			shareKey: false,
+			params:              &planning.QueryParameters{},
+			expectSameKeyAsBase: false,
 		},
 		"different EnableDelayedNameRemoval produces a different cache key": {
-			node:     matrixSelectorA(),
-			params:   &planning.QueryParameters{EnableDelayedNameRemoval: true},
-			shareKey: false,
+			node:                matrixSelectorA(),
+			params:              &planning.QueryParameters{EnableDelayedNameRemoval: true},
+			expectSameKeyAsBase: false,
 		},
 		"different LookbackDelta produces a different cache key": {
-			node:     matrixSelectorA(),
-			params:   &planning.QueryParameters{LookbackDelta: 5 * time.Minute},
-			shareKey: false,
+			node:                matrixSelectorA(),
+			params:              &planning.QueryParameters{LookbackDelta: 5 * time.Minute},
+			expectSameKeyAsBase: false,
 		},
 		"TimeRange does not affect the cache key": {
-			node:     matrixSelectorA(),
-			params:   &planning.QueryParameters{TimeRange: types.QueryTimeRange{StartT: 1, EndT: 2, IntervalMilliseconds: 1, StepCount: 1}},
-			shareKey: true,
+			node:                matrixSelectorA(),
+			params:              &planning.QueryParameters{TimeRange: types.QueryTimeRange{StartT: 1, EndT: 2, IntervalMilliseconds: 1, StepCount: 1}},
+			expectSameKeyAsBase: true,
 		},
 		"OriginalExpression does not affect the cache key": {
-			node:     matrixSelectorA(),
-			params:   &planning.QueryParameters{OriginalExpression: "some_query"},
-			shareKey: true,
+			node:                matrixSelectorA(),
+			params:              &planning.QueryParameters{OriginalExpression: "some_query"},
+			expectSameKeyAsBase: true,
 		},
 	}
 
@@ -116,7 +116,7 @@ func TestSplittingCacheKey_FieldSensitivity(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			key, err := SplittingCacheKey(tc.node, tc.params)
 			require.NoError(t, err)
-			if tc.shareKey {
+			if tc.expectSameKeyAsBase {
 				require.Equal(t, baseKey, key)
 			} else {
 				require.NotEqual(t, baseKey, key)
