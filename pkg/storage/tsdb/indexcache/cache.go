@@ -29,18 +29,22 @@ import (
 )
 
 const (
-	cacheTypePostings          = "Postings"
-	cacheTypeSeriesForRef      = "SeriesForRef"
-	cacheTypeExpandedPostings  = "ExpandedPostings"
-	cacheTypeSeriesForPostings = "SeriesForPostings"
-	cacheTypeLabelNames        = "LabelNames"
-	cacheTypeLabelValues       = "LabelValues"
+	cacheTypePostingsOffset            = "PostingsOffset"
+	cacheTypePostingsOffsetsForMatcher = "PostingsOffSetsForMatcher"
+	cacheTypePostings                  = "Postings"
+	cacheTypeSeriesForRef              = "SeriesForRef"
+	cacheTypeExpandedPostings          = "ExpandedPostings"
+	cacheTypeSeriesForPostings         = "SeriesForPostings"
+	cacheTypeLabelNames                = "LabelNames"
+	cacheTypeLabelValues               = "LabelValues"
 
 	defaultTTL = 7 * 24 * time.Hour
 )
 
 var (
 	allCacheTypes = []string{
+		cacheTypePostingsOffset,
+		cacheTypePostingsOffsetsForMatcher,
 		cacheTypePostings,
 		cacheTypeSeriesForRef,
 		cacheTypeExpandedPostings,

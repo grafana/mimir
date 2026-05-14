@@ -174,6 +174,27 @@ func (c *InMemoryIndexCache) get(key cacheKey) ([]byte, bool) {
 	return v, true
 }
 
+// getDecodedFromInMemory wraps InMemoryIndexCache.get with cache value decoding and error logging
+func getDecodedFromInMemory[T any](c *InMemoryIndexCache, key cacheKey, decode func([]byte) (T, error)) (T, bool) {
+	var zero T
+	val, ok := c.get(key)
+	if !ok {
+		return zero, false
+	}
+
+	out, err := decode(val)
+	if err != nil {
+		level.Error(c.logger).Log(
+			"msg", "error decoding cached value",
+			"key", key,
+			"type", key.typ(),
+			"err", err,
+		)
+		return zero, false
+	}
+	return out, true
+}
+
 func (c *InMemoryIndexCache) set(key cacheKey, val []byte) {
 	typ := key.typ()
 	size := sliceSize(val)
@@ -247,24 +268,60 @@ func copyLabel(l labels.Label) labels.Label {
 	return labels.Label{Value: strings.Clone(l.Value), Name: strings.Clone(l.Name)}
 }
 
-func (c *InMemoryIndexCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration) {
-	//TODO implement me
-	panic("implement me")
+func (c *InMemoryIndexCache) StorePostingsOffset(
+	tenantID string,
+	blockID ulid.ULID,
+	lbl labels.Label,
+	rng index.Range,
+	_ time.Duration,
+) {
+	key := PostingsOffsetsCacheKey{tenantID, blockID, lbl}
+	val := encodeSingleRange(rng)
+	c.set(key, val)
 }
 
-func (c *InMemoryIndexCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
-	//TODO implement me
-	panic("implement me")
+func (c *InMemoryIndexCache) FetchPostingsOffset(
+	_ context.Context,
+	tenantID string,
+	blockID ulid.ULID,
+	lbl labels.Label,
+) (index.Range, bool) {
+	key := PostingsOffsetsCacheKey{tenantID, blockID, lbl}
+	return getDecodedFromInMemory(c, key, decodeSingleRange)
 }
 
-func (c *InMemoryIndexCache) StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration) {
-	//TODO implement me
-	panic("implement me")
+func (c *InMemoryIndexCache) StorePostingsOffsetsForMatcher(
+	tenantID string,
+	blockID ulid.ULID,
+	m *labels.Matcher,
+	isSubtract bool,
+	offsets []streamindex.PostingListOffset,
+	_ time.Duration,
+) {
+	key := PostingsOffsetsForMatcherCacheKey{
+		tenantID:   tenantID,
+		blockID:    blockID,
+		matcherStr: m.String(),
+		isSubtract: isSubtract,
+	}
+	val := encodePostingsOffsets(offsets)
+	c.set(key, val)
 }
 
-func (c *InMemoryIndexCache) FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool) {
-	//TODO implement me
-	panic("implement me")
+func (c *InMemoryIndexCache) FetchPostingsOffsetsForMatcher(
+	_ context.Context,
+	tenantID string,
+	blockID ulid.ULID,
+	m *labels.Matcher,
+	isSubtract bool,
+) ([]streamindex.PostingListOffset, bool) {
+	key := PostingsOffsetsForMatcherCacheKey{
+		tenantID:   tenantID,
+		blockID:    blockID,
+		matcherStr: m.String(),
+		isSubtract: isSubtract,
+	}
+	return getDecodedFromInMemory(c, key, decodePostingsOffsets)
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v,

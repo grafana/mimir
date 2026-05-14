@@ -100,14 +100,36 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 	shard := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16}
 	ctx := context.Background()
 
+	// Cache interfaces for PostingsOffset and PostingsOffSetsForMatcher
+	// use structs rather than bytes, wrapping encode/decode within the method.
+	// Stub out the encoded versions here; other interfaces just take arbitrary byte blobs.
+	rangeSmall := encodeSingleRange(index.Range{Start: 1, End: 2})
+	rangeLarge := encodeSingleRange(index.Range{Start: 1 << 14, End: 1 << 20})
+	rangeMutate := encodeSingleRange(index.Range{Start: 99, End: 100})
+
+	offsetsSmall := encodePostingsOffsets([]streamindex.PostingListOffset{
+		{LabelValue: "a", Off: index.Range{Start: 1, End: 2}},
+	})
+	offsetsLarge := encodePostingsOffsets([]streamindex.PostingListOffset{
+		{LabelValue: "aa", Off: index.Range{Start: 3, End: 4}},
+		{LabelValue: "bb", Off: index.Range{Start: 5, End: 6}},
+	})
+	offsetsMutate := encodePostingsOffsets([]streamindex.PostingListOffset{
+		{LabelValue: "z", Off: index.Range{Start: 5, End: 6}},
+	})
+
 	for _, tt := range []struct {
-		typ string
-		set func(uint64, []byte)
-		get func(uint64) ([]byte, bool)
+		typ                           string
+		smallVal, largeVal, mutateVal []byte
+		set                           func(uint64, []byte)
+		get                           func(uint64) ([]byte, bool)
 	}{
 		{
-			typ: cacheTypePostings,
-			set: func(id uint64, b []byte) { cache.StorePostings(user, uid(id), lbl, b, time.Hour) },
+			typ:       cacheTypePostings,
+			smallVal:  []byte{0},
+			largeVal:  []byte{0, 1},
+			mutateVal: []byte{1, 2},
+			set:       func(id uint64, b []byte) { cache.StorePostings(user, uid(id), lbl, b, time.Hour) },
 			get: func(id uint64) ([]byte, bool) {
 				hits := cache.FetchMultiPostings(ctx, user, uid(id), []labels.Label{lbl})
 				b, _ := hits.Next()
@@ -115,7 +137,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			},
 		},
 		{
-			typ: cacheTypeSeriesForRef,
+			typ:       cacheTypeSeriesForRef,
+			smallVal:  []byte{0},
+			largeVal:  []byte{0, 1},
+			mutateVal: []byte{1, 2},
 			set: func(id uint64, b []byte) {
 				cache.StoreSeriesForRef(user, uid(id), storage.SeriesRef(id), b, time.Hour)
 			},
@@ -128,7 +153,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			},
 		},
 		{
-			typ: cacheTypeExpandedPostings,
+			typ:       cacheTypeExpandedPostings,
+			smallVal:  []byte{0},
+			largeVal:  []byte{0, 1},
+			mutateVal: []byte{1, 2},
 			set: func(id uint64, b []byte) {
 				cache.StoreExpandedPostings(user, uid(id), CanonicalLabelMatchersKey(matchers), "strategy", b)
 			},
@@ -137,7 +165,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			},
 		},
 		{
-			typ: cacheTypeSeriesForPostings,
+			typ:       cacheTypeSeriesForPostings,
+			smallVal:  []byte{0},
+			largeVal:  []byte{0, 1},
+			mutateVal: []byte{1, 2},
 			set: func(id uint64, b []byte) {
 				cache.StoreSeriesForPostings(user, uid(id), shard, CanonicalPostingsKey([]storage.SeriesRef{1}), b)
 			},
@@ -146,7 +177,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			},
 		},
 		{
-			typ: cacheTypeLabelNames,
+			typ:       cacheTypeLabelNames,
+			smallVal:  []byte{0},
+			largeVal:  []byte{0, 1},
+			mutateVal: []byte{1, 2},
 			set: func(id uint64, b []byte) {
 				cache.StoreLabelNames(user, uid(id), CanonicalLabelMatchersKey(matchers), b)
 			},
@@ -155,7 +189,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			},
 		},
 		{
-			typ: cacheTypeLabelValues,
+			typ:       cacheTypeLabelValues,
+			smallVal:  []byte{0},
+			largeVal:  []byte{0, 1},
+			mutateVal: []byte{1, 2},
 			set: func(id uint64, b []byte) {
 				cache.StoreLabelValues(user, uid(id), fmt.Sprintf("lbl_%d", id), CanonicalLabelMatchersKey(matchers), b)
 			},
@@ -163,46 +200,89 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 				return cache.FetchLabelValues(ctx, user, uid(id), fmt.Sprintf("lbl_%d", id), CanonicalLabelMatchersKey(matchers))
 			},
 		},
+		{
+			typ:       cacheTypePostingsOffset,
+			smallVal:  rangeSmall,
+			largeVal:  rangeLarge,
+			mutateVal: rangeMutate,
+			// StorePostingsOffset & FetchPostingsOffset use index.Range as value type.
+			// Set & get ops use extra decode step for compat with []byte type in test.
+			set: func(id uint64, b []byte) {
+				rng, err := decodeSingleRange(b)
+				assert.NoError(t, err)
+				cache.StorePostingsOffset(user, uid(id), lbl, rng, time.Hour)
+			},
+			get: func(id uint64) ([]byte, bool) {
+				rng, ok := cache.FetchPostingsOffset(ctx, user, uid(id), lbl)
+				if !ok {
+					return nil, false
+				}
+				return encodeSingleRange(rng), true
+			},
+		},
+		{
+			typ:       cacheTypePostingsOffsetsForMatcher,
+			smallVal:  offsetsSmall,
+			largeVal:  offsetsLarge,
+			mutateVal: offsetsMutate,
+			// StorePostingsOffsetsForMatcher & FetchPostingsOffsetsForMatcher use streamindex.PostingListOffset as value type.
+			// Set & get ops use extra decode step for compat with []byte type in test.
+			set: func(id uint64, b []byte) {
+				offs, err := decodePostingsOffsets(b)
+				assert.NoError(t, err)
+				cache.StorePostingsOffsetsForMatcher(user, uid(id), matchers[0], false, offs, time.Hour)
+			},
+			get: func(id uint64) ([]byte, bool) {
+				offs, ok := cache.FetchPostingsOffsetsForMatcher(ctx, user, uid(id), matchers[0], false)
+				if !ok {
+					return nil, false
+				}
+				return encodePostingsOffsets(offs), true
+			},
+		},
 	} {
 		t.Run(tt.typ, func(t *testing.T) {
 			defer func() { errorLogs = nil }()
 
+			smallSize := float64(sliceHeaderSize + len(tt.smallVal))
+			largeSize := float64(sliceHeaderSize + len(tt.largeVal))
+
 			// Set value.
-			tt.set(0, []byte{0})
+			tt.set(0, tt.smallVal)
 			buf, ok := tt.get(0)
 			assert.Equal(t, true, ok)
-			assert.Equal(t, []byte{0}, buf)
-			assert.Equal(t, float64(sliceHeaderSize+1), promtest.ToFloat64(cache.currentSize.WithLabelValues(tt.typ)))
+			assert.Equal(t, tt.smallVal, buf)
+			assert.Equal(t, smallSize, promtest.ToFloat64(cache.currentSize.WithLabelValues(tt.typ)))
 			assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(tt.typ)))
 			assert.Equal(t, []string(nil), errorLogs)
 
 			// Set the same value again.
 			// NB: This used to over-count the value.
-			tt.set(0, []byte{0})
+			tt.set(0, tt.smallVal)
 			buf, ok = tt.get(0)
 			assert.Equal(t, true, ok)
-			assert.Equal(t, []byte{0}, buf)
-			assert.Equal(t, float64(sliceHeaderSize+1), promtest.ToFloat64(cache.currentSize.WithLabelValues(tt.typ)))
+			assert.Equal(t, tt.smallVal, buf)
+			assert.Equal(t, smallSize, promtest.ToFloat64(cache.currentSize.WithLabelValues(tt.typ)))
 			assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(tt.typ)))
 			assert.Equal(t, []string(nil), errorLogs)
 
 			// Set a larger value.
 			// NB: This used to deadlock when enough values were over-counted and it
 			// couldn't clear enough space -- repeatedly removing oldest after empty.
-			tt.set(1, []byte{0, 1})
+			tt.set(1, tt.largeVal)
 			buf, ok = tt.get(1)
 			assert.Equal(t, true, ok)
-			assert.Equal(t, []byte{0, 1}, buf)
-			assert.Equal(t, float64(sliceHeaderSize+2), promtest.ToFloat64(cache.currentSize.WithLabelValues(tt.typ)))
+			assert.Equal(t, tt.largeVal, buf)
+			assert.Equal(t, largeSize, promtest.ToFloat64(cache.currentSize.WithLabelValues(tt.typ)))
 			assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(tt.typ)))
 			assert.Equal(t, []string(nil), errorLogs)
 
 			// Mutations to existing values will be ignored.
-			tt.set(1, []byte{1, 2})
+			tt.set(1, tt.mutateVal)
 			buf, ok = tt.get(1)
 			assert.Equal(t, true, ok)
-			assert.Equal(t, []byte{0, 1}, buf)
-			assert.Equal(t, float64(sliceHeaderSize+2), promtest.ToFloat64(cache.currentSize.WithLabelValues(tt.typ)))
+			assert.Equal(t, tt.largeVal, buf)
+			assert.Equal(t, largeSize, promtest.ToFloat64(cache.currentSize.WithLabelValues(tt.typ)))
 			assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(tt.typ)))
 			assert.Equal(t, []string(nil), errorLogs)
 		})
@@ -487,7 +567,6 @@ func testFetchPostingsOffsetsForMatcher(
 			assert.EqualValues(t, expectedV, hits[k])
 		}
 	}
-
 }
 
 func testFetchMultiPostings(ctx context.Context, t *testing.T, cache IndexCache, user string, id ulid.ULID, keys []labels.Label, expectedHits map[labels.Label][]byte) {

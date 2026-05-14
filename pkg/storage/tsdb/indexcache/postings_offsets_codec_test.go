@@ -42,12 +42,11 @@ func TestHeaderCacheCodec_PostingsOffsets(t *testing.T) {
 		}
 	}
 
-	codec := BigEndianPostingsOffsetCodec{}
 	for i := 0; i <= len(postingsOffsets); i++ {
 		offsets := postingsOffsets[:i] // Encode more entries each iter.
-		encodedOffsets := codec.EncodePostingsOffsets(offsets)
+		encodedOffsets := encodePostingsOffsets(offsets)
 
-		decodedOffsets, err := codec.DecodePostingsOffsets(encodedOffsets)
+		decodedOffsets, err := decodePostingsOffsets(encodedOffsets)
 		require.NoError(t, err, offsets)
 		require.Equal(t, offsets, decodedOffsets)
 	}
@@ -63,11 +62,10 @@ func TestHeaderCacheCodec_SingleRange(t *testing.T) {
 		{Start: 1 << 32, End: 1 << 40},
 	}
 
-	codec := BigEndianPostingsOffsetCodec{}
 	for _, rng := range ranges {
-		encoded := codec.EncodeSingleRange(rng)
+		encoded := encodeSingleRange(rng)
 
-		decoded, err := codec.DecodeSingleRange(encoded)
+		decoded, err := decodeSingleRange(encoded)
 		require.NoError(t, err, rng)
 		require.Equal(t, rng, decoded)
 	}

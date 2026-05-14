@@ -6,30 +6,48 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 )
 
-// PostingsOffsetCacheCodec encodes and decodes values from PostingsOffsetsTable operations for the index cache.
-//
-// Encoding and decoding is strictly to store and retrieve int64 values for index.Range instances.
-//
-// Implementations must NOT be tied to specific TSDB layout assumptions
-// such as the length of Postings entries or relation between consecutive Postings entries -
-// This logic is left for the implementations of the PostingOffsetTable interface.
-type PostingsOffsetCacheCodec interface {
-	EncodePostingsOffsets([]streamindex.PostingListOffset) []byte
-	DecodePostingsOffsets([]byte) ([]streamindex.PostingListOffset, error)
-
-	EncodeSingleRange(index.Range) []byte
-	DecodeSingleRange([]byte) (index.Range, error)
+type PostingsOffsetsCacheKey struct {
+	tenantID string
+	blockID  ulid.ULID
+	lbl      labels.Label
 }
 
-type BigEndianPostingsOffsetCodec struct{}
+// typ implements cacheKey for in-memory cache implementations
+func (k PostingsOffsetsCacheKey) typ() string {
+	return cacheTypePostingsOffset
+}
 
-func (c BigEndianPostingsOffsetCodec) EncodePostingsOffsets(offsets []streamindex.PostingListOffset) []byte {
+// size implements cacheKey for in-memory cache implementations
+func (k PostingsOffsetsCacheKey) size() uint64 {
+	return stringSize(k.tenantID) + ulidSize + stringSize(k.lbl.Name) + stringSize(k.lbl.Value)
+}
+
+type PostingsOffsetsForMatcherCacheKey struct {
+	tenantID   string
+	blockID    ulid.ULID
+	matcherStr string
+	isSubtract bool
+}
+
+// typ implements cacheKey for in-memory cache implementations
+func (k PostingsOffsetsForMatcherCacheKey) typ() string {
+	return cacheTypePostingsOffsetsForMatcher
+}
+
+// size implements cacheKey for in-memory cache implementations
+func (k PostingsOffsetsForMatcherCacheKey) size() uint64 {
+	return stringSize(k.tenantID) + ulidSize + stringSize(k.matcherStr) + 1 // add a byte for boolean isSubtract
+}
+
+func encodePostingsOffsets(offsets []streamindex.PostingListOffset) []byte {
 	bufLen := binary.MaxVarintLen64 // Leading len field for number of entries
 	for _, offset := range offsets {
 		bufLen += binary.MaxVarintLen64 + len(offset.LabelValue) // Leading len field for string plus the string itself
@@ -47,7 +65,7 @@ func (c BigEndianPostingsOffsetCodec) EncodePostingsOffsets(offsets []streaminde
 	return encBuf.Get()
 }
 
-func (c BigEndianPostingsOffsetCodec) DecodePostingsOffsets(buf []byte) ([]streamindex.PostingListOffset, error) {
+func decodePostingsOffsets(buf []byte) ([]streamindex.PostingListOffset, error) {
 	decBuf := encoding.Decbuf{B: buf}
 	decLen := decBuf.Uvarint()
 	offsets := make([]streamindex.PostingListOffset, decLen)
@@ -72,7 +90,7 @@ func (c BigEndianPostingsOffsetCodec) DecodePostingsOffsets(buf []byte) ([]strea
 	return offsets, nil
 }
 
-func (c BigEndianPostingsOffsetCodec) EncodeSingleRange(rng index.Range) []byte {
+func encodeSingleRange(rng index.Range) []byte {
 	buflen := binary.MaxVarintLen64 + // Leading len field for number of entries - always 1 in this case
 		2*binary.MaxVarintLen64 // start + end integers for one entry
 
@@ -88,7 +106,7 @@ func encodeRange(buf []byte, rng index.Range) []byte {
 	return buf
 }
 
-func (c BigEndianPostingsOffsetCodec) DecodeSingleRange(buf []byte) (index.Range, error) {
+func decodeSingleRange(buf []byte) (index.Range, error) {
 	decLen, n := binary.Uvarint(buf)
 	if n <= 0 || decLen != 1 {
 		// Number of entries should always be 1 for encodings from EncodeSingleRange
@@ -103,7 +121,6 @@ func (c BigEndianPostingsOffsetCodec) DecodeSingleRange(buf []byte) (index.Range
 // decodeRange decodes a single start + end integer pair to an index.Range.
 // This should only be called after decoding the leading integer
 // used to indicate the number of entries in the full list.
-// DecodeSingleRange and DecodeMultiRange handle this before calling.
 func decodeRange(buf []byte) (index.Range, int, error) {
 	rng := index.Range{}
 	read := 0
