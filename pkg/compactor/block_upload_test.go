@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -40,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block/blockvalidation"
 )
 
 func verifyUploadedMeta(t *testing.T, bkt *bucket.ClientMock, expMeta block.Meta) {
@@ -473,7 +473,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			setUpBucketMock:         setUpPartialBlock,
 			meta:                    &validMeta,
 			maxBlockUploadSizeBytes: 1,
-			expBadRequest:           fmt.Sprintf(maxBlockUploadSizeBytesFormat, 1),
+			expBadRequest:           fmt.Sprintf(blockvalidation.MaxBlockSizeBytesFormat, 1),
 		},
 		{
 			name:                   "block with too big time range",
@@ -1601,7 +1601,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			populateFileList: true,
 			maximumBlockSize: 1,
 			expectError:      true,
-			expectedMsg:      fmt.Sprintf(maxBlockUploadSizeBytesFormat, 1),
+			expectedMsg:      fmt.Sprintf(blockvalidation.MaxBlockSizeBytesFormat, 1),
 		},
 		{
 			name:        "missing meta file",
@@ -1983,75 +1983,6 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
 			require.Equal(t, tc.expectedBody, strings.TrimSpace(string(body)))
-		})
-	}
-}
-
-func TestMultitenantCompactor_ValidateMaximumBlockSize(t *testing.T) {
-	const userID = "user"
-
-	type testCase struct {
-		maximumBlockSize int64
-		fileSizes        []int64
-		expectErr        bool
-	}
-
-	for name, tc := range map[string]testCase{
-		"no limit": {
-			maximumBlockSize: 0,
-			fileSizes:        []int64{math.MaxInt64},
-			expectErr:        false,
-		},
-		"under limit": {
-			maximumBlockSize: 4,
-			fileSizes:        []int64{1, 2},
-			expectErr:        false,
-		},
-		"under limit - zero size file included": {
-			maximumBlockSize: 2,
-			fileSizes:        []int64{1, 0},
-			expectErr:        false,
-		},
-		"under limit - negative size file included": {
-			maximumBlockSize: 2,
-			fileSizes:        []int64{2, -1},
-			expectErr:        true,
-		},
-		"exact limit": {
-			maximumBlockSize: 3,
-			fileSizes:        []int64{1, 2},
-			expectErr:        false,
-		},
-		"over limit": {
-			maximumBlockSize: 1,
-			fileSizes:        []int64{1, 1},
-			expectErr:        true,
-		},
-		"overflow": {
-			maximumBlockSize: math.MaxInt64,
-			fileSizes:        []int64{math.MaxInt64, math.MaxInt64, math.MaxInt64},
-			expectErr:        true,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			files := make([]block.File, len(tc.fileSizes))
-			for i, size := range tc.fileSizes {
-				files[i] = block.File{SizeBytes: size}
-			}
-
-			cfgProvider := newMockConfigProvider()
-			cfgProvider.blockUploadMaxBlockSizeBytes[userID] = tc.maximumBlockSize
-			c := &MultitenantCompactor{
-				logger:      log.NewNopLogger(),
-				cfgProvider: cfgProvider,
-			}
-
-			err := c.validateMaximumBlockSize(c.logger, files, userID)
-			if tc.expectErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
 		})
 	}
 }
