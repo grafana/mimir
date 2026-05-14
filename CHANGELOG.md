@@ -8,6 +8,7 @@
 * [BUGFIX] Update golang.org/x/net to v0.53.0 to address [CVE-2026-33814](https://nvd.nist.gov/vuln/detail/CVE-2026-33814). #15281
 * [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp to v1.43.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
 * [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp to v0.19.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp to v1.43.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
 
 ## 2.17.10
 
