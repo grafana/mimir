@@ -33,6 +33,7 @@ func (k PostingsOffsetsCacheKey) size() uint64 {
 type PostingsOffsetsForMatcherCacheKey struct {
 	tenantID   string
 	blockID    ulid.ULID
+	labelName  string
 	matcherStr string
 	isSubtract bool
 }
@@ -44,7 +45,7 @@ func (k PostingsOffsetsForMatcherCacheKey) typ() string {
 
 // size implements cacheKey for in-memory cache implementations
 func (k PostingsOffsetsForMatcherCacheKey) size() uint64 {
-	return stringSize(k.tenantID) + ulidSize + stringSize(k.matcherStr) + 1 // add a byte for boolean isSubtract
+	return stringSize(k.tenantID) + ulidSize + stringSize(k.labelName) + stringSize(k.matcherStr) + 1 // add a byte for boolean isSubtract
 }
 
 func encodePostingsOffsets(offsets []streamindex.PostingListOffset) []byte {

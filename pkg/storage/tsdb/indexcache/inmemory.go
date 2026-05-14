@@ -299,6 +299,7 @@ func (c *InMemoryIndexCache) FetchPostingsOffset(
 func (c *InMemoryIndexCache) StorePostingsOffsetsForMatcher(
 	tenantID string,
 	blockID ulid.ULID,
+	labelName string,
 	m *labels.Matcher,
 	isSubtract bool,
 	offsets []streamindex.PostingListOffset,
@@ -310,7 +311,8 @@ func (c *InMemoryIndexCache) StorePostingsOffsetsForMatcher(
 	key := PostingsOffsetsForMatcherCacheKey{
 		tenantID:   tenantID,
 		blockID:    blockID,
-		matcherStr: m.String(),
+		labelName:  labelName,
+		matcherStr: matcherStr(m),
 		isSubtract: isSubtract,
 	}
 	val := encodePostingsOffsets(offsets)
@@ -321,6 +323,7 @@ func (c *InMemoryIndexCache) FetchPostingsOffsetsForMatcher(
 	_ context.Context,
 	tenantID string,
 	blockID ulid.ULID,
+	labelName string,
 	m *labels.Matcher,
 	isSubtract bool,
 ) ([]streamindex.PostingListOffset, bool) {
@@ -330,7 +333,8 @@ func (c *InMemoryIndexCache) FetchPostingsOffsetsForMatcher(
 	key := PostingsOffsetsForMatcherCacheKey{
 		tenantID:   tenantID,
 		blockID:    blockID,
-		matcherStr: m.String(),
+		labelName:  labelName,
+		matcherStr: matcherStr(m),
 		isSubtract: isSubtract,
 	}
 	return getDecodedInMemory(c, key, decodePostingsOffsets)

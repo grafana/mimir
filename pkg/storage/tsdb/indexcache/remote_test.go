@@ -44,6 +44,7 @@ type mockedPostingsOffset struct {
 type mockedPostingsOffsetsForMatcher struct {
 	tenantID   string
 	blockID    ulid.ULID
+	labelName  string
 	m          *labels.Matcher
 	isSubtract bool
 	//rngs       []index.Range
@@ -264,7 +265,7 @@ func TestRemotePostingsOffsetTableCache_FetchPostingsOffsetsForMatcher(t *testin
 
 			ctx := context.Background()
 			for k, v := range testData.setupSetVals {
-				c.StorePostingsOffsetsForMatcher(k.tenantID, k.blockID, k.m, k.isSubtract, v, time.Hour)
+				c.StorePostingsOffsetsForMatcher(k.tenantID, k.blockID, k.labelName, k.m, k.isSubtract, v, time.Hour)
 			}
 
 			testFetchPostingsOffsetsForMatcher(
@@ -296,7 +297,7 @@ func TestRemoteIndexCache_PostingsOffsetsDisabled(t *testing.T) {
 
 	// Stores must no-op: nothing should land in the underlying client.
 	c.StorePostingsOffset(tenant, block, lbl, index.Range{Start: 4, End: 16}, time.Hour)
-	c.StorePostingsOffsetsForMatcher(tenant, block, matcher, false, offsets, time.Hour)
+	c.StorePostingsOffsetsForMatcher(tenant, block, lbl.Name, matcher, false, offsets, time.Hour)
 	assert.Empty(t, client.cache)
 
 	// Fetches must return zero values without consulting the client.
@@ -304,7 +305,7 @@ func TestRemoteIndexCache_PostingsOffsetsDisabled(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, index.Range{}, rng)
 
-	gotOffsets, ok := c.FetchPostingsOffsetsForMatcher(ctx, tenant, block, matcher, false)
+	gotOffsets, ok := c.FetchPostingsOffsetsForMatcher(ctx, tenant, block, lbl.Name, matcher, false)
 	assert.False(t, ok)
 	assert.Nil(t, gotOffsets)
 }

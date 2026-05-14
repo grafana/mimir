@@ -134,24 +134,17 @@ type BucketStore struct {
 
 type noopCache struct{}
 
-func (c noopCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration) {
-	//TODO implement me
-	panic("implement me")
+func (c noopCache) StorePostingsOffset(string, ulid.ULID, labels.Label, index.Range, time.Duration) {}
+
+func (c noopCache) FetchPostingsOffset(context.Context, string, ulid.ULID, labels.Label) (index.Range, bool) {
+	return index.Range{}, false
 }
 
-func (c noopCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
-	//TODO implement me
-	panic("implement me")
+func (c noopCache) StorePostingsOffsetsForMatcher(string, ulid.ULID, string, *labels.Matcher, bool, []streamindex.PostingListOffset, time.Duration) {
 }
 
-func (c noopCache) StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c noopCache) FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool) {
-	//TODO implement me
-	panic("implement me")
+func (c noopCache) FetchPostingsOffsetsForMatcher(context.Context, string, ulid.ULID, string, *labels.Matcher, bool) ([]streamindex.PostingListOffset, bool) {
+	return nil, false
 }
 
 func (noopCache) StorePostings(string, ulid.ULID, labels.Label, []byte, time.Duration) {}
@@ -1623,9 +1616,20 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	}
 
 	// TODO: if matchers contains labelName, we could use it to filter out label values here.
-	allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, "", nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "index header label values")
+	// Try cache for postings offset
+	allValuesPostingOffsets, ok := b.indexCache.FetchPostingsOffsetsForMatcher(
+		ctx, b.userID, b.meta.ULID, labelName, nil, false,
+	)
+	if !ok {
+		var err error
+		allValuesPostingOffsets, err = b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, "", nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "index header label values")
+		}
+
+		b.indexCache.StorePostingsOffsetsForMatcher(
+			b.userID, b.meta.ULID, labelName, nil, false, allValuesPostingOffsets, indexcache.BlockTTL(b.meta),
+		)
 	}
 
 	if len(matchers) == 0 {
