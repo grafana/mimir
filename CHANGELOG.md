@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Grafana Mimir
+
+* [BUGFIX] Update golang.org/x/net to v0.51.0 to address [CVE-2026-27141](https://nvd.nist.gov/vuln/detail/CVE-2026-27141). #15068
+* [BUGFIX] Update golang.org/x/net to v0.53.0 to address [CVE-2026-33814](https://nvd.nist.gov/vuln/detail/CVE-2026-33814). #15281
+
 ## 2.17.10
 
 ### Grafana Mimir
