@@ -506,6 +506,12 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 }
 
 func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, blockMetadata *block.Meta, userBkt objstore.Bucket, userID string) error {
+	maxBlockSizeBytes := c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID)
+	if err := blockvalidation.CheckMaxBlockSize(blockMetadata.Thanos.Files, maxBlockSizeBytes); err != nil {
+		level.Error(logger).Log("msg", "rejecting block upload for exceeding maximum size", "limit", maxBlockSizeBytes)
+		return err
+	}
+
 	blockDir, err := c.prepareBlockForValidation(ctx, userBkt, blockID)
 	if err != nil {
 		return err
@@ -514,7 +520,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Log
 
 	return blockvalidation.CheckBlockOnDisk(ctx, logger, blockDir, blockMetadata, blockvalidation.CheckBlockOnDiskOptions{
 		CheckChunks:       c.cfgProvider.CompactorBlockUploadVerifyChunks(userID),
-		MaxBlockSizeBytes: c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID),
+		MaxBlockSizeBytes: maxBlockSizeBytes,
 	})
 }
 

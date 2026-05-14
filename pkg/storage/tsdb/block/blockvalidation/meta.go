@@ -92,7 +92,7 @@ func CheckMeta(meta *block.Meta, opts CheckMetaOptions) error {
 		}
 	}
 
-	if err := checkMaxBlockSize(meta.Thanos.Files, opts.MaxBlockSizeBytes); err != nil {
+	if err := CheckMaxBlockSize(meta.Thanos.Files, opts.MaxBlockSizeBytes); err != nil {
 		return err
 	}
 
@@ -152,9 +152,9 @@ func SanitizeForUpload(logger log.Logger, meta *block.Meta, blockID ulid.ULID) {
 	meta.Thanos.Source = uploadSource
 }
 
-// checkMaxBlockSize returns a non-nil error if the sum of file sizes exceeds
+// CheckMaxBlockSize returns a non-nil error if the sum of file sizes exceeds
 // maxBlockSizeBytes. maxBlockSizeBytes <= 0 disables the check.
-func checkMaxBlockSize(files []block.File, maxBlockSizeBytes int64) error {
+func CheckMaxBlockSize(files []block.File, maxBlockSizeBytes int64) error {
 	if maxBlockSizeBytes <= 0 {
 		return nil
 	}

@@ -1604,6 +1604,15 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			expectedMsg:      fmt.Sprintf(blockvalidation.MaxBlockSizeBytesFormat, 1),
 		},
 		{
+			name:             "maximum block size exceeded before preparing block",
+			lbls:             validLabels,
+			populateFileList: true,
+			maximumBlockSize: 1,
+			missing:          MissingMeta,
+			expectError:      true,
+			expectedMsg:      fmt.Sprintf(blockvalidation.MaxBlockSizeBytesFormat, 1),
+		},
+		{
 			name:        "missing meta file",
 			lbls:        validLabels,
 			missing:     MissingMeta,

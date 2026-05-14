@@ -164,12 +164,12 @@ func TestCheckMeta_MaxBlockSize(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf(MaxBlockSizeBytesFormat, int64(299)), err.Error())
 }
 
-// Test_checkMaxBlockSize exercises the unexported helper directly so we can
+// TestCheckMaxBlockSize exercises the size helper directly so we can
 // cover negative-size and overflow paths that are otherwise short-circuited
 // by CheckMeta's earlier file checks. The compactor previously owned an
 // equivalent TestMultitenantCompactor_ValidateMaximumBlockSize test which
 // became redundant once the helper moved here.
-func Test_checkMaxBlockSize(t *testing.T) {
+func TestCheckMaxBlockSize(t *testing.T) {
 	const maxInt64 = int64(1<<63 - 1)
 
 	tests := map[string]struct {
@@ -216,7 +216,7 @@ func Test_checkMaxBlockSize(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := checkMaxBlockSize(tc.files, tc.maxBlockSizeBytes)
+			err := CheckMaxBlockSize(tc.files, tc.maxBlockSizeBytes)
 			if tc.expectErr {
 				require.Error(t, err)
 				return

@@ -40,7 +40,7 @@ func CheckBlockOnDisk(ctx context.Context, logger log.Logger, blockDir string, m
 		return fmt.Errorf("missing block metadata")
 	}
 
-	if err := checkMaxBlockSize(meta.Thanos.Files, opts.MaxBlockSizeBytes); err != nil {
+	if err := CheckMaxBlockSize(meta.Thanos.Files, opts.MaxBlockSizeBytes); err != nil {
 		return err
 	}
 
