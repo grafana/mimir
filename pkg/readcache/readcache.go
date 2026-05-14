@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,9 +18,13 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/nautilus/loadstats"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
+	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -46,10 +52,16 @@ type Readcache struct {
 
 	partitionMu sync.RWMutex
 	// partitions is the set of partitions currently owned by this
-	// instance, keyed by partition ID. Populated by the static
-	// -readcache.owned-partitions flag in Phase 2A, and by the
-	// rebalancer log subscription in Phase 2B.
+	// instance, keyed by partition ID. Populated by the rebalancer's
+	// WatchReadcacheAssignments stream in production, or by the
+	// legacy static -readcache.owned-partitions flag when the
+	// rebalancer address is unset (tests / degraded mode).
 	partitions map[int32]*partitionState
+
+	// rebalancerConn is the gRPC connection used by the
+	// WatchReadcacheAssignments subscriber. Nil when
+	// RebalancerAddress is empty.
+	rebalancerConn *grpc.ClientConn
 
 	// queryLoad and rangeSeries are the per-partition query-load and
 	// per-hash-range active-series signals that the rebalancer pulls
@@ -123,9 +135,28 @@ func (r *Readcache) starting(ctx context.Context) error {
 		return fmt.Errorf("creating readcache data-dir %q: %w", r.cfg.DataDir, err)
 	}
 
-	// Static partition assignment for Phase 2A. Phase 2B replaces this
-	// with a subscription to WatchReadcacheAssignments on the
-	// rebalancer.
+	if r.cfg.RebalancerAddress != "" {
+		conn, err := r.dialRebalancer(ctx)
+		if err != nil {
+			return fmt.Errorf("dialing nautilus rebalancer %q: %w", r.cfg.RebalancerAddress, err)
+		}
+		r.rebalancerConn = conn
+		level.Info(r.logger).Log(
+			"msg", "readcache started; awaiting first assignment snapshot",
+			"instance_id", r.cfg.InstanceID,
+			"rebalancer", r.cfg.RebalancerAddress,
+			"kafka_topic", r.cfg.KafkaTopic,
+		)
+		// Don't seed from OwnedPartitions: the rebalancer is
+		// authoritative. The watch goroutine (started by running)
+		// will issue addPartition/removePartition calls as snapshots
+		// arrive.
+		return nil
+	}
+
+	// Legacy fallback: no rebalancer address configured (tests or
+	// degraded-mode bring-up). Honour the static OwnedPartitions
+	// flag so existing single-node setups keep working.
 	pids, err := r.cfg.ParseOwnedPartitions()
 	if err != nil {
 		return fmt.Errorf("parsing -readcache.owned-partitions: %w", err)
@@ -137,12 +168,25 @@ func (r *Readcache) starting(ctx context.Context) error {
 	}
 
 	level.Info(r.logger).Log(
-		"msg", "readcache started",
+		"msg", "readcache started with static partition assignment",
 		"instance_id", r.cfg.InstanceID,
 		"owned_partitions", len(pids),
 		"kafka_topic", r.cfg.KafkaTopic,
 	)
 	return nil
+}
+
+// dialRebalancer opens a gRPC connection to the nautilus rebalancer.
+// Mirrors the distributor's dial behaviour
+// (insecure, blocking, X-Scope-OrgID interceptor injected via
+// per-RPC metadata in the watch goroutine).
+func (r *Readcache) dialRebalancer(ctx context.Context) (*grpc.ClientConn, error) {
+	dialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	}
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
+	return grpc.DialContext(ctx, r.cfg.RebalancerAddress, dialOpts...)
 }
 
 func (r *Readcache) running(ctx context.Context) error {
@@ -154,6 +198,14 @@ func (r *Readcache) running(ctx context.Context) error {
 
 	loadStatsTickT := time.NewTicker(loadstats.TickInterval)
 	defer loadStatsTickT.Stop()
+
+	// When configured, subscribe to the rebalancer's
+	// WatchReadcacheAssignments stream and react to ownership
+	// changes by add/removing partitions. The goroutine returns
+	// when ctx is cancelled.
+	if r.rebalancerConn != nil {
+		go r.watchReadcacheAssignments(ctx)
+	}
 
 	for {
 		select {
@@ -169,8 +221,6 @@ func (r *Readcache) running(ctx context.Context) error {
 
 func (r *Readcache) stopping(_ error) error {
 	r.partitionMu.Lock()
-	defer r.partitionMu.Unlock()
-
 	var firstErr error
 	for pid, p := range r.partitions {
 		if err := r.stopPartitionLocked(pid, p); err != nil && firstErr == nil {
@@ -178,6 +228,14 @@ func (r *Readcache) stopping(_ error) error {
 		}
 	}
 	r.partitions = map[int32]*partitionState{}
+	r.partitionMu.Unlock()
+
+	if r.rebalancerConn != nil {
+		if err := r.rebalancerConn.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		r.rebalancerConn = nil
+	}
 	return firstErr
 }
 
@@ -390,5 +448,151 @@ func (r *Readcache) OwnedPartitions() []int32 {
 	for pid := range r.partitions {
 		out = append(out, pid)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
+}
+
+// watchReadcacheAssignments runs a long-lived
+// WatchReadcacheAssignments subscription against the rebalancer.
+// Snapshots are passed to applyAssignment, which converts them into
+// add/removePartition calls. Mirrors the distributor-side
+// watchReadcacheAssignments backoff loop so a rebalancer outage is
+// transparently survived.
+func (r *Readcache) watchReadcacheAssignments(ctx context.Context) {
+	const (
+		minBackoff = 250 * time.Millisecond
+		maxBackoff = 8 * time.Second
+	)
+	backoff := minBackoff
+
+	cli := rebalancer.NewNautilusRebalancerClient(r.rebalancerConn)
+
+	for ctx.Err() == nil {
+		stream, err := cli.WatchReadcacheAssignments(ctx, &rebalancer.WatchReadcacheAssignmentsRequest{})
+		if err != nil {
+			level.Warn(r.logger).Log("msg", "failed to open WatchReadcacheAssignments stream", "err", err, "backoff", backoff)
+			sleepWithCtx(ctx, backoff)
+			backoff = nextBackoff(backoff, maxBackoff)
+			continue
+		}
+		backoff = minBackoff
+
+		if err := r.consumeAssignmentStream(ctx, stream); err != nil && ctx.Err() == nil {
+			if !errors.Is(err, io.EOF) {
+				level.Warn(r.logger).Log("msg", "WatchReadcacheAssignments stream ended", "err", err, "backoff", backoff)
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		sleepWithCtx(ctx, backoff)
+		backoff = nextBackoff(backoff, maxBackoff)
+	}
+}
+
+func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalancer.NautilusRebalancer_WatchReadcacheAssignmentsClient) error {
+	for {
+		resp, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		entries := rebalancer.ReadcacheEntriesFromProto(resp.Entries)
+		if err := r.applyAssignment(ctx, entries, time.Now()); err != nil {
+			level.Warn(r.logger).Log("msg", "applying readcache assignment", "err", err)
+			// Keep consuming: a single failed add/remove must not
+			// take down the whole subscription. The next snapshot
+			// will reconcile.
+		}
+	}
+}
+
+// applyAssignment reconciles the local owned-partition set with the
+// authoritative snapshot from the rebalancer. Partitions whose
+// active lease names this instance are added if missing; partitions
+// not in the snapshot are removed.
+//
+// `at` is the wall-clock instant used to determine which leases are
+// currently active. Pre-issued future leases (From > at) are not
+// considered ours yet; expired leases (To <= at) are not considered
+// ours anymore. This mirrors the readcacheassignment.Log.Lookup
+// semantics the distributor uses on the read path, so add/remove
+// transitions happen at the same instant on both sides.
+func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassignment.LogEntry, at time.Time) error {
+	wanted := map[int32]struct{}{}
+	for _, e := range entries {
+		if e.InstanceID != r.cfg.InstanceID {
+			continue
+		}
+		if !e.ActiveAt(at) {
+			continue
+		}
+		wanted[e.PartitionID] = struct{}{}
+	}
+
+	r.partitionMu.RLock()
+	current := make(map[int32]struct{}, len(r.partitions))
+	for pid := range r.partitions {
+		current[pid] = struct{}{}
+	}
+	r.partitionMu.RUnlock()
+
+	var toAdd, toRemove []int32
+	for pid := range wanted {
+		if _, ok := current[pid]; !ok {
+			toAdd = append(toAdd, pid)
+		}
+	}
+	for pid := range current {
+		if _, ok := wanted[pid]; !ok {
+			toRemove = append(toRemove, pid)
+		}
+	}
+	sort.Slice(toAdd, func(i, j int) bool { return toAdd[i] < toAdd[j] })
+	sort.Slice(toRemove, func(i, j int) bool { return toRemove[i] < toRemove[j] })
+
+	var firstErr error
+	for _, pid := range toAdd {
+		if err := r.addPartition(ctx, pid); err != nil {
+			level.Warn(r.logger).Log("msg", "failed to add partition from rebalancer assignment",
+				"partition", pid, "err", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+	}
+	for _, pid := range toRemove {
+		if err := r.removePartition(pid); err != nil {
+			level.Warn(r.logger).Log("msg", "failed to remove partition from rebalancer assignment",
+				"partition", pid, "err", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+	}
+	if len(toAdd) > 0 || len(toRemove) > 0 {
+		level.Info(r.logger).Log("msg", "readcache reconciled partition assignment",
+			"added", len(toAdd), "removed", len(toRemove), "owned", len(wanted))
+	}
+	return firstErr
+}
+
+// sleepWithCtx sleeps for d unless ctx is cancelled first.
+func sleepWithCtx(ctx context.Context, d time.Duration) {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
+// nextBackoff doubles d up to maxBackoff.
+func nextBackoff(d, max time.Duration) time.Duration {
+	d *= 2
+	if d > max {
+		return max
+	}
+	return d
 }

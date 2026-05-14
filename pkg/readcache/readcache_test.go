@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -128,6 +129,89 @@ func TestReadcache_Lifecycle(t *testing.T) {
 	assert.ElementsMatch(t, []int32{0, 7, 42}, owned)
 
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+}
+
+// TestReadcache_ApplyAssignment_AddsAndRemoves exercises the
+// reconciliation logic that wires WatchReadcacheAssignments snapshots
+// into add/removePartition calls. The Kafka cluster has 4
+// partitions; the readcache starts with none and is driven entirely
+// by the assignment snapshots.
+func TestReadcache_ApplyAssignment_AddsAndRemoves(t *testing.T) {
+	cfg := newTestConfig(t, true, 4)
+	cfg.InstanceID = "readcache-test"
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	r, err := New(cfg, limits, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, r) }()
+
+	require.Empty(t, r.OwnedPartitions(), "cold-start readcache must own nothing until the rebalancer leases partitions")
+
+	now := time.Now()
+	leaseEnd := now.Add(time.Hour)
+
+	// First snapshot: lease partitions 0 and 2 to this instance,
+	// partition 1 to a different instance (must be ignored), and
+	// pre-issue partition 3 in the future (must also be ignored).
+	snap1 := []readcacheassignment.LogEntry{
+		{PartitionID: 0, InstanceID: "readcache-test", From: now.Add(-time.Minute), To: leaseEnd},
+		{PartitionID: 1, InstanceID: "readcache-other", From: now.Add(-time.Minute), To: leaseEnd},
+		{PartitionID: 2, InstanceID: "readcache-test", From: now.Add(-time.Minute), To: leaseEnd},
+		{PartitionID: 3, InstanceID: "readcache-test", From: now.Add(time.Minute), To: leaseEnd},
+	}
+	require.NoError(t, r.applyAssignment(ctx, snap1, now))
+	assert.Equal(t, []int32{0, 2}, r.OwnedPartitions(),
+		"applyAssignment must own only currently-active leases for this instance")
+
+	// Second snapshot: drop partition 2, add partition 3 (which is
+	// now active because its From has elapsed in the slightly-later
+	// `at` we pass in below).
+	snap2 := []readcacheassignment.LogEntry{
+		{PartitionID: 0, InstanceID: "readcache-test", From: now.Add(-time.Minute), To: leaseEnd},
+		{PartitionID: 3, InstanceID: "readcache-test", From: now.Add(time.Minute), To: leaseEnd},
+	}
+	require.NoError(t, r.applyAssignment(ctx, snap2, now.Add(2*time.Minute)))
+	assert.Equal(t, []int32{0, 3}, r.OwnedPartitions(),
+		"applyAssignment must add newly-active partitions and remove dropped ones")
+
+	// Third snapshot: empty (rebalancer says we own nothing).
+	require.NoError(t, r.applyAssignment(ctx, nil, now.Add(2*time.Minute)))
+	assert.Empty(t, r.OwnedPartitions(),
+		"empty snapshot must release all owned partitions")
+}
+
+// TestReadcache_ApplyAssignment_IgnoresExpiredLeases checks the
+// boundary case where a lease's To is exactly `at`: by
+// LogEntry.ActiveAt semantics, To is exclusive, so the partition
+// must NOT be owned.
+func TestReadcache_ApplyAssignment_IgnoresExpiredLeases(t *testing.T) {
+	cfg := newTestConfig(t, true, 2)
+	cfg.InstanceID = "readcache-test"
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	r, err := New(cfg, limits, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, r) }()
+
+	now := time.Now()
+	snap := []readcacheassignment.LogEntry{
+		{PartitionID: 0, InstanceID: "readcache-test", From: now.Add(-time.Hour), To: now},
+		{PartitionID: 1, InstanceID: "readcache-test", From: now.Add(-time.Hour), To: now.Add(time.Hour)},
+	}
+	require.NoError(t, r.applyAssignment(ctx, snap, now))
+	assert.Equal(t, []int32{1}, r.OwnedPartitions(),
+		"a lease whose To == at is expired and must not produce ownership")
 }
 
 func TestReadcache_GetOrOpenTSDB(t *testing.T) {

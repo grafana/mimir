@@ -143,6 +143,26 @@ type Config struct {
 	// round.
 	PartitionCount int32 `yaml:"partition_count"`
 
+	// ActivePartitionCount, when > 0, caps the rebalancer's logical
+	// view of "active partitions" to the first K partition IDs
+	// [0, K) regardless of what the ingester partition ring
+	// reports. This decouples the nautilus partition space from the
+	// ingester partition ring so a cell with N ingester partitions
+	// can experiment with K nautilus partitions (K != N).
+	//
+	// Constraints:
+	//   - 0 < ActivePartitionCount <= PartitionCount (validated at
+	//     config parse). Setting it greater than the topic's
+	//     provisioned partition count would route writes to
+	//     non-existent Kafka partitions.
+	//   - Raising the value at runtime is safe (new partitions come
+	//     online cold and the slicer assigns them). Lowering it
+	//     orphans data on partitions [K_new, K_old) until those
+	//     partitions are re-included or their data ages out.
+	//
+	// Default 0 means "use pRing.ActivePartitionIDs() as before".
+	ActivePartitionCount int32 `yaml:"active_partition_count"`
+
 	// Kafka is the shared ingest-storage Kafka config, injected by
 	// pkg/mimir so this package doesn't depend on the global Mimir
 	// configuration tree. It is consulted for connection/auth
@@ -166,7 +186,20 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.DataDir, prefix+"data-dir", "", "Directory where the rebalancer persists its assignment logs. Empty disables persistence; on restart the log is seeded from FineEvenSplit / ingester reports as before. Set this to a persistent volume in production so rebalancer restarts don't shuffle routing.")
 	f.StringVar(&cfg.KafkaTopic, prefix+"kafka-topic", "nautilus_ingest", "Name of the Kafka topic the nautilus pipeline runs on. The rebalancer auto-creates this topic on startup (gated by -ingest-storage.kafka.auto-create-topic-enabled); distributors forward nautilus-only tenant writes here; readcache pods consume from it.")
 	f.Var(asInt32Var{&cfg.PartitionCount}, prefix+"partition-count", "Number of partitions on -nautilus.rebalancer.kafka-topic. Used both for auto-creation and to size the slicer's initial partition set when seeding the in-memory log. Must be > 0 when persistence is empty; otherwise the seeded value from disk wins.")
+	f.Var(asInt32Var{&cfg.ActivePartitionCount}, prefix+"active-partition-count", "Cap on the rebalancer's logical active-partition set: when > 0 the rebalancer slices over partition IDs [0, K) instead of consulting the ingester partition ring. Use this to decouple the nautilus partition space from the ingester ring (e.g. test 320 nautilus partitions in a cell with 80 ingesters). Must be <= -nautilus-rebalancer.partition-count. Default 0 falls back to the ingester partition ring.")
 	cfg.ReadcacheSlicer.RegisterFlagsWithPrefix(prefix+"readcache-slicer.", f)
+}
+
+// Validate returns an error if the config is internally inconsistent.
+// Called by pkg/mimir during configuration parsing.
+func (cfg *Config) Validate() error {
+	if cfg.ActivePartitionCount < 0 {
+		return fmt.Errorf("nautilus-rebalancer.active-partition-count must be >= 0, got %d", cfg.ActivePartitionCount)
+	}
+	if cfg.ActivePartitionCount > 0 && cfg.PartitionCount > 0 && cfg.ActivePartitionCount > cfg.PartitionCount {
+		return fmt.Errorf("nautilus-rebalancer.active-partition-count (%d) must be <= nautilus-rebalancer.partition-count (%d); the cap can't exceed the topic's provisioned partitions", cfg.ActivePartitionCount, cfg.PartitionCount)
+	}
+	return nil
 }
 
 // asInt32Var adapts an *int32 to flag.Value, which only ships with
@@ -433,6 +466,25 @@ func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsReque
 	}
 }
 
+// activePartitionsForRound returns the partition ID set the
+// rebalancer should slice over for this round. When
+// cfg.ActivePartitionCount is set, the rebalancer synthesizes
+// [0, K) and ignores the ingester partition ring entirely; this is
+// the lever for decoupling the nautilus partition space from the
+// ingester ring (e.g. running a 320-partition nautilus topic in a
+// cell with 80 ingester partitions). Otherwise the rebalancer
+// honors whatever the ingester partition ring reports.
+func (r *Rebalancer) activePartitionsForRound(pRing partitionRingView) []int32 {
+	if r.cfg.ActivePartitionCount > 0 {
+		out := make([]int32, r.cfg.ActivePartitionCount)
+		for i := range out {
+			out[i] = int32(i)
+		}
+		return out
+	}
+	return pRing.ActivePartitionIDs()
+}
+
 func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// The ingester client pool requires an org ID in the context
 	// (ClientUserHeaderInterceptor). Inject a synthetic one since
@@ -440,7 +492,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	ctx = user.InjectOrgID(ctx, "nautilus-rebalancer")
 
 	pRing := r.partitionRing.PartitionRing()
-	activePartitions := pRing.ActivePartitionIDs()
+	activePartitions := r.activePartitionsForRound(pRing)
 	if len(activePartitions) == 0 {
 		level.Warn(r.logger).Log("msg", "no active partitions, skipping rebalance")
 		return nil
@@ -466,6 +518,19 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		}
 		r.store.apply(time.Now(), current, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
 		r.pushRangesToIngesters(ctx, current)
+		// Seed the readcache slicer too: without this the readcache
+		// log stays empty until the next round, which is up to
+		// LeaseDuration - LeaseLookahead away (3.5min by default).
+		// During that gap distributors find no readcache owner for
+		// any partition and readcache pods (which subscribe to
+		// WatchReadcacheAssignments and trust the log as
+		// authoritative) own nothing — so newly-written nautilus
+		// data is silently unqueryable from readcache. Running the
+		// slicer with empty load signals just produces an even
+		// spread, which is exactly what we want at cold start.
+		if r.cfg.ReadcacheSlicer.Enabled && len(r.cfg.ReadcacheSlicer.Instances) > 0 {
+			r.runReadcacheSlicer(time.Now(), activePartitions, nil, nil)
+		}
 		return nil
 	}
 
@@ -1006,6 +1071,7 @@ func partitionL(instanceTotals map[string]int64, pRing partitionRingView, active
 // inject a stub without spinning up a full PartitionRing.
 type partitionRingView interface {
 	PartitionOwnerIDs(int32) []string
+	ActivePartitionIDs() []int32
 }
 
 // pushRangesToIngesters calls SetHashRanges on each ingester with

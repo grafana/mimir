@@ -210,14 +210,10 @@ services:
       - '-config.file=./config/mimir.yaml'
       - '-target=readcache'
       - '-readcache.instance-id=readcache-1'
-      # Dev cell: have both readcache pods consume every partition.
-      # In production the rebalancer slicer issues per-partition
-      # leases that drive what each pod owns, but for Phase 2A bring-
-      # up the slicer's cold-start (all loads = 0) picks a single
-      # instance for everything; if static ownership disagreed with
-      # the slicer's choice, the distributor's read routing would
-      # query a pod that never consumed that partition's data.
-      - '-readcache.owned-partitions=0,1,2,3,4,5,6,7'
+      # Partition ownership is supplied by the rebalancer's
+      # WatchReadcacheAssignments stream (rebalancer_address in
+      # mimir.yaml). The pod owns nothing until the first snapshot
+      # arrives.
     ports:
       - '8014:8080'
     volumes:
@@ -236,7 +232,6 @@ services:
       - '-config.file=./config/mimir.yaml'
       - '-target=readcache'
       - '-readcache.instance-id=readcache-2'
-      - '-readcache.owned-partitions=0,1,2,3,4,5,6,7'
     ports:
       - '8015:8080'
     volumes:

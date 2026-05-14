@@ -1051,6 +1051,22 @@ type stubPartitionRing map[int32][]string
 
 func (s stubPartitionRing) PartitionOwnerIDs(pid int32) []string { return s[pid] }
 
+// ActivePartitionIDs reports the keys of the stub map in sorted order
+// so tests get a deterministic active-set view of the ring.
+func (s stubPartitionRing) ActivePartitionIDs() []int32 {
+	out := make([]int32, 0, len(s))
+	for pid := range s {
+		out = append(out, pid)
+	}
+	// Sort to keep test expectations deterministic.
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1] > out[j]; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
+}
+
 // TestPartitionL_MaxOverOwners verifies that partitionL takes the
 // worst-case owner total when a partition has multiple replicas
 // (typically one per zone). Balancing on the max keeps any single
@@ -1585,4 +1601,68 @@ func TestStitchReportedEntries_BoundaryHiMaxUint32(t *testing.T) {
 // for test readability.
 func sortReportedEntriesForTest(r []reportedEntry) {
 	sortReportedEntries(r)
+}
+
+// TestActivePartitionsForRound_NoCap_DefersToRing verifies the
+// default (cap=0) behaviour: the rebalancer trusts whatever the
+// ingester partition ring reports as active.
+func TestActivePartitionsForRound_NoCap_DefersToRing(t *testing.T) {
+	r := &Rebalancer{cfg: Config{}}
+	pRing := stubPartitionRing{0: {"a"}, 1: {"b"}, 5: {"c"}}
+	got := r.activePartitionsForRound(pRing)
+	assert.Equal(t, []int32{0, 1, 5}, got)
+}
+
+// TestActivePartitionsForRound_CapSynthesises ensures that when the
+// cap is set, the rebalancer ignores the ingester ring's view and
+// synthesises [0, K). This is the lever that decouples the nautilus
+// partition space from the ingester partition ring.
+func TestActivePartitionsForRound_CapSynthesises(t *testing.T) {
+	r := &Rebalancer{cfg: Config{ActivePartitionCount: 4}}
+	// The ring claims a sparse, unrelated set; the cap must win.
+	pRing := stubPartitionRing{42: {"x"}, 99: {"y"}}
+	got := r.activePartitionsForRound(pRing)
+	assert.Equal(t, []int32{0, 1, 2, 3}, got)
+}
+
+// TestActivePartitionsForRound_CapSmallerThanRing covers the
+// "scale down" path: cap below the ring's active count still
+// produces just [0, K).
+func TestActivePartitionsForRound_CapSmallerThanRing(t *testing.T) {
+	r := &Rebalancer{cfg: Config{ActivePartitionCount: 2}}
+	pRing := stubPartitionRing{0: {"a"}, 1: {"b"}, 2: {"c"}, 3: {"d"}}
+	got := r.activePartitionsForRound(pRing)
+	assert.Equal(t, []int32{0, 1}, got)
+}
+
+// TestConfig_Validate exercises the Validate() rules for the new
+// ActivePartitionCount knob. Negative values and values exceeding
+// PartitionCount must be rejected at parse time; zero (default) and
+// any value within the topic's provisioned partition count are OK.
+func TestConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr bool
+	}{
+		{name: "default disables cap", cfg: Config{PartitionCount: 100}},
+		{name: "cap within partition count", cfg: Config{PartitionCount: 100, ActivePartitionCount: 50}},
+		{name: "cap equal to partition count", cfg: Config{PartitionCount: 100, ActivePartitionCount: 100}},
+		{name: "negative cap rejected", cfg: Config{ActivePartitionCount: -1}, wantErr: true},
+		{name: "cap above partition count rejected", cfg: Config{PartitionCount: 100, ActivePartitionCount: 101}, wantErr: true},
+		// When PartitionCount=0 (e.g. seeded from persisted log), no
+		// upper-bound check is applied — the operator is responsible
+		// for ensuring the persisted topology agrees with the cap.
+		{name: "cap allowed when partition count unset", cfg: Config{ActivePartitionCount: 320}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.Validate()
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

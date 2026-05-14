@@ -43,6 +43,11 @@ nautilus_rebalancer:
   data_dir: /data/nautilus-rebalancer
   kafka_topic: nautilus_ingest
   partition_count: 8
+  # Exercise the active-partition-count cap: the topic has 8
+  # partitions provisioned but the rebalancer slices over [0, 4)
+  # only, decoupled from the ingester partition ring (which has 1
+  # entry in this single-ingester dev cell).
+  active_partition_count: 4
   readcache_slicer:
     enabled: true
     instances: readcache-1,readcache-2
@@ -54,7 +59,12 @@ nautilus_rebalancer:
 readcache:
   data_dir: /data/readcache
   kafka_topic: nautilus_ingest
-  owned_partitions: ""
+  # The rebalancer is authoritative for partition ownership. Each
+  # readcache pod subscribes to WatchReadcacheAssignments on startup
+  # and only consumes the partitions whose active lease names it;
+  # cold pods own nothing until the rebalancer's first snapshot
+  # arrives.
+  rebalancer_address: nautilus-rebalancer:9095
   head_compaction_interval: 1m
   local_block_retention: 1h
 
