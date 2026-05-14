@@ -3,6 +3,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -82,20 +83,20 @@ func NewCacheFactoryWithBackend(backend Backend, ttlProvider TTLProvider, reg pr
 	}
 }
 
-func generateCacheKey(tenant string, function functions.Function, selector string, start, end int64) string {
-	return fmt.Sprintf("%s:%d:%s:%d:%d", tenant, function, selector, start, end)
+func generateCacheKey(tenant string, function functions.Function, selector []byte, start, end int64) []byte {
+	return fmt.Appendf(nil, "%s:%d:%s:%d:%d", tenant, function, selector, start, end)
 }
 
 // hashCacheKey is needed due to memcached key limit
-func hashCacheKey(key string) string {
+func hashCacheKey(key []byte) string {
 	hasher := fnv.New64a()
-	_, _ = hasher.Write([]byte(key))
+	_, _ = hasher.Write(key)
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 // TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals.
 // This should only be used in tests.
-func TestGenerateHashedCacheKey(tenant string, function functions.Function, selector string, start, end int64) string {
+func TestGenerateHashedCacheKey(tenant string, function functions.Function, selector []byte, start, end int64) string {
 	return hashCacheKey(generateCacheKey(tenant, function, selector, start, end))
 }
 
@@ -129,7 +130,7 @@ func NewCache[T any](factory *CacheFactory, codec SplitCodec[T]) *Cache[T] {
 func (c *Cache[T]) Get(
 	ctx context.Context,
 	function functions.Function,
-	innerKey string,
+	innerKey []byte,
 	start, end int64,
 	stats *CacheStats,
 ) (seriesMetadata []querierpb.SeriesMetadata, annotations querierpb.Annotations, results []T, found bool, err error) {
@@ -154,7 +155,7 @@ func (c *Cache[T]) Get(
 		return nil, querierpb.Annotations{}, nil, false, nil
 	}
 
-	if cached.CacheKey != cacheKey {
+	if !bytes.Equal(cached.CacheKey, cacheKey) {
 		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey)
 		return nil, querierpb.Annotations{}, nil, false, nil
 	}
@@ -175,7 +176,7 @@ func (c *Cache[T]) Get(
 func (c *Cache[T]) Set(
 	ctx context.Context,
 	function functions.Function,
-	innerKey string,
+	innerKey []byte,
 	start, end int64,
 	seriesMetadata []querierpb.SeriesMetadata,
 	annotations querierpb.Annotations,

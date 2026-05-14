@@ -1524,7 +1524,7 @@ func (e *errorStorage) Querier(_, _ int64) (storage.Querier, error) {
 	return nil, fmt.Errorf("injected storage error")
 }
 
-func splittingCacheKey(t *testing.T, node planning.SplitNode, params *planning.QueryParameters) string {
+func splittingCacheKey(t *testing.T, node planning.Node, params *planning.QueryParameters) []byte {
 	key, err := rangevectorsplitting.SplittingCacheKey(node, params)
 	require.NoError(t, err)
 	return key

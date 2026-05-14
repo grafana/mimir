@@ -56,7 +56,7 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	innerNode      planning.Node
 	materializer   *planning.Materializer
 	queryTimeRange types.QueryTimeRange
-	innerCacheKey  string
+	innerCacheKey  []byte
 	splitRanges    []Range
 
 	generateFunc SplitGenerateFunc[T]
@@ -88,7 +88,7 @@ func NewSplittingFunctionOverRangeVector[T any](
 	materializer *planning.Materializer,
 	timeRange types.QueryTimeRange,
 	ranges []Range,
-	innerCacheKey string,
+	innerCacheKey []byte,
 	cacheFactory *cache.CacheFactory,
 	funcId functions.Function,
 	funcDef functions.FunctionOverRangeVectorDefinition,

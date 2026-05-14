@@ -33,7 +33,7 @@ func TestSplittingCacheKey_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	var encoded planning.EncodedQueryPlan
-	require.NoError(t, encoded.Unmarshal([]byte(key)))
+	require.NoError(t, encoded.Unmarshal(key))
 
 	require.Len(t, encoded.Nodes, 1)
 	require.Equal(t, planning.NODE_TYPE_MATRIX_SELECTOR, encoded.Nodes[0].NodeType)

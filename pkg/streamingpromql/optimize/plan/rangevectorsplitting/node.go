@@ -223,7 +223,7 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	return planning.NewSingleUseOperatorFactory(splitOp), nil
 }
 
-func SplittingCacheKey(node planning.SplitNode, params *planning.QueryParameters) (string, error) {
+func SplittingCacheKey(node planning.Node, params *planning.QueryParameters) ([]byte, error) {
 	// Make a copy of params so we can clear a couple of unnecessary fields before encoding.
 	cacheKeyParams := *params
 	// Clear query time range as queries at different times can share cache entries if the queries overlap.
@@ -233,12 +233,12 @@ func SplittingCacheKey(node planning.SplitNode, params *planning.QueryParameters
 	plan := &planning.QueryPlan{Root: node, Parameters: &cacheKeyParams}
 	encoded, _, err := plan.ToEncodedPlan(false, true)
 	if err != nil {
-		return "", fmt.Errorf("encoding %T for splitting cache key: %w", node, err)
+		return nil, fmt.Errorf("encoding %T for splitting cache key: %w", node, err)
 	}
 
-	bytes, err := proto.Marshal(encoded)
+	b, err := proto.Marshal(encoded)
 	if err != nil {
-		return "", fmt.Errorf("marshalling encoded plan for splitting cache key: %w", err)
+		return nil, fmt.Errorf("marshalling encoded plan for splitting cache key: %w", err)
 	}
-	return string(bytes), nil
+	return b, nil
 }
