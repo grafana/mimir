@@ -19,46 +19,10 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
-	"github.com/grafana/mimir/pkg/mimirtool/backfill/verify"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// Backfill runs verification (with no extra checks wired) then uploads each
-// block. This method's signature is preserved for backwards compatibility
-// with external importers of pkg/mimirtool/client. Callers that want to
-// supply a configured verifier or enable dry-run should use
-// BackfillWithOptions instead.
 func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
-	return c.BackfillWithOptions(ctx, blocks, sleepTime, verify.NewVerifier(c.logger), false)
-}
-
-// BackfillWithOptions runs the provided verifier over all blocks before any
-// upload begins. If any block fails verification, the method returns the
-// aggregated error without issuing any /api/v1/upload/block/... requests.
-// If dryRun is true and verification passes, the method returns nil without
-// uploading.
-//
-// Passing a nil verifier is equivalent to passing verify.NewVerifier(logger)
-// (no checks registered, every block trivially passes).
-func (c *MimirClient) BackfillWithOptions(ctx context.Context, blocks []string, sleepTime time.Duration, verifier *verify.Verifier, dryRun bool) error {
-	if verifier == nil {
-		verifier = verify.NewVerifier(c.logger)
-	}
-
-	report := verifier.Run(ctx, blocks)
-	if report.HasFailures() {
-		for _, f := range report.Failures() {
-			logctx := log.With(c.logger, "block", f.BlockULID)
-			level.Error(logctx).Log("check", f.Check, "msg", f.Err.Error())
-		}
-		return report.Err()
-	}
-
-	if dryRun {
-		level.Info(c.logger).Log("msg", "dry-run: verification passed, skipping uploads", "blocks", len(blocks))
-		return nil
-	}
-
 	// Upload each block
 	var succeeded, failed, alreadyExists int
 
