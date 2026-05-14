@@ -94,8 +94,8 @@ type IndexCache interface {
 	StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration)
 	FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool)
 
-	StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration)
-	FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool)
+	StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, labelName string, m *labels.Matcher, invertMatch bool, offsets []streamindex.PostingListOffset, ttl time.Duration)
+	FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, labelName string, m *labels.Matcher, invertMatch bool) ([]streamindex.PostingListOffset, bool)
 
 	// StorePostings stores postings for a single series.
 	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, ttl time.Duration)

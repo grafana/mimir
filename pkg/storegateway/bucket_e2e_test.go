@@ -184,6 +184,21 @@ func withManyParts() prepareStoreConfigOption {
 	}
 }
 
+func withPostingsOffsetsIndexCache(t testing.TB) prepareStoreConfigOption {
+	return func(config *prepareStoreConfig) {
+		cacheCfg := indexcache.IndexCacheConfig{
+			CachePostingsOffsets: true,
+			InMemory: indexcache.InMemoryIndexCacheConfig{
+				MaxItemSizeBytes:  1024 * 1024,
+				MaxCacheSizeBytes: 1024 * 1024,
+			},
+		}
+		cache, err := indexcache.NewInMemoryIndexCacheWithConfig(cacheCfg, nil, log.NewNopLogger())
+		require.NoError(t, err)
+		config.indexCache = cache
+	}
+}
+
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 	minTime, maxTime := prepareTestBlocks(t, time.Now(), cfg.numBlocks/2, cfg.tempDir, bkt, cfg.series, extLset, cfg.nonOverlappingBlocks)
@@ -979,99 +994,110 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 }
 
 func TestBucketStore_LabelValues_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		s := newSuite()
-
-		mint, maxt := s.store.TimeRange()
-		assert.Equal(t, s.minTime, mint)
-		assert.Equal(t, s.maxTime, maxt)
-
-		for name, tc := range map[string]struct {
-			req      *storepb.LabelValuesRequest
-			expected []string
-		}{
-			"label a": {
-				req: &storepb.LabelValuesRequest{
-					Label: "a",
-					Start: timestamp.FromTime(minTime),
-					End:   timestamp.FromTime(maxTime),
-				},
-				expected: []string{"1", "2"},
-			},
-			"label a, outside time range": {
-				req: &storepb.LabelValuesRequest{
-					Label: "a",
-					Start: timestamp.FromTime(time.Now().Add(-24 * time.Hour)),
-					End:   timestamp.FromTime(time.Now().Add(-23 * time.Hour)),
-				},
-				expected: nil,
-			},
-			"label a, a=1": {
-				req: &storepb.LabelValuesRequest{
-					Label: "a",
-					Start: timestamp.FromTime(minTime),
-					End:   timestamp.FromTime(maxTime),
-					Matchers: []storepb.LabelMatcher{
-						{
-							Type:  storepb.LabelMatcher_EQ,
-							Name:  "a",
-							Value: "1",
-						},
-					},
-				},
-				expected: []string{"1"},
-			},
-			"label a, a=2, c=2": {
-				req: &storepb.LabelValuesRequest{
-					Label: "a",
-					Start: timestamp.FromTime(minTime),
-					End:   timestamp.FromTime(maxTime),
-					Matchers: []storepb.LabelMatcher{
-						{
-							Type:  storepb.LabelMatcher_EQ,
-							Name:  "a",
-							Value: "2",
-						},
-						{
-							Type:  storepb.LabelMatcher_EQ,
-							Name:  "c",
-							Value: "2",
-						},
-					},
-				},
-				expected: []string{"2"},
-			},
-			"label a, limit=1": {
-				req: &storepb.LabelValuesRequest{
-					Label: "a",
-					Start: timestamp.FromTime(minTime),
-					End:   timestamp.FromTime(maxTime),
-					Limit: 1,
-				},
-				expected: []string{"1"},
-			},
-			"label ext1": {
-				req: &storepb.LabelValuesRequest{
-					Label: "ext1",
-					Start: timestamp.FromTime(minTime),
-					End:   timestamp.FromTime(maxTime),
-				},
-				expected: nil, // External labels are not returned.
-			},
-		} {
-			t.Run(name, func(t *testing.T) {
-				vals, err := s.store.LabelValues(ctx, tc.req)
-				assert.NoError(t, err)
-
-				assert.Equal(t, tc.expected, emptyToNil(vals.Values))
-
-				assertQueryStatsLabelValuesMetricsRecorded(t, s.metricsRegistry)
+	// Each entry runs its own foreachStore so the filesystem subtest gets a fresh bucket
+	// per cache variant (foreachStore creates one filesystem bucket per call).
+	for cacheName, suiteOpts := range map[string][]prepareStoreConfigOption{
+		"no index cache":               nil,
+		"postings offsets index cache": {withPostingsOffsetsIndexCache(t)},
+	} {
+		t.Run(cacheName, func(t *testing.T) {
+			foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
+				testBucketStoreLabelValuesE2E(t, newSuite(suiteOpts...))
 			})
-		}
-	})
+		})
+	}
+}
+
+func testBucketStoreLabelValuesE2E(t *testing.T, s *storeSuite) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mint, maxt := s.store.TimeRange()
+	assert.Equal(t, s.minTime, mint)
+	assert.Equal(t, s.maxTime, maxt)
+
+	for name, tc := range map[string]struct {
+		req      *storepb.LabelValuesRequest
+		expected []string
+	}{
+		"label a": {
+			req: &storepb.LabelValuesRequest{
+				Label: "a",
+				Start: timestamp.FromTime(minTime),
+				End:   timestamp.FromTime(maxTime),
+			},
+			expected: []string{"1", "2"},
+		},
+		"label a, outside time range": {
+			req: &storepb.LabelValuesRequest{
+				Label: "a",
+				Start: timestamp.FromTime(time.Now().Add(-24 * time.Hour)),
+				End:   timestamp.FromTime(time.Now().Add(-23 * time.Hour)),
+			},
+			expected: nil,
+		},
+		"label a, a=1": {
+			req: &storepb.LabelValuesRequest{
+				Label: "a",
+				Start: timestamp.FromTime(minTime),
+				End:   timestamp.FromTime(maxTime),
+				Matchers: []storepb.LabelMatcher{
+					{
+						Type:  storepb.LabelMatcher_EQ,
+						Name:  "a",
+						Value: "1",
+					},
+				},
+			},
+			expected: []string{"1"},
+		},
+		"label a, a=2, c=2": {
+			req: &storepb.LabelValuesRequest{
+				Label: "a",
+				Start: timestamp.FromTime(minTime),
+				End:   timestamp.FromTime(maxTime),
+				Matchers: []storepb.LabelMatcher{
+					{
+						Type:  storepb.LabelMatcher_EQ,
+						Name:  "a",
+						Value: "2",
+					},
+					{
+						Type:  storepb.LabelMatcher_EQ,
+						Name:  "c",
+						Value: "2",
+					},
+				},
+			},
+			expected: []string{"2"},
+		},
+		"label a, limit=1": {
+			req: &storepb.LabelValuesRequest{
+				Label: "a",
+				Start: timestamp.FromTime(minTime),
+				End:   timestamp.FromTime(maxTime),
+				Limit: 1,
+			},
+			expected: []string{"1"},
+		},
+		"label ext1": {
+			req: &storepb.LabelValuesRequest{
+				Label: "ext1",
+				Start: timestamp.FromTime(minTime),
+				End:   timestamp.FromTime(maxTime),
+			},
+			expected: nil, // External labels are not returned.
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			vals, err := s.store.LabelValues(ctx, tc.req)
+			assert.NoError(t, err)
+
+			assert.Equal(t, tc.expected, emptyToNil(vals.Values))
+
+			assertQueryStatsLabelValuesMetricsRecorded(t, s.metricsRegistry)
+		})
+	}
 }
 
 func TestBucketStore_ValueTypes_e2e(t *testing.T) {

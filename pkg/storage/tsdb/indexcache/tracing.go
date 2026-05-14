@@ -37,12 +37,12 @@ func (t *TracingIndexCache) FetchPostingsOffset(ctx context.Context, userID stri
 	return t.c.FetchPostingsOffset(ctx, userID, blockID, lbl)
 }
 
-func (t *TracingIndexCache) StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool, offsets []streamindex.PostingListOffset, ttl time.Duration) {
-	t.c.StorePostingsOffsetsForMatcher(userID, blockID, m, isSubtract, offsets, ttl)
+func (t *TracingIndexCache) StorePostingsOffsetsForMatcher(userID string, blockID ulid.ULID, labelName string, m *labels.Matcher, invertMatch bool, offsets []streamindex.PostingListOffset, ttl time.Duration) {
+	t.c.StorePostingsOffsetsForMatcher(userID, blockID, labelName, m, invertMatch, offsets, ttl)
 }
 
-func (t *TracingIndexCache) FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, m *labels.Matcher, isSubtract bool) ([]streamindex.PostingListOffset, bool) {
-	return t.c.FetchPostingsOffsetsForMatcher(ctx, userID, blockID, m, isSubtract)
+func (t *TracingIndexCache) FetchPostingsOffsetsForMatcher(ctx context.Context, userID string, blockID ulid.ULID, labelName string, m *labels.Matcher, invertMatch bool) ([]streamindex.PostingListOffset, bool) {
+	return t.c.FetchPostingsOffsetsForMatcher(ctx, userID, blockID, labelName, m, invertMatch)
 }
 
 func (t *TracingIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, ttl time.Duration) {

@@ -231,10 +231,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			set: func(id uint64, b []byte) {
 				offs, err := decodePostingsOffsets(b)
 				assert.NoError(t, err)
-				cache.StorePostingsOffsetsForMatcher(user, uid(id), matchers[0], false, offs, time.Hour)
+				cache.StorePostingsOffsetsForMatcher(user, uid(id), lbl.Name, matchers[0], false, offs, time.Hour)
 			},
 			get: func(id uint64) ([]byte, bool) {
-				offs, ok := cache.FetchPostingsOffsetsForMatcher(ctx, user, uid(id), matchers[0], false)
+				offs, ok := cache.FetchPostingsOffsetsForMatcher(ctx, user, uid(id), lbl.Name, matchers[0], false)
 				if !ok {
 					return nil, false
 				}
@@ -312,7 +312,7 @@ func TestInMemoryIndexCache_PostingsOffsetsDisabled(t *testing.T) {
 
 	// Stores must no-op: nothing should land in the underlying LRU.
 	cache.StorePostingsOffset(tenant, block, lbl, index.Range{Start: 4, End: 16}, time.Hour)
-	cache.StorePostingsOffsetsForMatcher(tenant, block, matcher, false, offsets, time.Hour)
+	cache.StorePostingsOffsetsForMatcher(tenant, block, lbl.Name, matcher, false, offsets, time.Hour)
 	assert.Equal(t, 0, cache.lru.Len())
 
 	// Fetches must return zero values without consulting the LRU.
@@ -320,7 +320,7 @@ func TestInMemoryIndexCache_PostingsOffsetsDisabled(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, index.Range{}, rng)
 
-	gotOffsets, ok := cache.FetchPostingsOffsetsForMatcher(ctx, tenant, block, matcher, false)
+	gotOffsets, ok := cache.FetchPostingsOffsetsForMatcher(ctx, tenant, block, lbl.Name, matcher, false)
 	assert.False(t, ok)
 	assert.Nil(t, gotOffsets)
 }
@@ -584,7 +584,7 @@ func testFetchPostingsOffsetsForMatcher(
 	misses := make([]mockedPostingsOffsetsForMatcher, 0, len(keys))
 	for _, key := range keys {
 		offsets, ok := cache.FetchPostingsOffsetsForMatcher(
-			ctx, key.tenantID, key.blockID, key.m, key.isSubtract,
+			ctx, key.tenantID, key.blockID, key.labelName, key.m, key.isSubtract,
 		)
 		if ok {
 			hits[key] = offsets

@@ -591,6 +591,37 @@ func TestBlockLabelValues(t *testing.T) {
 		require.Equal(t, []string{"bar"}, values)
 	})
 
+	t.Run("postings offsets cache hit", func(t *testing.T) {
+		// blockLabelValues first hits index cache FetchLabelValues for the fully-resolved label matchers response,
+		// which is keyed on the label name and combination of all matchers for the request.
+		// If it misses, it will call the index reader's LabelValuesOffsets without any matcher
+		// to get all Postings Offsets for the given label name and cache it with index cache StorePostingsOffsetsForMatcher.
+		b := newTestBucketBlock()
+		b.indexCache = newInMemoryIndexCacheWithPostingsOffsets(t)
+
+		// First call misses cache for the fully-resolved label matchers response,
+		// then also misses the cache for the unfiltered LabelValuesOffsets,
+		// and finally stores the response for unfiltered LabelValuesOffsets.
+		pFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}
+		values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
+
+		// Second call also misses cache for the fully-resolved label matchers response, as it uses different matchers,
+		// but hits the cache for LabelValuesOffsets because it is called without matchers.
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onLabelValuesOffsetsCalled: func(string) error {
+				return fmt.Errorf("LabelValuesOffsets must not be called when Postings Offset cache hits")
+			},
+		}
+
+		qFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "q", "foo")}
+		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, []string{"bar"}, values)
+	})
+
 	t.Run("happy case cached with weak matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexCache = newInMemoryIndexCache(t)
@@ -1042,6 +1073,19 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
 	cfg := indexcache.IndexCacheConfig{
+		InMemory: indexcache.InMemoryIndexCacheConfig{
+			MaxCacheSizeBytes: 250 * 1024 * 1024,
+			MaxItemSizeBytes:  125 * 1024 * 1024,
+		},
+	}
+	cache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	return cache
+}
+
+func newInMemoryIndexCacheWithPostingsOffsets(t testing.TB) indexcache.IndexCache {
+	cfg := indexcache.IndexCacheConfig{
+		CachePostingsOffsets: true,
 		InMemory: indexcache.InMemoryIndexCacheConfig{
 			MaxCacheSizeBytes: 250 * 1024 * 1024,
 			MaxItemSizeBytes:  125 * 1024 * 1024,
