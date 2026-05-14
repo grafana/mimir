@@ -191,10 +191,14 @@ func unfilteredTruncationWarning(merged []string, hints *storage.SearchHints) []
 }
 
 // buildBucketSearchHints converts the wire filter, ordering, and limit into a
-// storage.SearchHints. Validation errors (delegated to BuildFilter) are
+// storage.SearchHints. Validation errors from NewParams or BuildFilter are
 // returned for the caller to map to gRPC InvalidArgument.
 func buildBucketSearchHints(wf *storepb.SearchFilter, ord storepb.SearchOrdering, limit int64) (*storage.SearchHints, error) {
-	filter, err := streaminglabelvalues.BuildFilter(storepbToParams(wf))
+	params, err := storepbToParams(wf)
+	if err != nil {
+		return nil, err
+	}
+	filter, err := streaminglabelvalues.BuildFilter(params)
 	if err != nil {
 		return nil, err
 	}
@@ -205,24 +209,17 @@ func buildBucketSearchHints(wf *storepb.SearchFilter, ord storepb.SearchOrdering
 	}, nil
 }
 
-// storepbToParams converts a wire SearchFilter into the streaminglabelvalues.Params
-// shape that BuildFilter consumes. A nil input returns nil.
-func storepbToParams(wf *storepb.SearchFilter) *streaminglabelvalues.Params {
+// storepbToParams converts a wire SearchFilter into a validated
+// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
+func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
-		return nil
+		return nil, nil
 	}
-	p := &streaminglabelvalues.Params{
-		Terms:         wf.Terms,
-		CaseSensitive: !wf.CaseInsensitive,
-		FuzzThreshold: int(wf.FuzzThreshold),
+	alg := streaminglabelvalues.FuzzAlgSubsequence
+	if wf.FuzzAlg == storepb.FUZZ_ALG_JARO_WINKLER {
+		alg = streaminglabelvalues.FuzzAlgJaroWinkler
 	}
-	switch wf.FuzzAlg {
-	case storepb.FUZZ_ALG_JARO_WINKLER:
-		p.FuzzAlg = streaminglabelvalues.FuzzAlgJaroWinkler
-	default:
-		p.FuzzAlg = streaminglabelvalues.FuzzAlgSubsequence
-	}
-	return p
+	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 }
 
 // storepbToOrdering maps the wire SearchOrdering enum onto storage.Ordering.

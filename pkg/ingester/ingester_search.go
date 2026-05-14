@@ -106,7 +106,10 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	if err != nil {
 		return nil, nil, err
 	}
-	params := protoToParams(wf)
+	params, err := protoToParams(wf)
+	if err != nil {
+		return nil, nil, err
+	}
 	filter, err := streaminglabelvalues.BuildFilter(params)
 	if err != nil {
 		return nil, nil, err
@@ -119,24 +122,17 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	return hints, matchers, nil
 }
 
-// protoToParams converts a wire SearchFilter into the streaminglabelvalues.Params
-// shape that BuildFilter consumes. A nil input returns nil.
-func protoToParams(wf *client.SearchFilter) *streaminglabelvalues.Params {
+// protoToParams converts a wire SearchFilter into a validated
+// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
+func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
-		return nil
+		return nil, nil
 	}
-	p := &streaminglabelvalues.Params{
-		Terms:         wf.Terms,
-		CaseSensitive: !wf.CaseInsensitive,
-		FuzzThreshold: int(wf.FuzzThreshold),
+	alg := streaminglabelvalues.FuzzAlgSubsequence
+	if wf.FuzzAlg == client.FUZZ_ALG_JARO_WINKLER {
+		alg = streaminglabelvalues.FuzzAlgJaroWinkler
 	}
-	switch wf.FuzzAlg {
-	case client.FUZZ_ALG_JARO_WINKLER:
-		p.FuzzAlg = streaminglabelvalues.FuzzAlgJaroWinkler
-	default:
-		p.FuzzAlg = streaminglabelvalues.FuzzAlgSubsequence
-	}
-	return p
+	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 }
 
 // protoToOrdering maps the wire SearchOrdering enum onto the Prometheus

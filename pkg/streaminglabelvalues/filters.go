@@ -208,6 +208,12 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 // when Params is nil or has zero Terms — a nil storage.Filter accepts every
 // value with score 1.0 by Prometheus convention.
 //
+// BuildFilter trusts that p has already been validated (via NewParams or
+// an equivalent caller-side check). Per-leaf constructors still reject
+// obviously bad inputs (empty term, threshold out of [0,1]), so a malformed
+// Params will surface an error rather than silently producing a wrong
+// filter, but validation is not BuildFilter's responsibility.
+//
 // Per-term composition mirrors Prometheus PR #18573's buildSearchFilter:
 //   - FuzzAlgSubsequence: just a FilterSubsequence (no substring fallback;
 //     prefix matches still score 1.0 inside FilterSubsequence).
@@ -221,12 +227,6 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 // via caseFoldingFilter; per-term filters are built case-sensitive against a
 // pre-lowercased term so they do not re-fold the same value per Accept call.
 func BuildFilter(p *Params) (storage.Filter, error) {
-	// Validate before the empty-Terms early-return so callers see invalid
-	// FuzzThreshold/FuzzAlg values rejected even when no terms are supplied.
-	// Params.Validate is nil-safe.
-	if err := p.Validate(); err != nil {
-		return nil, err
-	}
 	if p == nil || len(p.Terms) == 0 {
 		return nil, nil
 	}

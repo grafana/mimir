@@ -289,27 +289,6 @@ func TestBuildFilterDividesThresholdBy100(t *testing.T) {
 	assert.InDelta(t, 1.0, score, 1e-9)
 }
 
-func TestBuildFilterRejectsInvalid(t *testing.T) {
-	_, err := BuildFilter(&Params{Terms: []string{""}})
-	require.Error(t, err)
-	_, err = BuildFilter(&Params{Terms: []string{"a"}, FuzzThreshold: 150})
-	require.Error(t, err)
-	_, err = BuildFilter(&Params{Terms: []string{"a"}, FuzzAlg: FuzzAlg(99)})
-	require.Error(t, err)
-}
-
-// TestBuildFilterRejectsInvalidFieldsEvenWhenTermsEmpty locks in the contract
-// that BuildFilter validates Params *before* the empty-Terms early-return.
-// Without this test, reverting the validation order would still pass every
-// other test (Terms-empty paths simply return (nil, nil)) and the early-
-// detection improvement would silently regress.
-func TestBuildFilterRejectsInvalidFieldsEvenWhenTermsEmpty(t *testing.T) {
-	_, err := BuildFilter(&Params{FuzzThreshold: 150})
-	require.Error(t, err, "out-of-range FuzzThreshold must be rejected even with empty Terms")
-	_, err = BuildFilter(&Params{FuzzAlg: FuzzAlg(99)})
-	require.Error(t, err, "unknown FuzzAlg must be rejected even with empty Terms")
-}
-
 func TestBuildFilterCaseInsensitiveWrapsAtORRoot(t *testing.T) {
 	// CaseSensitive=false must wrap the root in caseFoldingFilter so each value
 	// is lowercased exactly once for the whole OR chain, not per-term per-Accept.

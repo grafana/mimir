@@ -25,6 +25,11 @@ const (
 //
 // Field names and defaults match Prometheus PR #18573's HTTP URL params so
 // the eventual HTTP layer is a verbatim translation.
+//
+// Use NewParams to construct a Params from untrusted (wire) input — it
+// validates every field. Direct struct literals are permitted for callers
+// that have already validated their inputs (in-package tests, for example),
+// but bypass the construction-time check.
 type Params struct {
 	// Terms are the search terms. An empty slice (or nil) yields a nil filter.
 	// Multiple terms are combined with OR semantics by filterOr.
@@ -40,6 +45,24 @@ type Params struct {
 	// BuildFilter divides by 100 before passing to filter constructors.
 	// Zero accepts any subseq match (Prometheus's default).
 	FuzzThreshold int
+}
+
+// NewParams constructs and validates a Params. Returns an error if any
+// field is outside its permitted range. This is the canonical way to build
+// a Params from wire input — callers (proto translators, the HTTP handler
+// in PR #4) route untrusted values through here so BuildFilter can trust
+// what it receives.
+func NewParams(terms []string, caseSensitive bool, alg FuzzAlg, threshold int) (*Params, error) {
+	p := &Params{
+		Terms:         terms,
+		CaseSensitive: caseSensitive,
+		FuzzAlg:       alg,
+		FuzzThreshold: threshold,
+	}
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 // Validate returns a non-nil error if Params has fields outside their
