@@ -1737,7 +1737,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.timeseriesPanel(title) +
         $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.hiddenLegendQueryPanel(
-          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
+          'sum(max_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
           'Queue length'
         ) +
         {
