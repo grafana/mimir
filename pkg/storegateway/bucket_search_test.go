@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
@@ -203,28 +204,6 @@ func TestBucketStoreSearchLabelValues(t *testing.T) {
 	}
 }
 
-// TestBucketStoreSearchLabelValuesEmitsTruncationWarning checks that when
-// ApplySearchHints clips the merged result set due to req.Limit, a
-// human-readable warning rides on the trailer batch.
-func TestBucketStoreSearchLabelValuesEmitsTruncationWarning(t *testing.T) {
-	bs := prepareSearchTestStore(t)
-
-	req := &storepb.SearchLabelValuesRequest{
-		Start:  0,
-		End:    math.MaxInt64,
-		Label:  "a", // values {1, 2}; limit 1 forces truncation by 1.
-		Filter: &storepb.SearchFilter{},
-		Limit:  1,
-	}
-	s := &mockSearchLabelValuesServer{ctx: context.Background()}
-	require.NoError(t, bs.SearchLabelValues(req, s))
-
-	require.Len(t, s.sent, 1)
-	assert.Equal(t, []string{"1"}, collectSearchNames(s.sent))
-	require.Len(t, s.sent[0].Warnings, 1)
-	assert.Contains(t, s.sent[0].Warnings[0], "truncated")
-}
-
 // TestBucketStoreSearchLabelNamesHonoursCtxCancellation cancels the server
 // context before invoking the RPC and asserts that the RPC returns
 // codes.Canceled rather than draining the iterator.
@@ -248,16 +227,18 @@ func TestBucketStoreSearchLabelNamesHonoursCtxCancellation(t *testing.T) {
 }
 
 // TestStreamBucketSearchResultsBatching exercises streamBucketSearchResults
-// in isolation against a synthetic slice of >searchBatchSize results, and
-// verifies the boundary splits into the expected batches with the warning
-// riding on the trailer.
+// in isolation against a synthetic iterator of >searchBatchSize results, and
+// verifies the boundary splits into the expected batches with any iterator
+// warnings riding on the trailer.
 func TestStreamBucketSearchResultsBatching(t *testing.T) {
 	const total = searchBatchSize + 1
 	results := make([]storage.SearchResult, total)
 	for i := 0; i < total; i++ {
 		results[i] = storage.SearchResult{Value: fmt.Sprintf("v%04d", i), Score: 1.0}
 	}
-	warnings := []string{"results truncated: 999 values matched, returning first 257"}
+	var warns annotations.Annotations
+	warns.Add(errors.New("partial-block: index header missing"))
+	rs := storage.NewSearchResultSetFromSlice(results, warns)
 
 	var sent []*storepb.SearchResultBatch
 	send := func(b *storepb.SearchResultBatch) error {
@@ -266,13 +247,14 @@ func TestStreamBucketSearchResultsBatching(t *testing.T) {
 		sent = append(sent, &storepb.SearchResultBatch{Results: copyResults, Warnings: b.Warnings})
 		return nil
 	}
-	require.NoError(t, streamBucketSearchResults(context.Background(), results, warnings, send))
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, send))
 
 	require.Len(t, sent, 2, "257 results must split into 2 batches at the searchBatchSize=256 boundary")
 	assert.Len(t, sent[0].Results, searchBatchSize)
 	assert.Empty(t, sent[0].Warnings, "warnings must ride only on the trailer batch")
 	assert.Len(t, sent[1].Results, 1)
-	assert.Equal(t, warnings, sent[1].Warnings)
+	require.Len(t, sent[1].Warnings, 1)
+	assert.Equal(t, "partial-block: index header missing", sent[1].Warnings[0])
 }
 
 // TestStreamBucketSearchResultsHonoursCtxCancellation cancels ctx before
@@ -282,10 +264,11 @@ func TestStreamBucketSearchResultsHonoursCtxCancellation(t *testing.T) {
 	for i := range results {
 		results[i] = storage.SearchResult{Value: fmt.Sprintf("v%d", i), Score: 1.0}
 	}
+	rs := storage.NewSearchResultSetFromSlice(results, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	send := func(_ *storepb.SearchResultBatch) error { return nil }
-	err := streamBucketSearchResults(ctx, results, nil, send)
+	err := streamBucketSearchResults(ctx, rs, send)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled), "expected context.Canceled, got %v", err)
 }

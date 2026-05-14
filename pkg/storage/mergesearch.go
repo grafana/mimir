@@ -82,10 +82,10 @@ func (s *limitSearchResultSet) Next() bool {
 	return false
 }
 
-func (s *limitSearchResultSet) At() storage.SearchResult           { return s.rs.At() }
-func (s *limitSearchResultSet) Warnings() annotations.Annotations  { return s.rs.Warnings() }
-func (s *limitSearchResultSet) Err() error                         { return s.rs.Err() }
-func (s *limitSearchResultSet) Close() error                       { return s.rs.Close() }
+func (s *limitSearchResultSet) At() storage.SearchResult          { return s.rs.At() }
+func (s *limitSearchResultSet) Warnings() annotations.Annotations { return s.rs.Warnings() }
+func (s *limitSearchResultSet) Err() error                        { return s.rs.Err() }
+func (s *limitSearchResultSet) Close() error                      { return s.rs.Close() }
 
 // mergingSearchResultSet lazily merges two pre-sorted SearchResultSets using
 // the comparison function defined by order. Both inputs must yield results in

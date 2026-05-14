@@ -34,10 +34,10 @@ func (f *fakeSearchResultSet) Next() bool {
 	return true
 }
 
-func (f *fakeSearchResultSet) At() storage.SearchResult           { return f.results[f.idx-1] }
-func (f *fakeSearchResultSet) Warnings() annotations.Annotations  { return f.warns }
-func (f *fakeSearchResultSet) Err() error                         { return f.err }
-func (f *fakeSearchResultSet) Close() error                       { f.closed = true; return f.closeErr }
+func (f *fakeSearchResultSet) At() storage.SearchResult          { return f.results[f.idx-1] }
+func (f *fakeSearchResultSet) Warnings() annotations.Annotations { return f.warns }
+func (f *fakeSearchResultSet) Err() error                        { return f.err }
+func (f *fakeSearchResultSet) Close() error                      { f.closed = true; return f.closeErr }
 
 func newFake(results ...storage.SearchResult) *fakeSearchResultSet {
 	return &fakeSearchResultSet{results: results}
@@ -237,10 +237,10 @@ func TestCompareSearchResults_ValueDesc(t *testing.T) {
 
 func TestCompareSearchResults_ScoreDescTieBreaksOnValue(t *testing.T) {
 	c := compareSearchResults(storage.OrderByScoreDesc)
-	assert.Negative(t, c(sr("a", 0.9), sr("b", 0.5)))    // higher score first
-	assert.Positive(t, c(sr("a", 0.5), sr("b", 0.9)))    // higher score first
-	assert.Negative(t, c(sr("a", 0.9), sr("b", 0.9)))    // tie → Value asc
-	assert.Positive(t, c(sr("b", 0.9), sr("a", 0.9)))    // tie → Value asc
+	assert.Negative(t, c(sr("a", 0.9), sr("b", 0.5))) // higher score first
+	assert.Positive(t, c(sr("a", 0.5), sr("b", 0.9))) // higher score first
+	assert.Negative(t, c(sr("a", 0.9), sr("b", 0.9))) // tie → Value asc
+	assert.Positive(t, c(sr("b", 0.9), sr("a", 0.9))) // tie → Value asc
 	assert.Zero(t, c(sr("a", 0.9), sr("a", 0.9)))
 }
 
