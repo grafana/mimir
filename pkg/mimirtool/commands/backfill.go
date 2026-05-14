@@ -157,12 +157,16 @@ func (c *BackfillCommand) backfill(logger log.Logger) error {
 		mode = verify.Medium
 	}
 
+	// Block-level checks run in registration order. Run the cheap pure-header
+	// checks first so fail-fast skips the expensive structural walk when the
+	// meta is already obviously bad.
 	verifier := verify.NewVerifier(logger,
 		verify.WithMode(mode),
 		verify.WithFailFast(!c.fullReport),
 		verify.WithConcurrency(c.verifyConcurrency),
-		verify.WithBlockCheck(verify.NewWellFormedVerifier(logger, mode)),
+		verify.WithBlockCheck(verify.NewMetaCheckVerifier(logger)),
 		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(logger)),
+		verify.WithBlockCheck(verify.NewWellFormedVerifier(logger, mode)),
 		verify.WithBatchCheck(verify.NewDuplicateDayVerifier(logger)),
 	)
 
