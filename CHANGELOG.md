@@ -738,6 +738,38 @@
 * [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
 * [CHANGE] Add backend configuration options for request proportion sampling and time-based query filtering. #13037
 
+## 2.17.11
+
+### Grafana Mimir
+
+* [BUGFIX] Update golang.org/x/net to v0.51.0 to address [CVE-2026-27141](https://nvd.nist.gov/vuln/detail/CVE-2026-27141). #15068
+* [BUGFIX] Update golang.org/x/net to v0.53.0 to address [CVE-2026-33814](https://nvd.nist.gov/vuln/detail/CVE-2026-33814). #15281
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp to v1.43.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp to v0.19.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp to v1.43.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/stdout/stdoutlog to v0.19.0 for compatibility with updated OTLP exporters. #15329
+
+## 2.17.10
+
+### Grafana Mimir
+
+* [BUGFIX] Update go.opentelemetry.io/otel/sdk to v1.43.0 to address [CVE-2026-39883](https://www.cve.org/CVERecord?id=CVE-2026-39883). #15050
+* [BUGFIX] Update github.com/aws/aws-sdk-go-v2/service/s3 to v1.97.3 to address [GHSA-xmrv-pmrh-hhx2](https://github.com/advisories/GHSA-xmrv-pmrh-hhx2). #15050
+* [BUGFIX] Update to Go v1.25.9 to address [CVE-2026-32283](https://pkg.go.dev/vuln/GO-2026-4870), [CVE-2026-32282](https://pkg.go.dev/vuln/GO-2026-4864), [CVE-2026-27144](https://pkg.go.dev/vuln/GO-2026-4867), [CVE-2026-27143](https://pkg.go.dev/vuln/GO-2026-4868), [CVE-2026-27140](https://pkg.go.dev/vuln/GO-2026-4871), [CVE-2026-32289](https://pkg.go.dev/vuln/GO-2026-4865), [CVE-2026-32288](https://pkg.go.dev/vuln/GO-2026-4869), [CVE-2026-32280](https://pkg.go.dev/vuln/GO-2026-4947), [CVE-2026-32281](https://pkg.go.dev/vuln/GO-2026-4946). #15042
+* [BUGFIX] Ruler: Fix parsing of rule expressions with leading newlines. #14947 #15032
+
+## 2.17.9
+
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14908
+
+## 2.17.8
+
+### Grafana Mimir
+
+* [BUGFIX] Update module google.golang.org/grpc to v1.79.3 to address [CVE-2026-33186](https://nvd.nist.gov/vuln/detail/CVE-2026-33186) #14762
+
 ## 2.17.7
 
 ### Grafana Mimir
