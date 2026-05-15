@@ -112,7 +112,6 @@ func drainAndCloseBody(resp *http.Response) {
 }
 
 func (c *MimirClient) backfillBlock(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID, logctx log.Logger, sleepTime time.Duration) error {
-	// blockMeta returned by getBlockMetaFromBucket will have thanos.files section pre-populated.
 	blockMeta, err := GetBlockMeta(ctx, bkt, blockID)
 	if err != nil {
 		return err
@@ -209,12 +208,9 @@ func (c *MimirClient) getBlockUpload(ctx context.Context, url string) (result, e
 	defer drainAndCloseBody(resp)
 
 	var r result
-
-	dec := json.NewDecoder(resp.Body)
-	if err := dec.Decode(&r); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 		return result{}, err
 	}
-
 	return r, nil
 }
 
@@ -244,7 +240,8 @@ func (c *MimirClient) uploadBlockFile(ctx context.Context, bkt objstore.BucketRe
 func GetBlockMeta(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID) (block.Meta, error) {
 	var blockMeta block.Meta
 
-	metaPath := path.Join(blockID.String(), block.MetaFilename)
+	blockPrefix := blockID.String()
+	metaPath := path.Join(blockPrefix, block.MetaFilename)
 	r, err := bkt.Get(ctx, metaPath)
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to read %q", metaPath)
@@ -264,37 +261,28 @@ func GetBlockMeta(ctx context.Context, bkt objstore.BucketReader, blockID ulid.U
 			block.MetaFilename, blockMeta.Version)
 	}
 
-	blockMeta.Thanos.Files = []block.File{
-		{
-			RelPath: block.MetaFilename,
-		},
-	}
+	blockMeta.Thanos.Files = []block.File{{RelPath: block.MetaFilename}}
 
-	relPaths := []string{block.IndexFilename}
-
-	// Add segment files to relPaths.
-	blockPrefix := blockID.String()
-	chunksPrefix := path.Join(blockPrefix, block.ChunksDirname)
-	err = bkt.Iter(ctx, chunksPrefix, func(name string) error {
-		rel := strings.TrimPrefix(name, blockPrefix+"/")
-		relPaths = append(relPaths, rel)
-		return nil
-	})
-	if err != nil {
-		return blockMeta, errors.Wrapf(err, "failed to list chunks in %q", chunksPrefix)
-	}
-
-	for _, relPath := range relPaths {
+	appendFile := func(relPath string) error {
 		objPath := path.Join(blockPrefix, relPath)
 		attrs, err := bkt.Attributes(ctx, objPath)
 		if err != nil {
-			return blockMeta, errors.Wrapf(err, "failed to get attributes for %q", objPath)
+			return errors.Wrapf(err, "failed to get attributes for %q", objPath)
 		}
+		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, block.File{RelPath: relPath, SizeBytes: attrs.Size})
+		return nil
+	}
 
-		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, block.File{
-			RelPath:   relPath,
-			SizeBytes: attrs.Size,
-		})
+	if err := appendFile(block.IndexFilename); err != nil {
+		return blockMeta, err
+	}
+
+	chunksPrefix := path.Join(blockPrefix, block.ChunksDirname)
+	err = bkt.Iter(ctx, chunksPrefix, func(name string) error {
+		return appendFile(strings.TrimPrefix(name, blockPrefix+"/"))
+	})
+	if err != nil {
+		return blockMeta, errors.Wrapf(err, "failed to list chunks in %q", chunksPrefix)
 	}
 
 	return blockMeta, nil

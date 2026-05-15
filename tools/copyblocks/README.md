@@ -1,6 +1,6 @@
 # copyblocks
 
-This program can copy Mimir blocks between two buckets or from a bucket to a backfill destination.
+This program can copy Mimir blocks between two buckets or from a bucket to a backfill destination. It tracks what has been copied by uploading copy markers to the source bucket, preventing blocks from being copied multiple times to the same destination.
 
 By default, a copy between two buckets will be attempted server-side if both the source and destination specify the same object storage service. If the buckets are on different object storage services, or if `--client-side-copy` is passed, then the copy will be performed client side.
 
@@ -8,14 +8,13 @@ The currently supported object storage services are Amazon Simple Storage Servic
 
 ## Features
 
-- Prevents copying blocks multiple times to the same destination by uploading block marker files to the source bucket
-- Runs continuously with periodic checks when supplied a time duration with `--copy-period`, otherwise runs one check then exits
+- Delete copy markers (e.g. `tenant1/markers/01EZED0X3YZMNJ3NHGMJJKMHCR-copied-backfill`) instead of copying with `--clear-copy-markers`
+- Run continuously with periodic checks when supplied a time duration with `--copy-period`, otherwise run one check then exit
 - Include or exclude users from having blocks copied (`--enabled-users` and `--disabled-users`)
-- Configurable minimum block duration (`--min-block-duration`) and (`--skip-no-compact-block-duration-check`) to target blocks that are not awaiting compaction
-- Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range (e.g. `--min-time 2026-01-15T00:00:00Z`)
+- Set a minimum block duration (`--min-block-duration`) and optionally skip that check for blocks marked as no-compact (`--skip-no-compact-block-duration-check`) to target blocks that are not awaiting compaction
+- Set a time range (`--min-time` and `--max-time`) to only copy blocks within a provided range (e.g. `--min-time 2026-01-15T00:00:00Z`)
 - Copy blocks between users with `--user-mapping`. For instance, `--user-mapping="user1:user2,user3:user4"` maps source blocks from `user1` to `user2` and source blocks from `user3` to `user4`. If you don't provide a mapping for a user, it is assumed to be identical to the source user.
 - Log what would be copied without actually copying anything with `--dry-run`
-- Delete copy markers (e.g. `tenant1/markers/01EZED0X3YZMNJ3NHGMJJKMHCR-copied-backfill`) from the source bucket with `--clear-copy-markers` instead of copying blocks, allowing blocks to be re-copied on the next run. Respects `--enabled-users` and `--disabled-users`.
 
 ## Running
 
