@@ -408,5 +408,6 @@ type EvaluationObserver interface {
 	StringEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data string) error
 
 	// EvaluationCompleted notifies this observer when evaluation is complete.
+	// Implementations of this method are responsible for closing the OperatorEvaluationStats instances when they are no longer needed.
 	EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error
 }

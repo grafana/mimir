@@ -599,6 +599,14 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		encodedStats[nodeIndex] = s.Encode()
 	}
 
+	defer func() {
+		// The EncodedOperatorEvaluationStats instances may share pooled memory with the original OperatorEvaluationStats
+		// instances, so we can't close them until the message below is marshalled.
+		for _, s := range stats {
+			s.Close()
+		}
+	}()
+
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
