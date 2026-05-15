@@ -431,6 +431,10 @@ eval range from 0 to 10m step 1m increase(metric[1m] anchored)
 eval range from 0 to 10m step 1m increase(metric[1m2s] anchored)
   {} 0 1 2 2 2 2 2 2 2 2 2
 
+# Different function applying to the same range selector to exercise common subexpression elimination.
+eval range from 0 to 10m step 1m increase(metric[5m] anchored) + delta(metric[5m] anchored)
+  {} 0 2 4 6 8 10 10 10 10 10 10
+
 clear
 load 1m
   metric{id="1"} 11 -1 100 0
