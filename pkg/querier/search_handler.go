@@ -13,13 +13,16 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util"
@@ -113,6 +116,11 @@ type searchRequest struct {
 	endMs        int64
 	batchSize    int
 	includeScore bool
+	// metadata, when true, asks the metric-names endpoint to enrich each
+	// emitted record with Type/Help/Unit from Mimir's MetadataSupplier.
+	// Ignored by the label-names and label-values endpoints (the param
+	// is metric-specific; silently accepted for forward-compatibility).
+	metadata bool
 	// labelName is only set for the label-values endpoint; required there.
 	labelName string
 }
@@ -224,6 +232,15 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		includeScore = parsed
 	}
 
+	wantMetadata := false
+	if v := q.Get("metadata"); v != "" {
+		parsed, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid metadata: %w", err)
+		}
+		wantMetadata = parsed
+	}
+
 	// Time range. Defaults match Prometheus PR #18573: start defaults to one
 	// hour before now, end defaults to now. Keeps the default window narrow
 	// enough that searches over an unspecified range stay cheap.
@@ -282,6 +299,7 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		endMs:        endMs,
 		batchSize:    batchSize,
 		includeScore: includeScore,
+		metadata:     wantMetadata,
 		labelName:    labelName,
 	}, nil
 }
@@ -375,7 +393,7 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 				rec.Score = &s
 			}
 			return rec
-		})
+		}, "")
 	})
 }
 
@@ -408,12 +426,25 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 				rec.Score = &s
 			}
 			return rec
-		})
+		}, "")
 	})
 }
 
 // SearchMetricNamesHandler returns the handler for /api/v1/search/metric_names.
-func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides) http.Handler {
+//
+// Implementation note: Mimir does not scrape, so it has no in-process scrape
+// metadata. It does, however, receive metric metadata via push (remote write,
+// OTLP) and serves it through MetadataSupplier (pkg/querier/metadata_handler.go).
+// When the caller passes `metadata=true` and a supplier is wired in, this
+// handler fetches the tenant's full metadata once at request start, builds a
+// name → MetricMetadata map, and enriches each emitted record's
+// Type/Help/Unit at the batch boundary. Supplier errors are demoted to a
+// warning on the trailer; the search results themselves remain useful.
+//
+// metadataSupplier may be nil; a nil supplier silently disables enrichment
+// regardless of the URL param. Useful for tests and for deployments where
+// the supplier isn't wired in.
+func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, metadataSupplier MetadataSupplier, _ *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !querierCfg.ExperimentalSearchAPIEnabled {
 			writeSearchFeatureDisabled(w)
@@ -430,6 +461,8 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return
 		}
 		defer querier.Close()
+		metadataMap, metadataWarning := fetchMetadataMap(r.Context(), req, metadataSupplier)
+
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
 			return searcher.SearchLabelValues(r.Context(), model.MetricNameLabel, req.params, req.hints, m...)
 		})
@@ -440,8 +473,13 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 				s := r.Score
 				rec.Score = &s
 			}
+			if m, ok := metadataMap[r.Value]; ok {
+				rec.Type = string(m.Type)
+				rec.Help = m.Help
+				rec.Unit = m.Unit
+			}
 			return rec
-		})
+		}, metadataWarning)
 	})
 }
 
@@ -454,6 +492,40 @@ type searcherClientError struct{ err error }
 
 func (e *searcherClientError) Error() string { return e.err.Error() }
 func (e *searcherClientError) Unwrap() error { return e.err }
+
+// fetchMetadataMap fetches the tenant's metric metadata via the supplier and
+// returns a name → MetricMetadata lookup. Returns (nil, "") when enrichment
+// is not requested (req.metadata=false) or the supplier is nil. Supplier
+// errors degrade to (nil, "metadata enrichment failed: ...") so the caller
+// can surface them on the response trailer without failing the request.
+//
+// Strings are cloned because the supplier's response may be backed by a
+// pooled gRPC buffer (CLAUDE.md § "Unsafe memory tricks") that the supplier
+// reuses after this call; the enrichment data must survive into the response
+// goroutine.
+func fetchMetadataMap(ctx context.Context, req *searchRequest, supplier MetadataSupplier) (map[string]scrape.MetricMetadata, string) {
+	if !req.metadata || supplier == nil {
+		return nil, ""
+	}
+	resp, err := supplier.MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
+	if err != nil {
+		return nil, fmt.Sprintf("metadata enrichment failed: %s", err)
+	}
+	if len(resp) == 0 {
+		return nil, ""
+	}
+	out := make(map[string]scrape.MetricMetadata, len(resp))
+	for _, m := range resp {
+		name := strings.Clone(m.MetricFamily)
+		out[name] = scrape.MetricMetadata{
+			MetricFamily: name,
+			Type:         m.Type,
+			Help:         strings.Clone(m.Help),
+			Unit:         strings.Clone(m.Unit),
+		}
+	}
+	return out, ""
+}
 
 // searcherForRequest opens a querier for the time range and type-asserts it
 // to mimirSearcher. The caller is responsible for calling querier.Close().
@@ -502,10 +574,13 @@ func writeSearcherForRequestError(w http.ResponseWriter, err error) {
 // trailer instead of an HTTP error code.
 //
 // build maps each storage.SearchResult to the endpoint-specific record
-// shape (label-names, label-values, metric-names). Score handling lives
-// in the per-endpoint builder so the wire-shape contract is enforced at
-// the call site.
-func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet, req *searchRequest, build func(storage.SearchResult) T) {
+// shape (label-names, label-values, metric-names). Score handling and
+// any per-record enrichment (e.g. metadata Type/Help/Unit for
+// metric-names) live in the per-endpoint builder so the wire-shape
+// contract is enforced at the call site. preWarning, if non-empty, is
+// prepended to the trailer's warnings — used to surface a
+// metadata-supplier error without failing the request.
+func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet, req *searchRequest, build func(storage.SearchResult) T, preWarning string) {
 	flusher, _ := w.(http.Flusher)
 	enc := json.NewEncoder(w)
 	// Don't HTML-escape — search values may legitimately contain <, >, & and
@@ -603,6 +678,9 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 	// clampEnforcedMin tracks the smallest post-clamp cap observed across
 	// per-source warnings. -1 means "no clamp fired".
 	clampEnforcedMin := -1
+	if preWarning != "" {
+		trailer.Warnings = append(trailer.Warnings, preWarning)
+	}
 	for _, warn := range rs.Warnings() {
 		trailer.Warnings = append(trailer.Warnings, warn.Error())
 		if enforced, ok := searchClampEnforced(warn); ok {

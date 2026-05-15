@@ -801,7 +801,7 @@ func TestSearchMetricNamesHandler_ForwardsMetricNameLabel(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("metric_a", 1.0)}, nil)
 		},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, nil)
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names"))
