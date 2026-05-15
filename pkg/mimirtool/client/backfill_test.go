@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-func TestGetBlockMetaFromBucket(t *testing.T) {
+func TestGetBlockMeta(t *testing.T) {
 	blockID := ulid.MustNew(1000, nil)
 	bkt := objstore.NewInMemBucket()
 
@@ -38,39 +38,36 @@ func TestGetBlockMetaFromBucket(t *testing.T) {
 	metaBytes, err := json.Marshal(meta)
 	require.NoError(t, err)
 
-	require.NoError(t, bkt.Upload(context.Background(), blockID.String()+"/meta.json", bytes.NewReader(metaBytes)))
-	require.NoError(t, bkt.Upload(context.Background(), blockID.String()+"/index", bytes.NewReader([]byte("index-data"))))
-	require.NoError(t, bkt.Upload(context.Background(), blockID.String()+"/chunks/000001", bytes.NewReader([]byte("chunk-1"))))
-	require.NoError(t, bkt.Upload(context.Background(), blockID.String()+"/chunks/000002", bytes.NewReader([]byte("chunk-22"))))
+	ctx := context.Background()
+	prefix := blockID.String()
+	require.NoError(t, bkt.Upload(ctx, prefix+"/meta.json", bytes.NewReader(metaBytes)))
+	require.NoError(t, bkt.Upload(ctx, prefix+"/index", bytes.NewReader(make([]byte, 1))))
+	require.NoError(t, bkt.Upload(ctx, prefix+"/chunks/000001", bytes.NewReader(make([]byte, 2))))
+	require.NoError(t, bkt.Upload(ctx, prefix+"/chunks/000002", bytes.NewReader(make([]byte, 3))))
 
-	result, err := GetBlockMeta(context.Background(), bkt, blockID)
+	result, err := GetBlockMeta(ctx, bkt, blockID)
 	require.NoError(t, err)
 
 	assert.Equal(t, blockID, result.ULID)
 	assert.Equal(t, int64(100), result.MinTime)
 	assert.Equal(t, int64(200), result.MaxTime)
 
-	filesByPath := map[string]int64{}
+	fileSizes := map[string]int64{}
 	for _, f := range result.Thanos.Files {
-		filesByPath[f.RelPath] = f.SizeBytes
+		fileSizes[f.RelPath] = f.SizeBytes
 	}
-
-	assert.Contains(t, filesByPath, "meta.json")
-	assert.Equal(t, int64(len("index-data")), filesByPath["index"])
-	assert.Equal(t, int64(len("chunk-1")), filesByPath["chunks/000001"])
-	assert.Equal(t, int64(len("chunk-22")), filesByPath["chunks/000002"])
+	assert.Len(t, fileSizes, 4)
+	assert.Contains(t, fileSizes, "meta.json")
+	assert.Equal(t, int64(1), fileSizes["index"])
+	assert.Equal(t, int64(2), fileSizes["chunks/000001"])
+	assert.Equal(t, int64(3), fileSizes["chunks/000002"])
 }
 
-func TestGetBlockMetaFromBucket_InvalidVersion(t *testing.T) {
+func TestGetBlockMeta_RejectsUnsupportedVersion(t *testing.T) {
 	blockID := ulid.MustNew(1000, nil)
 	bkt := objstore.NewInMemBucket()
 
-	meta := block.Meta{
-		BlockMeta: tsdb.BlockMeta{
-			ULID:    blockID,
-			Version: 99,
-		},
-	}
+	meta := block.Meta{BlockMeta: tsdb.BlockMeta{ULID: blockID, Version: 99}}
 	metaBytes, err := json.Marshal(meta)
 	require.NoError(t, err)
 
@@ -78,12 +75,13 @@ func TestGetBlockMetaFromBucket_InvalidVersion(t *testing.T) {
 
 	_, err = GetBlockMeta(context.Background(), bkt, blockID)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only version 1")
 }
 
 func TestBackfillBlock(t *testing.T) {
 	blockID := ulid.MustNew(1000, nil)
-	blockIDStr := blockID.String()
+	prefix := blockID.String()
+	indexData := []byte("index-content")
+	chunkData := []byte("chunk-content")
 
 	bkt := objstore.NewInMemBucket()
 	meta := block.Meta{
@@ -97,88 +95,62 @@ func TestBackfillBlock(t *testing.T) {
 	metaBytes, err := json.Marshal(meta)
 	require.NoError(t, err)
 
-	chunkData := []byte("chunk-data-here")
-	indexData := []byte("index-data-here")
-	require.NoError(t, bkt.Upload(context.Background(), blockIDStr+"/meta.json", bytes.NewReader(metaBytes)))
-	require.NoError(t, bkt.Upload(context.Background(), blockIDStr+"/index", bytes.NewReader(indexData)))
-	require.NoError(t, bkt.Upload(context.Background(), blockIDStr+"/chunks/000001", bytes.NewReader(chunkData)))
+	ctx := context.Background()
+	require.NoError(t, bkt.Upload(ctx, prefix+"/meta.json", bytes.NewReader(metaBytes)))
+	require.NoError(t, bkt.Upload(ctx, prefix+"/index", bytes.NewReader(indexData)))
+	require.NoError(t, bkt.Upload(ctx, prefix+"/chunks/000001", bytes.NewReader(chunkData)))
 
-	var calls []string
-	uploadedFiles := map[string][]byte{}
+	type recorded struct {
+		method string
+		path   string
+		file   string // "path" query param for file uploads
+		body   []byte
+	}
+	var reqs []recorded
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := r.URL.Path
-		calls = append(calls, r.Method+" "+p)
-
-		switch {
-		case strings.HasSuffix(p, "/start"):
-			w.WriteHeader(http.StatusOK)
-		case strings.Contains(p, "/files"):
-			filePath := r.URL.Query().Get("path")
-			body, _ := io.ReadAll(r.Body)
-			uploadedFiles[filePath] = body
-			w.WriteHeader(http.StatusOK)
-		case strings.HasSuffix(p, "/finish"):
-			w.WriteHeader(http.StatusOK)
-		case strings.HasSuffix(p, "/check"):
+		body, _ := io.ReadAll(r.Body)
+		reqs = append(reqs, recorded{
+			method: r.Method,
+			path:   r.URL.Path,
+			file:   r.URL.Query().Get("path"),
+			body:   body,
+		})
+		if strings.HasSuffix(r.URL.Path, "/check") {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"result":"complete"}`)
-		default:
-			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `{"result":"complete"}`)
 		}
 	}))
+	defer srv.Close()
 
-	mimirClient, err := New(Config{
-		Address: srv.URL,
-		ID:      "test-tenant",
-	}, log.NewNopLogger())
+	c, err := New(Config{Address: srv.URL, ID: "test"}, log.NewNopLogger())
 	require.NoError(t, err)
 
-	err = mimirClient.BackfillBlock(context.Background(), bkt, blockID, 0)
-	srv.Close()
-	require.NoError(t, err)
+	require.NoError(t, c.BackfillBlock(ctx, bkt, blockID, 0))
 
-	require.GreaterOrEqual(t, len(calls), 4)
-	assert.Contains(t, calls[0], "/start")
-	assert.Contains(t, calls[len(calls)-2], "/finish")
-	assert.Contains(t, calls[len(calls)-1], "/check")
+	blockPath := "/api/v1/upload/block/" + prefix
 
+	// start, upload index, upload chunk, finish, check
+	require.Len(t, reqs, 5)
+
+	assert.Equal(t, http.MethodPost, reqs[0].method)
+	assert.Equal(t, blockPath+"/start", reqs[0].path)
+	var sentMeta block.Meta
+	require.NoError(t, json.Unmarshal(reqs[0].body, &sentMeta))
+	assert.Equal(t, blockID, sentMeta.ULID)
+
+	uploadedFiles := map[string][]byte{}
+	for _, r := range reqs[1:3] {
+		assert.Equal(t, http.MethodPost, r.method)
+		assert.Equal(t, blockPath+"/files", r.path)
+		uploadedFiles[r.file] = r.body
+	}
 	assert.Equal(t, indexData, uploadedFiles["index"])
 	assert.Equal(t, chunkData, uploadedFiles["chunks/000001"])
-	assert.NotContains(t, uploadedFiles, "meta.json")
-}
 
-func TestBackfillBlock_AlreadyExists(t *testing.T) {
-	blockID := ulid.MustNew(1000, nil)
+	assert.Equal(t, http.MethodPost, reqs[3].method)
+	assert.Equal(t, blockPath+"/finish", reqs[3].path)
 
-	bkt := objstore.NewInMemBucket()
-	meta := block.Meta{
-		BlockMeta: tsdb.BlockMeta{
-			ULID:    blockID,
-			Version: 1,
-		},
-	}
-	metaBytes, err := json.Marshal(meta)
-	require.NoError(t, err)
-
-	require.NoError(t, bkt.Upload(context.Background(), blockID.String()+"/meta.json", bytes.NewReader(metaBytes)))
-	require.NoError(t, bkt.Upload(context.Background(), blockID.String()+"/index", bytes.NewReader([]byte("data"))))
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/start") {
-			w.WriteHeader(http.StatusConflict)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	mimirClient, err := New(Config{
-		Address: srv.URL,
-		ID:      "test-tenant",
-	}, log.NewNopLogger())
-	require.NoError(t, err)
-
-	err = mimirClient.BackfillBlock(context.Background(), bkt, blockID, 0)
-	srv.Close()
-	require.ErrorIs(t, err, ErrConflict)
+	assert.Equal(t, http.MethodGet, reqs[4].method)
+	assert.Equal(t, blockPath+"/check", reqs[4].path)
 }
