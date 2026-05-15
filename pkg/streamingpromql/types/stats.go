@@ -212,6 +212,42 @@ func (s *OperatorEvaluationStats) AddSingleStep(other *OperatorEvaluationStats) 
 	return nil
 }
 
+// AddSubRange adds the statistics from other to this instance.
+//
+// This instance is modified in-place.
+//
+// The other instance's steps must align with a sub-range of this instance's steps.
+//
+// Both instances must not have subsets.
+func (s *OperatorEvaluationStats) AddSubRange(other *OperatorEvaluationStats) error {
+	if len(s.subsets) > 0 {
+		return errors.New("cannot add a sub-range to an OperatorEvaluationStats instance that has subsets")
+	}
+
+	if len(other.subsets) > 0 {
+		return errors.New("cannot add a sub-range from an OperatorEvaluationStats instance that has subsets")
+	}
+
+	if s.timeRange.StepCount > 1 && other.timeRange.StepCount > 1 && other.timeRange.IntervalMilliseconds != s.timeRange.IntervalMilliseconds {
+		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with multiple steps and interval %v ms to another instance with multiple steps and interval %v ms", other.timeRange.IntervalMilliseconds, s.timeRange.IntervalMilliseconds)
+	}
+
+	if other.timeRange.StartT < s.timeRange.StartT || other.timeRange.EndT > s.timeRange.EndT {
+		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with time range [%v, %v] to another instance with time range [%v, %v]", other.timeRange.StartT, other.timeRange.EndT, s.timeRange.StartT, s.timeRange.EndT)
+	}
+
+	firstIndexInThisInstance := s.timeRange.PointIndex(other.timeRange.StartT)
+	if s.timeRange.IndexTime(firstIndexInThisInstance) != other.timeRange.StartT {
+		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with time range [%v, %v] and interval %v ms to another instance with time range [%v, %v] and interval %v ms", other.timeRange.StartT, other.timeRange.EndT, other.timeRange.IntervalMilliseconds, s.timeRange.StartT, s.timeRange.EndT, s.timeRange.IntervalMilliseconds)
+	}
+
+	for otherIndex := range other.timeRange.StepCount {
+		s.allSeries.Add(firstIndexInThisInstance+int64(otherIndex), other.allSeries.samplesProcessedPerStep[otherIndex], other.allSeries.samplesReadIfSubsequentStep[otherIndex], other.allSeries.samplesReadIfFirstStep[otherIndex])
+	}
+
+	return nil
+}
+
 func (s *OperatorEvaluationStats) newEmptyInstanceWithSameSubsets(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
 	return NewOperatorEvaluationStatsWithQueryStats(timeRange, s.memoryConsumptionTracker, s.queryStats, len(s.subsets))
 }
