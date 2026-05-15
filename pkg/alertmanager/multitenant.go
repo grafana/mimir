@@ -641,7 +641,7 @@ func (am *MultitenantAlertmanager) stopping(_ error) error {
 // loadAlertmanagerConfigs Loads (and filters) the alertmanagers configuration from object storage, taking into consideration the sharding strategy. Returns:
 // - The list of discovered users (all users with a configuration in storage)
 // - The configurations of users owned by this instance.
-func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDesc, error) {
+func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]*alertspb.AlertConfigDesc, error) {
 	// Find all users with an alertmanager config.
 	allUserIDs, err := am.store.ListAllUsers(ctx)
 	if err != nil {
@@ -680,7 +680,7 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDesc) {
+func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]*alertspb.AlertConfigDesc) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	amInitSkipped := map[string]struct{}{}
 	for user, cfg := range cfgMap {
@@ -727,7 +727,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 }
 
 // shouldStartAM checks a tenant's configuration and last request time to determine whether we should start an Alertmanager for them.
-func (am *MultitenantAlertmanager) shouldStartAM(cfg alertspb.AlertConfigDesc) bool {
+func (am *MultitenantAlertmanager) shouldStartAM(cfg *alertspb.AlertConfigDesc) bool {
 	// Always start Alertmanagers when strict initialization is disabled.
 	if !am.cfg.StrictInitializationEnabled {
 		return true
@@ -758,7 +758,7 @@ func (am *MultitenantAlertmanager) shouldStartAM(cfg alertspb.AlertConfigDesc) b
 	return true
 }
 
-func fingerprint(desc alertspb.AlertConfigDesc) model.Fingerprint {
+func fingerprint(desc *alertspb.AlertConfigDesc) model.Fingerprint {
 	sum := fnv.New64a()
 
 	writeBytes := func(b []byte) {
@@ -800,14 +800,14 @@ func fingerprint(desc alertspb.AlertConfigDesc) model.Fingerprint {
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) setConfig(cfg *alertspb.AlertConfigDesc) (*Alertmanager, error) {
 	if am.cfg.UTF8MigrationLogging {
 		// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
 		// The reason for this that the config.Load function uses the origin "config",
 		// which is correct, but Mimir uses config.Load to validate both API requests and tenant
 		// configurations. This means metrics from API requests are confused with metrics from
 		// tenant configurations. To avoid this confusion, we use a different origin.
-		validateMatchersInConfigDesc(am.logger, "tenant", alertspb.AlertConfigDesc{
+		validateMatchersInConfigDesc(am.logger, "tenant", &alertspb.AlertConfigDesc{
 			User:      cfg.User,
 			RawConfig: cfg.RawConfig,
 		})
@@ -1099,9 +1099,9 @@ func (am *MultitenantAlertmanager) ReplicateStateForUser(ctx context.Context, us
 		}
 
 		switch resp.Status {
-		case alertmanagerpb.MERGE_ERROR:
+		case alertmanagerpb.UpdateStateStatus_MERGE_ERROR:
 			level.Error(am.logger).Log("msg", "state replication failed", "user", userID, "key", part.Key, "err", resp.Error)
-		case alertmanagerpb.USER_NOT_FOUND:
+		case alertmanagerpb.UpdateStateStatus_USER_NOT_FOUND:
 			level.Debug(am.logger).Log("msg", "user not found while trying to replicate state", "user", userID, "key", part.Key)
 		}
 		return nil
@@ -1147,13 +1147,13 @@ func (am *MultitenantAlertmanager) ReadFullStateForUser(ctx context.Context, use
 		}
 
 		switch resp.Status {
-		case alertmanagerpb.READ_OK:
+		case alertmanagerpb.ReadStateStatus_READ_OK:
 			resultsMtx.Lock()
 			results = append(results, resp.State)
 			resultsMtx.Unlock()
-		case alertmanagerpb.READ_ERROR:
+		case alertmanagerpb.ReadStateStatus_READ_ERROR:
 			level.Error(am.logger).Log("msg", "error trying to read state", "addr", addr, "user", userID, "err", resp.Error)
-		case alertmanagerpb.READ_USER_NOT_FOUND:
+		case alertmanagerpb.ReadStateStatus_READ_USER_NOT_FOUND:
 			level.Debug(am.logger).Log("msg", "user not found while trying to read state", "addr", addr, "user", userID)
 			resultsMtx.Lock()
 			notFound++
@@ -1195,19 +1195,19 @@ func (am *MultitenantAlertmanager) UpdateState(ctx context.Context, part *cluste
 		// We can end up trying to replicate state to an alertmanager that is no longer available due to e.g. a ring topology change.
 		level.Debug(am.logger).Log("msg", "user does not have an alertmanager in this instance", "user", userID)
 		return &alertmanagerpb.UpdateStateResponse{
-			Status: alertmanagerpb.USER_NOT_FOUND,
+			Status: alertmanagerpb.UpdateStateStatus_USER_NOT_FOUND,
 			Error:  "alertmanager for this user does not exists",
 		}, nil
 	}
 
 	if err = userAM.mergePartialExternalState(part); err != nil {
 		return &alertmanagerpb.UpdateStateResponse{
-			Status: alertmanagerpb.MERGE_ERROR,
+			Status: alertmanagerpb.UpdateStateStatus_MERGE_ERROR,
 			Error:  err.Error(),
 		}, nil
 	}
 
-	return &alertmanagerpb.UpdateStateResponse{Status: alertmanagerpb.OK}, nil
+	return &alertmanagerpb.UpdateStateResponse{Status: alertmanagerpb.UpdateStateStatus_OK}, nil
 }
 
 // deleteUnusedRemoteUserState deletes state objects in remote storage for users that are no longer configured.
@@ -1299,7 +1299,7 @@ func (am *MultitenantAlertmanager) ReadState(ctx context.Context, _ *alertmanage
 	if !ok {
 		level.Debug(am.logger).Log("msg", "user does not have an alertmanager in this instance", "user", userID)
 		return &alertmanagerpb.ReadStateResponse{
-			Status: alertmanagerpb.READ_USER_NOT_FOUND,
+			Status: alertmanagerpb.ReadStateStatus_READ_USER_NOT_FOUND,
 			Error:  "alertmanager for this user does not exists",
 		}, nil
 	}
@@ -1307,13 +1307,13 @@ func (am *MultitenantAlertmanager) ReadState(ctx context.Context, _ *alertmanage
 	state, err := userAM.getFullState()
 	if err != nil {
 		return &alertmanagerpb.ReadStateResponse{
-			Status: alertmanagerpb.READ_ERROR,
+			Status: alertmanagerpb.ReadStateStatus_READ_ERROR,
 			Error:  err.Error(),
 		}, nil
 	}
 
 	return &alertmanagerpb.ReadStateResponse{
-		Status: alertmanagerpb.READ_OK,
+		Status: alertmanagerpb.ReadStateStatus_READ_OK,
 		State:  state,
 	}, nil
 }
