@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Alertmanager: Upgraded the embedded `prometheus/alertmanager` library to v0.32.0. The per-tenant alertmanager web UI and the `/-/healthy`, `/-/ready`, `/-/reload`, `/script.js`, and `/favicon.ico` endpoints under the alertmanager prefix are no longer served because upstream removed the embeddable UI package. The v2 API endpoints and request/response shapes are unchanged, but a few error message strings from the upstream parser have been reformatted (for example, matcher-validation errors now include `in set N`). #15144
+* [CHANGE] Alertmanager: The `cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total` counter is now best-effort under concurrent alert ingest. The upstream alertmanager v0.32.0 ingests alerts via worker goroutines and the group-limit check is a racy check-then-act, so the configured limit can be exceeded under burst load. #15144
 * [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
 * [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
@@ -20,8 +22,6 @@
 * [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147 #15270 #14878
 * [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
 * [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
-* [CHANGE] Alertmanager: Upgraded the embedded `prometheus/alertmanager` library to v0.32.0. The per-tenant alertmanager web UI and the `/-/healthy`, `/-/ready`, `/-/reload`, `/script.js`, and `/favicon.ico` endpoints under the alertmanager prefix are no longer served because upstream removed the embeddable UI package. The v2 API endpoints and request/response shapes are unchanged, but a few error message strings from the upstream parser have been reformatted (for example, matcher-validation errors now include `in set N`). #15144
-* [CHANGE] Alertmanager: The `cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total` counter is now best-effort under concurrent alert ingest. The upstream alertmanager v0.32.0 ingests alerts via worker goroutines and the group-limit check is a racy check-then-act, so the configured limit can be exceeded under burst load. #15144
 
 ### Mixin
 
