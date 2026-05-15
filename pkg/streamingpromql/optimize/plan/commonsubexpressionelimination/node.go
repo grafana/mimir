@@ -121,6 +121,24 @@ func (d *Duplicate) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (
 	return planning.QueryPlanVersionZero, nil
 }
 
+func (d *Duplicate) IsSplittable() bool {
+	splitNode, ok := d.Inner.(planning.SplitNode)
+	if !ok {
+		return false
+	}
+	return splitNode.IsSplittable()
+}
+
+func (d *Duplicate) GetRangeParams() planning.RangeParams {
+	splitNode, ok := d.Inner.(planning.SplitNode)
+	if !ok {
+		return planning.RangeParams{}
+	}
+	return splitNode.GetRangeParams()
+}
+
+var _ planning.SplitNode = &Duplicate{}
+
 func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToOperatorWithSubRange(d.Inner, timeRange, overrideTimeParams)
 	if err != nil {
@@ -252,6 +270,16 @@ func (f *DuplicateFilter) ExpressionPosition() (posrange.PositionRange, error) {
 func (f *DuplicateFilter) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanV7, nil
 }
+
+func (f *DuplicateFilter) IsSplittable() bool {
+	return f.Inner.IsSplittable()
+}
+
+func (f *DuplicateFilter) GetRangeParams() planning.RangeParams {
+	return f.Inner.GetRangeParams()
+}
+
+var _ planning.SplitNode = &DuplicateFilter{}
 
 func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	operator, err := materializer.ConvertNodeToOperatorWithSubRange(f.Inner, timeRange, overrideTimeParams)

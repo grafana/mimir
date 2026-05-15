@@ -28,8 +28,11 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -471,28 +474,54 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	backend, eng := setupEngineAndCache(t)
 	// With SSE, the hist{job="test"}[4h] nodes will be merged.
 	// Additionally, skipping histogram buckets is disabled if a node is being split.
-	query := `
-		histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h]))
-		* histogram_count(last_over_time(hist{job="test"}[4h]))`
+	query := `histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h])) * histogram_count(last_over_time(hist{job="test"}[4h]))`
 	r := runInstantQuery(t, eng, promStorage, query, ts)
 	require.NoError(t, r.Err)
 
 	// With a 4h range at ts=4h and 2h split interval, the single cacheable block is (2h-1ms, 4h-1ms].
-	countKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", job="test"}`, 2*hourInMs-1, 4*hourInMs-1, false)
-	fractionKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, `{__name__="hist", code!="err", job="test"}`, 2*hourInMs-1, 4*hourInMs-1, false)
+	// After SSE: histogram_fraction's inner is DuplicateFilter -> Duplicate -> broad MatrixSelector;
+	// histogram_count's inner is Duplicate -> broad MatrixSelector.
+	broadSelector := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
+		Matchers: []*core.LabelMatcher{
+			{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
+			{Name: "job", Type: labels.MatchEqual, Value: "test"},
+		},
+		Range:              4 * time.Hour,
+		ExpressionPosition: core.PositionRange{Start: 112, End: 132},
+		Subsets: []core.SubsetMatchers{
+			{Matchers: []*core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}}},
+		},
+	}}
+	fractionSplit := &commonsubexpressionelimination.DuplicateFilter{
+		DuplicateFilterDetails: &commonsubexpressionelimination.DuplicateFilterDetails{
+			Filters:     []*core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}},
+			SubsetIndex: 0,
+		},
+		Inner: &commonsubexpressionelimination.Duplicate{
+			DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
+			Inner:            broadSelector,
+		},
+	}
+	countSplit := &commonsubexpressionelimination.Duplicate{
+		DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
+		Inner:            broadSelector,
+	}
+	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
 
 	require.Len(t, backend.items, 2)
 
-	// Both countKey and fractionKey must contain the full histogram (skip=false fetches buckets).
 	expectedH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
 	expectedIntermediate := rangevectorsplitting.FirstLastOverTimeIntermediate{H: &expectedH}
 
+	// Both keys must contain the full histogram (skip=false fetches buckets).
+	countKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, countSplit, params), 2*hourInMs-1, 4*hourInMs-1)
 	var countEntry cache.CachedSeries
 	require.NoError(t, countEntry.Unmarshal(backend.items[countKey]))
-	var noSkipList rangevectorsplitting.FirstLastOverTimeIntermediateList
-	require.NoError(t, noSkipList.Unmarshal(countEntry.Results))
-	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, noSkipList.Results)
+	var countList rangevectorsplitting.FirstLastOverTimeIntermediateList
+	require.NoError(t, countList.Unmarshal(countEntry.Results))
+	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, countList.Results)
 
+	fractionKey := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, fractionSplit, params), 2*hourInMs-1, 4*hourInMs-1)
 	var fractionEntry cache.CachedSeries
 	require.NoError(t, fractionEntry.Unmarshal(backend.items[fractionKey]))
 	var fractionList rangevectorsplitting.FirstLastOverTimeIntermediateList
@@ -518,6 +547,98 @@ func TestQuerySplitting_SkipHistogramBucketsNotApplied(t *testing.T) {
 	`), p.String())
 }
 
+// TestQuerySplitting_CacheKeyReflectsPostOptimizationState verifies that the inner-node cache key
+// is derived from the final post-CSE/SSE plan structure. A selector wrapped in a DuplicateFilter by
+// SSE produces a duplicate_filter(...) cache key, while the same logical query without SSE produces
+// a bare matchers cache key.
+func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="prod", region="us"} 0+1x60
+			some_metric{env="prod", region="eu"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(6 * time.Hour)
+	// Narrow selector is a subset of the broad selector, so SSE merges them when enabled:
+	// the narrow side's inner becomes DuplicateFilter[region="us"] -> Duplicate -> MatrixSelector{env="prod"}.
+	expr := `sum_over_time(some_metric{env="prod", region="us"}[5h]) / sum_over_time(some_metric{env="prod"}[5h])`
+
+	// Without SSE: each MatrixSelector keeps its full matchers, so cache keys are just the matchers.
+	withoutSSE := defaultSplittingOpts()
+	withoutSSE.EnableSubsetSelectorElimination = false
+	backendNoSSE, engineNoSSE := setupEngineAndCacheWithOpts(t, withoutSSE)
+
+	require.NoError(t, runInstantQuery(t, engineNoSSE, promStorage, expr, ts).Err)
+
+	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
+	const blockStart, blockEnd = 2*hourInMs - 1, 4*hourInMs - 1
+
+	// Without SSE: the two MatrixSelectors retain their original matchers.
+	narrowNoSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
+		Matchers: []*core.LabelMatcher{
+			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+			{Name: "region", Type: labels.MatchEqual, Value: "us"},
+		},
+		Range:              5 * time.Hour,
+		ExpressionPosition: core.PositionRange{Start: 14, End: 54},
+	}}
+	broadNoSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
+		Matchers: []*core.LabelMatcher{
+			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+		},
+		Range:              5 * time.Hour,
+		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
+	}}
+	narrowKeyNoSSE := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowNoSSE, params), blockStart, blockEnd)
+	broadKeyNoSSE := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadNoSSE, params), blockStart, blockEnd)
+	require.Contains(t, backendNoSSE.items, narrowKeyNoSSE, "expected bare-matchers cache key for narrow selector when SSE is off")
+	require.Contains(t, backendNoSSE.items, broadKeyNoSSE, "expected bare-matchers cache key for broad selector when SSE is off")
+
+	// With SSE: the narrow MatrixSelector is rewritten into DuplicateFilter -> Duplicate -> broad MatrixSelector,
+	// and the broad MatrixSelector picks up the narrow side's region="us" as a subset.
+	withSSE := defaultSplittingOpts()
+	withSSE.EnableSubsetSelectorElimination = true
+	backendSSE, engineSSE := setupEngineAndCacheWithOpts(t, withSSE)
+
+	require.NoError(t, runInstantQuery(t, engineSSE, promStorage, expr, ts).Err)
+
+	broadSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
+		Matchers: []*core.LabelMatcher{
+			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+		},
+		Range:              5 * time.Hour,
+		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
+		Subsets: []core.SubsetMatchers{
+			{Matchers: []*core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}}},
+		},
+	}}
+	narrowSSE := &commonsubexpressionelimination.DuplicateFilter{
+		DuplicateFilterDetails: &commonsubexpressionelimination.DuplicateFilterDetails{
+			Filters:     []*core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}},
+			SubsetIndex: 0,
+		},
+		Inner: &commonsubexpressionelimination.Duplicate{
+			DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
+			Inner:            broadSSE,
+		},
+	}
+	broadSplitSSE := &commonsubexpressionelimination.Duplicate{
+		DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
+		Inner:            broadSSE,
+	}
+	narrowKeySSE := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowSSE, params), blockStart, blockEnd)
+	broadKeySSE := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSplitSSE, params), blockStart, blockEnd)
+	require.Contains(t, backendSSE.items, narrowKeySSE, "expected duplicate_filter cache key for narrow selector when SSE is on")
+	require.Contains(t, backendSSE.items, broadKeySSE, "expected subset-aware cache key for broad selector when SSE is on")
+	require.NotContains(t, backendNoSSE.items, narrowKeySSE, "narrow SSE cache key must not exist in no-SSE backend (key reflects post-optimization plan)")
+	require.NotContains(t, backendNoSSE.items, broadKeySSE, "broad SSE cache key must not exist in no-SSE backend (key reflects post-optimization plan)")
+}
+
 func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
 	ctx := context.Background()
 	evalTime := timestamp.Time(0).Add(6 * time.Hour)
@@ -537,7 +658,7 @@ func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
 	`), p.String())
 }
 
-func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
+func TestQuerySplitting_WithOffset_CacheBehavior(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -563,21 +684,21 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	}, ranges1)
 	verifyCacheStats(t, testCache, 1, 0, 1) // 1 cacheable block
 
-	// Q1b: no offset at 7h accesses same range (2h, 7h]
-	// Cache has block (4h-1ms, 6h-1ms] from Q1, so queries head and tail from storage
+	// Q1b: no offset at 7h accesses same range (2h, 7h] but has a different cache key from Q1
+	// (offset is part of the cache key), so the block at (4h-1ms, 6h-1ms] is a cache miss.
 	ts7h := baseT.Add(7 * time.Hour)
 	exprNoOffset := "sum_over_time(test_metric[5h])"
 	result1b, ranges1b := executeQuery(t, mimirEngine, promStorage, exprNoOffset, ts7h)
 	require.Equal(t, expectedScalarResult(ts7h, 825, "env", "prod"), result1b)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
+		{mint: 4 * hourInMs, maxt: 6*hourInMs - 1},   // Cacheable range: (4h, 6h-1ms] -> storage [4h, 6h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges1b)
-	verifyCacheStats(t, testCache, 2, 1, 1) // 1 cache hit on the block
+	verifyCacheStats(t, testCache, 2, 0, 2) // Q1b: cache miss on the block, separate entry
 
 	// Q2: offset 1h at 10h accesses (4h, 9h]
 	// Splits: head (4h, 6h-1ms], block (6h-1ms, 8h-1ms] (cache miss, new), tail (8h-1ms, 9h]
-	// All uncached ranges merge into single storage query
 	// Data: first sample @ 4h10m = 25, last sample @ 9h = 54, samples = 30
 	// Sum: (25+54)*(30/2) = 1185
 	ts10h := baseT.Add(10 * time.Hour)
@@ -588,10 +709,10 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 		{mint: 6 * hourInMs, maxt: 8*hourInMs - 1},   // Cacheable range: (6h, 8h-1ms] -> storage [6h, 8h-1ms]
 		{mint: 8 * hourInMs, maxt: 9 * hourInMs},     // Tail: (8h-1ms, 9h] -> storage [8h, 9h]
 	}, ranges2)
-	verifyCacheStats(t, testCache, 3, 1, 2) // Q1: 1 get/1 set, Q1b: 1 get/1 hit, Q2: 1 get/1 set
+	verifyCacheStats(t, testCache, 3, 0, 3) // Q1: 1 get/1 set, Q1b: 1 get/1 set, Q2: 1 get/1 set
 }
 
-func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
+func TestQuerySplitting_WithAtModifier_CacheBehavior(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -615,20 +736,21 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 	}, ranges1)
 	verifyCacheStats(t, testCache, 1, 0, 1) // 1 cacheable block
 
-	// Q2: no @ at 7h accesses same range (2h, 7h]
-	// Cache has block (4h-1ms, 6h-1ms] from Q1, so queries head and tail from storage
+	// Q2: no @ at 7h accesses same range (2h, 7h] but has a different cache key from Q1
+	// (the @ timestamp is part of the cache key), so the block at (4h-1ms, 6h-1ms] is a cache miss.
 	exprNoModifier := "sum_over_time(test_metric[5h])"
 	ts7h := baseT.Add(7 * time.Hour)
 	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, exprNoModifier, ts7h)
 	require.Equal(t, expectedScalarResult(ts7h, 825, "env", "prod"), result2)
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
+		{mint: 4 * hourInMs, maxt: 6*hourInMs - 1},   // Cacheable range: (4h, 6h-1ms] -> storage [4h, 6h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges2)
-	verifyCacheStats(t, testCache, 2, 1, 1) // 1 cache hit on the block
+	verifyCacheStats(t, testCache, 2, 0, 2) // Q2: cache miss on the block, separate entry
 
-	// Q3: @ 7h at 10h accesses same range (2h, 7h]
-	// Cache has block (4h-1ms, 6h-1ms] from Q1, so queries head and tail from storage
+	// Q3: @ 7h at 10h accesses same range (2h, 7h] and shares the same @ modifier as Q1, so it
+	// has the same cache key as Q1 and hits the cached block (4h-1ms, 6h-1ms].
 	ts10h := baseT.Add(10 * time.Hour)
 	result3, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, ts10h)
 	require.Equal(t, expectedScalarResult(ts10h, 825, "env", "prod"), result3)
@@ -636,7 +758,7 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
 		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges3)
-	verifyCacheStats(t, testCache, 3, 2, 1) // Q1: 1 get/1 set, Q2: 1 get/1 hit, Q3: 1 get/1 hit
+	verifyCacheStats(t, testCache, 3, 1, 2) // Q3: 1 get/1 hit on Q1's cache entry
 }
 
 func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
@@ -898,7 +1020,13 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 	verifyCacheStats(t, testCache, 3, 0, 3)
 
 	// Evict Block2: (4h-1ms, 6h-1ms].
-	block2Key := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, `{__name__="test_metric"}`, 4*hourInMs-1, 6*hourInMs-1, false)
+	inner := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
+		Matchers:           []*core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "test_metric"}},
+		Range:              7 * time.Hour,
+		ExpressionPosition: core.PositionRange{Start: 14, End: 29},
+	}}
+	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
+	block2Key := cache.TestGenerateHashedCacheKey("test-user", functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, inner, params), 4*hourInMs-1, 6*hourInMs-1)
 	_, exists := testCache.items[block2Key]
 	require.True(t, exists, "Block2 cache key should exist before eviction")
 	delete(testCache.items, block2Key)
@@ -1260,10 +1388,12 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 }
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
+	return setupEngineAndCacheWithOpts(t, defaultSplittingOpts())
+}
+
+func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
 	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
-
-	opts := defaultSplittingOpts()
 
 	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -1392,4 +1522,10 @@ type errorStorage struct {
 
 func (e *errorStorage) Querier(_, _ int64) (storage.Querier, error) {
 	return nil, fmt.Errorf("injected storage error")
+}
+
+func splittingCacheKey(t *testing.T, node planning.Node, params *planning.QueryParameters) []byte {
+	key, err := rangevectorsplitting.SplittingCacheKey(node, params)
+	require.NoError(t, err)
+	return key
 }
