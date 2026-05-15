@@ -149,6 +149,9 @@ func (c *backfillConfig) Validate() error {
 	if c.clientConfig.ID == "" {
 		return fmt.Errorf("-backfill.id is required when -destination.backend is set to backfill")
 	}
+	if err := tenant.ValidTenantID(c.clientConfig.ID); err != nil {
+		return fmt.Errorf("-backfill.id is invalid: %w", err)
+	}
 	if c.clientConfig.Key != "" && c.clientConfig.AuthToken != "" {
 		return fmt.Errorf("at most one of -backfill.key and -backfill.auth-token can be set")
 	}
@@ -228,6 +231,7 @@ func main() {
 			level.Error(logger).Log("msg", "failed to clear copy markers", "err", err)
 			os.Exit(1)
 		}
+		level.Info(logger).Log("msg", "finished clearing copy markers")
 		os.Exit(0)
 	}
 
@@ -356,8 +360,12 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 			return nil
 		}
 
-		destinationTenantID, ok := userMapping[sourceTenantID]
-		if !ok {
+		var destinationTenantID string
+		if cfg.isBackfill() {
+			destinationTenantID = cfg.backfill.clientConfig.ID
+		} else if id, ok := userMapping[sourceTenantID]; ok {
+			destinationTenantID = id
+		} else {
 			destinationTenantID = sourceTenantID
 		}
 
