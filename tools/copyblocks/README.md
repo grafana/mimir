@@ -109,12 +109,12 @@ Copies blocks from object storage to a Mimir instance using the block upload API
   --s3.source.endpoint <source endpoint> \
   --backfill.address <Mimir address> \
   --backfill.id <tenant id> \
-  --backfill.auth-token <bearer token> \
+  --backfill.key <token used in basic auth> \
   --min-time 2026-01-15T00:00:00Z \
   --max-time 2026-02-15T00:00:00Z \
   --dry-run
 ```
 
-`--backfill.id` sets the tenant ID (X-Scope-OrgID header). Use `--backfill.auth-token` for bearer token auth or `--backfill.basic-auth-key` for basic auth (username is the tenant ID). TLS is configurable with `--backfill.tls-*`.
+`--backfill.id` sets the user ID (X-Scope-OrgID header). Use `--backfill.auth-token` for bearer token auth or `--backfill.key` for basic auth. TLS is configurable with `--backfill.tls-*`.
 
 Note that `--user-mapping` cannot be used with the backfill destination.
