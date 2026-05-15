@@ -552,6 +552,14 @@ func (m *FunctionOverRangeVectorSplit[T]) storeResultsInCache(ctx context.Contex
 func (m *FunctionOverRangeVectorSplit[T]) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
 	var finalStats *types.OperatorEvaluationStats
 
+	if len(m.splits) == 0 {
+		var err error
+		finalStats, err = types.NewOperatorEvaluationStats(ctx, m.queryTimeRange, m.MemoryConsumptionTracker, 0)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	for _, split := range m.splits {
 		rangeStats, err := split.Stats(ctx)
 		if err != nil {
