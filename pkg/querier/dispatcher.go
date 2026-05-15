@@ -616,14 +616,16 @@ func (o *evaluationObserver) populateStats(ctx context.Context, evaluationStats 
 		return querier_stats.Stats{}
 	}
 
+	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
+
 	// Calculate the total number of samples processed, in case we're talking to an old query-frontend that doesn't read the per-node stats.
+	// This can be removed once we're guaranteed to not be talking to old query-frontends (ie. all query-frontends have https://github.com/grafana/mimir/pull/15282).
 	totalSamplesProcessed := int64(0)
 	for _, stats := range evaluationStats {
 		totalSamplesProcessed += stats.GetTotalSamplesProcessed()
 	}
 
 	querierStats.AddSamplesProcessed(uint64(totalSamplesProcessed))
-	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
 
 	// Return a copy of the stats to avoid race conditions if anything is still modifying the
 	// stats after we return them for serialization.
