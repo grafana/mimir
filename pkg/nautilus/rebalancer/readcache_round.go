@@ -14,9 +14,14 @@ import (
 // (partition -> readcache instance) mapping using the per-partition
 // load signal collected by collectRates().
 //
+// activeInstances is the set of readcache instance IDs the slicer
+// may assign to this round. The caller resolves it (preferring the
+// ring when wired, falling back to ReadcacheSlicerConfig.Instances)
+// so the slicer itself is agnostic to discovery mechanism.
+//
 // This is a no-op when ReadcacheSlicer.Enabled is false or
-// ReadcacheSlicer.Instances is empty (those gates are checked by
-// the caller). When it runs, it:
+// activeInstances is empty (those gates are checked by the caller).
+// When it runs, it:
 //
 //  1. Reads the current (partition -> instance) mapping from
 //     readcacheStore.
@@ -32,6 +37,7 @@ func (r *Rebalancer) runReadcacheSlicer(
 	activePartitions []int32,
 	partitionLByPID map[int32]int64,
 	partitionQuerySamples map[int32]float64,
+	activeInstances []string,
 ) {
 	cfg := r.cfg.ReadcacheSlicer
 
@@ -56,7 +62,7 @@ func (r *Rebalancer) runReadcacheSlicer(
 	plan := planReadcacheAssignment(cfg, readcachePlanInput{
 		partitions:      activePartitions,
 		loadByPartition: loadByPartition,
-		instances:       cfg.Instances,
+		instances:       activeInstances,
 		currentOwner:    currentOwner,
 		recentlyMoved:   r.readcacheCooldowns.stillCooling(now),
 	})
@@ -68,7 +74,7 @@ func (r *Rebalancer) runReadcacheSlicer(
 			"msg", "readcache slicer round produced changes",
 			"moves", len(plan.Moves),
 			"partitions", len(activePartitions),
-			"instances", len(cfg.Instances),
+			"instances", len(activeInstances),
 		)
 	}
 	r.metrics.updateReadcacheRound(plan)

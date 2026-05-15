@@ -38,6 +38,9 @@ func newTestConfig(t *testing.T, withKafka bool, numPartitions int32) Config {
 	cfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError), log.NewNopLogger())
 	cfg.DataDir = t.TempDir()
 	cfg.InstanceID = "test"
+	// Keep the ring's instance ID aligned with the pod's instance ID
+	// so Config.Validate() doesn't bounce on the drift check.
+	cfg.InstanceRing.InstanceID = cfg.InstanceID
 	cfg.KafkaTopic = topic
 
 	var blocksCfg tsdb.BlocksStorageConfig
@@ -117,7 +120,7 @@ func TestReadcache_Lifecycle(t *testing.T) {
 
 	limits := validation.NewOverrides(validation.Limits{}, nil)
 
-	r, err := New(cfg, limits, log.NewNopLogger(), prometheus.NewRegistry())
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -139,10 +142,11 @@ func TestReadcache_Lifecycle(t *testing.T) {
 func TestReadcache_ApplyAssignment_AddsAndRemoves(t *testing.T) {
 	cfg := newTestConfig(t, true, 4)
 	cfg.InstanceID = "readcache-test"
+	cfg.InstanceRing.InstanceID = cfg.InstanceID
 
 	limits := validation.NewOverrides(validation.Limits{}, nil)
 
-	r, err := New(cfg, limits, log.NewNopLogger(), prometheus.NewRegistry())
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -193,9 +197,10 @@ func TestReadcache_ApplyAssignment_AddsAndRemoves(t *testing.T) {
 func TestReadcache_ApplyAssignment_IgnoresExpiredLeases(t *testing.T) {
 	cfg := newTestConfig(t, true, 2)
 	cfg.InstanceID = "readcache-test"
+	cfg.InstanceRing.InstanceID = cfg.InstanceID
 
 	limits := validation.NewOverrides(validation.Limits{}, nil)
-	r, err := New(cfg, limits, log.NewNopLogger(), prometheus.NewRegistry())
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -220,7 +225,7 @@ func TestReadcache_GetOrOpenTSDB(t *testing.T) {
 
 	limits := validation.NewOverrides(validation.Limits{}, nil)
 
-	r, err := New(cfg, limits, log.NewNopLogger(), prometheus.NewRegistry())
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

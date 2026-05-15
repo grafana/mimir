@@ -45,7 +45,7 @@ func TestReadcache_KafkaConsumption(t *testing.T) {
 	limits := validation.NewOverrides(validation.Limits{}, nil)
 	reg := prometheus.NewPedanticRegistry()
 
-	rc, err := New(cfg, limits, log.NewNopLogger(), reg)
+	rc, err := New(cfg, limits, nil, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

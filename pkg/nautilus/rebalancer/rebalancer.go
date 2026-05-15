@@ -115,6 +115,13 @@ type Config struct {
 	// balances partition->readcache-instance.
 	ReadcacheSlicer ReadcacheSlicerConfig `yaml:"readcache_slicer"`
 
+	// ReadcacheClient configures the gRPC client the rebalancer uses
+	// to dial readcache pods (HashRangeStats / SetHashRanges /
+	// GetHashRanges). Read only when a readcache instance ring is
+	// wired; without the ring the rebalancer falls back to the
+	// legacy ingester pool and ignores these settings.
+	ReadcacheClient ReadcacheClientConfig `yaml:"readcache_client"`
+
 	// DataDir is a local-disk directory where the rebalancer
 	// persists both the (hash-range -> partition) and the (partition
 	// -> readcache instance) logs. On restart the rebalancer seeds
@@ -188,6 +195,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(asInt32Var{&cfg.PartitionCount}, prefix+"partition-count", "Number of partitions on -nautilus.rebalancer.kafka-topic. Used both for auto-creation and to size the slicer's initial partition set when seeding the in-memory log. Must be > 0 when persistence is empty; otherwise the seeded value from disk wins.")
 	f.Var(asInt32Var{&cfg.ActivePartitionCount}, prefix+"active-partition-count", "Cap on the rebalancer's logical active-partition set: when > 0 the rebalancer slices over partition IDs [0, K) instead of consulting the ingester partition ring. Use this to decouple the nautilus partition space from the ingester ring (e.g. test 320 nautilus partitions in a cell with 80 ingesters). Must be <= -nautilus-rebalancer.partition-count. Default 0 falls back to the ingester partition ring.")
 	cfg.ReadcacheSlicer.RegisterFlagsWithPrefix(prefix+"readcache-slicer.", f)
+	cfg.ReadcacheClient.RegisterFlagsWithPrefix(prefix+"readcache-client.", f)
 }
 
 // Validate returns an error if the config is internally inconsistent.
@@ -236,6 +244,16 @@ type Rebalancer struct {
 	pool          *ring_client.Pool
 	partitionRing *ring.PartitionInstanceRing
 
+	// readcachePool dials readcache pods discovered via the
+	// readcache instance ring. Nil when running without the ring
+	// (degraded mode / tests); when nil the rebalancer falls back
+	// to the legacy ingester-pool path for HashRangeStats /
+	// SetHashRanges / GetHashRanges. With the ring wired, the
+	// readcache fleet is the authoritative source of per-partition
+	// load and the destination of computed assignments — the
+	// ingester contract (Unimplemented) is bypassed.
+	readcachePool *ReadcachePool
+
 	store          *logStore
 	readcacheStore *readcacheLogStore
 	admin          adminState
@@ -264,6 +282,21 @@ type Rebalancer struct {
 	// second slicer round (partition -> readcache instance). Mutated
 	// only by rebalance() / planReadcacheAssignment.
 	readcacheCooldowns readcacheMoveCooldowns
+
+	// readcacheRing is the ring client the slicer consults to learn
+	// which readcache instances are currently healthy. Nil when
+	// running without a ring (tests, or operators who pin the
+	// instance set via ReadcacheSlicer.Instances). Resolved on each
+	// slicer round so scale-up/scale-down is picked up at most one
+	// round (lease_lookahead by default) after the ring event.
+	readcacheRing readcacheRingReader
+}
+
+// readcacheRingReader is the subset of *ring.Ring the slicer needs to
+// enumerate healthy readcache instances. Modeled as an interface so
+// tests can substitute a fake without spinning up a real KV.
+type readcacheRingReader interface {
+	GetAllHealthy(op ring.Operation) (ring.ReplicationSet, error)
 }
 
 // moveRecord tracks one past move off a source partition during the
@@ -279,13 +312,26 @@ type moveRecord struct {
 }
 
 // New creates and returns a new Rebalancer.
-func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partitionRing *ring.PartitionInstanceRing, registerer prometheus.Registerer, logger log.Logger) *Rebalancer {
+//
+// readcacheRing and readcachePool are optional but always travel
+// together. When both are non-nil, the rebalancer treats readcache
+// as the authoritative source of nautilus stats and the destination
+// of computed hash-range assignments: collectRates and
+// pushRangesToIngesters target readcache pods through the pool, and
+// the readcache slicer enumerates the ring instead of
+// ReadcacheSlicerConfig.Instances. When nil, the rebalancer falls
+// back to the legacy ingester-pool path (used by tests and by the
+// pre-readcache phase 1 deployments where the ingester still
+// implements the nautilus RPCs).
+func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partitionRing *ring.PartitionInstanceRing, readcacheRing readcacheRingReader, readcachePool *ReadcachePool, registerer prometheus.Registerer, logger log.Logger) *Rebalancer {
 	r := &Rebalancer{
 		cfg:                cfg,
 		logger:             logger,
 		ingesterRing:       ingesterRing,
 		pool:               pool,
 		partitionRing:      partitionRing,
+		readcacheRing:      readcacheRing,
+		readcachePool:      readcachePool,
 		store:              newLogStore(),
 		readcacheStore:     newReadcacheLogStore(),
 		moveCooldowns:      make(map[assignment.HashRange]time.Time),
@@ -501,10 +547,11 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	current := r.store.latestActiveAssignment(time.Now())
 	if current == nil {
 		// Cold start: try to reconstruct the assignment from whatever
-		// each ingester locally remembers (via GetHashRanges). On a
-		// rolling rebalancer restart this preserves rebalanced state;
-		// on a truly-cold cluster it falls back to FineEvenSplit.
-		current = r.reconstructAssignment(ctx, activePartitions)
+		// each owning pod (readcache when wired, ingester otherwise)
+		// locally remembers (via GetHashRanges). On a rolling
+		// rebalancer restart this preserves rebalanced state; on a
+		// truly-cold cluster it falls back to FineEvenSplit.
+		current = r.reconstructRound(ctx, activePartitions)
 		if current == nil {
 			current = assignment.FineEvenSplit(activePartitions, initialSlicesPerPartition)
 			level.Info(r.logger).Log("msg", "initialized assignment with fine even split",
@@ -517,7 +564,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				"total_entries", len(current.Entries))
 		}
 		r.store.apply(time.Now(), current, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
-		r.pushRangesToIngesters(ctx, current)
+		r.pushRanges(ctx, current, time.Now())
 		// Seed the readcache slicer too: without this the readcache
 		// log stays empty until the next round, which is up to
 		// LeaseDuration - LeaseLookahead away (3.5min by default).
@@ -528,15 +575,17 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// data is silently unqueryable from readcache. Running the
 		// slicer with empty load signals just produces an even
 		// spread, which is exactly what we want at cold start.
-		if r.cfg.ReadcacheSlicer.Enabled && len(r.cfg.ReadcacheSlicer.Instances) > 0 {
-			r.runReadcacheSlicer(time.Now(), activePartitions, nil, nil)
+		if r.cfg.ReadcacheSlicer.Enabled {
+			if instances := r.activeReadcacheInstances(); len(instances) > 0 {
+				r.runReadcacheSlicer(time.Now(), activePartitions, nil, nil, instances)
+			}
 		}
 		return nil
 	}
 
-	rates, instanceTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRates(ctx)
+	rates, instanceTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx)
 	if err != nil {
-		level.Warn(r.logger).Log("msg", "failed to collect ingester rates", "err", err)
+		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)
 		return nil
 	}
 
@@ -546,10 +595,12 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	r.pruneExpiredCooldowns(now)
 	r.pruneRecentMoves(now)
 
-	// Compute per-partition L (head-series) from ingester totals, taking
-	// the max over owners in each partition's replica set. Max rather
-	// than mean captures worst-case memory pressure across replicas.
-	partitionLByPID := partitionL(instanceTotals, pRing, activePartitions)
+	// Compute per-partition L (head-series). With the readcache pool
+	// wired, owners come from the readcache assignment log (single
+	// owner per partition); otherwise fall back to the ingester
+	// partition ring (max across the replica set). Both paths
+	// produce the same shape: partition ID -> int64.
+	partitionLByPID := r.partitionLByPID(instanceTotals, pRing, activePartitions, now)
 
 	lm := buildLoadMap(rates)
 	r.admin.setLastStats(lm, partitionLByPID, r.recentMoves, activePartitions)
@@ -572,16 +623,18 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	r.recordRecentMoves(now, actions, lm)
 
 	r.store.apply(now, newAssignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
-	r.pushRangesToIngesters(ctx, newAssignment)
+	r.pushRanges(ctx, newAssignment, now)
 
 	// Second slicer round: balance partition -> readcache instance
 	// using the per-partition load signal we just collected. Only
-	// runs when explicitly enabled and an instance set is configured;
-	// disabling either gate is the production default during the
-	// Phase 2A bring-up so the rebalancer's existing behaviour is
-	// preserved.
-	if r.cfg.ReadcacheSlicer.Enabled && len(r.cfg.ReadcacheSlicer.Instances) > 0 {
-		r.runReadcacheSlicer(now, activePartitions, partitionLByPID, partitionQuerySamples)
+	// runs when explicitly enabled and an instance set is available
+	// (from the ring when wired, otherwise from the static config);
+	// either gate disabled leaves the readcache log untouched, which
+	// is the production default during the Phase 2A bring-up.
+	if r.cfg.ReadcacheSlicer.Enabled {
+		if instances := r.activeReadcacheInstances(); len(instances) > 0 {
+			r.runReadcacheSlicer(now, activePartitions, partitionLByPID, partitionQuerySamples, instances)
+		}
 	}
 
 	// Compute round summary stats using L (memory series) so the admin

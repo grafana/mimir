@@ -36,8 +36,11 @@ ingester:
 distributor:
   nautilus_rebalancer_address: nautilus-rebalancer:9095
   nautilus_ingest_topic: nautilus_ingest
-  readcache:
-    addresses: readcache-1=readcache-1:9095,readcache-2=readcache-2:9095
+  # Static readcache addresses left empty: the distributor resolves
+  # instance IDs to dial targets through the readcache instance ring
+  # (kvstore.store=memberlist below). The static `addresses` map
+  # remains available as an operator escape hatch for pinning specific
+  # pods.
 
 nautilus_rebalancer:
   data_dir: /data/nautilus-rebalancer
@@ -48,9 +51,21 @@ nautilus_rebalancer:
   # only, decoupled from the ingester partition ring (which has 1
   # entry in this single-ingester dev cell).
   active_partition_count: 4
+  # Faster cycle in the dev cell so observability tests don't have
+  # to wait the full production lease window. 30s lookahead on a
+  # 90s lease means one round every ~60s.
+  min_rebalance_interval: 15s
+  max_rebalance_interval: 60s
+  lease_duration: 90s
+  lease_lookahead: 30s
   readcache_slicer:
     enabled: true
-    instances: readcache-1,readcache-2
+    # `instances:` left empty so the slicer enumerates the
+    # readcache instance ring (KV: collectors/readcache) every
+    # round. Adding a pod is "deploy and wait one round"; removing
+    # one (clean shutdown calls LeaveOnStopping) takes effect within
+    # a heartbeat. Setting `instances:` here would re-pin the slicer
+    # to a static list, which is reserved for drain / debug.
     alpha: 1.0
     beta: 0.0
     movement_budget: 0.5
@@ -67,6 +82,12 @@ readcache:
   rebalancer_address: nautilus-rebalancer:9095
   head_compaction_interval: 1m
   local_block_retention: 1h
+  instance_ring:
+    # Memberlist matches the rest of the nautilus stack (ingester,
+    # distributor, query-frontend, etc.) so all rings share a single
+    # gossip cluster.
+    kvstore:
+      store: memberlist
 
 block_builder:
   scheduler_config:

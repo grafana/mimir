@@ -614,7 +614,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, readcacheRing *ring.Ring, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -926,8 +926,15 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	// Some queries in the mixin use the presence of these metrics as indication whether Mimir is running with ingest storage or not.
 	exportStorageModeMetrics(reg, cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled || !cfg.IngestStorageConfig.Enabled, cfg.IngestStorageConfig.Enabled, ingestersRing.ReplicationFactor())
 
-	if cfg.Readcache.Addresses != "" {
-		pool, err := newReadcachePool(cfg.Readcache, log)
+	// Build the readcache pool when either the ring or the static
+	// address map is available. The ring is the production source of
+	// truth; the static map is an operator escape hatch for tests
+	// and degraded-mode bring-ups. When neither is wired, the
+	// distributor still works against ingesters — read-routing to
+	// readcache is simply a no-op (resolveReadcacheClientForPartition
+	// short-circuits on d.readcachePool == nil).
+	if readcacheRing != nil || cfg.Readcache.Addresses != "" {
+		pool, err := newReadcachePool(cfg.Readcache, readcacheRing, log)
 		if err != nil {
 			return nil, err
 		}

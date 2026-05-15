@@ -242,6 +242,29 @@ services:
       minio-init:          {condition: service_completed_successfully}
       nautilus-rebalancer: {condition: service_started}
 
+  # readcache-3 exists in the compose file but is started on demand
+  # via `docker compose up -d readcache-3` from inside a test, so the
+  # default `compose-up.sh` brings up only readcache-1/-2 (the cold-
+  # start fleet) and tests can scale up without editing files.
+  readcache-3:
+    image: mimir
+    hostname: readcache-3
+    profiles: ["scaleup"]
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=readcache'
+      - '-readcache.instance-id=readcache-3'
+    ports:
+      - '8016:8080'
+    volumes:
+      - './config:/mimir/config'
+      - '.data-readcache-3:/data:delegated'
+    depends_on:
+      kafka_1:             {condition: service_healthy}
+      minio-init:          {condition: service_completed_successfully}
+      nautilus-rebalancer: {condition: service_started}
+
   block-builder-scheduler-0:
     image: mimir
     hostname: block-builder-scheduler-0

@@ -12,28 +12,27 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/ring"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/readcache"
 )
 
 // ReadcacheConfig holds the distributor-side configuration for
-// dialling readcache instances. Until the readcache ring is wired up
-// (deferred from phase 2A), the distributor resolves readcache
-// instance IDs to network addresses through a static
-// flag-configurable map.
+// dialling readcache instances. In production the distributor
+// discovers readcache pods via the readcache instance ring; the
+// static Addresses map is retained as an escape hatch for tests and
+// degraded-mode bring-ups where no ring KV is available.
 type ReadcacheConfig struct {
-	// Addresses is a comma-separated list of `instance_id=host:port`
-	// pairs. When the readcache rebalancer publishes a lease
-	// referencing instance_id, the distributor looks up host:port
-	// in this map to dial the pod.
-	//
-	// Once a readcache ring exists, this field becomes redundant
-	// (instance addresses are read from the ring's Desc); for now it
-	// is the bridge that lets the Phase 2C distributor route reads
-	// without a ring.
+	// Addresses is an optional comma-separated list of
+	// `instance_id=host:port` pairs. When set, it takes precedence
+	// over the ring (per-instance), letting an operator pin specific
+	// dial targets. When empty (the production default), the
+	// distributor reads addresses from the readcache ring entries
+	// populated by each pod's BasicLifecycler.
 	Addresses string `yaml:"addresses" category:"experimental"`
 
 	// GRPCClientConfig configures the gRPC client used to dial
@@ -44,7 +43,7 @@ type ReadcacheConfig struct {
 
 // RegisterFlagsWithPrefix registers the readcache pool's flags.
 func (cfg *ReadcacheConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Addresses, prefix+"addresses", "", "Comma-separated list of instance_id=host:port pairs identifying readcache pods this distributor may dial for reads. Replaced by ring-based discovery in a follow-up patch.")
+	f.StringVar(&cfg.Addresses, prefix+"addresses", "", "Optional comma-separated list of instance_id=host:port pairs identifying readcache pods. When set, each listed instance overrides ring-based discovery; when empty (the default), the distributor resolves addresses from the readcache instance ring.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
 }
 
@@ -71,39 +70,59 @@ func parseReadcacheAddresses(s string) (map[string]string, error) {
 	return out, nil
 }
 
+// readcacheRingReader is the subset of *ring.Ring the pool needs.
+// Modelled as an interface so tests can substitute a fake without a
+// real KV.
+type readcacheRingReader interface {
+	GetAllHealthy(op ring.Operation) (ring.ReplicationSet, error)
+}
+
 // readcachePool resolves readcache instance IDs to ingester gRPC
 // clients (readcache implements the same gRPC service as the
 // ingester minus Push, so an ingester client is what we want).
-// Connections are cached per instance and reused.
+// Connections are cached per instance and reused; the cache is
+// invalidated when the ring reports a different address for a
+// previously-known instance (pod restarts that change IP).
 type readcachePool struct {
-	addresses map[string]string
-	dialOpts  []grpc.DialOption
-	logger    log.Logger
+	staticAddresses map[string]string
+	ring            readcacheRingReader
+	dialOpts        []grpc.DialOption
+	logger          log.Logger
 
 	mu      sync.Mutex
 	clients map[string]readcacheClient
 }
 
-// readcacheClient bundles a gRPC connection and a typed IngesterClient.
-// The connection is kept so Stop can close it cleanly.
+// readcacheClient bundles a gRPC connection, a typed IngesterClient,
+// and the address it was dialed against. The address is retained so
+// the pool can detect ring updates that move an instance to a new
+// host:port and drop the stale connection.
 type readcacheClient struct {
 	conn *grpc.ClientConn
 	cli  client.IngesterClient
+	addr string
 }
 
-// newReadcachePool returns a pool that resolves the configured
-// addresses. Returns an error if the addresses string is malformed.
-func newReadcachePool(cfg ReadcacheConfig, logger log.Logger) (*readcachePool, error) {
+// newReadcachePool returns a pool that resolves clients through the
+// readcache ring (preferred) with a static-address override map for
+// tests and operator escape hatches. ringClient may be nil iff the
+// caller has supplied a complete static address map; otherwise the
+// pool would have nowhere to look up unknown instance IDs.
+func newReadcachePool(cfg ReadcacheConfig, ringClient readcacheRingReader, logger log.Logger) (*readcachePool, error) {
 	addresses, err := parseReadcacheAddresses(cfg.Addresses)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing readcache addresses")
+	}
+	if ringClient == nil && len(addresses) == 0 {
+		return nil, errors.New("readcache pool requires either a ring client or a non-empty -distributor.readcache.addresses map")
 	}
 	// Install the X-Scope-OrgID propagation interceptors so reads
 	// arriving at readcache pass the standard StreamServerUserHeaderInterceptor
 	// gate. Without this every QueryStream against a readcache pod
 	// returns "no org id" on the server side.
 	return &readcachePool{
-		addresses: addresses,
+		staticAddresses: addresses,
+		ring:            ringClient,
 		dialOpts: []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithUnaryInterceptor(middleware.ClientUserHeaderInterceptor),
@@ -114,27 +133,62 @@ func newReadcachePool(cfg ReadcacheConfig, logger log.Logger) (*readcachePool, e
 	}, nil
 }
 
+// resolveAddr returns the dial target for instanceID. Static map
+// wins when present so the operator escape hatch isn't shadowed by
+// stale ring entries.
+func (p *readcachePool) resolveAddr(instanceID string) (string, error) {
+	if addr, ok := p.staticAddresses[instanceID]; ok {
+		return addr, nil
+	}
+	if p.ring == nil {
+		return "", fmt.Errorf("readcache instance %q has no configured address and no ring is wired", instanceID)
+	}
+	set, err := p.ring.GetAllHealthy(readcache.ReadcacheRingOp)
+	if err != nil {
+		return "", fmt.Errorf("readcache ring lookup: %w", err)
+	}
+	for _, inst := range set.Instances {
+		if inst.Id == instanceID {
+			return inst.Addr, nil
+		}
+	}
+	return "", fmt.Errorf("readcache instance %q not found in ring", instanceID)
+}
+
 // GetClientForInstance returns (or lazily dials) a client for the
 // readcache instance identified by instanceID. The returned client
 // implements the same gRPC surface as an ingester (minus Push).
+//
+// If the ring reports a different address than the one we previously
+// dialed for this instance (pod restart with a new IP), the cached
+// connection is closed and a fresh dial happens transparently.
 func (p *readcachePool) GetClientForInstance(ctx context.Context, instanceID string) (client.IngesterClient, error) {
+	addr, err := p.resolveAddr(instanceID)
+	if err != nil {
+		return nil, err
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if c, ok := p.clients[instanceID]; ok {
-		return c.cli, nil
+		if c.addr == addr {
+			return c.cli, nil
+		}
+		// Address changed: drop the stale connection. Logging
+		// here makes pod-restart events visible without spamming
+		// the steady-state path.
+		_ = c.conn.Close()
+		delete(p.clients, instanceID)
 	}
-	addr, ok := p.addresses[instanceID]
-	if !ok {
-		return nil, fmt.Errorf("readcache instance %q has no configured address", instanceID)
-	}
+
 	// nolint:staticcheck // grpc.DialContext is deprecated but is still the form used elsewhere in this package.
 	conn, err := grpc.DialContext(ctx, addr, p.dialOpts...)
 	if err != nil {
 		return nil, errors.Wrapf(err, "dialing readcache %s at %s", instanceID, addr)
 	}
 	cli := client.NewIngesterClient(conn)
-	p.clients[instanceID] = readcacheClient{conn: conn, cli: cli}
+	p.clients[instanceID] = readcacheClient{conn: conn, cli: cli, addr: addr}
 	return cli, nil
 }
 

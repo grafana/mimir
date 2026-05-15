@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
@@ -63,6 +64,12 @@ type Readcache struct {
 	// RebalancerAddress is empty.
 	rebalancerConn *grpc.ClientConn
 
+	// instanceLifecycler registers this readcache pod in the
+	// service-discovery ring (KV key "readcache"). Nil when the
+	// caller of New didn't pass one (e.g. unit tests that don't
+	// care about ring registration).
+	instanceLifecycler *ring.BasicLifecycler
+
 	// queryLoad and rangeSeries are the per-partition query-load and
 	// per-hash-range active-series signals that the rebalancer pulls
 	// via HashRangeStats. They live on readcache (not ingester) per
@@ -79,6 +86,15 @@ type partitionState struct {
 	// reader is the Kafka consumer driving samples into this
 	// partition. Nil until startKafkaReader is called.
 	reader *ingest.PartitionReader
+
+	// readerMetrics is the isolated metric registry the
+	// PartitionReader uses for its own counters/histograms. We keep
+	// it on partitionState so that on partition removal we can
+	// unregister it from the main Mimir registry; this is what lets
+	// the rebalancer move a partition off and back onto the same
+	// readcache pod without panicking on duplicate metric
+	// registrations.
+	readerMetrics *prometheus.Registry
 
 	// warm flips to true once the Kafka reader has caught up to the
 	// starting fetch offset enough that read RPCs can be served
@@ -102,9 +118,15 @@ func newPartitionState(partitionID int32) *partitionState {
 
 // New constructs a Readcache. Wiring (Kafka readers, ring registration,
 // rebalancer subscription) happens in starting().
+//
+// instanceLifecycler may be nil; when supplied, the readcache starts
+// it as a subservice so the pod joins the readcache ring (KV key
+// "readcache") and the rebalancer / distributor can discover this
+// instance without static config.
 func New(
 	cfg Config,
 	limits *validation.Overrides,
+	instanceLifecycler *ring.BasicLifecycler,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*Readcache, error) {
@@ -113,13 +135,14 @@ func New(
 	}
 
 	r := &Readcache{
-		cfg:         cfg,
-		limits:      limits,
-		logger:      logger,
-		reg:         reg,
-		partitions:  make(map[int32]*partitionState),
-		queryLoad:   loadstats.NewTracker("cortex_readcache"),
-		rangeSeries: loadstats.NewRangeSeries(),
+		cfg:                cfg,
+		limits:             limits,
+		logger:             logger,
+		reg:                reg,
+		partitions:         make(map[int32]*partitionState),
+		instanceLifecycler: instanceLifecycler,
+		queryLoad:          loadstats.NewTracker("cortex_readcache"),
+		rangeSeries:        loadstats.NewRangeSeries(),
 	}
 
 	if reg != nil {
@@ -133,6 +156,19 @@ func New(
 func (r *Readcache) starting(ctx context.Context) error {
 	if err := os.MkdirAll(r.cfg.DataDir, 0o755); err != nil {
 		return fmt.Errorf("creating readcache data-dir %q: %w", r.cfg.DataDir, err)
+	}
+
+	// Register in the readcache ring BEFORE subscribing to the
+	// rebalancer: the rebalancer's slicer enumerates the ring for
+	// eligible instances, so any partition this pod is meant to own
+	// must wait until our ring entry is visible to the slicer.
+	// Conversely, the WatchReadcacheAssignments stream we open below
+	// is the channel through which the slicer's choice reaches us,
+	// so it must come after the lifecycler is running.
+	if r.instanceLifecycler != nil {
+		if err := services.StartAndAwaitRunning(ctx, r.instanceLifecycler); err != nil {
+			return fmt.Errorf("starting readcache instance lifecycler: %w", err)
+		}
 	}
 
 	if r.cfg.RebalancerAddress != "" {
@@ -235,6 +271,17 @@ func (r *Readcache) stopping(_ error) error {
 			firstErr = err
 		}
 		r.rebalancerConn = nil
+	}
+
+	// Tear the lifecycler down last so the rebalancer's slicer can
+	// still see us as ACTIVE while we drain partitions above. The
+	// LeaveOnStopping delegate inserts the UNREGISTER state into the
+	// ring so a clean shutdown removes the entry rather than waiting
+	// for heartbeat timeout.
+	if r.instanceLifecycler != nil {
+		if err := services.StopAndAwaitTerminated(context.Background(), r.instanceLifecycler); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 	return firstErr
 }

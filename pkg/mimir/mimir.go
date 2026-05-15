@@ -921,6 +921,7 @@ type Mimir struct {
 	CostAttributionManager           *costattribution.Manager
 	NautilusRebalancer               *rebalancer.Rebalancer
 	Readcache                        *readcache.Readcache
+	ReadcacheInstanceRing            *ring.Ring
 
 	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
 	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.

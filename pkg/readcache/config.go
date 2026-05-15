@@ -64,6 +64,11 @@ type Config struct {
 	// store-gateway (fed by blockbuilder) is the canonical source.
 	LocalBlockRetention time.Duration `yaml:"local_block_retention" category:"experimental"`
 
+	// InstanceRing configures the readcache service-discovery ring.
+	// Both the rebalancer (slicer eligibility) and the distributor
+	// (read-path dial target lookup) read from the same KV key.
+	InstanceRing InstanceRingConfig `yaml:"instance_ring"`
+
 	// Config parameters injected dynamically from outside readcache's own config.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
 	BlocksStorage tsdb.BlocksStorageConfig `yaml:"-"`
@@ -84,6 +89,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.OwnedPartitions, "readcache.owned-partitions", "", "Legacy static comma-separated list of int32 partition IDs this readcache instance owns. Ignored when -readcache.rebalancer-address is set. Intended for tests and degraded-mode bring-up only.")
 	f.DurationVar(&cfg.HeadCompactionInterval, "readcache.head-compaction-interval", 1*time.Hour, "How often each partitionTSDB head is considered for compaction.")
 	f.DurationVar(&cfg.LocalBlockRetention, "readcache.local-block-retention", 6*time.Hour, "How long readcache keeps locally-compacted blocks queryable after they leave the head.")
+	cfg.InstanceRing.RegisterFlags(f, logger)
 }
 
 // Validate returns nil if the Config is internally consistent.
@@ -105,6 +111,14 @@ func (cfg *Config) Validate() error {
 	}
 	if _, err := cfg.ParseOwnedPartitions(); err != nil {
 		return fmt.Errorf("owned-partitions: %w", err)
+	}
+	// The pod's own InstanceID and the ID it registers in the ring
+	// must match: WatchReadcacheAssignments uses cfg.InstanceID to
+	// pick its assigned partitions out of the rebalancer's snapshot,
+	// while the rebalancer's slicer keys on whatever ID it sees in
+	// the ring. If those drift, the readcache silently owns nothing.
+	if cfg.InstanceRing.InstanceID != "" && cfg.InstanceID != cfg.InstanceRing.InstanceID {
+		return fmt.Errorf("-readcache.instance-id (%q) must match -readcache.instance-ring.instance-id (%q)", cfg.InstanceID, cfg.InstanceRing.InstanceID)
 	}
 	return nil
 }

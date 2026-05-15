@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
@@ -128,21 +129,36 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 
 	pusher := &partitionPusher{rc: r, partitionID: p.partitionID}
 
-	// Wrap the registerer with a per-partition constant label so that
-	// each PartitionReader's metric registrations don't collide on
-	// the shared mimir-wide registry. Without this wrapper, two
-	// readers calling promauto.NewHistogram with the same name would
-	// panic.
+	// Use an isolated per-partition Registry rather than wrapping
+	// r.reg directly. Wrapping r.reg with a constant label only
+	// distinguishes series — the underlying metric *names* still
+	// collide on the global registry. That bites whenever the
+	// rebalancer moves a partition off this pod and back on later:
+	// the second startKafkaReader call panics with "duplicate
+	// metrics collector registration attempted". By giving each
+	// reader its own Registry and registering that Registry as a
+	// Collector on the main one, we get scrape coverage without
+	// global-namespace conflicts; removePartition then drops the
+	// Registry to free the namespace for the next ownership cycle.
 	var perPartitionReg prometheus.Registerer
+	var partitionReg *prometheus.Registry
 	if r.reg != nil {
-		// We use the label name "reader_partition" instead of
-		// "partition" because some of the inner reader metrics
-		// already use a "partition" variable label, and a constant
-		// label that collides with a variable label is rejected by
-		// the Prometheus client library.
+		partitionReg = prometheus.NewRegistry()
+		// The "reader_partition" constant label keeps scrape output
+		// distinguishable between partitions on the same pod. We
+		// pick this name rather than "partition" because some of
+		// the inner reader metrics already use a "partition"
+		// variable label, and Prometheus rejects a constant label
+		// that collides with a variable label.
 		perPartitionReg = prometheus.WrapRegistererWith(prometheus.Labels{
 			"reader_partition": strconv.Itoa(int(p.partitionID)),
-		}, r.reg)
+		}, partitionReg)
+		// Register the isolated registry as a Collector on the main
+		// one so its metrics still appear at /metrics. Unregister
+		// happens in stopKafkaReaderLocked.
+		if err := r.reg.Register(partitionReg); err != nil {
+			return fmt.Errorf("registering per-partition metric registry: %w", err)
+		}
 	}
 
 	reader, err := ingest.NewPartitionReaderForPusher(
@@ -163,12 +179,20 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	}
 
 	p.reader = reader
+	p.readerMetrics = partitionReg
 	return nil
 }
 
 // stopKafkaReaderLocked stops the partition reader if present. Caller
 // must hold p's owning lock so the reader pointer isn't observed mid-
 // transition.
+//
+// In addition to stopping the reader's services, this releases the
+// per-partition metric registry. Skipping the Unregister here means
+// the next addPartition call for the same partition ID would
+// panic on a duplicate Registry collector registration; this is
+// the readcache slicer's "move partition X off and back onto the
+// same pod" path, which we want to support cleanly.
 func (r *Readcache) stopKafkaReaderLocked(p *partitionState) error {
 	if p.reader == nil {
 		return nil
@@ -178,5 +202,17 @@ func (r *Readcache) stopKafkaReaderLocked(p *partitionState) error {
 		return errors.Wrapf(err, "stopping partition reader for partition %d", p.partitionID)
 	}
 	p.reader = nil
+
+	if p.readerMetrics != nil && r.reg != nil {
+		if !r.reg.Unregister(p.readerMetrics) {
+			// The Unregister no-ops if the collector was never
+			// registered (e.g. r.reg was nil at start time);
+			// we only log when we expected to find it but
+			// didn't, because that would mean we've leaked a
+			// collector and a future re-add will panic.
+			level.Warn(r.logger).Log("msg", "readcache: per-partition metric registry not found in registerer", "partition", p.partitionID)
+		}
+		p.readerMetrics = nil
+	}
 	return nil
 }
