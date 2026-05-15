@@ -56,7 +56,7 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	innerNode      planning.Node
 	materializer   *planning.Materializer
 	queryTimeRange types.QueryTimeRange
-	innerCacheKey  string
+	innerCacheKey  []byte
 	splitRanges    []Range
 
 	generateFunc SplitGenerateFunc[T]
@@ -88,7 +88,7 @@ func NewSplittingFunctionOverRangeVector[T any](
 	materializer *planning.Materializer,
 	timeRange types.QueryTimeRange,
 	ranges []Range,
-	innerCacheKey string,
+	innerCacheKey []byte,
 	cacheFactory *cache.CacheFactory,
 	funcId functions.Function,
 	funcDef functions.FunctionOverRangeVectorDefinition,
@@ -197,7 +197,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 	for _, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
 			// TODO: considering using a single call to retrieve all the cache entries.
-			metadata, annotations, results, found, err := m.cache.Get(ctx, m.FuncId, m.innerCacheKey, splitRange.Start, splitRange.End, m.enableDelayedNameRemoval, m.cacheStats)
+			metadata, annotations, results, found, err := m.cache.Get(ctx, m.FuncId, m.innerCacheKey, splitRange.Start, splitRange.End, m.cacheStats)
 			if err != nil {
 				return err
 			}
@@ -497,7 +497,6 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 	level.Info(logger).Log(
 		"msg", "range vector splitting stats",
 		"function", m.FuncId.PromQLName(),
-		"inner_cache_key", m.innerCacheKey,
 		"query_start_ms", m.queryTimeRange.StartT,
 		"query_end_ms", m.queryTimeRange.EndT,
 		"inner_describe", m.innerNode.Describe(),
@@ -812,7 +811,6 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			p.parent.innerCacheKey,
 			splitRange.Start,
 			splitRange.End,
-			p.parent.enableDelayedNameRemoval,
 			seriesMetadata,
 			ann,
 			p.rangeResults[rangeIdx],
