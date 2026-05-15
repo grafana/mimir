@@ -20,7 +20,7 @@ import (
 // unsafeMutableString cross-tenant guard; see CLAUDE.md).
 type concurrentSearchResultSet struct {
 	child  storage.SearchResultSet
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 	ch     <-chan storage.SearchResult
 	cur    storage.SearchResult
 	done   <-chan struct{}
@@ -45,7 +45,7 @@ func NewConcurrentSearchResultSet(ctx context.Context, child storage.SearchResul
 	if bufSize <= 0 {
 		bufSize = 1
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	ch := make(chan storage.SearchResult, bufSize)
 	done := make(chan struct{})
 	c := &concurrentSearchResultSet{child: child, cancel: cancel, ch: ch, done: done}
@@ -113,7 +113,7 @@ func (c *concurrentSearchResultSet) Err() error {
 // Idempotent.
 func (c *concurrentSearchResultSet) Close() error {
 	c.closeOnce.Do(func() {
-		c.cancel()
+		c.cancel(nil)
 		c.closeErr = c.child.Close()
 		<-c.done
 		for range c.ch { //nolint:revive // intentional drain

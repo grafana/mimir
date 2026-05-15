@@ -115,15 +115,15 @@ func (d *Distributor) openIngesterSearchStreams(
 			return nil, err
 		}
 		// Survivor streams must root in the caller's ctx — see godoc.
-		streamCtx, streamCancel := context.WithCancel(ctx)
+		streamCtx, streamCancel := context.WithCancelCause(ctx)
 		stream, err := open(streamCtx, client.(ingester_client.IngesterClient))
 		if err != nil {
-			streamCancel()
+			streamCancel(err)
 			dscCancel(err)
 			return nil, err
 		}
 		inner := newIngesterSearchResultSet(stream, func() {
-			streamCancel()
+			streamCancel(nil)
 			dscCancel(nil)
 		})
 		return mimirstorage.NewConcurrentSearchResultSet(ctx, inner, ingesterSearchPrefetchBuffer), nil
