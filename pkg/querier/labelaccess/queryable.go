@@ -403,6 +403,7 @@ func (l *labelAccessSeriesSet) Next() bool {
 		l.metrics.incFilteredSeries()
 		seriesToSkip = append(seriesToSkip, l.curSeries)
 	}
+	_ = consumeSkippedSeriesIterators(seriesToSkip, nil)
 	l.curSeries = nil
 	return false
 }
@@ -432,10 +433,15 @@ func (s *skipPreviousSeries) Labels() labels.Labels {
 }
 
 func (s *skipPreviousSeries) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	for _, series := range s.seriesToSkip {
+	iterator = consumeSkippedSeriesIterators(s.seriesToSkip, iterator)
+	return s.inner.Iterator(iterator)
+}
+
+func consumeSkippedSeriesIterators(seriesToSkip []storage.Series, iterator chunkenc.Iterator) chunkenc.Iterator {
+	for _, series := range seriesToSkip {
 		iterator = series.Iterator(iterator)
 	}
-	return s.inner.Iterator(iterator)
+	return iterator
 }
 
 type labelAccessChunkQuerier struct {
@@ -514,6 +520,7 @@ func (l *labelAccessChunkSeriesSet) Next() bool {
 		l.metrics.incFilteredSeries()
 		seriesToSkip = append(seriesToSkip, l.curSeries)
 	}
+	_ = (&skipPreviousChunkSeriesState{seriesToSkip: seriesToSkip}).consume(nil)
 	l.curSeries = nil
 	return false
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
@@ -261,6 +262,74 @@ func TestLabelAccessChunkSeriesSet_Next_ConsumesSkippedSeriesChunksOnceAcrossChu
 	assert.Equal(t, 2, allowedIteratorCalls)
 }
 
+func TestLabelAccessSeriesSet_Next_ConsumesTrailingSkippedSeries(t *testing.T) {
+	var firstSkippedIteratorCalls int
+	var secondSkippedIteratorCalls int
+
+	set := &labelAccessSeriesSet{
+		selectors: []promSelector{
+			{labels.MustNewMatcher(labels.MatchEqual, "allow", "true")},
+		},
+		upstream: &mockSeriesSet{
+			series: []storage.Series{
+				&trackingSeries{
+					labels: labels.FromStrings("allow", "true"),
+				},
+				&trackingSeries{
+					labels:        labels.FromStrings("allow", "false"),
+					iteratorCalls: &firstSkippedIteratorCalls,
+				},
+				&trackingSeries{
+					labels:        labels.FromStrings("allow", "false"),
+					iteratorCalls: &secondSkippedIteratorCalls,
+				},
+			},
+		},
+		logger: log.NewNopLogger(),
+	}
+
+	require.True(t, set.Next())
+	require.False(t, set.Next())
+
+	assert.Equal(t, 1, firstSkippedIteratorCalls)
+	assert.Equal(t, 1, secondSkippedIteratorCalls)
+	assert.Nil(t, set.At())
+}
+
+func TestLabelAccessChunkSeriesSet_Next_ConsumesTrailingSkippedSeries(t *testing.T) {
+	var firstSkippedIteratorCalls int
+	var secondSkippedIteratorCalls int
+
+	set := &labelAccessChunkSeriesSet{
+		selectors: []promSelector{
+			{labels.MustNewMatcher(labels.MatchEqual, "allow", "true")},
+		},
+		upstream: &mockChunkSeriesSet{
+			series: []storage.ChunkSeries{
+				&trackingChunkSeries{
+					labels: labels.FromStrings("allow", "true"),
+				},
+				&trackingChunkSeries{
+					labels:        labels.FromStrings("allow", "false"),
+					iteratorCalls: &firstSkippedIteratorCalls,
+				},
+				&trackingChunkSeries{
+					labels:        labels.FromStrings("allow", "false"),
+					iteratorCalls: &secondSkippedIteratorCalls,
+				},
+			},
+		},
+		logger: log.NewNopLogger(),
+	}
+
+	require.True(t, set.Next())
+	require.False(t, set.Next())
+
+	assert.Equal(t, 1, firstSkippedIteratorCalls)
+	assert.Equal(t, 1, secondSkippedIteratorCalls)
+	assert.Nil(t, set.At())
+}
+
 func TestPromSelector_Matches(t *testing.T) {
 	t.Run("does not match", func(t *testing.T) {
 		matcher1, err := labels.NewMatcher(labels.MatchEqual, "method", "GET")
@@ -287,6 +356,22 @@ func TestPromSelector_Matches(t *testing.T) {
 	})
 }
 
+type trackingSeries struct {
+	labels        labels.Labels
+	iteratorCalls *int
+}
+
+func (s *trackingSeries) Labels() labels.Labels {
+	return s.labels
+}
+
+func (s *trackingSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
+	if s.iteratorCalls != nil {
+		*s.iteratorCalls = *s.iteratorCalls + 1
+	}
+	return chunkenc.NewNopIterator()
+}
+
 type trackingChunkSeries struct {
 	labels        labels.Labels
 	iteratorCalls *int
@@ -297,7 +382,9 @@ func (s *trackingChunkSeries) Labels() labels.Labels {
 }
 
 func (s *trackingChunkSeries) Iterator(chunks.Iterator) chunks.Iterator {
-	*s.iteratorCalls = *s.iteratorCalls + 1
+	if s.iteratorCalls != nil {
+		*s.iteratorCalls = *s.iteratorCalls + 1
+	}
 	return noopChunkIterator{}
 }
 
@@ -307,6 +394,34 @@ func (s *trackingChunkSeries) ChunkCount() (int, error) {
 
 func (s *trackingChunkSeries) IteratorFactory() storage.ChunkIterable {
 	return s
+}
+
+type mockSeriesSet struct {
+	series []storage.Series
+	idx    int
+}
+
+func (s *mockSeriesSet) Next() bool {
+	if s.idx >= len(s.series) {
+		return false
+	}
+	s.idx++
+	return true
+}
+
+func (s *mockSeriesSet) At() storage.Series {
+	if s.idx == 0 || s.idx > len(s.series) {
+		return nil
+	}
+	return s.series[s.idx-1]
+}
+
+func (s *mockSeriesSet) Err() error {
+	return nil
+}
+
+func (s *mockSeriesSet) Warnings() annotations.Annotations {
+	return nil
 }
 
 type mockChunkSeriesSet struct {
