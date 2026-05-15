@@ -183,7 +183,7 @@ func (c *Cache[T]) Set(
 	seriesMetadata []querierpb.SeriesMetadata,
 	annotations querierpb.Annotations,
 	results []T,
-	operatorStats *types.EncodedOperatorEvaluationStats,
+	operatorStats types.EncodedOperatorEvaluationStats,
 	totalSeriesCount int,
 	stats *CacheStats,
 ) error {
@@ -211,7 +211,7 @@ func (c *Cache[T]) Set(
 		SeriesMetadata: seriesMetadata,
 		Annotations:    annotations,
 		Results:        resultBytes,
-		Stats:          operatorStats,
+		Stats:          &operatorStats,
 	}
 
 	data, err := cached.Marshal()

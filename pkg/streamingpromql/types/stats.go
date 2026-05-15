@@ -420,8 +420,8 @@ func sum(s []int64) int64 {
 // Encode returns the encoded form of this instance, suitable for serialization.
 // The encoded form may share memory with this instance, and so may be modified
 // if this instance is modified, and becomes invalid when this instance is closed.
-func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
-	encoded := &EncodedOperatorEvaluationStats{
+func (s *OperatorEvaluationStats) Encode() EncodedOperatorEvaluationStats {
+	encoded := EncodedOperatorEvaluationStats{
 		TimeRange: s.timeRange.Encode(),
 		AllSeries: s.allSeries.Encode(),
 	}

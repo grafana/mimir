@@ -1326,7 +1326,8 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			original := factory(t, ctx, memoryConsumptionTracker)
 
-			encodedBytes, err := original.Encode().Marshal()
+			encodedOriginal := original.Encode()
+			encodedBytes, err := encodedOriginal.Marshal()
 			require.NoError(t, err)
 			encoded := &EncodedOperatorEvaluationStats{}
 			require.NoError(t, encoded.Unmarshal(encodedBytes))

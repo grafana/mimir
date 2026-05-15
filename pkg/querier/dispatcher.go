@@ -596,7 +596,7 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 			return err
 		}
 
-		encodedStats[nodeIndex] = *s.Encode()
+		encodedStats[nodeIndex] = s.Encode()
 	}
 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
