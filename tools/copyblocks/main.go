@@ -39,7 +39,7 @@ import (
 
 type config struct {
 	copyConfig                      objtools.CopyBucketConfig
-	backfill backfillConfig
+	backfill                        backfillConfig
 	minBlockDuration                time.Duration
 	minTime                         flagext.Time
 	maxTime                         flagext.Time
@@ -300,7 +300,7 @@ func newBackfillBlockCopier(ctx context.Context, cfg config, logger log.Logger) 
 			prefixedBkt := objstore.NewPrefixedBucket(objstoreBkt, srcTenant)
 			err := mimirClient.BackfillBlock(ctx, prefixedBkt, blockID, cfg.backfill.sleepTime)
 			if errors.Is(err, client.ErrConflict) {
-				return errBlockAlreadyExists 
+				return errBlockAlreadyExists
 			}
 			return err
 		},

@@ -12,7 +12,7 @@ The currently supported object storage services are Amazon Simple Storage Servic
 - Runs continuously with periodic checks when supplied a time duration with `--copy-period`, otherwise runs one check then exits
 - Include or exclude users from having blocks copied (`--enabled-users` and `--disabled-users`)
 - Configurable minimum block duration (`--min-block-duration`) and (`--skip-no-compact-block-duration-check`) to target blocks that are not awaiting compaction
-- Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range
+- Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range (e.g. `--min-time 2026-01-15T00:00:00Z`)
 - Copy blocks between users with `--user-mapping`. For instance, `--user-mapping="user1:user2,user3:user4"` maps source blocks from `user1` to `user2` and source blocks from `user3` to `user4`. If you don't provide a mapping for a user, it is assumed to be identical to the source user.
 - Log what would be copied without actually copying anything with `--dry-run`
 
@@ -101,13 +101,17 @@ Blocks can be copied to a Mimir instance via the block upload API by setting `--
 
 ```bash
 ./copyblocks \
-  --source.backend gcs \
+  --source.backend s3 \
   --destination.backend backfill \
-  --gcs.source.bucket-name <source bucket name> \
+  --s3.source.bucket-name <source bucket name> \
+  --s3.source.access-key-id <source access key id> \
+  --s3.source.secret-access-key <source secret access key> \
+  --s3.source.endpoint <source endpoint> \
   --backfill.address <mimir address> \
   --backfill.id <tenant id> \
   --backfill.auth-token <bearer token> \
-  --min-block-duration 13h \
+  --min-time 2026-01-15T00:00:00Z \
+  --max-time 2026-02-15T00:00:00Z \
   --dry-run
 ```
 
