@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ingester/client/ingester.proto
+// Provenance-includes-location: https://github.com/prometheus/prometheus/pull/18573
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+// Provenance-includes-copyright: The Prometheus Authors
 
 syntax = "proto3";
 
