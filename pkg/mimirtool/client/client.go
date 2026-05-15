@@ -153,9 +153,26 @@ func (c *MimirClient) Query(ctx context.Context, query string) (*http.Response, 
 }
 
 func (c *MimirClient) doRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
-	req, err := buildRequest(ctx, path, method, *c.endpoint, payload, contentLength)
+	req, resp, err := c.executeRequest(ctx, path, method, payload, contentLength)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := c.checkResponse(resp); err != nil {
+		_ = resp.Body.Close()
+		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
+	}
+
+	return resp, nil
+}
+
+// executeRequest sends the HTTP request and returns the raw response without inspecting its status.
+// Callers that need to interpret specific status codes themselves should use this and then either
+// handle the response directly or fall back to checkResponse.
+func (c *MimirClient) executeRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Request, *http.Response, error) {
+	req, err := buildRequest(ctx, path, method, *c.endpoint, payload, contentLength)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	switch {
@@ -180,15 +197,10 @@ func (c *MimirClient) doRequest(ctx context.Context, path, method string, payloa
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "error during request to Grafana Mimir API", "url", req.URL.String(), "method", req.Method, "err", err.Error())
-		return nil, err
+		return nil, nil, err
 	}
 
-	if err := c.checkResponse(resp); err != nil {
-		_ = resp.Body.Close()
-		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
-	}
-
-	return resp, nil
+	return req, resp, nil
 }
 
 func validateAuthConfig(user, key, authToken string, sigV4Configured bool) error {

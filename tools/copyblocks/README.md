@@ -15,6 +15,7 @@ The currently supported object storage services are Amazon Simple Storage Servic
 - Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range (e.g. `--min-time 2026-01-15T00:00:00Z`)
 - Copy blocks between users with `--user-mapping`. For instance, `--user-mapping="user1:user2,user3:user4"` maps source blocks from `user1` to `user2` and source blocks from `user3` to `user4`. If you don't provide a mapping for a user, it is assumed to be identical to the source user.
 - Log what would be copied without actually copying anything with `--dry-run`
+- Delete copy markers (e.g. `tenant1/markers/01EZED0X3YZMNJ3NHGMJJKMHCR-copied-backfill`) from the source bucket with `--clear-copy-markers` instead of copying blocks, allowing blocks to be re-copied on the next run. Respects `--enabled-users` and `--disabled-users`.
 
 ## Running
 

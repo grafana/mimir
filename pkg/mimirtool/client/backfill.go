@@ -25,6 +25,28 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
+var ErrBlockInvalid = errors.New("block is invalid")
+
+func (c *MimirClient) doBackfillRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
+	req, resp, err := c.executeRequest(ctx, path, method, payload, contentLength)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusRequestEntityTooLarge || resp.StatusCode == http.StatusUnprocessableEntity {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%w: %s %s: %s", ErrBlockInvalid, req.Method, req.URL.String(), body)
+	}
+
+	if err := c.checkResponse(resp); err != nil {
+		_ = resp.Body.Close()
+		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
+	}
+
+	return resp, nil
+}
+
 func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
 	// Upload each block
 	var succeeded, failed, alreadyExists int
@@ -113,7 +135,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, bkt objstore.BucketRead
 	if err := json.NewEncoder(buf).Encode(blockMeta); err != nil {
 		return errors.Wrap(err, "failed to JSON encode payload")
 	}
-	resp, err := c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockIDStr), startBlockUpload), http.MethodPost, buf, int64(buf.Len()))
+	resp, err := c.doBackfillRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockIDStr), startBlockUpload), http.MethodPost, buf, int64(buf.Len()))
 	if err != nil {
 		return errors.Wrap(err, "request to start block upload failed")
 	}
@@ -132,7 +154,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, bkt objstore.BucketRead
 	}
 
 	for {
-		resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockIDStr), finishBlockUpload), http.MethodPost, nil, -1)
+		resp, err = c.doBackfillRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockIDStr), finishBlockUpload), http.MethodPost, nil, -1)
 		if err == nil {
 			drainAndCloseBody(resp)
 			break
@@ -161,7 +183,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, bkt objstore.BucketRead
 		}
 
 		if uploadResult.State == "failed" {
-			return errors.Errorf("block validation failed: %s", uploadResult.Error)
+			return fmt.Errorf("%w: block validation failed: %s", ErrBlockInvalid, uploadResult.Error)
 		}
 
 		// Sleep and then try to get the state again.
@@ -179,7 +201,7 @@ type result struct {
 }
 
 func (c *MimirClient) getBlockUpload(ctx context.Context, url string) (result, error) {
-	resp, err := c.doRequest(ctx, url, http.MethodGet, nil, -1)
+	resp, err := c.doBackfillRequest(ctx, url, http.MethodGet, nil, -1)
 	if err != nil {
 		return result{}, err
 	}
@@ -207,7 +229,7 @@ func (c *MimirClient) uploadBlockFileFromBucket(ctx context.Context, bkt objstor
 
 	level.Info(logctx).Log("msg", "uploading block file", "file", tf.RelPath, "size", tf.SizeBytes)
 
-	resp, err := c.doRequest(ctx, fmt.Sprintf("%s?path=%s", fileUploadEndpoint, url.QueryEscape(tf.RelPath)), http.MethodPost, r, tf.SizeBytes)
+	resp, err := c.doBackfillRequest(ctx, fmt.Sprintf("%s?path=%s", fileUploadEndpoint, url.QueryEscape(tf.RelPath)), http.MethodPost, r, tf.SizeBytes)
 	if err != nil {
 		return errors.Wrapf(err, "request to upload file %q failed", objectName)
 	}

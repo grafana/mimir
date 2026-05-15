@@ -51,6 +51,7 @@ type config struct {
 	userMapping                     flagext.StringSliceCSV
 	dryRun                          bool
 	skipNoCompactBlockDurationCheck bool
+	clearCopyMarkers                bool
 	httpListen                      string
 }
 
@@ -68,11 +69,16 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.Var(&c.userMapping, "user-mapping", "A comma-separated list of (source user):(destination user). If a user is not mapped then its destination user is assumed to be identical.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform any copy; only log what would happen.")
 	f.BoolVar(&c.skipNoCompactBlockDurationCheck, "skip-no-compact-block-duration-check", false, "If set, blocks marked as no-compact are not checked against min-block-duration.")
+	f.BoolVar(&c.clearCopyMarkers, "clear-copy-markers", false, "If set, delete copy markers from the source bucket instead of copying blocks, allowing blocks to be re-copied. Respects -enabled-users and -disabled-users.")
 	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 }
 
 func (c *config) validate() error {
-	if c.isBackfill() {
+	if c.clearCopyMarkers {
+		if err := c.copyConfig.ValidateSource(); err != nil {
+			return err
+		}
+	} else if c.isBackfill() {
 		if err := c.copyConfig.ValidateSource(); err != nil {
 			return err
 		}
@@ -154,6 +160,8 @@ type metrics struct {
 	copyCyclesFailed    prometheus.Counter
 	blocksCopied        prometheus.Counter
 	blocksCopyFailed    prometheus.Counter
+	blocksAlreadyExist  prometheus.Counter
+	blocksInvalid       prometheus.Counter
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
@@ -173,6 +181,14 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		blocksCopyFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_blocks_copy_blocks_failed_total",
 			Help: "Number of blocks that failed to copy.",
+		}),
+		blocksAlreadyExist: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blocks_copy_blocks_already_exist_total",
+			Help: "Number of blocks that were not copied because they already exist on the destination.",
+		}),
+		blocksInvalid: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blocks_copy_blocks_invalid_total",
+			Help: "Number of blocks that were rejected as permanently invalid by the destination.",
 		}),
 	}
 }
@@ -206,6 +222,14 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	if cfg.clearCopyMarkers {
+		if err := clearCopyMarkers(ctx, cfg, logger); err != nil {
+			level.Error(logger).Log("msg", "failed to clear copy markers", "err", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 
 	m := newMetrics(prometheus.DefaultRegisterer)
 
@@ -325,14 +349,7 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 		return fmt.Errorf("failed to list tenants: %w", err)
 	}
 
-	enabledUsers := map[string]struct{}{}
-	disabledUsers := map[string]struct{}{}
-	for _, u := range cfg.enabledUsers {
-		enabledUsers[u] = struct{}{}
-	}
-	for _, u := range cfg.disabledUsers {
-		disabledUsers[u] = struct{}{}
-	}
+	enabledUsers, disabledUsers := cfg.userFilters()
 
 	return concurrency.ForEachUser(ctx, tenants, cfg.tenantConcurrency, func(ctx context.Context, sourceTenantID string) error {
 		if !isAllowedUser(enabledUsers, disabledUsers, sourceTenantID) {
@@ -430,15 +447,20 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 			level.Info(logger).Log("msg", "copying block")
 
 			err = copier.copyBlock(ctx, sourceTenantID, destinationTenantID, blockID, markers[blockID])
-			if errors.Is(err, errBlockAlreadyExists) {
+			switch {
+			case err == nil:
+				m.blocksCopied.Inc()
+				level.Info(logger).Log("msg", "block copied successfully")
+			case errors.Is(err, errBlockAlreadyExists):
+				m.blocksAlreadyExist.Inc()
 				level.Info(logger).Log("msg", "block already exists on destination, writing copy marker")
-			} else if err != nil {
+			case errors.Is(err, client.ErrBlockInvalid):
+				m.blocksInvalid.Inc()
+				level.Warn(logger).Log("msg", "block is permanently invalid and will not be accepted, writing copy marker to skip", "err", err)
+			default:
 				m.blocksCopyFailed.Inc()
 				level.Error(logger).Log("msg", "failed to copy block", "err", err)
 				return err
-			} else {
-				m.blocksCopied.Inc()
-				level.Info(logger).Log("msg", "block copied successfully")
 			}
 
 			// Note that only the blockID and destination name are considered in the copy marker.
@@ -451,6 +473,65 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 			return nil
 		})
 	})
+}
+
+func clearCopyMarkers(ctx context.Context, cfg config, logger log.Logger) error {
+	sourceBucket, err := cfg.copyConfig.SourceBucket(ctx)
+	if err != nil {
+		return err
+	}
+
+	tenants, err := listTenants(ctx, sourceBucket)
+	if err != nil {
+		return fmt.Errorf("failed to list tenants: %w", err)
+	}
+
+	enabledUsers, disabledUsers := cfg.userFilters()
+
+	return concurrency.ForEachUser(ctx, tenants, cfg.tenantConcurrency, func(ctx context.Context, tenantID string) error {
+		if !isAllowedUser(enabledUsers, disabledUsers, tenantID) {
+			return nil
+		}
+
+		logger := log.With(logger, "tenantID", tenantID)
+
+		names, err := listMarkerNamesForTenant(ctx, sourceBucket, tenantID)
+		if err != nil {
+			return fmt.Errorf("failed to list markers for tenant %v: %w", tenantID, err)
+		}
+
+		prefix := tenantID + objtools.Delim + block.MarkersPathname
+		for _, name := range names {
+			if ok, _, _ := IsCopiedToBucketMarkFilename(name); !ok {
+				continue
+			}
+			objectName := prefix + objtools.Delim + name
+			logger := log.With(logger, "marker", objectName)
+			if cfg.dryRun {
+				level.Info(logger).Log("msg", "would delete copy marker, but skipping due to dry-run")
+				continue
+			}
+			level.Info(logger).Log("msg", "deleting copy marker")
+			if err := sourceBucket.Delete(ctx, objectName, objtools.DeleteOptions{}); err != nil {
+				level.Error(logger).Log("msg", "failed to delete copy marker", "err", err)
+				return fmt.Errorf("failed to delete copy marker %v: %w", objectName, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func (c *config) userFilters() (map[string]struct{}, map[string]struct{}) {
+	enabled := make(map[string]struct{}, len(c.enabledUsers))
+	disabled := make(map[string]struct{}, len(c.disabledUsers))
+	for _, u := range c.enabledUsers {
+		enabled[u] = struct{}{}
+	}
+	for _, u := range c.disabledUsers {
+		disabled[u] = struct{}{}
+	}
+	return enabled, disabled
 }
 
 func isAllowedUser(enabled map[string]struct{}, disabled map[string]struct{}, tenantID string) bool {
@@ -587,7 +668,7 @@ type blockMarkers struct {
 	noCompact bool
 }
 
-func listBlockMarkersForTenant(ctx context.Context, bkt objtools.Bucket, tenantID string, destinationBucket string) (map[ulid.ULID]blockMarkers, error) {
+func listMarkerNamesForTenant(ctx context.Context, bkt objtools.Bucket, tenantID string) ([]string, error) {
 	prefix := tenantID + objtools.Delim + block.MarkersPathname
 	listing, err := bkt.List(ctx, objtools.ListOptions{
 		Prefix:    prefix,
@@ -596,7 +677,11 @@ func listBlockMarkersForTenant(ctx context.Context, bkt objtools.Bucket, tenantI
 	if err != nil {
 		return nil, err
 	}
-	markers, err := listing.ToNamesWithoutPrefix(prefix)
+	return listing.ToNamesWithoutPrefix(prefix)
+}
+
+func listBlockMarkersForTenant(ctx context.Context, bkt objtools.Bucket, tenantID string, destinationBucket string) (map[ulid.ULID]blockMarkers, error) {
+	markers, err := listMarkerNamesForTenant(ctx, bkt, tenantID)
 	if err != nil {
 		return nil, err
 	}
