@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
