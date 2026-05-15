@@ -210,7 +210,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 					return err
 				}
 
-				cachedSplit, err := NewCachedSplit(ctx, metadata, annotations, results, stats, m, splitRange.End)
+				cachedSplit, err := NewCachedSplit(ctx, metadata, annotations, results, stats, m)
 				if err != nil {
 					return err
 				}
@@ -633,9 +633,8 @@ func NewCachedSplit[T any](
 	protoMetadata []querierpb.SeriesMetadata,
 	annotations querierpb.Annotations,
 	results []T,
-	protoStats *types.EncodedOperatorEvaluationStats,
+	protoStats types.EncodedOperatorEvaluationStats,
 	parent *FunctionOverRangeVectorSplit[T],
-	endT int64,
 ) (*CachedSplit[T], error) {
 	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(protoMetadata), parent.MemoryConsumptionTracker)
 	if err != nil {
@@ -651,26 +650,10 @@ func NewCachedSplit[T any](
 		}
 	}
 
-	var stats *types.OperatorEvaluationStats
+	stats, err := protoStats.Decode(ctx, parent.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
 
-	if protoStats == nil {
-		// The cached split was evaluated before support for stats was introduced.
-		//
-		// For simplicity during upgrades, and for consistency with remote execution's behaviour during the same circumstances,
-		// we use an empty set of stats.
-		logger := spanlogger.FromContext(ctx, parent.logger)
-		level.Warn(logger).Log("msg", "NewCachedSplit expected statistics in the cache entry, but none were present, so using an empty set of statistics. This is expected following an upgrade where the cache contains entries without statistics, but a bug otherwise.")
-
-		stats, err = types.NewOperatorEvaluationStats(ctx, types.NewInstantQueryTimeRange(promts.Time(endT)), parent.MemoryConsumptionTracker, 0)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		stats, err = protoStats.Decode(ctx, parent.MemoryConsumptionTracker)
-		if err != nil {
-			return nil, err
-
-		}
 	}
 
 	return &CachedSplit[T]{

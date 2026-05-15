@@ -26,5 +26,5 @@ message CachedSeries {
   repeated querierpb.SeriesMetadata series_metadata = 4 [(gogoproto.nullable) = false];
   bytes results = 5;
   querierpb.Annotations annotations = 6 [(gogoproto.nullable) = false];
-  types.EncodedOperatorEvaluationStats stats = 7;
+  types.EncodedOperatorEvaluationStats stats = 7 [(gogoproto.nullable) = false];
 }
