@@ -180,5 +180,5 @@ func TestBackfillBlock_AlreadyExists(t *testing.T) {
 
 	err = mimirClient.BackfillBlock(context.Background(), bkt, blockID, 0)
 	srv.Close()
-	require.ErrorIs(t, err, errConflict)
+	require.ErrorIs(t, err, ErrConflict)
 }

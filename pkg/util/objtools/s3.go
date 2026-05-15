@@ -86,6 +86,17 @@ func (bkt *s3Bucket) Get(ctx context.Context, objectName string, options GetOpti
 	return obj, nil
 }
 
+func (bkt *s3Bucket) Exists(ctx context.Context, objectName string) (bool, error) {
+	_, err := bkt.client.StatObject(ctx, bkt.bucketName, objectName, minio.StatObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == minio.NoSuchKey {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 const maxSingleCopySize int64 = 5 * (1024 * 1024 * 1024) // 5 GiB
 
 func (bkt *s3Bucket) ServerSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error {

@@ -31,7 +31,7 @@ const (
 
 var (
 	ErrResourceNotFound = errors.New("requested resource not found")
-	errConflict         = errors.New("conflict with current state of target resource")
+	ErrConflict         = errors.New("conflict with current state of target resource")
 	errTooManyRequests  = errors.New("too many requests")
 )
 
@@ -230,7 +230,7 @@ func (c *MimirClient) checkResponse(r *http.Response) error {
 	}
 	if r.StatusCode == http.StatusConflict {
 		level.Debug(c.logger).Log("msg", msg, "status", r.Status, "body", bodyStr)
-		return errConflict
+		return ErrConflict
 	}
 	if r.StatusCode == http.StatusTooManyRequests {
 		level.Debug(c.logger).Log("msg", msg, "status", r.Status, "body", bodyStr)

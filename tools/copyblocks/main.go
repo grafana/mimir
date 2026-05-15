@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -26,7 +27,6 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -39,6 +39,7 @@ import (
 
 type config struct {
 	copyConfig                      objtools.CopyBucketConfig
+	backfill backfillConfig
 	minBlockDuration                time.Duration
 	minTime                         flagext.Time
 	maxTime                         flagext.Time
@@ -51,8 +52,6 @@ type config struct {
 	dryRun                          bool
 	skipNoCompactBlockDurationCheck bool
 	httpListen                      string
-
-	backfill backfillConfig
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
@@ -124,6 +123,8 @@ func (c *config) parseUserMapping() (map[string]string, error) {
 }
 
 const backfillBackend = "backfill"
+
+var errBlockAlreadyExists = errors.New("block already exists")
 
 type backfillConfig struct {
 	clientConfig client.Config
@@ -268,6 +269,13 @@ func newBucketBlockCopier(ctx context.Context, cfg config) (objtools.Bucket, *bl
 	return sourceBucket, &blockCopier{
 		name: destBucket.Name(),
 		copyBlock: func(ctx context.Context, srcTenant, dstTenant string, blockID ulid.ULID, markers blockMarkers) error {
+			exists, err := destBucket.Exists(ctx, metaObjectName(dstTenant, blockID))
+			if err != nil {
+				return fmt.Errorf("failed to check if block already exists on destination: %w", err)
+			}
+			if exists {
+				return errBlockAlreadyExists
+			}
 			return copySingleBlock(ctx, srcTenant, dstTenant, blockID, markers, sourceBucket, copyFunc)
 		},
 	}, nil
@@ -284,13 +292,17 @@ func newBackfillBlockCopier(ctx context.Context, cfg config, logger log.Logger) 
 	}
 	mimirClient, err := client.New(cfg.backfill.clientConfig, logger)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to create Mimir client for backfill")
+		return nil, nil, fmt.Errorf("failed to create Mimir client for backfill: %w", err)
 	}
 	return sourceBucket, &blockCopier{
 		name: "backfill",
 		copyBlock: func(ctx context.Context, srcTenant, _ string, blockID ulid.ULID, _ blockMarkers) error {
 			prefixedBkt := objstore.NewPrefixedBucket(objstoreBkt, srcTenant)
-			return mimirClient.BackfillBlock(ctx, prefixedBkt, blockID, cfg.backfill.sleepTime)
+			err := mimirClient.BackfillBlock(ctx, prefixedBkt, blockID, cfg.backfill.sleepTime)
+			if errors.Is(err, client.ErrConflict) {
+				return errBlockAlreadyExists 
+			}
+			return err
 		},
 	}, nil
 }
@@ -310,7 +322,7 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 
 	tenants, err := listTenants(ctx, sourceBucket)
 	if err != nil {
-		return errors.Wrapf(err, "failed to list tenants")
+		return fmt.Errorf("failed to list tenants: %w", err)
 	}
 
 	enabledUsers := map[string]struct{}{}
@@ -337,13 +349,13 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 		blocks, err := listBlocksForTenant(ctx, sourceBucket, sourceTenantID)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to list blocks for tenant", "err", err)
-			return errors.Wrapf(err, "failed to list blocks for tenant %v", sourceTenantID)
+			return fmt.Errorf("failed to list blocks for tenant %v: %w", sourceTenantID, err)
 		}
 
 		markers, err := listBlockMarkersForTenant(ctx, sourceBucket, sourceTenantID, copier.name)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to list blocks markers for tenant", "err", err)
-			return errors.Wrapf(err, "failed to list block markers for tenant %v", sourceTenantID)
+			return fmt.Errorf("failed to list block markers for tenant %v: %w", sourceTenantID, err)
 		}
 
 		var blockIDs []string
@@ -418,17 +430,19 @@ func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, 
 			level.Info(logger).Log("msg", "copying block")
 
 			err = copier.copyBlock(ctx, sourceTenantID, destinationTenantID, blockID, markers[blockID])
-			if err != nil {
+			if errors.Is(err, errBlockAlreadyExists) {
+				level.Info(logger).Log("msg", "block already exists on destination, writing copy marker")
+			} else if err != nil {
 				m.blocksCopyFailed.Inc()
 				level.Error(logger).Log("msg", "failed to copy block", "err", err)
 				return err
+			} else {
+				m.blocksCopied.Inc()
+				level.Info(logger).Log("msg", "block copied successfully")
 			}
 
-			m.blocksCopied.Inc()
-			level.Info(logger).Log("msg", "block copied successfully")
-
-			// Note that only the blockID and destination bucket are considered in the copy marker.
-			// If multiple tenants in the same destination bucket are copied to from the same source tenant the markers will currently clash.
+			// Note that only the blockID and destination name are considered in the copy marker.
+			// If multiple tenants in the same destination are copied to from the same source tenant the markers will currently clash.
 			err = uploadCopiedMarkerFile(ctx, sourceBucket, sourceTenantID, blockID, copier.name)
 			if err != nil {
 				level.Error(logger).Log("msg", "failed to upload copied-marker file for block", "block", blockID.String(), "err", err)
@@ -462,7 +476,7 @@ func copySingleBlock(ctx context.Context, sourceTenantID, destinationTenantID st
 		Recursive: true,
 	})
 	if err != nil {
-		return errors.Wrapf(err, "copySingleBlock: failed to list block files for %v/%v", sourceTenantID, blockID.String())
+		return fmt.Errorf("copySingleBlock: failed to list block files for %v/%v: %w", sourceTenantID, blockID.String(), err)
 	}
 	paths := result.ToNames()
 
@@ -494,7 +508,7 @@ func copySingleBlock(ctx context.Context, sourceTenantID, destinationTenantID st
 		}
 		err := copyFunc(ctx, fullPath, options)
 		if err != nil {
-			return errors.Wrapf(err, "copySingleBlock: failed to copy %v", fullPath)
+			return fmt.Errorf("copySingleBlock: failed to copy %v: %w", fullPath, err)
 		}
 	}
 
@@ -504,14 +518,21 @@ func copySingleBlock(ctx context.Context, sourceTenantID, destinationTenantID st
 func uploadCopiedMarkerFile(ctx context.Context, bkt objtools.Bucket, tenantID string, blockID ulid.ULID, targetBucketName string) error {
 	objectName := tenantID + objtools.Delim + CopiedToBucketMarkFilename(blockID, targetBucketName)
 	err := bkt.Upload(ctx, objectName, bytes.NewReader([]byte{}), 0)
-	return errors.Wrap(err, "uploadCopiedMarkerFile")
+	if err != nil {
+		return fmt.Errorf("uploadCopiedMarkerFile: %w", err)
+	}
+	return nil
+}
+
+func metaObjectName(tenantID string, blockID ulid.ULID) string {
+	return tenantID + objtools.Delim + blockID.String() + objtools.Delim + block.MetaFilename
 }
 
 func loadMetaJSONFile(ctx context.Context, bkt objtools.Bucket, tenantID string, blockID ulid.ULID) (block.Meta, error) {
-	objectName := tenantID + objtools.Delim + blockID.String() + objtools.Delim + block.MetaFilename
+	objectName := metaObjectName(tenantID, blockID)
 	r, err := bkt.Get(ctx, objectName, objtools.GetOptions{})
 	if err != nil {
-		return block.Meta{}, errors.Wrapf(err, "failed to read %v", objectName)
+		return block.Meta{}, fmt.Errorf("failed to read %v: %w", objectName, err)
 	}
 
 	var m block.Meta
@@ -521,10 +542,10 @@ func loadMetaJSONFile(ctx context.Context, bkt objtools.Bucket, tenantID string,
 	closeErr := r.Close() // do this before any return.
 
 	if err != nil {
-		return block.Meta{}, errors.Wrapf(err, "read %v", objectName)
+		return block.Meta{}, fmt.Errorf("read %v: %w", objectName, err)
 	}
 	if closeErr != nil {
-		return block.Meta{}, errors.Wrapf(err, "close reader for %v", objectName)
+		return block.Meta{}, fmt.Errorf("close reader for %v: %w", objectName, closeErr)
 	}
 
 	return m, nil

@@ -54,7 +54,7 @@ func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime t
 		}
 
 		if err := c.backfillBlock(ctx, fsBkt, blockID, logctx, sleepTime); err != nil {
-			if errors.Is(err, errConflict) {
+			if errors.Is(err, ErrConflict) {
 				level.Warn(logctx).Log("msg", "block already exists on the server")
 				alreadyExists++
 			} else {

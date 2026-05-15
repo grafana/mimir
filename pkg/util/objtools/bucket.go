@@ -26,6 +26,7 @@ const (
 // Bucket is an object storage interface intended to be used by tools that require functionality that isn't in objstore
 type Bucket interface {
 	Get(ctx context.Context, objectName string, options GetOptions) (io.ReadCloser, error)
+	Exists(ctx context.Context, objectName string) (bool, error)
 	ServerSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error
 	ClientSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error
 	List(ctx context.Context, options ListOptions) (*ListResult, error)
