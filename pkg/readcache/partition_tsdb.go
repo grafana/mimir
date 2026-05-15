@@ -11,13 +11,16 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // partitionTSDB is the readcache equivalent of pkg/ingester.userTSDB,
@@ -45,14 +48,19 @@ type partitionTSDB struct {
 
 // openPartitionTSDB opens (or creates) the on-disk TSDB at
 // <data-dir>/<tenant>/partition-<id>/, with compaction enabled and
-// shipping disabled.
+// shipping disabled. TSDB options mirror pkg/ingester.createTSDB for
+// fields that affect ingest and query semantics (OOO window, exemplars,
+// postings caches, isolation), using per-tenant limits from Overrides
+// the same way the ingester does.
 func openPartitionTSDB(
 	tenantID string,
 	partitionID int32,
 	rootDir string,
 	cfg mimir_tsdb.TSDBConfig,
+	limits *validation.Overrides,
+	seriesHashCache *hashcache.SeriesHashCache,
+	headPostingsForMatchersCacheFactory, blockPostingsForMatchersCacheFactory tsdb.PostingsForMatchersCacheFactory,
 	logger log.Logger,
-	reg prometheus.Registerer,
 ) (*partitionTSDB, error) {
 	dir := filepath.Join(rootDir, tenantID, fmt.Sprintf("partition-%d", partitionID))
 
@@ -64,30 +72,48 @@ func openPartitionTSDB(
 		blockRanges = []int64{int64(2 * time.Hour / time.Millisecond)}
 	}
 
-	// Start from Prometheus' DefaultOptions so structurally-required
-	// fields (e.g. the postings-for-matchers cache metrics) are
-	// initialized; nil metrics here panic the first query against the
-	// head. Then layer Mimir TSDBConfig knobs on top.
-	opts := tsdb.DefaultOptions()
-	opts.RetentionDuration = cfg.Retention.Milliseconds()
-	opts.MinBlockDuration = blockRanges[0]
-	opts.MaxBlockDuration = blockRanges[len(blockRanges)-1]
-	opts.WALCompression = cfg.WALCompressionType()
-	opts.NoLockfile = false
-	if cfg.StripeSize > 0 {
-		opts.StripeSize = cfg.StripeSize
+	var oooTW time.Duration
+	var maxExemplars int64
+	if limits != nil {
+		oooTW = limits.OutOfOrderTimeWindow(tenantID)
+		if oooTW < 0 {
+			oooTW = 0
+		}
+		maxExemplars = int64(limits.MaxGlobalExemplarsPerUser(tenantID))
+		if maxExemplars < 0 {
+			maxExemplars = 0
+		}
 	}
-	if cfg.HeadChunksWriteQueueSize > 0 {
-		opts.HeadChunksWriteQueueSize = cfg.HeadChunksWriteQueueSize
+
+	opts := &tsdb.Options{
+		RetentionDuration:                    cfg.Retention.Milliseconds(),
+		MinBlockDuration:                     blockRanges[0],
+		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
+		NoLockfile:                           true,
+		StripeSize:                           cfg.StripeSize,
+		HeadChunksWriteBufferSize:            cfg.HeadChunksWriteBufferSize,
+		HeadChunksEndTimeVariance:            cfg.HeadChunksEndTimeVariance,
+		WALCompression:                       cfg.WALCompressionType(),
+		WALSegmentSize:                       cfg.WALSegmentSizeBytes,
+		WALReplayConcurrency:                 cfg.WALReplayConcurrency,
+		EnableExemplarStorage:                true,
+		MaxExemplars:                         maxExemplars,
+		SeriesHashCache:                      seriesHashCache,
+		EnableMemorySnapshotOnShutdown:       cfg.MemorySnapshotOnShutdown,
+		EnableBiggerOOOBlockForOldSamples:    cfg.BiggerOutOfOrderBlocksForOldSamples,
+		IsolationDisabled:                    true,
+		HeadChunksWriteQueueSize:             cfg.HeadChunksWriteQueueSize,
+		EnableOverlappingCompaction:          false,
+		EnableSharding:                       true,
+		OutOfOrderTimeWindow:                 oooTW.Milliseconds(),
+		OutOfOrderCapMax:                     int64(cfg.OutOfOrderCapacityMax),
+		TimelyCompaction:                     cfg.TimelyHeadCompaction,
+		SharedPostingsForMatchersCache:       cfg.SharedPostingsForMatchersCache,
+		PostingsForMatchersCacheKeyFunc:      tenant.TenantID,
+		HeadPostingsForMatchersCacheFactory:  headPostingsForMatchersCacheFactory,
+		BlockPostingsForMatchersCacheFactory: blockPostingsForMatchersCacheFactory,
+		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
 	}
-	opts.HeadPostingsForMatchersCacheForce = cfg.HeadPostingsForMatchersCacheForce
-	opts.BlockPostingsForMatchersCacheForce = cfg.BlockPostingsForMatchersCacheForce
-	// DefaultOptions leaves PostingsClonerFactory nil, but the
-	// internal head/block cache factories the TSDB synthesizes when
-	// no explicit factory is supplied require it (otherwise the
-	// first PostingsForMatchers call nil-derefs in
-	// postingsForMatchersPromise). Match what the ingester wires up.
-	opts.PostingsClonerFactory = lookupplan.ActualSelectedPostingsClonerFactory{}
 
 	db, err := tsdb.Open(dir, util_log.SlogFromGoKit(userLogger), nil, opts, nil)
 	if err != nil {
@@ -104,6 +130,37 @@ func openPartitionTSDB(
 		dir:         dir,
 		db:          db,
 	}, nil
+}
+
+// applyTenantTSDBSettings reapplies per-tenant TSDB settings from runtime
+// limits (mirrors ingester.applyTSDBSettings).
+func (p *partitionTSDB) applyTenantTSDBSettings(limits *validation.Overrides, logger log.Logger) error {
+	if limits == nil || p.db == nil {
+		return nil
+	}
+	oooTW := limits.OutOfOrderTimeWindow(p.tenantID)
+	if oooTW < 0 {
+		oooTW = 0
+	}
+	maxExemplars := int64(limits.MaxGlobalExemplarsPerUser(p.tenantID))
+	if maxExemplars < 0 {
+		maxExemplars = 0
+	}
+	cfg := config.Config{
+		StorageConfig: config.StorageConfig{
+			ExemplarsConfig: &config.ExemplarsConfig{
+				MaxExemplars: maxExemplars,
+			},
+			TSDBConfig: &config.TSDBConfig{
+				OutOfOrderTimeWindow: oooTW.Milliseconds(),
+			},
+		},
+	}
+	if err := p.db.ApplyConfig(&cfg); err != nil {
+		level.Error(logger).Log("msg", "failed to apply config to readcache partition TSDB", "user", p.tenantID, "partition", p.partitionID, "err", err)
+		return err
+	}
+	return nil
 }
 
 // Appender returns a fresh Appender for ingesting samples into this

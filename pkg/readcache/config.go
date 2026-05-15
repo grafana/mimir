@@ -59,6 +59,12 @@ type Config struct {
 	// handles long-term blocks).
 	HeadCompactionInterval time.Duration `yaml:"head_compaction_interval" category:"experimental"`
 
+	// TSDBConfigUpdatePeriod is how often readcache reapplies per-tenant
+	// TSDB settings from runtime limits (out-of-order window, exemplar
+	// cap), matching the ingester's -ingester.tsdb-config-update-period
+	// behaviour.
+	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
+
 	// LocalBlockRetention is how long readcache keeps locally-compacted
 	// blocks queryable after they leave the head. Beyond this window,
 	// store-gateway (fed by blockbuilder) is the canonical source.
@@ -88,6 +94,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.RebalancerAddress, "readcache.rebalancer-address", "", "gRPC address of the nautilus rebalancer. When set, the readcache pod subscribes to WatchReadcacheAssignments and owns only partitions whose active lease names this instance. Production deployments must set this; -readcache.owned-partitions is only consulted as a fallback when this is empty.")
 	f.StringVar(&cfg.OwnedPartitions, "readcache.owned-partitions", "", "Legacy static comma-separated list of int32 partition IDs this readcache instance owns. Ignored when -readcache.rebalancer-address is set. Intended for tests and degraded-mode bring-up only.")
 	f.DurationVar(&cfg.HeadCompactionInterval, "readcache.head-compaction-interval", 1*time.Hour, "How often each partitionTSDB head is considered for compaction.")
+	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "readcache.tsdb-config-update-period", 15*time.Second, "Period with which readcache updates per-tenant TSDB configuration from runtime limits (e.g. out-of-order samples window, exemplars), mirroring the ingester.")
 	f.DurationVar(&cfg.LocalBlockRetention, "readcache.local-block-retention", 6*time.Hour, "How long readcache keeps locally-compacted blocks queryable after they leave the head.")
 	cfg.InstanceRing.RegisterFlags(f, logger)
 }
@@ -105,6 +112,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.HeadCompactionInterval <= 0 {
 		return fmt.Errorf("head-compaction-interval must be positive")
+	}
+	if cfg.TSDBConfigUpdatePeriod <= 0 {
+		return fmt.Errorf("tsdb-config-update-period must be positive")
 	}
 	if cfg.LocalBlockRetention < 0 {
 		return fmt.Errorf("local-block-retention must be non-negative")

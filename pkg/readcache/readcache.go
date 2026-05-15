@@ -17,12 +17,16 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/nautilus/loadstats"
 	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
@@ -76,6 +80,12 @@ type Readcache struct {
 	// the plan.
 	queryLoad   *loadstats.Tracker
 	rangeSeries *loadstats.RangeSeries
+
+	// seriesHashCache and postings-for-matchers cache factories mirror
+	// the ingester: shared across partition TSDBs on this process.
+	seriesHashCache                      *hashcache.SeriesHashCache
+	headPostingsForMatchersCacheFactory  tsdb.PostingsForMatchersCacheFactory
+	blockPostingsForMatchersCacheFactory tsdb.PostingsForMatchersCacheFactory
 }
 
 // partitionState bundles the per-partition Kafka reader and the
@@ -134,6 +144,7 @@ func New(
 		return nil, fmt.Errorf("validating readcache config: %w", err)
 	}
 
+	tsdbCfg := cfg.BlocksStorage.TSDB
 	r := &Readcache{
 		cfg:                cfg,
 		limits:             limits,
@@ -144,6 +155,42 @@ func New(
 		queryLoad:          loadstats.NewTracker("cortex_readcache"),
 		rangeSeries:        loadstats.NewRangeSeries(),
 	}
+
+	r.seriesHashCache = hashcache.NewSeriesHashCache(tsdbCfg.SeriesHashCacheMaxBytes)
+
+	var headPostingsMetrics *tsdb.PostingsForMatchersCacheMetrics
+	var blockPostingsMetrics *tsdb.PostingsForMatchersCacheMetrics
+	if reg != nil {
+		headPostingsMetrics = tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_readcache_tsdb_head_", reg))
+		blockPostingsMetrics = tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_readcache_tsdb_block_", reg))
+	} else {
+		headPostingsMetrics = tsdb.NewPostingsForMatchersCacheMetrics(nil)
+		blockPostingsMetrics = tsdb.NewPostingsForMatchersCacheMetrics(nil)
+	}
+	r.headPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(tsdb.PostingsForMatchersCacheConfig{
+		Shared:                tsdbCfg.SharedPostingsForMatchersCache,
+		KeyFunc:               tenant.TenantID,
+		Invalidation:          tsdbCfg.HeadPostingsForMatchersCacheInvalidation,
+		CacheVersions:         tsdbCfg.HeadPostingsForMatchersCacheVersions,
+		TTL:                   tsdbCfg.HeadPostingsForMatchersCacheTTL,
+		MaxItems:              tsdbCfg.HeadPostingsForMatchersCacheMaxItems,
+		MaxBytes:              tsdbCfg.HeadPostingsForMatchersCacheMaxBytes,
+		Force:                 tsdbCfg.HeadPostingsForMatchersCacheForce,
+		Metrics:               headPostingsMetrics,
+		PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
+	})
+	r.blockPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(tsdb.PostingsForMatchersCacheConfig{
+		Shared:                tsdbCfg.SharedPostingsForMatchersCache,
+		KeyFunc:               tenant.TenantID,
+		Invalidation:          false,
+		CacheVersions:         0,
+		TTL:                   tsdbCfg.BlockPostingsForMatchersCacheTTL,
+		MaxItems:              tsdbCfg.BlockPostingsForMatchersCacheMaxItems,
+		MaxBytes:              tsdbCfg.BlockPostingsForMatchersCacheMaxBytes,
+		Force:                 tsdbCfg.BlockPostingsForMatchersCacheForce,
+		Metrics:               blockPostingsMetrics,
+		PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
+	})
 
 	if reg != nil {
 		reg.MustRegister(r.queryLoad)
@@ -232,6 +279,9 @@ func (r *Readcache) running(ctx context.Context) error {
 	compactT := time.NewTicker(r.cfg.HeadCompactionInterval)
 	defer compactT.Stop()
 
+	tsdbUpdateT := time.NewTicker(r.cfg.TSDBConfigUpdatePeriod)
+	defer tsdbUpdateT.Stop()
+
 	loadStatsTickT := time.NewTicker(loadstats.TickInterval)
 	defer loadStatsTickT.Stop()
 
@@ -249,6 +299,8 @@ func (r *Readcache) running(ctx context.Context) error {
 			return nil
 		case <-compactT.C:
 			r.compactHeads()
+		case <-tsdbUpdateT.C:
+			r.applyPartitionTSDBTenantSettings()
 		case <-loadStatsTickT.C:
 			r.queryLoad.Tick()
 		}
@@ -406,8 +458,11 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 		partitionID,
 		r.cfg.DataDir,
 		r.cfg.BlocksStorage.TSDB,
+		r.limits,
+		r.seriesHashCache,
+		r.headPostingsForMatchersCacheFactory,
+		r.blockPostingsForMatchersCacheFactory,
 		r.logger,
-		r.reg,
 	)
 	if err != nil {
 		return nil, err
@@ -460,6 +515,30 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 		p.tenantsMu.RUnlock()
 	}
 	return out, nil
+}
+
+func (r *Readcache) applyPartitionTSDBTenantSettings() {
+	if r.limits == nil {
+		return
+	}
+	r.partitionMu.RLock()
+	parts := make([]*partitionState, 0, len(r.partitions))
+	for _, p := range r.partitions {
+		parts = append(parts, p)
+	}
+	r.partitionMu.RUnlock()
+
+	for _, p := range parts {
+		p.tenantsMu.RLock()
+		dbs := make([]*partitionTSDB, 0, len(p.tenants))
+		for _, db := range p.tenants {
+			dbs = append(dbs, db)
+		}
+		p.tenantsMu.RUnlock()
+		for _, db := range dbs {
+			_ = db.applyTenantTSDBSettings(r.limits, r.logger)
+		}
+	}
 }
 
 func (r *Readcache) compactHeads() {
