@@ -7,11 +7,14 @@ package lazyquery
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
 // LazyQueryable wraps a storage.Queryable
@@ -78,6 +81,35 @@ func (l LazyQuerier) LabelValues(ctx context.Context, name string, hints *storag
 // LabelNames implements Storage.Querier
 func (l LazyQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return l.next.LabelNames(ctx, hints, matchers...)
+}
+
+// searcher is the Mimir-side cross-source Searcher interface that
+// LazyQuerier defers to when the wrapped querier supports label/value
+// search. Defined locally to avoid an import cycle on pkg/querier.
+type searcher interface {
+	SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+}
+
+// SearchLabelNames passes through to the wrapped querier when it implements
+// search; otherwise surfaces a clear error. Prometheus's lazySearchResultSet
+// already covers deferred init at the merge layer, so no extra wrapping is
+// needed here — this is a straight pass-through.
+func (l LazyQuerier) SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := l.next.(searcher)
+	if !ok {
+		return storage.ErrSearchResultSet(fmt.Errorf("wrapped querier %T does not implement search", l.next))
+	}
+	return s.SearchLabelNames(ctx, params, hints, matchers...)
+}
+
+// SearchLabelValues mirrors SearchLabelNames.
+func (l LazyQuerier) SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := l.next.(searcher)
+	if !ok {
+		return storage.ErrSearchResultSet(fmt.Errorf("wrapped querier %T does not implement search", l.next))
+	}
+	return s.SearchLabelValues(ctx, name, params, hints, matchers...)
 }
 
 // Close implements Storage.Querier
