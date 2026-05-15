@@ -19,13 +19,21 @@ import (
 // request-pool buffer aliasing the child might use internally (Mimir's
 // unsafeMutableString cross-tenant guard; see CLAUDE.md).
 type concurrentSearchResultSet struct {
-	child     storage.SearchResultSet
-	cancel    context.CancelFunc
-	ch        <-chan storage.SearchResult
-	cur       storage.SearchResult
-	done      <-chan struct{}
-	err       error
-	warns     annotations.Annotations
+	child  storage.SearchResultSet
+	cancel context.CancelFunc
+	ch     <-chan storage.SearchResult
+	cur    storage.SearchResult
+	done   <-chan struct{}
+
+	// mu guards err and warns. Consumers (notably the merge primitive's
+	// per-Next Err()/Warnings() checks) may read at any time during
+	// iteration; the producer writes once when it exits. The channel
+	// close alone is not a sufficient barrier because readers that
+	// haven't observed it (mid-iteration Err()) would race the writer.
+	mu    sync.Mutex
+	err   error
+	warns annotations.Annotations
+
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -52,8 +60,12 @@ func NewConcurrentSearchResultSet(ctx context.Context, child storage.SearchResul
 		defer close(done)
 		defer close(ch)
 		defer func() {
-			c.err = child.Err()
-			c.warns = child.Warnings()
+			err := child.Err()
+			warns := child.Warnings()
+			c.mu.Lock()
+			c.err = err
+			c.warns = warns
+			c.mu.Unlock()
 		}()
 		for child.Next() {
 			r := child.At()
@@ -69,8 +81,9 @@ func NewConcurrentSearchResultSet(ctx context.Context, child storage.SearchResul
 }
 
 // Next blocks until the next result is available, the producer exits, or
-// ctx is cancelled. After Next returns false, Err and Warnings are stable
-// (the producer's writes are synchronised through the channel close).
+// ctx is cancelled. Err and Warnings are safe to call at any time — they
+// return the producer's zero values while it is still running and the
+// terminal values once it has exited (synchronised by c.mu).
 func (c *concurrentSearchResultSet) Next() bool {
 	r, ok := <-c.ch
 	if !ok {
@@ -80,9 +93,19 @@ func (c *concurrentSearchResultSet) Next() bool {
 	return true
 }
 
-func (c *concurrentSearchResultSet) At() storage.SearchResult          { return c.cur }
-func (c *concurrentSearchResultSet) Warnings() annotations.Annotations { return c.warns }
-func (c *concurrentSearchResultSet) Err() error                        { return c.err }
+func (c *concurrentSearchResultSet) At() storage.SearchResult { return c.cur }
+
+func (c *concurrentSearchResultSet) Warnings() annotations.Annotations {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.warns
+}
+
+func (c *concurrentSearchResultSet) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
 
 // Close cancels the producer and closes the child before waiting for the
 // producer to exit — required because ctx cancellation alone does not

@@ -54,7 +54,7 @@ func (d *Distributor) SearchLabelNames(
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
-	return mimirstorage.NewMergingSearchResultSet(sources, hints)
+	return mimirstorage.PairwiseMergeSearchSetsWithHints(sources, hints)
 }
 
 // SearchLabelValues mirrors SearchLabelNames; the wire request additionally
@@ -81,7 +81,7 @@ func (d *Distributor) SearchLabelValues(
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
-	return mimirstorage.NewMergingSearchResultSet(sources, hints)
+	return mimirstorage.PairwiseMergeSearchSetsWithHints(sources, hints)
 }
 
 // searchStream is the Recv surface shared by Ingester_SearchLabelNamesClient
@@ -268,8 +268,8 @@ func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter
 	return wf
 }
 
-// orderingToProto defaults nil hints to ORDER_BY_VALUE_ASC — same default
-// as NewMergingSearchResultSet, keeping leaf and merge ordering aligned.
+// orderingToProto defaults nil hints to ORDER_BY_VALUE_ASC — keeping leaf
+// and merge ordering aligned.
 func orderingToProto(hints *storage.SearchHints) ingester_client.SearchOrdering {
 	if hints == nil {
 		return ingester_client.ORDER_BY_VALUE_ASC

@@ -96,7 +96,7 @@ func wrapAsMergingSearchResultSet(perSG [][]storage.SearchResult, extraWarnings 
 	if len(extraWarnings) > 0 {
 		sources = append(sources, storage.NewSearchResultSetFromSlice(nil, extraWarnings))
 	}
-	return mimirstorage.NewMergingSearchResultSet(sources, hints)
+	return mimirstorage.PairwiseMergeSearchSetsWithHints(sources, hints)
 }
 
 // fetchSearchLabelNamesFromStore drains every SG client in parallel and
