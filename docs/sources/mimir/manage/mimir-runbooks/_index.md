@@ -2261,7 +2261,14 @@ How it **works**:
 
 - Block-builder-scheduler schedules and assigns jobs to workers, but it is the workers who carry out the consumption work.
 - Block-builder-scheduler notices when a worker fails to complete a job, and maintains a failure count on each job.
-- Block-builder-scheduler increments the `cortex_blockbuilder_scheduler_persistent_job_failures_total` metric when a job's failure count exceeds the `block-builder-scheduler.job-failures-allowed` setting.
+- Block-builder-scheduler increments the `cortex_blockbuilder_scheduler_persistent_job_failures_total` metric when a job's failure count exceeds the `-block-builder-scheduler.job-failures-allowed` setting.
+
+What is the **impact**:
+
+- The scheduler keeps reassigning the job after each lease expiry. Transient failures may resolve on a retry, but the scheduler never gives up on its own. Persistent failures are retried continuously.
+- While the job has not yet succeeded, the partition's committed Kafka offset cannot advance past it, so the records in its offset range stay absent from object storage.
+- With the default `-block-builder-scheduler.max-jobs-per-partition=1`, no later jobs for that partition can be scheduled while the failing one is in flight, and block production for the partition halts entirely. With a higher limit, later jobs continue to run but the commit still cannot advance.
+- If the failure is persistent and not fixed before Kafka topic retention deletes the records in the failing offset range, those records are unrecoverable. When block-builder is the sole shipper of blocks (ingester block shipment disabled), this means permanent data loss for that range.
 
 How to **investigate**:
 
