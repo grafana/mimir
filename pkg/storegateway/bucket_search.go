@@ -135,11 +135,7 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	)
 
 	s.blockSet.filter(req.Start, req.End, nil, func(b *bucketBlock) {
-		// indexReader is created here (outside the goroutine) to hold the block open.
-		indexr := b.indexReader(nil)
 		g.Go(func() error {
-			defer runutil.CloseWithLogOnErr(s.logger, indexr, "search label values")
-
 			b.ensureIndexHeaderLoaded(gctx, stats)
 
 			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, matchers, s.logger, stats)
