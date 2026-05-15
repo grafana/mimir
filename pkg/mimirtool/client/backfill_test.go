@@ -43,7 +43,7 @@ func TestGetBlockMetaFromBucket(t *testing.T) {
 	require.NoError(t, bkt.Upload(context.Background(), blockID.String()+"/chunks/000001", bytes.NewReader([]byte("chunk-1"))))
 	require.NoError(t, bkt.Upload(context.Background(), blockID.String()+"/chunks/000002", bytes.NewReader([]byte("chunk-22"))))
 
-	result, err := GetBlockMetaFromBucket(context.Background(), bkt, blockID)
+	result, err := GetBlockMeta(context.Background(), bkt, blockID)
 	require.NoError(t, err)
 
 	assert.Equal(t, blockID, result.ULID)
@@ -76,7 +76,7 @@ func TestGetBlockMetaFromBucket_InvalidVersion(t *testing.T) {
 
 	require.NoError(t, bkt.Upload(context.Background(), blockID.String()+"/meta.json", bytes.NewReader(metaBytes)))
 
-	_, err = GetBlockMetaFromBucket(context.Background(), bkt, blockID)
+	_, err = GetBlockMeta(context.Background(), bkt, blockID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "only version 1")
 }

@@ -53,7 +53,7 @@ Run `go build` in this directory to build the program. Then, use an example belo
 
 ### Example for Amazon Simple Storage Service
 
-A destination bucket is called to initiate the server-side copy which may require setting up additional permissions for the copy to have access the source bucket.
+The destination bucket is called to initiate the server-side copy which may require setting up additional permissions for the copy to have access the source bucket.
 Consider passing `--client-side-copy` to avoid having to deal with that.
 
 ```bash

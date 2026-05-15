@@ -241,7 +241,7 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 		// client.GetBlockMetaFromBucket will generate correct meta.json file ready for initiating upload of our block.
 		fsBkt, err := filesystem.NewBucket(tmpDir)
 		require.NoError(t, err)
-		meta, err := client.GetBlockMetaFromBucket(context.Background(), fsBkt, block)
+		meta, err := client.GetBlockMeta(context.Background(), fsBkt, block)
 		require.NoError(t, err)
 
 		buf := bytes.NewBuffer(nil)
