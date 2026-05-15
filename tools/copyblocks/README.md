@@ -97,7 +97,7 @@ For instance, to copy from S3 to ABS:
 
 ### Example for backfilling to Mimir
 
-Blocks can be copied to a Mimir instance via the block upload API by setting `--destination.backend backfill`.
+Copies blocks from object storage to a Mimir instance using the block upload API.
 
 ```bash
 ./copyblocks \
@@ -107,7 +107,7 @@ Blocks can be copied to a Mimir instance via the block upload API by setting `--
   --s3.source.access-key-id <source access key id> \
   --s3.source.secret-access-key <source secret access key> \
   --s3.source.endpoint <source endpoint> \
-  --backfill.address <mimir address> \
+  --backfill.address <Mimir address> \
   --backfill.id <tenant id> \
   --backfill.auth-token <bearer token> \
   --min-time 2026-01-15T00:00:00Z \
@@ -115,6 +115,6 @@ Blocks can be copied to a Mimir instance via the block upload API by setting `--
   --dry-run
 ```
 
-The `--backfill.id` flag sets the tenant ID (X-Scope-OrgID header). Authentication is configured with either `--backfill.auth-token` (bearer token) or `--backfill.basic-auth-key` (basic auth, using the tenant ID as the username). TLS can be configured with the `--backfill.tls-*` flags.
+`--backfill.id` sets the tenant ID (X-Scope-OrgID header). Use `--backfill.auth-token` for bearer token auth or `--backfill.basic-auth-key` for basic auth (username is the tenant ID). TLS is configurable with `--backfill.tls-*`.
 
 Note that `--user-mapping` cannot be used with the backfill destination.
