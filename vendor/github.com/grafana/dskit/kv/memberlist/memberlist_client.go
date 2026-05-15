@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	math_rand "math/rand"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,11 @@ const (
 	noChangeDetectedRetrySleep = time.Second // how long to sleep after no change was detected in CAS
 	watchPrefixBufferSize      = 128         // size of buffered channel for the WatchPrefix function
 )
+
+var supportedCompressionAlgorithms = []string{
+	string(memberlist.CompressionAlgorithmLZW),
+	string(memberlist.CompressionAlgorithmSnappy),
+}
 
 // Client implements kv.Client interface, by using memberlist.KV
 type Client struct {
@@ -147,6 +153,8 @@ type KVConfig struct {
 	NotifyInterval            time.Duration `yaml:"notify_interval" category:"advanced"`
 	ReceivedMessagesQueueSize int           `yaml:"received_messages_queue_size" category:"advanced"`
 
+	CompressionAlgorithm string `yaml:"compression_algorithm" category:"advanced"`
+
 	// ip:port to advertise other cluster members. Used for NAT traversal
 	AdvertiseAddr string `yaml:"advertise_addr"`
 	AdvertisePort int    `yaml:"advertise_port"`
@@ -231,6 +239,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.DeadNodeReclaimTime, prefix+"memberlist.dead-node-reclaim-time", mlDefaults.DeadNodeReclaimTime, "How soon can dead node's name be reclaimed with new address. 0 to disable.")
 	f.IntVar(&cfg.MessageHistoryBufferBytes, prefix+"memberlist.message-history-buffer-bytes", 0, "How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.")
 	f.BoolVar(&cfg.EnableCompression, prefix+"memberlist.compression-enabled", mlDefaults.EnableCompression, "Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization.")
+	f.StringVar(&cfg.CompressionAlgorithm, prefix+"memberlist.compression-algorithm", string(memberlist.CompressionAlgorithmLZW), fmt.Sprintf("Compression algorithm used for outgoing messages when -memberlist.compression-enabled is true. Supported values: %s. Ignored when -memberlist.compression-enabled is false.", strings.Join(supportedCompressionAlgorithms, ", ")))
 	f.DurationVar(&cfg.NotifyInterval, prefix+"memberlist.notify-interval", 0, "How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.")
 	f.IntVar(&cfg.ReceivedMessagesQueueSize, prefix+"memberlist.received-messages-queue-size", mlDefaults.HandoffQueueDepth, "Size of the internal queue for messages received from other nodes. Increasing this value may help to avoid dropping messages when the node is processing a large number of messages from other nodes.")
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"memberlist.advertise-addr", mlDefaults.AdvertiseAddr, "Gossip address to advertise to other members in the cluster. Used for NAT traversal.")
@@ -259,6 +268,9 @@ func (cfg *KVConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *KVConfig) Validate() error {
 	if cfg.ReceivedMessagesQueueSize <= 0 {
 		return fmt.Errorf("memberlist received messages queue size must be greater than 0")
+	}
+	if cfg.CompressionAlgorithm != "" && !slices.Contains(supportedCompressionAlgorithms, cfg.CompressionAlgorithm) {
+		return fmt.Errorf("memberlist compression algorithm %q is not supported, valid values: %s", cfg.CompressionAlgorithm, strings.Join(supportedCompressionAlgorithms, ", "))
 	}
 	return cfg.ZoneAwareRouting.Validate()
 }
@@ -493,6 +505,7 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	mlCfg.GossipToTheDeadTime = m.cfg.GossipToTheDeadTime
 	mlCfg.DeadNodeReclaimTime = m.cfg.DeadNodeReclaimTime
 	mlCfg.EnableCompression = m.cfg.EnableCompression
+	mlCfg.CompressionAlgorithm = memberlist.CompressionAlgorithm(m.cfg.CompressionAlgorithm)
 	mlCfg.HandoffQueueDepth = m.cfg.ReceivedMessagesQueueSize
 
 	mlCfg.AdvertiseAddr = m.cfg.AdvertiseAddr
