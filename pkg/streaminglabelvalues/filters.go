@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus/prometheus/pull/18573
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors
 
 package streaminglabelvalues
 
