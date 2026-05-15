@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
@@ -67,9 +68,24 @@ type readcacheClient struct {
 
 // NewReadcachePool constructs a pool. ringClient must be non-nil;
 // the rebalancer never operates without a discovery source.
-func NewReadcachePool(_ ReadcacheClientConfig, ringClient readcacheRingClient, logger log.Logger) (*ReadcachePool, error) {
+//
+// clusterValidationLabel must match readcache's
+// -server.cluster-validation.label when that server-side check is
+// enabled; otherwise gRPC returns FailedPrecondition ("empty
+// cluster validation label"). Same value as -ingester-client.grpc-
+// client-config.cluster-validation.label / common client-cluster-
+// validation in a typical Mimir deployment.
+func NewReadcachePool(_ ReadcacheClientConfig, ringClient readcacheRingClient, clusterValidationLabel string, logger log.Logger) (*ReadcachePool, error) {
 	if ringClient == nil {
 		return nil, errors.New("rebalancer readcache pool requires a non-nil ring client")
+	}
+	dialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+	if clusterValidationLabel != "" {
+		dialOpts = append(dialOpts, grpc.WithUnaryInterceptor(
+			middleware.ClusterUnaryClientInterceptor(clusterValidationLabel, middleware.NoOpInvalidClusterValidationReporter),
+		))
 	}
 	return &ReadcachePool{
 		ring: ringClient,
@@ -77,11 +93,9 @@ func NewReadcachePool(_ ReadcacheClientConfig, ringClient readcacheRingClient, l
 		// GetHashRanges) are administrative; they don't carry a
 		// tenant header. We deliberately omit the
 		// ClientUserHeaderInterceptor that the distributor uses.
-		dialOpts: []grpc.DialOption{
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		},
-		logger:  logger,
-		clients: map[string]readcacheClient{},
+		dialOpts: dialOpts,
+		logger:   logger,
+		clients:  map[string]readcacheClient{},
 	}, nil
 }
 

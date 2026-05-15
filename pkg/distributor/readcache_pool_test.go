@@ -31,7 +31,7 @@ func TestReadcachePool_ResolveAddr_StaticOverridesRing(t *testing.T) {
 	cfg := ReadcacheConfig{Addresses: "readcache-1=overridden:1234"}
 	p, err := newReadcachePool(cfg, stubReadcacheRing{set: ring.ReplicationSet{Instances: []ring.InstanceDesc{
 		{Id: "readcache-1", Addr: "10.0.0.7:9095"},
-	}}}, log.NewNopLogger())
+	}}}, "", log.NewNopLogger())
 	require.NoError(t, err)
 
 	addr, err := p.resolveAddr("readcache-1")
@@ -46,7 +46,7 @@ func TestReadcachePool_ResolveAddr_RingLookupSucceeds(t *testing.T) {
 	p, err := newReadcachePool(ReadcacheConfig{}, stubReadcacheRing{set: ring.ReplicationSet{Instances: []ring.InstanceDesc{
 		{Id: "readcache-1", Addr: "10.0.0.7:9095"},
 		{Id: "readcache-2", Addr: "10.0.0.8:9095"},
-	}}}, log.NewNopLogger())
+	}}}, "", log.NewNopLogger())
 	require.NoError(t, err)
 
 	addr, err := p.resolveAddr("readcache-2")
@@ -64,7 +64,7 @@ func TestReadcachePool_ResolveAddr_RingLookupSucceeds(t *testing.T) {
 func TestReadcachePool_ResolveAddr_UnknownInstance(t *testing.T) {
 	p, err := newReadcachePool(ReadcacheConfig{}, stubReadcacheRing{set: ring.ReplicationSet{Instances: []ring.InstanceDesc{
 		{Id: "readcache-1", Addr: "10.0.0.7:9095"},
-	}}}, log.NewNopLogger())
+	}}}, "", log.NewNopLogger())
 	require.NoError(t, err)
 
 	_, err = p.resolveAddr("readcache-missing")
@@ -77,7 +77,7 @@ func TestReadcachePool_ResolveAddr_UnknownInstance(t *testing.T) {
 // to the ingester pool, so a partial readcache-ring outage degrades
 // to "served by ingester" rather than "no client at all".
 func TestReadcachePool_ResolveAddr_RingErrorBubbles(t *testing.T) {
-	p, err := newReadcachePool(ReadcacheConfig{}, stubReadcacheRing{err: errors.New("kv unavailable")}, log.NewNopLogger())
+	p, err := newReadcachePool(ReadcacheConfig{}, stubReadcacheRing{err: errors.New("kv unavailable")}, "", log.NewNopLogger())
 	require.NoError(t, err)
 
 	_, err = p.resolveAddr("readcache-1")
@@ -90,6 +90,6 @@ func TestReadcachePool_ResolveAddr_RingErrorBubbles(t *testing.T) {
 // instance addresses; the distributor must catch this at startup
 // rather than producing "no configured address" at query time.
 func TestNewReadcachePool_RejectsEmptyConfig(t *testing.T) {
-	_, err := newReadcachePool(ReadcacheConfig{}, nil, log.NewNopLogger())
+	_, err := newReadcachePool(ReadcacheConfig{}, nil, "", log.NewNopLogger())
 	require.Error(t, err)
 }

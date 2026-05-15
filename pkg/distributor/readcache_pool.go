@@ -108,7 +108,11 @@ type readcacheClient struct {
 // tests and operator escape hatches. ringClient may be nil iff the
 // caller has supplied a complete static address map; otherwise the
 // pool would have nowhere to look up unknown instance IDs.
-func newReadcachePool(cfg ReadcacheConfig, ringClient readcacheRingReader, logger log.Logger) (*readcachePool, error) {
+//
+// clusterValidationLabel must match readcache's server cluster
+// validation label when gRPC cluster validation is enabled on
+// readcache (same as other internal clients, e.g. ingester pool).
+func newReadcachePool(cfg ReadcacheConfig, ringClient readcacheRingReader, clusterValidationLabel string, logger log.Logger) (*readcachePool, error) {
 	addresses, err := parseReadcacheAddresses(cfg.Addresses)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing readcache addresses")
@@ -120,12 +124,16 @@ func newReadcachePool(cfg ReadcacheConfig, ringClient readcacheRingReader, logge
 	// arriving at readcache pass the standard StreamServerUserHeaderInterceptor
 	// gate. Without this every QueryStream against a readcache pod
 	// returns "no org id" on the server side.
+	unary := []grpc.UnaryClientInterceptor{middleware.ClientUserHeaderInterceptor}
+	if clusterValidationLabel != "" {
+		unary = append(unary, middleware.ClusterUnaryClientInterceptor(clusterValidationLabel, middleware.NoOpInvalidClusterValidationReporter))
+	}
 	return &readcachePool{
 		staticAddresses: addresses,
 		ring:            ringClient,
 		dialOpts: []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithUnaryInterceptor(middleware.ClientUserHeaderInterceptor),
+			grpc.WithChainUnaryInterceptor(unary...),
 			grpc.WithStreamInterceptor(middleware.StreamClientUserHeaderInterceptor),
 		},
 		logger:  logger,

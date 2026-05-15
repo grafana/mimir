@@ -1481,7 +1481,12 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 	// path (used by tests and pre-readcache phase 1 deployments).
 	var rcPool *rebalancer.ReadcachePool
 	if t.ReadcacheInstanceRing != nil {
-		p, err := rebalancer.NewReadcachePool(t.Cfg.NautilusRebalancer.ReadcacheClient, t.ReadcacheInstanceRing, util_log.Logger)
+		p, err := rebalancer.NewReadcachePool(
+			t.Cfg.NautilusRebalancer.ReadcacheClient,
+			t.ReadcacheInstanceRing,
+			t.Cfg.IngesterClient.GRPCClientConfig.ClusterValidation.Label,
+			util_log.Logger,
+		)
 		if err != nil {
 			return nil, errors.Wrap(err, "rebalancer readcache pool init")
 		}
