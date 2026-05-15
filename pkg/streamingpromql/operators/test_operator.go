@@ -18,7 +18,9 @@ type TestOperator struct {
 	Series                   []labels.Labels
 	DropName                 []bool
 	Data                     []types.InstantVectorSeriesData
+	EvaluationStats          *types.OperatorEvaluationStats
 	Prepared                 bool
+	AfterPrepareCalled       bool
 	Finalized                bool
 	Closed                   bool
 	Position                 posrange.PositionRange
@@ -115,6 +117,7 @@ func (t *TestOperator) Prepare(_ context.Context, _ *types.PrepareParams) error 
 }
 
 func (t *TestOperator) AfterPrepare(_ context.Context) error {
+	t.AfterPrepareCalled = true
 	return nil
 }
 
@@ -124,7 +127,7 @@ func (t *TestOperator) Finalize(_ context.Context) error {
 }
 
 func (t *TestOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
-	panic("not implemented")
+	return t.EvaluationStats, nil
 }
 
 func (t *TestOperator) Close() {
