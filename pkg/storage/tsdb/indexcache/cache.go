@@ -157,13 +157,14 @@ func BlockTTL(meta *block.Meta) time.Duration {
 		duration += time.Hour - duration%time.Hour
 	}
 
-	// Pick the max of one hour or duration adjusted up to the next hour
-	duration = max(time.Hour, duration)
-
-	// Anything less than 24h is a temporary block that will eventually be compacted into
-	// a 24h block. Use a shorter TTL since otherwise these will stay in the cache long
-	// after they're no longer relevant.
-	if duration < 24*time.Hour {
+	if duration <= time.Hour {
+		return time.Hour
+	} else if duration < 3*time.Hour {
+		return 3 * time.Hour
+	} else if duration < 24*time.Hour {
+		// Anything less than 24h is a temporary block that will eventually be compacted into
+		// a 24h block. Use a shorter TTL since otherwise these will stay in the cache long
+		// after they're no longer relevant.
 		return duration
 	}
 

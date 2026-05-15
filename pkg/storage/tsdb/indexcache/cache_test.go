@@ -161,13 +161,13 @@ func TestBlockTTL(t *testing.T) {
 			name: "65m block",
 			minT: 1700000000000,
 			maxT: 1700003900000,
-			ttl:  2 * time.Hour,
+			ttl:  3 * time.Hour,
 		},
 		{
 			name: "2h block",
 			minT: 1700000000000,
 			maxT: 1700007200000,
-			ttl:  2 * time.Hour,
+			ttl:  3 * time.Hour,
 		},
 		{
 			name: "3h block",
