@@ -35,6 +35,9 @@ import (
 //     long-term home for blocks on the experimental Kafka topic.
 //   - **No active-series tracker / ownedSeries / cost attribution.**
 //     Those are write-path concerns that don't apply to readcache.
+//   - **TSDB head mutations are serialized** (append, runtime ApplyConfig,
+//     CompactHead) so Kafka parallel ingestion cannot interleave commits
+//     on the same head; the ingester achieves the same with acquireAppendLock.
 type partitionTSDB struct {
 	tenantID    string
 	partitionID int32
@@ -44,6 +47,15 @@ type partitionTSDB struct {
 
 	mu     sync.RWMutex
 	closed bool
+
+	// tsdbMut serializes TSDB head mutations. The Kafka ingest path uses
+	// ingest.PusherConsumer with parallel shards when
+	// ingestion-concurrency-max > 0, which can call the readcache pusher
+	// concurrently; Prometheus TSDB expects a single writer at a time
+	// for appends (same contract as the ingester's acquireAppendLock).
+	// We also hold this for CompactHead and ApplyConfig so those never
+	// race with appends.
+	tsdbMut sync.Mutex
 }
 
 // openPartitionTSDB opens (or creates) the on-disk TSDB at
@@ -138,6 +150,9 @@ func (p *partitionTSDB) applyTenantTSDBSettings(limits *validation.Overrides, lo
 	if limits == nil || p.db == nil {
 		return nil
 	}
+	p.tsdbMut.Lock()
+	defer p.tsdbMut.Unlock()
+
 	oooTW := limits.OutOfOrderTimeWindow(p.tenantID)
 	if oooTW < 0 {
 		oooTW = 0
@@ -202,12 +217,19 @@ func (p *partitionTSDB) Blocks() []*tsdb.Block {
 // CompactHead compacts the in-memory head into a block on disk.
 // Unlike the ingester, blocks stay local; no shipper picks them up.
 func (p *partitionTSDB) CompactHead() error {
+	p.tsdbMut.Lock()
+	defer p.tsdbMut.Unlock()
+
 	h := p.db.Head()
 	return p.db.CompactHead(tsdb.NewRangeHead(h, h.MinTime(), h.MaxTime()))
 }
 
 // Close shuts down the TSDB. Idempotent.
 func (p *partitionTSDB) Close() error {
+	// Wait for in-flight appends / compaction / ApplyConfig before closing.
+	p.tsdbMut.Lock()
+	defer p.tsdbMut.Unlock()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {

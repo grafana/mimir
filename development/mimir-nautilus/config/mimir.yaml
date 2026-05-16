@@ -16,6 +16,9 @@ ingest_storage:
     topic:   mimir-ingest
     last_produced_offset_poll_interval: 500ms
     fetch_concurrency_max: 15
+    # Parallel shard pushes are safe on the ingester (append lock) and on
+    # readcache (per-partition TSDB mutex around append/ApplyConfig/CompactHead).
+    ingestion_concurrency_max: 8
     auto_create_topic_enabled: true
     auto_create_topic_default_partitions: 8
 

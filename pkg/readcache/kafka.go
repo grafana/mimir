@@ -60,6 +60,11 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 		return nil
 	}
 
+	// Serialize with CompactHead and ApplyConfig on this partition TSDB.
+	// Kafka ingest may use parallel pusher shards (ingestion-concurrency-max).
+	db.tsdbMut.Lock()
+	defer db.tsdbMut.Unlock()
+
 	app := db.Appender(ctx)
 	for _, ts := range req.Timeseries {
 		lbls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)

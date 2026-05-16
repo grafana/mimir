@@ -84,6 +84,8 @@ config on reload.
 
 ## Caveats / known follow-ups
 
+- Readcache takes a per-partition TSDB mutex around Kafka-driven appends,
+  `ApplyConfig`, and head compaction so parallel ingest (`ingest_storage.kafka.ingestion-concurrency-max` > 0) cannot race the Prometheus head the way the ingester avoids with `acquireAppendLock`.
 - The static `-readcache.owned-partitions` flag means the
   rebalancer's actual slicer round is exercised only after Phase 2D
   wires the readcache ring lifecycler. Until then, the rebalancer's
