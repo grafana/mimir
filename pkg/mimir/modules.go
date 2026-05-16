@@ -1514,7 +1514,13 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 }
 
 func (t *Mimir) initReadcache() (services.Service, error) {
+	// Copy Kafka config so readcache-specific tweaks do not mutate the
+	// ingester's ingest-storage struct. MaxReplayPeriod is required when
+	// consumer_group_offset_commit_file_enforced is true (partition reader
+	// startup); the ingester sets it from TSDB retention in NewIngester.
 	t.Cfg.Readcache.Kafka = t.Cfg.IngestStorage.KafkaConfig
+	t.Cfg.Readcache.Kafka.MaxReplayPeriod = t.Cfg.BlocksStorage.TSDB.Retention
+
 	t.Cfg.Readcache.BlocksStorage = t.Cfg.BlocksStorage
 	t.Cfg.Readcache.InstanceRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
