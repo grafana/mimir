@@ -12,13 +12,11 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/storage"
-
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // partitionPusher is the Pusher handed to a per-partition
@@ -65,43 +63,26 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 	db.tsdbMut.Lock()
 	defer db.tsdbMut.Unlock()
 
-	app := db.Appender(ctx)
-	for _, ts := range req.Timeseries {
-		lbls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
-		var ref storage.SeriesRef
-		for _, s := range ts.Samples {
-			r, err := app.Append(ref, lbls, s.TimestampMs, s.Value)
-			if err != nil {
-				return errors.Wrapf(err, "appending sample for series %s", lbls.String())
-			}
-			ref = r
-		}
-		for j := range ts.Histograms {
-			h := &ts.Histograms[j]
-			if h.IsFloatHistogram() {
-				ffh := mimirpb.FromFloatHistogramProtoToFloatHistogram(h)
-				if _, err := app.AppendHistogram(ref, lbls, h.Timestamp, nil, ffh); err != nil {
-					return errors.Wrap(err, "appending float histogram")
-				}
-			} else {
-				fh := mimirpb.FromHistogramProtoToHistogram(h)
-				if _, err := app.AppendHistogram(ref, lbls, h.Timestamp, fh, nil); err != nil {
-					return errors.Wrap(err, "appending histogram")
-				}
-			}
-		}
-		for _, ex := range ts.Exemplars {
-			exLbls := mimirpb.FromLabelAdaptersToLabels(ex.Labels)
-			_, _ = app.AppendExemplar(ref, lbls, exemplar.Exemplar{
-				Labels: exLbls,
-				Value:  ex.Value,
-				Ts:     ex.TimestampMs,
-				HasTs:  true,
-			})
-		}
+	app := db.Appender(ctx).(ingester.ExtendedAppender)
+	res := ingester.PushWriteRequestTimeseries(ctx, ingester.WriteRequestTimeseriesPush{
+		UserID:             userID,
+		Timeseries:         req.Timeseries,
+		Source:             req.Source,
+		Limits:             p.rc.limits,
+		Logger:             p.rc.logger,
+		Samplers:           p.rc.pushErrSamplers,
+		Discard:            nil,
+		MaxSeriesPerUser:   func() int { return p.rc.limits.MaxGlobalSeriesPerUser(userID) },
+		MaxSeriesPerMetric: func() int { return p.rc.limits.MaxGlobalSeriesPerMetric(userID) },
+		ActiveSeries:       nil,
+		App:                app,
+		Head:               db.Head(),
+	})
+	if res.Err != nil {
+		return res.Err
 	}
-	if err := app.Commit(); err != nil {
-		return errors.Wrap(err, "committing partition appender")
+	if res.FirstPartialErr != nil {
+		return res.FirstPartialErr
 	}
 	return nil
 }

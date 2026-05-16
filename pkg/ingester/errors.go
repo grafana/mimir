@@ -565,22 +565,24 @@ func (e reactiveLimiterExceededError) errorCause() mimirpb.ErrorCause {
 
 var _ ingesterError = reactiveLimiterExceededError{}
 
-type ingesterErrSamplers struct {
-	sampleTimestampTooOld             *log.Sampler
-	sampleTimestampTooOldOOOEnabled   *log.Sampler
-	sampleTimestampTooFarInFuture     *log.Sampler
-	sampleOutOfOrder                  *log.Sampler
-	sampleDuplicateTimestamp          *log.Sampler
-	maxSeriesPerMetricLimitExceeded   *log.Sampler
-	maxMetadataPerMetricLimitExceeded *log.Sampler
-	maxSeriesPerUserLimitExceeded     *log.Sampler
-	maxMetadataPerUserLimitExceeded   *log.Sampler
-	nativeHistogramValidationError    *log.Sampler
-	labelsNotSorted                   *log.Sampler
+// IngesterErrSamplers rate-limits logging of push-time soft errors.
+type IngesterErrSamplers struct {
+	SampleTimestampTooOld             *log.Sampler
+	SampleTimestampTooOldOOOEnabled   *log.Sampler
+	SampleTimestampTooFarInFuture     *log.Sampler
+	SampleOutOfOrder                  *log.Sampler
+	SampleDuplicateTimestamp          *log.Sampler
+	MaxSeriesPerMetricLimitExceeded   *log.Sampler
+	MaxMetadataPerMetricLimitExceeded *log.Sampler
+	MaxSeriesPerUserLimitExceeded     *log.Sampler
+	MaxMetadataPerUserLimitExceeded   *log.Sampler
+	NativeHistogramValidationError    *log.Sampler
+	LabelsNotSorted                   *log.Sampler
 }
 
-func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
-	return ingesterErrSamplers{
+// NewIngesterErrSamplers creates samplers for push-time errors. freq is passed to log.NewSampler (0 logs all).
+func NewIngesterErrSamplers(freq int64) IngesterErrSamplers {
+	return IngesterErrSamplers{
 		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),

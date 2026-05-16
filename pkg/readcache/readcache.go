@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/nautilus/loadstats"
@@ -86,6 +87,10 @@ type Readcache struct {
 	seriesHashCache                      *hashcache.SeriesHashCache
 	headPostingsForMatchersCacheFactory  tsdb.PostingsForMatchersCacheFactory
 	blockPostingsForMatchersCacheFactory tsdb.PostingsForMatchersCacheFactory
+
+	// pushErrSamplers rate-limits logging of soft append errors on the Kafka path,
+	// matching the ingester push pipeline (ingester.PushWriteRequestTimeseries).
+	pushErrSamplers ingester.IngesterErrSamplers
 }
 
 // partitionState bundles the per-partition Kafka reader and the
@@ -191,6 +196,8 @@ func New(
 		Metrics:               blockPostingsMetrics,
 		PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 	})
+
+	r.pushErrSamplers = ingester.NewIngesterErrSamplers(10)
 
 	if reg != nil {
 		reg.MustRegister(r.queryLoad)
