@@ -371,7 +371,7 @@ func (i *Ingester) PushToStorageAndReleaseRequest(ctx context.Context, req *mimi
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
 	if err != nil {
-		return mapPushErrorToErrorWithStatus(err)
+		return MapPushErrorToErrorWithStatus(err)
 	}
 	return nil
 }

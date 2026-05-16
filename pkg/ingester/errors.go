@@ -597,8 +597,14 @@ func NewIngesterErrSamplers(freq int64) IngesterErrSamplers {
 	}
 }
 
-// mapPushErrorToErrorWithStatus maps the given error to the corresponding error of type globalerror.ErrorWithStatus.
-func mapPushErrorToErrorWithStatus(err error) error {
+// MapPushErrorToErrorWithStatus maps ingester-style push errors to globalerror.ErrorWithStatus
+// (gRPC codes + mimirpb.ErrorDetails) so mimirpb.IsClientError classifies them the same way as
+// Ingester.PushToStorageAndReleaseRequest. Kafka ingest-storage pushers rely on that for offset
+// advance vs retry.
+func MapPushErrorToErrorWithStatus(err error) error {
+	if err == nil {
+		return nil
+	}
 	var (
 		ingesterErr ingesterError
 		errCode     = codes.Internal

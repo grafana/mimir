@@ -79,10 +79,10 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 		Head:               db.Head(),
 	})
 	if res.Err != nil {
-		return res.Err
+		return ingester.MapPushErrorToErrorWithStatus(res.Err)
 	}
 	if res.FirstPartialErr != nil {
-		return res.FirstPartialErr
+		return ingester.MapPushErrorToErrorWithStatus(res.FirstPartialErr)
 	}
 	return nil
 }

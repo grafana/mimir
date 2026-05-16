@@ -4344,7 +4344,7 @@ func TestIngester_Push(t *testing.T) {
 						assert.NoError(t, err)
 					} else {
 						require.Error(t, err)
-						handledErr := mapPushErrorToErrorWithStatus(err)
+						handledErr := MapPushErrorToErrorWithStatus(err)
 						errWithStatus, ok := handledErr.(globalerror.ErrorWithStatus)
 						require.True(t, ok)
 						require.Truef(t, errWithStatus.Equals(testData.expectedErr), "errors don't match \nactual:   '%v'\nexpected: '%v'", errWithStatus, testData.expectedErr)
