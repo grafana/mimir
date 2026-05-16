@@ -5,6 +5,8 @@ package readcache
 import (
 	"context"
 	"flag"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -112,6 +114,28 @@ func TestConfig_ParseOwnedPartitions(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestReadcache_WipeTSDBDirOnStartup(t *testing.T) {
+	cfg := newTestConfig(t, false, 0)
+	marker := filepath.Join(cfg.DataDir, "stale")
+	require.NoError(t, os.WriteFile(marker, []byte("x"), 0o644))
+
+	cfg.WipeTSDBDirOnStartup = true
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+
+	_, err = os.Stat(marker)
+	require.Error(t, err)
+	require.True(t, os.IsNotExist(err))
 }
 
 func TestReadcache_Lifecycle(t *testing.T) {

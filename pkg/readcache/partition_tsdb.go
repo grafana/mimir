@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -72,6 +73,7 @@ func openPartitionTSDB(
 	limits *validation.Overrides,
 	seriesHashCache *hashcache.SeriesHashCache,
 	headPostingsForMatchersCacheFactory, blockPostingsForMatchersCacheFactory tsdb.PostingsForMatchersCacheFactory,
+	tsdbPromReg prometheus.Registerer,
 	logger log.Logger,
 ) (*partitionTSDB, error) {
 	dir := filepath.Join(rootDir, tenantID, fmt.Sprintf("partition-%d", partitionID))
@@ -127,7 +129,7 @@ func openPartitionTSDB(
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
 	}
 
-	db, err := tsdb.Open(dir, util_log.SlogFromGoKit(userLogger), nil, opts, nil)
+	db, err := tsdb.Open(dir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, opts, nil)
 	if err != nil {
 		return nil, fmt.Errorf("opening partition TSDB %q: %w", dir, err)
 	}

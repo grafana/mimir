@@ -70,6 +70,10 @@ type Config struct {
 	// store-gateway (fed by blockbuilder) is the canonical source.
 	LocalBlockRetention time.Duration `yaml:"local_block_retention" category:"experimental"`
 
+	// WipeTSDBDirOnStartup deletes DataDir on startup before recreating it.
+	// Only intended for development and testing.
+	WipeTSDBDirOnStartup bool `yaml:"wipe_tsdb_dir_on_startup" category:"experimental" doc:"hidden"`
+
 	// InstanceRing configures the readcache service-discovery ring.
 	// Both the rebalancer (slicer eligibility) and the distributor
 	// (read-path dial target lookup) read from the same KV key.
@@ -89,7 +93,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	}
 
 	f.StringVar(&cfg.InstanceID, "readcache.instance-id", hostname, "Instance ID. Defaults to the hostname.")
-	f.StringVar(&cfg.DataDir, "readcache.data-dir", "./data-readcache/", "Directory under which per-(tenant, partition) TSDBs are stored. Wiped on restart.")
+	f.StringVar(&cfg.DataDir, "readcache.data-dir", "./data-readcache/", "Directory under which per-(tenant, partition) TSDBs are stored.")
+	f.BoolVar(&cfg.WipeTSDBDirOnStartup, "readcache.wipe-tsdb-dir-on-startup", false, "If true, readcache deletes all data in -readcache.data-dir on startup before re-initializing it. Only intended for development and testing.")
 	f.StringVar(&cfg.KafkaTopic, "readcache.kafka-topic", "nautilus_ingest", "Kafka topic readcache consumes from. The plan uses a dedicated experimental topic to isolate the readcache fleet from production ingesters.")
 	f.StringVar(&cfg.RebalancerAddress, "readcache.rebalancer-address", "", "gRPC address of the nautilus rebalancer. When set, the readcache pod subscribes to WatchReadcacheAssignments and owns only partitions whose active lease names this instance. Production deployments must set this; -readcache.owned-partitions is only consulted as a fallback when this is empty.")
 	f.StringVar(&cfg.OwnedPartitions, "readcache.owned-partitions", "", "Legacy static comma-separated list of int32 partition IDs this readcache instance owns. Ignored when -readcache.rebalancer-address is set. Intended for tests and degraded-mode bring-up only.")

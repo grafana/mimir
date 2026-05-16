@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -91,6 +92,10 @@ type Readcache struct {
 	// pushErrSamplers rate-limits logging of soft append errors on the Kafka path,
 	// matching the ingester push pipeline (ingester.PushWriteRequestTimeseries).
 	pushErrSamplers ingester.IngesterErrSamplers
+
+	// tsdbMetrics aggregates per-(tenant, partition) TSDB registry metrics
+	// (e.g. cortex_readcache_memory_series), mirroring the ingester's TSDBMetrics.
+	tsdbMetrics *mimir_tsdb.TSDBMetrics
 }
 
 // partitionState bundles the per-partition Kafka reader and the
@@ -200,6 +205,7 @@ func New(
 	r.pushErrSamplers = ingester.NewIngesterErrSamplers(10)
 
 	if reg != nil {
+		r.tsdbMetrics = mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_readcache_", reg), logger)
 		reg.MustRegister(r.queryLoad)
 	}
 
@@ -208,6 +214,13 @@ func New(
 }
 
 func (r *Readcache) starting(ctx context.Context) error {
+	if r.cfg.WipeTSDBDirOnStartup {
+		level.Warn(r.logger).Log("msg", "wiping readcache data directory on startup as configured", "dir", r.cfg.DataDir)
+		if err := os.RemoveAll(r.cfg.DataDir); err != nil {
+			return fmt.Errorf("wiping readcache data directory on startup: %w", err)
+		}
+	}
+
 	if err := os.MkdirAll(r.cfg.DataDir, 0o755); err != nil {
 		return fmt.Errorf("creating readcache data-dir %q: %w", r.cfg.DataDir, err)
 	}
@@ -423,6 +436,9 @@ func (r *Readcache) stopPartitionLocked(partitionID int32, p *partitionState) er
 	defer p.tenantsMu.Unlock()
 
 	for tenant, db := range p.tenants {
+		if r.tsdbMetrics != nil {
+			r.tsdbMetrics.RemoveRegistryForTenant(tsdbMetricsTenantID(tenant, partitionID))
+		}
 		if err := db.Close(); err != nil && firstErr == nil {
 			firstErr = err
 			level.Warn(r.logger).Log("msg", "closing partition TSDB",
@@ -460,6 +476,7 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 		return db, nil
 	}
 
+	tsdbPromReg := prometheus.NewRegistry()
 	opened, err := openPartitionTSDB(
 		tenantID,
 		partitionID,
@@ -469,13 +486,22 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 		r.seriesHashCache,
 		r.headPostingsForMatchersCacheFactory,
 		r.blockPostingsForMatchersCacheFactory,
+		tsdbPromReg,
 		r.logger,
 	)
 	if err != nil {
 		return nil, err
 	}
+	if r.tsdbMetrics != nil {
+		r.tsdbMetrics.SetRegistryForTenant(tsdbMetricsTenantID(tenantID, partitionID), tsdbPromReg)
+	}
 	p.tenants[tenantID] = opened
 	return opened, nil
+}
+
+// tsdbMetricsTenantID is the key used in TSDBMetrics for a (tenant, partition) head.
+func tsdbMetricsTenantID(tenantID string, partitionID int32) string {
+	return fmt.Sprintf("%s/%d", tenantID, partitionID)
 }
 
 // listTSDBsForTenant returns the partition TSDBs this readcache owns
