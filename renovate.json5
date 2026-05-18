@@ -46,6 +46,18 @@
         '# renovate: depName=github.com/(?<depName>[^\\s]+)\\s+ENV [A-Z_]+=(?<currentValue>[^\\s]+)\\s+',
       ],
       datasourceTemplate: 'github-tags',
+    },
+    {
+      customType: 'regex',
+      description: 'Update helm_version in helm-ci.yml to track the alpine/helm tag in mimir-build-image/Dockerfile',
+      managerFilePatterns: [
+        '.github/workflows/helm-ci.yml',
+      ],
+      matchStrings: [
+        'helm_version:\\s+v(?<currentValue>[\\d.]+)',
+      ],
+      depNameTemplate: 'alpine/helm',
+      datasourceTemplate: 'docker',
     }
   ],
   baseBranchPatterns: [
