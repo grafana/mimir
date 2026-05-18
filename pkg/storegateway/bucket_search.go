@@ -135,7 +135,12 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	)
 
 	s.blockSet.filter(req.Start, req.End, nil, func(b *bucketBlock) {
-		// indexReader is created here (outside the goroutine) to hold the block open.
+		// indexr is intentionally unused below — blockLabelValues takes the
+		// bucketBlock directly and constructs its own reader with the right
+		// postingsSelectionStrategy. We still create one here (and defer its
+		// Close) so b.pendingReaders is incremented for the duration of the
+		// goroutine: that refcount keeps the block from being unloaded
+		// mid-query. Same idiom as BucketStore.LabelValues (bucket.go:1544).
 		indexr := b.indexReader(nil)
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "search label values")
