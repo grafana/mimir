@@ -477,7 +477,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(now time.Time) {
 
 	// Collect all userIDs that have trackers.
 	m.stmtx.RLock()
-	userIDs := make(map[string]struct{}, len(m.sampleTrackersByUserID)+len(m.activeTrackersByUserID))
+	userIDs := make(map[string]struct{}, len(m.sampleTrackersByUserID))
 	for userID := range m.sampleTrackersByUserID {
 		userIDs[userID] = struct{}{}
 	}
