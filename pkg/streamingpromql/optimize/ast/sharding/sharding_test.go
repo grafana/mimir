@@ -16,13 +16,14 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/shardingtest"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -139,17 +140,17 @@ func TestQuerySharding_AvgStats(t *testing.T) {
 	// Verify that sharded avg() reports the same sample count as unsharded avg().
 	// Without the __sharded_avg__ correction, sharded avg() reports 2x the samples
 	// because both the sum and count legs process the same underlying data.
-	queryable := promqltest.LoadedStorage(t, `
-		load 30s
-			foo{group="a"} 0+1x10
-			foo{group="a"} 1+1x10
-			foo{group="b"} 2+1x10
-			foo{group="b"} 3+1x10
-	`)
 
 	start := time.Unix(0, 0)
 	end := time.Unix(300, 0)
 	step := 30 * time.Second
+
+	queryable := testdatagen.StorageSeriesQueryable([]storage.Series{
+		testdatagen.NewSeries(labels.FromStrings("__name__", "foo", "group", "a", "idx", "0"), start, end, step, testdatagen.Factor(5)),
+		testdatagen.NewSeries(labels.FromStrings("__name__", "foo", "group", "a", "idx", "1"), start, end, step, testdatagen.Factor(7)),
+		testdatagen.NewSeries(labels.FromStrings("__name__", "foo", "group", "b", "idx", "0"), start, end, step, testdatagen.Factor(12)),
+		testdatagen.NewSeries(labels.FromStrings("__name__", "foo", "group", "b", "idx", "1"), start, end, step, testdatagen.Factor(11)),
+	})
 
 	ctx := user.InjectOrgID(context.Background(), "test-user")
 
