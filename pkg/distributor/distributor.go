@@ -291,7 +291,10 @@ type Distributor struct {
 	// failure modes so SREs can alert on a sustained imbalance
 	// between them.
 	nautilusRoutingRejected *prometheus.CounterVec
-	clusterValidationLabel  string
+	// nautilusPartitionSamplesWritten counts samples successfully
+	// written to the nautilus ingest topic, per partition and tenant.
+	nautilusPartitionSamplesWritten *prometheus.CounterVec
+	clusterValidationLabel          string
 
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
@@ -773,6 +776,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_nautilus_routing_rejected_total",
 			Help: "Total number of write requests rejected because -distributor.nautilus-required is set and the assignment log could not route them. Reason 'table_unavailable' means no live snapshot was available; 'key_not_covered' means the live snapshot had a gap covering the series key.",
 		}, []string{"reason"}),
+
+		nautilusPartitionSamplesWritten: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_nautilus_partition_samples_written_total",
+			Help: "Total number of float and native histogram samples successfully written to the nautilus ingest Kafka topic (-distributor.nautilus-ingest-topic), per partition and tenant. Only incremented for tenants with nautilus_ingest_routing=nautilus-only.",
+		}, []string{"partition", "user"}),
 
 		PushMetrics: newPushMetrics(reg),
 		now:         defaultNow,
@@ -2673,11 +2681,42 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
 	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, topic, tenantID, partitionRequests)
+	if err == nil {
+		d.observeNautilusPartitionWrites(tenantID, topic, partitionRequests)
+	}
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)
 
 	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
 	return errors.Wrap(err, "send data to partitions")
+}
+
+// writeRequestSampleCount returns the number of float and native
+// histogram samples in req, matching cortex_distributor_samples_in_total.
+func writeRequestSampleCount(req *mimirpb.WriteRequest) int {
+	if req == nil {
+		return 0
+	}
+	n := 0
+	for _, ts := range req.Timeseries {
+		n += len(ts.Samples) + len(ts.Histograms)
+	}
+	return n
+}
+
+// observeNautilusPartitionWrites records per-partition sample counts
+// for tenants writing to the nautilus ingest topic.
+func (d *Distributor) observeNautilusPartitionWrites(tenantID, topic string, partitionRequests []ingest.PartitionWriteRequest) {
+	if d.nautilusPartitionSamplesWritten == nil || d.cfg.NautilusIngestTopic == "" || topic != d.cfg.NautilusIngestTopic {
+		return
+	}
+	for _, pr := range partitionRequests {
+		n := writeRequestSampleCount(pr.WriteRequest)
+		if n == 0 {
+			continue
+		}
+		d.nautilusPartitionSamplesWritten.WithLabelValues(strconv.FormatInt(int64(pr.PartitionID), 10), tenantID).Add(float64(n))
+	}
 }
 
 // getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.

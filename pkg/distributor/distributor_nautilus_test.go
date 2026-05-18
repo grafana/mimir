@@ -17,6 +17,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 // buildActiveTable returns an ActiveTable that tiles the given hash
@@ -160,4 +161,53 @@ func TestNautilusRoutingUnavailableError_HasServiceUnavailableCause(t *testing.T
 	require.False(t, err.IsSoft(), "required-mode rejections must not be soft errors")
 	assert.Equal(t, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE, err.Cause(),
 		"required-mode rejections must surface as Service Unavailable so writers retry")
+}
+
+func TestWriteRequestSampleCount(t *testing.T) {
+	assert.Equal(t, 0, writeRequestSampleCount(nil))
+	assert.Equal(t, 0, writeRequestSampleCount(&mimirpb.WriteRequest{}))
+	assert.Equal(t, 3, writeRequestSampleCount(&mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{Samples: []mimirpb.Sample{{}, {}}}},
+			{TimeSeries: &mimirpb.TimeSeries{Histograms: []mimirpb.Histogram{{}}}},
+		},
+	}))
+}
+
+func TestObserveNautilusPartitionWrites(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	partitionSamples := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_distributor_nautilus_partition_samples_written_total",
+		Help: "test",
+	}, []string{"partition", "user"})
+	require.NoError(t, reg.Register(partitionSamples))
+
+	d := &Distributor{
+		cfg:                             Config{NautilusIngestTopic: "nautilus_ingest"},
+		nautilusPartitionSamplesWritten: partitionSamples,
+	}
+
+	d.observeNautilusPartitionWrites("tenant-a", "production_topic", []ingest.PartitionWriteRequest{
+		{PartitionID: 1, WriteRequest: &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{Samples: []mimirpb.Sample{{}}}},
+			},
+		}},
+	})
+	assert.Equal(t, float64(0), testutil.ToFloat64(partitionSamples.WithLabelValues("1", "tenant-a")))
+
+	d.observeNautilusPartitionWrites("tenant-a", "nautilus_ingest", []ingest.PartitionWriteRequest{
+		{PartitionID: 1, WriteRequest: &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{Samples: []mimirpb.Sample{{}, {}}}},
+			},
+		}},
+		{PartitionID: 42, WriteRequest: &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{Histograms: []mimirpb.Histogram{{}}}},
+			},
+		}},
+	})
+	assert.Equal(t, float64(2), testutil.ToFloat64(partitionSamples.WithLabelValues("1", "tenant-a")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(partitionSamples.WithLabelValues("42", "tenant-a")))
 }
