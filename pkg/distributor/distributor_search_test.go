@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,8 +12,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
@@ -343,4 +346,66 @@ func TestOrderingToProto(t *testing.T) {
 			assert.Equal(t, tc.want, orderingToProto(tc.hints))
 		})
 	}
+}
+
+// closeCountingSet is a minimal storage.SearchResultSet whose only contract
+// is to bump a counter on Close. Used by collectOrCleanupSearchSets tests
+// to assert that survivor streams are properly torn down on the error path.
+type closeCountingSet struct {
+	closed *atomic.Int32
+}
+
+func (c *closeCountingSet) Next() bool                        { return false }
+func (c *closeCountingSet) At() storage.SearchResult          { return storage.SearchResult{} }
+func (c *closeCountingSet) Warnings() annotations.Annotations { return nil }
+func (c *closeCountingSet) Err() error                        { return nil }
+func (c *closeCountingSet) Close() error                      { c.closed.Inc(); return nil }
+
+func TestCollectOrCleanupSearchSets_ClosesSurvivorsOnAnyError(t *testing.T) {
+	// Two jobs: job 0 returns three mock sets; job 1 errors. After the
+	// helper returns the error, all three mock sets must have been Close()d
+	// — otherwise the original bug (ForEachJobMergeResults discarding the
+	// accumulated slice on a sibling job's failure) would leak survivor
+	// streams rooted in the caller's ctx.
+	var closeCount atomic.Int32
+	mk := func() storage.SearchResultSet { return &closeCountingSet{closed: &closeCount} }
+
+	wantErr := errors.New("boom")
+	got, err := collectOrCleanupSearchSets(context.Background(), 2, func(_ context.Context, idx int) ([]storage.SearchResultSet, error) {
+		switch idx {
+		case 0:
+			return []storage.SearchResultSet{mk(), mk(), mk()}, nil
+		default:
+			return nil, wantErr
+		}
+	})
+	require.ErrorIs(t, err, wantErr)
+	require.Nil(t, got)
+	assert.Equal(t, int32(3), closeCount.Load(), "every survivor set must be closed when a sibling job fails")
+}
+
+func TestCollectOrCleanupSearchSets_NoCloseOnSuccess(t *testing.T) {
+	// All jobs succeed — the returned sets must NOT be closed by the helper.
+	// The caller is responsible for Close on success; if the helper closed
+	// here, the caller would receive zombie sets.
+	var closeCount atomic.Int32
+	mk := func() storage.SearchResultSet { return &closeCountingSet{closed: &closeCount} }
+
+	got, err := collectOrCleanupSearchSets(context.Background(), 2, func(_ context.Context, idx int) ([]storage.SearchResultSet, error) {
+		return []storage.SearchResultSet{mk()}, nil
+	})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.Equal(t, int32(0), closeCount.Load(), "successful sets must not be closed by the helper")
+}
+
+func TestCollectOrCleanupSearchSets_AllJobsErrorBeforeOpening(t *testing.T) {
+	// No survivors to clean up, but the helper must still surface the error
+	// cleanly without panicking on the empty slice.
+	wantErr := errors.New("nothing opened")
+	got, err := collectOrCleanupSearchSets(context.Background(), 3, func(_ context.Context, _ int) ([]storage.SearchResultSet, error) {
+		return nil, wantErr
+	})
+	require.ErrorIs(t, err, wantErr)
+	require.Nil(t, got)
 }
