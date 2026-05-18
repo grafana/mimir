@@ -199,6 +199,53 @@ func (p *prometheusFloatHistogramChunk) Encoding() Encoding {
 	return PrometheusFloatHistogramChunk
 }
 
+// Wrapper around a Prometheus XOR2 chunk.
+type prometheusXOR2Chunk struct {
+	prometheusChunk
+}
+
+func newPrometheusXOR2Chunk() *prometheusXOR2Chunk {
+	return &prometheusXOR2Chunk{}
+}
+
+// Add adds another sample to the chunk. While Add works, it is only implemented
+// to make tests work, and should not be used in production.
+func (p *prometheusXOR2Chunk) Add(m model.SamplePair) (EncodedChunk, error) {
+	if p.chunk == nil {
+		p.chunk = chunkenc.NewXOR2Chunk()
+	}
+
+	app, err := p.chunk.Appender()
+	if err != nil {
+		return nil, err
+	}
+
+	app.Append(0, int64(m.Timestamp), float64(m.Value))
+	return nil, nil
+}
+
+func (p *prometheusXOR2Chunk) AddHistogram(_ int64, _ *histogram.Histogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add histogram to sample chunk")
+}
+
+func (p *prometheusXOR2Chunk) AddFloatHistogram(_ int64, _ *histogram.FloatHistogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float histogram to sample chunk")
+}
+
+func (p *prometheusXOR2Chunk) UnmarshalFromBuf(bytes []byte) error {
+	c, err := chunkenc.FromData(chunkenc.EncXOR2, bytes)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Prometheus XOR2 chunk from bytes")
+	}
+
+	p.chunk = c
+	return nil
+}
+
+func (p *prometheusXOR2Chunk) Encoding() Encoding {
+	return PrometheusXOR2Chunk
+}
+
 type prometheusChunkIterator struct {
 	c  chunkenc.Chunk // we need chunk, because FindAtOrAfter needs to start with fresh iterator.
 	it chunkenc.Iterator

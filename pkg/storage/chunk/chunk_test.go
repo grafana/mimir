@@ -66,7 +66,7 @@ var step = int(15 * time.Second / time.Millisecond)
 func TestChunk(t *testing.T) {
 	const maxSamples = 240 // Twice as big as current TSDB
 
-	for _, enc := range []Encoding{PrometheusXorChunk, PrometheusHistogramChunk, PrometheusFloatHistogramChunk} {
+	for _, enc := range []Encoding{PrometheusXorChunk, PrometheusXOR2Chunk, PrometheusHistogramChunk, PrometheusFloatHistogramChunk} {
 		for samples := maxSamples / 10; samples < maxSamples; samples += maxSamples / 10 {
 			t.Run(fmt.Sprintf("testChunkEncoding/%s/%d", enc.String(), samples), func(t *testing.T) {
 				testChunkEncoding(t, enc, samples)
@@ -94,7 +94,7 @@ func mkChunk(t *testing.T, encoding Encoding, samples int) EncodedChunk {
 	for i := 0; i < samples; i++ {
 		var overflowChunk EncodedChunk
 		switch encoding {
-		case PrometheusXorChunk:
+		case PrometheusXorChunk, PrometheusXOR2Chunk:
 			overflowChunk, err = chunk.Add(model.SamplePair{
 				Timestamp: model.Time(i * step),
 				Value:     model.SampleValue(i),
@@ -138,7 +138,7 @@ func testChunkEncoding(t *testing.T, encoding Encoding, samples int) {
 	)
 	for i := 0; i < samples; i++ {
 		switch encoding {
-		case PrometheusXorChunk:
+		case PrometheusXorChunk, PrometheusXOR2Chunk:
 			require.Equal(t, chunkenc.ValFloat, iter.Scan())
 			sample := iter.Value()
 			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
@@ -192,7 +192,7 @@ func testChunkSeek(t *testing.T, encoding Encoding, samples int) {
 			// Seek one millisecond before the actual time
 			require.NotEqual(t, chunkenc.ValNone, iter.FindAtOrAfter(model.Time(i*step-1)), "1ms before step %d not found", i)
 			switch encoding {
-			case PrometheusXorChunk:
+			case PrometheusXorChunk, PrometheusXOR2Chunk:
 				sample := iter.Value()
 				require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 				require.EqualValues(t, model.SampleValue(i), sample.Value)
@@ -211,7 +211,7 @@ func testChunkSeek(t *testing.T, encoding Encoding, samples int) {
 		// Now seek to exactly the right time
 		require.NotEqual(t, chunkenc.ValNone, iter.FindAtOrAfter(model.Time(i*step)))
 		switch encoding {
-		case PrometheusXorChunk:
+		case PrometheusXorChunk, PrometheusXOR2Chunk:
 			sample := iter.Value()
 			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 			require.EqualValues(t, model.SampleValue(i), sample.Value)
@@ -231,7 +231,7 @@ func testChunkSeek(t *testing.T, encoding Encoding, samples int) {
 		for ; j < samples; j++ {
 			require.NotEqual(t, chunkenc.ValNone, iter.Scan())
 			switch encoding {
-			case PrometheusXorChunk:
+			case PrometheusXorChunk, PrometheusXOR2Chunk:
 				sample := iter.Value()
 				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
 				require.EqualValues(t, model.SampleValue(j), sample.Value)
@@ -266,7 +266,7 @@ func testChunkSeekForward(t *testing.T, encoding Encoding, samples int) {
 	for i := 0; i < samples; i += samples / 10 {
 		require.NotEqual(t, chunkenc.ValNone, iter.FindAtOrAfter(model.Time(i*step)))
 		switch encoding {
-		case PrometheusXorChunk:
+		case PrometheusXorChunk, PrometheusXOR2Chunk:
 			sample := iter.Value()
 			require.EqualValues(t, model.Time(i*step), sample.Timestamp)
 			require.EqualValues(t, model.SampleValue(i), sample.Value)
@@ -286,7 +286,7 @@ func testChunkSeekForward(t *testing.T, encoding Encoding, samples int) {
 		for ; j < (i+samples/10) && j < samples; j++ {
 			require.NotEqual(t, chunkenc.ValNone, iter.Scan())
 			switch encoding {
-			case PrometheusXorChunk:
+			case PrometheusXorChunk, PrometheusXOR2Chunk:
 				sample := iter.Value()
 				require.EqualValues(t, model.Time(j*step), sample.Timestamp)
 				require.EqualValues(t, model.SampleValue(j), sample.Value)
@@ -316,7 +316,7 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 		chunkType := iter.Scan()
 		var batch Batch
 		switch encoding {
-		case PrometheusXorChunk:
+		case PrometheusXorChunk, PrometheusXOR2Chunk:
 			require.Equal(t, chunkenc.ValFloat, chunkType)
 			batch = iter.Batch(BatchSize, chunkenc.ValFloat, nil, nil)
 			require.Equal(t, chunkenc.ValFloat, batch.ValueType, "Batch contains floats")

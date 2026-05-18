@@ -24,6 +24,8 @@ func ChunkFromMeta(meta chunks.Meta) (Chunk, error) {
 	switch meta.Chunk.Encoding() {
 	case chunkenc.EncXOR:
 		ch.Encoding = int32(chunk.PrometheusXorChunk)
+	case chunkenc.EncXOR2:
+		ch.Encoding = int32(chunk.PrometheusXOR2Chunk)
 	case chunkenc.EncHistogram:
 		ch.Encoding = int32(chunk.PrometheusHistogramChunk)
 	case chunkenc.EncFloatHistogram:
