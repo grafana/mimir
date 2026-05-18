@@ -86,6 +86,12 @@ func (l LazyQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, 
 // searcher is the Mimir-side cross-source Searcher interface that
 // LazyQuerier defers to when the wrapped querier supports label/value
 // search. Defined locally to avoid an import cycle on pkg/querier.
+//
+// MUST stay in lock-step with pkg/querier.mimirSearcher: this declaration
+// is consumed only via a runtime type assertion (l.next.(searcher)), so any
+// drift between the two definitions silently turns into "search not
+// supported" at runtime rather than a compile error. If the mimirSearcher
+// signature changes, update this one too.
 type searcher interface {
 	SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
 	SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet

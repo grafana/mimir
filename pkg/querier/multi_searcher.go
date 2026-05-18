@@ -55,7 +55,7 @@ func (mq *multiQuerier) SearchLabelNames(ctx context.Context, params *streamingl
 	}
 
 	hints, clampWarn := clampSearchHintsLimit(spanLog, hints, mq.limits.MaxLabelNamesLimit(userID), validation.MaxLabelNamesLimitFlag)
-	sets := fanOutSearch(ctx, queriers, clampWarn, func(s mimirSearcher) storage.SearchResultSet {
+	sets := fanOutSearch(queriers, clampWarn, func(s mimirSearcher) storage.SearchResultSet {
 		return s.SearchLabelNames(ctx, params, hints, matchers...)
 	})
 	return storage.MergeSearchResultSets(sets, hints)
@@ -81,7 +81,7 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, para
 	}
 
 	hints, clampWarn := clampSearchHintsLimit(spanLog, hints, mq.limits.MaxLabelValuesLimit(userID), validation.MaxLabelValuesLimitFlag)
-	sets := fanOutSearch(ctx, queriers, clampWarn, func(s mimirSearcher) storage.SearchResultSet {
+	sets := fanOutSearch(queriers, clampWarn, func(s mimirSearcher) storage.SearchResultSet {
 		return s.SearchLabelValues(ctx, name, params, hints, matchers...)
 	})
 	return storage.MergeSearchResultSets(sets, hints)
@@ -117,7 +117,7 @@ func clampSearchHintsLimit(spanLog *spanlogger.SpanLogger, hints *storage.Search
 // merge composes around the error. If clampWarn is non-empty an extra
 // warning-only set is appended; the merge primitive merges its Warnings()
 // into the final set.
-func fanOutSearch(_ context.Context, queriers []storage.Querier, clampWarn annotations.Annotations, call func(mimirSearcher) storage.SearchResultSet) []storage.SearchResultSet {
+func fanOutSearch(queriers []storage.Querier, clampWarn annotations.Annotations, call func(mimirSearcher) storage.SearchResultSet) []storage.SearchResultSet {
 	sets := make([]storage.SearchResultSet, 0, len(queriers)+1)
 	for _, q := range queriers {
 		s, ok := q.(mimirSearcher)
