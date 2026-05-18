@@ -8,9 +8,11 @@ run:
   # NOTE: requires_libpcap is not included here because it is only needed for
   # tools/trafficdump/, which is linted separately in the Makefile (see lint target).
   # The tags here match the image-and-lint Go build cache for faster CI linting.
+  # Keep in sync with GO_TAGS in the Makefile.
   build-tags:
     - netgo
     - stringlabels
+    - hashicorpmetrics
 output:
   formats:
     text:

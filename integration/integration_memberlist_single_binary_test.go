@@ -120,6 +120,13 @@ func testSingleBinaryEnvPerNodeFlags(
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
 
+	// Memberlist's internal hashicorp/go-metrics instrumentation only reaches the Prometheus
+	// registry when Mimir is built with the hashicorpmetrics tag. The sink creates these
+	// families lazily on first emission, hence WaitMissingMetrics.
+	require.NoError(t, mimir1.WaitSumMetricsWithOptions(e2e.Greater(0), []string{"counter_memberlist_udp_sent"}, e2e.WaitMissingMetrics))
+	require.NoError(t, mimir2.WaitSumMetricsWithOptions(e2e.Greater(0), []string{"counter_memberlist_udp_sent"}, e2e.WaitMissingMetrics))
+	require.NoError(t, mimir3.WaitSumMetricsWithOptions(e2e.Greater(0), []string{"counter_memberlist_udp_sent"}, e2e.WaitMissingMetrics))
+
 	if postConverge != nil {
 		postConverge(mimir1, mimir2, mimir3)
 	}

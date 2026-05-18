@@ -37,8 +37,9 @@ if [[ -z "$TOTAL" ]]; then
     exit 1
 fi
 
-# If you change the build tags or CLI flags, update warmup-build-cache-unit-tests in the Makefile too.
-BUILD_TAGS="netgo,stringlabels"
+# Keep in sync with GO_TAGS in the Makefile. If you change the build tags or CLI flags,
+# update warmup-build-cache-unit-tests in the Makefile too.
+BUILD_TAGS="netgo,stringlabels,hashicorpmetrics"
 if [[ -n "$EXTRA_BUILD_TAGS" ]]; then
     BUILD_TAGS="$BUILD_TAGS,$EXTRA_BUILD_TAGS"
 fi
