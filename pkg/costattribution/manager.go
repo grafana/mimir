@@ -235,7 +235,7 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Sampl
 	}
 
 	trackers := make([]*sampleTracker, 0, len(userTrackers))
-	for _, name := range sortedKeys(configs) {
+	for _, name := range slices.Sorted(maps.Keys(configs)) {
 		if t, ok := userTrackers[name]; ok {
 			trackers = append(trackers, t)
 		}
@@ -300,7 +300,7 @@ func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) 
 	}
 
 	trackers := make([]*activeSeriesTracker, 0, len(userTrackers))
-	for _, name := range sortedKeys(configs) {
+	for _, name := range slices.Sorted(maps.Keys(configs)) {
 		if t, ok := userTrackers[name]; ok {
 			trackers = append(trackers, t)
 		}
@@ -550,14 +550,6 @@ func (m *Manager) purgeInactiveAttributionsUntil(now time.Time) {
 	}
 }
 
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
-}
 
 var _ prometheus.Collector = (*costAttributionCollector)(nil)
 
