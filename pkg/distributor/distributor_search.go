@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
@@ -95,12 +96,18 @@ type searchStream interface {
 //
 // Critical lifecycle invariant: survivor streams MUST be rooted in the
 // caller's ctx, not in any context owned by ring.DoUntilQuorum or
-// concurrency.ForEachJobMergeResults — both helpers cancel their internal
-// contexts on return, and a cancelled ctx racing the prefetcher's
+// concurrency.ForEachJob — both helpers cancel their internal contexts on
+// return, and a cancelled ctx racing the prefetcher's
 // `select { case ch <- r: case <-ctx.Done() }` can silently drop values.
 // Close() on the returned set cancels the per-stream ctx (terminating the
 // gRPC RPC) AND signals DoUntilQuorum's CancelCauseFunc (resource tracking
 // — failing to call it leaks).
+//
+// Cross-set cleanup: ForEachJob short-circuits on the first job error and
+// never returns accumulated results. Survivor streams opened by earlier
+// jobs would otherwise leak (their context is the caller's, so ForEachJob's
+// internal cancellation does not reach them). The deferred cleanup closes
+// anything we have already collected when the function returns an error.
 func (d *Distributor) openIngesterSearchStreams(
 	ctx context.Context,
 	replicationSets []ring.ReplicationSet,
@@ -133,11 +140,51 @@ func (d *Distributor) openIngesterSearchStreams(
 		_ = rs.Close()
 	}
 
-	return concurrency.ForEachJobMergeResults[ring.ReplicationSet, storage.SearchResultSet](
-		ctx, replicationSets, 0,
-		func(jobCtx context.Context, set ring.ReplicationSet) ([]storage.SearchResultSet, error) {
-			return ring.DoUntilQuorumWithoutSuccessfulContextCancellation(jobCtx, set, quorumConfig, wrappedF, cleanup)
-		})
+	return collectOrCleanupSearchSets(ctx, len(replicationSets), func(jobCtx context.Context, idx int) ([]storage.SearchResultSet, error) {
+		return ring.DoUntilQuorumWithoutSuccessfulContextCancellation(jobCtx, replicationSets[idx], quorumConfig, wrappedF, cleanup)
+	})
+}
+
+// collectOrCleanupSearchSets runs n jobs in parallel via concurrency.ForEachJob,
+// accumulating each job's returned SearchResultSets into a single slice. On
+// success it returns the merged slice; if any job errors, every SearchResultSet
+// accumulated from already-completed jobs is Close()d before the error returns
+// to the caller — preventing stranded gRPC streams when one fan-out branch
+// fails after another has already opened streams rooted in the caller's ctx.
+func collectOrCleanupSearchSets(
+	ctx context.Context,
+	n int,
+	runJob func(jobCtx context.Context, idx int) ([]storage.SearchResultSet, error),
+) ([]storage.SearchResultSet, error) {
+	var (
+		sourcesMx sync.Mutex
+		sources   []storage.SearchResultSet
+		succeeded bool
+	)
+	defer func() {
+		if succeeded {
+			return
+		}
+		for _, rs := range sources {
+			_ = rs.Close()
+		}
+	}()
+
+	err := concurrency.ForEachJob(ctx, n, 0, func(jobCtx context.Context, idx int) error {
+		sets, jobErr := runJob(jobCtx, idx)
+		if jobErr != nil {
+			return jobErr
+		}
+		sourcesMx.Lock()
+		sources = append(sources, sets...)
+		sourcesMx.Unlock()
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	succeeded = true
+	return sources, nil
 }
 
 // ingesterSearchResultSet adapts an ingester search stream client to
