@@ -4732,10 +4732,6 @@ cost_attribution_labels_structured:
 
         [output: <string> | default = ""]
 
-    [max_cardinality: <int> | default = ]
-
-    [cooldown: <duration> | default = ]
-
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
 # CLI flag: -ruler.evaluation-delay-duration

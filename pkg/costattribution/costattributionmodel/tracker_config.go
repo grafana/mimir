@@ -10,9 +10,7 @@ import (
 
 // TrackerConfig defines the configuration for a single named cost attribution tracker.
 type TrackerConfig struct {
-	Labels         Labels         `yaml:"labels" json:"labels"`
-	MaxCardinality int            `yaml:"max_cardinality,omitempty" json:"max_cardinality,omitempty"`
-	Cooldown       model.Duration `yaml:"cooldown,omitempty" json:"cooldown,omitempty"`
+	Labels Labels `yaml:"labels" json:"labels"`
 }
 
 // TrackerConfigs is a map of tracker name to TrackerConfig.

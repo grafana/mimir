@@ -6512,24 +6512,6 @@
                   "fieldValue": null,
                   "fieldDefaultValue": null
                 }
-              },
-              {
-                "kind": "field",
-                "name": "max_cardinality",
-                "required": false,
-                "desc": "",
-                "fieldValue": null,
-                "fieldDefaultValue": 0,
-                "fieldType": "int"
-              },
-              {
-                "kind": "field",
-                "name": "cooldown",
-                "required": false,
-                "desc": "",
-                "fieldValue": null,
-                "fieldDefaultValue": null,
-                "fieldType": "duration"
               }
             ],
             "fieldValue": null,

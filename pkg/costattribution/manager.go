@@ -158,18 +158,10 @@ func (m *Manager) effectiveTrackerConfigs(userID string) map[string]resolvedTrac
 		if len(tcfg.Labels) == 0 {
 			continue
 		}
-		maxCard := defaultMaxCardinality
-		if tcfg.MaxCardinality > 0 {
-			maxCard = tcfg.MaxCardinality
-		}
-		cooldown := defaultCooldown
-		if tcfg.Cooldown > 0 {
-			cooldown = time.Duration(tcfg.Cooldown)
-		}
 		result[name] = resolvedTrackerConfig{
 			labels:           tcfg.Labels,
-			maxCardinality:   maxCard,
-			cooldownDuration: cooldown,
+			maxCardinality:   defaultMaxCardinality,
+			cooldownDuration: defaultCooldown,
 		}
 	}
 
@@ -543,7 +535,6 @@ func (m *Manager) purgeInactiveAttributionsUntil(now time.Time) {
 		}
 	}
 }
-
 
 var _ prometheus.Collector = (*costAttributionCollector)(nil)
 
