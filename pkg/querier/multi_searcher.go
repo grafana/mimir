@@ -21,11 +21,10 @@ import (
 // fan-out layer. It differs from Prometheus's storage.Searcher
 // (vendor/github.com/prometheus/prometheus/storage/interface.go) by taking an
 // extra *streaminglabelvalues.Params: each leaf (ingester / store-gateway)
-// builds its own concurrency-unsafe storage.Filter from these params (spec
-// invariant 9), so the params travel separately from the opaque hints.Filter.
+// builds its own concurrency-unsafe storage.Filter from these params, so the
+// params travel separately from the opaque hints.Filter.
 //
-// distributorQuerier and blocksStoreQuerier (added in PR #2) both implement
-// this shape.
+// distributorQuerier and blocksStoreQuerier both implement this shape.
 type mimirSearcher interface {
 	SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
 	SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
