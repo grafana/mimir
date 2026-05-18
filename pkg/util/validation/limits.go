@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"reflect"
 	"slices"
@@ -252,6 +253,7 @@ type Limits struct {
 	MaxCostAttributionCardinality     int                                 `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
 	CostAttributionCooldown           model.Duration                      `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
 	AdditionalCostAttributionTrackers costattributionmodel.TrackerConfigs `yaml:"additional_cost_attribution_trackers,omitempty" json:"additional_cost_attribution_trackers,omitempty" category:"experimental"`
+	costAttributionConfigHash         uint64
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -585,6 +587,7 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 
 	l.canonicalizeQueries()
+	l.ComputeCostAttributionConfigHash()
 	return nil
 }
 
@@ -698,6 +701,14 @@ func (l *Limits) Validate() error {
 	if err := l.CostAttributionLabelsStructured.Validate(); err != nil {
 		return err
 	}
+	if err := l.AdditionalCostAttributionTrackers.Validate(); err != nil {
+		return err
+	}
+	if len(l.CostAttributionLabelsStructured) > 0 {
+		if _, ok := l.AdditionalCostAttributionTrackers[costattributionmodel.DefaultTrackerName]; ok {
+			return fmt.Errorf("additional cost attribution tracker name %q conflicts with the default tracker configured via cost_attribution_labels", costattributionmodel.DefaultTrackerName)
+		}
+	}
 
 	if l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage < 0 || l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage > 100 {
 		return fmt.Errorf("early_head_compaction_min_estimated_series_reduction_percentage must be between 0 and 100")
@@ -709,6 +720,25 @@ func (l *Limits) Validate() error {
 	}
 
 	return nil
+}
+
+// ComputeCostAttributionConfigHash computes and caches the hash of cost attribution config fields.
+func (l *Limits) ComputeCostAttributionConfigHash() uint64 {
+	l.costAttributionConfigHash = l.computeCostAttributionConfigHash()
+	return l.costAttributionConfigHash
+}
+
+func (l *Limits) computeCostAttributionConfigHash() uint64 {
+	if len(l.CostAttributionLabelsStructured) == 0 && len(l.AdditionalCostAttributionTrackers) == 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	e := json.NewEncoder(h)
+	_ = e.Encode(l.CostAttributionLabelsStructured)
+	_ = e.Encode(l.MaxCostAttributionCardinality)
+	_ = e.Encode(l.CostAttributionCooldown)
+	_ = e.Encode(l.AdditionalCostAttributionTrackers)
+	return h.Sum64()
 }
 
 // LabelValueHashLen is the length of the hash portion that replaces part of all
@@ -1167,6 +1197,28 @@ func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
 
 func (o *Overrides) AdditionalCostAttributionTrackers(userID string) costattributionmodel.TrackerConfigs {
 	return o.getOverridesForUser(userID).AdditionalCostAttributionTrackers
+}
+
+// CostAttributionConfig returns all cost attribution limits for a tenant in a single lookup.
+type CostAttributionConfig struct {
+	Labels             costattributionmodel.Labels
+	MaxCardinality     int
+	Cooldown           time.Duration
+	AdditionalTrackers costattributionmodel.TrackerConfigs
+}
+
+func (o *Overrides) CostAttributionConfig(userID string) CostAttributionConfig {
+	l := o.getOverridesForUser(userID)
+	return CostAttributionConfig{
+		Labels:             l.CostAttributionLabelsStructured,
+		MaxCardinality:     l.MaxCostAttributionCardinality,
+		Cooldown:           time.Duration(l.CostAttributionCooldown),
+		AdditionalTrackers: l.AdditionalCostAttributionTrackers,
+	}
+}
+
+func (o *Overrides) CostAttributionConfigHash(userID string) uint64 {
+	return o.getOverridesForUser(userID).costAttributionConfigHash
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.

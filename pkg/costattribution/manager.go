@@ -24,7 +24,6 @@ const (
 	trackerLabel        = "tracker"
 	tenantLabel         = "tenant"
 	reasonLabel         = "reason"
-	defaultTrackerName  = "cost-attribution"
 	missingValue        = "__missing__"
 	overflowValue       = "__overflow__"
 	activeSeriesTracker = "active-series"
@@ -54,19 +53,28 @@ type Manager struct {
 	// userID → trackerName → *SampleTracker
 	stmtx                  sync.RWMutex
 	sampleTrackersByUserID map[string]map[string]*SampleTracker
+	cachedSampleComposites map[string]cachedComposite[*CompositeSampleTracker]
 
 	// userID → trackerName → *ActiveSeriesTracker
-	atmtx                  sync.RWMutex
-	activeTrackersByUserID map[string]map[string]*ActiveSeriesTracker
+	atmtx                        sync.RWMutex
+	activeTrackersByUserID       map[string]map[string]*ActiveSeriesTracker
+	cachedActiveSeriesComposites map[string]cachedComposite[*CompositeActiveSeriesTracker]
+}
+
+type cachedComposite[T any] struct {
+	configHash uint64
+	composite  T
 }
 
 func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg, costAttributionReg prometheus.Registerer) (*Manager, error) {
 	m := &Manager{
 		stmtx:                  sync.RWMutex{},
 		sampleTrackersByUserID: make(map[string]map[string]*SampleTracker),
+		cachedSampleComposites: make(map[string]cachedComposite[*CompositeSampleTracker]),
 
-		atmtx:                  sync.RWMutex{},
-		activeTrackersByUserID: make(map[string]map[string]*ActiveSeriesTracker),
+		atmtx:                        sync.RWMutex{},
+		activeTrackersByUserID:       make(map[string]map[string]*ActiveSeriesTracker),
+		cachedActiveSeriesComposites: make(map[string]cachedComposite[*CompositeActiveSeriesTracker]),
 
 		trackerCreationErrors: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_cost_attribution_tracker_creation_errors_total",
@@ -127,40 +135,39 @@ func (m *Manager) iteration(_ context.Context) error {
 }
 
 // effectiveTrackerConfigs resolves the effective tracker configs for a user,
-// merging the legacy single-tracker config with the new multi-tracker map.
+// merging the default tracker config with the additional trackers map.
 func (m *Manager) effectiveTrackerConfigs(userID string) map[string]resolvedTrackerConfig {
 	if m == nil {
 		return nil
 	}
-	legacyLabels := m.limits.CostAttributionLabelsStructured(userID)
-	trackers := m.limits.AdditionalCostAttributionTrackers(userID)
-	defaultMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
-	defaultCooldown := m.limits.CostAttributionCooldown(userID)
+	cfg := m.limits.CostAttributionConfig(userID)
+	defaultMaxCardinality := cfg.MaxCardinality
+	defaultCooldown := cfg.Cooldown
 
-	result := make(map[string]resolvedTrackerConfig, len(trackers)+1)
+	result := make(map[string]resolvedTrackerConfig, len(cfg.AdditionalTrackers)+1)
 
-	if len(legacyLabels) > 0 {
-		result[defaultTrackerName] = resolvedTrackerConfig{
-			labels:           legacyLabels,
+	if len(cfg.Labels) > 0 {
+		result[costattributionmodel.DefaultTrackerName] = resolvedTrackerConfig{
+			labels:           cfg.Labels,
 			maxCardinality:   defaultMaxCardinality,
 			cooldownDuration: defaultCooldown,
 		}
 	}
 
-	for name, cfg := range trackers {
-		if len(cfg.Labels) == 0 {
+	for name, tcfg := range cfg.AdditionalTrackers {
+		if len(tcfg.Labels) == 0 {
 			continue
 		}
 		maxCard := defaultMaxCardinality
-		if cfg.MaxCardinality > 0 {
-			maxCard = cfg.MaxCardinality
+		if tcfg.MaxCardinality > 0 {
+			maxCard = tcfg.MaxCardinality
 		}
 		cooldown := defaultCooldown
-		if cfg.Cooldown > 0 {
-			cooldown = time.Duration(cfg.Cooldown)
+		if tcfg.Cooldown > 0 {
+			cooldown = time.Duration(tcfg.Cooldown)
 		}
 		result[name] = resolvedTrackerConfig{
-			labels:           cfg.Labels,
+			labels:           tcfg.Labels,
 			maxCardinality:   maxCard,
 			cooldownDuration: cooldown,
 		}
@@ -177,39 +184,42 @@ func sortLabels(labels costattributionmodel.Labels) costattributionmodel.Labels 
 }
 
 func (m *Manager) SampleTracker(userID string) *CompositeSampleTracker {
+	if m == nil {
+		return nil
+	}
+	configHash := m.limits.CostAttributionConfigHash(userID)
+	if configHash == 0 {
+		return nil
+	}
+
+	m.stmtx.RLock()
+	if cached, ok := m.cachedSampleComposites[userID]; ok && cached.configHash == configHash {
+		m.stmtx.RUnlock()
+		return cached.composite
+	}
+	m.stmtx.RUnlock()
+
+	return m.rebuildSampleTrackers(userID, configHash)
+}
+
+func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *CompositeSampleTracker {
 	configs := m.effectiveTrackerConfigs(userID)
 	if len(configs) == 0 {
 		return nil
 	}
 
-	m.stmtx.RLock()
-	userTrackers := m.sampleTrackersByUserID[userID]
-	if userTrackers != nil && len(userTrackers) == len(configs) {
-		allExist := true
-		for name := range configs {
-			if _, ok := userTrackers[name]; !ok {
-				allExist = false
-				break
-			}
-		}
-		if allExist {
-			trackers := make([]*SampleTracker, 0, len(userTrackers))
-			for _, name := range sortedKeys(configs) {
-				trackers = append(trackers, userTrackers[name])
-			}
-			m.stmtx.RUnlock()
-			return newCompositeSampleTracker(trackers)
-		}
-	}
-	m.stmtx.RUnlock()
-
 	m.stmtx.Lock()
 	defer m.stmtx.Unlock()
+
+	// Double-check after acquiring write lock.
+	if cached, ok := m.cachedSampleComposites[userID]; ok && cached.configHash == configHash {
+		return cached.composite
+	}
 
 	if m.sampleTrackersByUserID[userID] == nil {
 		m.sampleTrackersByUserID[userID] = make(map[string]*SampleTracker, len(configs))
 	}
-	userTrackers = m.sampleTrackersByUserID[userID]
+	userTrackers := m.sampleTrackersByUserID[userID]
 
 	for name, cfg := range configs {
 		if _, exists := userTrackers[name]; exists {
@@ -230,43 +240,51 @@ func (m *Manager) SampleTracker(userID string) *CompositeSampleTracker {
 			trackers = append(trackers, t)
 		}
 	}
-	return newCompositeSampleTracker(trackers)
+	composite := newCompositeSampleTracker(trackers)
+	m.cachedSampleComposites[userID] = cachedComposite[*CompositeSampleTracker]{
+		configHash: configHash,
+		composite:  composite,
+	}
+	return composite
 }
 
 func (m *Manager) ActiveSeriesTracker(userID string) *CompositeActiveSeriesTracker {
+	if m == nil {
+		return nil
+	}
+	configHash := m.limits.CostAttributionConfigHash(userID)
+	if configHash == 0 {
+		return nil
+	}
+
+	m.atmtx.RLock()
+	if cached, ok := m.cachedActiveSeriesComposites[userID]; ok && cached.configHash == configHash {
+		m.atmtx.RUnlock()
+		return cached.composite
+	}
+	m.atmtx.RUnlock()
+
+	return m.rebuildActiveSeriesTrackers(userID, configHash)
+}
+
+func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) *CompositeActiveSeriesTracker {
 	configs := m.effectiveTrackerConfigs(userID)
 	if len(configs) == 0 {
 		return nil
 	}
 
-	m.atmtx.RLock()
-	userTrackers := m.activeTrackersByUserID[userID]
-	if userTrackers != nil && len(userTrackers) == len(configs) {
-		allExist := true
-		for name := range configs {
-			if _, ok := userTrackers[name]; !ok {
-				allExist = false
-				break
-			}
-		}
-		if allExist {
-			trackers := make([]*ActiveSeriesTracker, 0, len(userTrackers))
-			for _, name := range sortedKeys(configs) {
-				trackers = append(trackers, userTrackers[name])
-			}
-			m.atmtx.RUnlock()
-			return NewCompositeActiveSeriesTracker(trackers)
-		}
-	}
-	m.atmtx.RUnlock()
-
 	m.atmtx.Lock()
 	defer m.atmtx.Unlock()
+
+	// Double-check after acquiring write lock.
+	if cached, ok := m.cachedActiveSeriesComposites[userID]; ok && cached.configHash == configHash {
+		return cached.composite
+	}
 
 	if m.activeTrackersByUserID[userID] == nil {
 		m.activeTrackersByUserID[userID] = make(map[string]*ActiveSeriesTracker, len(configs))
 	}
-	userTrackers = m.activeTrackersByUserID[userID]
+	userTrackers := m.activeTrackersByUserID[userID]
 
 	for name, cfg := range configs {
 		if _, exists := userTrackers[name]; exists {
@@ -287,7 +305,12 @@ func (m *Manager) ActiveSeriesTracker(userID string) *CompositeActiveSeriesTrack
 			trackers = append(trackers, t)
 		}
 	}
-	return NewCompositeActiveSeriesTracker(trackers)
+	composite := NewCompositeActiveSeriesTracker(trackers)
+	m.cachedActiveSeriesComposites[userID] = cachedComposite[*CompositeActiveSeriesTracker]{
+		configHash: configHash,
+		composite:  composite,
+	}
+	return composite
 }
 
 func (m *Manager) Collect(out chan<- prometheus.Metric) {
@@ -372,6 +395,7 @@ func (m *Manager) deleteSampleTracker(userID, trackerName string) {
 			delete(m.sampleTrackersByUserID, userID)
 		}
 	}
+	delete(m.cachedSampleComposites, userID)
 	m.stmtx.Unlock()
 }
 
@@ -383,16 +407,19 @@ func (m *Manager) deleteActiveTracker(userID, trackerName string) {
 			delete(m.activeTrackersByUserID, userID)
 		}
 	}
+	delete(m.cachedActiveSeriesComposites, userID)
 	m.atmtx.Unlock()
 }
 
 func (m *Manager) deleteAllTrackersForUser(userID string) {
 	m.stmtx.Lock()
 	delete(m.sampleTrackersByUserID, userID)
+	delete(m.cachedSampleComposites, userID)
 	m.stmtx.Unlock()
 
 	m.atmtx.Lock()
 	delete(m.activeTrackersByUserID, userID)
+	delete(m.cachedActiveSeriesComposites, userID)
 	m.atmtx.Unlock()
 }
 
@@ -448,6 +475,7 @@ func (m *Manager) updateTrackers(userID string) (map[string]*SampleTracker, map[
 					m.sampleTrackersByUserID[userID][name] = newST
 					existingST[name] = newST
 				}
+				delete(m.cachedSampleComposites, userID)
 				m.stmtx.Unlock()
 			}
 		}
@@ -464,6 +492,7 @@ func (m *Manager) updateTrackers(userID string) (map[string]*SampleTracker, map[
 					m.activeTrackersByUserID[userID][name] = newAT
 					existingAT[name] = newAT
 				}
+				delete(m.cachedActiveSeriesComposites, userID)
 				m.atmtx.Unlock()
 			}
 		}

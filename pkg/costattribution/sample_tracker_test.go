@@ -50,7 +50,7 @@ func TestNewSampleTracker(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			st, stErr := newSampleTracker("tenant-1", defaultTrackerName, testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
+			st, stErr := newSampleTracker("tenant-1", costattributionmodel.DefaultTrackerName, testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
 			if testCase.expectedErr == nil {
 				require.NoError(t, stErr)
 				require.NotNil(t, st)
@@ -66,7 +66,7 @@ func TestNewSampleTracker(t *testing.T) {
 func TestSampleTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	manager.SampleTracker("user1")
-	st := manager.sampleTrackersByUserID["user1"][defaultTrackerName]
+	st := manager.sampleTrackersByUserID["user1"][costattributionmodel.DefaultTrackerName]
 	assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
 }
 
@@ -117,7 +117,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
 	manager, _, _ := newTestManager()
 	cst := manager.SampleTracker("user3")
-	st := manager.sampleTrackersByUserID["user3"][defaultTrackerName]
+	st := manager.sampleTrackersByUserID["user3"][costattributionmodel.DefaultTrackerName]
 	lbls1 := []mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}
 	lbls2 := []mimirpb.LabelAdapter{{Name: "department", Value: "bar"}, {Name: "service", Value: "baz"}}
 	lbls3 := []mimirpb.LabelAdapter{{Name: "department", Value: "baz"}, {Name: "service", Value: "foo"}}
@@ -142,7 +142,7 @@ func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
 func TestSampleTracker_inactiveObservations(t *testing.T) {
 	manager, _, _ := newTestManager()
 	cst := manager.SampleTracker("user1")
-	st := manager.sampleTrackersByUserID["user1"][defaultTrackerName]
+	st := manager.sampleTrackersByUserID["user1"][costattributionmodel.DefaultTrackerName]
 
 	observations := [][]mimirpb.LabelAdapter{
 		{{Name: "team", Value: "foo"}},
@@ -175,7 +175,7 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 
 	m, _, costAttributionReg := newTestManager()
 	cst := m.SampleTracker("user1")
-	st := m.sampleTrackersByUserID["user1"][defaultTrackerName]
+	st := m.sampleTrackersByUserID["user1"][costattributionmodel.DefaultTrackerName]
 
 	var wg sync.WaitGroup
 	var i int64

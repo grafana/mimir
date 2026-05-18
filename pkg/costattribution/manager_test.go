@@ -34,7 +34,7 @@ func newTestManager() (manager *Manager, reg, costAttributionReg *prometheus.Reg
 // getSampleTracker returns the internal SampleTracker for a user (assumes single legacy tracker).
 func getSampleTracker(m *Manager, userID string) *SampleTracker {
 	if trackers, ok := m.sampleTrackersByUserID[userID]; ok {
-		return trackers[defaultTrackerName]
+		return trackers[costattributionmodel.DefaultTrackerName]
 	}
 	return nil
 }
@@ -42,7 +42,7 @@ func getSampleTracker(m *Manager, userID string) *SampleTracker {
 // getActiveTracker returns the internal ActiveSeriesTracker for a user (assumes single legacy tracker).
 func getActiveTracker(m *Manager, userID string) *ActiveSeriesTracker {
 	if trackers, ok := m.activeTrackersByUserID[userID]; ok {
-		return trackers[defaultTrackerName]
+		return trackers[costattributionmodel.DefaultTrackerName]
 	}
 	return nil
 }

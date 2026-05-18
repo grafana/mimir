@@ -18,6 +18,10 @@ type TrackerConfig struct {
 // TrackerConfigs is a map of tracker name to TrackerConfig.
 type TrackerConfigs map[string]TrackerConfig
 
+// DefaultTrackerName is the name used for the default cost attribution tracker
+// configured via cost_attribution_labels.
+const DefaultTrackerName = "cost-attribution"
+
 func (tc TrackerConfigs) Validate() error {
 	for name, cfg := range tc {
 		if name == "" {

@@ -69,6 +69,9 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 		overrides["user1"].CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "department", Output: "my_department"}}
 	}
 
+	for _, l := range overrides {
+		l.ComputeCostAttributionConfigHash()
+	}
 	return validation.NewOverrides(limits, validation.NewMockTenantLimits(overrides))
 }
 
