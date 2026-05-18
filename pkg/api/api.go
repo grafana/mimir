@@ -504,15 +504,8 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
-	// Streaming label/value search endpoints (experimental, gated by
-	// -querier.experimental-search-api-enabled). Mirror Prometheus PR #18573.
-	// gzip is enabled: per-batch streaming works end-to-end because
-	// pkg/util/gziphandler's GzipResponseWriter.Flush calls gz.Flush()
-	// (deflate SYNC_FLUSH) before flushing the underlying ResponseWriter,
-	// so the consumer can decode each NDJSON batch as it arrives. The
-	// per-flush sync-marker cost (5 bytes plus one missed back-reference
-	// at each flush boundary) is negligible compared with the bandwidth
-	// saved on label/value listings, which are highly repetitive.
+	// Experimental streaming search endpoints, gated by
+	// -querier.experimental-search-api-enabled. Mirrors Prometheus PR #18573.
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/metric_names"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/label_names"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/label_values"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
