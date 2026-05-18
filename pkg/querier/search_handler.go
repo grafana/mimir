@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/e8e25eb09e41bf295e0c9e847cd27cf9016a553a/web/api/v1/search.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package querier
 
@@ -37,10 +40,8 @@ const (
 )
 
 // searchResultRecord is the JSON shape of a single result emitted on the
-// wire. Score is optional (controlled by include_score). The Type/Help/Unit
-// fields are only meaningful for metric-names results in upstream Prometheus
-// (carrying scrape metadata); Mimir never populates them because Mimir does
-// not scrape, but the JSON tags are kept so the wire shape stays compatible.
+// wire. Score is optional (controlled by include_score); Type/Help/Unit
+// are optional (controlled by include_metadata).
 type searchResultRecord struct {
 	Name  string   `json:"name"`
 	Score *float64 `json:"score,omitempty"`
