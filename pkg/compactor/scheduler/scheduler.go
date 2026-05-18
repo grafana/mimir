@@ -147,6 +147,7 @@ func newCompactorScheduler(
 		cfg.MaintenanceInterval,
 		cfg.MaintenanceIntervalsBeforeLeaseExpiration,
 		cfg.MaintenanceIntervalsBeforeColdStartPlanning,
+		metrics.pendingJobsLastEmpty,
 		logger,
 	)
 

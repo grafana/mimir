@@ -14,7 +14,7 @@ import (
 
 const (
 	// resultsCacheVersion should be increased every time the cache format changes.
-	resultsCacheVersion = 1
+	resultsCacheVersion = 3
 )
 
 var (

@@ -155,9 +155,8 @@ func (c *genericQueryCache) storeCachedResponse(ctx context.Context, cachedRes *
 		level.Warn(c.logger).Log("msg", "failed to encode cached query response", "err", err)
 		return
 	}
-	toStore := map[string][]byte{hashedCacheKey: encoded}
-	c.cache.SetMultiAsync(toStore, cacheTTL)
-	c.recordCacheStoreQueryDetails(ctx, toStore)
+	c.cache.SetAsync(hashedCacheKey, encoded, cacheTTL)
+	c.recordCacheStoreQueryDetails(ctx, encoded)
 }
 
 func (c *genericQueryCache) recordCacheHitQueryDetails(ctx context.Context, hits map[string][]byte) {
@@ -170,14 +169,12 @@ func (c *genericQueryCache) recordCacheHitQueryDetails(ctx context.Context, hits
 	}
 }
 
-func (c *genericQueryCache) recordCacheStoreQueryDetails(ctx context.Context, toStore map[string][]byte) {
+func (c *genericQueryCache) recordCacheStoreQueryDetails(ctx context.Context, value []byte) {
 	details := QueryDetailsFromContext(ctx)
 	if details == nil {
 		return
 	}
-	for _, val := range toStore {
-		details.ResultsCacheMissBytes += len(val)
-	}
+	details.ResultsCacheMissBytes += len(value)
 }
 
 func generateGenericQueryRequestCacheKey(tenantIDs []string, req *GenericQueryCacheKey) (cacheKey, hashedCacheKey string) {

@@ -3,14 +3,15 @@
 package binops
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"math"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // vectorMatchingGroupKeyFunc returns a function that computes the grouping key of the output group a series belongs to.
@@ -773,27 +775,82 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 }
 
 // Hints are hints that can be applied to binary operations to avoid doing unnecessary work.
+//
+// When Include is non-empty, matchers are built from those specific labels (on-matching).
+// When Include is empty, matchers are built from all labels on the side whose metadata
+// is passed to BuildMatchers, except those in Exclude (exclude-matching, used for
+// ignoring/default matching).
 type Hints struct {
 	Include []string
+	// Exclude lists label names that should not be used as extra selectors when
+	// Include is empty. In this mode, BuildMatchers will generate selectors for
+	// all labels on the metadata side not present in Exclude.
+	Exclude []string
+}
+
+// IsExcludeMatching reports whether these hints use exclude-matching mode
+// (ignoring/default matching semantics), where matchers are built from all
+// labels on the metadata side except those in Exclude.
+func (h *Hints) IsExcludeMatching() bool {
+	return h != nil && len(h.Include) == 0
 }
 
 const (
 	maxHintMatcherValues = 64
 )
 
-// BuildMatchers builds matchers to limit the data selected on one side of binary operation
+// BuildMatchers builds matchers to limit the data selected on one side of a binary operation
 // based on the series returned by the other side and QueryHints as determined by the query
 // planner. If there are more than a hard-coded maximum number of values for the hinted labels
 // matchers for that label are skipped.
-func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers {
+// When hints.Include is empty, matchers are built from all labels on the metadata side not
+// present in hints.Exclude (exclude-matching semantics). Otherwise, matchers are built from
+// the labels listed in hints.Include.
+//
+// If hints are nil, BuildMatchers returns nil. During rolling upgrades, an older
+// query-frontend may send a plan without hints. In that case we skip narrowing
+// rather than trying to build matchers from VectorMatching.MatchingLabels,
+// because those labels may include names synthesized by label_replace/label_join
+// that don't exist in storage. Matching on them would incorrectly drop series.
+// Skipping narrowing is safe and won't result in correctness issues,
+// it'll just fetch more data than it needs.
+func BuildMatchers(ctx context.Context, logger log.Logger, metadata []types.SeriesMetadata, hints *Hints) types.Matchers {
+	if hints == nil {
+		return nil
+	}
+
+	sl := spanlogger.FromContext(ctx, logger)
+
+	var matchers types.Matchers
+	if hints.IsExcludeMatching() {
+		matchers = buildMatchersForIgnoring(metadata, hints.Exclude)
+		sl.DebugLog(
+			"msg", "binary operator passing exclude-derived matchers",
+			"excluded_labels", hints.Exclude,
+			"hint_matchers", len(matchers),
+		)
+	} else {
+		matchers = buildMatchersForOn(metadata, hints.Include)
+		sl.DebugLog(
+			"msg", "binary operator passing additional matchers",
+			"fields", hints.Include,
+			"hint_matchers", len(matchers),
+		)
+	}
+
+	return matchers
+}
+
+// buildMatchersForOn builds matchers from an explicit list of label names (on-matching).
+func buildMatchersForOn(metadata []types.SeriesMetadata, include []string) types.Matchers {
 	var matchers []types.Matcher
 
-	for _, label := range hints.Include {
+	for _, label := range include {
 		values := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
 
 		if len(values) > 0 {
 			ordered := make([]string, 0, len(values))
-			for k := range maps.Keys(values) {
+			for k := range values {
 				ordered = append(ordered, regexp.QuoteMeta(k))
 			}
 
@@ -812,6 +869,65 @@ func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers
 	return matchers
 }
 
+// buildMatchersForIgnoring builds matchers to limit the data selected on one side of a binary
+// operation when using ignoring or default (no on/ignoring) matching. For each label name
+// present on at least one series in metadata (excluding __name__ and any labels in
+// excludeLabels), it collects the unique values and builds a regexp matcher if the number
+// of unique values is below the cap. Labels absent from some series contribute an empty
+// string alternative so that the matcher also matches series without that label.
+func buildMatchersForIgnoring(metadata []types.SeriesMetadata, excludeLabels []string) types.Matchers {
+	// If there's no metadata we take the fast path because passing any matchers would be wrong.
+	if len(metadata) == 0 {
+		return nil
+	}
+
+	// Collect all label names that appear on at least one series,
+	// skipping __name__ (never useful as a narrowing matcher) and any
+	// excluded labels up front to avoid storing them in the map.
+	// excludeLabels must be sorted by the caller so we can use binary search.
+	labelNames := make(map[string]struct{})
+	for _, s := range metadata {
+		s.Labels.Range(func(l labels.Label) {
+			if l.Name == model.MetricNameLabel {
+				return
+			}
+			if _, found := slices.BinarySearch(excludeLabels, l.Name); found {
+				return
+			}
+			labelNames[l.Name] = struct{}{}
+		})
+	}
+
+	// Iterate label names in sorted order for deterministic output.
+	sortedNames := make([]string, 0, len(labelNames))
+	for name := range labelNames {
+		sortedNames = append(sortedNames, name)
+	}
+	slices.Sort(sortedNames)
+
+	var matchers []types.Matcher
+	for _, name := range sortedNames {
+		values := getUniqueLabelValues(metadata, name, maxHintMatcherValues)
+		if len(values) == 0 {
+			continue
+		}
+
+		ordered := make([]string, 0, len(values))
+		for k := range values {
+			ordered = append(ordered, regexp.QuoteMeta(k))
+		}
+		slices.Sort(ordered)
+
+		matchers = append(matchers, types.Matcher{
+			Type:  labels.MatchRegexp,
+			Name:  name,
+			Value: strings.Join(ordered, "|"),
+		})
+	}
+
+	return matchers
+}
+
 func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]struct{} {
 	values := make(map[string]struct{})
 
@@ -820,13 +936,10 @@ func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValu
 		// values that we'll include in a matcher. In this case, we can't use the
 		// values collected so far to build a matcher.
 		if len(values) >= maxValues {
-			return map[string]struct{}{}
+			return nil
 		}
 
-		val := series.Labels.Get(label)
-		if val != "" {
-			values[val] = struct{}{}
-		}
+		values[series.Labels.Get(label)] = struct{}{}
 	}
 
 	return values

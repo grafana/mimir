@@ -68,11 +68,16 @@ type RemoteExecutionResponse interface {
 	//
 	// If there is any unread data for this request, it is discarded.
 	//
-	// If this is the last request in a group, it returns the annotations and statistics from the remote evaluation, or otherwise returns an empty set of annotations
+	// If this is the last request in a group, it returns the annotations and group statistics from the remote evaluation, or otherwise returns an empty set of annotations
 	// and statistics.
 	//
 	// Finalize can only be called before Close is called.
 	Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error)
+
+	// Stats returns the evaluation stats for this request.
+	//
+	// Stats must only be called once. It may only be called after Finalize has been called for all requests in the group and before Close.
+	Stats(ctx context.Context) (*types.OperatorEvaluationStats, error)
 
 	// Close cleans up any resources associated with this request.
 	//

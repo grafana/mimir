@@ -3,6 +3,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -19,11 +20,12 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type Backend interface {
 	GetMulti(ctx context.Context, keys []string, opts ...cache.Option) map[string][]byte
-	SetMultiAsync(data map[string][]byte, ttl time.Duration)
+	SetAsync(key string, value []byte, ttl time.Duration)
 }
 
 type TTLProvider interface {
@@ -82,21 +84,21 @@ func NewCacheFactoryWithBackend(backend Backend, ttlProvider TTLProvider, reg pr
 	}
 }
 
-func generateCacheKey(tenant string, function functions.Function, selector string, start, end int64, enableDelayedNameRemoval bool) string {
-	return fmt.Sprintf("%s:%d:%s:%d:%d:%t", tenant, function, selector, start, end, enableDelayedNameRemoval)
+func generateCacheKey(tenant string, function functions.Function, selector []byte, start, end int64) []byte {
+	return fmt.Appendf(nil, "%s:%d:%s:%d:%d", tenant, function, selector, start, end)
 }
 
 // hashCacheKey is needed due to memcached key limit
-func hashCacheKey(key string) string {
+func hashCacheKey(key []byte) string {
 	hasher := fnv.New64a()
-	_, _ = hasher.Write([]byte(key))
+	_, _ = hasher.Write(key)
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 // TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals.
 // This should only be used in tests.
-func TestGenerateHashedCacheKey(tenant string, function functions.Function, selector string, start, end int64, enableDelayedNameRemoval bool) string {
-	return hashCacheKey(generateCacheKey(tenant, function, selector, start, end, enableDelayedNameRemoval))
+func TestGenerateHashedCacheKey(tenant string, function functions.Function, selector []byte, start, end int64) string {
+	return hashCacheKey(generateCacheKey(tenant, function, selector, start, end))
 }
 
 // SplitCodec handles serialization of intermediate results for query splitting.
@@ -129,59 +131,58 @@ func NewCache[T any](factory *CacheFactory, codec SplitCodec[T]) *Cache[T] {
 func (c *Cache[T]) Get(
 	ctx context.Context,
 	function functions.Function,
-	innerKey string,
+	innerKey []byte,
 	start, end int64,
-	enableDelayedNameRemoval bool,
 	stats *CacheStats,
-) (seriesMetadata []querierpb.SeriesMetadata, annotations querierpb.Annotations, results []T, found bool, err error) {
+) (seriesMetadata []querierpb.SeriesMetadata, annotations querierpb.Annotations, results []T, operatorStats types.EncodedOperatorEvaluationStats, found bool, err error) {
 	tenant, err := user.ExtractOrgID(ctx)
 	if err != nil {
-		return nil, querierpb.Annotations{}, nil, false, err
+		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, err
 	}
 
 	c.metrics.cacheRequests.Inc()
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end, enableDelayedNameRemoval)
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
 	hashedKey := hashCacheKey(cacheKey)
 
 	foundData := c.backend.GetMulti(ctx, []string{hashedKey})
 	data, ok := foundData[hashedKey]
 	if !ok || len(data) == 0 {
-		return nil, querierpb.Annotations{}, nil, false, nil
+		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, nil
 	}
 
 	var cached CachedSeries
 	if err := cached.Unmarshal(data); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "cache_key", cacheKey, "err", err)
-		return nil, querierpb.Annotations{}, nil, false, nil
+		level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "err", err)
+		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, nil
 	}
 
-	if cached.CacheKey != cacheKey {
-		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey, "cache_key", cacheKey)
-		return nil, querierpb.Annotations{}, nil, false, nil
+	if !bytes.Equal(cached.CacheKey, cacheKey) {
+		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey)
+		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, nil
 	}
 
 	c.metrics.cacheHits.Inc()
-	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "innerKey", innerKey, "start", start, "end", end)
+	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "hashed_cache_key", hashedKey, "start", start, "end", end)
 
 	stats.AddReadEntryStat(len(cached.SeriesMetadata), len(data))
 
 	results, err = c.codec.Unmarshal(cached.Results)
 	if err != nil {
-		return nil, querierpb.Annotations{}, nil, false, fmt.Errorf("unmarshaling cached results: %w", err)
+		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, fmt.Errorf("unmarshaling cached results: %w", err)
 	}
 
-	return cached.SeriesMetadata, cached.Annotations, results, true, nil
+	return cached.SeriesMetadata, cached.Annotations, results, cached.Stats, true, nil
 }
 
 func (c *Cache[T]) Set(
 	ctx context.Context,
 	function functions.Function,
-	innerKey string,
+	innerKey []byte,
 	start, end int64,
-	enableDelayedNameRemoval bool,
 	seriesMetadata []querierpb.SeriesMetadata,
 	annotations querierpb.Annotations,
 	results []T,
+	operatorStats types.EncodedOperatorEvaluationStats,
 	totalSeriesCount int,
 	stats *CacheStats,
 ) error {
@@ -195,7 +196,7 @@ func (c *Cache[T]) Set(
 		return fmt.Errorf("getting results cache TTL: %w", err)
 	}
 
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end, enableDelayedNameRemoval)
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
 
 	resultBytes, err := c.codec.Marshal(results)
 	if err != nil {
@@ -209,6 +210,7 @@ func (c *Cache[T]) Set(
 		SeriesMetadata: seriesMetadata,
 		Annotations:    annotations,
 		Results:        resultBytes,
+		Stats:          operatorStats,
 	}
 
 	data, err := cached.Marshal()
@@ -217,10 +219,10 @@ func (c *Cache[T]) Set(
 	}
 
 	hashedKey := hashCacheKey(cacheKey)
-	c.backend.SetMultiAsync(map[string][]byte{hashedKey: data}, ttl)
+	c.backend.SetAsync(hashedKey, data, ttl)
 
 	seriesCount := len(seriesMetadata)
-	level.Debug(c.logger).Log("msg", "cache entry written", "cache_key", cacheKey, "series_count", seriesCount, "entry_size", len(data))
+	level.Debug(c.logger).Log("msg", "cache entry written", "hashed_cache_key", hashedKey, "series_count", seriesCount, "entry_size", len(data))
 
 	stats.AddWriteEntryStat(seriesCount, totalSeriesCount, len(data))
 

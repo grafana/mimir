@@ -1326,7 +1326,8 @@ func TestOperatorEvaluationStats_EncodingAndDecoding(t *testing.T) {
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			original := factory(t, ctx, memoryConsumptionTracker)
 
-			encodedBytes, err := original.Encode().Marshal()
+			encodedOriginal := original.Encode()
+			encodedBytes, err := encodedOriginal.Marshal()
 			require.NoError(t, err)
 			encoded := &EncodedOperatorEvaluationStats{}
 			require.NoError(t, encoded.Unmarshal(encodedBytes))
@@ -1485,6 +1486,30 @@ func TestOperatorEvaluationStats_FinalizeAndComputePrometheusStats(t *testing.T)
 		StartTimestamp:      timestamp.FromTime(startT),
 	}
 	require.Equal(t, expected, actual)
+
+	stats.Close()
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+func TestOperatorEvaluationStats_GetTotalSamplesProcessed(t *testing.T) {
+	startT := timestamp.Time(1000)
+	timeRange := NewRangeQueryTimeRange(startT, startT.Add(2*time.Second), time.Second)
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	stats, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 2)
+	require.NoError(t, err)
+
+	stats.allSeries.samplesProcessedPerStep[0] = 100
+	stats.allSeries.samplesProcessedPerStep[1] = 101
+	stats.allSeries.samplesProcessedPerStep[2] = 102
+	stats.allSeries.samplesReadIfSubsequentStep[0] = 200
+	stats.allSeries.samplesReadIfSubsequentStep[1] = 201
+	stats.allSeries.samplesReadIfSubsequentStep[2] = 202
+	stats.allSeries.samplesReadIfFirstStep[0] = 300
+	stats.allSeries.samplesReadIfFirstStep[1] = 301
+	stats.allSeries.samplesReadIfFirstStep[2] = 302
+
+	require.Equal(t, int64(100+101+102), stats.GetTotalSamplesProcessed())
 
 	stats.Close()
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())

@@ -31,6 +31,11 @@ func NewPromQLParserOptions() parser.Options {
 		// This enables the anchored and smoothed selector modifiers.
 		EnableExtendedRangeSelectors: true,
 
+		// Duration arithmetic in offset and range specifications. Upstream made this opt-in
+		// again via the `promql-duration-expr` feature in prometheus/prometheus#18684; Mimir
+		// keeps it on globally for parity with the prior always-on behaviour. See #11344.
+		ExperimentalDurationExpr: true,
+
 		// Disabled by default.
 		EnableBinopFillModifiers: false,
 	}

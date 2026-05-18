@@ -29,7 +29,6 @@ type Evaluator struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	annotations *annotations.Annotations
-	stats       *types.QueryStats
 	cancel      context.CancelCauseFunc
 }
 
@@ -42,7 +41,6 @@ func NewEvaluator(nodeRequests []NodeEvaluationRequest, params *planning.Operato
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 
 		annotations: params.Annotations,
-		stats:       params.QueryStats,
 	}, nil
 }
 
@@ -189,12 +187,22 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		}
 	}
 
+	stats := make(map[planning.Node]*types.OperatorEvaluationStats, len(e.nodeRequests))
+	for _, req := range e.nodeRequests {
+		s, err := req.operator.Stats(ctx)
+		if err != nil {
+			return err
+		}
+
+		stats[req.Node] = s
+	}
+
 	// To make comparing to Prometheus' engine easier, only return the annotations if there are some, otherwise, return nil.
 	if len(*e.annotations) == 0 {
 		e.annotations = nil
 	}
 
-	return observer.EvaluationCompleted(ctx, e, e.annotations, e.stats)
+	return observer.EvaluationCompleted(ctx, e, e.annotations, stats)
 }
 
 func (e *Evaluator) closeOperators() {
@@ -400,5 +408,6 @@ type EvaluationObserver interface {
 	StringEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data string) error
 
 	// EvaluationCompleted notifies this observer when evaluation is complete.
-	EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error
+	// Implementations of this method are responsible for closing the OperatorEvaluationStats instances when they are no longer needed.
+	EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error
 }

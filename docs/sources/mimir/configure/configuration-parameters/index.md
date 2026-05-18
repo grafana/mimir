@@ -1699,6 +1699,11 @@ read_reactive_limiter:
   # current inflight requests, after which all requests are rejected
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
+
+# (experimental) Maximum concurrency used to compute a single label values count
+# request.
+# CLI flag: -ingester.label-values-count-max-concurrency
+[label_values_count_request_max_concurrency: <int> | default = 16]
 ```
 
 ### querier

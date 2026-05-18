@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"slices"
 	"strings"
 	"sync"
@@ -1010,20 +1011,20 @@ type limitPerPartitionJobCreationPolicy struct {
 }
 
 // canCreateJob allows at most $partitionLimit jobs per partition.
-// TODO(davidgrant): add an error return to explain the reason for rejection.
-func (p limitPerPartitionJobCreationPolicy) canCreateJob(_ jobKey, spec *schedulerpb.JobSpec, existingJobs []*schedulerpb.JobSpec) bool {
+func (p limitPerPartitionJobCreationPolicy) canCreateJob(_ jobKey, spec *schedulerpb.JobSpec, existing iter.Seq[*schedulerpb.JobSpec]) error {
 	remaining := p.partitionLimit - 1 // -1: we're about to add one.
 
-	for _, existing := range existingJobs {
-		if existing.Topic == spec.Topic && existing.Partition == spec.Partition {
-			remaining--
-			if remaining < 0 {
-				return false
-			}
+	for existingSpec := range existing {
+		if existingSpec.Topic != spec.Topic || existingSpec.Partition != spec.Partition {
+			continue
+		}
+		if remaining--; remaining < 0 {
+			return fmt.Errorf("partition %d already has %d in-flight jobs (limit %d)",
+				spec.Partition, p.partitionLimit, p.partitionLimit)
 		}
 	}
 
-	return true
+	return nil
 }
 
 var _ jobCreationPolicy[schedulerpb.JobSpec] = (*limitPerPartitionJobCreationPolicy)(nil)

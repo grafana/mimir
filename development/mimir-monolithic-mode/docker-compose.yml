@@ -64,7 +64,7 @@ services:
   grafana-alloy:
     profiles:
       - grafana-alloy
-    image: grafana/alloy:v1.16.0@sha256:6e00cf7c5a692ff5f24844529416ed017d76fce922f8199004e73d5eca46b6b8
+    image: grafana/alloy:v1.16.1@sha256:51aeb9d829239345070619dad3edd6873186f913c84f45b365b74574fcb38ec0
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
       - ./config/config.alloy:/etc/alloy/config.alloy
@@ -121,7 +121,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.151.0@sha256:d57bfe8eee2378f31cb1193239fbcac521d54a5a071fca2bfc106916a32b892d
+    image: otel/opentelemetry-collector-contrib:0.152.0@sha256:f41d7995565df3733b7568702073a9c490792f9c6ac60684fe6a4da21a313f8d
     command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
     profiles:
       - otel-collector-remote-write
@@ -137,7 +137,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.151.0@sha256:d57bfe8eee2378f31cb1193239fbcac521d54a5a071fca2bfc106916a32b892d
+    image: otel/opentelemetry-collector-contrib:0.152.0@sha256:f41d7995565df3733b7568702073a9c490792f9c6ac60684fe6a4da21a313f8d
     command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
     profiles:
       - otel-collector-otlp-push

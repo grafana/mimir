@@ -494,7 +494,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(spanLog *spanlogger.SpanLogg
 	}
 
 	level.Debug(spanLog).Log("msg", "asynchronously storing response in cache", "key", key, "size", len(buf), "ttl", usedTTL, "extents", len(extents))
-	s.cache.SetMultiAsync(map[string][]byte{hashCacheKey(key): buf}, usedTTL)
+	s.cache.SetAsync(hashCacheKey(key), buf, usedTTL)
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e Extent) time.Duration {

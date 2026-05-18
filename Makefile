@@ -235,7 +235,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr15213-51d8941fe0
+LATEST_BUILD_IMAGE_TAG ?= pr15144-1c816b56e4
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -267,7 +267,7 @@ SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
 exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format: fetch-build-image
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) $@;
 
 else
 
@@ -286,6 +286,34 @@ protos: $(PROTO_GOS)
 	@./tools/apply-expected-diffs.sh $(PROTO_GOS)
 
 GENERATE_FILES ?= true
+
+# alertspb and alertmanagerpb embed types from prometheus/alertmanager's clusterpb,
+# which switched away from gogo-protobuf in v0.32.0. We therefore generate these
+# packages with the standard protoc-gen-go (and protoc-gen-go-grpc) toolchain
+# instead of the gogoslick rule below.
+pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
+ifeq ($(GENERATE_FILES),true)
+	protoc -I $(GOPATH)/src:./vendor:./$(@D) --go_out=paths=source_relative:./$(@D) ./$<
+else
+	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on $@ and $< are correct."
+endif
+
+# httpgrpc.proto in dskit imports gogoproto/gogo.proto and uses a short go_package
+# value; map it to its full Go import path explicitly so protoc-gen-go can resolve it.
+pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
+ifeq ($(GENERATE_FILES),true)
+	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) \
+		--go_opt=Mgithub.com/grafana/dskit/httpgrpc/httpgrpc.proto=github.com/grafana/dskit/httpgrpc \
+		--go-grpc_opt=Mgithub.com/grafana/dskit/httpgrpc/httpgrpc.proto=github.com/grafana/dskit/httpgrpc \
+		--go-grpc_opt=require_unimplemented_servers=false \
+		--go_out=paths=source_relative:./$(@D) \
+		--go-grpc_out=paths=source_relative:./$(@D) \
+		./$<
+else
+	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on $@ and $< are correct."
+endif
 
 %.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
@@ -604,7 +632,14 @@ build-mixin: check-mixin-jb
 	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
 		mkdir -p "$(MIXIN_OUT_PATH)$$suffix"; \
 		find "$(MIXIN_OUT_PATH)$$suffix" -type f -delete; \
-		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		input_file="${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		if [ -n "$(DASHBOARDS_HISTOGRAM_MODE)" ]; then \
+			tmp_file="${MIXIN_PATH}/mixin-compiled$$suffix-tmp-latency.libsonnet"; \
+			echo "(import 'mixin-compiled$$suffix.libsonnet') + { _config+:: { dashboards_default_latency_mode: '$(DASHBOARDS_HISTOGRAM_MODE)' } }" > "$$tmp_file"; \
+			input_file="$$tmp_file"; \
+		fi; \
+		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "$$input_file"; \
+		if [ -n "$(DASHBOARDS_HISTOGRAM_MODE)" ]; then rm -f "$$tmp_file"; fi; \
 		./tools/check-rules.sh "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" 20 ; \
 		cd "$(MIXIN_OUT_PATH)$$suffix/.." && zip -q -r "mimir-mixin$$suffix.zip" $$(basename "$(MIXIN_OUT_PATH)$$suffix"); \
 		cd -; \

@@ -1456,9 +1456,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 
 			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
 			require.Equal(t, testCase.expectedPhysicalSamplesRead, stats.PhysicalSamplesRead)
-			require.Zero(t, stats.EquivalentSamplesRead, "this test is outdated and needs to be updated given https://github.com/grafana/mimir/pull/14838 seems to have been merged")
-			// Once https://github.com/grafana/mimir/pull/14838 has been merged, remove the assertion above and replace it with:
-			//  require.Equal(t, testCase.expectedEquivalentSamplesRead, stats.EquivalentSamplesRead)
+			require.Equal(t, testCase.expectedEquivalentSamplesRead, stats.EquivalentSamplesRead)
 
 			if responseWithFinalizer.Data.ResultType == model.ValString.String() {
 				// We can't perform the assertions below for string results because it doesn't select any data,

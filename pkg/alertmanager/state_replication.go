@@ -178,7 +178,7 @@ func (s *state) GetFullState() (*clusterpb.FullState, error) {
 	defer s.mtx.Unlock()
 
 	all := &clusterpb.FullState{
-		Parts: make([]clusterpb.Part, 0, len(s.states)),
+		Parts: make([]*clusterpb.Part, 0, len(s.states)),
 	}
 
 	for key, s := range s.states {
@@ -186,7 +186,7 @@ func (s *state) GetFullState() (*clusterpb.FullState, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode state for key: %v: %w", key, err)
 		}
-		all.Parts = append(all.Parts, clusterpb.Part{Key: key, Data: b})
+		all.Parts = append(all.Parts, &clusterpb.Part{Key: key, Data: b})
 	}
 
 	return all, nil

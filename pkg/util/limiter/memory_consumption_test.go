@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -505,5 +506,90 @@ func TestMemoryTrackerNestedTrackers(t *testing.T) {
 		childTracker := tracker.NewNestedMemoryConsumptionTracker(context.Background(), "child")
 
 		require.PanicsWithValue(t, "cannot nest a tracker not created via a InflightMemoryConsumptionTracker", func() { childTracker.NewNestedMemoryConsumptionTracker(context.Background(), "child") })
+	})
+}
+
+func TestInflightMemoryConsumptionTracker_MaxAge(t *testing.T) {
+	const maxAgeMetric = "cortex_querier_inflight_query_max_age_seconds"
+
+	// fakeClock returns a controllable time source. Reading it never advances it; tests
+	// mutate the underlying time directly to simulate the passage of time.
+	type fakeClock struct {
+		t time.Time
+	}
+
+	newTracker := func(c *fakeClock) *InflightMemoryConsumptionTracker {
+		reg := prometheus.NewPedanticRegistry()
+		tt := NewInflightMemoryConsumptionTracker(reg, nil)
+		tt.now = func() time.Time { return c.t }
+		return tt
+	}
+
+	t.Run("no in-flight queries emits zero", func(t *testing.T) {
+		clock := &fakeClock{t: time.Unix(1_000_000, 0)}
+		tt := newTracker(clock)
+
+		reg := prometheus.NewPedanticRegistry()
+		reg.MustRegister(tt)
+
+		expected := `
+			# HELP cortex_querier_inflight_query_max_age_seconds Age in seconds of the oldest in-flight query memory consumption tracker. Zero when there are no in-flight queries.
+			# TYPE cortex_querier_inflight_query_max_age_seconds gauge
+			cortex_querier_inflight_query_max_age_seconds 0
+		`
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected), maxAgeMetric))
+	})
+
+	t.Run("single in-flight query reports its age", func(t *testing.T) {
+		clock := &fakeClock{t: time.Unix(1_000_000, 0)}
+		tt := newTracker(clock)
+
+		reg := prometheus.NewPedanticRegistry()
+		reg.MustRegister(tt)
+
+		// Tracker is stamped with the clock's current time at registration.
+		_ = tt.NewMemoryConsumptionTracker(context.Background(), 0, "query1")
+		// Advance the clock by 30 seconds before collecting.
+		clock.t = clock.t.Add(30 * time.Second)
+
+		expected := `
+			# HELP cortex_querier_inflight_query_max_age_seconds Age in seconds of the oldest in-flight query memory consumption tracker. Zero when there are no in-flight queries.
+			# TYPE cortex_querier_inflight_query_max_age_seconds gauge
+			cortex_querier_inflight_query_max_age_seconds 30
+		`
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected), maxAgeMetric))
+	})
+
+	t.Run("multiple in-flight queries report the oldest age", func(t *testing.T) {
+		clock := &fakeClock{t: time.Unix(1_000_000, 0)}
+		tt := newTracker(clock)
+
+		reg := prometheus.NewPedanticRegistry()
+		reg.MustRegister(tt)
+
+		// Register three trackers at different points in time so the oldest is 90s old at collection.
+		oldest := tt.NewMemoryConsumptionTracker(context.Background(), 0, "oldest")
+		clock.t = clock.t.Add(30 * time.Second)
+		_ = tt.NewMemoryConsumptionTracker(context.Background(), 0, "middle")
+		clock.t = clock.t.Add(30 * time.Second)
+		_ = tt.NewMemoryConsumptionTracker(context.Background(), 0, "newest")
+		// Advance to the collection time: oldest is now 90s old, newest is 30s old.
+		clock.t = clock.t.Add(30 * time.Second)
+
+		expected := `
+			# HELP cortex_querier_inflight_query_max_age_seconds Age in seconds of the oldest in-flight query memory consumption tracker. Zero when there are no in-flight queries.
+			# TYPE cortex_querier_inflight_query_max_age_seconds gauge
+			cortex_querier_inflight_query_max_age_seconds 90
+		`
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected), maxAgeMetric))
+
+		// After deregistering the oldest, the next oldest (middle, 60s) should take over.
+		tt.Deregister(oldest)
+		expected = `
+			# HELP cortex_querier_inflight_query_max_age_seconds Age in seconds of the oldest in-flight query memory consumption tracker. Zero when there are no in-flight queries.
+			# TYPE cortex_querier_inflight_query_max_age_seconds gauge
+			cortex_querier_inflight_query_max_age_seconds 60
+		`
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected), maxAgeMetric))
 	})
 }

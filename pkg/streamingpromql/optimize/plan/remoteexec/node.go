@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -264,7 +265,7 @@ type RemoteExecutionGroupMaterializer struct {
 	groupEvaluatorFactory GroupEvaluatorFactory
 }
 
-type GroupEvaluatorFactory func(eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) GroupEvaluator
+type GroupEvaluatorFactory func(eagerLoad bool, queryParameters *planning.QueryParameters, logger log.Logger, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) GroupEvaluator
 
 func NewRemoteExecutionGroupMaterializer(groupEvaluatorFactory GroupEvaluatorFactory) planning.NodeMaterializer {
 	return &RemoteExecutionGroupMaterializer{groupEvaluatorFactory: groupEvaluatorFactory}
@@ -276,7 +277,7 @@ func (m *RemoteExecutionGroupMaterializer) Materialize(n planning.Node, material
 		return nil, fmt.Errorf("expected node of type RemoteExecutionGroup, got %T", n)
 	}
 
-	evaluator := m.groupEvaluatorFactory(g.EagerLoad, params.QueryParameters, params.MemoryConsumptionTracker)
+	evaluator := m.groupEvaluatorFactory(g.EagerLoad, params.QueryParameters, params.Logger, params.MemoryConsumptionTracker)
 	return &RemoteExecutionGroupOperatorFactory{GroupEvaluator: evaluator}, nil
 }
 
@@ -311,7 +312,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
 			Annotations:        params.Annotations,
-			QueryStats:         params.QueryStats,
 			expressionPosition: expressionPosition,
 		}, nil
 
@@ -321,7 +321,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
 			Annotations:        params.Annotations,
-			QueryStats:         params.QueryStats,
 			expressionPosition: expressionPosition,
 		}, nil
 
@@ -331,7 +330,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
 			Annotations:        params.Annotations,
-			QueryStats:         params.QueryStats,
 			expressionPosition: expressionPosition,
 		}, nil
 

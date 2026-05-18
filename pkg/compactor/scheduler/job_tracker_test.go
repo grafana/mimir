@@ -65,7 +65,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		},
 		"skips within compaction wait period": {
 			setup: func(jt *JobTracker) {
-				// 3:30 + 1h = 4:30, truncate to 1h = 4:00, so 4:00 + compactionWaitPeriod
+				// (3:30 - 15m = 3:15).Truncate(1h) = 3:00, so 3:00 + 1h = 4:00 + compactionWaitPeriod
 				jt.completePlanTime = at(3, 30)
 			},
 			now: at(4, 0).Add(compactionWaitPeriod - time.Minute),
@@ -127,6 +127,23 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, transition)
 		require.NotContains(t, jt.incompleteJobs, planJobId)
+	})
+
+	t.Run("plans for next window when plan completion bleeds past interval boundary", func(t *testing.T) {
+		// Previous plan: 1:30 + 25m = 1:55 start time.
+		// If a plan completes at 2:03 (past the 2:00 boundary), the 2:00 + 25m = 2:25 should still be planned, not skipped.
+		const planInterval = 30 * time.Minute
+		const waitPeriod = 25 * time.Minute
+
+		clk := clock.NewMock()
+		clk.Set(at(2, 25))
+		jt, _ := newTestJobTracker(clk)
+		jt.completePlanTime = at(2, 3)
+
+		transition, err := jt.Maintenance(leaseDuration, false, true, planInterval, waitPeriod)
+		require.NoError(t, err)
+		require.True(t, transition)
+		require.Contains(t, jt.incompleteJobs, planJobId)
 	})
 
 	t.Run("new plan job is leased ahead of existing pending compactions", func(t *testing.T) {
