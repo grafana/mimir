@@ -637,19 +637,28 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 	snap := r.rangeSeries.Snapshot()
 
 	var totalSeries int64
+	partitionSeries := make([]client.PartitionActiveSeries, 0, len(r.partitions))
 	r.partitionMu.RLock()
-	for _, p := range r.partitions {
+	for pid, p := range r.partitions {
+		var partitionTotal int64
 		p.tenantsMu.RLock()
 		for _, db := range p.tenants {
-			totalSeries += int64(db.Head().NumSeries())
+			n := int64(db.Head().NumSeries())
+			partitionTotal += n
+			totalSeries += n
 		}
 		p.tenantsMu.RUnlock()
+		partitionSeries = append(partitionSeries, client.PartitionActiveSeries{
+			PartitionId:  pid,
+			ActiveSeries: partitionTotal,
+		})
 	}
 	r.partitionMu.RUnlock()
 
 	resp := &client.HashRangeStatsResponse{
-		Rates:             make([]client.HashRangeRate, len(snap.Ranges)),
-		TotalActiveSeries: totalSeries,
+		Rates:                 make([]client.HashRangeRate, len(snap.Ranges)),
+		TotalActiveSeries:     totalSeries,
+		PartitionActiveSeries: partitionSeries,
 	}
 	for j, rng := range snap.Ranges {
 		resp.Rates[j] = client.HashRangeRate{

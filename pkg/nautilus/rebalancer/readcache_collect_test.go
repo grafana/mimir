@@ -8,49 +8,29 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 )
 
-// TestPartitionLByPID_ReadcacheLog verifies that with the readcache
-// pool wired (rc != nil), partitionLByPID maps each partition to
-// the instance total of its current owner from the readcache log.
-// This is the central piece of "load follows the slicer": the
-// hashrange slicer sees per-partition L proportional to the owning
-// readcache's memory pressure, so a readcache that's drowning in
-// series pushes its hottest hash ranges (= heaviest partitions)
-// toward a less-loaded peer.
-func TestPartitionLByPID_ReadcacheLog(t *testing.T) {
+// TestPartitionLByPID_ReadcacheUsesPartitionTotals verifies that with
+// the readcache pool wired, partitionLByPID uses per-partition head
+// series from HashRangeStats rather than fanning out instance totals.
+func TestPartitionLByPID_ReadcacheUsesPartitionTotals(t *testing.T) {
 	r := &Rebalancer{
-		logger:         log.NewNopLogger(),
-		readcacheStore: newReadcacheLogStore(),
-		// Non-nil readcachePool tag selects the readcache code path.
-		// We don't dial anything in this test; we only exercise the
-		// L-mapping function which reads readcacheStore directly.
+		logger:        log.NewNopLogger(),
 		readcachePool: &ReadcachePool{},
 	}
 
-	now := time.Now()
-	// Seed the log: partition 0 -> readcache-a, partition 1 -> readcache-b,
-	// partition 2 -> readcache-a, partition 3 has no active lease
-	// (cold).
-	r.readcacheStore.seedFromEntries([]readcacheassignment.LogEntry{
-		{PartitionID: 0, InstanceID: "readcache-a", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
-		{PartitionID: 1, InstanceID: "readcache-b", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
-		{PartitionID: 2, InstanceID: "readcache-a", From: now.Add(-time.Minute), To: now.Add(time.Hour)},
-	})
-
-	instanceTotals := map[string]int64{
-		"readcache-a": 9000,
-		"readcache-b": 3000,
+	partitionTotals := map[int32]int64{
+		0: 5000,
+		1: 3000,
+		2: 4000,
 	}
 
-	got := r.partitionLByPID(instanceTotals, nil, []int32{0, 1, 2, 3}, now)
+	got := r.partitionLByPID(nil, partitionTotals, nil, []int32{0, 1, 2, 3}, time.Now())
 	assert.Equal(t, map[int32]int64{
-		0: 9000,
+		0: 5000,
 		1: 3000,
-		2: 9000,
-		3: 0, // no owner -> zero (slicer treats as cold)
+		2: 4000,
+		3: 0, // not reported this round
 	}, got)
 }
 
@@ -74,7 +54,7 @@ func TestPartitionLByPID_FallbackToIngesterRing(t *testing.T) {
 		"ingester-b": 7000,
 	}
 
-	got := r.partitionLByPID(instanceTotals, pRing, []int32{0, 1}, time.Now())
+	got := r.partitionLByPID(instanceTotals, nil, pRing, []int32{0, 1}, time.Now())
 	assert.Equal(t, map[int32]int64{
 		0: 7000, // max(5000, 7000)
 		1: 7000,

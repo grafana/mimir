@@ -167,11 +167,12 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 // readcache pods through the ring; otherwise it falls back to the
 // legacy ingester-pool path (used by tests and pre-readcache
 // phase 1 deployments).
-func (r *Rebalancer) collectRoundStats(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]float64, map[string]float64, error) {
+func (r *Rebalancer) collectRoundStats(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
 	if r.readcachePool != nil {
 		return r.collectRatesFromReadcache(ctx)
 	}
-	return r.collectRates(ctx)
+	rates, instanceTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRates(ctx)
+	return rates, instanceTotals, nil, partitionQuerySamples, unnamedPerInstance, err
 }
 
 // pushRanges dispatches to the readcache or the ingester push path
@@ -185,34 +186,18 @@ func (r *Rebalancer) pushRanges(ctx context.Context, a *assignment.Assignment, a
 }
 
 // partitionLByPID computes per-partition head-series load. With the
-// readcache pool wired, owners come from the readcache assignment
-// log (one owner per partition under the current single-owner
-// policy); otherwise the helper falls back to partitionL backed by
-// the ingester partition ring.
-func (r *Rebalancer) partitionLByPID(instanceTotals map[string]int64, pRing partitionRingView, activePartitions []int32, at time.Time) map[int32]int64 {
+// readcache pool wired, L comes from partitionTotals reported by
+// HashRangeStats (one entry per Kafka partition per readcache pod);
+// otherwise the helper falls back to partitionL backed by the ingester
+// partition ring and per-instance totals.
+func (r *Rebalancer) partitionLByPID(instanceTotals map[string]int64, partitionTotals map[int32]int64, pRing partitionRingView, activePartitions []int32, at time.Time) map[int32]int64 {
 	if r.readcachePool == nil {
 		return partitionL(instanceTotals, pRing, activePartitions)
 	}
 
-	// Snapshot the readcache log once per round to map pid -> owner.
-	ownerByPartition := make(map[int32]string)
-	for _, entry := range r.readcacheStore.snapshot() {
-		if entry.ActiveAt(at) {
-			ownerByPartition[entry.PartitionID] = entry.InstanceID
-		}
-	}
 	out := make(map[int32]int64, len(activePartitions))
 	for _, pid := range activePartitions {
-		owner, ok := ownerByPartition[pid]
-		if !ok || owner == "" {
-			// No owner yet (cold-start, between rounds): record 0
-			// so callers can iterate every active partition. The
-			// slicer treats zero-load partitions as cold which is
-			// safe.
-			out[pid] = 0
-			continue
-		}
-		out[pid] = instanceTotals[owner]
+		out[pid] = partitionTotals[pid]
 	}
 	return out
 }
@@ -228,8 +213,10 @@ func (r *Rebalancer) partitionLByPID(instanceTotals map[string]int64, pRing part
 //     report it. In single-owner-per-partition mode each range
 //     appears on exactly one pod, so the sum reduces to a passthrough.
 //   - instanceTotals: readcache instance ID -> sum of head series
-//     across that pod's owned partitions. This is the readcache's
-//     equivalent of the ingester's "L_i" memory pressure signal.
+//     across that pod's owned partitions. Used for observability;
+//     partition-level L uses partitionTotals instead.
+//   - partitionTotals: per-partition head series, max across pods
+//     that reported each partition (normally exactly one owner).
 //   - partitionQuerySamples: per-partition query-load EWMA, summed
 //     across pods that report the partition.
 //   - unnamedPerInstance: per-readcache unnamed query EWMA, surfaced
@@ -239,18 +226,19 @@ func (r *Rebalancer) partitionLByPID(instanceTotals map[string]int64, pRing part
 // other pods returned; a single misbehaving readcache cannot block
 // the rebalance round behind TCP timeouts (see
 // Config.IngesterRPCTimeout).
-func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]float64, map[string]float64, error) {
+func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
 	instances, err := r.readcachePool.healthyInstances()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	type result struct {
-		instanceID    string
-		totalSeries   int64
-		rates         []rangeRate
-		partitionLoad []ingester_client.PartitionQueryLoad
-		unnamedLoad   float64
+		instanceID      string
+		totalSeries     int64
+		rates           []rangeRate
+		partitionSeries []ingester_client.PartitionActiveSeries
+		partitionLoad   []ingester_client.PartitionQueryLoad
+		unnamedLoad     float64
 	}
 
 	results := make([]result, len(instances))
@@ -284,11 +272,12 @@ func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate
 			}
 		}
 		results[idx] = result{
-			instanceID:    inst.Id,
-			totalSeries:   resp.TotalActiveSeries,
-			rates:         rates,
-			partitionLoad: resp.PartitionQueryLoads,
-			unnamedLoad:   resp.UnnamedQuerySamplesEwma,
+			instanceID:      inst.Id,
+			totalSeries:     resp.TotalActiveSeries,
+			rates:           rates,
+			partitionSeries: resp.PartitionActiveSeries,
+			partitionLoad:   resp.PartitionQueryLoads,
+			unnamedLoad:     resp.UnnamedQuerySamplesEwma,
 		}
 		ok.Add(1)
 		return nil
@@ -296,6 +285,7 @@ func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate
 
 	var all []rangeRate
 	instanceTotals := make(map[string]int64, len(instances))
+	partitionTotals := map[int32]int64{}
 	partitionQuerySamples := map[int32]float64{}
 	unnamedPerInstance := map[string]float64{}
 	for _, res := range results {
@@ -304,6 +294,11 @@ func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate
 		}
 		instanceTotals[res.instanceID] = res.totalSeries
 		all = append(all, res.rates...)
+		for _, p := range res.partitionSeries {
+			if p.ActiveSeries > partitionTotals[p.PartitionId] {
+				partitionTotals[p.PartitionId] = p.ActiveSeries
+			}
+		}
 		for _, p := range res.partitionLoad {
 			partitionQuerySamples[p.PartitionId] += p.SamplesEwma
 		}
@@ -313,7 +308,7 @@ func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate
 	}
 
 	level.Info(r.logger).Log("msg", "collected readcache stats", "healthy", len(instances), "ok", ok.Load(), "failed", failed.Load())
-	return all, instanceTotals, partitionQuerySamples, unnamedPerInstance, nil
+	return all, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, nil
 }
 
 // pushRangesToReadcache calls SetHashRanges on each readcache that

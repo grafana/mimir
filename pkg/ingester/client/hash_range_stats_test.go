@@ -53,6 +53,10 @@ func TestHashRangeStatsResponse_QueryLoadFields_RoundTrip(t *testing.T) {
 			{PartitionId: 7, SamplesEwma: 7777.7},
 			{PartitionId: -1, SamplesEwma: 1.0}, // negative partitions are tolerated by the wire format
 		},
+		PartitionActiveSeries: []PartitionActiveSeries{
+			{PartitionId: 0, ActiveSeries: 100},
+			{PartitionId: 7, ActiveSeries: 200},
+		},
 	}
 
 	data, err := original.Marshal()
@@ -69,6 +73,11 @@ func TestHashRangeStatsResponse_QueryLoadFields_RoundTrip(t *testing.T) {
 	assert.Equal(t, int32(7), restored.PartitionQueryLoads[1].PartitionId)
 	assert.Equal(t, 7777.7, restored.PartitionQueryLoads[1].SamplesEwma)
 	assert.Equal(t, int32(-1), restored.PartitionQueryLoads[2].PartitionId)
+	require.Len(t, restored.PartitionActiveSeries, 2)
+	assert.Equal(t, int32(0), restored.PartitionActiveSeries[0].PartitionId)
+	assert.Equal(t, int64(100), restored.PartitionActiveSeries[0].ActiveSeries)
+	assert.Equal(t, int32(7), restored.PartitionActiveSeries[1].PartitionId)
+	assert.Equal(t, int64(200), restored.PartitionActiveSeries[1].ActiveSeries)
 }
 
 func TestQueryRequest_AttributionHint_RoundTrip(t *testing.T) {

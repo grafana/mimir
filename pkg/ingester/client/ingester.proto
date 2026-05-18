@@ -83,11 +83,21 @@ message HashRangeStatsResponse {
   // entry; under the future N:1 architecture (David I) it carries one
   // entry per owned partition.
   repeated PartitionQueryLoad partition_query_loads = 4 [(gogoproto.nullable) = false];
+  // partition_active_series carries per-partition TSDB head-series
+  // counts. Readcache reports one entry per Kafka partition it
+  // currently holds; the rebalancer uses these for partition-level L
+  // instead of fanning out instance totals.
+  repeated PartitionActiveSeries partition_active_series = 5 [(gogoproto.nullable) = false];
 }
 
 message PartitionQueryLoad {
   int32 partition_id = 1;
   double samples_ewma = 2;
+}
+
+message PartitionActiveSeries {
+  int32 partition_id = 1;
+  int64 active_series = 2;
 }
 
 message HashRangeEntry {

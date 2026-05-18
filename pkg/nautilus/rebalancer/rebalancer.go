@@ -583,7 +583,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	rates, instanceTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx)
+	rates, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)
 		return nil
@@ -596,11 +596,9 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	r.pruneRecentMoves(now)
 
 	// Compute per-partition L (head-series). With the readcache pool
-	// wired, owners come from the readcache assignment log (single
-	// owner per partition); otherwise fall back to the ingester
-	// partition ring (max across the replica set). Both paths
-	// produce the same shape: partition ID -> int64.
-	partitionLByPID := r.partitionLByPID(instanceTotals, pRing, activePartitions, now)
+	// wired, L comes from per-partition HashRangeStats; otherwise fall
+	// back to the ingester partition ring (max across the replica set).
+	partitionLByPID := r.partitionLByPID(instanceTotals, partitionTotals, pRing, activePartitions, now)
 
 	lm := buildLoadMap(rates)
 	r.admin.setLastStats(lm, partitionLByPID, r.recentMoves, activePartitions)

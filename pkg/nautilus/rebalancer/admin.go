@@ -182,6 +182,23 @@ func (s *adminState) setLastStats(
 // the lightweight Round summaries only — the full Trace inputs are
 // served separately via the JSON endpoints to keep HTML rendering
 // cheap.
+func (s *adminState) snapshotReadcacheRound() (readcacheRoundView, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.lastReadcacheRound.PerPartition) == 0 && len(s.lastReadcacheRound.PerInstance) == 0 {
+		return readcacheRoundView{}, false
+	}
+	view := readcacheRoundView{
+		PerInstance:  make(map[string]float64, len(s.lastReadcacheRound.PerInstance)),
+		PerPartition: append([]readcachePartitionEntry(nil), s.lastReadcacheRound.PerPartition...),
+		Moves:        append([]readcacheMove(nil), s.lastReadcacheRound.Moves...),
+	}
+	for inst, load := range s.lastReadcacheRound.PerInstance {
+		view.PerInstance[inst] = load
+	}
+	return view, true
+}
+
 func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStatsView, map[int32]int64, map[int32]int64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -252,6 +269,15 @@ type rangeView struct {
 	LastAction ActionKind
 }
 
+// readcacheReplicaView is one readcache pod and the Kafka partitions
+// it currently owns according to the readcache assignment log.
+type readcacheReplicaView struct {
+	InstanceID   string
+	InstanceAddr string
+	Load         float64 // slicer load from the most recent readcache round (0 if unknown)
+	Partitions   []int32 // sorted partition IDs owned by this replica
+}
+
 // adminPageData is the full data structure passed to the template.
 type adminPageData struct {
 	GeneratedAt        string
@@ -269,6 +295,11 @@ type adminPageData struct {
 	Partitions         []partitionView
 	Rounds             []RoundLog
 	HeatmapData        string
+
+	ReadcacheConfigured bool
+	ReadcacheReplicas   []readcacheReplicaView
+	ReadcacheLastRound  readcacheRoundView
+	ReadcacheHasRound   bool
 }
 
 func (r *Rebalancer) buildAdminPageData() adminPageData {
@@ -460,7 +491,69 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	data.Rounds = reversedRounds
 	data.HeatmapData = string(heatmapJSON)
 
+	data.ReadcacheConfigured = r.readcacheConfigured()
+	if data.ReadcacheConfigured {
+		data.ReadcacheReplicas = r.buildReadcacheReplicaViews()
+		data.ReadcacheLastRound, data.ReadcacheHasRound = r.admin.snapshotReadcacheRound()
+	}
+
 	return data
+}
+
+func (r *Rebalancer) readcacheConfigured() bool {
+	return r.readcachePool != nil || r.readcacheRing != nil || r.cfg.ReadcacheSlicer.Enabled || len(r.cfg.ReadcacheSlicer.Instances) > 0
+}
+
+// buildReadcacheReplicaViews groups the live readcache assignment log
+// by instance ID and enriches with ring addresses and slicer load.
+func (r *Rebalancer) buildReadcacheReplicaViews() []readcacheReplicaView {
+	now := time.Now()
+
+	partitionsByInstance := make(map[string][]int32)
+	for _, e := range r.readcacheStore.activeEntries(now) {
+		partitionsByInstance[e.InstanceID] = append(partitionsByInstance[e.InstanceID], e.PartitionID)
+	}
+
+	instanceSet := make(map[string]struct{})
+	for inst := range partitionsByInstance {
+		instanceSet[inst] = struct{}{}
+	}
+	for _, inst := range r.activeReadcacheInstances() {
+		instanceSet[inst] = struct{}{}
+	}
+
+	loadByInstance := make(map[string]float64)
+	if round, ok := r.admin.snapshotReadcacheRound(); ok {
+		loadByInstance = round.PerInstance
+	}
+
+	idToAddr := make(map[string]string)
+	if r.readcacheRing != nil {
+		if set, err := r.readcacheRing.GetAllHealthy(readcacheRingOp); err == nil {
+			for _, inst := range set.Instances {
+				idToAddr[inst.Id] = inst.Addr
+			}
+		}
+	}
+
+	replicas := make([]readcacheReplicaView, 0, len(instanceSet))
+	for inst := range instanceSet {
+		pids := partitionsByInstance[inst]
+		sort.Slice(pids, func(i, j int) bool { return pids[i] < pids[j] })
+		replicas = append(replicas, readcacheReplicaView{
+			InstanceID:   inst,
+			InstanceAddr: idToAddr[inst],
+			Load:         loadByInstance[inst],
+			Partitions:   pids,
+		})
+	}
+	sort.Slice(replicas, func(i, j int) bool {
+		if len(replicas[i].Partitions) != len(replicas[j].Partitions) {
+			return len(replicas[i].Partitions) > len(replicas[j].Partitions)
+		}
+		return replicas[i].InstanceID < replicas[j].InstanceID
+	})
+	return replicas
 }
 
 // ServeHTTP dispatches all requests under the rebalancer's admin
