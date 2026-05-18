@@ -158,6 +158,66 @@ details>summary::-webkit-details-marker{display:none}
 {{end}}
 </div>
 
+{{if .ReadcacheConfigured}}
+<h2>Readcache replicas (partition ownership)</h2>
+<p style="font-size:12px;color:#666;margin:-4px 0 8px">Live leases from the readcache assignment log. Load is from the most recent readcache slicer round.</p>
+<div class="partitions">
+{{range .ReadcacheReplicas}}
+<div class="partition">
+	<details{{if .Partitions}} open{{end}}>
+	<summary class="part-header">
+		<span class="part-id">{{.InstanceID}}</span>
+		<span class="part-instance" title="{{.InstanceAddr}}">{{if .InstanceAddr}}{{.InstanceAddr}}{{else}}(address unknown){{end}}</span>
+		<span class="part-stats">
+			<span>{{len .Partitions}} partition{{if ne (len .Partitions) 1}}s{{end}}</span>
+			{{if gt .Load 0}}<span title="Slicer load from the last readcache round">{{fmtFloat .Load}} load</span>{{end}}
+		</span>
+	</summary>
+	<div class="part-ranges open">
+		{{if .Partitions}}
+		<div class="range-grid">
+		{{range .Partitions}}
+			<span class="range" title="Kafka partition {{.}}">P{{.}}</span>
+		{{end}}
+		</div>
+		{{else}}
+		<div class="no-data" style="padding:8px 0">No partitions assigned</div>
+		{{end}}
+	</div>
+	</details>
+</div>
+{{else}}
+<div class="no-data">No readcache instances in the ring or assignment log yet.</div>
+{{end}}
+</div>
+
+{{if .ReadcacheHasRound}}
+<details style="margin-bottom:16px">
+<summary style="cursor:pointer;font-size:12px;color:#666;margin-bottom:8px">Last readcache slicer round (planned vs current)</summary>
+<div class="log-section" style="max-height:300px">
+<table style="width:100%;border-collapse:collapse;font-size:12px">
+<tr style="text-align:left;border-bottom:1px solid #eee"><th>Partition</th><th>Current owner</th><th>Planned owner</th></tr>
+{{range .ReadcacheLastRound.PerPartition}}
+<tr style="border-bottom:1px solid #f5f5f5">
+	<td>P{{.PartitionID}}</td>
+	<td>{{if .CurrentOwner}}{{.CurrentOwner}}{{else}}—{{end}}</td>
+	<td>{{if .PlannedOwner}}{{.PlannedOwner}}{{else}}—{{end}}</td>
+</tr>
+{{end}}
+</table>
+{{if .ReadcacheLastRound.Moves}}
+<div style="margin-top:8px;font-size:11px;color:#666">Moves this round: {{len .ReadcacheLastRound.Moves}}</div>
+<div class="round-actions" style="margin-top:4px">
+{{range .ReadcacheLastRound.Moves}}
+	<span class="action-pill act-move" title="load {{fmtFloat .Load}}">P{{.PartitionID}} {{.FromInstance}}→{{.ToInstance}}</span>
+{{end}}
+</div>
+{{end}}
+</div>
+</details>
+{{end}}
+{{end}}
+
 <h2>Recent Rebalance Rounds</h2>
 <div class="log-section">
 {{if eq (len .Rounds) 0}}
