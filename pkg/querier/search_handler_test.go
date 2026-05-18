@@ -85,6 +85,36 @@ func sr(v string, score float64) storage.SearchResult {
 	return storage.SearchResult{Value: v, Score: score}
 }
 
+// erroringQueryable returns an error from Querier(); used to exercise the
+// searcherForRequest open-error branch.
+type erroringQueryable struct{ err error }
+
+func (e *erroringQueryable) Querier(_, _ int64) (storage.Querier, error) {
+	return nil, e.err
+}
+
+// plainQueryable returns a storage.Querier that deliberately does NOT
+// implement mimirSearcher; exercises searcherForRequest's type-assertion
+// failure branch.
+type plainQueryable struct{}
+
+func (plainQueryable) Querier(_, _ int64) (storage.Querier, error) {
+	return plainQuerier{}, nil
+}
+
+type plainQuerier struct{}
+
+func (plainQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	return storage.EmptySeriesSet()
+}
+func (plainQuerier) LabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (plainQuerier) LabelNames(_ context.Context, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (plainQuerier) Close() error { return nil }
+
 // tooManySearchTerms returns a "search[]=tN&..." query fragment with n terms.
 // Used to drive the maxSearchTermsPerRequest cap test.
 func tooManySearchTerms(n int) string {
@@ -400,7 +430,7 @@ func TestSearchMetricNamesHandler_ForwardsMetricNameLabel(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names"))
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, metricNameLabel, mq.lastName, "metric_names endpoint must search the __name__ label")
+	assert.Equal(t, labels.MetricName, mq.lastName, "metric_names endpoint must search the __name__ label")
 }
 
 func TestParseSortOrder_Cases(t *testing.T) {
@@ -483,4 +513,90 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	require.Len(t, req.matchers, 1)
 	assert.Equal(t, "job", req.matchers[0].Name)
 	assert.Equal(t, "prom", req.matchers[0].Value)
+}
+
+// TestParseSearchRequest_BatchSizeZeroKeepsDefault pins the post-rename
+// contract: batch_size=0 means "server-determined" and falls back to
+// searchDefaultBatchSize. Previously Mimir rejected 0; upstream accepts it.
+func TestParseSearchRequest_BatchSizeZeroKeepsDefault(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?batch_size=0")
+	req, err := parseSearchRequest(r, false)
+	require.NoError(t, err)
+	assert.Equal(t, searchDefaultBatchSize, req.batchSize)
+}
+
+// TestSearchLabelNamesHandler_AcceptsPOSTForm covers the spec parity case:
+// the routes are registered for POST and the query parameters can ride on
+// the form body. r.ParseForm() should reach them.
+func TestSearchLabelNamesHandler_AcceptsPOSTForm(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0)}, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	body := strings.NewReader("search[]=foo&include_score=true")
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/search/label_names", body)
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = r.WithContext(user.InjectOrgID(r.Context(), "test"))
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, mq.lastParams)
+	assert.Equal(t, []string{"foo"}, mq.lastParams.Terms, "POST form body must reach the parser")
+}
+
+func TestSearchLabelNamesHandler_MissingTenantReturns400(t *testing.T) {
+	// Deliberately do not inject org ID — searcherForRequest must reject.
+	mq := &searchMockQuerier{}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/search/label_names", nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSearchLabelNamesHandler_QueryableOpenError(t *testing.T) {
+	wantErr := errors.New("open boom")
+	h := SearchLabelNamesHandler(&erroringQueryable{err: wantErr}, enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	lines := drainNDJSON(t, w.Body.String())
+	require.Len(t, lines, 1)
+	assert.Contains(t, lines[0]["error"], "open querier")
+}
+
+func TestSearchLabelNamesHandler_QuerierNotMimirSearcherReturns400(t *testing.T) {
+	h := SearchLabelNamesHandler(plainQueryable{}, enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	lines := drainNDJSON(t, w.Body.String())
+	require.Len(t, lines, 1)
+	assert.Contains(t, lines[0]["error"], "does not support search")
+}
+
+// TestSearchLabelNamesHandler_EmptyResultsEmitsTrailerOnly pins that the
+// handler does not emit an empty {"results":[]} batch line when the iterator
+// has nothing to yield — only the success trailer reaches the wire.
+func TestSearchLabelNamesHandler_EmptyResultsEmitsTrailerOnly(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.EmptySearchResultSet()
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	assert.Equal(t, http.StatusOK, w.Code)
+	lines := drainNDJSON(t, w.Body.String())
+	require.Len(t, lines, 1, "no batch line; only the success trailer")
+	assert.Equal(t, "success", lines[0]["status"])
 }

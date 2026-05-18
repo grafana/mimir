@@ -25,10 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// metricNameLabel is the label whose values are searched by the metric-names
-// endpoint. Mirrors model.MetricNameLabel.
-const metricNameLabel = "__name__"
-
 const (
 	// searchAPIContentType is the wire content type for NDJSON streaming
 	// responses (one JSON object per line). Matches Prometheus PR #18573.
@@ -39,9 +35,7 @@ const (
 	searchDefaultBatchSize = 100
 
 	// maxSearchTermsPerRequest caps the number of search[] query parameters
-	// a single request may carry. Matches Prometheus PR #18573 (capped to 32
-	// upstream); the cap bounds per-term filter construction cost which is
-	// O(terms) for each Filter.Accept call.
+	// a single request may carry; matches the 32-term upstream cap.
 	maxSearchTermsPerRequest = 32
 )
 
@@ -57,11 +51,9 @@ type searchResultRecord struct {
 }
 
 // searchBatchEnvelope is the per-line JSON object for streaming result
-// batches. Warnings ride on the line that introduces them; the trailer
-// carries any final batch of warnings the iterator accumulated last.
+// batches. Warnings (when any) ride on the trailer, not on the batches.
 type searchBatchEnvelope struct {
-	Results  []searchResultRecord `json:"results"`
-	Warnings []string             `json:"warnings,omitempty"`
+	Results []searchResultRecord `json:"results"`
 }
 
 // searchTrailerEnvelope is the final NDJSON line on a successful stream.
@@ -94,7 +86,7 @@ type searchRequest struct {
 }
 
 // parseSearchRequest reads the HTTP request and builds a searchRequest.
-// requireLabelName is true for the label-values endpoint where the `name`
+// requireLabelName is true for the label-values endpoint where the `label`
 // parameter is mandatory. Returns a wrapped error suitable for surfacing as
 // HTTP 400.
 func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest, error) {
@@ -227,8 +219,7 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, fmt.Errorf("invalid search params: %w", err)
 	}
 
-	// Label name for label-values endpoint. URL param is "label", matching
-	// Prometheus PR #18573 (clients ported from upstream send ?label=...).
+	// URL param is "label"; required by the label-values endpoint.
 	labelName := q.Get("label")
 	if requireLabelName && labelName == "" {
 		return nil, errors.New(`missing required parameter "label"`)
@@ -376,7 +367,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return
 		}
 		defer querier.Close()
-		rs := searcher.SearchLabelValues(r.Context(), metricNameLabel, req.params, req.hints, req.matchers...)
+		rs := searcher.SearchLabelValues(r.Context(), labels.MetricName, req.params, req.hints, req.matchers...)
 		defer rs.Close()
 		streamSearchNDJSON(w, rs, req)
 	})
