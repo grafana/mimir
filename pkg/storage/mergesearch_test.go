@@ -188,16 +188,30 @@ func TestPairwiseMergeSearchSets_WarningsMerge(t *testing.T) {
 	assert.True(t, msgs["warn-b"])
 }
 
-func TestPairwiseMergeSearchSets_ErrorStopsIteration(t *testing.T) {
+func TestPairwiseMergeSearchSets_PartialResultThenError(t *testing.T) {
+	// One side errors immediately; the merge must still drain the surviving
+	// side and surface the error at iteration end. Mirrors the resilience of
+	// blocksStoreQuerier.LabelNames across replicas — partial drains are not
+	// silently lost just because one source failed.
 	wantErr := errors.New("boom")
 	a := &fakeSearchResultSet{results: []storage.SearchResult{sr("x", 1.0)}}
 	b := &fakeSearchResultSet{results: nil, err: wantErr}
 
 	rs := PairwiseMergeSearchSets([]storage.SearchResultSet{a, b}, storage.OrderByValueAsc, 0)
-	for rs.Next() {
-	}
+	got := drainNoErr(t, rs)
+	assert.Equal(t, []storage.SearchResult{sr("x", 1.0)}, got, "surviving source must be drained before error is surfaced")
 	require.Error(t, rs.Err())
 	assert.ErrorIs(t, rs.Err(), wantErr)
+}
+
+// drainNoErr is drain's loose-on-error sibling: iterate to completion, return
+// results, do not assert on rs.Err(). Callers assert the error themselves.
+func drainNoErr(_ *testing.T, rs storage.SearchResultSet) []storage.SearchResult {
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	return got
 }
 
 func TestPairwiseMergeSearchSets_CloseClosesAllChildren(t *testing.T) {

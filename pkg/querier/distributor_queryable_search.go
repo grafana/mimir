@@ -39,9 +39,9 @@ func (q *distributorQuerier) SearchLabelNames(
 	}
 
 	now := time.Now().UnixMilli()
-	q.mint = clampMinTime(spanLog, q.mint, now, -queryIngestersWithin, "query ingesters within")
+	mint := clampMinTime(spanLog, q.mint, now, -queryIngestersWithin, "query ingesters within")
 
-	return q.distributor.SearchLabelNames(ctx, model.Time(q.mint), model.Time(q.maxt), params, hints, matchers)
+	return q.distributor.SearchLabelNames(ctx, model.Time(mint), model.Time(q.maxt), params, hints, matchers)
 }
 
 // SearchLabelValues mirrors SearchLabelNames with the label name to query.
@@ -67,7 +67,7 @@ func (q *distributorQuerier) SearchLabelValues(
 	}
 
 	now := time.Now().UnixMilli()
-	q.mint = clampMinTime(spanLog, q.mint, now, -queryIngestersWithin, "query ingesters within")
+	mint := clampMinTime(spanLog, q.mint, now, -queryIngestersWithin, "query ingesters within")
 
-	return q.distributor.SearchLabelValues(ctx, model.Time(q.mint), model.Time(q.maxt), name, params, hints, matchers)
+	return q.distributor.SearchLabelValues(ctx, model.Time(mint), model.Time(q.maxt), name, params, hints, matchers)
 }

@@ -18,6 +18,23 @@ import (
 // and respecting the requested ordering. Each input must emit results in the
 // order requested.
 //
+// Dedup invariant the caller must uphold:
+//
+// Under OrderByValueAsc / OrderByValueDesc the comparator keys on Value alone,
+// so duplicates collapse and the higher score wins (see mergingSearchResultSet.Next).
+//
+// Under OrderByScoreDesc the comparator is (Score desc, Value asc) — a total
+// order. Two entries with the same Value but different Scores compare unequal
+// and the merger therefore emits both. Correct dedup under OrderByScoreDesc
+// requires that every source fed into one PairwiseMergeSearchSets call assigns
+// the same Score to the same Value. That holds today because each tier
+// (per-block in the store-gateway, per-replica in the distributor) builds its
+// filter from the same Params and the leaf Filter.Accept is deterministic on
+// the input value. If a future change inserts a filtering step that
+// recomputes scores between leaf and merge — or merges across tiers that ran
+// distinct filters — this invariant breaks and same-value duplicates will leak
+// through under OrderByScoreDesc.
+//
 // This mirrors the behaviour of Prometheus's internal pairwiseMergeSearchSets
 // (vendor/github.com/prometheus/prometheus/storage/generic.go), which is
 // package-private upstream. The implementation here is a verbatim port — the
@@ -143,12 +160,15 @@ func (s *mergingSearchResultSet) Next() bool {
 		s.bInit = true
 	}
 
-	// Check for errors from either side after priming or after the previous
-	// advance. An error means we should stop iteration.
-	if s.a.Err() != nil || s.b.Err() != nil {
-		s.done = true
-		return false
-	}
+	// We intentionally do not poll s.a.Err() / s.b.Err() per iteration.
+	// A child that errors mid-stream signals exhaustion via Next() == false
+	// from that point on; the merge then continues with the surviving side
+	// until both report exhaustion. The terminal error is surfaced via
+	// Err() once iteration ends — mirroring how blocksStoreQuerier.LabelNames
+	// drains partial results across replicas and only fails the whole call
+	// after the drain completes. Per-Next polling also incurred a mutex
+	// acquisition on every concurrentSearchResultSet leaf, scaling with the
+	// number of fanned-out sources.
 
 	switch {
 	case !s.aOk && !s.bOk:
