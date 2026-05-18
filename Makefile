@@ -204,6 +204,12 @@ images: ## Print all image names.
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
+# Side-product outputs produced by --go-grpc_out (alongside their *.pb.go).
+# These are NOT matched by the %.proto -> %.pb.go patsubst, so they must be
+# tracked explicitly. Add new entries here when a new .proto adopts the
+# protoc-gen-go-grpc toolchain (see the rule for alertmanager.pb.go).
+PROTO_GRPC_GOS := pkg/alertmanager/alertmanagerpb/alertmanager_grpc.pb.go
+
 PROMQL_TESTS := $(shell find pkg/streamingpromql/testdata/ours pkg/streamingpromql/testdata/ours-only $(DONT_FIND) -type f -path '*.test' -print)
 
 # Building binaries is now automated. The convention is to build a binary
@@ -282,8 +288,8 @@ $(EXES_RACE):
 	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: ## Generates protobuf files.
-protos: $(PROTO_GOS)
-	@./tools/apply-expected-diffs.sh $(PROTO_GOS)
+protos: $(PROTO_GOS) $(PROTO_GRPC_GOS)
+	@./tools/apply-expected-diffs.sh $(PROTO_GOS) $(PROTO_GRPC_GOS)
 
 GENERATE_FILES ?= true
 
@@ -301,18 +307,22 @@ endif
 
 # httpgrpc.proto in dskit imports gogoproto/gogo.proto and uses a short go_package
 # value; map it to its full Go import path explicitly so protoc-gen-go can resolve it.
-pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
+# Grouped target (&:) tells make that the single protoc invocation produces both
+# *.pb.go and *_grpc.pb.go atomically -- deleting either forces regeneration.
+pkg/alertmanager/alertmanagerpb/alertmanager.pb.go \
+pkg/alertmanager/alertmanagerpb/alertmanager_grpc.pb.go &: \
+		pkg/alertmanager/alertmanagerpb/alertmanager.proto
 ifeq ($(GENERATE_FILES),true)
-	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) \
+	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(<D) \
 		--go_opt=Mgithub.com/grafana/dskit/httpgrpc/httpgrpc.proto=github.com/grafana/dskit/httpgrpc \
 		--go-grpc_opt=Mgithub.com/grafana/dskit/httpgrpc/httpgrpc.proto=github.com/grafana/dskit/httpgrpc \
 		--go-grpc_opt=require_unimplemented_servers=false \
-		--go_out=paths=source_relative:./$(@D) \
-		--go-grpc_out=paths=source_relative:./$(@D) \
+		--go_out=paths=source_relative:./$(<D) \
+		--go-grpc_out=paths=source_relative:./$(<D) \
 		./$<
 else
-	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
-	@echo "If this is unexpected, check if the last modified timestamps on $@ and $< are correct."
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
 endif
 
 %.pb.go: %.proto
@@ -539,7 +549,7 @@ mod-check: ## Check the go mod is clean and tidy.
 
 check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
-	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
+	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) $(PROTO_GRPC_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
 
 format-promql-tests:
 	@./tools/format-promql-test.sh $(PROMQL_TESTS)
@@ -718,7 +728,7 @@ clean: ## Cleanup the docker images, object files and executables.
 	go clean ./...
 
 clean-protos: ## Clean protobuf files.
-	rm -rf $(PROTO_GOS)
+	rm -rf $(PROTO_GOS) $(PROTO_GRPC_GOS)
 
 list-image-targets: ## List all images building make targets.
 	@echo $(UPTODATE_FILES) | tr " " "\n"
