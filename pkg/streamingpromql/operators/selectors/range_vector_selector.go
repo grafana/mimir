@@ -21,7 +21,6 @@ import (
 
 type RangeVectorSelector struct {
 	Selector                 *Selector
-	QueryStats               *types.QueryStats
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	rangeMilliseconds int64
@@ -40,11 +39,9 @@ type RangeVectorSelector struct {
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats) *RangeVectorSelector {
-
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RangeVectorSelector {
 	rangeVectorSelector := RangeVectorSelector{
 		Selector:                 selector,
-		QueryStats:               stats,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms:               types.NewHPointRingBuffer(memoryConsumptionTracker),
@@ -194,8 +191,6 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	m.stepData.RangeStart = originalRangeStart // important to return the original range start so that functions like rate() can determine the range duration regardless of smoothed / anchored
 	m.stepData.RangeEnd = originalRangeEnd
-
-	m.QueryStats.IncrementSamples(int64(m.stepData.Floats.Count()) + m.stepData.Histograms.EquivalentFloatSampleCount())
 
 	return m.stepData, nil
 }

@@ -5,6 +5,7 @@ syntax = "proto3";
 package rangevectorsplittingcache;
 
 import "github.com/grafana/mimir/pkg/querier/querierpb/querier.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
 import "gogoproto/gogo.proto";
 
 option go_package = "cache";
@@ -25,4 +26,5 @@ message CachedSeries {
   repeated querierpb.SeriesMetadata series_metadata = 4 [(gogoproto.nullable) = false];
   bytes results = 5;
   querierpb.Annotations annotations = 6 [(gogoproto.nullable) = false];
+  types.EncodedOperatorEvaluationStats stats = 7 [(gogoproto.nullable) = false];
 }

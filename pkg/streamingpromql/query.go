@@ -42,7 +42,8 @@ type Query struct {
 	string         *promql.String
 	scalar         *promql.Scalar
 	annotations    *annotations.Annotations
-	stats          *types.QueryStats
+	stats          *types.OperatorEvaluationStats
+	finalizedStats *promstats.QuerySamples
 
 	topLevelValueType parser.ValueType
 	resultIsVector    bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
@@ -244,15 +245,31 @@ func (q *Query) StringEvaluated(_ context.Context, _ *Evaluator, _ planning.Node
 }
 
 // EvaluationCompleted implements the EvaluationObserver interface.
-func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
 	q.annotations = annotations
-	q.stats = stats
+
+	if len(stats) != 1 {
+		return fmt.Errorf("expected exactly one stats entry, but got %d", len(stats))
+	}
+
+	q.stats = stats[q.evaluator.nodeRequests[0].Node]
+
+	var err error
+	q.finalizedStats, err = q.stats.FinalizeAndComputePrometheusStats()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (q *Query) Close() {
 	q.evaluator.Close()
 	q.returnResultToPool()
+
+	if q.stats != nil {
+		q.stats.Close()
+	}
 
 	if q.engine.pedantic && q.succeeded {
 		// Only bother checking memory consumption if the query succeeded: it's not expected that all memory
@@ -303,13 +320,8 @@ func (q *Query) Statement() parser.Statement {
 
 func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
-		Timers: promstats.NewQueryTimers(),
-		Samples: &promstats.QuerySamples{
-			TotalSamples:       q.stats.TotalSamples,
-			EnablePerStepStats: false,
-			Interval:           q.topLevelQueryTimeRange.IntervalMilliseconds,
-			StartTimestamp:     q.topLevelQueryTimeRange.StartT,
-		},
+		Timers:  promstats.NewQueryTimers(),
+		Samples: q.finalizedStats,
 	}
 }
 

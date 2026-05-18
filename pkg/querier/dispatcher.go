@@ -573,7 +573,7 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 	})
 }
 
-func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, evaluationStats *types.QueryStats) error {
+func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
 	for _, batch := range o.instantVectorSeriesDataBatches {
 		if len(batch.unsentSeries) > 0 {
 			// Send any outstanding data now.
@@ -589,24 +589,51 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		annos.Warnings, annos.Infos = annotations.AsStrings(o.originalExpression, 0, 0)
 	}
 
+	encodedStats := make(map[int64]types.EncodedOperatorEvaluationStats, len(stats))
+	for node, s := range stats {
+		nodeIndex, err := o.nodeToIndex(node)
+		if err != nil {
+			return err
+		}
+
+		encodedStats[nodeIndex] = s.Encode()
+	}
+
+	defer func() {
+		// The EncodedOperatorEvaluationStats instances may share pooled memory with the original OperatorEvaluationStats
+		// instances, so we can't close them until the message below is marshalled.
+		for _, s := range stats {
+			s.Close()
+		}
+	}()
+
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-				Annotations: annos,
-				Stats:       o.populateStats(ctx, evaluationStats),
+				Annotations:  annos,
+				Stats:        o.populateStats(ctx, stats),
+				PerNodeStats: encodedStats,
 			},
 		},
 	})
 }
 
-func (o *evaluationObserver) populateStats(ctx context.Context, evaluationStats *types.QueryStats) querier_stats.Stats {
+func (o *evaluationObserver) populateStats(ctx context.Context, evaluationStats map[planning.Node]*types.OperatorEvaluationStats) querier_stats.Stats {
 	querierStats := querier_stats.FromContext(ctx)
 	if querierStats == nil {
 		return querier_stats.Stats{}
 	}
 
-	querierStats.AddSamplesProcessed(uint64(evaluationStats.TotalSamples))
 	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
+
+	// Calculate the total number of samples processed, in case we're talking to an old query-frontend that doesn't read the per-node stats.
+	// This can be removed once we're guaranteed to not be talking to old query-frontends (ie. all query-frontends have https://github.com/grafana/mimir/pull/15282).
+	totalSamplesProcessed := int64(0)
+	for _, stats := range evaluationStats {
+		totalSamplesProcessed += stats.GetTotalSamplesProcessed()
+	}
+
+	querierStats.AddSamplesProcessed(uint64(totalSamplesProcessed))
 
 	// Return a copy of the stats to avoid race conditions if anything is still modifying the
 	// stats after we return them for serialization.

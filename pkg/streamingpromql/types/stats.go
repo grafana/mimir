@@ -18,30 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// QueryStats tracks statistics about the execution of a single query.
-//
-// It is not safe to use this type from multiple goroutines simultaneously.
-type QueryStats struct {
-	// The total number of samples processed during the query.
-	//
-	// In the case of range vector selectors, each sample is counted once for each time step it appears in.
-	// For example, if a query is running with a step of 30s with a range vector selector with range 45s,
-	// then samples in the overlapping 15s are counted twice.
-	TotalSamples int64
-}
-
-func NewQueryStats() *QueryStats {
-	return &QueryStats{}
-}
-
-// IncrementSamples increments the total samples count.
-func (qs *QueryStats) IncrementSamples(samples int64) {
-	if qs == nil {
-		return
-	}
-	qs.TotalSamples += samples
-}
-
 const timestampFieldSize = int64(unsafe.Sizeof(int64(0)))
 
 func EquivalentFloatSampleCount(h *histogram.FloatHistogram) int64 {
@@ -396,6 +372,14 @@ func (s *OperatorEvaluationStats) HasSubsets() bool {
 	return len(s.subsets) > 0
 }
 
+func (s *OperatorEvaluationStats) GetSubsetCount() int {
+	return len(s.subsets)
+}
+
+func (s *OperatorEvaluationStats) GetTotalSamplesProcessed() int64 {
+	return sum(s.allSeries.samplesProcessedPerStep)
+}
+
 // FinalizeAndComputePrometheusStats computes an equivalent QuerySamples instance as expected
 // by Prometheus' Query.Stats() method.
 //
@@ -436,8 +420,8 @@ func sum(s []int64) int64 {
 // Encode returns the encoded form of this instance, suitable for serialization.
 // The encoded form may share memory with this instance, and so may be modified
 // if this instance is modified, and becomes invalid when this instance is closed.
-func (s *OperatorEvaluationStats) Encode() *EncodedOperatorEvaluationStats {
-	encoded := &EncodedOperatorEvaluationStats{
+func (s *OperatorEvaluationStats) Encode() EncodedOperatorEvaluationStats {
+	encoded := EncodedOperatorEvaluationStats{
 		TimeRange: s.timeRange.Encode(),
 		AllSeries: s.allSeries.Encode(),
 	}
