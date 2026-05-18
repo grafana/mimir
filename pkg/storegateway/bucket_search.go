@@ -10,6 +10,7 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
@@ -43,6 +44,11 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request matchers").Error())
 	}
 
+	reqBlockMatchers, err := searchLabelNamesRequestBlockMatchers(req)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+
 	params, err := storepbToParams(req.Filter)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
@@ -66,7 +72,7 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 	)
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
-	s.blockSet.filter(req.Start, req.End, nil, func(b *bucketBlock) {
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		// indexReader is created here (outside the goroutine) to hold the block open.
 		indexr := b.indexReader(s.postingsStrategy)
 		blockID := b.meta.ULID
@@ -118,6 +124,11 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request matchers").Error())
 	}
 
+	reqBlockMatchers, err := searchLabelValuesRequestBlockMatchers(req)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+
 	params, err := storepbToParams(req.Filter)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
@@ -140,7 +151,7 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 		queriedBlocks []ulid.ULID
 	)
 
-	s.blockSet.filter(req.Start, req.End, nil, func(b *bucketBlock) {
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		// indexr is intentionally unused below — blockLabelValues takes the
 		// bucketBlock directly and constructs its own reader with the right
 		// postingsSelectionStrategy. We still create one here (and defer its
@@ -183,6 +194,32 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	merged := mimirstorage.PairwiseMergeSearchSets(sets, order, limit)
 	defer merged.Close()
 	return streamBucketSearchResults(ctx, merged, queriedBlocks, srv.Send)
+}
+
+// searchLabelNamesRequestBlockMatchers extracts the block_matchers hint from a
+// SearchLabelNamesRequest. Returns nil when no hint is set so blockSet.filter
+// skips per-block filtering.
+func searchLabelNamesRequestBlockMatchers(req *storepb.SearchLabelNamesRequest) ([]*labels.Matcher, error) {
+	if req.RequestHints == nil || len(req.RequestHints.BlockMatchers) == 0 {
+		return nil, nil
+	}
+	bm, err := storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
+	if err != nil {
+		return nil, errors.Wrap(err, "translate request hints labels matchers")
+	}
+	return bm, nil
+}
+
+// searchLabelValuesRequestBlockMatchers mirrors searchLabelNamesRequestBlockMatchers.
+func searchLabelValuesRequestBlockMatchers(req *storepb.SearchLabelValuesRequest) ([]*labels.Matcher, error) {
+	if req.RequestHints == nil || len(req.RequestHints.BlockMatchers) == 0 {
+		return nil, nil
+	}
+	bm, err := storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
+	if err != nil {
+		return nil, errors.Wrap(err, "translate request hints labels matchers")
+	}
+	return bm, nil
 }
 
 // applyPerBlockSearchHints builds a per-goroutine filter from params, then

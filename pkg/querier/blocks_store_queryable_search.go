@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
@@ -127,7 +128,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			req := buildSGSearchLabelNamesRequest(minT, maxT, params, hints, wireMatchers)
+			req := buildSGSearchLabelNamesRequest(minT, maxT, blockIDs, params, hints, wireMatchers)
 			stream, err := c.SearchLabelNames(gCtx, req)
 			if err != nil {
 				if shouldRetry(err) {
@@ -169,26 +170,44 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 	return resultSets, warnings, queriedBlocks, nil
 }
 
-// buildSGSearchLabelNamesRequest assembles the wire request. The SG search
-// RPC has no block-ID hints; the SG searches every block it owns in the
-// request's time range.
+// buildSGSearchLabelNamesRequest assembles the wire request, scoping the SG
+// search to the blocks assigned by queryWithConsistencyCheck via request_hints
+// so the SG does not re-scan every block it owns on every replica attempt.
 func buildSGSearchLabelNamesRequest(
 	minT, maxT int64,
+	blockIDs []ulid.ULID,
 	params *streaminglabelvalues.Params,
 	hints *storage.SearchHints,
 	wireMatchers []storepb.LabelMatcher,
 ) *storepb.SearchLabelNamesRequest {
 	req := &storepb.SearchLabelNamesRequest{
-		Start:    minT,
-		End:      maxT,
-		Matchers: wireMatchers,
-		Filter:   paramsToSGProto(params),
-		Ordering: orderingToSGProto(hints),
+		Start:        minT,
+		End:          maxT,
+		Matchers:     wireMatchers,
+		Filter:       paramsToSGProto(params),
+		Ordering:     orderingToSGProto(hints),
+		RequestHints: &storepb.SearchLabelNamesRequestHints{BlockMatchers: blockIDsToBlockMatchers(blockIDs)},
 	}
 	if hints != nil {
 		req.Limit = int64(hints.Limit)
 	}
 	return req
+}
+
+// blockIDsToBlockMatchers builds the per-RPC block_matchers hint. Returns nil
+// for an empty slice so the SG's BlockMatchers branch is not taken when no
+// scoping is requested (matches LabelNames/LabelValues semantics).
+func blockIDsToBlockMatchers(blockIDs []ulid.ULID) []storepb.LabelMatcher {
+	if len(blockIDs) == 0 {
+		return nil
+	}
+	return []storepb.LabelMatcher{
+		{
+			Type:  storepb.LabelMatcher_RE,
+			Name:  block.BlockIDLabel,
+			Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+		},
+	}
 }
 
 // paramsToSGProto is the storepb twin of distributor's paramsToProto.
@@ -310,7 +329,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			req := buildSGSearchLabelValuesRequest(minT, maxT, name, params, hints, wireMatchers)
+			req := buildSGSearchLabelValuesRequest(minT, maxT, name, blockIDs, params, hints, wireMatchers)
 			stream, err := c.SearchLabelValues(gCtx, req)
 			if err != nil {
 				if shouldRetry(err) {
@@ -358,17 +377,19 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 func buildSGSearchLabelValuesRequest(
 	minT, maxT int64,
 	name string,
+	blockIDs []ulid.ULID,
 	params *streaminglabelvalues.Params,
 	hints *storage.SearchHints,
 	wireMatchers []storepb.LabelMatcher,
 ) *storepb.SearchLabelValuesRequest {
 	req := &storepb.SearchLabelValuesRequest{
-		Start:    minT,
-		End:      maxT,
-		Label:    name,
-		Matchers: wireMatchers,
-		Filter:   paramsToSGProto(params),
-		Ordering: orderingToSGProto(hints),
+		Start:        minT,
+		End:          maxT,
+		Label:        name,
+		Matchers:     wireMatchers,
+		Filter:       paramsToSGProto(params),
+		Ordering:     orderingToSGProto(hints),
+		RequestHints: &storepb.SearchLabelValuesRequestHints{BlockMatchers: blockIDsToBlockMatchers(blockIDs)},
 	}
 	if hints != nil {
 		req.Limit = int64(hints.Limit)

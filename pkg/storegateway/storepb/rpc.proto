@@ -287,6 +287,15 @@ message SearchLabelNamesRequest {
   SearchFilter filter = 4;
   SearchOrdering ordering = 5;
   int64 limit = 6;
+  SearchLabelNamesRequestHints request_hints = 7;
+}
+
+message SearchLabelNamesRequestHints {
+  // block_matchers is a list of label matchers evaluated against each block's labels
+  // to scope which blocks the store-gateway queries. Empty disables per-block filtering.
+  // Mirrors the LabelNamesRequestHints semantics so the querier's per-replica block
+  // assignment from queryWithConsistencyCheck is honoured.
+  repeated LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
 }
 
 message SearchLabelValuesRequest {
@@ -297,6 +306,13 @@ message SearchLabelValuesRequest {
   SearchFilter filter = 5;
   SearchOrdering ordering = 6;
   int64 limit = 7;
+  SearchLabelValuesRequestHints request_hints = 8;
+}
+
+message SearchLabelValuesRequestHints {
+  // block_matchers is a list of label matchers evaluated against each block's labels
+  // to scope which blocks the store-gateway queries. Empty disables per-block filtering.
+  repeated LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
 }
 
 // SearchResultBatch carries one batch of (value, score) pairs in a streaming
