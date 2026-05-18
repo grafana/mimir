@@ -242,6 +242,7 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		functions.FUNCTION_SGN,
 		functions.FUNCTION_SIN,
 		functions.FUNCTION_SINH,
+		functions.FUNCTION_SHARDING_AVG,
 		functions.FUNCTION_SORT,
 		functions.FUNCTION_SORT_BY_LABEL,
 		functions.FUNCTION_SORT_BY_LABEL_DESC,
