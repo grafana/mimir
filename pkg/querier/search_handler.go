@@ -80,8 +80,11 @@ type searchErrorEnvelope struct {
 // searchRequest holds the parsed, validated query parameters for one search
 // RPC. Use parseSearchRequest to construct one from an *http.Request.
 type searchRequest struct {
-	params       *streaminglabelvalues.Params
-	matchers     []*labels.Matcher
+	params *streaminglabelvalues.Params
+	// matchers is one selector per match[] URL entry. Multiple entries are
+	// unioned by the dispatcher (OR across selectors) — matching the upstream
+	// /api/v1/labels semantics and Prometheus PR #18573.
+	matchers     [][]*labels.Matcher
 	hints        *storage.SearchHints
 	startMs      int64
 	endMs        int64
@@ -289,22 +292,43 @@ func parseSearchTime(s string, defaultT model.Time) (int64, error) {
 	return t.UnixMilli(), nil
 }
 
-// parseSearchMatchers parses each entry of match[] as a PromQL series selector.
-// Returns the flattened slice of matchers. An empty input yields a nil slice.
-func parseSearchMatchers(raw []string) ([]*labels.Matcher, error) {
+// parseSearchMatchers parses each entry of match[] as a PromQL series
+// selector. Returns one matcher slice per input selector — repeated match[]
+// entries stay separate so the dispatcher can union them (OR), not AND them.
+// An empty input yields a nil slice.
+func parseSearchMatchers(raw []string) ([][]*labels.Matcher, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	p := promqlext.NewPromQLParser()
-	var out []*labels.Matcher
+	out := make([][]*labels.Matcher, 0, len(raw))
 	for i, sel := range raw {
 		ms, err := p.ParseMetricSelector(sel)
 		if err != nil {
 			return nil, fmt.Errorf("invalid match[%d]=%q: %w", i, sel, err)
 		}
-		out = append(out, ms...)
+		out = append(out, ms)
 	}
 	return out, nil
+}
+
+// dispatchSearchOverMatcherSets runs the per-selector fan-out for repeated
+// match[] entries. 0 sets → one call with no matchers; 1 set → one call with
+// that set; N sets → N calls whose SearchResultSets are merged via the
+// pairwise k-way merger (OR semantics, dedup across selectors).
+func dispatchSearchOverMatcherSets(matcherSets [][]*labels.Matcher, hints *storage.SearchHints, run func(matchers []*labels.Matcher) storage.SearchResultSet) storage.SearchResultSet {
+	if len(matcherSets) <= 1 {
+		var matchers []*labels.Matcher
+		if len(matcherSets) == 1 {
+			matchers = matcherSets[0]
+		}
+		return run(matchers)
+	}
+	sets := make([]storage.SearchResultSet, 0, len(matcherSets))
+	for _, matchers := range matcherSets {
+		sets = append(sets, run(matchers))
+	}
+	return storage.MergeSearchResultSets(sets, hints)
 }
 
 // SearchLabelNamesHandler returns the handler for GET/POST /api/v1/search/label_names.
@@ -325,7 +349,9 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 			return
 		}
 		defer querier.Close()
-		rs := searcher.SearchLabelNames(r.Context(), req.params, req.hints, req.matchers...)
+		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
+			return searcher.SearchLabelNames(r.Context(), req.params, req.hints, m...)
+		})
 		defer rs.Close()
 		streamSearchNDJSON(w, rs, req)
 	})
@@ -349,7 +375,9 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return
 		}
 		defer querier.Close()
-		rs := searcher.SearchLabelValues(r.Context(), req.labelName, req.params, req.hints, req.matchers...)
+		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
+			return searcher.SearchLabelValues(r.Context(), req.labelName, req.params, req.hints, m...)
+		})
 		defer rs.Close()
 		streamSearchNDJSON(w, rs, req)
 	})
@@ -376,7 +404,9 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return
 		}
 		defer querier.Close()
-		rs := searcher.SearchLabelValues(r.Context(), labels.MetricName, req.params, req.hints, req.matchers...)
+		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
+			return searcher.SearchLabelValues(r.Context(), labels.MetricName, req.params, req.hints, m...)
+		})
 		defer rs.Close()
 		streamSearchNDJSON(w, rs, req)
 	})

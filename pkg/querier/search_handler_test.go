@@ -511,9 +511,10 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	assert.True(t, req.includeScore)
 	assert.Equal(t, 42, req.hints.Limit)
 	assert.Equal(t, 7, req.batchSize)
-	require.Len(t, req.matchers, 1)
-	assert.Equal(t, "job", req.matchers[0].Name)
-	assert.Equal(t, "prom", req.matchers[0].Value)
+	require.Len(t, req.matchers, 1, "one match[] entry → one matcher set")
+	require.Len(t, req.matchers[0], 1)
+	assert.Equal(t, "job", req.matchers[0][0].Name)
+	assert.Equal(t, "prom", req.matchers[0][0].Value)
 }
 
 // TestParseSearchRequest_BatchSizeZeroKeepsDefault pins the post-rename
@@ -600,4 +601,43 @@ func TestSearchLabelNamesHandler_EmptyResultsEmitsTrailerOnly(t *testing.T) {
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 1, "no batch line; only the success trailer")
 	assert.Equal(t, "success", lines[0]["status"])
+}
+
+// TestSearchLabelNamesHandler_RepeatedMatchUnionsSelectors pins the OR
+// semantics for repeated match[] selectors: each selector is run independently
+// and the resulting SearchResultSets are merged (with dedup), matching the
+// upstream /api/v1/labels and Prometheus PR #18573 behaviour.
+func TestSearchLabelNamesHandler_RepeatedMatchUnionsSelectors(t *testing.T) {
+	// The mock returns different results per matcher set so we can verify
+	// both calls happened AND the union was emitted.
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+			require.Len(t, matchers, 1, "each call sees exactly one selector's matchers")
+			switch matchers[0].Name {
+			case "job":
+				return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0), sr("shared", 1.0)}, nil)
+			case "env":
+				return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("b", 1.0), sr("shared", 1.0)}, nil)
+			default:
+				t.Fatalf("unexpected matcher %s=%q", matchers[0].Name, matchers[0].Value)
+				return nil
+			}
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?match[]={job=%22api%22}&match[]={env=%22prod%22}"))
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	lines := drainNDJSON(t, w.Body.String())
+	require.NotEmpty(t, lines)
+	// Collect every result value across all batch lines (everything but the trailer).
+	var got []string
+	for _, line := range lines[:len(lines)-1] {
+		for _, r := range line["results"].([]any) {
+			got = append(got, r.(map[string]any)["name"].(string))
+		}
+	}
+	assert.ElementsMatch(t, []string{"a", "b", "shared"}, got, "selectors unioned and duplicates collapsed")
 }
