@@ -634,37 +634,27 @@ func (r *Readcache) activeSeries(_ *client.ActiveSeriesRequest, srv client.Inges
 // done by this readcache pod: per-range active-series counts plus
 // per-partition query-load EWMAs.
 func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
-	snap := r.rangeSeries.Snapshot()
+	rangeSnap := r.rangeSeries.Snapshot()
+	partSnap := r.partitionSeries.Snapshot()
 
-	var totalSeries int64
-	partitionSeries := make([]client.PartitionActiveSeries, 0, len(r.partitions))
-	r.partitionMu.RLock()
-	for pid, p := range r.partitions {
-		var partitionTotal int64
-		p.tenantsMu.RLock()
-		for _, db := range p.tenants {
-			n := int64(db.Head().NumSeries())
-			partitionTotal += n
-			totalSeries += n
+	partitionSeries := make([]client.PartitionActiveSeries, len(partSnap.Partitions))
+	for i, e := range partSnap.Partitions {
+		partitionSeries[i] = client.PartitionActiveSeries{
+			PartitionId:  e.PartitionID,
+			ActiveSeries: e.ActiveSeries,
 		}
-		p.tenantsMu.RUnlock()
-		partitionSeries = append(partitionSeries, client.PartitionActiveSeries{
-			PartitionId:  pid,
-			ActiveSeries: partitionTotal,
-		})
 	}
-	r.partitionMu.RUnlock()
 
 	resp := &client.HashRangeStatsResponse{
-		Rates:                 make([]client.HashRangeRate, len(snap.Ranges)),
-		TotalActiveSeries:     totalSeries,
+		Rates:                 make([]client.HashRangeRate, len(rangeSnap.Ranges)),
+		TotalActiveSeries:     partSnap.Total,
 		PartitionActiveSeries: partitionSeries,
 	}
-	for j, rng := range snap.Ranges {
+	for j, rng := range rangeSnap.Ranges {
 		resp.Rates[j] = client.HashRangeRate{
 			Lo:           rng.Lo,
 			Hi:           rng.Hi,
-			ActiveSeries: snap.Counts[j],
+			ActiveSeries: rangeSnap.Counts[j],
 		}
 	}
 

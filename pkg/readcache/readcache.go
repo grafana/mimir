@@ -80,8 +80,13 @@ type Readcache struct {
 	// per-hash-range active-series signals that the rebalancer pulls
 	// via HashRangeStats. They live on readcache (not ingester) per
 	// the plan.
-	queryLoad   *loadstats.Tracker
-	rangeSeries *loadstats.RangeSeries
+	queryLoad       *loadstats.Tracker
+	rangeSeries     *loadstats.RangeSeries
+	partitionSeries *loadstats.PartitionSeries
+
+	// seriesWalkMu prevents overlapping background series walks when a
+	// single tick takes longer than loadstats.TickInterval.
+	seriesWalkMu sync.Mutex
 
 	// seriesHashCache and postings-for-matchers cache factories mirror
 	// the ingester: shared across partition TSDBs on this process.
@@ -164,6 +169,7 @@ func New(
 		instanceLifecycler: instanceLifecycler,
 		queryLoad:          loadstats.NewTracker("cortex_readcache"),
 		rangeSeries:        loadstats.NewRangeSeries(),
+		partitionSeries:    loadstats.NewPartitionSeries(),
 	}
 
 	r.seriesHashCache = hashcache.NewSeriesHashCache(tsdbCfg.SeriesHashCacheMaxBytes)
@@ -313,6 +319,10 @@ func (r *Readcache) running(ctx context.Context) error {
 		go r.watchReadcacheAssignments(ctx)
 	}
 
+	// Prime partition/hash-range snapshots so the first HashRangeStats
+	// RPC does not return zeros while waiting for the first tick.
+	go r.refreshSeriesStats(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -323,6 +333,7 @@ func (r *Readcache) running(ctx context.Context) error {
 			r.applyPartitionTSDBTenantSettings()
 		case <-loadStatsTickT.C:
 			r.queryLoad.Tick()
+			go r.refreshSeriesStats(ctx)
 		}
 	}
 }

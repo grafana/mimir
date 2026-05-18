@@ -4,6 +4,15 @@ Out-of-band caveats for future work on the slicer / readcache integration.
 Not intended as user-facing docs — keep brief, append findings as they
 come up.
 
+## HashRangeStats is snapshot-only on readcache
+
+`HashRangeStats` copies precomputed `PartitionSeries` and `RangeSeries`
+snapshots refreshed every `loadstats.TickInterval` (15s) by
+`refreshSeriesStats` — it no longer walks TSDB heads on the RPC path.
+If stats look stale or walks fall behind ingest, check for
+`hash range series walk failed` warnings and consider lowering partition
+count per pod or lengthening the rebalancer poll interval.
+
 ## locality-aware sharding pins single-metric spikes to one partition
 
 `mimirpb.ShardByMetricNameLocality` packs the metric-name hash into
