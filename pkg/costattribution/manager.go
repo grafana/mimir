@@ -188,9 +188,6 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 		return nil
 	}
 	configHash := m.limits.CostAttributionConfigHash(userID)
-	if configHash == 0 {
-		return nil
-	}
 
 	m.stmtx.RLock()
 	if cached, ok := m.cachedSampleComposites[userID]; ok && cached.configHash == configHash {
@@ -226,7 +223,7 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Sampl
 			continue
 		}
 		labels := sortLabels(cfg.labels)
-		tracker, err := newSingleSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+		tracker, err := newSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 		if err != nil {
 			m.trackerCreationErrors.WithLabelValues(userID, samplesTrackerType, name).Inc()
 			continue
@@ -240,7 +237,7 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Sampl
 			trackers = append(trackers, t)
 		}
 	}
-	composite := newSampleTracker(trackers)
+	composite := newSampleTrackerComposite(trackers)
 	m.cachedSampleComposites[userID] = cachedComposite[*SampleTracker]{
 		configHash: configHash,
 		composite:  composite,
@@ -253,9 +250,6 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 		return nil
 	}
 	configHash := m.limits.CostAttributionConfigHash(userID)
-	if configHash == 0 {
-		return nil
-	}
 
 	m.atmtx.RLock()
 	if cached, ok := m.cachedActiveSeriesComposites[userID]; ok && cached.configHash == configHash {
@@ -466,7 +460,7 @@ func (m *Manager) updateTrackers(userID string) (map[string]*sampleTracker, map[
 		if st, ok := existingST[name]; ok {
 			if !st.hasSameLabels(labels) || st.maxCardinality != cfg.maxCardinality || st.cooldownDuration != cfg.cooldownDuration {
 				m.stmtx.Lock()
-				newST, err := newSingleSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+				newST, err := newSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 				if err != nil {
 					m.trackerCreationErrors.WithLabelValues(userID, samplesTrackerType, name).Inc()
 					delete(m.sampleTrackersByUserID[userID], name)

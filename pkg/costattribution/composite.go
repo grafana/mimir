@@ -18,7 +18,7 @@ type SampleTracker struct {
 	trackers []*sampleTracker
 }
 
-func newSampleTracker(trackers []*sampleTracker) *SampleTracker {
+func newSampleTrackerComposite(trackers []*sampleTracker) *SampleTracker {
 	if len(trackers) == 0 {
 		return nil
 	}

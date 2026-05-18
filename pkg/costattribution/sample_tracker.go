@@ -48,7 +48,7 @@ type sampleTracker struct {
 	overflowCounter observation
 }
 
-func newSingleSampleTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldown time.Duration, logger log.Logger) (*sampleTracker, error) {
+func newSampleTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldown time.Duration, logger log.Logger) (*sampleTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {

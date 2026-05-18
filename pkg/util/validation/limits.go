@@ -1217,6 +1217,9 @@ func (o *Overrides) CostAttributionConfig(userID string) CostAttributionConfig {
 	}
 }
 
+// CostAttributionConfigHash returns a precomputed hash of all cost attribution
+// config fields for a tenant. The hash is stable within a config reload cycle.
+// A value of 0 means no cost attribution is configured for this tenant.
 func (o *Overrides) CostAttributionConfigHash(userID string) uint64 {
 	return o.getOverridesForUser(userID).costAttributionConfigHash
 }
