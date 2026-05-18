@@ -28,7 +28,7 @@ type observation struct {
 	totalDiscarded     atomic.Float64
 }
 
-type SampleTracker struct {
+type sampleTracker struct {
 	userID                     string
 	trackerName                string
 	receivedSamplesAttribution *descriptor
@@ -48,7 +48,7 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldown time.Duration, logger log.Logger) (*SampleTracker, error) {
+func newSingleSampleTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldown time.Duration, logger log.Logger) (*sampleTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -58,7 +58,7 @@ func newSampleTracker(userID, trackerName string, trackedLabels costattributionm
 	overflowLabels[len(trackedLabels)] = userID
 	overflowLabels[len(trackedLabels)+1] = overflowValue
 
-	tracker := &SampleTracker{
+	tracker := &sampleTracker{
 		userID:           userID,
 		trackerName:      trackerName,
 		labels:           trackedLabels,
@@ -77,7 +77,7 @@ func newSampleTracker(userID, trackerName string, trackedLabels costattributionm
 	return tracker, nil
 }
 
-func (st *SampleTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
+func (st *sampleTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
 	variableLabels := make([]string, 0, len(trackedLabels)+2)
 	for _, label := range trackedLabels {
 		variableLabels = append(variableLabels, label.OutputLabel())
@@ -101,7 +101,7 @@ func (st *SampleTracker) createAndValidateDescriptors(trackedLabels costattribut
 	return nil
 }
 
-func (st *SampleTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
+func (st *sampleTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
 	return slices.Equal(st.labels, labels)
 }
 
@@ -111,7 +111,7 @@ var bufferPool = sync.Pool{
 	},
 }
 
-func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
+func (st *sampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
 	st.observedMtx.RLock()
@@ -142,7 +142,7 @@ func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	}
 }
 
-func (st *SampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
+func (st *sampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
 	if st == nil {
 		return
 	}
@@ -153,7 +153,7 @@ func (st *SampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, 
 	st.updateObservations(buf.String(), now, 0, value, &reason)
 }
 
-func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
+func (st *sampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
 	if st == nil {
 		return
 	}
@@ -179,7 +179,7 @@ func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now
 	}
 }
 
-func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, buf *bytes.Buffer) {
+func (st *sampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, buf *bytes.Buffer) {
 	buf.Reset()
 	var exists bool
 	for idx, cal := range st.labels {
@@ -201,7 +201,7 @@ func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, b
 }
 
 // updateObservations updates or creates a new observation in the 'observed' map.
-func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+func (st *sampleTracker) updateObservations(key string, ts time.Time, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	// if not overflow, we need to check if the key exists in the observed map,
 	// if yes, we update the observation, otherwise we create a new observation, and set the overflowSince if the max cardinality is exceeded
 	st.observedMtx.RLock()
@@ -299,7 +299,7 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 	}
 }
 
-func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
+func (st *sampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 	st.observedMtx.RLock()
 	if !st.overflowSince.IsZero() && st.overflowSince.Add(st.cooldownDuration).Before(deadline) {
 		if len(st.observed) < st.maxCardinality {
@@ -322,7 +322,7 @@ func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 	return false
 }
 
-func (st *SampleTracker) cleanupInactiveObservations(deadline time.Time) {
+func (st *sampleTracker) cleanupInactiveObservations(deadline time.Time) {
 	// otherwise, we need to check all observations and clean up the ones that are inactive
 	var invalidKeys []string
 	st.observedMtx.RLock()
@@ -340,7 +340,7 @@ func (st *SampleTracker) cleanupInactiveObservations(deadline time.Time) {
 	st.observedMtx.Unlock()
 }
 
-func (st *SampleTracker) cardinality() (cardinality int, overflown bool) {
+func (st *sampleTracker) cardinality() (cardinality int, overflown bool) {
 	st.observedMtx.RLock()
 	defer st.observedMtx.RUnlock()
 	return len(st.observed), !st.overflowSince.IsZero()

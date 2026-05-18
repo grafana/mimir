@@ -21,13 +21,13 @@ import (
 )
 
 const (
-	trackerLabel        = "tracker"
-	tenantLabel         = "tenant"
-	reasonLabel         = "reason"
-	missingValue        = "__missing__"
-	overflowValue       = "__overflow__"
-	activeSeriesTracker = "active-series"
-	samplesTracker      = "samples"
+	trackerLabel            = "tracker"
+	tenantLabel             = "tenant"
+	reasonLabel             = "reason"
+	missingValue            = "__missing__"
+	overflowValue           = "__overflow__"
+	activeSeriesTrackerType = "active-series"
+	samplesTrackerType      = "samples"
 )
 
 // resolvedTrackerConfig is a TrackerConfig with all defaults filled in.
@@ -52,13 +52,13 @@ type Manager struct {
 
 	// userID → trackerName → *SampleTracker
 	stmtx                  sync.RWMutex
-	sampleTrackersByUserID map[string]map[string]*SampleTracker
-	cachedSampleComposites map[string]cachedComposite[*CompositeSampleTracker]
+	sampleTrackersByUserID map[string]map[string]*sampleTracker
+	cachedSampleComposites map[string]cachedComposite[*SampleTracker]
 
 	// userID → trackerName → *ActiveSeriesTracker
 	atmtx                        sync.RWMutex
-	activeTrackersByUserID       map[string]map[string]*ActiveSeriesTracker
-	cachedActiveSeriesComposites map[string]cachedComposite[*CompositeActiveSeriesTracker]
+	activeTrackersByUserID       map[string]map[string]*activeSeriesTracker
+	cachedActiveSeriesComposites map[string]cachedComposite[*ActiveSeriesTracker]
 }
 
 type cachedComposite[T any] struct {
@@ -69,12 +69,12 @@ type cachedComposite[T any] struct {
 func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg, costAttributionReg prometheus.Registerer) (*Manager, error) {
 	m := &Manager{
 		stmtx:                  sync.RWMutex{},
-		sampleTrackersByUserID: make(map[string]map[string]*SampleTracker),
-		cachedSampleComposites: make(map[string]cachedComposite[*CompositeSampleTracker]),
+		sampleTrackersByUserID: make(map[string]map[string]*sampleTracker),
+		cachedSampleComposites: make(map[string]cachedComposite[*SampleTracker]),
 
 		atmtx:                        sync.RWMutex{},
-		activeTrackersByUserID:       make(map[string]map[string]*ActiveSeriesTracker),
-		cachedActiveSeriesComposites: make(map[string]cachedComposite[*CompositeActiveSeriesTracker]),
+		activeTrackersByUserID:       make(map[string]map[string]*activeSeriesTracker),
+		cachedActiveSeriesComposites: make(map[string]cachedComposite[*ActiveSeriesTracker]),
 
 		trackerCreationErrors: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_cost_attribution_tracker_creation_errors_total",
@@ -183,7 +183,7 @@ func sortLabels(labels costattributionmodel.Labels) costattributionmodel.Labels 
 	return labels
 }
 
-func (m *Manager) SampleTracker(userID string) *CompositeSampleTracker {
+func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	if m == nil {
 		return nil
 	}
@@ -202,7 +202,7 @@ func (m *Manager) SampleTracker(userID string) *CompositeSampleTracker {
 	return m.rebuildSampleTrackers(userID, configHash)
 }
 
-func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *CompositeSampleTracker {
+func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *SampleTracker {
 	configs := m.effectiveTrackerConfigs(userID)
 	if len(configs) == 0 {
 		return nil
@@ -217,7 +217,7 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Compo
 	}
 
 	if m.sampleTrackersByUserID[userID] == nil {
-		m.sampleTrackersByUserID[userID] = make(map[string]*SampleTracker, len(configs))
+		m.sampleTrackersByUserID[userID] = make(map[string]*sampleTracker, len(configs))
 	}
 	userTrackers := m.sampleTrackersByUserID[userID]
 
@@ -226,29 +226,29 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Compo
 			continue
 		}
 		labels := sortLabels(cfg.labels)
-		tracker, err := newSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+		tracker, err := newSingleSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 		if err != nil {
-			m.trackerCreationErrors.WithLabelValues(userID, samplesTracker, name).Inc()
+			m.trackerCreationErrors.WithLabelValues(userID, samplesTrackerType, name).Inc()
 			continue
 		}
 		userTrackers[name] = tracker
 	}
 
-	trackers := make([]*SampleTracker, 0, len(userTrackers))
+	trackers := make([]*sampleTracker, 0, len(userTrackers))
 	for _, name := range sortedKeys(configs) {
 		if t, ok := userTrackers[name]; ok {
 			trackers = append(trackers, t)
 		}
 	}
-	composite := newCompositeSampleTracker(trackers)
-	m.cachedSampleComposites[userID] = cachedComposite[*CompositeSampleTracker]{
+	composite := newSampleTracker(trackers)
+	m.cachedSampleComposites[userID] = cachedComposite[*SampleTracker]{
 		configHash: configHash,
 		composite:  composite,
 	}
 	return composite
 }
 
-func (m *Manager) ActiveSeriesTracker(userID string) *CompositeActiveSeriesTracker {
+func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	if m == nil {
 		return nil
 	}
@@ -267,7 +267,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *CompositeActiveSeriesTrack
 	return m.rebuildActiveSeriesTrackers(userID, configHash)
 }
 
-func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) *CompositeActiveSeriesTracker {
+func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) *ActiveSeriesTracker {
 	configs := m.effectiveTrackerConfigs(userID)
 	if len(configs) == 0 {
 		return nil
@@ -282,7 +282,7 @@ func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) 
 	}
 
 	if m.activeTrackersByUserID[userID] == nil {
-		m.activeTrackersByUserID[userID] = make(map[string]*ActiveSeriesTracker, len(configs))
+		m.activeTrackersByUserID[userID] = make(map[string]*activeSeriesTracker, len(configs))
 	}
 	userTrackers := m.activeTrackersByUserID[userID]
 
@@ -291,22 +291,22 @@ func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) 
 			continue
 		}
 		labels := sortLabels(cfg.labels)
-		tracker, err := NewActiveSeriesTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+		tracker, err := newActiveSeriesTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 		if err != nil {
-			m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTracker, name).Inc()
+			m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTrackerType, name).Inc()
 			continue
 		}
 		userTrackers[name] = tracker
 	}
 
-	trackers := make([]*ActiveSeriesTracker, 0, len(userTrackers))
+	trackers := make([]*activeSeriesTracker, 0, len(userTrackers))
 	for _, name := range sortedKeys(configs) {
 		if t, ok := userTrackers[name]; ok {
 			trackers = append(trackers, t)
 		}
 	}
-	composite := NewCompositeActiveSeriesTracker(trackers)
-	m.cachedActiveSeriesComposites[userID] = cachedComposite[*CompositeActiveSeriesTracker]{
+	composite := newActiveSeriesTrackerComposite(trackers)
+	m.cachedActiveSeriesComposites[userID] = cachedComposite[*ActiveSeriesTracker]{
 		configHash: configHash,
 		composite:  composite,
 	}
@@ -315,14 +315,14 @@ func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) 
 
 func (m *Manager) Collect(out chan<- prometheus.Metric) {
 	m.stmtx.RLock()
-	sampleTrackersByUserID := make(map[string]map[string]*SampleTracker, len(m.sampleTrackersByUserID))
+	sampleTrackersByUserID := make(map[string]map[string]*sampleTracker, len(m.sampleTrackersByUserID))
 	for userID, trackers := range m.sampleTrackersByUserID {
 		sampleTrackersByUserID[userID] = maps.Clone(trackers)
 	}
 	m.stmtx.RUnlock()
 
 	m.atmtx.RLock()
-	activeTrackersByUserID := make(map[string]map[string]*ActiveSeriesTracker, len(m.activeTrackersByUserID))
+	activeTrackersByUserID := make(map[string]map[string]*activeSeriesTracker, len(m.activeTrackersByUserID))
 	for userID, trackers := range m.activeTrackersByUserID {
 		activeTrackersByUserID[userID] = maps.Clone(trackers)
 	}
@@ -356,14 +356,14 @@ func (m *Manager) Describe(chan<- *prometheus.Desc) {
 
 func (m *Manager) collectCostAttribution(out chan<- prometheus.Metric) {
 	m.stmtx.RLock()
-	sampleTrackersByUserID := make(map[string]map[string]*SampleTracker, len(m.sampleTrackersByUserID))
+	sampleTrackersByUserID := make(map[string]map[string]*sampleTracker, len(m.sampleTrackersByUserID))
 	for userID, trackers := range m.sampleTrackersByUserID {
 		sampleTrackersByUserID[userID] = maps.Clone(trackers)
 	}
 	m.stmtx.RUnlock()
 
 	m.atmtx.RLock()
-	activeTrackersByUserID := make(map[string]map[string]*ActiveSeriesTracker, len(m.activeTrackersByUserID))
+	activeTrackersByUserID := make(map[string]map[string]*activeSeriesTracker, len(m.activeTrackersByUserID))
 	for userID, trackers := range m.activeTrackersByUserID {
 		activeTrackersByUserID[userID] = maps.Clone(trackers)
 	}
@@ -425,7 +425,7 @@ func (m *Manager) deleteAllTrackersForUser(userID string) {
 
 // updateTrackers ensures trackers for userID match the current config.
 // Returns per-tracker-name sample and active series trackers that are still active.
-func (m *Manager) updateTrackers(userID string) (map[string]*SampleTracker, map[string]*ActiveSeriesTracker) {
+func (m *Manager) updateTrackers(userID string) (map[string]*sampleTracker, map[string]*activeSeriesTracker) {
 	configs := m.effectiveTrackerConfigs(userID)
 	if len(configs) == 0 {
 		m.deleteAllTrackersForUser(userID)
@@ -466,9 +466,9 @@ func (m *Manager) updateTrackers(userID string) (map[string]*SampleTracker, map[
 		if st, ok := existingST[name]; ok {
 			if !st.hasSameLabels(labels) || st.maxCardinality != cfg.maxCardinality || st.cooldownDuration != cfg.cooldownDuration {
 				m.stmtx.Lock()
-				newST, err := newSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+				newST, err := newSingleSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 				if err != nil {
-					m.trackerCreationErrors.WithLabelValues(userID, samplesTracker, name).Inc()
+					m.trackerCreationErrors.WithLabelValues(userID, samplesTrackerType, name).Inc()
 					delete(m.sampleTrackersByUserID[userID], name)
 					delete(existingST, name)
 				} else {
@@ -483,9 +483,9 @@ func (m *Manager) updateTrackers(userID string) (map[string]*SampleTracker, map[
 		if at, ok := existingAT[name]; ok {
 			if !at.hasSameLabels(labels) || at.maxCardinality != cfg.maxCardinality || at.cooldownDuration != cfg.cooldownDuration {
 				m.atmtx.Lock()
-				newAT, err := NewActiveSeriesTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
+				newAT, err := newActiveSeriesTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 				if err != nil {
-					m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTracker, name).Inc()
+					m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTrackerType, name).Inc()
 					delete(m.activeTrackersByUserID[userID], name)
 					delete(existingAT, name)
 				} else {

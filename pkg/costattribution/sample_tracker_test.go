@@ -50,7 +50,7 @@ func TestNewSampleTracker(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			st, stErr := newSampleTracker("tenant-1", costattributionmodel.DefaultTrackerName, testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
+			st, stErr := newSingleSampleTracker("tenant-1", costattributionmodel.DefaultTrackerName, testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
 			if testCase.expectedErr == nil {
 				require.NoError(t, stErr)
 				require.NotNil(t, st)

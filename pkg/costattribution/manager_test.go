@@ -31,23 +31,21 @@ func newTestManager() (manager *Manager, reg, costAttributionReg *prometheus.Reg
 	return manager, reg, costAttributionReg
 }
 
-// getSampleTracker returns the internal SampleTracker for a user (assumes single legacy tracker).
-func getSampleTracker(m *Manager, userID string) *SampleTracker {
+func getSampleTracker(m *Manager, userID string) *sampleTracker {
 	if trackers, ok := m.sampleTrackersByUserID[userID]; ok {
 		return trackers[costattributionmodel.DefaultTrackerName]
 	}
 	return nil
 }
 
-// getActiveTracker returns the internal ActiveSeriesTracker for a user (assumes single legacy tracker).
-func getActiveTracker(m *Manager, userID string) *ActiveSeriesTracker {
+func getActiveTracker(m *Manager, userID string) *activeSeriesTracker {
 	if trackers, ok := m.activeTrackersByUserID[userID]; ok {
 		return trackers[costattributionmodel.DefaultTrackerName]
 	}
 	return nil
 }
 
-func withLockedActiveSeriesTracker(m *Manager, userID string, fn func(ast *ActiveSeriesTracker)) {
+func withLockedActiveSeriesTracker(m *Manager, userID string, fn func(ast *activeSeriesTracker)) {
 	m.ActiveSeriesTracker(userID) // ensure tracker exists
 	ast := getActiveTracker(m, userID)
 	ast.observedMtx.Lock()
@@ -314,7 +312,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "1"), now, 0)
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "2"), now, 0)
 
-		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 2, len(ast.observed), "Should have 2 series tracked")
 			require.True(t, ast.overflowSince.IsZero(), "Should not be in overflow state yet")
 			require.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero")
@@ -322,7 +320,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "3"), now, 0)
 
-		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 3, len(ast.observed), "Should have 3 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero")
@@ -332,7 +330,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "5"), now, 0)
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "6"), now, 0)
 
-		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 4, len(ast.observed), "Should have 4 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(2), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
@@ -341,7 +339,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		now = now.Add(testutils.TestAttributionCooldown)
 		manager.purgeInactiveAttributionsUntil(now)
 
-		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 4, len(ast.observed), "Should have 4 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(2), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
@@ -351,7 +349,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "1"), 0)
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "6"), 0)
 
-		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 3, len(ast.observed), "Should have 3 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
@@ -360,7 +358,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		now = now.Add(testutils.TestAttributionCooldown)
 		manager.purgeInactiveAttributionsUntil(now)
 
-		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 3, len(ast.observed), "Should have 3 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
@@ -368,7 +366,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 		now = now.Add(testutils.TestAttributionCooldown / 10)
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "7"), now, 0)
-		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 4, len(ast.observed), "Should have 4 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
@@ -378,7 +376,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "3"), 0)
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "4"), 0)
 
-		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 2, len(ast.observed), "Should have 2 series tracked")
 			require.False(t, ast.overflowSince.IsZero(), "Should be in overflow state")
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
@@ -386,7 +384,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 		now = now.Add(testutils.TestAttributionCooldown)
 		manager.purgeInactiveAttributionsUntil(now)
-		withLockedActiveSeriesTracker(manager, "user7", func(ast *ActiveSeriesTracker) {
+		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 0, len(ast.observed), "Should have no series tracked")
 			require.True(t, ast.overflowSince.IsZero(), "Should not be in overflow state anymore")
 			require.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero")

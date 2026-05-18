@@ -991,18 +991,16 @@ func TestActiveSeries_ReloadCostAttributionTrackers(t *testing.T) {
 	c.UpdateSeries(ls2, ref2, currentTime, -1, false, nil)
 
 	// Change the cost attribution tracker, series should be preserved, purge result valid.
-	catTracker, err := costattribution.NewActiveSeriesTracker("a", "cost-attribution", costattributionmodel.Labels{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat, err := costattribution.NewActiveSeriesTracker("a", "cost-attribution", costattributionmodel.Labels{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
 	assert.NoError(t, err)
-	cat := costattribution.NewCompositeActiveSeriesTracker([]*costattribution.ActiveSeriesTracker{catTracker})
 	c.ReloadSeriesConfig(asm, cat, false, true, idx)
 	c.Purge(currentTime, idx)
 	assert.NotNil(t, c.cat)
 	allActive, _, _, _, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 2, allActive)
 
-	catTracker, err = costattribution.NewActiveSeriesTracker("a", "cost-attribution", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat, err = costattribution.NewActiveSeriesTracker("a", "cost-attribution", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
 	assert.NoError(t, err)
-	cat = costattribution.NewCompositeActiveSeriesTracker([]*costattribution.ActiveSeriesTracker{catTracker})
 	c.ReloadSeriesConfig(asm, cat, false, true, idx)
 	c.Purge(currentTime, idx)
 	assert.True(t, cat.Equals(c.CostAttributionTracker()))
@@ -1071,9 +1069,8 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 		"bar": `{a=~.+}`,
 	}))
 
-	catTracker, err := costattribution.NewActiveSeriesTracker("a", "cost-attribution", costattributionmodel.Labels{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat, err := costattribution.NewActiveSeriesTracker("a", "cost-attribution", costattributionmodel.Labels{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
 	assert.NoError(t, err)
-	cat := costattribution.NewCompositeActiveSeriesTracker([]*costattribution.ActiveSeriesTracker{catTracker})
 	currentTime := time.Now()
 	c := NewActiveSeries(asm, DefaultTimeout, cat)
 	c.Purge(currentTime, nil)
@@ -1183,9 +1180,8 @@ func TestActiveSeries_ReloadCatOnly_PreservesTotalCount(t *testing.T) {
 	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.+}`}))
 	currentTime := time.Now()
 
-	cat1t, err := costattribution.NewActiveSeriesTracker("u1", "cost-attribution", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat1, err := costattribution.NewActiveSeriesTracker("u1", "cost-attribution", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
 	require.NoError(t, err)
-	cat1 := costattribution.NewCompositeActiveSeriesTracker([]*costattribution.ActiveSeriesTracker{cat1t})
 	c := NewActiveSeries(asm, DefaultTimeout, cat1)
 
 	c.UpdateSeries(ls1, ref1, currentTime, -1, false, idx)
@@ -1197,9 +1193,8 @@ func TestActiveSeries_ReloadCatOnly_PreservesTotalCount(t *testing.T) {
 	assertMatcherCounts(t, map[string]int{"foo": 2}, matching, c.CurrentMatcherNames())
 
 	// Reload with new cat only.
-	cat2t, err := costattribution.NewActiveSeriesTracker("u1", "cost-attribution", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat2, err := costattribution.NewActiveSeriesTracker("u1", "cost-attribution", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
 	require.NoError(t, err)
-	cat2 := costattribution.NewCompositeActiveSeriesTracker([]*costattribution.ActiveSeriesTracker{cat2t})
 	c.ReloadSeriesConfig(asm, cat2, false, true, idx)
 	c.Purge(currentTime, idx)
 
@@ -1214,9 +1209,8 @@ func TestActiveSeries_ReloadBothMatchersAndCat(t *testing.T) {
 	idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1, ref2: ls2}}
 
 	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"team_x": `{team="x"}`}))
-	cat1t, err := costattribution.NewActiveSeriesTracker("u1", "cost-attribution", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat1, err := costattribution.NewActiveSeriesTracker("u1", "cost-attribution", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
 	require.NoError(t, err)
-	cat1 := costattribution.NewCompositeActiveSeriesTracker([]*costattribution.ActiveSeriesTracker{cat1t})
 	currentTime := time.Now()
 	c := NewActiveSeries(asm, DefaultTimeout, cat1)
 
@@ -1230,9 +1224,8 @@ func TestActiveSeries_ReloadBothMatchersAndCat(t *testing.T) {
 
 	// Reload both matchers and cat.
 	asm2 := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"team_y": `{team="y"}`}))
-	cat2t, err := costattribution.NewActiveSeriesTracker("u1", "cost-attribution", costattributionmodel.Labels{{Input: "team"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat2, err := costattribution.NewActiveSeriesTracker("u1", "cost-attribution", costattributionmodel.Labels{{Input: "team"}}, 4, 5*time.Minute, log.NewNopLogger())
 	require.NoError(t, err)
-	cat2 := costattribution.NewCompositeActiveSeriesTracker([]*costattribution.ActiveSeriesTracker{cat2t})
 	c.ReloadSeriesConfig(asm2, cat2, true, true, idx)
 	c.Purge(currentTime, idx)
 

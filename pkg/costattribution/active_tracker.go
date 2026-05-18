@@ -26,7 +26,7 @@ type counters struct {
 	nativeHistogramBuckets atomic.Int64
 }
 
-type ActiveSeriesTracker struct {
+type activeSeriesTracker struct {
 	userID                                         string
 	trackerName                                    string
 	activeSeriesPerUserAttribution                 *descriptor
@@ -50,7 +50,7 @@ type ActiveSeriesTracker struct {
 	overflowCounter counters
 }
 
-func NewActiveSeriesTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
+func newActiveSeriesTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*activeSeriesTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+1)
 	for i := range trackedLabels {
@@ -59,7 +59,7 @@ func NewActiveSeriesTracker(userID, trackerName string, trackedLabels costattrib
 
 	overflowLabels[len(trackedLabels)] = userID
 
-	ast := &ActiveSeriesTracker{
+	ast := &activeSeriesTracker{
 		userID:           userID,
 		trackerName:      trackerName,
 		labels:           trackedLabels,
@@ -76,7 +76,7 @@ func NewActiveSeriesTracker(userID, trackerName string, trackedLabels costattrib
 	return ast, nil
 }
 
-func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
+func (at *activeSeriesTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
 	variableLabels := make([]string, 0, len(trackedLabels)+1)
 	variableLabels = append(variableLabels, trackedLabels.OutputLabels()...)
 	variableLabels = append(variableLabels, tenantLabel)
@@ -105,14 +105,14 @@ func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels costat
 	return nil
 }
 
-func (at *ActiveSeriesTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
+func (at *activeSeriesTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
 	return slices.Equal(at.labels, labels)
 }
 
 // Increment increases the active series count for the given labels.
 // If nativeHistogramBucketNum is not -1, it also increments the native histogram counter and the corresponding bucket.
 // Otherwise, only the active series count is updated.
-func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nativeHistogramBucketNum int) {
+func (at *activeSeriesTracker) Increment(lbls labels.Labels, now time.Time, nativeHistogramBucketNum int) {
 	if at == nil {
 		return
 	}
@@ -188,7 +188,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 	}
 }
 
-func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucketNum int) {
+func (at *activeSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucketNum int) {
 	if at == nil {
 		return
 	}
@@ -231,7 +231,7 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 	panic(fmt.Errorf("decrementing non-existent active series: labels=%v, cost attribution keys: %v, the current observation map length: %d, the current cost attribution key: %s", lbls, at.labels, len(at.observed), buf.String()))
 }
 
-func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
+func (at *activeSeriesTracker) Collect(out chan<- prometheus.Metric) {
 	out <- at.attributedOverflowLabels.gauge(1, at.overflowLabels...)
 
 	at.observedMtx.RLock()
@@ -275,7 +275,7 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 	}
 }
 
-func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.Buffer) {
+func (at *activeSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.Buffer) {
 	buf.Reset()
 	for idx, cal := range at.labels {
 		if idx > 0 {
@@ -290,7 +290,7 @@ func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.
 	}
 }
 
-func (at *ActiveSeriesTracker) cardinality() (cardinality int, overflown bool) {
+func (at *activeSeriesTracker) cardinality() (cardinality int, overflown bool) {
 	at.observedMtx.RLock()
 	defer at.observedMtx.RUnlock()
 	return len(at.observed), !at.overflowSince.IsZero()

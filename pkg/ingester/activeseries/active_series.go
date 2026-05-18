@@ -49,7 +49,7 @@ type ActiveSeries struct {
 	// configMutex protects matchers and cat.
 	configMutex sync.RWMutex
 	matchers    *asmodel.Matchers
-	cat         *costattribution.CompositeActiveSeriesTracker
+	cat         *costattribution.ActiveSeriesTracker
 
 	// The duration after which series become inactive.
 	timeout time.Duration
@@ -76,7 +76,7 @@ type seriesStripe struct {
 	activeNativeHistogramBuckets         uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
 	activeMatchingNativeHistogramBuckets []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
 
-	cat                                   *costattribution.CompositeActiveSeriesTracker
+	cat                                   *costattribution.ActiveSeriesTracker
 	activeSeriesAttributionFailureCounter atomic.Float64
 }
 
@@ -119,7 +119,7 @@ func (s seriesEntry) isOTLP() bool {
 	return s.flags&flagIsOTLP > 0
 }
 
-func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattribution.CompositeActiveSeriesTracker) *ActiveSeries {
+func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattribution.ActiveSeriesTracker) *ActiveSeries {
 	c := &ActiveSeries{matchers: asm, timeout: timeout, cat: cat}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
@@ -142,19 +142,19 @@ func (c *ActiveSeries) MatchersDiffer(ctCfg asmodel.CustomTrackersConfig) bool {
 	return ctCfg.String() != c.matchers.Config().String()
 }
 
-func (c *ActiveSeries) CostAttributionDiffers(caCfg *costattribution.CompositeActiveSeriesTracker) bool {
+func (c *ActiveSeries) CostAttributionDiffers(caCfg *costattribution.ActiveSeriesTracker) bool {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
 	return !caCfg.Equals(c.cat)
 }
 
-func (c *ActiveSeries) CostAttributionTracker() *costattribution.CompositeActiveSeriesTracker {
+func (c *ActiveSeries) CostAttributionTracker() *costattribution.ActiveSeriesTracker {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
 	return c.cat
 }
 
-func (c *ActiveSeries) ReloadSeriesConfig(asm *asmodel.Matchers, cat *costattribution.CompositeActiveSeriesTracker, matchersChanged bool, catChanged bool, idx tsdb.IndexReader) {
+func (c *ActiveSeries) ReloadSeriesConfig(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, matchersChanged bool, catChanged bool, idx tsdb.IndexReader) {
 	c.configMutex.Lock()
 	defer c.configMutex.Unlock()
 	for i := 0; i < numStripes; i++ {
@@ -488,7 +488,7 @@ func (s *seriesStripe) clear() {
 }
 
 // initialize assigns matchers and corresponding size activeMatching slices.
-func (s *seriesStripe) initialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.CompositeActiveSeriesTracker) {
+func (s *seriesStripe) initialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.ActiveSeriesTracker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleted = deleted
@@ -517,7 +517,7 @@ func (s *seriesStripe) incrementMatchingCounters(entry seriesEntry) {
 	}
 }
 
-func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.CompositeActiveSeriesTracker, matchersChanged bool, catChanged bool, idx tsdb.IndexReader) {
+func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, matchersChanged bool, catChanged bool, idx tsdb.IndexReader) {
 	type resolvedSeries struct {
 		labels  labels.Labels
 		matches asmodel.PreAllocDynamicSlice
