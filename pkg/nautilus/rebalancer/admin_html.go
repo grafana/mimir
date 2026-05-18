@@ -170,7 +170,7 @@ details>summary::-webkit-details-marker{display:none}
 		<span class="part-instance" title="{{.InstanceAddr}}">{{if .InstanceAddr}}{{.InstanceAddr}}{{else}}(address unknown){{end}}</span>
 		<span class="part-stats">
 			<span>{{len .Partitions}} partition{{if ne (len .Partitions) 1}}s{{end}}</span>
-			{{if gt .Load 0}}<span title="Slicer load from the last readcache round">{{fmtFloat .Load}} load</span>{{end}}
+			{{if gt .Load 0.0}}<span title="Slicer load from the last readcache round">{{fmtFloat .Load}} load</span>{{end}}
 		</span>
 	</summary>
 	<div class="part-ranges open">
