@@ -436,6 +436,24 @@ func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 	assert.LessOrEqual(t, req.endMs, after+1000, "endMs must not exceed the test end")
 }
 
+// TestParseSearchRequest_RejectsInvertedTimeRange pins the upstream behaviour
+// from Prometheus PR #18573: end < start is HTTP 400 with the exact error
+// message clients are documented to expect, but end == start is fine.
+func TestParseSearchRequest_RejectsInvertedTimeRange(t *testing.T) {
+	t.Run("end before start is rejected", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=7200&end=3600")
+		_, err := parseSearchRequest(r, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "end timestamp must not be before start timestamp")
+	})
+	t.Run("end equal to start is permitted", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=3600&end=3600")
+		req, err := parseSearchRequest(r, false)
+		require.NoError(t, err)
+		assert.Equal(t, req.startMs, req.endMs)
+	})
+}
+
 func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&search[]=bar&case_sensitive=false&fuzz_alg=jarowinkler&fuzz_threshold=75&sort_by=alpha&sort_dir=dsc&include_score=true&limit=42&batch_size=7&match[]={job=\"prom\"}")
 	req, err := parseSearchRequest(r, false)

@@ -193,6 +193,11 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	if err != nil {
 		return nil, fmt.Errorf("invalid end: %w", err)
 	}
+	// end == start is permitted (zero-duration snapshot); only strictly
+	// inverted ranges are rejected, mirroring Prometheus PR #18573.
+	if endMs < startMs {
+		return nil, errors.New("end timestamp must not be before start timestamp")
+	}
 
 	// Matchers (match[]). Each entry is a PromQL series selector.
 	matchers, err := parseSearchMatchers(q["match[]"])
