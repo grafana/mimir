@@ -510,7 +510,13 @@ func (r *Rebalancer) buildReadcacheReplicaViews() []readcacheReplicaView {
 	now := time.Now()
 
 	partitionsByInstance := make(map[string][]int32)
-	for _, e := range r.readcacheStore.activeEntries(now) {
+	// Use ActiveAt (currently-serving leases), not LiveEntries, which
+	// also includes pre-issued future leases and inflates per-replica
+	// partition counts during handoffs.
+	for _, e := range r.readcacheStore.snapshot() {
+		if !e.ActiveAt(now) {
+			continue
+		}
 		partitionsByInstance[e.InstanceID] = append(partitionsByInstance[e.InstanceID], e.PartitionID)
 	}
 

@@ -209,7 +209,7 @@ details>summary::-webkit-details-marker{display:none}
 <div style="margin-top:8px;font-size:11px;color:#666">Moves this round: {{len .ReadcacheLastRound.Moves}}</div>
 <div class="round-actions" style="margin-top:4px">
 {{range .ReadcacheLastRound.Moves}}
-	<span class="action-pill act-move" title="load {{fmtFloat .Load}}">P{{.PartitionID}} {{.FromInstance}}→{{.ToInstance}}</span>
+	<span class="action-pill act-move" title="load {{fmtFloat .Load}}">P{{.PartitionID}} {{.From}}→{{.To}}</span>
 {{end}}
 </div>
 {{end}}
