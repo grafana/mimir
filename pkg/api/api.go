@@ -506,12 +506,16 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	// Streaming label/value search endpoints (experimental, gated by
 	// -querier.experimental-search-api-enabled). Mirror Prometheus PR #18573.
-	// gzip is disabled (gzipEnabled=false) because NDJSON responses are
-	// streamed with per-batch Flush(); wrapping in gzip would buffer until
-	// the gzip writer's buffer fills, defeating the per-batch flush.
-	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/metric_names"), handler, true, false, maxBodySizeIfAny, "GET", "POST")
-	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/label_names"), handler, true, false, maxBodySizeIfAny, "GET", "POST")
-	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/label_values"), handler, true, false, maxBodySizeIfAny, "GET", "POST")
+	// gzip is enabled: per-batch streaming works end-to-end because
+	// pkg/util/gziphandler's GzipResponseWriter.Flush calls gz.Flush()
+	// (deflate SYNC_FLUSH) before flushing the underlying ResponseWriter,
+	// so the consumer can decode each NDJSON batch as it arrives. The
+	// per-flush sync-marker cost (5 bytes plus one missed back-reference
+	// at each flush boundary) is negligible compared with the bandwidth
+	// saved on label/value listings, which are highly repetitive.
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/metric_names"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/label_names"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/label_values"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 }
 
 func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {

@@ -114,7 +114,7 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	alg := streaminglabelvalues.FuzzAlgSubsequence
 	switch q.Get("fuzz_alg") {
 	case "", "subsequence":
-		alg = streaminglabelvalues.FuzzAlgSubsequence
+		// keep default
 	case "jarowinkler":
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
 	default:
