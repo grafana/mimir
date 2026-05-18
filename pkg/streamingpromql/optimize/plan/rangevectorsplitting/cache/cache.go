@@ -25,7 +25,7 @@ import (
 
 type Backend interface {
 	GetMulti(ctx context.Context, keys []string, opts ...cache.Option) map[string][]byte
-	SetMultiAsync(data map[string][]byte, ttl time.Duration)
+	SetAsync(key string, value []byte, ttl time.Duration)
 }
 
 type TTLProvider interface {
@@ -219,7 +219,7 @@ func (c *Cache[T]) Set(
 	}
 
 	hashedKey := hashCacheKey(cacheKey)
-	c.backend.SetMultiAsync(map[string][]byte{hashedKey: data}, ttl)
+	c.backend.SetAsync(hashedKey, data, ttl)
 
 	seriesCount := len(seriesMetadata)
 	level.Debug(c.logger).Log("msg", "cache entry written", "hashed_cache_key", hashedKey, "series_count", seriesCount, "entry_size", len(data))

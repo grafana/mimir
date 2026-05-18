@@ -1544,11 +1544,9 @@ func (c *testCacheBackend) GetMulti(_ context.Context, keys []string, _ ...dskit
 	return result
 }
 
-func (c *testCacheBackend) SetMultiAsync(data map[string][]byte, _ time.Duration) {
+func (c *testCacheBackend) SetAsync(key string, value []byte, _ time.Duration) {
 	c.sets++
-	for key, value := range data {
-		c.items[key] = value
-	}
+	c.items[key] = value
 }
 
 func (c *testCacheBackend) Reset() {
