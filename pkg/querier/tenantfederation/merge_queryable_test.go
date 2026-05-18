@@ -32,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -1052,4 +1053,101 @@ func containsAttribute(span tracetest.SpanStub, expectedTag attribute.KeyValue) 
 type spanWithAttributes struct {
 	name string
 	tags []attribute.KeyValue
+}
+
+// searchableTenantQueryable returns a storage.Querier that also implements
+// the local search interface declared in merge_queryable.go, letting the
+// mergeQuerier's federation fan-out drive SearchLabelNames/SearchLabelValues
+// through the tenant adapter and back to per-tenant test results.
+type searchableTenantQueryable struct {
+	resultsByTenant map[string][]storage.SearchResult
+}
+
+func (s *searchableTenantQueryable) Querier(_, _ int64) (storage.Querier, error) {
+	return &searchableTenantQuerier{src: s}, nil
+}
+
+type searchableTenantQuerier struct {
+	src *searchableTenantQueryable
+}
+
+func (q *searchableTenantQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	return storage.EmptySeriesSet()
+}
+func (q *searchableTenantQuerier) LabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (q *searchableTenantQuerier) LabelNames(_ context.Context, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (q *searchableTenantQuerier) Close() error { return nil }
+
+func (q *searchableTenantQuerier) SearchLabelNames(ctx context.Context, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	tenantID, _ := tenant.TenantID(ctx)
+	return storage.NewSearchResultSetFromSlice(q.src.resultsByTenant[tenantID], nil)
+}
+
+func (q *searchableTenantQuerier) SearchLabelValues(ctx context.Context, _ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	tenantID, _ := tenant.TenantID(ctx)
+	return storage.NewSearchResultSetFromSlice(q.src.resultsByTenant[tenantID], nil)
+}
+
+// TestMergeQueryable_SearchLabelNames_MultiTenantFanout pins the federation
+// search path: a multi-tenant request must fan out per-tenant, route each
+// per-tenant call to its own org-ID-scoped context, and merge the streamed
+// SearchResultSets via storage.MergeSearchResultSets (dedup + ordering).
+func TestMergeQueryable_SearchLabelNames_MultiTenantFanout(t *testing.T) {
+	src := &searchableTenantQueryable{
+		resultsByTenant: map[string][]storage.SearchResult{
+			"t1": {{Value: "alpha", Score: 1.0}, {Value: "beta", Score: 1.0}},
+			"t2": {{Value: "beta", Score: 1.0}, {Value: "gamma", Score: 1.0}},
+		},
+	}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s, ok := querier.(searcher)
+	require.True(t, ok, "mergeQuerier must satisfy the local search interface")
+
+	ctx := user.InjectOrgID(context.Background(), "t1|t2")
+	rs := s.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, got, "fan-out must dedup across tenants and respect value-asc ordering")
+}
+
+// TestMergeQueryable_SearchLabelNames_SingleTenantBypass pins the bypass
+// path: when bypassWithSingleID=true and exactly one tenant is in scope,
+// the federation layer must delegate directly to the per-tenant upstream
+// without invoking the fan-out merge.
+func TestMergeQueryable_SearchLabelNames_SingleTenantBypass(t *testing.T) {
+	src := &searchableTenantQueryable{
+		resultsByTenant: map[string][]storage.SearchResult{
+			"only": {{Value: "x", Score: 1.0}, {Value: "y", Score: 1.0}},
+		},
+	}
+	q := NewQueryable(src, true, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "only")
+	rs := s.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"x", "y"}, got)
 }

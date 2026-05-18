@@ -377,6 +377,7 @@ func TestSearchLabelNamesHandler_BadParams_Return400(t *testing.T) {
 		{name: "negative limit", query: "limit=-1"},
 		{name: "negative batch_size", query: "batch_size=-1"},
 		{name: "non-integer batch_size", query: "batch_size=abc"},
+		{name: "batch_size above maximum", query: "batch_size=1000000000"},
 		{name: "sort_by=score without search[]", query: "sort_by=score"},
 		{name: "too many search[] terms", query: tooManySearchTerms(maxSearchTermsPerRequest + 1)},
 		{name: "invalid include_score", query: "include_score=maybe"},

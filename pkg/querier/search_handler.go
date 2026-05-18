@@ -34,6 +34,12 @@ const (
 	searchDefaultLimit     = 100
 	searchDefaultBatchSize = 100
 
+	// maxSearchBatchSize caps user-supplied batch_size to keep the
+	// pre-allocation of one batch worth of records bounded. Sized to match
+	// the upstream --web.search.max-limit default (10000) so a batch can't
+	// usefully exceed the largest reasonable in-flight result count.
+	maxSearchBatchSize = 10000
+
 	// maxSearchTermsPerRequest caps the number of search[] query parameters
 	// a single request may carry; matches the 32-term upstream cap.
 	maxSearchTermsPerRequest = 32
@@ -168,13 +174,16 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	}
 
 	// Batch size (default searchDefaultBatchSize). batch_size=0 means
-	// "server-determined" and keeps the default; only negative values are
-	// rejected. Matches Prometheus PR #18573.
+	// "server-determined" and keeps the default; negative values rejected.
+	// Capped at maxSearchBatchSize to bound the per-batch pre-allocation.
 	batchSize := searchDefaultBatchSize
 	if v := q.Get("batch_size"); v != "" {
 		parsed, err := strconv.Atoi(v)
 		if err != nil || parsed < 0 {
 			return nil, fmt.Errorf("invalid batch_size %q: must be non-negative integer", v)
+		}
+		if parsed > maxSearchBatchSize {
+			return nil, fmt.Errorf("batch_size %d exceeds maximum %d", parsed, maxSearchBatchSize)
 		}
 		if parsed > 0 {
 			batchSize = parsed
@@ -375,8 +384,11 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 
 // searcherForRequest opens a querier for the time range and type-asserts it
 // to mimirSearcher. The caller is responsible for calling querier.Close().
+// Uses tenant.TenantIDs (plural) rather than TenantID so multi-tenant
+// requests routed through tenantfederation.NewQueryable are not rejected
+// here — the federation layer resolves per-tenant IDs internally.
 func searcherForRequest(ctx context.Context, queryable storage.Queryable, startMs, endMs int64) (mimirSearcher, storage.Querier, error) {
-	if _, err := tenant.TenantID(ctx); err != nil {
+	if _, err := tenant.TenantIDs(ctx); err != nil {
 		return nil, nil, err
 	}
 	q, err := queryable.Querier(startMs, endMs)
