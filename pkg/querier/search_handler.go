@@ -37,6 +37,12 @@ const (
 	// Default values per Prometheus PR #18573 search API.
 	searchDefaultLimit     = 100
 	searchDefaultBatchSize = 100
+
+	// maxSearchTermsPerRequest caps the number of search[] query parameters
+	// a single request may carry. Matches Prometheus PR #18573 (capped to 32
+	// upstream); the cap bounds per-term filter construction cost which is
+	// O(terms) for each Filter.Accept call.
+	maxSearchTermsPerRequest = 32
 )
 
 // searchResultRecord is the JSON shape of a single result emitted on the
@@ -98,8 +104,12 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 
 	q := r.Form
 
-	// Search terms (search[]).
+	// Search terms (search[]). Capped at maxSearchTermsPerRequest to bound
+	// per-request filter construction cost; matches Prometheus PR #18573.
 	terms := q["search[]"]
+	if len(terms) > maxSearchTermsPerRequest {
+		return nil, fmt.Errorf("too many search[] terms: got %d, maximum is %d", len(terms), maxSearchTermsPerRequest)
+	}
 
 	// Case sensitivity defaults to true per Prometheus URL polarity.
 	caseSensitive := true
@@ -137,6 +147,12 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	if sortBy == "" {
 		sortBy = "alpha"
 	}
+	// sort_by=score sorts by relevance score, which is only meaningful when
+	// at least one search[] term has been supplied to produce the scores.
+	// Matches Prometheus PR #18573.
+	if sortBy == "score" && len(terms) == 0 {
+		return nil, errors.New("sort_by=score requires search[] to be set")
+	}
 	sortDir := q.Get("sort_dir")
 	if sortDir == "" {
 		sortDir = "asc"
@@ -159,17 +175,18 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		limit = parsed
 	}
 
-	// Batch size (default 100).
+	// Batch size (default searchDefaultBatchSize). batch_size=0 means
+	// "server-determined" and keeps the default; only negative values are
+	// rejected. Matches Prometheus PR #18573.
 	batchSize := searchDefaultBatchSize
 	if v := q.Get("batch_size"); v != "" {
 		parsed, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid batch_size: %w", err)
+		if err != nil || parsed < 0 {
+			return nil, fmt.Errorf("invalid batch_size %q: must be non-negative integer", v)
 		}
-		if parsed <= 0 {
-			return nil, fmt.Errorf("invalid batch_size: must be > 0")
+		if parsed > 0 {
+			batchSize = parsed
 		}
-		batchSize = parsed
 	}
 
 	includeScore := false
@@ -210,10 +227,11 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, fmt.Errorf("invalid search params: %w", err)
 	}
 
-	// Label name for label-values endpoint.
-	labelName := q.Get("name")
+	// Label name for label-values endpoint. URL param is "label", matching
+	// Prometheus PR #18573 (clients ported from upstream send ?label=...).
+	labelName := q.Get("label")
 	if requireLabelName && labelName == "" {
-		return nil, errors.New("missing required parameter: name")
+		return nil, errors.New(`missing required parameter "label"`)
 	}
 
 	return &searchRequest{
