@@ -20,7 +20,7 @@ option (gogoproto.unmarshaler_all) = true;
 
 message CachedSeries {
   // cacheKey contains the non-hashed cache key, to detect hash collision.
-  string cacheKey = 1;
+  bytes cacheKey = 1;
   int64 start = 2;
   int64 end = 3;
   repeated querierpb.SeriesMetadata series_metadata = 4 [(gogoproto.nullable) = false];

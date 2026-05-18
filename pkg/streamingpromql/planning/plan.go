@@ -74,7 +74,11 @@ const QueryPlanV11 = QueryPlanVersion(11)
 // QueryPlanV12 introduces a dedicated type for the second argument for the info() function.
 const QueryPlanV12 = QueryPlanVersion(12)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV12
+// QueryPlanV13 derives the SplitFunctionCall inner-node cache key at materialize time
+// rather than reading it from the proto.
+const QueryPlanV13 = QueryPlanVersion(13)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV13
 
 type QueryPlan struct {
 	Root       Node
@@ -271,9 +275,6 @@ type SplitNode interface {
 	// IsSplittable returns true if the node can actually be split. While a node satisfying this interface can usually
 	// be split, there might be some edge cases where it's not possible or not implemented yet.
 	IsSplittable() bool
-
-	// SplittingCacheKey returns a cache key for this node's intermediate results.
-	SplittingCacheKey() string
 
 	GetRangeParams() RangeParams
 }

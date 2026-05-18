@@ -32,17 +32,6 @@ func (m *MatrixSelector) Describe() string {
 	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude, m.Subsets)
 }
 
-// RangeVectorSplittingCacheKey returns the cache key for the matrix selector.
-// The range is not part of the cache key as range vector splitting means that matrix selectors which only differ by
-// the range can share cache entries.
-// The offset and @ modifiers are not part of the cache key as they are adjusted for when calculating split ranges.
-// TODO: when subquery splitting is supported, the logic will have to change - if the matrix selector is not the root
-// inner node, the range plus the offset and @ modifiers will have to be retained.
-// TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
-func (m *MatrixSelector) SplittingCacheKey() string {
-	return describeSelector(m.Matchers, nil, 0, nil, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude, m.Subsets)
-}
-
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
 	return timeRange
 }

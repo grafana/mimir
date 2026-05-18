@@ -153,6 +153,37 @@ func TestBinaryExpression_Describe(t *testing.T) {
 			},
 			expected: `LHS + ignoring (foo) group_right () RHS`,
 		},
+		"hints with include labels": {
+			node: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					Hints: &BinaryExpressionHints{
+						Include: []string{"region", "env"},
+					},
+				},
+			},
+			expected: `LHS + RHS, hints include (region, env)`,
+		},
+		"hints with exclude matching and no exclude labels": {
+			node: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:    BINARY_ADD,
+					Hints: &BinaryExpressionHints{},
+				},
+			},
+			expected: `LHS + RHS, hints exclude ()`,
+		},
+		"hints with exclude matching and exclude labels": {
+			node: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					Hints: &BinaryExpressionHints{
+						Exclude: []string{"foo", "bar"},
+					},
+				},
+			},
+			expected: `LHS + RHS, hints exclude (foo, bar)`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -462,15 +493,15 @@ func TestBinaryExpression_MergeHints(t *testing.T) {
 			second:   nil,
 			expected: nil,
 		},
-		"first has nil hints, other has empty hints": {
-			first:    nil,
-			second:   &BinaryExpressionHints{},
-			expected: nil,
+		"first has nil hints, other has empty exclude hints": {
+			first:       nil,
+			second:      &BinaryExpressionHints{},
+			expectError: true,
 		},
-		"second has nil hints, other has empty hints": {
-			first:    &BinaryExpressionHints{},
-			second:   nil,
-			expected: &BinaryExpressionHints{},
+		"second has nil hints, other has empty exclude hints": {
+			first:       &BinaryExpressionHints{},
+			second:      nil,
+			expectError: true,
 		},
 		"first has empty hints, other does not": {
 			first:       &BinaryExpressionHints{},
@@ -502,6 +533,26 @@ func TestBinaryExpression_MergeHints(t *testing.T) {
 			second:      &BinaryExpressionHints{Include: []string{"second", "foo"}},
 			expectError: true,
 		},
+		"both have exclude matching with same exclude": {
+			first:    &BinaryExpressionHints{Exclude: []string{"foo", "bar"}},
+			second:   &BinaryExpressionHints{Exclude: []string{"foo", "bar"}},
+			expected: &BinaryExpressionHints{Exclude: []string{"foo", "bar"}},
+		},
+		"both have exclude matching with different exclude": {
+			first:       &BinaryExpressionHints{Exclude: []string{"foo"}},
+			second:      &BinaryExpressionHints{Exclude: []string{"bar"}},
+			expectError: true,
+		},
+		"one has exclude matching, other has include matching": {
+			first:       &BinaryExpressionHints{Exclude: []string{"foo"}},
+			second:      &BinaryExpressionHints{Include: []string{"foo"}},
+			expectError: true,
+		},
+		"both have exclude matching with no exclude": {
+			first:    &BinaryExpressionHints{},
+			second:   &BinaryExpressionHints{},
+			expected: &BinaryExpressionHints{},
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -520,7 +571,7 @@ func TestBinaryExpression_MergeHints(t *testing.T) {
 
 			err := first.MergeHints(second)
 			if testCase.expectError {
-				require.EqualError(t, err, "cannot merge hints for binary expressions with different included labels")
+				require.EqualError(t, err, "cannot merge hints for binary expressions with different hints")
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, testCase.expected, first.Hints)

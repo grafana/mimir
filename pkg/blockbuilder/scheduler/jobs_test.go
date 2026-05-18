@@ -3,6 +3,8 @@
 package scheduler
 
 import (
+	"errors"
+	"iter"
 	"strings"
 	"testing"
 	"time"
@@ -227,8 +229,8 @@ func TestJobCreationPolicies(t *testing.T) {
 // allowNoneJobCreationPolicy is a job creation policy that never allows job creation.
 type allowNoneJobCreationPolicy[T any] struct{}
 
-func (p allowNoneJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool { // nolint:unused
-	return false
+func (p allowNoneJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ iter.Seq[*T]) error { // nolint:unused
+	return errors.New("allowNoneJobCreationPolicy")
 }
 
 var _ jobCreationPolicy[any] = (*allowNoneJobCreationPolicy[any])(nil)

@@ -4,6 +4,7 @@ package encoding
 
 import (
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 
 	"github.com/pkg/errors"
@@ -86,6 +87,10 @@ func (df *FilePoolDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Tab
 
 func (df *FilePoolDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 	return df.NewDecbufAtChecked(offset, nil)
+}
+
+func (df *FilePoolDecbufFactory) NewDecbufInSection(_, _, _ int) Decbuf {
+	return Decbuf{E: fmt.Errorf("NewDecbufInSection not implemented for FilePoolDecbufFactory")}
 }
 
 func (df *FilePoolDecbufFactory) NewRawDecbuf() Decbuf {
