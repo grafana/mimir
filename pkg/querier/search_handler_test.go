@@ -1063,7 +1063,7 @@ func TestSearchMetricNamesHandler_MetadataEnrichesRecords(t *testing.T) {
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), sup, nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?metadata=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 2)
@@ -1123,7 +1123,7 @@ func TestSearchMetricNamesHandler_SupplierErrorDegradesToTrailerWarning(t *testi
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), sup, nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?metadata=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code, "supplier errors must not fail the search request")
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 2)
@@ -1152,7 +1152,7 @@ func TestSearchMetricNamesHandler_EmptyMetadataEmitsRecordsAnyway(t *testing.T) 
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), sup, nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?metadata=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 2)
@@ -1179,7 +1179,7 @@ func TestSearchMetricNamesHandler_IncludeScoreAndMetadataCompose(t *testing.T) {
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), sup, nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?metadata=true&include_score=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true&include_score=true"))
 	lines := drainNDJSON(t, w.Body.String())
 	rec := lines[0]["results"].([]any)[0].(map[string]any)
 	assert.Equal(t, "http_requests_total", rec["name"])
@@ -1194,16 +1194,16 @@ func TestSearchMetricNamesHandler_NilSupplierDisablesEnrichmentSilently(t *testi
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("metric", 1.0)}, nil)
 		},
 	}
-	// nil supplier: metadata=true must not panic; just skip enrichment.
+	// nil supplier: include_metadata=true must not panic; just skip enrichment.
 	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?metadata=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
-	// metadata=true on the label-names endpoint is accepted (no 400) but the
+	// include_metadata=true on the label-names endpoint is accepted (no 400) but the
 	// supplier is never wired into label-names — the param is metric-specific
 	// and silently ignored for forward-compatibility.
 	mq := &searchMockQuerier{
@@ -1214,17 +1214,17 @@ func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
 	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?metadata=true"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	lines := drainNDJSON(t, w.Body.String())
 	rec := lines[0]["results"].([]any)[0].(map[string]any)
 	_, hasType := rec["type"]
-	assert.False(t, hasType, "label_names must never emit type/help/unit even with metadata=true")
+	assert.False(t, hasType, "label_names must never emit type/help/unit even with include_metadata=true")
 }
 
 func TestSearchMetricNamesHandler_InvalidMetadataParamReturns400(t *testing.T) {
 	h := SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil, nil)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?metadata=maybe"))
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=maybe"))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

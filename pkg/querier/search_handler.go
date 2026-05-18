@@ -118,8 +118,11 @@ type searchRequest struct {
 	includeScore bool
 	// metadata, when true, asks the metric-names endpoint to enrich each
 	// emitted record with Type/Help/Unit from Mimir's MetadataSupplier.
-	// Ignored by the label-names and label-values endpoints (the param
-	// is metric-specific; silently accepted for forward-compatibility).
+	// Parsed from the include_metadata URL param (matching Prometheus
+	// PR #18573's wire contract; the include_ prefix is symmetric with
+	// include_score). Ignored by the label-names and label-values
+	// endpoints (the param is metric-specific; silently accepted for
+	// forward-compatibility).
 	metadata bool
 	// labelName is only set for the label-values endpoint; required there.
 	labelName string
@@ -233,10 +236,10 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	}
 
 	wantMetadata := false
-	if v := q.Get("metadata"); v != "" {
+	if v := q.Get("include_metadata"); v != "" {
 		parsed, err := strconv.ParseBool(v)
 		if err != nil {
-			return nil, fmt.Errorf("invalid metadata: %w", err)
+			return nil, fmt.Errorf("invalid include_metadata: %w", err)
 		}
 		wantMetadata = parsed
 	}
