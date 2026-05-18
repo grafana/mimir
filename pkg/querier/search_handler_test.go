@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
@@ -414,6 +415,25 @@ func TestParseSortOrder_Cases(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestParseSearchRequest_DefaultTimeRange pins the one-hour default window
+// matched against Prometheus PR #18573. If either default ever drifts (e.g.
+// back to model.Earliest/Latest), this test fails: an unspecified start/end
+// must return endMs == "now" and startMs == "now - 1h".
+func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo")
+	before := time.Now().UnixMilli()
+	req, err := parseSearchRequest(r, false)
+	after := time.Now().UnixMilli()
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(3600000), req.endMs-req.startMs, "default window must be exactly one hour")
+	// endMs should fall in [before, after] modulo the small slack of the
+	// internal model.Now() call between us reading "before" and the handler
+	// stamping the default. Add a 1s tolerance either side.
+	assert.GreaterOrEqual(t, req.endMs, before-1000, "endMs must not predate the test start")
+	assert.LessOrEqual(t, req.endMs, after+1000, "endMs must not exceed the test end")
 }
 
 func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {

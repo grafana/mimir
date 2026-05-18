@@ -181,12 +181,15 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		includeScore = parsed
 	}
 
-	// Time range. Default to a wide range when not specified.
-	startMs, err := parseSearchTime(q.Get("start"), model.Earliest)
+	// Time range. Defaults match Prometheus PR #18573: start defaults to one
+	// hour before now, end defaults to now. Keeps the default window narrow
+	// enough that searches over an unspecified range stay cheap.
+	now := model.Now()
+	startMs, err := parseSearchTime(q.Get("start"), now.Add(-time.Hour))
 	if err != nil {
 		return nil, fmt.Errorf("invalid start: %w", err)
 	}
-	endMs, err := parseSearchTime(q.Get("end"), model.Latest)
+	endMs, err := parseSearchTime(q.Get("end"), now)
 	if err != nil {
 		return nil, fmt.Errorf("invalid end: %w", err)
 	}
