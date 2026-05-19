@@ -32,6 +32,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -349,6 +350,277 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 			for i, queryCall := range queryCalls {
 				require.Equal(t, int64(1), queryCall.Load(), "Query %d should be called exactly once", i)
 			}
+		})
+	}
+}
+
+func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
+	tests := map[string]struct {
+		queries             []*prompb.Query
+		seriesSets          func() []storage.SeriesSet
+		expectedSampleCount uint64
+	}{
+		"single query with float samples only": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
+							nil,
+						),
+					}),
+				}
+			},
+			expectedSampleCount: 3,
+		},
+		"single query with histograms": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							nil,
+							[]mimirpb.Histogram{
+								mimirpb.FromHistogramToHistogramProto(1, test.GenerateTestHistogram(1)),
+								mimirpb.FromHistogramToHistogramProto(2, test.GenerateTestHistogram(2)),
+							},
+						),
+					}),
+				}
+			},
+			expectedSampleCount: 2,
+		},
+		"single query with mixed float and histogram samples": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+							[]mimirpb.Histogram{
+								mimirpb.FromHistogramToHistogramProto(3, test.GenerateTestHistogram(3)),
+							},
+						),
+					}),
+				}
+			},
+			expectedSampleCount: 3,
+		},
+		"multiple queries": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+							nil,
+						),
+					}),
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "baz"),
+							[]model.SamplePair{{Timestamp: 3, Value: 3}},
+							nil,
+						),
+					}),
+				}
+			},
+			expectedSampleCount: 3,
+		},
+		"empty series set": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries(nil),
+				}
+			},
+			expectedSampleCount: 0,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			seriesSets := tc.seriesSets()
+			callCount := atomic.NewInt64(0)
+
+			q := &mockSampleAndChunkQueryable{
+				queryableFn: func(int64, int64) (storage.Querier, error) {
+					return mockQuerier{
+						selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+							idx := callCount.Inc() - 1
+							return seriesSets[idx]
+						},
+					}, nil
+				},
+			}
+
+			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
+			w := httptest.NewRecorder()
+			req := &prompb.ReadRequest{Queries: tc.queries}
+
+			remoteReadSamples(ctx, q, w, req, 0, log.NewNopLogger())
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Equal(t, tc.expectedSampleCount, queryStats.LoadPhysicalSamplesRead())
+			require.Equal(t, tc.expectedSampleCount, queryStats.LoadEquivalentSamplesRead())
+		})
+	}
+}
+
+func TestRemoteReadStreamedXORChunks_SampleCountStats(t *testing.T) {
+	tests := map[string]struct {
+		queries             []*prompb.Query
+		chunkSeriesSets     func() []storage.ChunkSeriesSet
+		expectedSampleCount uint64
+	}{
+		"single query with float samples": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
+								nil,
+							),
+						}),
+					),
+				}
+			},
+			expectedSampleCount: 3,
+		},
+		"single query with histogram samples": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								nil,
+								[]mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(1, test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(2, test.GenerateTestHistogram(2)),
+								},
+							),
+						}),
+					),
+				}
+			},
+			expectedSampleCount: 2,
+		},
+		"single query with many samples across multiple chunks": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 1000},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								getNSamples(250),
+								nil,
+							),
+						}),
+					),
+				}
+			},
+			expectedSampleCount: 250,
+		},
+		"multiple queries": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+								nil,
+							),
+						}),
+					),
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "baz"),
+								[]model.SamplePair{{Timestamp: 3, Value: 3}},
+								nil,
+							),
+						}),
+					),
+				}
+			},
+			expectedSampleCount: 3,
+		},
+		"empty series set": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries(nil),
+					),
+				}
+			},
+			expectedSampleCount: 0,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			chunkSeriesSets := tc.chunkSeriesSets()
+			callCount := atomic.NewInt64(0)
+
+			q := &mockSampleAndChunkQueryable{
+				chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
+					return mockChunkQuerier{
+						selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
+							idx := callCount.Inc() - 1
+							return chunkSeriesSets[idx]
+						},
+					}, nil
+				},
+			}
+
+			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
+			w := httptest.NewRecorder()
+			req := &prompb.ReadRequest{
+				Queries:               tc.queries,
+				AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+			}
+
+			remoteReadStreamedXORChunks(ctx, q, w, req, maxRemoteReadFrameBytes, 0, log.NewNopLogger())
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Equal(t, tc.expectedSampleCount, queryStats.LoadPhysicalSamplesRead())
+			require.Equal(t, tc.expectedSampleCount, queryStats.LoadEquivalentSamplesRead())
 		})
 	}
 }

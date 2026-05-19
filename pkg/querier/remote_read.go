@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -86,6 +87,7 @@ func remoteReadSamples(
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
 
+	sampleCounts := make([]uint64, len(req.Queries))
 	closers := make([]io.Closer, len(req.Queries))
 	defer func() {
 		for _, closer := range closers {
@@ -111,7 +113,7 @@ func remoteReadSamples(
 
 		// We can over-read when querying, but we don't need to return samples
 		// outside the queried range, so can filter them out.
-		resp.Results[idx], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
+		resp.Results[idx], sampleCounts[idx], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
 		return err
 	}
 
@@ -124,6 +126,15 @@ func remoteReadSamples(
 		http.Error(w, err.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
 		return
 	}
+
+	var totalSamples uint64
+	for _, c := range sampleCounts {
+		totalSamples += c
+	}
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddPhysicalSamplesRead(totalSamples)
+	queryStats.AddEquivalentSamplesRead(totalSamples)
+
 	w.Header().Add("Content-Type", "application/x-protobuf")
 	w.Header().Set("Content-Encoding", "snappy")
 
@@ -200,13 +211,15 @@ func remoteReadStreamedXORChunks(
 	// We don't set the header because the http stdlib will automatically set it to 200 on the first Write().
 	// In case of an error, we will break the stream below.
 
+	var totalSamples uint64
 	for i, result := range results {
-		if err := streamChunkedReadResponses(
+		count, err := streamChunkedReadResponses(
 			prom_remote.NewChunkedWriter(w, f),
 			result.series,
 			i,
 			maxBytesInFrame,
-		); err != nil {
+		)
+		if err != nil {
 			code := remoteReadErrorStatusCode(err)
 			if code/100 != 4 {
 				level.Error(logger).Log("msg", "error while streaming remote read response", "err", err)
@@ -217,7 +230,12 @@ func remoteReadStreamedXORChunks(
 			http.Error(w, err.Error(), code)
 			return
 		}
+		totalSamples += count
 	}
+
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddPhysicalSamplesRead(totalSamples)
+	queryStats.AddEquivalentSamplesRead(totalSamples)
 }
 
 func remoteReadErrorStatusCode(err error) int {
@@ -235,8 +253,9 @@ func remoteReadErrorStatusCode(err error) int {
 	}
 }
 
-func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, error) {
+func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, uint64, error) {
 	result := &prompb.QueryResult{}
+	var sampleCount uint64
 
 	var it chunkenc.Iterator
 	for s.Next() {
@@ -257,19 +276,22 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 					Timestamp: t,
 					Value:     v,
 				})
+				sampleCount++
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromIntHistogram(t, h))
+				sampleCount++
 			case chunkenc.ValFloatHistogram:
 				t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromFloatHistogram(t, h))
+				sampleCount++
 			default:
-				return nil, fmt.Errorf("unsupported value type: %v", valType)
+				return nil, 0, fmt.Errorf("unsupported value type: %v", valType)
 			}
 		}
 
 		if err := it.Err(); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		ts := &prompb.TimeSeries{
@@ -281,7 +303,7 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 		result.Timeseries = append(result.Timeseries, ts)
 	}
 
-	return result, s.Err()
+	return result, sampleCount, s.Err()
 }
 
 func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.ReadRequest_ResponseType, error) {
@@ -302,10 +324,11 @@ func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.R
 	return 0, errors.Errorf("server does not support any of the requested response types: %v; supported: %v", accepted, supported)
 }
 
-func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, queryIndex, maxBytesInFrame int) error {
+func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, queryIndex, maxBytesInFrame int) (uint64, error) {
 	var (
-		chks []prompb.Chunk
-		lbls []prompb.Label
+		chks        []prompb.Chunk
+		lbls        []prompb.Label
+		sampleCount uint64
 	)
 
 	var iter chunks.Iterator
@@ -321,8 +344,12 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 			chk := iter.At()
 
 			if chk.Chunk == nil {
-				return errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
+				return 0, errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
 			}
+
+			// NumSamples() is used here to avoid decoding the individual samples, the tests show that it's safe to use for this but
+			// review this first if we run into inaccuracies with some chunk encodings.
+			sampleCount += uint64(chk.Chunk.NumSamples())
 
 			// Cut the chunk.
 			chks = append(chks, prompb.Chunk{
@@ -349,20 +376,20 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				QueryIndex: int64(queryIndex),
 			})
 			if err != nil {
-				return errors.Wrap(err, "marshal client.StreamReadResponse")
+				return 0, errors.Wrap(err, "marshal client.StreamReadResponse")
 			}
 
 			if _, err := stream.Write(b); err != nil {
-				return errors.Wrap(err, "write to stream")
+				return 0, errors.Wrap(err, "write to stream")
 			}
 			chks = chks[:0]
 			frameBytesRemaining = initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		}
 		if err := iter.Err(); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return ss.Err()
+	return sampleCount, ss.Err()
 }
 
 func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []prompb.Label) int {
