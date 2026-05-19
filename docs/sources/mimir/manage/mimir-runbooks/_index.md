@@ -2266,7 +2266,7 @@ How it **works**:
 What is the **impact**:
 
 - The scheduler retries the job continuously and never gives up on its own. The records in the failing offset range stay absent from object storage until the job succeeds.
-- If a job does not succeed before ingesters stop serving data from the affected offset, query results may be missing data. 
+- If a job does not succeed before ingesters stop serving data from the affected offset, query results may be missing data.
 - If exactly `-block-builder-scheduler.max-jobs-per-partition` jobs are failing repeatedly for a partition, the partition is effectively stalled. If less, then the partition continues to make progress, but slower than expected.
 - The partition's committed Kafka offset cannot advance past a failing job. If the commit lags far behind and the scheduler restarts, it re-schedules jobs covering offset ranges that may have already succeeded, writing duplicate blocks to object storage.
 - If a job fails repeatedly for longer than the Kafka topic retention, the data in the affected range is effectively lost, unless ingesters are configured to also ship blocks, and succeeding.
