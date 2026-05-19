@@ -246,7 +246,43 @@ func TestSearchLabelNamesHandler_BatchBoundaries(t *testing.T) {
 	assert.Equal(t, "success", lines[3]["status"])
 }
 
+// TestSearchLabelNamesHandler_HasMoreWhenLimitHit pins the limit+1 probe:
+// the data has more records than the user's limit, so the iterator's
+// (limit+1)-th step lets the handler signal has_more=true while the
+// wire response is still capped at exactly limit records.
 func TestSearchLabelNamesHandler_HasMoreWhenLimitHit(t *testing.T) {
+	results := []storage.SearchResult{sr("a", 1.0), sr("b", 1.0), sr("c", 1.0)}
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(results, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=2"))
+
+	lines := drainNDJSON(t, w.Body.String())
+	require.NotEmpty(t, lines)
+	// The wire response holds at most limit records — the (limit+1)-th
+	// probe is dropped before encoding.
+	emitted := 0
+	for _, ln := range lines[:len(lines)-1] {
+		emitted += len(ln["results"].([]any))
+	}
+	assert.Equal(t, 2, emitted, "wire output must be capped at the user limit; probe record is dropped")
+	trailer := lines[len(lines)-1]
+	assert.Equal(t, "success", trailer["status"])
+	assert.Equal(t, true, trailer["has_more"])
+}
+
+// TestSearchLabelNamesHandler_HasMoreFalseWhenDataExactlyFillsLimit
+// pins the precision improvement from the limit+1 probe: when the data
+// has *exactly* req.limit records the iterator runs out without
+// producing a probe record, so has_more must be false. Without the +1
+// probe this case would read as has_more=true (the old "emitted >=
+// limit" approximation).
+func TestSearchLabelNamesHandler_HasMoreFalseWhenDataExactlyFillsLimit(t *testing.T) {
 	results := []storage.SearchResult{sr("a", 1.0), sr("b", 1.0)}
 	mq := &searchMockQuerier{
 		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
@@ -262,7 +298,8 @@ func TestSearchLabelNamesHandler_HasMoreWhenLimitHit(t *testing.T) {
 	require.NotEmpty(t, lines)
 	trailer := lines[len(lines)-1]
 	assert.Equal(t, "success", trailer["status"])
-	assert.Equal(t, true, trailer["has_more"])
+	assert.Equal(t, false, trailer["has_more"],
+		"data length == limit must not be reported as has_more (limit+1 probe distinguishes this from a real overflow)")
 }
 
 func TestSearchLabelNamesHandler_HasMoreFalseWhenUnderLimit(t *testing.T) {
@@ -280,6 +317,27 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenUnderLimit(t *testing.T) {
 	trailer := lines[len(lines)-1]
 	assert.Equal(t, "success", trailer["status"])
 	assert.Equal(t, false, trailer["has_more"])
+}
+
+// TestSearchLabelNamesHandler_HintsLimitIsLimitPlusOne pins that the
+// downstream Searcher sees hints.Limit set to userLimit+1 so the +1
+// probe survives all the way to the iterator. limit=0 ("no limit") is
+// passed through as hints.Limit=0.
+func TestSearchLabelNamesHandler_HintsLimitIsLimitPlusOne(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.EmptySearchResultSet()
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=50"))
+	assert.Equal(t, 51, mq.lastHints.Limit, "user limit must arrive at the searcher as limit+1 (the has_more probe)")
+
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=0"))
+	assert.Equal(t, 0, mq.lastHints.Limit, "limit=0 (no limit) must pass through unchanged — no probe added")
 }
 
 func TestSearchLabelNamesHandler_WarningsRideOnTrailer(t *testing.T) {
@@ -649,7 +707,8 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	assert.Equal(t, 75, req.params.FuzzThreshold)
 	assert.Equal(t, storage.OrderByValueDesc, req.hints.OrderBy)
 	assert.True(t, req.includeScore)
-	assert.Equal(t, 42, req.hints.Limit)
+	assert.Equal(t, 42, req.limit, "user-facing limit is the URL value")
+	assert.Equal(t, 43, req.hints.Limit, "downstream hint is limit+1 (the has_more probe)")
 	assert.Equal(t, 7, req.batchSize)
 	require.Len(t, req.matchers, 1, "one match[] entry → one matcher set")
 	require.Len(t, req.matchers[0], 1)

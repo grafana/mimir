@@ -84,8 +84,15 @@ type searchRequest struct {
 	// matchers is one selector per match[] URL entry. Multiple entries are
 	// unioned by the dispatcher (OR across selectors) — matching the upstream
 	// /api/v1/labels semantics and Prometheus PR #18573.
-	matchers     [][]*labels.Matcher
-	hints        *storage.SearchHints
+	matchers [][]*labels.Matcher
+	hints    *storage.SearchHints
+	// limit is the user-facing result cap from ?limit=. The handler emits
+	// at most limit records to the wire. hints.Limit, by contrast, is set
+	// to limit+1 so the iterator returns one extra record when more is
+	// available — that "+1 probe" is the precise signal for has_more.
+	// limit==0 means "no limit" (Prometheus convention) and hints.Limit
+	// is left at 0 to pass that through.
+	limit        int
 	startMs      int64
 	endMs        int64
 	batchSize    int
@@ -237,10 +244,20 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, errors.New(`missing required parameter "label"`)
 	}
 
+	// hintsLimit asks downstream for one extra result so the handler can
+	// precisely tell "we hit the user's limit and there's more" from
+	// "data exactly filled the limit". When limit==0 (Prometheus convention
+	// for "no limit") we pass 0 through untouched — no probe needed.
+	hintsLimit := limit
+	if limit > 0 {
+		hintsLimit = limit + 1
+	}
+
 	return &searchRequest{
 		params:       params,
 		matchers:     matchers,
-		hints:        &storage.SearchHints{OrderBy: order, Limit: limit},
+		hints:        &storage.SearchHints{OrderBy: order, Limit: hintsLimit},
+		limit:        limit,
 		startMs:      startMs,
 		endMs:        endMs,
 		batchSize:    batchSize,
@@ -469,6 +486,15 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 	}
 
 	for rs.Next() {
+		emitted++
+		// req.hints.Limit was set to req.limit+1 to probe for has_more.
+		// When the iterator returns that (limit+1)-th record we now know
+		// data extends past the user's limit — record the signal and drop
+		// the probe record so we never emit more than req.limit to the
+		// wire.
+		if req.limit > 0 && emitted > req.limit {
+			break
+		}
 		r := rs.At()
 		rec := searchResultRecord{Name: r.Value}
 		if req.includeScore {
@@ -476,7 +502,6 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 			rec.Score = &s
 		}
 		batch = append(batch, rec)
-		emitted++
 		if len(batch) >= req.batchSize {
 			if err := flushBatch(); err != nil {
 				return
@@ -509,16 +534,16 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 		return
 	}
 
-	// has_more is true if the result set was truncated by *any* limit on
-	// the way to the wire. Two truncation signals can fire:
-	//   1. The merge primitive stops after emitting hints.Limit results,
-	//      so emitted == req.hints.Limit means we hit the requested cap.
-	//   2. A per-source clamp fires when a tenant max-label-{names,values}
-	//      ceiling is lower than the requested limit; it surfaces as a
-	//      *MaxLimitError warning. The effective limit is then smaller than
-	//      req.hints.Limit and emitted >= clamped < req.hints.Limit would
-	//      otherwise read as has_more=false. OR'ing in the clamp signal
-	//      keeps has_more correct under tenant clamps.
+	// has_more uses two signals OR'd together:
+	//   1. emitted > req.limit. We asked the iterator for req.limit+1
+	//      records as a probe; if it produced the extra one we know the
+	//      data extends past the user's limit. This avoids the false
+	//      positive that "emitted >= limit" would have when the data
+	//      exactly fills req.limit.
+	//   2. A per-source clamp warning (*MaxLimitError on the search
+	//      label-{names,values} flags). The tenant ceiling can cut the
+	//      effective limit below req.limit before the probe even reaches
+	//      the data, so the probe alone is not enough.
 	trailer := searchTrailerEnvelope{Status: "success"}
 	clampFired := false
 	for _, w := range rs.Warnings() {
@@ -527,7 +552,7 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 			clampFired = true
 		}
 	}
-	if clampFired || (req.hints.Limit > 0 && emitted >= req.hints.Limit) {
+	if clampFired || (req.limit > 0 && emitted > req.limit) {
 		trailer.HasMore = true
 	}
 	_ = enc.Encode(trailer)
