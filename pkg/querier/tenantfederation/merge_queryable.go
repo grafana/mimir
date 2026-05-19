@@ -338,9 +338,21 @@ func (m *mergeQuerier) SearchLabelNames(ctx context.Context, params *streamingla
 	}
 
 	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
-	sets := make([]storage.SearchResultSet, 0, len(matchedIDs))
+	jobs := make([]string, 0, len(matchedIDs))
 	for id := range matchedIDs {
-		sets = append(sets, m.upstream.SearchLabelNames(ctx, id, params, hints, filteredMatchers...))
+		jobs = append(jobs, id)
+	}
+	sets := make([]storage.SearchResultSet, len(jobs))
+	// We don't use the context passed to the per-job closure: the opened
+	// SearchResultSets are iterated AFTER ForEachJob returns, and the per-job
+	// ctx is cancelled at that point. Bind to the outer ctx instead, matching
+	// the explicit hazard noted in defaultMultiTenantSelectFunc.
+	run := func(_ context.Context, idx int) error {
+		sets[idx] = m.upstream.SearchLabelNames(ctx, jobs[idx], params, hints, filteredMatchers...)
+		return nil
+	}
+	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
+		return storage.ErrSearchResultSet(err)
 	}
 	return storage.MergeSearchResultSets(sets, hints)
 }
@@ -384,9 +396,17 @@ func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, param
 		name = m.idLabelName
 	}
 
-	sets := make([]storage.SearchResultSet, 0, len(matchedIDs))
+	jobs := make([]string, 0, len(matchedIDs))
 	for id := range matchedIDs {
-		sets = append(sets, m.upstream.SearchLabelValues(ctx, id, name, params, hints, filteredMatchers...))
+		jobs = append(jobs, id)
+	}
+	sets := make([]storage.SearchResultSet, len(jobs))
+	run := func(_ context.Context, idx int) error {
+		sets[idx] = m.upstream.SearchLabelValues(ctx, jobs[idx], name, params, hints, filteredMatchers...)
+		return nil
+	}
+	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
+		return storage.ErrSearchResultSet(err)
 	}
 	return storage.MergeSearchResultSets(sets, hints)
 }

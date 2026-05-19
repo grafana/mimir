@@ -432,13 +432,13 @@ func searcherForRequest(ctx context.Context, queryable storage.Queryable, startM
 
 // streamSearchNDJSON drains rs and writes NDJSON to w. One JSON object per
 // line; results batched per req.batchSize; flusher.Flush() called after each
-// batch line. Trailer status line is always emitted (success or error). If a
-// stream error surfaces after at least one batch has been flushed, the error
-// rides on a status="error" trailer instead of an HTTP error code (headers
-// are already on the wire by then).
+// batch line. NDJSON Content-Type is set lazily on the first batch flush so
+// pre-flush errors can fall back to the standard application/json envelope
+// per Prometheus PR #18573 (web/api/v1/search.go: respondPreStreamSearchError
+// vs writeStreamSearchError). Once any batch has been flushed, headers are
+// on the wire and a later iterator error rides on a status="error" NDJSON
+// trailer instead of an HTTP error code.
 func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *searchRequest) {
-	w.Header().Set("Content-Type", searchAPIContentType)
-	w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 	flusher, _ := w.(http.Flusher)
 	enc := json.NewEncoder(w)
 	// Don't HTML-escape — search values may legitimately contain <, >, & and
@@ -451,6 +451,10 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 	flushBatch := func() error {
 		if len(batch) == 0 {
 			return nil
+		}
+		if !flushedAny {
+			w.Header().Set("Content-Type", searchAPIContentType)
+			w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 		}
 		env := searchBatchEnvelope{Results: batch}
 		if err := enc.Encode(env); err != nil {
@@ -484,13 +488,16 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 		return
 	}
 
-	// Iterator-level error: if anything was flushed, surface as error trailer
-	// (HTTP headers are already on the wire). Otherwise return HTTP 500.
+	// Iterator-level error. If anything was flushed, surface as an NDJSON
+	// error trailer — HTTP 200 headers are already on the wire. Otherwise
+	// fall through to writePreFlushSearchError, which writes a standard
+	// application/json envelope with a classified status code, mirroring
+	// Prometheus' respondPreStreamSearchError.
 	if err := rs.Err(); err != nil {
 		if flushedAny {
 			_ = enc.Encode(searchErrorEnvelope{
 				Status:    "error",
-				ErrorType: "internal",
+				ErrorType: searchErrorType(err),
 				Error:     err.Error(),
 			})
 			if flusher != nil {
@@ -498,27 +505,99 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 			}
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writePreFlushSearchError(w, err)
 		return
 	}
 
-	// has_more is true if we hit the limit AND the iterator was still
-	// producing. Today the merge primitive stops as soon as it has emitted
-	// `Limit` results, so we approximate has_more by comparing emitted to
-	// the requested limit. A precise has_more (was there a next item?)
-	// would require an extra rs.Next() probe which the iterator contract
-	// doesn't support after EOF.
+	// has_more is true if the result set was truncated by *any* limit on
+	// the way to the wire. Two truncation signals can fire:
+	//   1. The merge primitive stops after emitting hints.Limit results,
+	//      so emitted == req.hints.Limit means we hit the requested cap.
+	//   2. A per-source clamp fires when a tenant max-label-{names,values}
+	//      ceiling is lower than the requested limit; it surfaces as a
+	//      *MaxLimitError warning. The effective limit is then smaller than
+	//      req.hints.Limit and emitted >= clamped < req.hints.Limit would
+	//      otherwise read as has_more=false. OR'ing in the clamp signal
+	//      keeps has_more correct under tenant clamps.
 	trailer := searchTrailerEnvelope{Status: "success"}
-	if req.hints.Limit > 0 && emitted >= req.hints.Limit {
-		trailer.HasMore = true
-	}
+	clampFired := false
 	for _, w := range rs.Warnings() {
 		trailer.Warnings = append(trailer.Warnings, w.Error())
+		if isSearchLimitWarning(w) {
+			clampFired = true
+		}
+	}
+	if clampFired || (req.hints.Limit > 0 && emitted >= req.hints.Limit) {
+		trailer.HasMore = true
 	}
 	_ = enc.Encode(trailer)
 	if flusher != nil {
 		flusher.Flush()
 	}
+}
+
+// isSearchLimitWarning reports whether warn signals that a per-source
+// label-names / label-values limit clamped the request. Any other
+// LimitError (e.g. series-query length) is ignored here — only clamps
+// that truncate the search result count should flip has_more.
+func isSearchLimitWarning(warn error) bool {
+	var mle *MaxLimitError
+	if !errors.As(warn, &mle) {
+		return false
+	}
+	return mle.Flag == validation.MaxLabelNamesLimitFlag || mle.Flag == validation.MaxLabelValuesLimitFlag
+}
+
+// statusClientClosedConnection mirrors Prometheus' 499 used for
+// client-cancelled requests (web/api/v1/api.go).
+const statusClientClosedConnection = 499
+
+// searchErrorType classifies err into the Prometheus-style errorType
+// string that rides on the JSON envelope. Mimir doesn't carry the full
+// Prometheus apiError taxonomy; we map the cases that drive distinct
+// HTTP status codes and bucket everything else as "internal".
+func searchErrorType(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	default:
+		return "internal"
+	}
+}
+
+// searchErrorStatus picks the HTTP status code for a pre-flush search
+// error. Mirrors Prometheus' getDefaultErrorCode mapping for the error
+// types we currently emit: canceled → 499, timeout → 503, otherwise
+// 500.
+func searchErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return statusClientClosedConnection
+	case errors.Is(err, context.DeadlineExceeded):
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+// writePreFlushSearchError writes the standard JSON error envelope when
+// an iterator fails before any NDJSON batch has been flushed. Mirrors
+// Prometheus PR #18573's respondPreStreamSearchError: Content-Type is
+// application/json (not the streaming NDJSON type), the status code is
+// classified, and the body is the same searchErrorEnvelope shape used
+// for post-flush errors.
+func writePreFlushSearchError(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(searchErrorStatus(err))
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(searchErrorEnvelope{
+		Status:    "error",
+		ErrorType: searchErrorType(err),
+		Error:     err.Error(),
+	})
 }
 
 // writeSearchFeatureDisabled emits the 404 + feature_not_enabled body per

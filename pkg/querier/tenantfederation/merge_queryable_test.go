@@ -13,7 +13,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
@@ -1063,11 +1065,37 @@ type spanWithAttributes struct {
 type searchableTenantQueryable struct {
 	resultsByTenant map[string][]storage.SearchResult
 
-	// mu guards valueNamesObservedByTenant. The federation fan-out is
-	// sequential on the caller's goroutine today, but guarding the
-	// capture map keeps the data-race detector happy if that changes.
+	// mu guards valueNamesObservedByTenant against concurrent updates
+	// from the federation fan-out goroutines.
 	mu                         sync.Mutex
 	valueNamesObservedByTenant map[string][]string
+
+	// holdFor optionally pauses each upstream Search* call for the given
+	// duration before returning, so concurrency-bounded fan-out tests can
+	// observe how many tenants are in flight at once. Zero disables the
+	// hold.
+	holdFor time.Duration
+
+	// inFlight tracks concurrent upstream Search* calls; maxInFlight
+	// stores the peak. Both are updated through atomic operations only.
+	inFlight    atomic.Int32
+	maxInFlight atomic.Int32
+}
+
+// enterUpstream records a new in-flight upstream call and returns a
+// release closure that must run before the upstream call returns.
+func (s *searchableTenantQueryable) enterUpstream() func() {
+	cur := s.inFlight.Add(1)
+	for {
+		prev := s.maxInFlight.Load()
+		if cur <= prev || s.maxInFlight.CompareAndSwap(prev, cur) {
+			break
+		}
+	}
+	if s.holdFor > 0 {
+		time.Sleep(s.holdFor)
+	}
+	return func() { s.inFlight.Add(-1) }
 }
 
 func (s *searchableTenantQueryable) Querier(_, _ int64) (storage.Querier, error) {
@@ -1105,11 +1133,15 @@ func (q *searchableTenantQuerier) LabelNames(_ context.Context, _ *storage.Label
 func (q *searchableTenantQuerier) Close() error { return nil }
 
 func (q *searchableTenantQuerier) SearchLabelNames(ctx context.Context, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	release := q.src.enterUpstream()
+	defer release()
 	tenantID, _ := tenant.TenantID(ctx)
 	return storage.NewSearchResultSetFromSlice(q.src.resultsByTenant[tenantID], nil)
 }
 
 func (q *searchableTenantQuerier) SearchLabelValues(ctx context.Context, name string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	release := q.src.enterUpstream()
+	defer release()
 	tenantID, _ := tenant.TenantID(ctx)
 	q.src.recordValueName(tenantID, name)
 	return storage.NewSearchResultSetFromSlice(q.src.resultsByTenant[tenantID], nil)
@@ -1185,6 +1217,86 @@ func drainSearchResultSet(t *testing.T, rs storage.SearchResultSet) []string {
 	}
 	require.NoError(t, rs.Err())
 	return got
+}
+
+// TestMergeQueryable_SearchLabelNames_BoundedConcurrency pins the
+// federation max-concurrency contract for the search fan-out: with N
+// tenants and maxConcurrency=k, no more than k upstream SearchLabelNames
+// calls may be in flight at once. Sleeps in the upstream let many calls
+// pile up if the fan-out is unbounded.
+func TestMergeQueryable_SearchLabelNames_BoundedConcurrency(t *testing.T) {
+	const (
+		tenants        = 32
+		maxConcurrency = 4
+	)
+	results := map[string][]storage.SearchResult{}
+	ids := make([]string, 0, tenants)
+	for i := 0; i < tenants; i++ {
+		id := fmt.Sprintf("t%02d", i)
+		ids = append(ids, id)
+		results[id] = []storage.SearchResult{{Value: id, Score: 1.0}}
+	}
+	src := &searchableTenantQueryable{
+		resultsByTenant: results,
+		holdFor:         10 * time.Millisecond,
+	}
+	q := NewQueryable(src, false, maxConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), strings.Join(ids, "|"))
+	rs := s.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	// Drain so we don't leave a partially-consumed stream behind.
+	for rs.Next() { //nolint:revive // intentionally empty
+	}
+	require.NoError(t, rs.Err())
+
+	peak := src.maxInFlight.Load()
+	assert.LessOrEqual(t, peak, int32(maxConcurrency),
+		"federation fan-out must respect maxConcurrency=%d, observed peak %d in-flight upstream calls", maxConcurrency, peak)
+}
+
+// TestMergeQueryable_SearchLabelValues_BoundedConcurrency mirrors the
+// SearchLabelNames concurrency test for the label-values fan-out.
+func TestMergeQueryable_SearchLabelValues_BoundedConcurrency(t *testing.T) {
+	const (
+		tenants        = 32
+		maxConcurrency = 4
+	)
+	results := map[string][]storage.SearchResult{}
+	ids := make([]string, 0, tenants)
+	for i := 0; i < tenants; i++ {
+		id := fmt.Sprintf("t%02d", i)
+		ids = append(ids, id)
+		results[id] = []storage.SearchResult{{Value: id, Score: 1.0}}
+	}
+	src := &searchableTenantQueryable{
+		resultsByTenant: results,
+		holdFor:         10 * time.Millisecond,
+	}
+	q := NewQueryable(src, false, maxConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), strings.Join(ids, "|"))
+	rs := s.SearchLabelValues(ctx, "instance", nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	for rs.Next() { //nolint:revive // intentionally empty
+	}
+	require.NoError(t, rs.Err())
+
+	peak := src.maxInFlight.Load()
+	assert.LessOrEqual(t, peak, int32(maxConcurrency),
+		"federation fan-out must respect maxConcurrency=%d, observed peak %d in-flight upstream calls", maxConcurrency, peak)
 }
 
 // TestMergeQueryable_SearchLabelValues_MultiTenantFanout mirrors the

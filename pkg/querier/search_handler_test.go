@@ -22,7 +22,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // searchMockQuerier satisfies storage.Querier and mimirSearcher. The search
@@ -298,6 +300,86 @@ func TestSearchLabelNamesHandler_WarningsRideOnTrailer(t *testing.T) {
 	warnsField := trailer["warnings"].([]any)
 	require.Len(t, warnsField, 1)
 	assert.Equal(t, "source-warning", warnsField[0])
+	// An arbitrary warning must NOT flip has_more — only the
+	// MaxLimitError clamp warning signals truncation.
+	assert.Equal(t, false, trailer["has_more"])
+}
+
+// TestSearchLabelNamesHandler_HasMoreWhenClampFires pins the fix for the
+// case where a per-tenant max-label-names ceiling clamps the request
+// limit below what the client asked for: emitted < req.hints.Limit but
+// the result set was still truncated, so has_more must be true.
+func TestSearchLabelNamesHandler_HasMoreWhenClampFires(t *testing.T) {
+	var warns annotations.Annotations
+	warns.Add(NewMaxLimitError(10_000, 5, validation.MaxLabelNamesLimitFlag))
+	results := []storage.SearchResult{sr("a", 1), sr("b", 1), sr("c", 1), sr("d", 1), sr("e", 1)}
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(results, warns)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10000"))
+
+	lines := drainNDJSON(t, w.Body.String())
+	trailer := lines[len(lines)-1]
+	assert.Equal(t, "success", trailer["status"])
+	assert.Equal(t, true, trailer["has_more"],
+		"clamp warning must flip has_more even when emitted (%d) < requested limit", len(results))
+	warnsField := trailer["warnings"].([]any)
+	require.Len(t, warnsField, 1)
+	assert.Contains(t, warnsField[0], validation.MaxLabelNamesLimitFlag)
+}
+
+// TestSearchLabelValuesHandler_HasMoreWhenClampFires mirrors the label-
+// names test for the label-values path.
+func TestSearchLabelValuesHandler_HasMoreWhenClampFires(t *testing.T) {
+	var warns annotations.Annotations
+	warns.Add(NewMaxLimitError(10_000, 5, validation.MaxLabelValuesLimitFlag))
+	results := []storage.SearchResult{sr("a", 1), sr("b", 1), sr("c", 1), sr("d", 1), sr("e", 1)}
+	mq := &searchMockQuerier{
+		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(results, warns)
+		},
+	}
+	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=instance&limit=10000"))
+
+	lines := drainNDJSON(t, w.Body.String())
+	trailer := lines[len(lines)-1]
+	assert.Equal(t, "success", trailer["status"])
+	assert.Equal(t, true, trailer["has_more"],
+		"clamp warning must flip has_more even when emitted (%d) < requested limit", len(results))
+	warnsField := trailer["warnings"].([]any)
+	require.Len(t, warnsField, 1)
+	assert.Contains(t, warnsField[0], validation.MaxLabelValuesLimitFlag)
+}
+
+// TestSearchLabelNamesHandler_UnrelatedLimitErrorDoesNotFlipHasMore pins
+// that LimitErrors *other* than the MaxLimitError search clamps (e.g. a
+// series-query length limit) do not flip has_more — only the search
+// clamps signal label-list truncation.
+func TestSearchLabelNamesHandler_UnrelatedLimitErrorDoesNotFlipHasMore(t *testing.T) {
+	var warns annotations.Annotations
+	warns.Add(NewMaxLimitError(10_000, 5, validation.MaxSeriesQueryLimitFlag))
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0)}, warns)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=100"))
+
+	lines := drainNDJSON(t, w.Body.String())
+	trailer := lines[len(lines)-1]
+	assert.Equal(t, false, trailer["has_more"],
+		"non-search MaxLimitError must not be treated as a search-result truncation signal")
 }
 
 // errSearchResultSet emits one result then surfaces an error from Err().
@@ -345,7 +427,14 @@ func TestSearchLabelNamesHandler_MidStreamErrorRendersErrorTrailer(t *testing.T)
 	assert.Contains(t, trailer["error"], "midstream boom")
 }
 
-func TestSearchLabelNamesHandler_PreFlushErrorReturns500(t *testing.T) {
+// TestSearchLabelNamesHandler_PreFlushErrorReturnsJSONEnvelope pins the
+// pre-flush error response shape. Headers haven't been sent at the
+// point the error fires, so the response uses Content-Type:
+// application/json and carries the same envelope the post-flush path
+// emits as an NDJSON trailer (status / errorType / error). NDJSON
+// headers must NOT leak onto the response — that was the original bug
+// (http.Error overriding Content-Type with text/plain).
+func TestSearchLabelNamesHandler_PreFlushErrorReturnsJSONEnvelope(t *testing.T) {
 	wantErr := errors.New("pre-flush boom")
 	mq := &searchMockQuerier{
 		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
@@ -359,6 +448,56 @@ func TestSearchLabelNamesHandler_PreFlushErrorReturns500(t *testing.T) {
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"),
+		"pre-flush error must not advertise the streaming NDJSON content type")
+	assert.Empty(t, w.Header().Get(worker.ResponseStreamingEnabledHeader),
+		"pre-flush error must not advertise streaming-enabled")
+
+	var env map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env))
+	assert.Equal(t, "error", env["status"])
+	assert.Equal(t, "internal", env["errorType"])
+	assert.Contains(t, env["error"], "pre-flush boom")
+}
+
+// TestSearchLabelNamesHandler_PreFlushContextCanceledReturns499 pins
+// that a client-cancelled iterator surfaces as Prometheus' 499 status
+// with errorType=canceled, matching getDefaultErrorCode(errorCanceled).
+func TestSearchLabelNamesHandler_PreFlushContextCanceledReturns499(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return &errSearchResultSet{err: context.Canceled}
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+
+	assert.Equal(t, 499, w.Code)
+	var env map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env))
+	assert.Equal(t, "canceled", env["errorType"])
+}
+
+// TestSearchLabelNamesHandler_PreFlushContextDeadlineReturns503 pins
+// that an iterator failing with context.DeadlineExceeded maps to a
+// 503 with errorType=timeout, matching getDefaultErrorCode(errorTimeout).
+func TestSearchLabelNamesHandler_PreFlushContextDeadlineReturns503(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return &errSearchResultSet{err: context.DeadlineExceeded}
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	var env map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env))
+	assert.Equal(t, "timeout", env["errorType"])
 }
 
 func TestSearchLabelNamesHandler_BadParams_Return400(t *testing.T) {
