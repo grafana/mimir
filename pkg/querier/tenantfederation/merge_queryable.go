@@ -346,8 +346,21 @@ func (m *mergeQuerier) SearchLabelNames(ctx context.Context, params *streamingla
 }
 
 // SearchLabelValues mirrors SearchLabelNames with the label name parameter.
-// A search for the idLabelName itself is not specially handled — it is
-// forwarded to the per-tenant queriers which will not have that label.
+//
+// Two cases are special-cased before the fan-out, mirroring LabelValues:
+//   - name == idLabelName: return the matched federation IDs themselves
+//     filtered by params and ordered/limited by hints. Per-tenant queriers
+//     don't carry this synthetic label, so without this case the result
+//     would be empty (inconsistent with LabelValues).
+//   - name == retainExistingPrefix+idLabelName: the caller wants the real
+//     label values stored on the per-tenant series, exposed under the
+//     prefixed name when the federation layer detected a collision. The
+//     name is rewritten back to idLabelName and forwarded.
+//
+// In single-tenant bypass mode (bypassWithSingleID && len(ids)==1) the
+// synthetic label is not injected; the call is forwarded as-is, mirroring
+// LabelValues' bypass semantics so the synthetic label only appears when
+// federation is actually doing work.
 func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
 	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
@@ -360,11 +373,53 @@ func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, param
 	}
 
 	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
+
+	if name == m.idLabelName {
+		return searchSyntheticIDs(ids, matchedIDs, params, hints)
+	}
+
+	// ensure the name of a retained label gets handled under the original
+	// label name
+	if name == retainExistingPrefix+m.idLabelName {
+		name = m.idLabelName
+	}
+
 	sets := make([]storage.SearchResultSet, 0, len(matchedIDs))
 	for id := range matchedIDs {
 		sets = append(sets, m.upstream.SearchLabelValues(ctx, id, name, params, hints, filteredMatchers...))
 	}
 	return storage.MergeSearchResultSets(sets, hints)
+}
+
+// searchSyntheticIDs builds a SearchResultSet whose values are the matched
+// federation IDs themselves, filtered/ordered/limited per params and hints.
+// ids preserves the resolver's original list (used only as the iteration
+// source); matchedIDs is the subset surviving tenant matchers. params is
+// authoritative for the filter; any hints.Filter the caller already set is
+// overwritten, matching the per-leaf semantics described on mimirSearcher
+// (params travel separately from the opaque hints.Filter).
+func searchSyntheticIDs(ids []string, matchedIDs map[string]struct{}, params *streaminglabelvalues.Params, hints *storage.SearchHints) storage.SearchResultSet {
+	filter, err := streaminglabelvalues.BuildFilter(params)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	values := make([]string, 0, len(matchedIDs))
+	for _, id := range ids {
+		if _, ok := matchedIDs[id]; ok {
+			values = append(values, id)
+		}
+	}
+	// ApplySearchHints relies on ascending input for its OrderByValueAsc
+	// fast path and its OrderByValueDesc reverse; the resolver does not
+	// guarantee that, so sort here.
+	sort.Strings(values)
+
+	var hintsCopy storage.SearchHints
+	if hints != nil {
+		hintsCopy = *hints
+	}
+	hintsCopy.Filter = filter
+	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, &hintsCopy), nil)
 }
 
 type stringSliceFunc func(context.Context, string) ([]string, annotations.Annotations, error)

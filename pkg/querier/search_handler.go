@@ -384,9 +384,6 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 }
 
 // SearchMetricNamesHandler returns the handler for /api/v1/search/metric_names.
-// Mimir doesn't scrape, so Type/Help/Unit metadata is always omitted from the
-// emitted records — the endpoint reduces to searching the values of the
-// __name__ label.
 func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !querierCfg.ExperimentalSearchAPIEnabled {
