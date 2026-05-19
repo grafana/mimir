@@ -3,7 +3,6 @@
 package costattribution
 
 import (
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,11 +45,6 @@ func getActiveTracker(m *Manager, userID string) *activeSeriesTracker {
 	return nil
 }
 
-func hasLabels(t reconciledTracker, labels costattributionmodel.Labels) bool {
-	l, _, _ := t.config()
-	return slices.Equal(l, labels)
-}
-
 func withLockedActiveSeriesTracker(m *Manager, userID string, fn func(ast *activeSeriesTracker)) {
 	m.ActiveSeriesTracker(userID) // ensure tracker exists
 	ast := getActiveTracker(m, userID)
@@ -72,14 +66,14 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
 		assert.NotNil(t, manager.SampleTracker("user1"))
 		st := getSampleTracker(manager, "user1")
-		assert.True(t, hasLabels(st, costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
+		assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
 		assert.Equal(t, 5, st.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
 		assert.NotNil(t, manager.ActiveSeriesTracker("user3"))
 		at := getActiveTracker(manager, "user3")
-		assert.True(t, hasLabels(at, costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
+		assert.True(t, at.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
 		assert.Equal(t, 2, at.maxCardinality)
 	})
 
@@ -223,10 +217,10 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
 		manager.SampleTracker("user3")
 		st := getSampleTracker(manager, "user3")
-		assert.True(t, hasLabels(st, costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
+		assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
 		manager.ActiveSeriesTracker("user3")
 		at := getActiveTracker(manager, "user3")
-		assert.True(t, hasLabels(at, costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
+		assert.True(t, at.hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
 
 		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
 		expectedMetrics := `
@@ -442,14 +436,14 @@ func TestManager_InvalidTrackers(t *testing.T) {
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
 		assert.NotNil(t, manager.SampleTracker("user1"))
 		st := getSampleTracker(manager, "user1")
-		assert.True(t, hasLabels(st, costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
+		assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
 		assert.Equal(t, 5, st.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
 		assert.NotNil(t, manager.ActiveSeriesTracker("user3"))
 		at := getActiveTracker(manager, "user3")
-		assert.True(t, hasLabels(at, costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
+		assert.True(t, at.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
 		assert.Equal(t, 2, at.maxCardinality)
 	})
 

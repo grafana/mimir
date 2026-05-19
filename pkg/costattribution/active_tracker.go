@@ -5,6 +5,7 @@ package costattribution
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -104,8 +105,8 @@ func (at *activeSeriesTracker) createAndValidateDescriptors(trackedLabels costat
 	return nil
 }
 
-func (at *activeSeriesTracker) config() (costattributionmodel.Labels, int, time.Duration) {
-	return at.labels, at.maxCardinality, at.cooldownDuration
+func (at *activeSeriesTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
+	return slices.Equal(at.labels, labels)
 }
 
 // Increment increases the active series count for the given labels.

@@ -175,37 +175,6 @@ func sortLabels(labels costattributionmodel.Labels) costattributionmodel.Labels 
 	return labels
 }
 
-type reconciledTracker interface {
-	config() (costattributionmodel.Labels, int, time.Duration)
-}
-
-func reconcileTrackers[T reconciledTracker](
-	existing map[string]T,
-	configs map[string]resolvedTrackerConfig,
-	create func(name string, labels costattributionmodel.Labels, maxCard int, cooldown time.Duration) (T, error),
-) {
-	for name := range existing {
-		if _, ok := configs[name]; !ok {
-			delete(existing, name)
-		}
-	}
-	for name, cfg := range configs {
-		labels := sortLabels(cfg.labels)
-		if e, ok := existing[name]; ok {
-			eLabels, eCard, eCooldown := e.config()
-			if slices.Equal(eLabels, labels) && eCard == cfg.maxCardinality && eCooldown == cfg.cooldownDuration {
-				continue
-			}
-		}
-		t, err := create(name, labels, cfg.maxCardinality, cfg.cooldownDuration)
-		if err != nil {
-			delete(existing, name)
-			continue
-		}
-		existing[name] = t
-	}
-}
-
 func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	if m == nil {
 		return nil
@@ -243,13 +212,27 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Sampl
 	}
 	userTrackers := m.sampleTrackersByUserID[userID]
 
-	reconcileTrackers(userTrackers, configs, func(name string, labels costattributionmodel.Labels, maxCard int, cooldown time.Duration) (*sampleTracker, error) {
-		t, err := newSampleTracker(userID, name, labels, maxCard, cooldown, m.logger)
+	for name := range userTrackers {
+		if _, ok := configs[name]; !ok {
+			delete(userTrackers, name)
+		}
+	}
+
+	for name, cfg := range configs {
+		labels := sortLabels(cfg.labels)
+		if existing, ok := userTrackers[name]; ok {
+			if existing.hasSameLabels(labels) && existing.maxCardinality == cfg.maxCardinality && existing.cooldownDuration == cfg.cooldownDuration {
+				continue
+			}
+		}
+		tracker, err := newSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 		if err != nil {
 			m.trackerCreationErrors.WithLabelValues(userID, samplesTrackerType, name).Inc()
+			delete(userTrackers, name)
+			continue
 		}
-		return t, err
-	})
+		userTrackers[name] = tracker
+	}
 
 	if len(userTrackers) == 0 {
 		delete(m.sampleTrackersByUserID, userID)
@@ -305,13 +288,27 @@ func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) 
 	}
 	userTrackers := m.activeTrackersByUserID[userID]
 
-	reconcileTrackers(userTrackers, configs, func(name string, labels costattributionmodel.Labels, maxCard int, cooldown time.Duration) (*activeSeriesTracker, error) {
-		t, err := newActiveSeriesTracker(userID, name, labels, maxCard, cooldown, m.logger)
+	for name := range userTrackers {
+		if _, ok := configs[name]; !ok {
+			delete(userTrackers, name)
+		}
+	}
+
+	for name, cfg := range configs {
+		labels := sortLabels(cfg.labels)
+		if existing, ok := userTrackers[name]; ok {
+			if existing.hasSameLabels(labels) && existing.maxCardinality == cfg.maxCardinality && existing.cooldownDuration == cfg.cooldownDuration {
+				continue
+			}
+		}
+		tracker, err := newActiveSeriesTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 		if err != nil {
 			m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTrackerType, name).Inc()
+			delete(userTrackers, name)
+			continue
 		}
-		return t, err
-	})
+		userTrackers[name] = tracker
+	}
 
 	if len(userTrackers) == 0 {
 		delete(m.activeTrackersByUserID, userID)

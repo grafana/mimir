@@ -5,6 +5,7 @@ package costattribution
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -100,8 +101,8 @@ func (st *sampleTracker) createAndValidateDescriptors(trackedLabels costattribut
 	return nil
 }
 
-func (st *sampleTracker) config() (costattributionmodel.Labels, int, time.Duration) {
-	return st.labels, st.maxCardinality, st.cooldownDuration
+func (st *sampleTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
+	return slices.Equal(st.labels, labels)
 }
 
 var bufferPool = sync.Pool{
