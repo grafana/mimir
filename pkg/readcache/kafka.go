@@ -113,6 +113,29 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	if r.cfg.KafkaTopic != "" {
 		kafkaCfg.Topic = r.cfg.KafkaTopic
 	}
+	// Always adopt new partitions at the live edge: skip
+	// PartitionReader's startup catch-up loop entirely. addPartition
+	// is on the critical path of every readcache assignment change
+	// (see Readcache.applyAssignment), and the rebalancer serializes
+	// adds within one snapshot; if start() blocks for catch-up on
+	// each partition, a pod that just received N partitions takes
+	// O(N * MaxConsumerLagAtStartup) wall-clock to finish
+	// reconciling. By forcing the consume position to the partition
+	// end, getStartOffset returns kafkaOffsetEnd, which
+	// PartitionReader.start() uses to short-circuit
+	// processNextFetchesUntilTargetOrMaxLagHonored.
+	//
+	// What we trade for it: any records produced before the reader
+	// joins are not consumed by this readcache. That's acceptable
+	// because readcache is a query-locality optimisation, not a
+	// durability path; the head will refill from the produce stream
+	// over the following minutes, and ingester/blockbuilder remain
+	// the canonical sources for anything older.
+	//
+	// The literal "end" is the user-facing flag value validated by
+	// ingest.KafkaConfig.Validate, so it's stable wire surface; the
+	// underlying constant lives in pkg/storage/ingest/config.go.
+	kafkaCfg.ConsumeFromPositionAtStartup = "end"
 
 	pusher := &partitionPusher{rc: r, partitionID: p.partitionID}
 
