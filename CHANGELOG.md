@@ -10,6 +10,7 @@
 * [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp to v0.19.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
 * [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp to v1.43.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
 * [BUGFIX] Update go.opentelemetry.io/otel/exporters/stdout/stdoutlog to v0.19.0 for compatibility with updated OTLP exporters. #15329
+* [BUGFIX] Update to Go v1.25.10. #15388
 
 ## 2.17.10
 
