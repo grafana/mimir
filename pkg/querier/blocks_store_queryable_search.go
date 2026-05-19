@@ -210,7 +210,6 @@ func blockIDsToBlockMatchers(blockIDs []ulid.ULID) []storepb.LabelMatcher {
 	}
 }
 
-// paramsToSGProto is the storepb twin of distributor's paramsToProto.
 func paramsToSGProto(p *streaminglabelvalues.Params) *storepb.SearchFilter {
 	if p == nil || len(p.Terms) == 0 {
 		return nil
@@ -399,7 +398,7 @@ func buildSGSearchLabelValuesRequest(
 
 // drainSGSearchLabelStream reads the stream to EOF, copying each batch's
 // scored results into []storage.SearchResult and accumulating warnings into
-// annotations. Scores are preserved verbatim from the leaf SG.
+// annotations. Scores are preserved.
 //
 // The store-gateway reports the blocks it actually queried via the
 // SearchResponseHints on (at least) the trailer batch; queriedBlocks

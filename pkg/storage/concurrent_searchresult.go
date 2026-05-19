@@ -11,13 +11,18 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// concurrentSearchResultSet pre-fetches a child SearchResultSet into a
-// bounded buffered channel, so a pull-based k-way merger doesn't serialise
-// on whichever source it pulls from next.
+// concurrentSearchResultSet wraps a child SearchResultSet with a goroutine
+// that eagerly pulls results into a bounded channel.
+// Consumers read via Next/At as usual, but each call typically returns
+// from the channel without waiting on the child's underlying I/O.
+//
+// It is used to wrap each source of a k-way merge. The merger reads
+// from one source at a time, so without prefetching it waits for each
+// source's I/O in turn. Wrapping each source lets that I/O happen in
+// the background in parallel.
 //
 // Value strings are cloned at the channel-send boundary to defuse any
-// request-pool buffer aliasing the child might use internally (Mimir's
-// unsafeMutableString cross-tenant guard; see CLAUDE.md).
+// request-pool buffer aliasing the child might use internally.
 type concurrentSearchResultSet struct {
 	child  storage.SearchResultSet
 	cancel context.CancelCauseFunc

@@ -295,8 +295,7 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 }
 
 // paramsToProto returns nil for nil/empty Params — the ingester treats a
-// nil filter as accept-all with score 1.0. CaseInsensitive is inverted from
-// Params.CaseSensitive.
+// nil filter as accept-all.
 func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter {
 	if p == nil || len(p.Terms) == 0 {
 		return nil
@@ -315,8 +314,7 @@ func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter
 	return wf
 }
 
-// orderingToProto defaults nil hints to ORDER_BY_VALUE_ASC — keeping leaf
-// and merge ordering aligned.
+// orderingToProto defaults nil hints to ORDER_BY_VALUE_ASC
 func orderingToProto(hints *storage.SearchHints) ingester_client.SearchOrdering {
 	if hints == nil {
 		return ingester_client.ORDER_BY_VALUE_ASC
