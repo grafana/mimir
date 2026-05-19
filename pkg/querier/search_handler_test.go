@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -338,6 +339,24 @@ func TestSearchLabelNamesHandler_HintsLimitIsLimitPlusOne(t *testing.T) {
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=0"))
 	assert.Equal(t, 0, mq.lastHints.Limit, "limit=0 (no limit) must pass through unchanged — no probe added")
+}
+
+// TestSearchLabelNamesHandler_HintsLimitAtMaxIntDoesNotOverflow pins
+// the guard against the +1 probe wrapping to a negative number when
+// the caller supplies math.MaxInt. A negative hints.Limit would be
+// treated as "no limit" by the merger, defeating the cap.
+func TestSearchLabelNamesHandler_HintsLimitAtMaxIntDoesNotOverflow(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.EmptySearchResultSet()
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, fmt.Sprintf("/api/v1/search/label_names?limit=%d", math.MaxInt)))
+	assert.Equal(t, math.MaxInt, mq.lastHints.Limit,
+		"limit=math.MaxInt must not wrap to a negative hints.Limit")
 }
 
 func TestSearchLabelNamesHandler_WarningsRideOnTrailer(t *testing.T) {

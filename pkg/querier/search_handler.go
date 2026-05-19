@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -86,10 +87,9 @@ type searchRequest struct {
 	// /api/v1/labels semantics and Prometheus PR #18573.
 	matchers [][]*labels.Matcher
 	hints    *storage.SearchHints
-	// limit is the user-facing result cap from ?limit=. The handler emits
-	// at most limit records to the wire. hints.Limit, by contrast, is set
-	// to limit+1 so the iterator returns one extra record when more is
-	// available — that "+1 probe" is the precise signal for has_more.
+	// limit is the user-facing result cap from the query param.
+	// hints.Limit is set to limit+1 so the iterator returns one extra record
+	// which allows for an easy determination of has_more.
 	// limit==0 means "no limit" (Prometheus convention) and hints.Limit
 	// is left at 0 to pass that through.
 	limit        int
@@ -245,11 +245,10 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	}
 
 	// hintsLimit asks downstream for one extra result so the handler can
-	// precisely tell "we hit the user's limit and there's more" from
-	// "data exactly filled the limit". When limit==0 (Prometheus convention
-	// for "no limit") we pass 0 through untouched — no probe needed.
+	// determine if there is more data available past the given limit.
+	// 0 = no limit.
 	hintsLimit := limit
-	if limit > 0 {
+	if limit > 0 && limit < math.MaxInt {
 		hintsLimit = limit + 1
 	}
 
