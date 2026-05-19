@@ -114,3 +114,56 @@ func newTestConfigNoKafka(t *testing.T) Config {
 	t.Helper()
 	return newTestConfig(t, false, 0)
 }
+
+func TestUnregisterPartitionMetricsRegistry(t *testing.T) {
+	main := prometheus.NewPedanticRegistry()
+	partitionReg := prometheus.NewRegistry()
+	require.NoError(t, main.Register(partitionReg))
+
+	rc := &Readcache{reg: main, logger: log.NewNopLogger()}
+	rc.unregisterPartitionMetricsRegistry(partitionReg, 1)
+
+	partitionReg2 := prometheus.NewRegistry()
+	require.NoError(t, main.Register(partitionReg2))
+}
+
+func TestStartKafkaReader_RollsBackMetricsRegistryOnFailure(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	cfg := newTestConfigNoKafka(t)
+
+	var kafkaCfg ingest.KafkaConfig
+	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	kafkaCfg.Address = flagext.StringSliceCSV{"127.0.0.1:1"}
+	kafkaCfg.Topic = "test-topic"
+	cfg.Kafka = kafkaCfg
+
+	rc := &Readcache{
+		cfg:    cfg,
+		reg:    reg,
+		logger: log.NewNopLogger(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	p := newPartitionState(0)
+	require.Error(t, rc.startKafkaReader(ctx, p))
+	assert.Nil(t, p.reader)
+	assert.Nil(t, p.readerMetrics)
+
+	readerPartitionSeries := 0
+	metrics, err := reg.Gather()
+	if err == nil {
+		for _, fam := range metrics {
+			for _, m := range fam.GetMetric() {
+				for _, l := range m.GetLabel() {
+					if l.GetName() == "reader_partition" {
+						readerPartitionSeries++
+					}
+				}
+			}
+		}
+	}
+	assert.Zero(t, readerPartitionSeries, "failed start must unregister per-partition metrics from the main registerer")
+	assert.NoError(t, err, "failed start must not leave duplicate per-partition collectors on the main registerer")
+}

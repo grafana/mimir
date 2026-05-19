@@ -139,12 +139,6 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 		perPartitionReg = prometheus.WrapRegistererWith(prometheus.Labels{
 			"reader_partition": strconv.Itoa(int(p.partitionID)),
 		}, partitionReg)
-		// Register the isolated registry as a Collector on the main
-		// one so its metrics still appear at /metrics. Unregister
-		// happens in stopKafkaReaderLocked.
-		if err := r.reg.Register(partitionReg); err != nil {
-			return fmt.Errorf("registering per-partition metric registry: %w", err)
-		}
 	}
 
 	reader, err := ingest.NewPartitionReaderForPusher(
@@ -161,12 +155,43 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	}
 
 	if err := services.StartAndAwaitRunning(ctx, reader); err != nil {
+		stopCtx := context.Background()
+		if stopErr := services.StopAndAwaitTerminated(stopCtx, reader); stopErr != nil {
+			level.Warn(r.logger).Log("msg", "stopping partition reader after failed start",
+				"partition", p.partitionID, "err", stopErr)
+		}
 		return errors.Wrapf(err, "starting partition reader for partition %d", p.partitionID)
+	}
+
+	// Only expose per-partition metrics on the main registerer once the
+	// reader is running. Registering earlier leaks a collector when startup
+	// fails after metrics have been created on the isolated registry.
+	if partitionReg != nil {
+		if err := r.reg.Register(partitionReg); err != nil {
+			stopCtx := context.Background()
+			if stopErr := services.StopAndAwaitTerminated(stopCtx, reader); stopErr != nil {
+				level.Warn(r.logger).Log("msg", "stopping partition reader after metric registration failure",
+					"partition", p.partitionID, "err", stopErr)
+			}
+			return fmt.Errorf("registering per-partition metric registry: %w", err)
+		}
 	}
 
 	p.reader = reader
 	p.readerMetrics = partitionReg
 	return nil
+}
+
+// unregisterPartitionMetricsRegistry removes a per-partition metric
+// registry from the main registerer. partitionID is only used for logs.
+func (r *Readcache) unregisterPartitionMetricsRegistry(partitionReg *prometheus.Registry, partitionID int32) {
+	if partitionReg == nil || r.reg == nil {
+		return
+	}
+	if !r.reg.Unregister(partitionReg) {
+		level.Warn(r.logger).Log("msg", "readcache: per-partition metric registry not found in registerer",
+			"partition", partitionID)
+	}
 }
 
 // stopKafkaReaderLocked stops the partition reader if present. Caller
@@ -189,15 +214,8 @@ func (r *Readcache) stopKafkaReaderLocked(p *partitionState) error {
 	}
 	p.reader = nil
 
-	if p.readerMetrics != nil && r.reg != nil {
-		if !r.reg.Unregister(p.readerMetrics) {
-			// The Unregister no-ops if the collector was never
-			// registered (e.g. r.reg was nil at start time);
-			// we only log when we expected to find it but
-			// didn't, because that would mean we've leaked a
-			// collector and a future re-add will panic.
-			level.Warn(r.logger).Log("msg", "readcache: per-partition metric registry not found in registerer", "partition", p.partitionID)
-		}
+	if p.readerMetrics != nil {
+		r.unregisterPartitionMetricsRegistry(p.readerMetrics, p.partitionID)
 		p.readerMetrics = nil
 	}
 	return nil
