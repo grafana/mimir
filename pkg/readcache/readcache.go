@@ -85,6 +85,15 @@ type Readcache struct {
 	queryLoad       *loadstats.Tracker
 	partitionSeries *loadstats.PartitionSeries
 
+	// samplesIngestedTotal counts float and native-histogram samples
+	// pulled from the Kafka topic and successfully appended to a
+	// partition's TSDB head. Labelled by Kafka partition ID. Use
+	// rate() over this counter to get samples/sec per partition; the
+	// readcache counterpart to
+	// cortex_distributor_nautilus_partition_samples_written_total on
+	// the producer side.
+	samplesIngestedTotal *prometheus.CounterVec
+
 	// seriesWalkMu prevents overlapping background series walks when a
 	// single tick takes longer than loadstats.TickInterval.
 	seriesWalkMu sync.Mutex
@@ -219,9 +228,14 @@ func New(
 
 	r.pushErrSamplers = ingester.NewIngesterErrSamplers(10)
 
+	r.samplesIngestedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_readcache_samples_ingested_total",
+		Help: "Total float and native-histogram samples successfully appended to a partition's TSDB head from the Kafka ingest topic, labelled by Kafka partition ID. Use rate() to get samples/sec per partition. Readcache counterpart to cortex_distributor_nautilus_partition_samples_written_total.",
+	}, []string{"partition"})
+
 	if reg != nil {
 		r.tsdbMetrics = mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_readcache_", reg), logger)
-		reg.MustRegister(r.queryLoad)
+		reg.MustRegister(r.queryLoad, r.samplesIngestedTotal)
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.running, r.stopping)

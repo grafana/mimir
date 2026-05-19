@@ -26,6 +26,11 @@ import (
 type partitionPusher struct {
 	rc          *Readcache
 	partitionID int32
+	// samplesIngested is the pre-resolved CounterVec child for this
+	// partition. Resolving WithLabelValues once at construction time
+	// avoids a map lookup on every Kafka batch on the hot ingest
+	// path.
+	samplesIngested prometheus.Counter
 }
 
 // PushToStorageAndReleaseRequest implements ingest.Pusher.
@@ -81,6 +86,26 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 	})
 	if res.Err != nil {
 		return ingester.MapPushErrorToErrorWithStatus(res.Err)
+	}
+	// Count what landed in the head (float samples + native
+	// histograms). PushWriteRequestTimeseries internally rejects
+	// individual sample-level errors via FirstPartialErr; res.Err
+	// (handled above) is the only hard-failure path, and on that
+	// path the batch is retried by the partition reader, so
+	// counting here avoids double-attribution on retry. Counting
+	// what arrived from Kafka — including the few samples that
+	// triggered a FirstPartialErr — is the right "ingest rate"
+	// signal: it tells you how much the Kafka topic asked this
+	// partition to handle, not how many individual samples passed
+	// validation.
+	if p.samplesIngested != nil {
+		var n int
+		for _, ts := range req.Timeseries {
+			n += len(ts.Samples) + len(ts.Histograms)
+		}
+		if n > 0 {
+			p.samplesIngested.Add(float64(n))
+		}
 	}
 	if res.FirstPartialErr != nil {
 		return ingester.MapPushErrorToErrorWithStatus(res.FirstPartialErr)
@@ -138,6 +163,9 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	kafkaCfg.ConsumeFromPositionAtStartup = "end"
 
 	pusher := &partitionPusher{rc: r, partitionID: p.partitionID}
+	if r.samplesIngestedTotal != nil {
+		pusher.samplesIngested = r.samplesIngestedTotal.WithLabelValues(strconv.Itoa(int(p.partitionID)))
+	}
 
 	// Use an isolated per-partition Registry rather than wrapping
 	// r.reg directly. Wrapping r.reg with a constant label only
