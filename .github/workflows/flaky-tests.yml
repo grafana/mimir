@@ -33,16 +33,12 @@ jobs:
             LOKI_URL=flaky-tests-bot:loki-url
             LOKI_USERNAME=flaky-tests-bot:loki-username
             LOKI_PASSWORD=flaky-tests-bot:loki-password
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
 
       - name: Generate GitHub App Token
         id: github-token
-        uses: actions/create-github-app-token@v1
+        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
         with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          github_app: mimir-github-bot
 
       - name: Run Flaky Tests Analysis
         uses: grafana/shared-workflows/actions/go-flaky-tests@b0a85c9abc496153b15bc21ba811ede0248d4e8e
