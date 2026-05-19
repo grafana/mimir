@@ -2280,7 +2280,7 @@ How to **investigate**:
 
 How to **mitigate**:
 
-- If in doubt that a job will succeed before the Kafka topic retention, temporarily increasing the retention is a good idea to prevent permanent data loss and buy more time for the investigation and fix. Gaps in queries may still occur during the incident, but at least the data will be safe in Kafka until the issue is resolved.
+- If in doubt that a job will succeed before the Kafka topic retention expires, temporarily increasing the retention is a good idea to prevent permanent data loss and buy more time for the investigation and fix. Gaps in queries may still occur during the incident, but at least the data will be retained in Kafka until the issue is resolved.
 
 ### MimirServerInvalidClusterLabelRequests
 
