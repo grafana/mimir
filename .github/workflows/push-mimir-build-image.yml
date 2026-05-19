@@ -40,25 +40,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Retrieve GitHub App credentials to get a token with org member read permissions.
-      # GITHUB_TOKEN doesn't have org-level permissions, so we use the mimir-github-bot GitHub App.
-      - name: Retrieve GitHub App Credentials from Vault
-        if: steps.check_dockerfile.outputs.modified == 'true'
-        id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@28361cdb22223e5f1e34358c86c20908e7248760 # v1.1.0
-        with:
-          repo_secrets: |
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
-
+      # We use the mimir-github-bot GitHub App because GITHUB_TOKEN doesn't have org-level permissions.
       - name: Generate GitHub App Token for Membership
         if: steps.check_dockerfile.outputs.modified == 'true'
         id: app-token-for-membership
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
+        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
         with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          github_app: mimir-github-bot
 
       # Check if PR author is a Grafana organization member using the GitHub API.
       # This is more reliable than author_association which depends on public membership visibility.
@@ -193,15 +181,13 @@ jobs:
           fi
 
       # Tokens expire after 1h. Since building the image can take a long time, we create a fresh App Token for the last
-      # step of the build. (https://github.com/actions/create-github-app-token/issues/121#issuecomment-2027574184)
+      # step of the build.
       - name: Generate GitHub App Token
         if: steps.check_dockerfile.outputs.modified == 'true'
         id: app-token-for-commit
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
+        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
         with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          github_app: mimir-github-bot
 
       # This step uses "Mimir bot" token (generated at the start of the workflow) instead of
       # "github-actions bot" (secrets.GITHUB_TOKEN) because any events triggered by the latter
