@@ -192,7 +192,7 @@ func TestPartitionRangesSetRanges_TransitionsTracked(t *testing.T) {
 		pr.setRanges([]assignment.HashRange{hr(0, 99)})
 		// Simulate a walker tick that observes some residue.
 		pr.setRanges([]assignment.HashRange{hr(500, 599)})
-		ok := pr.applyWalkResult([]assignment.HashRange{hr(0, 99), hr(500, 599)}, []int64{42, 7})
+		ok := pr.applyWalkResult([]assignment.HashRange{hr(0, 99), hr(500, 599)}, []int64{42, 7}, nil)
 		require.True(t, ok)
 		// Residue (42) keeps the historical range alive; current (7)
 		// is always retained.
@@ -201,7 +201,7 @@ func TestPartitionRangesSetRanges_TransitionsTracked(t *testing.T) {
 		assert.Equal(t, int64(7), pr.rangeCounts[hr(500, 599)])
 
 		// Next tick: compaction has cleared the residue.
-		ok = pr.applyWalkResult([]assignment.HashRange{hr(0, 99), hr(500, 599)}, []int64{0, 7})
+		ok = pr.applyWalkResult([]assignment.HashRange{hr(0, 99), hr(500, 599)}, []int64{0, 7}, nil)
 		require.True(t, ok)
 		assert.Empty(t, pr.historicalRanges, "historical drops when count goes to zero")
 		_, hasOld := pr.rangeCounts[hr(0, 99)]
@@ -212,7 +212,7 @@ func TestPartitionRangesSetRanges_TransitionsTracked(t *testing.T) {
 	t.Run("current entry retained at zero count", func(t *testing.T) {
 		pr := newPartitionRanges()
 		pr.setRanges([]assignment.HashRange{hr(0, 99)})
-		ok := pr.applyWalkResult([]assignment.HashRange{hr(0, 99)}, []int64{0})
+		ok := pr.applyWalkResult([]assignment.HashRange{hr(0, 99)}, []int64{0}, nil)
 		require.True(t, ok)
 		// rangeCounts still has the current range, with zero. The
 		// snapshot must still emit it so the rebalancer sees the
@@ -232,7 +232,7 @@ func TestPartitionRangesSetRanges_TransitionsTracked(t *testing.T) {
 		// Meanwhile, SetRanges fires.
 		pr.setRanges([]assignment.HashRange{hr(100, 199)})
 
-		ok := pr.applyWalkResult(walkerSnap, []int64{42})
+		ok := pr.applyWalkResult(walkerSnap, []int64{42}, nil)
 		assert.False(t, ok, "stale walk should be discarded")
 		// The fresh assignment is intact: [0, 99] in historical,
 		// [100, 199] current.
@@ -260,7 +260,7 @@ func TestPartitionRangesSnapshotCounts(t *testing.T) {
 		pr.setRanges([]assignment.HashRange{hr(200, 299)})
 		// Walker records: no residue on the historical, no growth yet
 		// on the current.
-		ok := pr.applyWalkResult([]assignment.HashRange{hr(0, 99), hr(200, 299)}, []int64{0, 0})
+		ok := pr.applyWalkResult([]assignment.HashRange{hr(0, 99), hr(200, 299)}, []int64{0, 0}, nil)
 		require.True(t, ok)
 
 		snap := pr.snapshotCounts()
@@ -275,7 +275,7 @@ func TestPartitionRangesSnapshotCounts(t *testing.T) {
 		pr.setRanges([]assignment.HashRange{hr(0, 99)})
 		// Move to [200, 299]. Old [0, 99] still has residue.
 		pr.setRanges([]assignment.HashRange{hr(200, 299)})
-		ok := pr.applyWalkResult([]assignment.HashRange{hr(0, 99), hr(200, 299)}, []int64{1234, 56})
+		ok := pr.applyWalkResult([]assignment.HashRange{hr(0, 99), hr(200, 299)}, []int64{1234, 56}, nil)
 		require.True(t, ok)
 
 		snap := pr.snapshotCounts()
@@ -305,7 +305,7 @@ func TestPartitionRangesWalkerInvariant(t *testing.T) {
 	// Simulate a walk where 100 series are in [0, 49] (residue) and
 	// 200 are in [50, 149] (current).
 	counts := []int64{100, 200}
-	ok := pr.applyWalkResult(snap, counts)
+	ok := pr.applyWalkResult(snap, counts, nil)
 	require.True(t, ok)
 
 	// snapshotCounts should report both, summing to 300.
@@ -315,4 +315,123 @@ func TestPartitionRangesWalkerInvariant(t *testing.T) {
 		total += e.Count
 	}
 	assert.Equal(t, int64(300), total)
+}
+
+// TestPartitionRangesExampleSeries verifies that example series flow
+// through applyWalkResult → adminSnapshot, are retained across walks
+// that fail to re-capture an example (e.g. a transient skip from a
+// concurrent compaction), and get GC'd when a range falls out of the
+// working set.
+func TestPartitionRangesExampleSeries(t *testing.T) {
+	t.Run("examples surface on adminSnapshot for current and historical", func(t *testing.T) {
+		pr := newPartitionRanges()
+		pr.setRanges([]assignment.HashRange{hr(0, 99)})
+		pr.setRanges([]assignment.HashRange{hr(200, 299)}) // [0, 99] now historical
+
+		snap := pr.rangesSnapshot()
+		require.True(t, pr.applyWalkResult(snap, []int64{50, 10}, []string{
+			`{__name__="residue_metric",x="1"}`,
+			`{__name__="growth_metric",x="2"}`,
+		}))
+
+		current, historical := pr.adminSnapshot()
+		require.Len(t, current, 1)
+		require.Len(t, historical, 1)
+		assert.Equal(t, hr(200, 299), current[0].Range)
+		assert.Equal(t, `{__name__="growth_metric",x="2"}`, current[0].Example)
+		assert.Equal(t, hr(0, 99), historical[0].Range)
+		assert.Equal(t, `{__name__="residue_metric",x="1"}`, historical[0].Example)
+	})
+
+	t.Run("retains previous example when walk passes empty slot", func(t *testing.T) {
+		pr := newPartitionRanges()
+		pr.setRanges([]assignment.HashRange{hr(0, 99)})
+
+		snap := pr.rangesSnapshot()
+		require.True(t, pr.applyWalkResult(snap, []int64{10}, []string{`{__name__="first_seen"}`}))
+
+		// A second walk: still has the range, but found no series
+		// (e.g. a transient compaction race). The previous example
+		// should be preserved so the admin page doesn't blank out.
+		require.True(t, pr.applyWalkResult(snap, []int64{0}, []string{""}))
+		current, _ := pr.adminSnapshot()
+		require.Len(t, current, 1)
+		assert.Equal(t, `{__name__="first_seen"}`, current[0].Example,
+			"empty slot should not clobber the previous example")
+	})
+
+	t.Run("nil examples slice leaves prior examples intact", func(t *testing.T) {
+		pr := newPartitionRanges()
+		pr.setRanges([]assignment.HashRange{hr(0, 99)})
+
+		snap := pr.rangesSnapshot()
+		require.True(t, pr.applyWalkResult(snap, []int64{10}, []string{`{__name__="cached"}`}))
+		// Stats-only caller (nil examples) — must not blank the
+		// previously-captured example.
+		require.True(t, pr.applyWalkResult(snap, []int64{15}, nil))
+		current, _ := pr.adminSnapshot()
+		require.Len(t, current, 1)
+		assert.Equal(t, `{__name__="cached"}`, current[0].Example)
+		assert.Equal(t, int64(15), current[0].Count)
+	})
+
+	t.Run("examples for dropped ranges are GC'd", func(t *testing.T) {
+		pr := newPartitionRanges()
+		pr.setRanges([]assignment.HashRange{hr(0, 99)})
+
+		require.True(t, pr.applyWalkResult(
+			[]assignment.HashRange{hr(0, 99)},
+			[]int64{10},
+			[]string{`{__name__="lives_here"}`},
+		))
+
+		// Move ownership and let residue compact away. setRanges
+		// drops the previous current into historical; the next
+		// walk with zero residue should let GC drop the example.
+		pr.setRanges([]assignment.HashRange{hr(500, 599)})
+		require.True(t, pr.applyWalkResult(
+			[]assignment.HashRange{hr(0, 99), hr(500, 599)},
+			[]int64{0, 0},
+			[]string{"", ""},
+		))
+
+		current, historical := pr.adminSnapshot()
+		require.Len(t, current, 1)
+		assert.Empty(t, historical, "compacted-out historical should be GC'd")
+		// The new current range hasn't seen any series; example
+		// should be empty.
+		assert.Empty(t, current[0].Example)
+	})
+
+	t.Run("setRanges drops examples for ranges that fall out of both sets", func(t *testing.T) {
+		pr := newPartitionRanges()
+		pr.setRanges([]assignment.HashRange{hr(0, 99)})
+		require.True(t, pr.applyWalkResult(
+			[]assignment.HashRange{hr(0, 99)},
+			[]int64{10},
+			[]string{`{__name__="should_disappear"}`},
+		))
+
+		// Compaction tick clears residue, then we get a brand-new
+		// assignment that shares no hash space with the old.
+		pr.setRanges([]assignment.HashRange{hr(500, 599)})
+		require.True(t, pr.applyWalkResult(
+			[]assignment.HashRange{hr(0, 99), hr(500, 599)},
+			[]int64{0, 0},
+			nil,
+		))
+		// Force a fresh setRanges that excludes the historical too —
+		// this happens whenever the rebalancer re-issues without the
+		// historical hash space (the residue counter would normally
+		// drop it via applyWalkResult above, but we want to be sure
+		// setRanges also GCs).
+		pr.setRanges([]assignment.HashRange{hr(700, 799)})
+
+		// Snapshot the bookkeeping directly — the previously-captured
+		// example must be gone.
+		pr.mu.RLock()
+		_, hasOld := pr.exampleSeries[hr(0, 99)]
+		pr.mu.RUnlock()
+		assert.False(t, hasOld, "examples for ranges no longer tracked must be GC'd")
+	})
 }

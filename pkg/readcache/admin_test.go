@@ -37,6 +37,18 @@ func TestReadcache_AdminPage_RendersOwnedPartitionsAndRanges(t *testing.T) {
 	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
+	// Block the background series walker for the duration of the
+	// test. running() spawns refreshSeriesStats in a goroutine at
+	// startup; if it lands between our setHashRanges and
+	// applyWalkResult calls below it would walk an empty head,
+	// see count=0 for [0,99] in P0's historical, GC the entry, and
+	// invalidate the snapshot we capture. Acquiring the lock
+	// before StartAndAwaitRunning is the only way to win that race
+	// — refreshSeriesStats TryLocks and returns immediately when
+	// it fails.
+	r.seriesWalkMu.Lock()
+	defer r.seriesWalkMu.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
@@ -72,11 +84,11 @@ func TestReadcache_AdminPage_RendersOwnedPartitionsAndRanges(t *testing.T) {
 	p0Snap := p0.ranges.rangesSnapshot()
 	require.Equal(t, []assignment.HashRange{hr(0, 99)}, p0Snap,
 		"P0 should have its formerly-current range [0,99] as historical now")
-	require.True(t, p0.ranges.applyWalkResult(p0Snap, []int64{1234}))
+	require.True(t, p0.ranges.applyWalkResult(p0Snap, []int64{1234}, []string{`{__name__="http_requests_total",instance="host-7",job="readcache"}`}))
 
 	p1Snap := p1.ranges.rangesSnapshot()
 	require.Equal(t, []assignment.HashRange{hr(0, 99), hr(100, 199)}, p1Snap)
-	require.True(t, p1.ranges.applyWalkResult(p1Snap, []int64{56, 78}))
+	require.True(t, p1.ranges.applyWalkResult(p1Snap, []int64{56, 78}, []string{`{__name__="cpu_seconds_total",instance="host-3"}`, `{__name__="memory_rss",instance="host-9"}`}))
 
 	// Now hit ServeHTTP.
 	rec := httptest.NewRecorder()
@@ -102,6 +114,13 @@ func TestReadcache_AdminPage_RendersOwnedPartitionsAndRanges(t *testing.T) {
 	// "1.23K", 56 and 78 as plain integers.
 	assert.Contains(t, body, "1.23K", "residue count should render")
 	assert.True(t, strings.Contains(body, ">56<") || strings.Contains(body, "56\n"), "p1 growth count should render")
+
+	// Example series captured by the (mocked) walker should render
+	// next to their ranges. html/template auto-escapes quotes, so
+	// look for the metric names directly.
+	assert.Contains(t, body, "http_requests_total", "P0 historical range example should render")
+	assert.Contains(t, body, "cpu_seconds_total", "P1 current range example #1 should render")
+	assert.Contains(t, body, "memory_rss", "P1 current range example #2 should render")
 
 	// The "no partitions" empty-state must NOT appear because we own
 	// two partitions.

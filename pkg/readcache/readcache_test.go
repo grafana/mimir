@@ -313,6 +313,17 @@ func TestReadcache_HashRangeStats_ResidueOnFormerOwner(t *testing.T) {
 	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
+	// Block the background series walker for the duration of the
+	// test. running() spawns refreshSeriesStats in a goroutine at
+	// startup; if it lands between setHashRanges and applyWalkResult
+	// below it walks an empty head, sees count=0 for [0,99] in P0's
+	// historical, GCs the entry, and invalidates the snapshot we
+	// capture. Acquiring before StartAndAwaitRunning is the only
+	// way to win that race — refreshSeriesStats TryLocks and exits
+	// immediately when it fails.
+	r.seriesWalkMu.Lock()
+	defer r.seriesWalkMu.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
@@ -350,12 +361,12 @@ func TestReadcache_HashRangeStats_ResidueOnFormerOwner(t *testing.T) {
 
 	p0Snap := p0.ranges.rangesSnapshot()
 	require.Equal(t, []assignment.HashRange{hr(0, 99)}, p0Snap)
-	require.True(t, p0.ranges.applyWalkResult(p0Snap, []int64{1234}))
+	require.True(t, p0.ranges.applyWalkResult(p0Snap, []int64{1234}, nil))
 
 	p1Snap := p1.ranges.rangesSnapshot()
 	// Sorted by Lo.
 	require.Equal(t, []assignment.HashRange{hr(0, 99), hr(100, 199)}, p1Snap)
-	require.True(t, p1.ranges.applyWalkResult(p1Snap, []int64{56, 78}))
+	require.True(t, p1.ranges.applyWalkResult(p1Snap, []int64{56, 78}, nil))
 
 	resp, err := r.hashRangeStats(ctx, &ingester_client.HashRangeStatsRequest{})
 	require.NoError(t, err)

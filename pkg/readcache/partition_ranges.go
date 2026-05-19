@@ -42,11 +42,24 @@ type partitionRanges struct {
 	currentRanges    []assignment.HashRange
 	historicalRanges []assignment.HashRange
 	rangeCounts      map[assignment.HashRange]int64
+	// exampleSeries holds one representative series (rendered via
+	// labels.Labels.String()) per range in the working set. Updated
+	// from applyWalkResult, scoped to a single Kafka partition's
+	// TSDB heads, and only used by the readcache admin page —
+	// operators looking at /readcache want to see "what series
+	// actually live here?" next to each hash range so they can
+	// sanity-check that distributor routing matches what the
+	// rebalancer thinks.
+	//
+	// Walks that pass nil examples leave this map untouched; that
+	// keeps cost off the rebalancer's stats RPC path entirely.
+	exampleSeries map[assignment.HashRange]string
 }
 
 func newPartitionRanges() *partitionRanges {
 	return &partitionRanges{
-		rangeCounts: make(map[assignment.HashRange]int64),
+		rangeCounts:   make(map[assignment.HashRange]int64),
+		exampleSeries: make(map[assignment.HashRange]string),
 	}
 }
 
@@ -80,7 +93,7 @@ func (pr *partitionRanges) setRanges(newRanges []assignment.HashRange) {
 	pr.currentRanges = sortedNew
 
 	// Drop counts for ranges that are now in neither set.
-	if len(pr.rangeCounts) > 0 {
+	if len(pr.rangeCounts) > 0 || len(pr.exampleSeries) > 0 {
 		live := make(map[assignment.HashRange]struct{}, len(pr.currentRanges)+len(pr.historicalRanges))
 		for _, r := range pr.currentRanges {
 			live[r] = struct{}{}
@@ -91,6 +104,11 @@ func (pr *partitionRanges) setRanges(newRanges []assignment.HashRange) {
 		for r := range pr.rangeCounts {
 			if _, ok := live[r]; !ok {
 				delete(pr.rangeCounts, r)
+			}
+		}
+		for r := range pr.exampleSeries {
+			if _, ok := live[r]; !ok {
+				delete(pr.exampleSeries, r)
 			}
 		}
 	}
@@ -120,12 +138,24 @@ func (pr *partitionRanges) rangesSnapshot() []assignment.HashRange {
 // are dropped from historicalRanges and rangeCounts — residue has
 // compacted out of the head.
 //
+// If examples is non-nil it must be the same length as forRanges and
+// holds one representative series per range (rendered via
+// labels.Labels.String()) for display on the readcache admin page.
+// Empty slots mean the walk found no series in that range; the
+// previously-captured example is retained in that case so the admin
+// UI stays useful across walks that happen to skip a range. Examples
+// for ranges no longer in the working set are GC'd alongside the
+// counts.
+//
 // forRanges must equal what rangesSnapshot returned at the start of
 // the walk (same length, same Lo/Hi at each position). Otherwise the
 // update is discarded — currentRanges shifted mid-walk and a fresh
 // walk on the new snapshot will reconcile.
-func (pr *partitionRanges) applyWalkResult(forRanges []assignment.HashRange, counts []int64) bool {
+func (pr *partitionRanges) applyWalkResult(forRanges []assignment.HashRange, counts []int64, examples []string) bool {
 	if len(forRanges) != len(counts) {
+		return false
+	}
+	if examples != nil && len(examples) != len(forRanges) {
 		return false
 	}
 
@@ -154,27 +184,39 @@ func (pr *partitionRanges) applyWalkResult(forRanges []assignment.HashRange, cou
 	// Replace counts wholesale. Historical ranges that walked to zero
 	// can be GC'd because their residue has compacted out.
 	nextCounts := make(map[assignment.HashRange]int64, len(forRanges))
+	nextExamples := make(map[assignment.HashRange]string, len(forRanges))
 	var newHistorical []assignment.HashRange
 	for i, r := range forRanges {
 		c := counts[i]
+		keep := false
 		if _, isCurrent := currentSet[r]; isCurrent {
 			// Always retain current ranges, even at zero — the
 			// rebalancer needs to see them as part of this
 			// partition's footprint.
 			nextCounts[r] = c
+			keep = true
+		} else if c > 0 {
+			nextCounts[r] = c
+			newHistorical = append(newHistorical, r)
+			keep = true
+		}
+		if !keep {
 			continue
 		}
-		// Historical range. Drop if its count has gone to zero.
-		if c == 0 {
-			continue
+		// Prefer the example captured by this walk; fall back to a
+		// previously-captured example so a transient empty walk
+		// doesn't blank the UI.
+		if examples != nil && examples[i] != "" {
+			nextExamples[r] = examples[i]
+		} else if prev, ok := pr.exampleSeries[r]; ok {
+			nextExamples[r] = prev
 		}
-		nextCounts[r] = c
-		newHistorical = append(newHistorical, r)
 	}
 	sort.Slice(newHistorical, func(i, j int) bool { return newHistorical[i].Lo < newHistorical[j].Lo })
 
 	pr.historicalRanges = newHistorical
 	pr.rangeCounts = nextCounts
+	pr.exampleSeries = nextExamples
 	return true
 }
 
@@ -219,31 +261,36 @@ func (pr *partitionRanges) currentRangesCopy() []assignment.HashRange {
 }
 
 // adminSnapshot returns the current and historical ranges with their
-// per-range counts, split into two slices so the admin page can show
-// growth (current) and residue (historical) separately. Unlike
-// snapshotCounts, this preserves the current vs historical
-// distinction even when residue is non-zero.
+// per-range counts and example series, split into two slices so the
+// admin page can show growth (current) and residue (historical)
+// separately. Unlike snapshotCounts, this preserves the current vs
+// historical distinction even when residue is non-zero, and
+// populates Example with a representative series (rendered via
+// labels.Labels.String()) for each range.
 func (pr *partitionRanges) adminSnapshot() (current, historical []hashRangeCount) {
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
 
 	current = make([]hashRangeCount, 0, len(pr.currentRanges))
 	for _, r := range pr.currentRanges {
-		current = append(current, hashRangeCount{Range: r, Count: pr.rangeCounts[r]})
+		current = append(current, hashRangeCount{Range: r, Count: pr.rangeCounts[r], Example: pr.exampleSeries[r]})
 	}
 	historical = make([]hashRangeCount, 0, len(pr.historicalRanges))
 	for _, r := range pr.historicalRanges {
-		historical = append(historical, hashRangeCount{Range: r, Count: pr.rangeCounts[r]})
+		historical = append(historical, hashRangeCount{Range: r, Count: pr.rangeCounts[r], Example: pr.exampleSeries[r]})
 	}
 	return current, historical
 }
 
 // hashRangeCount is the in-process shape of a per-(partition, range)
-// count emitted by HashRangeStats. Partition association is implicit
-// (it's the partition this came from); the wire format adds it back.
+// count emitted by HashRangeStats and rendered by the admin page.
+// Partition association is implicit (it's the partition this came
+// from); the wire format adds it back. Example is only populated by
+// adminSnapshot — the RPC path leaves it empty.
 type hashRangeCount struct {
-	Range assignment.HashRange
-	Count int64
+	Range   assignment.HashRange
+	Count   int64
+	Example string
 }
 
 // sortedNonOverlappingCopy returns a fresh sorted-by-Lo copy of the

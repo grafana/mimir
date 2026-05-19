@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 
@@ -214,7 +215,7 @@ func TestCountSeriesByHashRange_EmptyRanges(t *testing.T) {
 	head := newTestHead(t)
 
 	counts := []int64{}
-	n, err := CountSeriesByHashRange(context.Background(), "user-1", head, nil, counts)
+	n, err := CountSeriesByHashRange(context.Background(), "user-1", head, nil, counts, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), n)
 }
@@ -224,7 +225,7 @@ func TestCountSeriesByHashRange_EmptyHead(t *testing.T) {
 
 	ranges := []assignment.HashRange{{Lo: 0, Hi: math.MaxUint32}}
 	counts := make([]int64, len(ranges))
-	n, err := CountSeriesByHashRange(context.Background(), "user-1", head, ranges, counts)
+	n, err := CountSeriesByHashRange(context.Background(), "user-1", head, ranges, counts, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), n)
 	assert.Equal(t, int64(0), counts[0])
@@ -265,10 +266,24 @@ func TestCountSeriesByHashRange_AppendsAndAttributesSeries(t *testing.T) {
 			{Lo: math.MaxUint32/2 + 1, Hi: math.MaxUint32},
 		}
 		counts := make([]int64, len(ranges))
-		n, err := CountSeriesByHashRange(context.Background(), userID, head, ranges, counts)
+		examples := make([]string, len(ranges))
+		n, err := CountSeriesByHashRange(context.Background(), userID, head, ranges, counts, examples)
 		require.NoError(t, err)
 		assert.Equal(t, int64(totalSeries), n)
 		assert.Equal(t, int64(totalSeries), counts[0]+counts[1])
+
+		// Any range that received series should have a non-empty
+		// example whose labels.String() output starts with '{' (the
+		// canonical PromQL-style representation we render in the
+		// readcache admin page).
+		for i := range ranges {
+			if counts[i] == 0 {
+				continue
+			}
+			require.NotEmpty(t, examples[i], "range %d had %d series but no example", i, counts[i])
+			assert.True(t, strings.HasPrefix(examples[i], "{"), "example %q is not a labels.String() rendering", examples[i])
+			assert.Contains(t, examples[i], `__name__=`)
+		}
 
 		var want0, want1 int64
 		for h, c := range expected {
@@ -303,7 +318,7 @@ func TestCountSeriesByHashRange_AppendsAndAttributesSeries(t *testing.T) {
 
 		ranges := []assignment.HashRange{{Lo: lo, Hi: hi}}
 		counts := make([]int64, len(ranges))
-		n, err := CountSeriesByHashRange(context.Background(), userID, head, ranges, counts)
+		n, err := CountSeriesByHashRange(context.Background(), userID, head, ranges, counts, nil)
 		require.NoError(t, err)
 		assert.Equal(t, int64(totalSeries), n)
 		assert.Equal(t, want, counts[0])
@@ -324,7 +339,7 @@ func TestCountSeriesByHashRange_ContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	_, err = CountSeriesByHashRange(ctx, "user-1", head, ranges, counts)
+	_, err = CountSeriesByHashRange(ctx, "user-1", head, ranges, counts, nil)
 	if err != nil {
 		assert.ErrorIs(t, err, context.Canceled)
 	}

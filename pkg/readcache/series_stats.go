@@ -49,6 +49,13 @@ func (r *Readcache) refreshSeriesStats(ctx context.Context) {
 		// this round; the next tick uses the new snapshot.
 		bucketRanges := p.ranges.rangesSnapshot()
 		counts := make([]int64, len(bucketRanges))
+		// examples is parallel to bucketRanges. The walker writes
+		// one labels.Labels.String() per range (first series seen
+		// wins) so the readcache admin page can show a concrete
+		// example next to each hash range. The cost is bounded:
+		// at most one allocation per range per walk, regardless of
+		// head size.
+		examples := make([]string, len(bucketRanges))
 
 		type tenantDB struct {
 			tenantID string
@@ -72,7 +79,7 @@ func (r *Readcache) refreshSeriesStats(ctx context.Context) {
 			if err := ctx.Err(); err != nil {
 				return
 			}
-			if _, err := loadstats.CountSeriesByHashRange(ctx, td.tenantID, td.db.Head(), bucketRanges, counts); err != nil {
+			if _, err := loadstats.CountSeriesByHashRange(ctx, td.tenantID, td.db.Head(), bucketRanges, counts, examples); err != nil {
 				level.Warn(r.logger).Log(
 					"msg", "hash range series walk failed",
 					"partition", p.partitionID,
@@ -83,7 +90,7 @@ func (r *Readcache) refreshSeriesStats(ctx context.Context) {
 		}
 
 		if len(bucketRanges) > 0 {
-			if !p.ranges.applyWalkResult(bucketRanges, counts) {
+			if !p.ranges.applyWalkResult(bucketRanges, counts, examples) {
 				level.Debug(r.logger).Log(
 					"msg", "discarded stale hash range series walk",
 					"partition", p.partitionID,

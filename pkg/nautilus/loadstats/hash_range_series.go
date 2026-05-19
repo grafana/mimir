@@ -167,9 +167,18 @@ func (h *RangeSeries) LogSummary(logger log.Logger) {
 // that index. counts must be the same length as ranges and is mutated
 // in place.
 //
+// If examples is non-nil it must be the same length as ranges. The
+// labels of the FIRST series found in each range are written via
+// labels.Labels.String() into the matching slot; subsequent series in
+// the same range leave the slot untouched. Slots whose range never
+// matched any series are left as the zero value. Callers that only
+// want counts should pass nil. labels.String() materialises fresh
+// Go strings, so the captured examples are safe to retain across
+// walks and TSDB head compactions.
+//
 // Returns the number of series it observed (regardless of whether they
 // landed in an owned range).
-func CountSeriesByHashRange(ctx context.Context, userID string, head *tsdb.Head, ranges []assignment.HashRange, counts []int64) (int64, error) {
+func CountSeriesByHashRange(ctx context.Context, userID string, head *tsdb.Head, ranges []assignment.HashRange, counts []int64, examples []string) (int64, error) {
 	idx, err := head.Index()
 	if err != nil {
 		return 0, err
@@ -182,6 +191,7 @@ func CountSeriesByHashRange(ctx context.Context, userID string, head *tsdb.Head,
 		return 0, err
 	}
 
+	wantExamples := examples != nil && len(examples) == len(ranges)
 	builder := labels.NewScratchBuilder(16)
 	var walked int64
 
@@ -212,6 +222,14 @@ func CountSeriesByHashRange(ctx context.Context, userID string, head *tsdb.Head,
 		}) - 1
 		if ri >= 0 && ranges[ri].Contains(hash) {
 			counts[ri]++
+			if wantExamples && examples[ri] == "" {
+				// labels.Labels.String() allocates a fresh Go string,
+				// detaching us from the TSDB intern pool. Capturing
+				// once per range bounds the allocation to one per
+				// owned range per walk, even on heads with millions
+				// of series.
+				examples[ri] = lset.String()
+			}
 		}
 	}
 	return walked, postings.Err()

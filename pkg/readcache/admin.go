@@ -82,6 +82,14 @@ type adminRangeView struct {
 	Series int64
 	SizeB  uint64  // raw size in hash units (Hi-Lo+1)
 	SizeP  float64 // size as % of 32-bit hash space
+	// Example is one representative series in this range, rendered
+	// as labels.Labels.String() (e.g. `{__name__="up", instance="…"}`)
+	// by the load-stats walker. Empty if the walker has not seen
+	// any series in this range yet, or if the range only exists
+	// because the partition was just assigned and no walk has
+	// landed. Helps operators sanity-check that distributor
+	// routing matches what the rebalancer assigned.
+	Example string
 }
 
 func (r *Readcache) buildAdminPageData() adminPageData {
@@ -137,13 +145,13 @@ func (r *Readcache) buildAdminPageData() adminPageData {
 		}
 		pv.Current = make([]adminRangeView, len(current))
 		for i, c := range current {
-			pv.Current[i] = makeRangeView(c.Range, c.Count, hashSpaceTotal)
+			pv.Current[i] = makeRangeView(c.Range, c.Count, c.Example, hashSpaceTotal)
 			pv.CurrentSeries += c.Count
 			pv.CurrentHashPct += pv.Current[i].SizeP
 		}
 		pv.Historical = make([]adminRangeView, len(historical))
 		for i, h := range historical {
-			pv.Historical[i] = makeRangeView(h.Range, h.Count, hashSpaceTotal)
+			pv.Historical[i] = makeRangeView(h.Range, h.Count, h.Example, hashSpaceTotal)
 			pv.ResidueSeries += h.Count
 			pv.HistoricalHashPct += pv.Historical[i].SizeP
 		}
@@ -173,13 +181,14 @@ func (r *Readcache) buildAdminPageData() adminPageData {
 	return data
 }
 
-func makeRangeView(hr assignment.HashRange, series int64, hashSpaceTotal float64) adminRangeView {
+func makeRangeView(hr assignment.HashRange, series int64, example string, hashSpaceTotal float64) adminRangeView {
 	size := hr.Size()
 	return adminRangeView{
-		Lo:     hr.Lo,
-		Hi:     hr.Hi,
-		Series: series,
-		SizeB:  size,
-		SizeP:  float64(size) / hashSpaceTotal * 100,
+		Lo:      hr.Lo,
+		Hi:      hr.Hi,
+		Series:  series,
+		SizeB:   size,
+		SizeP:   float64(size) / hashSpaceTotal * 100,
+		Example: example,
 	}
 }

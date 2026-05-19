@@ -43,6 +43,14 @@ th, td {
 th { background: #eee; font-weight: bold; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.hex { font-family: "Courier New", Courier, monospace; }
+td.example {
+	font-family: "Courier New", Courier, monospace;
+	font-size: 11px;
+	color: #333;
+	max-width: 520px;
+	word-break: break-all;
+	overflow-wrap: anywhere;
+}
 
 .facts { margin: 4px 0 12px; }
 .facts dt { display: inline; font-weight: bold; }
@@ -163,13 +171,14 @@ all partitions have been moved off to other instances.</p>
 			<div class="empty">(no current ranges &mdash; this partition has nothing assigned to it on this instance)</div>
 			{{else}}
 			<table>
-				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th></tr>
+				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Example series</th></tr>
 				{{range .Current}}
 				<tr>
 					<td class="hex">{{hexRange .Lo .Hi}}</td>
 					<td class="num">{{.SizeB}}</td>
 					<td class="num">{{fmtPct4 .SizeP}}</td>
 					<td class="num">{{fmtSeries .Series}}</td>
+					<td class="example">{{if .Example}}{{.Example}}{{else}}<span class="muted">(no series sampled yet)</span>{{end}}</td>
 				</tr>
 				{{end}}
 			</table>
@@ -182,13 +191,14 @@ all partitions have been moved off to other instances.</p>
 			<div class="empty">(no residue &mdash; nothing has been moved off this partition recently, or it has already drained)</div>
 			{{else}}
 			<table>
-				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th></tr>
+				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Example series</th></tr>
 				{{range .Historical}}
 				<tr>
 					<td class="hex">{{hexRange .Lo .Hi}}</td>
 					<td class="num">{{.SizeB}}</td>
 					<td class="num">{{fmtPct4 .SizeP}}</td>
 					<td class="num {{if gt .Series 0}}warn{{end}}">{{fmtSeries .Series}}</td>
+					<td class="example">{{if .Example}}{{.Example}}{{else}}<span class="muted">(no series sampled yet)</span>{{end}}</td>
 				</tr>
 				{{end}}
 			</table>
