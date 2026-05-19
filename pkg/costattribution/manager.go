@@ -193,15 +193,18 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 
 func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *SampleTracker {
 	configs := m.effectiveTrackerConfigs(userID)
-	if len(configs) == 0 {
-		return nil
-	}
 
 	m.stmtx.Lock()
 	defer m.stmtx.Unlock()
 
 	if cached, ok := m.cachedSampleComposites[userID]; ok && cached.configHash == configHash {
 		return cached.composite
+	}
+
+	if len(configs) == 0 {
+		delete(m.sampleTrackersByUserID, userID)
+		m.cachedSampleComposites[userID] = cachedComposite[*SampleTracker]{configHash: configHash}
+		return nil
 	}
 
 	if m.sampleTrackersByUserID[userID] == nil {
@@ -233,7 +236,7 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Sampl
 
 	if len(userTrackers) == 0 {
 		delete(m.sampleTrackersByUserID, userID)
-		delete(m.cachedSampleComposites, userID)
+		m.cachedSampleComposites[userID] = cachedComposite[*SampleTracker]{configHash: configHash}
 		return nil
 	}
 
@@ -266,15 +269,18 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 
 func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) *ActiveSeriesTracker {
 	configs := m.effectiveTrackerConfigs(userID)
-	if len(configs) == 0 {
-		return nil
-	}
 
 	m.atmtx.Lock()
 	defer m.atmtx.Unlock()
 
 	if cached, ok := m.cachedActiveSeriesComposites[userID]; ok && cached.configHash == configHash {
 		return cached.composite
+	}
+
+	if len(configs) == 0 {
+		delete(m.activeTrackersByUserID, userID)
+		m.cachedActiveSeriesComposites[userID] = cachedComposite[*ActiveSeriesTracker]{configHash: configHash}
+		return nil
 	}
 
 	if m.activeTrackersByUserID[userID] == nil {
@@ -306,7 +312,7 @@ func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) 
 
 	if len(userTrackers) == 0 {
 		delete(m.activeTrackersByUserID, userID)
-		delete(m.cachedActiveSeriesComposites, userID)
+		m.cachedActiveSeriesComposites[userID] = cachedComposite[*ActiveSeriesTracker]{configHash: configHash}
 		return nil
 	}
 
