@@ -1347,6 +1347,7 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 		{"rate", "rate(test_metric[10h])"},
 		{"increase", "increase(test_metric[10h])"},
 		{"avg_over_time", "avg_over_time(test_metric[10h])"},
+		{"present_over_time", "present_over_time(test_metric[10h])"},
 	}
 
 	env1Labels := querierpb.SeriesMetadata{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "env", Value: "1"}}}

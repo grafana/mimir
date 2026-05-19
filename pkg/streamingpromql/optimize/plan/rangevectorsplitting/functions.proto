@@ -102,3 +102,11 @@ message AvgOverTimeIntermediate {
 message AvgOverTimeIntermediateList {
   repeated AvgOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
 }
+
+message PresentOverTimeIntermediate {
+  bool present = 1;
+}
+
+message PresentOverTimeIntermediateList {
+  repeated PresentOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+}

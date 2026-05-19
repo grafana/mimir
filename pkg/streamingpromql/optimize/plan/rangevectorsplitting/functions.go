@@ -445,4 +445,62 @@ func (c firstLastOverTimeCodec) Unmarshal(bytes []byte) ([]FirstLastOverTimeInte
 
 var FirstLastOverTimeCodec = firstLastOverTimeCodec{}
 
+var SplitPresentOverTime = NewSplitOperatorFactory[PresentOverTimeIntermediate](
+	presentOverTimeGenerate,
+	presentOverTimeCombine,
+	PresentOverTimeCodec,
+	functions.PresentOverTime,
+	functions.FUNCTION_PRESENT_OVER_TIME,
+)
+
+func presentOverTimeGenerate(
+	step *types.RangeVectorStepData,
+	_ types.EmitAnnotationFunc,
+	_ *limiter.MemoryConsumptionTracker,
+) (PresentOverTimeIntermediate, bool, error) {
+	if step.Floats.Any() || step.Histograms.Any() {
+		return PresentOverTimeIntermediate{Present: true}, true, nil
+	}
+
+	return PresentOverTimeIntermediate{Present: false}, false, nil
+}
+
+func presentOverTimeCombine(
+	pieces []PresentOverTimeIntermediate,
+	_ int64,
+	_ int64,
+	_ types.EmitAnnotationFunc,
+	_ *limiter.MemoryConsumptionTracker,
+) (float64, bool, *histogram.FloatHistogram, error) {
+	for _, p := range pieces {
+		if p.Present {
+			return 1, true, nil, nil
+		}
+	}
+	return 0, false, nil, nil
+}
+
+type presentOverTimeCodec struct{}
+
+func (c presentOverTimeCodec) Marshal(results []PresentOverTimeIntermediate) ([]byte, error) {
+	listProto := &PresentOverTimeIntermediateList{
+		Results: results,
+	}
+	listBytes, err := listProto.Marshal()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshaling present_over_time list")
+	}
+	return listBytes, nil
+}
+
+func (c presentOverTimeCodec) Unmarshal(bytes []byte) ([]PresentOverTimeIntermediate, error) {
+	var listProto PresentOverTimeIntermediateList
+	if err := listProto.Unmarshal(bytes); err != nil {
+		return nil, errors.Wrap(err, "unmarshaling present_over_time list")
+	}
+	return listProto.Results, nil
+}
+
+var PresentOverTimeCodec = presentOverTimeCodec{}
+
 func emitAnnotationNoop(_ types.AnnotationGenerator) {}
