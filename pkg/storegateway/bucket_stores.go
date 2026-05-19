@@ -422,6 +422,48 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
+// SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
+func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SearchLabelNames")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return nil
+	}
+
+	return store.SearchLabelNames(req, spanSearchLabelNamesServer{
+		StoreGateway_SearchLabelNamesServer: srv,
+		ctx:                                 ctx,
+	})
+}
+
+// SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
+func (u *BucketStores) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SearchLabelValues")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return nil
+	}
+
+	return store.SearchLabelValues(req, spanSearchLabelValuesServer{
+		StoreGateway_SearchLabelValuesServer: srv,
+		ctx:                                  ctx,
+	})
+}
+
 // scanUsers in the bucket and return the list of found users, respecting any specifically
 // enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {
@@ -692,5 +734,25 @@ type spanSeriesServer struct {
 }
 
 func (s spanSeriesServer) Context() context.Context {
+	return s.ctx
+}
+
+type spanSearchLabelNamesServer struct {
+	storegatewaypb.StoreGateway_SearchLabelNamesServer
+
+	ctx context.Context
+}
+
+func (s spanSearchLabelNamesServer) Context() context.Context {
+	return s.ctx
+}
+
+type spanSearchLabelValuesServer struct {
+	storegatewaypb.StoreGateway_SearchLabelValuesServer
+
+	ctx context.Context
+}
+
+func (s spanSearchLabelValuesServer) Context() context.Context {
 	return s.ctx
 }

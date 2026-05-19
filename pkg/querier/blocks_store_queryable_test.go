@@ -3327,6 +3327,14 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
 }
 
+func (m *storeGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
+}
+
+func (m *storeGatewayClientMock) SearchLabelValues(context.Context, *storepb.SearchLabelValuesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelValues not implemented")
+}
+
 func (m *storeGatewayClientMock) RemoteAddress() string {
 	return m.remoteAddr
 }
@@ -3406,6 +3414,14 @@ func (m *cancelerStoreGatewayClientMock) LabelNames(ctx context.Context, _ *stor
 func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *storepb.LabelValuesRequest, _ ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
 	m.cancel()
 	return nil, ctx.Err()
+}
+
+func (m *cancelerStoreGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
+}
+
+func (m *cancelerStoreGatewayClientMock) SearchLabelValues(context.Context, *storepb.SearchLabelValuesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelValues not implemented")
 }
 
 func (m *cancelerStoreGatewayClientMock) RemoteAddress() string {

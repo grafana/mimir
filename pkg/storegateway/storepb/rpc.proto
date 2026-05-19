@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/storepb/rpc.proto
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/e8e25eb09e41bf295e0c9e847cd27cf9016a553a/web/api/v1/search.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
+// Provenance-includes-copyright: The Prometheus Authors
 
 syntax = "proto3";
 package thanos;
@@ -244,4 +246,66 @@ message LabelValuesResponse {
 message LabelValuesResponseHints {
   // queried_blocks is the list of blocks that have been queried.
   repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+}
+
+// SearchOrdering selects the result ordering wire-side. Values mirror the
+// Prometheus storage.Ordering enum so the server-side translation is 1:1.
+enum SearchOrdering {
+  ORDER_BY_VALUE_ASC = 0;
+  ORDER_BY_VALUE_DESC = 1;
+  ORDER_BY_SCORE_DESC = 2;
+}
+
+// SearchFilter is the wire encoding of the filter applied to a search
+// request. Field names match Prometheus PR #18573's HTTP URL params so the
+// HTTP-to-gRPC translation in the querier (later PR) is verbatim.
+message SearchFilter {
+  // Terms are the search terms; combined with OR-max by filterOr at the server.
+  repeated string terms = 1;
+  // CaseInsensitive flips the search to be case-insensitive. The proto3 zero
+  // value (false) means case-sensitive — matching Prometheus's HTTP
+  // case_sensitive URL-param default of true. The HTTP handler in the later
+  // PR translates the URL param to this wire bit (case_sensitive=false URL
+  // param → case_insensitive=true wire bit).
+  bool case_insensitive = 2;
+
+  enum FuzzAlg {
+    FUZZ_ALG_SUBSEQUENCE = 0;
+    FUZZ_ALG_JARO_WINKLER = 1;
+  }
+  FuzzAlg fuzz_alg = 3;
+  // FuzzThreshold is the minimum fuzzy score expressed as int 0-100,
+  // matching Prometheus PR #18573's fuzz_threshold URL param. The server
+  // divides by 100 to compare against the matcher's [0,1] score.
+  int32 fuzz_threshold = 4;
+}
+
+message SearchLabelNamesRequest {
+  int64 start = 1;
+  int64 end = 2;
+  repeated LabelMatcher matchers = 3 [(gogoproto.nullable) = false];
+  SearchFilter filter = 4;
+  SearchOrdering ordering = 5;
+  int64 limit = 6;
+}
+
+message SearchLabelValuesRequest {
+  int64 start = 1;
+  int64 end = 2;
+  string label = 3;
+  repeated LabelMatcher matchers = 4 [(gogoproto.nullable) = false];
+  SearchFilter filter = 5;
+  SearchOrdering ordering = 6;
+  int64 limit = 7;
+}
+
+// SearchResultBatch carries one batch of (value, score) pairs in a streaming
+// reply. Both SearchLabel{Names,Values} use this shape.
+message SearchResultBatch {
+  message Result {
+    string value = 1;
+    double score = 2;
+  }
+  repeated Result results = 1 [(gogoproto.nullable) = false];
+  repeated string warnings = 2;
 }
