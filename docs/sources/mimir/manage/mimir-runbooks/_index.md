@@ -2265,10 +2265,11 @@ How it **works**:
 
 What is the **impact**:
 
-- The scheduler keeps reassigning the job after each lease expiry. Transient failures may resolve on a retry, but the scheduler never gives up on its own. Persistent failures are retried continuously.
-- While the job has not yet succeeded, the partition's committed Kafka offset cannot advance past it, so the records in its offset range stay absent from object storage.
-- With the default `-block-builder-scheduler.max-jobs-per-partition=1`, no later jobs for that partition can be scheduled while the failing one is in flight, and block production for the partition halts entirely. With a higher limit, later jobs continue to run but the commit still cannot advance.
-- If the failure is persistent and not fixed before Kafka topic retention deletes the records in the failing offset range, those records are unrecoverable. When block-builder is the sole shipper of blocks (ingester block shipment disabled), this means permanent data loss for that range.
+- The scheduler retries the job continuously and never gives up on its own. The records in the failing offset range stay absent from object storage until the job succeeds.
+- If a job fails for longer than ingesters retain and are queried for the affected samples (typically after `-querier.query-ingesters-within`), query results may be missing data from the affected range.
+- If exactly `-block-builder-scheduler.max-jobs-per-partition` jobs are failing repeatedly for a partition, the partition is effectively stalled. If less, then the partition continues to make progress, but slower than expected.
+- The partition's committed Kafka offset cannot advance past a failing job. If the commit lags far behind and the scheduler restarts, it re-schedules jobs covering offset ranges that may have already succeeded, writing duplicate blocks to object storage.
+- If a job fails repeatedly for longer than the Kafka topic retention, the data in the affected range is effectively lost, unless ingesters are configured to also ship blocks, and succeeding.
 
 How to **investigate**:
 
@@ -2276,6 +2277,10 @@ How to **investigate**:
   > ERROR ts=2025-10-30T15:20:55.134630922Z caller=jobs.go:236 level=error msg="job failed in a persistent manner" job_id=ingest/25/11740286308 epoch=104901 assignee=block-builder-7786c54c8-hsr6h fail_count=8
 - Now look at the logs on the assigned worker corresponding with the job ID found previously to understand the nature of the failure.
 - If there is no clear failure, check to see if the worker pod was terminated due to an out-of-memory condition. If this is the case, give the block-builder workers more memory.
+
+How to **mitigate**:
+
+- If in doubt that a job will succeed before the Kafka topic retention, temporarily increasing the retention is a good idea to prevent permanent data loss and buy more time for the investigation and fix. Gaps in queries may still occur during the incident, but at least the data will be safe in Kafka until the issue is resolved.
 
 ### MimirServerInvalidClusterLabelRequests
 
