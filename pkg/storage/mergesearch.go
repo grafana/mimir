@@ -18,30 +18,9 @@ import (
 // and respecting the requested ordering. Each input must emit results in the
 // order requested.
 //
-// Dedup invariant the caller must uphold:
-//
-// Under OrderByValueAsc / OrderByValueDesc the comparator keys on Value alone,
-// so duplicates collapse and the higher score wins (see mergingSearchResultSet.Next).
-//
-// Under OrderByScoreDesc the comparator is (Score desc, Value asc) — a total
-// order. Two entries with the same Value but different Scores compare unequal
-// and the merger therefore emits both. Correct dedup under OrderByScoreDesc
-// requires that every source fed into one PairwiseMergeSearchSets call assigns
-// the same Score to the same Value. That holds today because each tier
-// (per-block in the store-gateway, per-replica in the distributor) builds its
-// filter from the same Params and the leaf Filter.Accept is deterministic on
-// the input value. If a future change inserts a filtering step that
-// recomputes scores between leaf and merge — or merges across tiers that ran
-// distinct filters — this invariant breaks and same-value duplicates will leak
-// through under OrderByScoreDesc.
-//
 // This mirrors the behaviour of Prometheus's internal pairwiseMergeSearchSets
 // (vendor/github.com/prometheus/prometheus/storage/generic.go), which is
-// package-private upstream. The implementation here is a verbatim port — the
-// algorithm is well-defined and copying it lets us share the same semantic
-// contract across Mimir components that fan out to multiple Searcher sources
-// (the store-gateway's per-block fan-out today; cross-replica fan-out in
-// follow-up work).
+// package-private upstream.
 //
 // When limit > 0, the merge stops after emitting limit results across the
 // whole tree, enabling early termination that avoids consuming the full input
@@ -63,11 +42,6 @@ func PairwiseMergeSearchSets(sets []storage.SearchResultSet, order storage.Order
 	}
 }
 
-// compareSearchResults returns the total-order comparison function for the
-// given Ordering. For OrderByValueAsc and OrderByValueDesc the order is on
-// Value alone. For OrderByScoreDesc the order is (Score desc, Value asc),
-// which is a total order and defines the position at which a duplicate Value
-// is first emitted by the streaming merge.
 func compareSearchResults(o storage.Ordering) func(a, b storage.SearchResult) int {
 	switch o {
 	case storage.OrderByValueDesc:
@@ -109,9 +83,7 @@ func (s *limitSearchResultSet) Close() error                      { return s.rs.
 
 // mergingSearchResultSet lazily merges two pre-sorted SearchResultSets using
 // the comparison function defined by order. Both inputs must yield results in
-// that order. Equal entries (same Value under value orderings, same
-// (Score, Value) under OrderByScoreDesc) collapse in place; under value
-// orderings the higher score wins.
+// that order.
 type mergingSearchResultSet struct {
 	a, b         storage.SearchResultSet
 	cmpFn        func(a, b storage.SearchResult) int
@@ -166,9 +138,7 @@ func (s *mergingSearchResultSet) Next() bool {
 	// until both report exhaustion. The terminal error is surfaced via
 	// Err() once iteration ends — mirroring how blocksStoreQuerier.LabelNames
 	// drains partial results across replicas and only fails the whole call
-	// after the drain completes. Per-Next polling also incurred a mutex
-	// acquisition on every concurrentSearchResultSet leaf, scaling with the
-	// number of fanned-out sources.
+	// after the drain completes.
 
 	switch {
 	case !s.aOk && !s.bOk:
@@ -187,10 +157,6 @@ func (s *mergingSearchResultSet) Next() bool {
 			s.aVal = s.a.At()
 		}
 	default:
-		// Under value-based orderings, equal-Value entries collapse in
-		// place and keep the higher score. Under OrderByScoreDesc the
-		// comparator tie-breaks on Value, so equal cmp means equal
-		// (Score, Value) — collapsing is safe there too.
 		c := s.cmpFn(s.aVal, s.bVal)
 		switch {
 		case c < 0:
