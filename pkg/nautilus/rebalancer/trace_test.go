@@ -124,13 +124,13 @@ func nonTrivialTrace(t *testing.T) Trace {
 	for i, e := range initial.Entries {
 		switch e.PartitionID {
 		case 0:
-			rates = append(rates, rangeRate{hr: e.Range, series: int64(1000 + i*10)})
+			rates = append(rates, rangeRate{hr: e.Range, series: int64(1000 + i*10), partitionID: e.PartitionID})
 		case 1:
-			rates = append(rates, rangeRate{hr: e.Range, series: int64(2000 + i*5)})
+			rates = append(rates, rangeRate{hr: e.Range, series: int64(2000 + i*5), partitionID: e.PartitionID})
 		case 2:
-			rates = append(rates, rangeRate{hr: e.Range, series: 50})
+			rates = append(rates, rangeRate{hr: e.Range, series: 50, partitionID: e.PartitionID})
 		case 3:
-			rates = append(rates, rangeRate{hr: e.Range, series: 10})
+			rates = append(rates, rangeRate{hr: e.Range, series: 10, partitionID: e.PartitionID})
 		}
 	}
 
@@ -379,7 +379,13 @@ func TestAdminState_TraceAt(t *testing.T) {
 // version marker has been advanced past "1" — older traces captured
 // under the orphan-series model must not silently replay against
 // this binary.
+//
+// Version "3" added partition_id to RangeRate; traces from v2 and
+// earlier are missing that field and cannot be replayed
+// deterministically.
 func TestSlicerVersion_IsBumpedForNewModel(t *testing.T) {
 	assert.NotEqual(t, "1", SlicerVersion,
 		"SlicerVersion must be bumped when the load model changes incompatibly")
+	assert.NotEqual(t, "2", SlicerVersion,
+		"SlicerVersion must be bumped when RangeRate wire shape changes")
 }

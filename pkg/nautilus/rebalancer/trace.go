@@ -23,15 +23,28 @@ import (
 // (TotalActiveSeries) + CompactionInterval movable-budget model and
 // drops the samples signal from wire inputs. Traces captured under
 // SlicerVersion "1" are not replayable against this binary.
-const SlicerVersion = "2"
+//
+// Version "3" extends RangeRate with partition_id so the slicer's
+// loadMap is keyed by (partition, range) — required to keep residue
+// on a previous owner separate from growth on the new owner. Traces
+// captured under SlicerVersion "2" do not carry that field and
+// cannot be replayed deterministically against the v3 slicer.
+const SlicerVersion = "3"
 
-// RangeRate is the JSON-serializable view of a per-range rate signal.
-// Mirrors the unexported rangeRate but with JSON tags suitable for
-// trace persistence and external replay.
+// RangeRate is the JSON-serializable view of a per-(partition, range)
+// rate signal. Mirrors the unexported rangeRate but with JSON tags
+// suitable for trace persistence and external replay.
+//
+// PartitionID is the Kafka partition whose TSDB head contained the
+// Series count at capture time. The same (Lo, Hi) range can appear
+// multiple times with different PartitionIDs to model residue (one
+// entry on the previous owner) alongside growth (one entry on the
+// current owner).
 type RangeRate struct {
-	Lo     uint32 `json:"lo"`
-	Hi     uint32 `json:"hi"`
-	Series int64  `json:"series"`
+	Lo          uint32 `json:"lo"`
+	Hi          uint32 `json:"hi"`
+	Series      int64  `json:"series"`
+	PartitionID int32  `json:"partition_id"`
 }
 
 // MoveRecord is the JSON-serializable view of a moveRecord — a move
@@ -138,7 +151,7 @@ func ParseHashRangeKey(s string) (assignment.HashRange, error) {
 func ratesToWire(in []rangeRate) []RangeRate {
 	out := make([]RangeRate, len(in))
 	for i, r := range in {
-		out[i] = RangeRate{Lo: r.hr.Lo, Hi: r.hr.Hi, Series: r.series}
+		out[i] = RangeRate{Lo: r.hr.Lo, Hi: r.hr.Hi, Series: r.series, PartitionID: r.partitionID}
 	}
 	return out
 }
@@ -147,7 +160,11 @@ func ratesToWire(in []rangeRate) []RangeRate {
 func ratesFromWire(in []RangeRate) []rangeRate {
 	out := make([]rangeRate, len(in))
 	for i, r := range in {
-		out[i] = rangeRate{hr: assignment.HashRange{Lo: r.Lo, Hi: r.Hi}, series: r.Series}
+		out[i] = rangeRate{
+			hr:          assignment.HashRange{Lo: r.Lo, Hi: r.Hi},
+			series:      r.Series,
+			partitionID: r.PartitionID,
+		}
 	}
 	return out
 }

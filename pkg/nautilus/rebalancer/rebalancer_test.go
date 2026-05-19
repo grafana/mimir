@@ -28,16 +28,15 @@ func seriesCfg(movementBudget float64) Config {
 }
 
 // partitionLFromRates returns a partitionLByPID map derived by summing
-// per-range series on each partition, the natural "ground-truth" L_pid
-// for a test that doesn't otherwise model ingester totals.
-func partitionLFromRates(current *assignment.Assignment, rates []rangeRate) map[int32]int64 {
-	byRange := make(map[assignment.HashRange]int64, len(rates))
-	for _, r := range rates {
-		byRange[r.hr] += r.series
-	}
+// per-(partition, range) series on each partition, the natural
+// "ground-truth" L_pid for a test that doesn't otherwise model
+// ingester totals. Counts attached to a partition that isn't the
+// current owner of the range (residue) are still summed into that
+// partition's L — they're real series on its head.
+func partitionLFromRates(_ *assignment.Assignment, rates []rangeRate) map[int32]int64 {
 	out := make(map[int32]int64)
-	for _, e := range current.Entries {
-		out[e.PartitionID] += byRange[e.Range]
+	for _, r := range rates {
+		out[r.partitionID] += r.series
 	}
 	return out
 }
@@ -51,9 +50,9 @@ func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 10000 / int64(initialSlicesPerPartition)})
+			rates = append(rates, rangeRate{hr: e.Range, series: 10000 / int64(initialSlicesPerPartition), partitionID: e.PartitionID})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 100 / int64(initialSlicesPerPartition)})
+			rates = append(rates, rangeRate{hr: e.Range, series: 100 / int64(initialSlicesPerPartition), partitionID: e.PartitionID})
 		}
 	}
 
@@ -95,7 +94,7 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 
 	var rates []rangeRate
 	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, series: 100})
+		rates = append(rates, rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID})
 	}
 
 	r := &Rebalancer{cfg: seriesCfg(0.09)}
@@ -136,7 +135,7 @@ func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
 
 	var rates []rangeRate
 	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, series: 100})
+		rates = append(rates, rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID})
 	}
 
 	r := &Rebalancer{cfg: seriesCfg(0.5)}
@@ -158,9 +157,9 @@ func TestRunSlicer_SliceCountCapped(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 100000})
+			rates = append(rates, rangeRate{hr: e.Range, series: 100000, partitionID: e.PartitionID})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 1})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1, partitionID: e.PartitionID})
 		}
 	}
 
@@ -296,7 +295,7 @@ func TestRunSlicer_Phase1_DistributesAcrossPartitions(t *testing.T) {
 
 	var rates []rangeRate
 	for _, e := range initial.Entries {
-		rates = append(rates, rangeRate{hr: e.Range, series: 100})
+		rates = append(rates, rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID})
 	}
 
 	r := &Rebalancer{cfg: seriesCfg(0.0)}
@@ -328,9 +327,9 @@ func TestRunSlicer_Phase3_ExhaustsBudget(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 120})
+			rates = append(rates, rangeRate{hr: e.Range, series: 120, partitionID: e.PartitionID})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 80})
+			rates = append(rates, rangeRate{hr: e.Range, series: 80, partitionID: e.PartitionID})
 		}
 	}
 
@@ -510,13 +509,13 @@ func TestRunSlicer_Phase4_SplitsAnyHotSlice(t *testing.T) {
 	hotIdx := map[int]bool{0: true}
 	for i, e := range initial.Entries {
 		if e.PartitionID != 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 10})
+			rates = append(rates, rangeRate{hr: e.Range, series: 10, partitionID: e.PartitionID})
 			continue
 		}
 		if hotIdx[i] {
-			rates = append(rates, rangeRate{hr: e.Range, series: 500})
+			rates = append(rates, rangeRate{hr: e.Range, series: 500, partitionID: e.PartitionID})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 10})
+			rates = append(rates, rangeRate{hr: e.Range, series: 10, partitionID: e.PartitionID})
 		}
 	}
 
@@ -915,35 +914,55 @@ func TestRebalancer_WatchAssignments_SendsInitialAndUpdates(t *testing.T) {
 
 func TestLoadMap_SeriesAt(t *testing.T) {
 	rates := []rangeRate{
-		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100},
-		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 300},
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100, partitionID: 0},
+		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 300, partitionID: 1},
 	}
 	lm := buildLoadMap(rates)
 
-	assert.Equal(t, int64(100), lm.seriesAt(assignment.HashRange{Lo: 0, Hi: 999}))
-	assert.Equal(t, int64(300), lm.seriesAt(assignment.HashRange{Lo: 1000, Hi: 1999}))
-	assert.Equal(t, int64(0), lm.seriesAt(assignment.HashRange{Lo: 5000, Hi: 6000}))
+	assert.Equal(t, int64(100), lm.seriesAt(0, assignment.HashRange{Lo: 0, Hi: 999}))
+	assert.Equal(t, int64(300), lm.seriesAt(1, assignment.HashRange{Lo: 1000, Hi: 1999}))
+	assert.Equal(t, int64(0), lm.seriesAt(0, assignment.HashRange{Lo: 5000, Hi: 6000}))
+	// Same range under a different partition is a different key.
+	assert.Equal(t, int64(0), lm.seriesAt(1, assignment.HashRange{Lo: 0, Hi: 999}))
 }
 
 // TestLoadMap_MaxOverReplicas verifies that buildLoadMap aggregates
-// per-range series across replicas by taking the max, not the sum.
-// Each healthy owner of a partition reports a near-identical count for
-// the same ranges (they are mirrors), and partitionL is already on a
-// max-over-owners scale. Phase 3 of the slicer mixes per-range series
-// with the partition-level movable budget, so both signals must share
-// the same scale; summing here would inflate the per-range load by the
-// replication factor and cause systematic over-rejection in Phase 3's
-// `rl.series > mov` gate.
+// per-(partition, range) series across replicas by taking the max,
+// not the sum. Each healthy mirror of a partition reports a near-
+// identical count for the same ranges, and partitionL is already on
+// a max-over-owners scale. Phase 3 of the slicer mixes per-range
+// series with the partition-level movable budget, so both signals
+// must share the same scale; summing here would inflate the
+// per-range load by the replication factor and cause systematic
+// over-rejection in Phase 3's `rl.series > mov` gate.
 func TestLoadMap_MaxOverReplicas(t *testing.T) {
 	hr := assignment.HashRange{Lo: 0, Hi: 999}
 	rates := []rangeRate{
-		{hr: hr, series: 100},
-		{hr: hr, series: 150},
-		{hr: hr, series: 120},
+		{hr: hr, series: 100, partitionID: 0},
+		{hr: hr, series: 150, partitionID: 0},
+		{hr: hr, series: 120, partitionID: 0},
 	}
 	lm := buildLoadMap(rates)
 
-	assert.Equal(t, int64(150), lm.seriesAt(hr))
+	assert.Equal(t, int64(150), lm.seriesAt(0, hr))
+}
+
+// TestLoadMap_PartitionResidueSeparate verifies that reports with the
+// same hash range but different partition IDs (e.g. residue on a
+// previous owner alongside growth on the new owner) are tracked as
+// distinct entries rather than collapsed.
+func TestLoadMap_PartitionResidueSeparate(t *testing.T) {
+	hr := assignment.HashRange{Lo: 0, Hi: 999}
+	rates := []rangeRate{
+		// New owner: growth.
+		{hr: hr, series: 50, partitionID: 7},
+		// Previous owner: residue larger than current growth.
+		{hr: hr, series: 200, partitionID: 3},
+	}
+	lm := buildLoadMap(rates)
+
+	assert.Equal(t, int64(50), lm.seriesAt(7, hr), "new owner only sees its growth")
+	assert.Equal(t, int64(200), lm.seriesAt(3, hr), "previous owner reports its residue")
 }
 
 // TestRunSlicer_MoveCooldown_BlocksRepeatMoves verifies that, when a
@@ -960,9 +979,9 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 1000})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1000, partitionID: e.PartitionID})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 1})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1, partitionID: e.PartitionID})
 		}
 	}
 
@@ -1121,11 +1140,11 @@ func TestRunSlicer_ExhaustedBudgetDoesNotStallOthers(t *testing.T) {
 	for _, e := range initial.Entries {
 		switch e.PartitionID {
 		case 0:
-			rates = append(rates, rangeRate{hr: e.Range, series: 0})
+			rates = append(rates, rangeRate{hr: e.Range, series: 0, partitionID: e.PartitionID})
 		case 1:
-			rates = append(rates, rangeRate{hr: e.Range, series: 1000})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1000, partitionID: e.PartitionID})
 		default:
-			rates = append(rates, rangeRate{hr: e.Range, series: 1})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1, partitionID: e.PartitionID})
 		}
 	}
 
@@ -1180,9 +1199,9 @@ func TestRunSlicer_MovableBudgetCapsMovesPerWindow(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 100})
+			rates = append(rates, rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 10})
+			rates = append(rates, rangeRate{hr: e.Range, series: 10, partitionID: e.PartitionID})
 		}
 	}
 
@@ -1249,9 +1268,9 @@ func TestRunSlicer_BudgetResetsAfterCompactionInterval(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 100})
+			rates = append(rates, rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 10})
+			rates = append(rates, rangeRate{hr: e.Range, series: 10, partitionID: e.PartitionID})
 		}
 	}
 
@@ -1301,9 +1320,9 @@ func TestRunSlicer_PlannedAdditionsPreventDestinationStuffing(t *testing.T) {
 	for _, e := range initial.Entries {
 		switch e.PartitionID {
 		case 0:
-			rates = append(rates, rangeRate{hr: e.Range, series: 100})
+			rates = append(rates, rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID})
 		default:
-			rates = append(rates, rangeRate{hr: e.Range, series: 1})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1, partitionID: e.PartitionID})
 		}
 	}
 
@@ -1349,9 +1368,9 @@ func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
 	var rates []rangeRate
 	for _, e := range initial.Entries {
 		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 100})
+			rates = append(rates, rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID})
 		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 1})
+			rates = append(rates, rangeRate{hr: e.Range, series: 1, partitionID: e.PartitionID})
 		}
 	}
 

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/storage"
@@ -630,11 +631,23 @@ func (r *Readcache) activeSeries(_ *client.ActiveSeriesRequest, srv client.Inges
 	return srv.Send(&client.ActiveSeriesResponse{})
 }
 
-// hashRangeStats serves the rebalancer's per-partition view of work
-// done by this readcache pod: per-range active-series counts plus
-// per-partition query-load EWMAs.
+// hashRangeStats serves the rebalancer's view of work done by this
+// readcache pod: per-(partition, hash range) active-series counts plus
+// per-partition totals and query-load EWMAs.
+//
+// Each partition's currentRanges are always emitted, even at zero, so
+// the rebalancer sees the claimed footprint. Historical ranges are
+// emitted only when they still have residue series in the head; once
+// the head compacts and the count drops to zero, the walker GCs the
+// historical entry on the next tick.
 func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
-	rangeSnap := r.rangeSeries.Snapshot()
+	r.partitionMu.RLock()
+	parts := make([]*partitionState, 0, len(r.partitions))
+	for _, p := range r.partitions {
+		parts = append(parts, p)
+	}
+	r.partitionMu.RUnlock()
+
 	partSnap := r.partitionSeries.Snapshot()
 
 	partitionSeries := make([]client.PartitionActiveSeries, len(partSnap.Partitions))
@@ -646,15 +659,18 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 	}
 
 	resp := &client.HashRangeStatsResponse{
-		Rates:                 make([]client.HashRangeRate, len(rangeSnap.Ranges)),
 		TotalActiveSeries:     partSnap.Total,
 		PartitionActiveSeries: partitionSeries,
 	}
-	for j, rng := range rangeSnap.Ranges {
-		resp.Rates[j] = client.HashRangeRate{
-			Lo:           rng.Lo,
-			Hi:           rng.Hi,
-			ActiveSeries: rangeSnap.Counts[j],
+
+	for _, p := range parts {
+		for _, hrc := range p.ranges.snapshotCounts() {
+			resp.Rates = append(resp.Rates, client.HashRangeRate{
+				Lo:           hrc.Range.Lo,
+				Hi:           hrc.Range.Hi,
+				ActiveSeries: hrc.Count,
+				PartitionId:  p.partitionID,
+			})
 		}
 	}
 
@@ -670,23 +686,66 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 	return resp, nil
 }
 
-// setHashRanges replaces the set of hash ranges this readcache claims
-// to serve.
+// setHashRanges installs the latest per-partition hash range assignment
+// from the rebalancer. The request is a flat list of
+// (partition_id, lo, hi) entries; we group by partition and call
+// setRanges on each partition's bookkeeping in turn. Partitions owned
+// by this readcache that don't appear in the request have their
+// currentRanges cleared (any residue moves to historicalRanges).
+// Entries naming an unowned partition are dropped with a debug log —
+// the next assignment reconcile from the rebalancer will straighten it
+// out.
 func (r *Readcache) setHashRanges(_ context.Context, req *client.SetHashRangesRequest) (*client.SetHashRangesResponse, error) {
-	ranges := make([]assignment.HashRange, len(req.Ranges))
-	for j, rng := range req.Ranges {
-		ranges[j] = assignment.HashRange{Lo: rng.Lo, Hi: rng.Hi}
+	byPartition := make(map[int32][]assignment.HashRange)
+	for _, rng := range req.Ranges {
+		byPartition[rng.PartitionId] = append(byPartition[rng.PartitionId], assignment.HashRange{Lo: rng.Lo, Hi: rng.Hi})
 	}
-	r.rangeSeries.SetRanges(ranges)
+
+	r.partitionMu.RLock()
+	parts := make([]*partitionState, 0, len(r.partitions))
+	for _, p := range r.partitions {
+		parts = append(parts, p)
+	}
+	r.partitionMu.RUnlock()
+
+	owned := make(map[int32]struct{}, len(parts))
+	for _, p := range parts {
+		owned[p.partitionID] = struct{}{}
+		p.ranges.setRanges(byPartition[p.partitionID])
+	}
+
+	// Surface entries the rebalancer routed to us but for partitions
+	// we don't own. Reaching here usually means a partition just
+	// finished moving off this readcache and the next round will fix
+	// it up.
+	for pid := range byPartition {
+		if _, ok := owned[pid]; !ok {
+			level.Debug(r.logger).Log("msg", "SetHashRanges entry for unowned partition; ignoring", "partition", pid)
+		}
+	}
 	return &client.SetHashRangesResponse{}, nil
 }
 
-// getHashRanges returns the currently-claimed hash ranges.
+// getHashRanges returns the currently-claimed hash ranges across every
+// owned partition. Each entry carries the partition_id so the
+// rebalancer can rebuild a (partition, range) view from this response.
 func (r *Readcache) getHashRanges(_ context.Context, _ *client.GetHashRangesRequest) (*client.GetHashRangesResponse, error) {
-	rs := r.rangeSeries.Ranges()
-	resp := &client.GetHashRangesResponse{Ranges: make([]client.HashRangeEntry, len(rs))}
-	for j, rng := range rs {
-		resp.Ranges[j] = client.HashRangeEntry{Lo: rng.Lo, Hi: rng.Hi}
+	r.partitionMu.RLock()
+	parts := make([]*partitionState, 0, len(r.partitions))
+	for _, p := range r.partitions {
+		parts = append(parts, p)
+	}
+	r.partitionMu.RUnlock()
+
+	resp := &client.GetHashRangesResponse{}
+	for _, p := range parts {
+		for _, rng := range p.ranges.currentRangesCopy() {
+			resp.Ranges = append(resp.Ranges, client.HashRangeEntry{
+				Lo:          rng.Lo,
+				Hi:          rng.Hi,
+				PartitionId: p.partitionID,
+			})
+		}
 	}
 	return resp, nil
 }

@@ -53,6 +53,18 @@ message HashRangeRate {
   reserved 3; // formerly samples_per_second; dropped when the rebalancer
   // switched to a series-only load model.
   int64 active_series = 4;
+  // partition_id is the Kafka partition whose TSDB head contains the
+  // active_series counted in this entry. The same (lo, hi) range can
+  // appear multiple times in a single HashRangeStatsResponse when more
+  // than one of the reporter's partitions has head series with hashes
+  // in the range — typically the current owner of the range (growth)
+  // plus any partitions that used to own it and still hold the series
+  // as head residue until the next compaction. The rebalancer keys
+  // load by (partition_id, range) so it can attribute residue to the
+  // partition that actually has it, instead of summing it onto the
+  // current owner. Zero is a valid partition id; the field is required
+  // for readcache reporters and ignored by ingester reporters.
+  int32 partition_id = 5;
 }
 
 message HashRangeStatsResponse {
@@ -103,6 +115,13 @@ message PartitionActiveSeries {
 message HashRangeEntry {
   uint32 lo = 1;
   uint32 hi = 2;
+  // partition_id is the Kafka partition this range is currently
+  // assigned to. SetHashRanges uses it to route the new range set to
+  // the right per-partition bookkeeping on the readcache; GetHashRanges
+  // returns it so the rebalancer can rebuild a (partition, range)
+  // assignment from what the readcache currently believes it owns.
+  // Zero is a valid partition id.
+  int32 partition_id = 3;
 }
 
 message SetHashRangesRequest {

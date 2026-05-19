@@ -59,8 +59,11 @@ type RoundLog struct {
 
 const maxRoundLogs = 20
 
-// rangeStatsView mirrors loadMap for one range: the raw head series
-// count the ingester reported for it.
+// rangeStatsView mirrors loadMap for one (partition, range) pair: the
+// raw head series count the reporter (ingester or readcache)
+// attributed to that pair. Keyed by the partition the series belong
+// to, so the admin page can attribute residue to the partition that
+// has it rather than to whichever partition currently owns the range.
 type rangeStatsView struct {
 	Series int64
 }
@@ -72,7 +75,7 @@ type rangeStatsView struct {
 type adminState struct {
 	mu             sync.RWMutex
 	traces         []Trace
-	lastStats      map[assignment.HashRange]rangeStatsView
+	lastStats      map[partitionRangeKey]rangeStatsView
 	lastPartitionL map[int32]int64
 	lastMovable    map[int32]int64
 
@@ -92,9 +95,9 @@ type readcacheRoundView struct {
 }
 
 type readcachePartitionEntry struct {
-	PartitionID    int32  `json:"partition_id"`
-	CurrentOwner   string `json:"current_owner"`
-	PlannedOwner   string `json:"planned_owner"`
+	PartitionID  int32  `json:"partition_id"`
+	CurrentOwner string `json:"current_owner"`
+	PlannedOwner string `json:"planned_owner"`
 }
 
 // setLastReadcachePlan snapshots the most recent readcache slicer
@@ -141,9 +144,9 @@ func (s *adminState) setLastStats(
 	recentMoves map[int32][]moveRecord,
 	activePartitions []int32,
 ) {
-	stats := make(map[assignment.HashRange]rangeStatsView, len(lm.series))
-	for hr, n := range lm.series {
-		stats[hr] = rangeStatsView{Series: n}
+	stats := make(map[partitionRangeKey]rangeStatsView, len(lm.series))
+	for k, n := range lm.series {
+		stats[k] = rangeStatsView{Series: n}
 	}
 
 	var totalL int64
@@ -199,7 +202,7 @@ func (s *adminState) snapshotReadcacheRound() (readcacheRoundView, bool) {
 	return view, true
 }
 
-func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStatsView, map[int32]int64, map[int32]int64) {
+func (s *adminState) snapshot() ([]RoundLog, map[partitionRangeKey]rangeStatsView, map[int32]int64, map[int32]int64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -208,7 +211,7 @@ func (s *adminState) snapshot() ([]RoundLog, map[assignment.HashRange]rangeStats
 		rounds[i] = tr.Round
 	}
 
-	stats := make(map[assignment.HashRange]rangeStatsView, len(s.lastStats))
+	stats := make(map[partitionRangeKey]rangeStatsView, len(s.lastStats))
 	for k, v := range s.lastStats {
 		stats[k] = v
 	}
@@ -335,7 +338,7 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 			partMap[e.PartitionID] = pv
 		}
 
-		stat := lastStats[e.Range]
+		stat := lastStats[partitionRangeKey{partitionID: e.PartitionID, hr: e.Range}]
 		sizePct := float64(e.Range.Size()) / hashSpaceTotal * 100
 
 		action := lastActions[e.Range]
@@ -448,7 +451,7 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	heatmap := make([]float64, heatmapBuckets)
 	bucketSize := (uint64(math.MaxUint32) + 1) / uint64(heatmapBuckets)
 	for _, e := range current.Entries {
-		stat := lastStats[e.Range]
+		stat := lastStats[partitionRangeKey{partitionID: e.PartitionID, hr: e.Range}]
 		if stat.Series == 0 {
 			continue
 		}

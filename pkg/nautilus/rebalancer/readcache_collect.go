@@ -42,21 +42,24 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 		return nil
 	}
 
-	// Build instanceID -> the FIRST partition that readcache owns.
-	// Multi-partition ownership: a readcache pod may own several
-	// partitions in the log, and we'll process each separately by
-	// scanning the log per-pod.
-	type partitionOwnership struct {
+	// Build the set of unique (instanceID) we need to query. A
+	// readcache pod may own multiple partitions; one GetHashRanges
+	// RPC returns per-(partition, range) entries via partition_id on
+	// each HashRangeEntry, so one call per pod is enough — we no
+	// longer need to fan out per ownership pair.
+	type ownership struct {
 		instanceID string
 		partition  int32
 	}
-	var ownerships []partitionOwnership
+	var ownerships []ownership
+	uniqueInstances := make(map[string]struct{})
 	now := time.Now()
 	for _, entry := range r.readcacheStore.snapshot() {
 		if !entry.ActiveAt(now) {
 			continue
 		}
-		ownerships = append(ownerships, partitionOwnership{instanceID: entry.InstanceID, partition: entry.PartitionID})
+		ownerships = append(ownerships, ownership{instanceID: entry.InstanceID, partition: entry.PartitionID})
+		uniqueInstances[entry.InstanceID] = struct{}{}
 	}
 	if len(ownerships) == 0 {
 		level.Info(r.logger).Log("msg", "reconstructAssignmentFromReadcache: empty log, falling back to even split")
@@ -64,25 +67,42 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 	}
 
 	// Resolve to ring entries so we can dial. We need the address,
-	// and we drop ownership entries whose readcache isn't currently
-	// in the ring (e.g. drained pod whose log lease hasn't expired
-	// yet).
+	// and we drop instances whose readcache isn't currently in the
+	// ring (e.g. drained pod whose log lease hasn't expired yet).
 	idToInst := make(map[string]ring.InstanceDesc, len(instances))
 	for _, inst := range instances {
 		idToInst[inst.Id] = inst
 	}
 
-	reports := make([][]reportedEntry, len(ownerships))
-	var ok, failed, unmapped atomic.Int32
-
-	_ = concurrency.ForEachJob(ctx, len(ownerships), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
-		o := ownerships[idx]
-
-		inst, known := idToInst[o.instanceID]
-		if !known {
-			unmapped.Add(1)
-			return nil
+	// Only consider partitions still owned by an in-ring instance for
+	// the ownedPartitions filter (used to discard the readcache's
+	// own opinion if the log no longer names it as owner).
+	ownedPartitionByInstance := make(map[string]map[int32]struct{}, len(uniqueInstances))
+	for _, o := range ownerships {
+		if _, known := idToInst[o.instanceID]; !known {
+			continue
 		}
+		s := ownedPartitionByInstance[o.instanceID]
+		if s == nil {
+			s = make(map[int32]struct{})
+			ownedPartitionByInstance[o.instanceID] = s
+		}
+		s[o.partition] = struct{}{}
+	}
+
+	instanceList := make([]string, 0, len(ownedPartitionByInstance))
+	for id := range ownedPartitionByInstance {
+		instanceList = append(instanceList, id)
+	}
+
+	reports := make([][]reportedEntry, len(instanceList))
+	var ok, failed atomic.Int32
+	unmapped := int32(len(uniqueInstances) - len(ownedPartitionByInstance))
+
+	_ = concurrency.ForEachJob(ctx, len(instanceList), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
+		instanceID := instanceList[idx]
+		inst := idToInst[instanceID]
+		ownedPartitions := ownedPartitionByInstance[instanceID]
 
 		c, err := r.readcachePool.clientFor(jobCtx, inst)
 		if err != nil {
@@ -101,19 +121,27 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 			return nil
 		}
 
-		entries := make([]reportedEntry, len(resp.Ranges))
-		for i, hr := range resp.Ranges {
-			entries[i] = reportedEntry{
-				partitionID: o.partition,
-				hr:          assignment.HashRange{Lo: hr.Lo, Hi: hr.Hi},
+		entries := make([]reportedEntry, 0, len(resp.Ranges))
+		for _, hr := range resp.Ranges {
+			// Only consider ranges the readcache claims for
+			// partitions the log says it currently owns. This
+			// guards against stale state on a readcache whose
+			// partition lease just expired but who hasn't yet
+			// processed the assignment-log update.
+			if _, owned := ownedPartitions[hr.PartitionId]; !owned {
+				continue
 			}
+			entries = append(entries, reportedEntry{
+				partitionID: hr.PartitionId,
+				hr:          assignment.HashRange{Lo: hr.Lo, Hi: hr.Hi},
+			})
 		}
 		reports[idx] = entries
 		ok.Add(1)
 		return nil
 	})
 
-	expected := int32(len(ownerships)) - unmapped.Load()
+	expected := int32(len(instanceList))
 	if expected <= 0 {
 		level.Info(r.logger).Log("msg", "reconstructAssignmentFromReadcache: no readcaches mapped to active partitions, falling back to even split")
 		return nil
@@ -121,8 +149,8 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 	if int64(ok.Load())*int64(reconstructionQuorumDen) < int64(expected)*int64(reconstructionQuorumNum) {
 		level.Warn(r.logger).Log(
 			"msg", "reconstructAssignmentFromReadcache: not enough readcaches responded, falling back to even split",
-			"ownerships", len(ownerships),
-			"unmapped", unmapped.Load(),
+			"instances", len(instanceList),
+			"unmapped", unmapped,
 			"ok", ok.Load(),
 			"failed", failed.Load(),
 		)
@@ -167,11 +195,18 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 // readcache pods through the ring; otherwise it falls back to the
 // legacy ingester-pool path (used by tests and pre-readcache
 // phase 1 deployments).
-func (r *Rebalancer) collectRoundStats(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
+//
+// `current` is the rebalancer's current assignment; the ingester path
+// needs it to attribute each reported range to the partition that
+// currently owns it (legacy ingesters don't fill in partition_id on
+// HashRangeStats responses). The readcache path takes partition_id
+// straight from the proto so it can correctly report residue against
+// the previous owner rather than the new one.
+func (r *Rebalancer) collectRoundStats(ctx context.Context, current *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
 	if r.readcachePool != nil {
 		return r.collectRatesFromReadcache(ctx)
 	}
-	rates, instanceTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRates(ctx)
+	rates, instanceTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRates(ctx, current)
 	return rates, instanceTotals, nil, partitionQuerySamples, unnamedPerInstance, err
 }
 
@@ -267,8 +302,9 @@ func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate
 		rates := make([]rangeRate, len(resp.Rates))
 		for i, rate := range resp.Rates {
 			rates[i] = rangeRate{
-				hr:     assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
-				series: rate.ActiveSeries,
+				hr:          assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
+				series:      rate.ActiveSeries,
+				partitionID: rate.PartitionId,
 			}
 		}
 		results[idx] = result{
@@ -338,7 +374,9 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 	}
 
 	// Group hash ranges per readcache instance ID by walking the
-	// assignment entries.
+	// assignment entries. The partition id travels with the range
+	// entry so the receiving readcache can route each range into the
+	// per-partition bookkeeping that backs HashRangeStats.
 	rangesByInstance := make(map[string][]ingester_client.HashRangeEntry)
 	for _, e := range a.Entries {
 		owner, ok := ownerByPartition[e.PartitionID]
@@ -346,7 +384,7 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 			continue
 		}
 		rangesByInstance[owner] = append(rangesByInstance[owner],
-			ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi})
+			ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi, PartitionId: e.PartitionID})
 	}
 	if len(rangesByInstance) == 0 {
 		return

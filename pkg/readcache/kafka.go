@@ -12,11 +12,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // partitionPusher is the Pusher handed to a per-partition

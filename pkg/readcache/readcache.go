@@ -76,12 +76,13 @@ type Readcache struct {
 	// care about ring registration).
 	instanceLifecycler *ring.BasicLifecycler
 
-	// queryLoad and rangeSeries are the per-partition query-load and
-	// per-hash-range active-series signals that the rebalancer pulls
-	// via HashRangeStats. They live on readcache (not ingester) per
-	// the plan.
+	// queryLoad and partitionSeries are the per-partition query-load
+	// and per-partition active-series signals that the rebalancer
+	// pulls via HashRangeStats. Per-hash-range counts live on each
+	// partitionState (see partitionState.ranges) so residue stays
+	// attributed to the partition that has it. They live on readcache
+	// (not ingester) per the plan.
 	queryLoad       *loadstats.Tracker
-	rangeSeries     *loadstats.RangeSeries
 	partitionSeries *loadstats.PartitionSeries
 
 	// seriesWalkMu prevents overlapping background series walks when a
@@ -132,12 +133,21 @@ type partitionState struct {
 
 	tenantsMu sync.RWMutex
 	tenants   map[string]*partitionTSDB
+
+	// ranges is the per-partition hash-range bookkeeping that feeds
+	// the rebalancer's load signal. SetHashRanges updates
+	// ranges.currentRanges and migrates dropped ranges into
+	// ranges.historicalRanges so the walker keeps counting head
+	// residue until compaction clears it. Each walker tick updates
+	// ranges.rangeCounts from this partition's TSDB heads.
+	ranges *partitionRanges
 }
 
 func newPartitionState(partitionID int32) *partitionState {
 	return &partitionState{
 		partitionID: partitionID,
 		tenants:     make(map[string]*partitionTSDB),
+		ranges:      newPartitionRanges(),
 	}
 }
 
@@ -168,7 +178,6 @@ func New(
 		partitions:         make(map[int32]*partitionState),
 		instanceLifecycler: instanceLifecycler,
 		queryLoad:          loadstats.NewTracker("cortex_readcache"),
-		rangeSeries:        loadstats.NewRangeSeries(),
 		partitionSeries:    loadstats.NewPartitionSeries(),
 	}
 

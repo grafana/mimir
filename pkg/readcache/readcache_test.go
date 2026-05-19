@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 
+	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
 	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -241,6 +244,136 @@ func TestReadcache_ApplyAssignment_IgnoresExpiredLeases(t *testing.T) {
 	require.NoError(t, r.applyAssignment(ctx, snap, now))
 	assert.Equal(t, []int32{1}, r.OwnedPartitions(),
 		"a lease whose To == at is expired and must not produce ownership")
+}
+
+// TestReadcache_SetAndGetHashRanges_PerPartition verifies that the
+// SetHashRanges → GetHashRanges roundtrip preserves the per-partition
+// association added in this commit. The rebalancer sends a flat list
+// of (partition, range) entries; the readcache must demux them into
+// the matching partitionState's currentRanges and then echo them back
+// with the partition id intact.
+func TestReadcache_SetAndGetHashRanges_PerPartition(t *testing.T) {
+	cfg := newTestConfig(t, true, 4)
+	cfg.OwnedPartitions = "0,1"
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, r) }()
+
+	// Rebalancer sends partition 0 → [0, 99], partition 1 → [100,
+	// 199], and a stray entry for unowned partition 9 (must be
+	// ignored).
+	req := &ingester_client.SetHashRangesRequest{
+		Ranges: []ingester_client.HashRangeEntry{
+			{Lo: 100, Hi: 199, PartitionId: 1},
+			{Lo: 0, Hi: 99, PartitionId: 0},
+			{Lo: 500, Hi: 599, PartitionId: 9},
+		},
+	}
+	_, err = r.setHashRanges(ctx, req)
+	require.NoError(t, err)
+
+	getResp, err := r.getHashRanges(ctx, &ingester_client.GetHashRangesRequest{})
+	require.NoError(t, err)
+
+	// GetHashRanges should report exactly what the rebalancer sent
+	// for the OWNED partitions; the unowned partition 9 entry must
+	// have been dropped on the floor.
+	sort.Slice(getResp.Ranges, func(i, j int) bool {
+		if getResp.Ranges[i].PartitionId != getResp.Ranges[j].PartitionId {
+			return getResp.Ranges[i].PartitionId < getResp.Ranges[j].PartitionId
+		}
+		return getResp.Ranges[i].Lo < getResp.Ranges[j].Lo
+	})
+	require.Equal(t, []ingester_client.HashRangeEntry{
+		{Lo: 0, Hi: 99, PartitionId: 0},
+		{Lo: 100, Hi: 199, PartitionId: 1},
+	}, getResp.Ranges)
+}
+
+// TestReadcache_HashRangeStats_ResidueOnFormerOwner verifies the
+// design goal of this commit: after a hash range moves from one
+// partition to another, the previous owner's TSDB head still has the
+// series until compaction clears them. HashRangeStats reports the
+// residue against the previous owner's partition id — separately from
+// any growth on the new owner — so the rebalancer attributes load
+// correctly instead of summing residue onto whoever currently owns
+// the range. This is the per-partition L_pid accounting from the
+// design notes.
+func TestReadcache_HashRangeStats_ResidueOnFormerOwner(t *testing.T) {
+	cfg := newTestConfig(t, true, 4)
+	cfg.OwnedPartitions = "0,1"
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, r) }()
+
+	// First round: partition 0 owns [0, 99], partition 1 owns [100,
+	// 199].
+	_, err = r.setHashRanges(ctx, &ingester_client.SetHashRangesRequest{
+		Ranges: []ingester_client.HashRangeEntry{
+			{Lo: 0, Hi: 99, PartitionId: 0},
+			{Lo: 100, Hi: 199, PartitionId: 1},
+		},
+	})
+	require.NoError(t, err)
+
+	// Simulate a slicer round that moves [0, 99] from partition 0
+	// to partition 1.
+	_, err = r.setHashRanges(ctx, &ingester_client.SetHashRangesRequest{
+		Ranges: []ingester_client.HashRangeEntry{
+			{Lo: 100, Hi: 199, PartitionId: 1},
+			{Lo: 0, Hi: 99, PartitionId: 1},
+		},
+	})
+	require.NoError(t, err)
+
+	// Inject synthetic walker results: partition 0 has 1234 residue
+	// series in [0, 99], partition 1 has 56 fresh series in [0, 99]
+	// (just started growing) and 78 in [100, 199] (steady state).
+	r.partitionMu.RLock()
+	p0 := r.partitions[0]
+	p1 := r.partitions[1]
+	r.partitionMu.RUnlock()
+	require.NotNil(t, p0)
+	require.NotNil(t, p1)
+
+	p0Snap := p0.ranges.rangesSnapshot()
+	require.Equal(t, []assignment.HashRange{hr(0, 99)}, p0Snap)
+	require.True(t, p0.ranges.applyWalkResult(p0Snap, []int64{1234}))
+
+	p1Snap := p1.ranges.rangesSnapshot()
+	// Sorted by Lo.
+	require.Equal(t, []assignment.HashRange{hr(0, 99), hr(100, 199)}, p1Snap)
+	require.True(t, p1.ranges.applyWalkResult(p1Snap, []int64{56, 78}))
+
+	resp, err := r.hashRangeStats(ctx, &ingester_client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+
+	sort.Slice(resp.Rates, func(i, j int) bool {
+		if resp.Rates[i].PartitionId != resp.Rates[j].PartitionId {
+			return resp.Rates[i].PartitionId < resp.Rates[j].PartitionId
+		}
+		return resp.Rates[i].Lo < resp.Rates[j].Lo
+	})
+
+	// The same (0, 99) range appears under partition 0 (residue) AND
+	// partition 1 (growth) — distinct entries, NOT summed.
+	require.Equal(t, []ingester_client.HashRangeRate{
+		{Lo: 0, Hi: 99, ActiveSeries: 1234, PartitionId: 0},
+		{Lo: 0, Hi: 99, ActiveSeries: 56, PartitionId: 1},
+		{Lo: 100, Hi: 199, ActiveSeries: 78, PartitionId: 1},
+	}, resp.Rates)
 }
 
 func TestReadcache_GetOrOpenTSDB(t *testing.T) {

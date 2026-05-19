@@ -77,13 +77,16 @@ func (si *simulatedIngester) tick() {
 // snapshot returns the ingester's per-range load as rangeRate values.
 // The EWMA rate is coerced to int64 and reported as series; the
 // simulation's concept of "load" is the per-range rate, which in the
-// new model stands in for R_r.
+// new model stands in for R_r. All ranges are attributed to this
+// ingester's partition — the simulation models one partition per
+// simulated ingester with no residue.
 func (si *simulatedIngester) snapshot() []rangeRate {
 	out := make([]rangeRate, 0, len(si.ranges))
 	for i, r := range si.ranges {
 		out = append(out, rangeRate{
-			hr:     r,
-			series: int64(si.rates[i].Rate()),
+			hr:          r,
+			series:      int64(si.rates[i].Rate()),
+			partitionID: si.partitionID,
 		})
 	}
 	return out
@@ -197,7 +200,7 @@ func (s *simulation) partitionLoads() map[int32]float64 {
 	lm := buildLoadMap(rates)
 	loads := make(map[int32]float64)
 	for _, e := range s.assignment.Entries {
-		loads[e.PartitionID] += float64(lm.seriesAt(e.Range))
+		loads[e.PartitionID] += float64(lm.seriesAt(e.PartitionID, e.Range))
 	}
 	return loads
 }

@@ -140,4 +140,3 @@ func TestReadcacheLogStore_PersistOnApply(t *testing.T) {
 	}, time.Minute, 10*time.Second, time.Hour)
 	assert.Len(t, persisted, 1)
 }
-

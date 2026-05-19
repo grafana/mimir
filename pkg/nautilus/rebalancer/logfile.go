@@ -33,8 +33,8 @@ type logFileData struct {
 	// Exactly one of the two slices is populated, depending on the
 	// file kind. Marshalled with omitempty so the on-disk file
 	// reflects only the relevant kind.
-	Entries          []assignment.LogEntry           `json:"entries,omitempty"`
-	ReadcacheEntries []readcacheassignment.LogEntry  `json:"readcache_entries,omitempty"`
+	Entries          []assignment.LogEntry          `json:"entries,omitempty"`
+	ReadcacheEntries []readcacheassignment.LogEntry `json:"readcache_entries,omitempty"`
 }
 
 // logFile is a small atomic-write helper for the rebalancer logs.

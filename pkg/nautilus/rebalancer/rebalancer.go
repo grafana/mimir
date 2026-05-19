@@ -583,7 +583,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	rates, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx)
+	rates, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx, current)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)
 		return nil
@@ -734,7 +734,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 // the work intrinsically scours all owned partitions on that
 // ingester. The rebalancer surfaces it as an observability signal but
 // does not feed it into per-partition deltas.
-func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]float64, map[string]float64, error) {
+func (r *Rebalancer) collectRates(ctx context.Context, current *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]float64, map[string]float64, error) {
 	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -773,9 +773,20 @@ func (r *Rebalancer) collectRates(ctx context.Context) ([]rangeRate, map[string]
 
 		rates := make([]rangeRate, len(resp.Rates))
 		for i, rate := range resp.Rates {
+			hr := assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi}
+			// Legacy ingesters don't fill in partition_id in their
+			// HashRangeStats response; attribute the range to its
+			// current owner per the rebalancer's assignment.
+			pid := rate.PartitionId
+			if pid == 0 && current != nil {
+				if owner, ok := current.Lookup(hr.Lo); ok {
+					pid = owner
+				}
+			}
 			rates[i] = rangeRate{
-				hr:     assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
-				series: rate.ActiveSeries,
+				hr:          hr,
+				series:      rate.ActiveSeries,
+				partitionID: pid,
 			}
 		}
 		results[idx] = result{
@@ -1243,12 +1254,22 @@ const (
 	mergeChurnBudget = 0.01
 )
 
-// rangeRate is one entry from an ingester's HashRangeStats response.
-// Per the reframed load model only the per-range in-memory TSDB head
-// series count (R_r) feeds the slicer.
+// rangeRate is one entry from a reporter's (ingester or readcache)
+// HashRangeStats response. Per the reframed load model only the
+// per-range in-memory TSDB head series count (R_r) feeds the slicer.
+//
+// partitionID identifies which Kafka partition this entry's series
+// belong to. For readcache reporters, the same (Lo, Hi) range can
+// appear with different partitionIDs: the current owner (growth)
+// plus any partition still holding residue series after a recent
+// move. Keying load by (partitionID, range) lets the slicer
+// distinguish growth from residue. For ingester reporters,
+// partitionID is filled in from the current assignment at load-map
+// build time.
 type rangeRate struct {
-	hr     assignment.HashRange
-	series int64
+	hr          assignment.HashRange
+	series      int64
+	partitionID int32
 }
 
 // rangeLoad carries a single assignment entry alongside its cost
@@ -1320,7 +1341,7 @@ func (r *Rebalancer) runSlicer(
 	entries := make([]rangeLoad, len(current.Entries))
 	rrIdx := 0
 	for i, e := range current.Entries {
-		series := lm.seriesAt(e.Range)
+		series := lm.seriesAt(e.PartitionID, e.Range)
 		entries[i] = rangeLoad{
 			entry:  e,
 			load:   float64(series),
@@ -1422,8 +1443,13 @@ func (r *Rebalancer) runSlicer(
 				mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
 				left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
 				right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
-				leftSeries := lm.seriesAt(left)
-				rightSeries := lm.seriesAt(right)
+				// Split halves haven't been observed per-(partition,
+				// range) yet (the readcache only sees them after the
+				// next SetHashRanges). The fallback below distributes
+				// the parent's load proportionally to keep Phase 2
+				// from immediately re-merging.
+				leftSeries := lm.seriesAt(rl.entry.PartitionID, left)
+				rightSeries := lm.seriesAt(rl.entry.PartitionID, right)
 				leftLoad := float64(leftSeries)
 				rightLoad := float64(rightSeries)
 				if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
@@ -1814,34 +1840,54 @@ func computePartitionLoads(entries []rangeLoad) map[int32]float64 {
 	return m
 }
 
-// loadMap holds per-range raw series counts. Construct via
-// buildLoadMap and query via seriesAt().
-type loadMap struct {
-	series map[assignment.HashRange]int64
+// partitionRangeKey is the (partition, range) key for loadMap.
+// Two reporters reporting load for the same hash range with different
+// partition IDs (e.g. current owner + a residue holder) end up as
+// distinct entries.
+type partitionRangeKey struct {
+	partitionID int32
+	hr          assignment.HashRange
 }
 
-// buildLoadMap aggregates per-range series counts across all
-// reporting ingesters by taking the max over replicas of the same
-// range. Max (not sum) is intentional: every healthy owner of a
-// partition reports counts for the same ranges (they are mirrors), so
-// summing would scale the per-range signal by the replication factor
-// while `partitionL` is on a 1× (max-over-owners) scale. Phase 3 of
-// the slicer compares per-range `series` directly to the partition-
-// level movable budget, so the two must share the same scale.
+// loadMap holds per-(partition, range) raw series counts. Construct
+// via buildLoadMap and query via seriesAt().
+type loadMap struct {
+	series map[partitionRangeKey]int64
+}
+
+// buildLoadMap aggregates per-(partition, range) series counts across
+// all reporters by taking the max over reports of the same
+// (partition, range). Max (not sum) is intentional: where multiple
+// healthy owners report counts for the same partition (mirrored
+// ingester replicas), they are mirrors and summing would scale the
+// per-range signal by the replication factor while `partitionL` is
+// on a 1× (max-over-owners) scale. In the readcache path each
+// (partition, range) is reported by at most one instance so max
+// reduces to passthrough.
+//
+// Note that this is keyed by (partition, range), NOT just range:
+// residue on a previous owner's partition is reported with that
+// partition's id, separately from growth on the new owner.
 func buildLoadMap(rates []rangeRate) *loadMap {
-	lm := &loadMap{series: make(map[assignment.HashRange]int64, len(rates))}
+	lm := &loadMap{series: make(map[partitionRangeKey]int64, len(rates))}
 	for _, rr := range rates {
-		if rr.series > lm.series[rr.hr] {
-			lm.series[rr.hr] = rr.series
+		k := partitionRangeKey{partitionID: rr.partitionID, hr: rr.hr}
+		if rr.series > lm.series[k] {
+			lm.series[k] = rr.series
 		}
 	}
 	return lm
 }
 
 // seriesAt returns the raw in-memory TSDB head series count for the
-// given hash range, or 0 if the range is unknown.
-func (lm *loadMap) seriesAt(hr assignment.HashRange) int64 {
-	return lm.series[hr]
+// given (partition, range), or 0 if the pair is unknown.
+//
+// Callers in the slicer pass the partition currently assigned to the
+// range. Any residue on a previous owner is recorded under that
+// previous owner's partition id, so it does NOT contribute to the
+// load returned here for the current owner.
+func (lm *loadMap) seriesAt(partitionID int32, hr assignment.HashRange) int64 {
+	return lm.series[partitionRangeKey{partitionID: partitionID, hr: hr}]
 }
 
 // isInMoveCooldown reports whether the given range overlaps any range
@@ -1917,8 +1963,10 @@ func (r *Rebalancer) recordRecentMoves(now time.Time, actions []Action, lm *load
 		series := a.Series
 		if series == 0 && lm != nil {
 			// Defensive: if Action.Series wasn't populated (e.g.
-			// legacy callers), fall back to looking up by range.
-			series = lm.seriesAt(a.Range)
+			// legacy callers), fall back to looking up by
+			// (source partition, range). The move records belong to
+			// the SOURCE partition so we look up under FromPart.
+			series = lm.seriesAt(a.FromPart, a.Range)
 		}
 		r.recentMoves[a.FromPart] = append(r.recentMoves[a.FromPart], moveRecord{
 			hr:     a.Range,

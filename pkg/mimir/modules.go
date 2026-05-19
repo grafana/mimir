@@ -52,13 +52,13 @@ import (
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
-	"github.com/grafana/mimir/pkg/readcache"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/readcache"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -1542,6 +1542,7 @@ func (t *Mimir) initReadcache() (services.Service, error) {
 	}
 	t.Readcache = r
 	t.API.RegisterReadcache(r)
+	t.API.RegisterReadcacheAdmin(readcache.AdminPathPrefix, r)
 	return r, nil
 }
 
