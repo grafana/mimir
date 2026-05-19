@@ -62,11 +62,11 @@ func TestNewActiveTracker(t *testing.T) {
 	}
 }
 
-func TestActiveTracker_hasSameLabels(t *testing.T) {
+func TestActiveTracker_config(t *testing.T) {
 	manager, _, _ := newTestManager()
 	manager.ActiveSeriesTracker("user1")
 	ast := manager.activeTrackersByUserID["user1"][costattributionmodel.DefaultTrackerName]
-	assert.True(t, ast.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
+	assert.True(t, hasLabels(ast, costattributionmodel.Labels{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
 }
 
 func TestActiveTracker_IncrementDecrement(t *testing.T) {
