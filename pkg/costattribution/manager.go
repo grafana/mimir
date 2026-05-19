@@ -425,29 +425,9 @@ func (m *Manager) deleteActiveTracker(userID, trackerName string) {
 	m.atmtx.Unlock()
 }
 
-func (m *Manager) deleteAllTrackersForUser(userID string) {
-	m.stmtx.Lock()
-	delete(m.sampleTrackersByUserID, userID)
-	delete(m.cachedSampleComposites, userID)
-	m.stmtx.Unlock()
-
-	m.atmtx.Lock()
-	delete(m.activeTrackersByUserID, userID)
-	delete(m.cachedActiveSeriesComposites, userID)
-	m.atmtx.Unlock()
-}
-
 // updateTrackers ensures trackers for userID match the current config.
 // Returns per-tracker-name sample and active series trackers that are still active.
 func (m *Manager) updateTrackers(userID string) (map[string]*sampleTracker, map[string]*activeSeriesTracker) {
-	configs := m.effectiveTrackerConfigs(userID)
-	if len(configs) == 0 {
-		m.deleteAllTrackersForUser(userID)
-		return nil, nil
-	}
-
-	// SampleTracker/ActiveSeriesTracker handle full reconciliation
-	// (add/recreate/remove) on config hash mismatch.
 	m.SampleTracker(userID)
 	m.ActiveSeriesTracker(userID)
 
