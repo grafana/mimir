@@ -200,7 +200,6 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Sampl
 	m.stmtx.Lock()
 	defer m.stmtx.Unlock()
 
-	// Double-check after acquiring write lock.
 	if cached, ok := m.cachedSampleComposites[userID]; ok && cached.configHash == configHash {
 		return cached.composite
 	}
@@ -210,17 +209,32 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Sampl
 	}
 	userTrackers := m.sampleTrackersByUserID[userID]
 
-	for name, cfg := range configs {
-		if _, exists := userTrackers[name]; exists {
-			continue
+	for name := range userTrackers {
+		if _, ok := configs[name]; !ok {
+			delete(userTrackers, name)
 		}
+	}
+
+	for name, cfg := range configs {
 		labels := sortLabels(cfg.labels)
+		if existing, ok := userTrackers[name]; ok {
+			if existing.hasSameLabels(labels) && existing.maxCardinality == cfg.maxCardinality && existing.cooldownDuration == cfg.cooldownDuration {
+				continue
+			}
+		}
 		tracker, err := newSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 		if err != nil {
 			m.trackerCreationErrors.WithLabelValues(userID, samplesTrackerType, name).Inc()
+			delete(userTrackers, name)
 			continue
 		}
 		userTrackers[name] = tracker
+	}
+
+	if len(userTrackers) == 0 {
+		delete(m.sampleTrackersByUserID, userID)
+		delete(m.cachedSampleComposites, userID)
+		return nil
 	}
 
 	trackers := make([]*sampleTracker, 0, len(userTrackers))
@@ -230,10 +244,7 @@ func (m *Manager) rebuildSampleTrackers(userID string, configHash uint64) *Sampl
 		}
 	}
 	composite := newSampleTrackerComposite(trackers)
-	m.cachedSampleComposites[userID] = cachedComposite[*SampleTracker]{
-		configHash: configHash,
-		composite:  composite,
-	}
+	m.cachedSampleComposites[userID] = cachedComposite[*SampleTracker]{configHash: configHash, composite: composite}
 	return composite
 }
 
@@ -262,7 +273,6 @@ func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) 
 	m.atmtx.Lock()
 	defer m.atmtx.Unlock()
 
-	// Double-check after acquiring write lock.
 	if cached, ok := m.cachedActiveSeriesComposites[userID]; ok && cached.configHash == configHash {
 		return cached.composite
 	}
@@ -272,17 +282,32 @@ func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) 
 	}
 	userTrackers := m.activeTrackersByUserID[userID]
 
-	for name, cfg := range configs {
-		if _, exists := userTrackers[name]; exists {
-			continue
+	for name := range userTrackers {
+		if _, ok := configs[name]; !ok {
+			delete(userTrackers, name)
 		}
+	}
+
+	for name, cfg := range configs {
 		labels := sortLabels(cfg.labels)
+		if existing, ok := userTrackers[name]; ok {
+			if existing.hasSameLabels(labels) && existing.maxCardinality == cfg.maxCardinality && existing.cooldownDuration == cfg.cooldownDuration {
+				continue
+			}
+		}
 		tracker, err := newActiveSeriesTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
 		if err != nil {
 			m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTrackerType, name).Inc()
+			delete(userTrackers, name)
 			continue
 		}
 		userTrackers[name] = tracker
+	}
+
+	if len(userTrackers) == 0 {
+		delete(m.activeTrackersByUserID, userID)
+		delete(m.cachedActiveSeriesComposites, userID)
+		return nil
 	}
 
 	trackers := make([]*activeSeriesTracker, 0, len(userTrackers))
@@ -292,10 +317,7 @@ func (m *Manager) rebuildActiveSeriesTrackers(userID string, configHash uint64) 
 		}
 	}
 	composite := newActiveSeriesTrackerComposite(trackers)
-	m.cachedActiveSeriesComposites[userID] = cachedComposite[*ActiveSeriesTracker]{
-		configHash: configHash,
-		composite:  composite,
-	}
+	m.cachedActiveSeriesComposites[userID] = cachedComposite[*ActiveSeriesTracker]{configHash: configHash, composite: composite}
 	return composite
 }
 
@@ -418,12 +440,11 @@ func (m *Manager) updateTrackers(userID string) (map[string]*sampleTracker, map[
 		return nil, nil
 	}
 
-	// Ensure all configured trackers exist and are up-to-date.
-	// Force creation via SampleTracker/ActiveSeriesTracker.
+	// SampleTracker/ActiveSeriesTracker handle full reconciliation
+	// (add/recreate/remove) on config hash mismatch.
 	m.SampleTracker(userID)
 	m.ActiveSeriesTracker(userID)
 
-	// Remove trackers no longer in config.
 	m.stmtx.RLock()
 	existingST := maps.Clone(m.sampleTrackersByUserID[userID])
 	m.stmtx.RUnlock()
@@ -431,58 +452,6 @@ func (m *Manager) updateTrackers(userID string) (map[string]*sampleTracker, map[
 	m.atmtx.RLock()
 	existingAT := maps.Clone(m.activeTrackersByUserID[userID])
 	m.atmtx.RUnlock()
-
-	for name := range existingST {
-		if _, ok := configs[name]; !ok {
-			m.deleteSampleTracker(userID, name)
-			delete(existingST, name)
-		}
-	}
-	for name := range existingAT {
-		if _, ok := configs[name]; !ok {
-			m.deleteActiveTracker(userID, name)
-			delete(existingAT, name)
-		}
-	}
-
-	// Check if config changed for existing trackers; recreate if needed.
-	for name, cfg := range configs {
-		labels := sortLabels(cfg.labels)
-
-		if st, ok := existingST[name]; ok {
-			if !st.hasSameLabels(labels) || st.maxCardinality != cfg.maxCardinality || st.cooldownDuration != cfg.cooldownDuration {
-				m.stmtx.Lock()
-				newST, err := newSampleTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
-				if err != nil {
-					m.trackerCreationErrors.WithLabelValues(userID, samplesTrackerType, name).Inc()
-					delete(m.sampleTrackersByUserID[userID], name)
-					delete(existingST, name)
-				} else {
-					m.sampleTrackersByUserID[userID][name] = newST
-					existingST[name] = newST
-				}
-				delete(m.cachedSampleComposites, userID)
-				m.stmtx.Unlock()
-			}
-		}
-
-		if at, ok := existingAT[name]; ok {
-			if !at.hasSameLabels(labels) || at.maxCardinality != cfg.maxCardinality || at.cooldownDuration != cfg.cooldownDuration {
-				m.atmtx.Lock()
-				newAT, err := newActiveSeriesTracker(userID, name, labels, cfg.maxCardinality, cfg.cooldownDuration, m.logger)
-				if err != nil {
-					m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTrackerType, name).Inc()
-					delete(m.activeTrackersByUserID[userID], name)
-					delete(existingAT, name)
-				} else {
-					m.activeTrackersByUserID[userID][name] = newAT
-					existingAT[name] = newAT
-				}
-				delete(m.cachedActiveSeriesComposites, userID)
-				m.atmtx.Unlock()
-			}
-		}
-	}
 
 	return existingST, existingAT
 }
