@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -431,7 +432,7 @@ func TestSearchMetricNamesHandler_ForwardsMetricNameLabel(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names"))
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, labels.MetricName, mq.lastName, "metric_names endpoint must search the __name__ label")
+	assert.Equal(t, model.MetricNameLabel, mq.lastName, "metric_names endpoint must search the __name__ label")
 }
 
 func TestParseSortOrder_Cases(t *testing.T) {

@@ -405,7 +405,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		}
 		defer querier.Close()
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
-			return searcher.SearchLabelValues(r.Context(), labels.MetricName, req.params, req.hints, m...)
+			return searcher.SearchLabelValues(r.Context(), model.MetricNameLabel, req.params, req.hints, m...)
 		})
 		defer rs.Close()
 		streamSearchNDJSON(w, rs, req)
