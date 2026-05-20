@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -558,18 +559,18 @@ func TestSplitOperator(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
+			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 			innerOperators := make([]*operators.TestOperator, len(testCase.ranges))
 			for i, r := range testCase.ranges {
-				stats, err := r.stats.Decode(ctx, memoryConsumptionTracker)
+				s, err := r.stats.Decode(ctx, memoryConsumptionTracker)
 				require.NoError(t, err)
 
 				innerOperators[i] = &operators.TestOperator{
 					Series:                   r.data.seriesLabels(),
 					Data:                     r.data.seriesData(t, memoryConsumptionTracker),
-					EvaluationStats:          stats,
+					EvaluationStats:          s,
 					MemoryConsumptionTracker: memoryConsumptionTracker,
 				}
 			}
@@ -582,6 +583,7 @@ func TestSplitOperator(t *testing.T) {
 			o := newTimeRangeSplitOperator(ranges, memoryConsumptionTracker, testCase.expectedStats.TimeRange.Decode())
 
 			require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
+			require.Equal(t, len(testCase.ranges), int(queryStats.LoadSplitQueries()))
 			for i, o := range innerOperators {
 				require.Truef(t, o.Prepared, "expected inner operator %d to be prepared", i)
 			}
@@ -611,11 +613,11 @@ func TestSplitOperator(t *testing.T) {
 				require.Truef(t, o.Finalized, "expected inner operator %d to be finalized", i)
 			}
 
-			stats, err := o.Stats(ctx)
+			operatorStats, err := o.Stats(ctx)
 			require.NoError(t, err)
-			require.Equal(t, testCase.expectedStats, stats.Encode(), "expected stats to match expected")
+			require.Equal(t, testCase.expectedStats, operatorStats.Encode(), "expected stats to match expected")
 
-			stats.Close()
+			operatorStats.Close()
 
 			o.Close()
 			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())

@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -49,6 +50,9 @@ func newSplitRange(operator types.InstantVectorOperator) *splitRange {
 }
 
 func (s *TimeRangeSplitOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddSplitQueries(uint32(len(s.ranges)))
+
 	for _, r := range s.ranges {
 		if err := r.operator.Prepare(ctx, params); err != nil {
 			return err
@@ -211,6 +215,7 @@ func (s *TimeRangeSplitOperator) Finalize(ctx context.Context) error {
 
 		r.buffer.Finalize()
 	}
+
 	return nil
 }
 
