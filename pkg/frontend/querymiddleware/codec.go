@@ -347,8 +347,8 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 			Infos:    promInfos,
 		},
 		finalizer: func() {
-			for _, doClose := range promCloses {
-				doClose()
+			for _, close := range promCloses {
+				close()
 			}
 		},
 	}, nil
