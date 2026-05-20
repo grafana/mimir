@@ -26,6 +26,7 @@
 * [ENHANCEMENT] Memberlist: Reduce per-call allocations on the compression and TCP state-sync receive paths via internal buffer pools. #15357
 * [ENHANCEMENT] Memberlist: Add `memberlist.processed-messages-queue-size` flag to set the size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key. #15536
 * [ENHANCEMENT] MQE: Respect the `Cache-Control: no-store` request header when caching intermediate results for range vector splitting. #15148
+* [ENHANCEMENT] MQE: Support for native histograms in `smoothed` and `anchored` extended range selector modifiers. #15398
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
 * [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147 #15270 #14878
