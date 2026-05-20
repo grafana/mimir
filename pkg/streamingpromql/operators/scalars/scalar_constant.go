@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -70,8 +71,9 @@ func (s *ScalarConstant) FinishedReading(_ context.Context) error {
 	return nil
 }
 
-func (s *ScalarConstant) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, 0)
+func (s *ScalarConstant) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, err := types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, 0)
+	return stats, nil, err
 }
 
 func (s *ScalarConstant) Close() {

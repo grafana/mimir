@@ -5,19 +5,13 @@ package remoteexec
 import (
 	"context"
 
-	"github.com/prometheus/prometheus/util/annotations"
-
 	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
-func finishedReading(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations) error {
-	newAnnos, remoteStats, err := resp.FinishedReading(ctx)
+func finishedReading(ctx context.Context, resp RemoteExecutionResponse) error {
+	remoteStats, err := resp.FinishedReading(ctx)
 	if err != nil {
 		return err
-	}
-
-	if newAnnos != nil {
-		annos.Merge(*newAnnos)
 	}
 
 	if localStats := stats.FromContext(ctx); localStats != nil {

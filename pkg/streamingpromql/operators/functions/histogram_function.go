@@ -45,7 +45,7 @@ type HistogramFunction struct {
 	timeRange                types.QueryTimeRange
 	enableDelayedNameRemoval bool
 
-	annotations            *annotations.Annotations
+	annotations            annotations.Annotations
 	expressionPosition     posrange.PositionRange
 	innerSeriesMetricNames *operators.MetricNames // We need to keep track of the metric names for annotations.NewBadBucketLabelWarning
 
@@ -150,7 +150,6 @@ func NewHistogramQuantileFunction(
 	phArg types.ScalarOperator,
 	inner types.InstantVectorOperator,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 	enableDelayedNameRemoval bool,
@@ -161,14 +160,12 @@ func NewHistogramQuantileFunction(
 		f: &histogramQuantile{
 			phArg:                    phArg,
 			memoryConsumptionTracker: memoryConsumptionTracker,
-			annotations:              annotations,
 			innerSeriesMetricNames:   innerSeriesMetricNames,
 			innerExpressionPosition:  inner.ExpressionPosition(),
 			enableDelayedNameRemoval: enableDelayedNameRemoval,
 		},
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
-		annotations:              annotations,
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
@@ -181,7 +178,6 @@ func NewHistogramFractionFunction(
 	upper types.ScalarOperator,
 	inner types.InstantVectorOperator,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 	enableDelayedNameRemoval bool,
@@ -198,7 +194,6 @@ func NewHistogramFractionFunction(
 		},
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
-		annotations:              annotations,
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
@@ -559,8 +554,15 @@ func (h *HistogramFunction) FinishedReading(ctx context.Context) error {
 	return h.inner.FinishedReading(ctx)
 }
 
-func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats[types.StatsProvider](ctx, h.f, h.inner)
+func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, h.f, h.inner)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	h.annotations.Merge(childAnnos)
+
+	return stats, h.annotations, nil
 }
 
 func (h *HistogramFunction) Close() {
@@ -597,7 +599,7 @@ type histogramFunction interface {
 	Prepare(ctx context.Context, params *types.PrepareParams) error
 	AfterPrepare(ctx context.Context) error
 	FinishedReading(ctx context.Context) error
-	Stats(ctx context.Context) (*types.OperatorEvaluationStats, error)
+	Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error)
 	Close()
 }
 
@@ -606,7 +608,7 @@ type histogramQuantile struct {
 	phValues types.ScalarData
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	annotations              *annotations.Annotations
+	annotations              annotations.Annotations
 	innerSeriesMetricNames   *operators.MetricNames
 	innerExpressionPosition  posrange.PositionRange
 	enableDelayedNameRemoval bool
@@ -677,8 +679,15 @@ func (q *histogramQuantile) FinishedReading(ctx context.Context) error {
 	return q.phArg.FinishedReading(ctx)
 }
 
-func (q *histogramQuantile) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return q.phArg.Stats(ctx)
+func (q *histogramQuantile) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := q.phArg.Stats(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	q.annotations.Merge(childAnnos)
+
+	return stats, q.annotations, nil
 }
 
 func (q *histogramQuantile) Close() {
@@ -753,8 +762,8 @@ func (f *histogramFraction) FinishedReading(ctx context.Context) error {
 	return f.upperArg.FinishedReading(ctx)
 }
 
-func (f *histogramFraction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, f.lowerArg, f.upperArg)
+func (f *histogramFraction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.CombineStatsAndAnnotations(ctx, f.lowerArg, f.upperArg)
 }
 
 func (f *histogramFraction) Close() {

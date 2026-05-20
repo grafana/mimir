@@ -6,7 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,8 +13,7 @@ func TestRangeVectorRemoteExec_FinishedReadingCalledAfterClosed(t *testing.T) {
 	resp := &finishedReadingTestMockResponse{}
 
 	o := &RangeVectorRemoteExec{
-		Annotations: annotations.New(),
-		resp:        resp,
+		resp: resp,
 	}
 
 	o.Close()

@@ -10,6 +10,7 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -152,14 +153,14 @@ func (m *FunctionOverInstantVector) FinishedReading(ctx context.Context) error {
 	return nil
 }
 
-func (m *FunctionOverInstantVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (m *FunctionOverInstantVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	ops := make([]types.Operator, 1+len(m.ScalarArgs))
 	ops[0] = m.Inner
 	for i, sa := range m.ScalarArgs {
 		ops[1+i] = sa
 	}
 
-	return types.CombineStats(ctx, ops...)
+	return types.CombineStatsAndAnnotations(ctx, ops...)
 }
 
 func (m *FunctionOverInstantVector) Close() {

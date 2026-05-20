@@ -29,10 +29,13 @@ func TestOperator_FinishedReadingAndCloseBehaviour(t *testing.T) {
 	ctx := context.Background()
 	inner := &operators.TestOperator{}
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	group := NewMultiAggregatorGroupEvaluator(inner, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), log.NewNopLogger())
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	group := NewMultiAggregatorGroupEvaluator(inner, memoryConsumptionTracker, timeRange, log.NewNopLogger())
 
 	instance1 := group.AddInstance()
+	require.NoError(t, instance1.Configure(parser.SUM, nil, false, nil, -1, memoryConsumptionTracker, timeRange, posrange.PositionRange{}))
 	instance2 := group.AddInstance()
+	require.NoError(t, instance2.Configure(parser.COUNT, nil, false, nil, -1, memoryConsumptionTracker, timeRange, posrange.PositionRange{}))
 
 	require.NoError(t, instance1.FinishedReading(ctx))
 	require.False(t, inner.FinishedReadingCalled, "should only call FinishedReading on inner operator after all instances have had FinishedReading called")
@@ -83,9 +86,9 @@ func TestOperator_Stats(t *testing.T) {
 	group := NewMultiAggregatorGroupEvaluator(selector, memoryConsumptionTracker, timeRange, log.NewNopLogger())
 
 	instance1 := group.AddInstance()
-	require.NoError(t, instance1.Configure(parser.SUM, nil, false, nil, -1, memoryConsumptionTracker, nil, timeRange, posrange.PositionRange{}))
+	require.NoError(t, instance1.Configure(parser.SUM, nil, false, nil, -1, memoryConsumptionTracker, timeRange, posrange.PositionRange{}))
 	instance2 := group.AddInstance()
-	require.NoError(t, instance2.Configure(parser.SUM, nil, false, subset, 0, memoryConsumptionTracker, nil, timeRange, posrange.PositionRange{}))
+	require.NoError(t, instance2.Configure(parser.SUM, nil, false, subset, 0, memoryConsumptionTracker, timeRange, posrange.PositionRange{}))
 
 	require.NoError(t, instance1.Prepare(ctx, nil))
 	require.NoError(t, instance2.Prepare(ctx, nil))
@@ -124,7 +127,7 @@ func TestOperator_Stats(t *testing.T) {
 }
 
 func requireStats(t *testing.T, o types.Operator, ctx context.Context, expectedProcessed int64, expectedRead int64) {
-	operatorStats, err := o.Stats(ctx)
+	operatorStats, _, err := o.Stats(ctx)
 	require.NoError(t, err)
 
 	require.False(t, operatorStats.HasSubsets(), "subsets should not be present in statistics returned by duplication consumer")

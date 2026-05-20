@@ -193,15 +193,15 @@ func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskVa
 	return filteredData, nil
 }
 
-// emitIncompatibleTypesAnnotation adds an annotation to a given the presence of histograms on the left (lH) and right (rH) sides of op.
+// newIncompatibleTypesAnnotation returns an annotation given the presence of histograms on the left (lH) and right (rH) sides of op.
 // If lH is nil, this indicates that the left side was a float, and similarly for the right side and rH.
 // If lH is not nil, this indicates that the left side was a histogram, and similarly for the right side and rH.
-func emitIncompatibleTypesAnnotation(a *annotations.Annotations, op parser.ItemType, lH *histogram.FloatHistogram, rH *histogram.FloatHistogram, expressionPosition posrange.PositionRange) {
-	a.Add(annotations.NewIncompatibleTypesInBinOpInfo(sampleTypeDescription(lH), op.String(), sampleTypeDescription(rH), expressionPosition))
+func newIncompatibleTypesAnnotation(op parser.ItemType, lH *histogram.FloatHistogram, rH *histogram.FloatHistogram, expressionPosition posrange.PositionRange) error {
+	return annotations.NewIncompatibleTypesInBinOpInfo(sampleTypeDescription(lH), op.String(), sampleTypeDescription(rH), expressionPosition)
 }
 
-func emitIncompatibleBucketLayoutAnnotation(a *annotations.Annotations, op parser.ItemType, expressionPosition posrange.PositionRange) {
-	a.Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op.String(), expressionPosition))
+func newIncompatibleBucketLayoutAnnotation(op parser.ItemType, expressionPosition posrange.PositionRange) error {
+	return annotations.NewIncompatibleBucketLayoutInBinOpWarning(op.String(), expressionPosition)
 }
 
 func sampleTypeDescription(h *histogram.FloatHistogram) string {
@@ -218,7 +218,7 @@ type vectorVectorBinaryOperationEvaluator struct {
 	leftIterator             types.InstantVectorSeriesDataIterator
 	rightIterator            types.InstantVectorSeriesDataIterator
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	annotations              *annotations.Annotations
+	annotations              annotations.Annotations
 	expressionPosition       posrange.PositionRange
 	emitAnnotation           types.EmitAnnotationFunc
 }
@@ -227,14 +227,12 @@ func newVectorVectorBinaryOperationEvaluator(
 	op parser.ItemType,
 	returnBool bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
-) (vectorVectorBinaryOperationEvaluator, error) {
-	e := vectorVectorBinaryOperationEvaluator{
+) (*vectorVectorBinaryOperationEvaluator, error) {
+	e := &vectorVectorBinaryOperationEvaluator{
 		op:                       op,
 		opFunc:                   nil,
 		memoryConsumptionTracker: memoryConsumptionTracker,
-		annotations:              annotations,
 		expressionPosition:       expressionPosition,
 	}
 
@@ -245,7 +243,7 @@ func newVectorVectorBinaryOperationEvaluator(
 	}
 
 	if e.opFunc == nil {
-		return vectorVectorBinaryOperationEvaluator{}, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
 	e.emitAnnotation = func(generator types.AnnotationGenerator) {
@@ -389,7 +387,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-				emitIncompatibleBucketLayoutAnnotation(e.annotations, e.op, e.expressionPosition)
+				e.annotations.Add(newIncompatibleBucketLayoutAnnotation(e.op, e.expressionPosition))
 				err = nil
 			}
 
@@ -402,7 +400,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		}
 
 		if !valid {
-			emitIncompatibleTypesAnnotation(e.annotations, e.op, lH, rH, e.expressionPosition)
+			e.annotations.Add(newIncompatibleTypesAnnotation(e.op, lH, rH, e.expressionPosition))
 		}
 
 		if !keep {

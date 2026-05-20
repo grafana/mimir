@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -53,7 +54,7 @@ func (u *UnaryNegationOfScalar) FinishedReading(ctx context.Context) error {
 	return u.Inner.FinishedReading(ctx)
 }
 
-func (u *UnaryNegationOfScalar) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (u *UnaryNegationOfScalar) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return u.Inner.Stats(ctx)
 }
 

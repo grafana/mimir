@@ -16,7 +16,6 @@ type RangeVectorRemoteExec struct {
 	Node               planning.Node
 	TimeRange          types.QueryTimeRange
 	GroupEvaluator     GroupEvaluator
-	Annotations        *annotations.Annotations
 	expressionPosition posrange.PositionRange
 
 	resp                      RangeVectorRemoteExecutionResponse
@@ -66,14 +65,14 @@ func (r *RangeVectorRemoteExec) FinishedReading(ctx context.Context) error {
 
 	r.finishedReadingCalled = true
 
-	return finishedReading(ctx, r.resp, r.Annotations)
+	return finishedReading(ctx, r.resp)
 }
 
 func (r *RangeVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
 	return r.expressionPosition
 }
 
-func (r *RangeVectorRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (r *RangeVectorRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return r.resp.Stats(ctx)
 }
 

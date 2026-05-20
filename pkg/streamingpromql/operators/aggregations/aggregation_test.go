@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -87,7 +86,7 @@ func TestAggregator_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
-			aggregator, err := NewAggregator(parser.SUM, testCase.grouping, false, memoryConsumptionTracker, annotations.New(), types.NewInstantQueryTimeRange(time.Now()), posrange.PositionRange{})
+			aggregator, err := NewAggregator(parser.SUM, testCase.grouping, false, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()), posrange.PositionRange{})
 			require.NoError(t, err)
 
 			outputSeries, err := aggregator.ComputeGroups(testutils.LabelsToSeriesMetadata(testCase.inputSeries))
@@ -241,7 +240,7 @@ func TestAggregator_GroupLabelling(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			aggregator, err := NewAggregator(parser.SUM, testCase.grouping, testCase.without, nil, nil, types.NewInstantQueryTimeRange(timestamp.Time(0)), posrange.PositionRange{})
+			aggregator, err := NewAggregator(parser.SUM, testCase.grouping, testCase.without, nil, types.NewInstantQueryTimeRange(timestamp.Time(0)), posrange.PositionRange{})
 			require.NoError(t, err)
 			bytesFunc := aggregator.groupLabelsBytesFunc()
 			labelsFunc := aggregator.groupLabelsFunc()
@@ -281,7 +280,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 	createSimpleAggregation := func(op parser.ItemType) func(types.InstantVectorOperator, types.QueryTimeRange, *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
 		return func(inner types.InstantVectorOperator, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
-			return NewAggregation(inner, timeRange, []string{"group"}, false, op, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
+			return NewAggregation(inner, timeRange, []string{"group"}, false, op, memoryConsumptionTracker, posrange.PositionRange{})
 		}
 	}
 
@@ -314,7 +313,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 		"quantile": {
 			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
 				param := scalars.NewScalarConstant(0.5, queryTimeRange, memoryConsumptionTracker, posrange.PositionRange{})
-				return NewQuantileAggregation(inner, param, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
+				return NewQuantileAggregation(inner, param, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, posrange.PositionRange{})
 			},
 			expectedSeries: expectedSimpleAggregationOutputSeries,
 		},
@@ -581,7 +580,7 @@ func TestAggregation_RuntimeMatchersAdjusted(t *testing.T) {
 				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
-			op, err := NewAggregation(inner, timeRange, testCase.grouping, testCase.without, parser.SUM, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
+			op, err := NewAggregation(inner, timeRange, testCase.grouping, testCase.without, parser.SUM, memoryConsumptionTracker, posrange.PositionRange{})
 			require.NoError(t, err)
 
 			series, err := op.SeriesMetadata(ctx, testCase.matchers)

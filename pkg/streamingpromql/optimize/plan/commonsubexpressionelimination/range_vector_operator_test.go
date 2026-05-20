@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -1066,7 +1067,7 @@ func (o *failingRangeVectorOperator) Close() {
 	o.histogramsView = nil
 }
 
-func (o *failingRangeVectorOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+func (o *failingRangeVectorOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not implemented")
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -231,10 +232,10 @@ func (v *InstantVectorSelector) FinishedReading(ctx context.Context) error {
 	return nil
 }
 
-func (v *InstantVectorSelector) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+func (v *InstantVectorSelector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats := v.evaluationStats
 	v.evaluationStats = nil
-	return stats, nil
+	return stats, nil, nil
 }
 
 func (v *InstantVectorSelector) Close() {

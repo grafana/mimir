@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -127,7 +128,7 @@ func (a *Absent) FinishedReading(ctx context.Context) error {
 	return a.Inner.FinishedReading(ctx)
 }
 
-func (a *Absent) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (a *Absent) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return a.Inner.Stats(ctx)
 }
 

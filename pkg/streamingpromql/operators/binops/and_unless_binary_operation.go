@@ -8,6 +8,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -335,8 +336,8 @@ func (a *AndUnlessBinaryOperation) FinishedReading(ctx context.Context) error {
 	return a.Right.FinishedReading(ctx)
 }
 
-func (a *AndUnlessBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, a.Left, a.Right)
+func (a *AndUnlessBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.CombineStatsAndAnnotations(ctx, a.Left, a.Right)
 }
 
 func (a *AndUnlessBinaryOperation) Close() {

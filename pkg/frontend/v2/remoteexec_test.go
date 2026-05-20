@@ -904,7 +904,7 @@ func TestExecutionResponses_FinishedReadingAndStats(t *testing.T) {
 				memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 				response := responseCreator(t, ctx, stream, memoryConsumptionTracker)
 
-				annos, overallStats, err := response.FinishedReading(ctx)
+				overallStats, err := response.FinishedReading(ctx)
 				if !expectSuccess {
 					require.Equal(t, expectedError, err)
 					return
@@ -912,10 +912,6 @@ func TestExecutionResponses_FinishedReadingAndStats(t *testing.T) {
 
 				require.NoError(t, err)
 				require.Equal(t, expectedTotalSamples, overallStats.SamplesProcessed)
-
-				warnings, infos := annos.AsStrings("", 0, 0)
-				require.ElementsMatch(t, expectedWarnings, warnings)
-				require.ElementsMatch(t, expectedInfos, infos)
 
 				expectedOperatorStats, err := types.NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 				require.NoError(t, err)
@@ -926,9 +922,15 @@ func TestExecutionResponses_FinishedReadingAndStats(t *testing.T) {
 					expectedOperatorStats.TrackSampleForInstantVectorSelector(timeRange.StartT, 123, nil)
 				}
 
-				operatorStats, err := response.Stats(ctx)
+				operatorStats, annos, err := response.Stats(ctx)
 				require.NoError(t, err)
 				require.Equal(t, expectedOperatorStats, operatorStats)
+
+				warnings, infos := annos.AsStrings("", 0, 0)
+				require.ElementsMatch(t, expectedWarnings, warnings)
+				require.ElementsMatch(t, expectedInfos, infos)
+
+				// TODO: test per-node annotations
 			})
 		}
 	}
@@ -1028,7 +1030,7 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 		},
 	}
 
-	annos, overallStats, perNodeStats := decodeEvaluationCompletedMessage(msg)
+	annos, overallStats, perNodeStats, perNodeAnnotations := decodeEvaluationCompletedMessage(msg)
 	require.Equal(t, msg.Stats, overallStats)
 	require.Equal(t, msg.PerNodeStats, perNodeStats)
 
@@ -1037,6 +1039,10 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 	warnings, infos := annos.AsStrings("", 0, 0)
 	require.ElementsMatch(t, []string{"warning: something isn't quite right", "warning: something else isn't quite right"}, warnings)
 	require.ElementsMatch(t, []string{"info: you should know about this", "info: you should know about this too"}, infos)
+
+	require.Empty(t, perNodeAnnotations)
+
+	// TODO: test case where per-node annotations are present
 }
 
 func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRequest {
@@ -1159,6 +1165,23 @@ func newEvaluationCompletedWithPerNodeStats(totalSamples uint64, warnings []stri
 	}
 }
 
+func newEvaluationCompletedWithPerNodeAnnotations(totalSamples uint64, perNodeAnnotations map[int64]querierpb.Annotations) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+					EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+						Stats: stats.Stats{
+							SamplesProcessed: totalSamples,
+						},
+						PerNodeAnnotations: perNodeAnnotations,
+					},
+				},
+			},
+		},
+	}
+}
+
 func generateFPoints(baseT int64, count int, offset float64) []promql.FPoint {
 	points := make([]promql.FPoint, 0, count)
 	for i := range count {
@@ -1263,9 +1286,8 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	annos, returnedStats, err := resp1.FinishedReading(ctx)
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls FinishedReading")
 	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls FinishedReading")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
@@ -1283,15 +1305,22 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	annos, returnedStats, err = resp2.FinishedReading(ctx)
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
-	expectedAnnos := annotations.New()
-	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
-	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
-	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	_, annos, err := resp1.Stats(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+
+	_, annos, err = resp2.Stats(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Stats")
 
 	_, err = resp2.GetNextSeries(ctx)
 	require.EqualError(t, err, "can't read next message for node stream at index 1, as it is already finished")
@@ -1396,23 +1425,115 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 
 	// Read the evaluation completed message for the first node, which should cause no buffering as we'll
 	// read the results when we are done with the second node.
-	annos, returnedStats, err := resp1.FinishedReading(ctx)
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls FinishedReading")
 	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls FinishedReading")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	annos, returnedStats, err = resp2.FinishedReading(ctx)
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
-	expectedAnnos := annotations.New()
-	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
-	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
-	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
 	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
+
+	_, annos, err := resp1.Stats(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+
+	_, annos, err = resp2.Stats(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Stats")
+}
+
+func TestRemoteExecutionGroupEvaluator_PerStepAnnotations(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false),
+			},
+			{
+				msg: newSeriesMetadata(1, false),
+			},
+			{
+				msg: newEvaluationCompletedWithPerNodeAnnotations(
+					1234,
+					map[int64]querierpb.Annotations{
+						0: {
+							Infos:    []string{"an info annotation for node index 0"},
+							Warnings: []string{"a warning annotation for node index 0"},
+						},
+						1: {
+							Infos:    []string{"an info annotation for node index 1"},
+							Warnings: []string{"a warning annotation for node index 1"},
+						},
+					},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message for the first node.
+	series, err := resp1.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Empty(t, series)
+
+	// Now go and read the cached message for the first node, one more message for the first node.
+	series, err = resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Empty(t, series)
+
+	// Read the evaluation completed message for the first node.
+	returnedStats, err := resp1.FinishedReading(ctx)
+	require.NoError(t, err)
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	returnedStats, err = resp2.FinishedReading(ctx)
+	require.NoError(t, err)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
+
+	_, annos, err := resp1.Stats(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation for node index 0"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation for node index 0"))
+	require.Equal(t, expectedAnnos, annos)
+
+	_, annos, err = resp2.Stats(ctx)
+	require.NoError(t, err)
+	expectedAnnos = annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation for node index 1"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation for node index 1"))
+	require.Equal(t, expectedAnnos, annos)
 }
 
 func requireNoBufferedDataForAllNodes(t *testing.T, evaluator *RemoteExecutionGroupEvaluator) {
@@ -1575,9 +1696,8 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinishedReading(t *
 	requireNoBufferedDataForNode(t, evaluator, node2)
 
 	// Call FinishedReading on the first node, confirm the buffered message is dropped.
-	annos, returnedStats, err := resp1.FinishedReading(ctx)
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls FinishedReading")
 	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls FinishedReading")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
@@ -1589,17 +1709,24 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinishedReading(t *
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	// Call FinishedReading on the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
-	annos, returnedStats, err = resp2.FinishedReading(ctx)
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
-	expectedAnnos := annotations.New()
-	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
-	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
-	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
 	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
+
+	_, annos, err := resp1.Stats(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+
+	_, annos, err = resp2.Stats(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Stats")
 }
 
 func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode(t *testing.T) {
@@ -1682,17 +1809,20 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	// Call FinishedReading on the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
-	annos, returnedStats, err := resp2.FinishedReading(ctx)
+	returnedStats, err := resp2.FinishedReading(ctx)
 	require.NoError(t, err)
-	expectedAnnos := annotations.New()
-	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
-	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
-	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
 	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
+
+	_, annos, err := resp2.Stats(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
 }
 
 func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithCloseCalls(t *testing.T) {

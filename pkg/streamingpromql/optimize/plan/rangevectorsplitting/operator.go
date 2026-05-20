@@ -41,7 +41,7 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	FuncId                   functions.Function
 	FuncDef                  functions.FunctionOverRangeVectorDefinition
-	Annotations              *annotations.Annotations
+	Annotations              annotations.Annotations
 
 	metricNames                 *operators.MetricNames
 	enableDelayedNameRemoval    bool
@@ -99,7 +99,6 @@ func NewSplittingFunctionOverRangeVector[T any](
 	combineFunc SplitCombineFunc[T],
 	codec cache.SplitCodec[T],
 	expressionPosition posrange.PositionRange,
-	annotations *annotations.Annotations,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
 	logger log.Logger,
@@ -124,7 +123,6 @@ func NewSplittingFunctionOverRangeVector[T any](
 		FuncDef:                     funcDef,
 		generateFunc:                generateFunc,
 		combineFunc:                 combineFunc,
-		Annotations:                 annotations,
 		MemoryConsumptionTracker:    memoryConsumptionTracker,
 		expressionPosition:          expressionPosition,
 		innerNodeExpressionPosition: innerNodeExpressionPosition,
@@ -548,13 +546,13 @@ func (m *FunctionOverRangeVectorSplit[T]) storeResultsInCache(ctx context.Contex
 	return nil
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (m *FunctionOverRangeVectorSplit[T]) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	var finalStats *types.OperatorEvaluationStats
 
 	for _, split := range m.splits {
 		rangeStats, err := split.Stats(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Create finalStats once we have at least one set of stats from the splits, so that we know how many subsets
@@ -562,23 +560,23 @@ func (m *FunctionOverRangeVectorSplit[T]) Stats(ctx context.Context) (*types.Ope
 		if finalStats == nil {
 			finalStats, err = types.NewOperatorEvaluationStats(ctx, m.queryTimeRange, m.MemoryConsumptionTracker, rangeStats[0].GetSubsetCount())
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 
 		for _, s := range rangeStats {
 			if err := finalStats.AddSingleStep(s); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 	}
 
 	// Now that we've retrieved stats for all splits, store the results in the cache.
 	if err := m.storeResultsInCache(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return finalStats, nil
+	return finalStats, m.Annotations, nil
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) Close() {
@@ -862,12 +860,14 @@ func (p *UncachedSplit[T]) FinishedReading(ctx context.Context) error {
 }
 
 func (p *UncachedSplit[T]) Stats(ctx context.Context) ([]*types.OperatorEvaluationStats, error) {
-	combinedStatsForAllRanges, err := p.operator.Stats(ctx)
+	combinedStatsForAllRanges, annos, err := p.operator.Stats(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	defer combinedStatsForAllRanges.Close()
+
+	p.parent.Annotations.Merge(annos)
 
 	p.stats = make([]*types.OperatorEvaluationStats, 0, len(p.ranges))
 	for _, rng := range p.ranges {

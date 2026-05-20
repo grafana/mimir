@@ -6,7 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
@@ -16,76 +15,30 @@ import (
 
 func TestFinishedReading(t *testing.T) {
 	querierStats, ctx := stats.ContextWithEmptyStats(context.Background())
-	annos := annotations.New()
-
-	annos.Add(annotations.NewBadBucketLabelWarning("the_metric", "x", posrange.PositionRange{Start: 1, End: 2}))
-	annos.Add(annotations.NewPossibleNonCounterInfo("not_a_counter", posrange.PositionRange{Start: 3, End: 4}))
 
 	resp := &mockResponse{
 		stats: stats.Stats{SamplesProcessed: 456, FetchedChunkBytes: 9000},
-		annos: annotations.New(),
 	}
 
-	resp.annos.Add(annotations.NewMixedFloatsHistogramsWarning("mixed_metric", posrange.PositionRange{Start: 5, End: 6}))
-	resp.annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo("another_mixed_metric", posrange.PositionRange{Start: 5, End: 6}))
-
-	err := finishedReading(ctx, resp, annos)
+	err := finishedReading(ctx, resp)
 	require.NoError(t, err)
 	require.Zero(t, querierStats.SamplesProcessed, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
 	require.Equal(t, uint64(9000), querierStats.FetchedChunkBytes)
-
-	warnings, infos := annos.AsStrings("", 0, 0)
-	require.ElementsMatch(t, warnings, []string{
-		`PromQL warning: bucket label "le" is missing or has a malformed value of "x" for metric name "the_metric"`,
-		`PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric"`,
-	})
-
-	require.ElementsMatch(t, infos, []string{
-		`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "not_a_counter"`,
-		`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "another_mixed_metric"`,
-	})
-}
-
-func TestFinishedReading_EmptyAnnotationsAndStats(t *testing.T) {
-	querierStats, ctx := stats.ContextWithEmptyStats(context.Background())
-	annos := annotations.New()
-
-	annos.Add(annotations.NewBadBucketLabelWarning("the_metric", "x", posrange.PositionRange{Start: 1, End: 2}))
-	annos.Add(annotations.NewPossibleNonCounterInfo("not_a_counter", posrange.PositionRange{Start: 3, End: 4}))
-
-	resp := &mockResponse{
-		stats: stats.Stats{},
-		annos: nil,
-	}
-
-	err := finishedReading(ctx, resp, annos)
-	require.NoError(t, err)
-	require.Zero(t, querierStats.SamplesProcessed, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
-
-	warnings, infos := annos.AsStrings("", 0, 0)
-	require.ElementsMatch(t, warnings, []string{
-		`PromQL warning: bucket label "le" is missing or has a malformed value of "x" for metric name "the_metric"`,
-	})
-
-	require.ElementsMatch(t, infos, []string{
-		`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "not_a_counter"`,
-	})
 }
 
 type mockResponse struct {
 	stats stats.Stats
-	annos *annotations.Annotations
 }
 
 func (m *mockResponse) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockResponse) FinishedReading(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return m.annos, m.stats, nil
+func (m *mockResponse) FinishedReading(ctx context.Context) (stats.Stats, error) {
+	return m.stats, nil
 }
 
-func (m *mockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (m *mockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not supported")
 }
 
@@ -102,12 +55,12 @@ func (m *finishedReadingTestMockResponse) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *finishedReadingTestMockResponse) FinishedReading(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
+func (m *finishedReadingTestMockResponse) FinishedReading(ctx context.Context) (stats.Stats, error) {
 	m.FinishedReadingCalled = true
-	return annotations.New(), stats.Stats{}, nil
+	return stats.Stats{}, nil
 }
 
-func (m *finishedReadingTestMockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (m *finishedReadingTestMockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not supported")
 }
 
