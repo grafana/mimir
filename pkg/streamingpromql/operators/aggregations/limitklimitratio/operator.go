@@ -186,7 +186,9 @@ func (o *Operator) AfterPrepare(ctx context.Context) error {
 }
 
 func (o *Operator) Finalize(ctx context.Context) error {
-	o.stepArg.close()
+	if o.stepArg != nil {
+		o.stepArg.close()
+	}
 
 	for _, g := range o.seriesToGroups {
 		if g != nil {
@@ -208,7 +210,9 @@ func (o *Operator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, a
 		return nil, nil, err
 	}
 
-	annos.Merge(o.stepArg.getAnnotations())
+	if o.stepArg != nil {
+		annos.Merge(o.stepArg.getAnnotations())
+	}
 
 	return stats, annos, nil
 }
