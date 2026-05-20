@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -38,7 +39,7 @@ func runASTOptimizationPass(t *testing.T, ctx context.Context, input string, cre
 	require.NoError(t, err)
 	planner.RegisterASTOptimizationPass(optimizer)
 	observer := streamingpromql.NoopPlanningObserver{}
-	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, input, dummyTimeRange, observer)
+	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, input, dummyTimeRange, requestoptions.FromContext(ctx), observer)
 	require.NoError(t, err)
 	return reg, outputExpr
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -230,7 +231,7 @@ type PlanningObserver interface {
 // ParseAndApplyASTOptimizationPasses runs the AST optimization passes on the input string and outputs
 // an expression and any error encountered. This is separated into its own method to allow testing of
 // AST optimization passes.
-func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (parser.Expr, error) {
+func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, qs string, timeRange types.QueryTimeRange, opts requestoptions.Options, observer PlanningObserver) (parser.Expr, error) {
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return p.parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
@@ -258,7 +259,7 @@ func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, q
 	}
 
 	for _, o := range p.astOptimizationPasses {
-		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr) })
+		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr, opts) })
 
 		if err != nil {
 			return nil, err
@@ -291,7 +292,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 	spanLogger.DebugLog("msg", "starting planning", "expression", qs, "maximum_supported_query_plan_version", maximumSupportedQueryPlanVersion)
 
-	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, qs, timeRange, observer)
+	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, qs, timeRange, requestoptions.FromContext(ctx), observer)
 	if err != nil {
 		return nil, err
 	}

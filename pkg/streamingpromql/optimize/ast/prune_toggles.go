@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 )
 
 // PruneToggles optimizes queries by pruning expressions that are toggled off, only
@@ -39,7 +40,7 @@ func (p *PruneToggles) Name() string {
 	return "Toggled off expressions pruning"
 }
 
-func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+func (p *PruneToggles) Apply(ctx context.Context, expr parser.Expr, _ requestoptions.Options) (parser.Expr, error) {
 	p.pruneTogglesAttempts.Inc()
 	mapper := NewPruneTogglesMapper()
 	newExpr, err := mapper.Map(ctx, expr)

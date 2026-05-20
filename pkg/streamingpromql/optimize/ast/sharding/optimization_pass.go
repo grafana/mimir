@@ -34,12 +34,11 @@ func (o *OptimizationPass) Name() string {
 	return "Sharding"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, options requestoptions.Options) (parser.Expr, error) {
 	if containsSpunOffSubquery(expr) {
 		return expr, nil
 	}
 
-	options := requestoptions.FromContext(ctx)
 	if options.ShardingDisabled {
 		return expr, nil
 	}

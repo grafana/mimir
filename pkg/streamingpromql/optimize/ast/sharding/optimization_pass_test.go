@@ -88,7 +88,7 @@ func TestOptimizationPass(t *testing.T) {
 			require.NoError(t, err)
 
 			ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, testCase.hints, testCase.options)
-			output, err := pass.Apply(ctx, afterRewrite)
+			output, err := pass.Apply(ctx, afterRewrite, testCase.options)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedOutput, output.String())
 		})
