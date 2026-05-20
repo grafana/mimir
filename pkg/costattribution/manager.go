@@ -70,6 +70,9 @@ type managerTrackers[CT compositeTracker[IT], IT individualTracker] struct {
 type compositeTracker[IT individualTracker] interface {
 	getTrackers() []IT
 	getConfigHash() uint64
+
+	collectCostAttribution(out chan<- prometheus.Metric)
+	purge(now, deadline time.Time) int
 }
 
 type individualTracker interface {
@@ -335,9 +338,7 @@ func (mt *managerTrackers[CT, IT]) collectCostAttribution(out chan<- prometheus.
 	mt.RUnlock()
 
 	for _, composite := range trackersByUserID {
-		for _, tracker := range composite.getTrackers() {
-			tracker.collectCostAttribution(out)
-		}
+		composite.collectCostAttribution(out)
 	}
 }
 
@@ -364,13 +365,9 @@ func (mt *managerTrackers[CT, IT]) purge(now, deadline time.Time, limits *valida
 			continue
 		}
 
-		userCardinality := 0
-		for _, tracker := range composite.getTrackers() {
-			userCardinality += tracker.purge(now, deadline)
-		}
-
+		cardinality := composite.purge(now, deadline)
 		// This user doesn't have data anymore, remove it.
-		if userCardinality == 0 {
+		if cardinality == 0 {
 			mt.Lock()
 			delete(mt.composite, userID)
 			delete(mt.individual, userID)
