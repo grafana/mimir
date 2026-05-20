@@ -1,3 +1,7 @@
+# These tests have been added here since upstream Prometheus has recently
+# added support for smoothed/anchored histograms.
+# These tests will be removed once our Mimir implementation is completed.
+
 load 1s
   mixed 0 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 2 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 6 {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
   missing 0 _ 2 _ _ 5 _ _ _ _ _
