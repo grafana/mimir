@@ -246,9 +246,16 @@ func (r *Readcache) unregisterPartitionMetricsRegistry(partitionReg *prometheus.
 	}
 }
 
-// stopKafkaReaderLocked stops the partition reader if present. Caller
-// must hold p's owning lock so the reader pointer isn't observed mid-
-// transition.
+// stopKafkaReaderLocked stops the partition reader if present.
+//
+// The "Locked" suffix is historical: this function reads and writes
+// p.reader without taking a mutex, so the caller is responsible for
+// preventing concurrent access. Both call sites (stopPartition via
+// stopping() and removePartition) satisfy this by ensuring p has
+// already been removed from r.partitions, so no other goroutine can
+// reach this partitionState. addPartition is the only producer of
+// p.reader and runs at most once per (partition, partitionState)
+// pair.
 //
 // In addition to stopping the reader's services, this releases the
 // per-partition metric registry. Skipping the Unregister here means

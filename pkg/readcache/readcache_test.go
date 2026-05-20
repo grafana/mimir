@@ -423,3 +423,153 @@ func TestReadcache_GetOrOpenTSDB(t *testing.T) {
 	require.NotNil(t, dbOther)
 	assert.NotSame(t, db, dbOther)
 }
+
+// TestReadcache_Stopping_TearsDownPartitionsInParallel verifies that
+// stopping() fans out per-partition teardown across multiple
+// goroutines rather than tearing down one partition at a time. Before
+// the parallel-stopping change, a pod with N partitions paid O(N) *
+// stop-cost even when individual stops were independent; this test
+// would have timed out under the old serial path.
+//
+// The test uses the stopPartitionHook seam to block every
+// stopPartition call on a shared barrier until ALL partitions have
+// arrived. If the implementation is serial, only the first call
+// reaches the barrier, no further calls fire, and the wait times out.
+// If parallel, all N reach the barrier within the wait window and
+// the test passes.
+func TestReadcache_Stopping_TearsDownPartitionsInParallel(t *testing.T) {
+	const numPartitions = 8
+	cfg := newTestConfig(t, true, numPartitions)
+	cfg.OwnedPartitions = "0,1,2,3,4,5,6,7"
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	startCtx, startCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer startCancel()
+	require.NoError(t, services.StartAndAwaitRunning(startCtx, r))
+
+	// Each stopPartition call signals its arrival on `arrived`, then
+	// blocks on `release`. The test main goroutine waits to receive
+	// `numPartitions` arrivals (proving parallelism), then closes
+	// `release` to let all stops proceed.
+	arrived := make(chan int32, numPartitions)
+	release := make(chan struct{})
+	r.stopPartitionHook = func(pid int32) {
+		arrived <- pid
+		<-release
+	}
+
+	stopDone := make(chan error, 1)
+	go func() {
+		stopDone <- services.StopAndAwaitTerminated(context.Background(), r)
+	}()
+
+	// Wait for every partition to reach the hook. If the fan-out is
+	// serial, only one will, and this select will time out.
+	seen := make(map[int32]struct{}, numPartitions)
+	waitDeadline := time.After(15 * time.Second)
+	for len(seen) < numPartitions {
+		select {
+		case pid := <-arrived:
+			seen[pid] = struct{}{}
+		case <-waitDeadline:
+			t.Fatalf("stopping is serial: only %d/%d partitions reached stopPartition before timeout (saw %v)",
+				len(seen), numPartitions, seen)
+		}
+	}
+
+	close(release)
+
+	select {
+	case err := <-stopDone:
+		require.NoError(t, err)
+	case <-time.After(15 * time.Second):
+		t.Fatal("stopping did not complete after releasing the barrier")
+	}
+}
+
+// TestReadcache_Stopping_DoesNotHoldPartitionMuDuringStopPartition is
+// the regression test for the shutdown deadlock: with the old code,
+// stopping() held the partitionMu writer lock for the entire
+// duration of stopPartition (i.e. while the Kafka reader's stop was
+// waiting for in-flight pushers to complete), which meant any
+// concurrent getOrOpenTSDB call — including the one inside the
+// pusher itself — blocked, producing an A/B deadlock that only k8s
+// SIGKILL could resolve.
+//
+// We verify the fix by installing a stopPartitionHook that, the
+// moment a stop is in flight, races a writer-lock probe. If the
+// writer is held, TryLock returns false; we want it to succeed,
+// proving the lock has already been released by the time
+// stopPartition runs.
+func TestReadcache_Stopping_DoesNotHoldPartitionMuDuringStopPartition(t *testing.T) {
+	cfg := newTestConfig(t, true, 4)
+	cfg.OwnedPartitions = "0,1,2,3"
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	startCtx, startCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer startCancel()
+	require.NoError(t, services.StartAndAwaitRunning(startCtx, r))
+
+	var probedHeld bool
+	var probedFree bool
+	r.stopPartitionHook = func(_ int32) {
+		// If stopping() is still holding partitionMu (the bug we
+		// fixed), TryLock will fail because the writer is held.
+		if r.partitionMu.TryLock() {
+			probedFree = true
+			r.partitionMu.Unlock()
+		} else {
+			probedHeld = true
+		}
+	}
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
+
+	assert.True(t, probedFree, "partitionMu must be released before stopPartition runs")
+	assert.False(t, probedHeld, "partitionMu was held while stopPartition ran (deadlock bug regression)")
+}
+
+// TestReadcache_RemovePartition_DoesNotHoldPartitionMuDuringStop is
+// the equivalent regression test for the removePartition path.
+// removePartition is called from applyAssignment whenever the
+// rebalancer drops a partition, so the same lock-ordering bug
+// applies there: holding the writer lock during the Kafka reader's
+// stop would deadlock the in-flight pusher.
+func TestReadcache_RemovePartition_DoesNotHoldPartitionMuDuringStop(t *testing.T) {
+	cfg := newTestConfig(t, true, 2)
+	cfg.OwnedPartitions = "0,1"
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, r) }()
+
+	var probedFree bool
+	var probedHeld bool
+	r.stopPartitionHook = func(pid int32) {
+		if pid != 0 {
+			return
+		}
+		if r.partitionMu.TryLock() {
+			probedFree = true
+			r.partitionMu.Unlock()
+		} else {
+			probedHeld = true
+		}
+	}
+
+	require.NoError(t, r.removePartition(0))
+
+	assert.True(t, probedFree, "partitionMu must be released before stopPartition runs from removePartition")
+	assert.False(t, probedHeld, "partitionMu held by removePartition during stop (deadlock bug regression)")
+}

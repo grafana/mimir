@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"go.opentelemetry.io/otel"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -111,6 +112,14 @@ type Readcache struct {
 	// tsdbMetrics aggregates per-(tenant, partition) TSDB registry metrics
 	// (e.g. cortex_readcache_memory_series), mirroring the ingester's TSDBMetrics.
 	tsdbMetrics *mimir_tsdb.TSDBMetrics
+
+	// stopPartitionHook is a test-only seam fired at the top of
+	// stopPartition. It lets tests assert the shutdown fan-out
+	// invariants (no partitionMu held while stopPartition runs;
+	// per-partition stops actually overlap). Always nil in
+	// production; a non-nil setter would be a code smell. Tests
+	// install hooks before calling services.StopAndAwaitTerminated.
+	stopPartitionHook func(partitionID int32)
 }
 
 // partitionState bundles the per-partition Kafka reader and the
@@ -361,16 +370,67 @@ func (r *Readcache) running(ctx context.Context) error {
 	}
 }
 
+// shutdownStopConcurrency caps the fan-out used to tear down owned
+// partitions during stopping(). The work per partition is mostly
+// IO-bound (Kafka client close, in-flight fetch flush, per-tenant
+// TSDB Close), so a moderate fan-out is enough to overlap most of
+// the wait time without overwhelming the Kafka client or disk. The
+// value is deliberately a constant (rather than NumCPU or a config
+// flag) because the bottleneck is wall-clock on external IO, not
+// goroutine budget; raising it further has diminishing returns.
+const shutdownStopConcurrency = 16
+
 func (r *Readcache) stopping(_ error) error {
+	// Snapshot the owned partitions under the write lock and clear
+	// the map BEFORE doing any blocking teardown. Two reasons:
+	//
+	//  1. The Kafka reader's stop path waits for in-flight
+	//     partitionPusher.PushToStorageAndReleaseRequest calls to
+	//     finish. Those calls call getOrOpenTSDB, which RLocks
+	//     partitionMu. Holding the write lock across stop deadlocks
+	//     the pusher against ourselves, with no upper bound — the
+	//     reader's consume loop uses context.WithoutCancel so even
+	//     ctx cancellation does not unwedge it. Dropping the lock
+	//     before stop lets the in-flight pushers observe the empty
+	//     map, short-circuit via the `db == nil` branch in
+	//     PushToStorageAndReleaseRequest, and unblock the reader.
+	//
+	//  2. Clearing the map first means new pushers (e.g. those that
+	//     arrived between the moment we entered stopping() and the
+	//     moment we got the lock) will see the partition gone and
+	//     drop the batch gracefully via that same nil-DB branch.
 	r.partitionMu.Lock()
-	var firstErr error
+	parts := make([]partitionEntry, 0, len(r.partitions))
 	for pid, p := range r.partitions {
-		if err := r.stopPartitionLocked(pid, p); err != nil && firstErr == nil {
-			firstErr = err
-		}
+		parts = append(parts, partitionEntry{partitionID: pid, state: p})
 	}
 	r.partitions = map[int32]*partitionState{}
 	r.partitionMu.Unlock()
+
+	// Fan out the per-partition stop. Each partition's teardown is
+	// independent: it owns its Kafka reader and its per-tenant TSDB
+	// map, neither shared with peers. Using errgroup.SetLimit caps
+	// concurrency to shutdownStopConcurrency so a pod owning N
+	// partitions doesn't try to open N concurrent Kafka client
+	// shutdowns at once.
+	var firstErr error
+	var firstErrMu sync.Mutex
+	g := new(errgroup.Group)
+	g.SetLimit(shutdownStopConcurrency)
+	for _, entry := range parts {
+		entry := entry
+		g.Go(func() error {
+			if err := r.stopPartition(entry.partitionID, entry.state); err != nil {
+				firstErrMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				firstErrMu.Unlock()
+			}
+			return nil
+		})
+	}
+	_ = g.Wait()
 
 	if r.rebalancerConn != nil {
 		if err := r.rebalancerConn.Close(); err != nil && firstErr == nil {
@@ -390,6 +450,15 @@ func (r *Readcache) stopping(_ error) error {
 		}
 	}
 	return firstErr
+}
+
+// partitionEntry pairs a partition ID with its state for the
+// shutdown snapshot. Kept as a local type so the snapshot slice is
+// allocation-cheap and self-documenting; we can't iterate the live
+// r.partitions map outside the lock.
+type partitionEntry struct {
+	partitionID int32
+	state       *partitionState
 }
 
 // addPartition begins owning a partition: opens the Kafka reader and
@@ -443,23 +512,46 @@ func (r *Readcache) addPartition(ctx context.Context, partitionID int32) error {
 
 // removePartition stops owning a partition: shuts down the Kafka
 // reader and closes per-tenant TSDBs. Idempotent.
+//
+// The partition is deleted from r.partitions BEFORE the reader stop
+// blocks for in-flight pushes. Holding partitionMu across the reader
+// stop would deadlock against the pusher: the reader's consume loop
+// (in pkg/storage/ingest/reader.go) uses context.WithoutCancel so the
+// in-flight call cannot be interrupted, and that call routes through
+// getOrOpenTSDB which RLocks partitionMu. Once the partition is gone
+// from the map, in-flight pushers observe `db == nil` from
+// getOrOpenTSDB and short-circuit, unblocking the reader stop.
 func (r *Readcache) removePartition(partitionID int32) error {
 	r.partitionMu.Lock()
-	defer r.partitionMu.Unlock()
 	p, ok := r.partitions[partitionID]
+	if ok {
+		delete(r.partitions, partitionID)
+	}
+	r.partitionMu.Unlock()
 	if !ok {
 		return nil
 	}
-	delete(r.partitions, partitionID)
-	return r.stopPartitionLocked(partitionID, p)
+	return r.stopPartition(partitionID, p)
 }
 
-// stopPartitionLocked closes a partition's resources. Caller must hold
-// partitionMu.
+// stopPartition closes a partition's resources. The caller must
+// guarantee p is no longer reachable through r.partitions (so no
+// other goroutine will start a fresh reader or open a new TSDB on
+// it) before invoking this. removePartition and stopping() satisfy
+// that by deleting from r.partitions under partitionMu first; this
+// function then runs WITHOUT holding partitionMu, which is required
+// to avoid deadlocking the Kafka reader's stop path against in-flight
+// pusher goroutines (see removePartition for details).
 //
 // Tear-down order: stop the Kafka reader first so no more samples are
-// arriving, then close the per-tenant TSDBs.
-func (r *Readcache) stopPartitionLocked(partitionID int32, p *partitionState) error {
+// arriving, then close the per-tenant TSDBs. Once the reader has
+// returned from StopAndAwaitTerminated, no goroutine is calling
+// PushToStorageAndReleaseRequest for this partition, so taking
+// p.tenantsMu and Closing the TSDBs is safe.
+func (r *Readcache) stopPartition(partitionID int32, p *partitionState) error {
+	if hook := r.stopPartitionHook; hook != nil {
+		hook(partitionID)
+	}
 	var firstErr error
 	if err := r.stopKafkaReaderLocked(p); err != nil {
 		firstErr = err
