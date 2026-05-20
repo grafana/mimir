@@ -324,40 +324,40 @@ func (st *sampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 	return false
 }
 
-func (st *sampleTracker) purge(_now, deadline time.Time) int {
-	st.cleanupInactiveObservations(deadline)
-	if st.recoveredFromOverflow(deadline) {
-		st.reset()
-	}
-
-	cardinality, _ := st.cardinality()
-	return cardinality
-}
-
-func (st *sampleTracker) cleanupInactiveObservations(deadline time.Time) {
-	// otherwise, we need to check all observations and clean up the ones that are inactive
-	var invalidKeys []string
+func (st *sampleTracker) purge(now, deadline time.Time) int {
+	// First we check the inactive observations and collect them for cleanup, if applies.
+	var expired []string
 	st.observedMtx.RLock()
-	for labkey, ob := range st.observed {
+	for key, ob := range st.observed {
 		if ob != nil && ob.lastUpdate.Load() <= deadline.Unix() {
-			invalidKeys = append(invalidKeys, labkey)
+			expired = append(expired, key)
 		}
 	}
+	tryRecoverFromOverflow := !st.overflowSince.IsZero() && st.overflowSince.Add(st.cooldownDuration).Before(deadline)
+	cardinality := len(st.observed) - len(expired)
 	st.observedMtx.RUnlock()
 
-	st.observedMtx.Lock()
-	for _, key := range invalidKeys {
-		delete(st.observed, key)
+	if len(expired) > 0 || tryRecoverFromOverflow {
+		st.observedMtx.Lock()
+		for _, key := range expired {
+			delete(st.observed, key)
+		}
+		if tryRecoverFromOverflow {
+			if len(st.observed) < st.maxCardinality {
+				// Recovered from overflow, reset.
+				st.observed = make(map[string]*observation)
+				st.overflowSince = time.Time{}
+				st.overflowCounter = observation{}
+				cardinality = 0
+			} else {
+				// Extend the overflow period since we are still above the max cardinality after cleanup.
+				st.overflowSince = now
+			}
+		}
+		st.observedMtx.Unlock()
 	}
-	st.observedMtx.Unlock()
-}
 
-func (st *sampleTracker) reset() {
-	st.observedMtx.Lock()
-	defer st.observedMtx.Unlock()
-	st.observed = make(map[string]*observation)
-	st.overflowSince = time.Time{}
-	st.overflowCounter = observation{}
+	return cardinality
 }
 
 func (st *sampleTracker) cardinality() (cardinality int, overflown bool) {

@@ -295,21 +295,25 @@ func (at *activeSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.
 
 func (at *activeSeriesTracker) purge(now, deadline time.Time) int {
 	at.observedMtx.RLock()
-	isOverflowedAndShouldCheck := !at.overflowSince.IsZero() && at.overflowSince.Add(at.cooldownDuration).Before(deadline)
-	recovered := len(at.observed) <= at.maxCardinality
+	tryRecoverFromOverflow := !at.overflowSince.IsZero() && at.overflowSince.Add(at.cooldownDuration).Before(deadline)
+	cardinality := len(at.observed)
 	at.observedMtx.RUnlock()
 
-	if isOverflowedAndShouldCheck {
-		if recovered {
-			at.reset()
+	if tryRecoverFromOverflow {
+		at.observedMtx.Lock()
+		if len(at.observed) <= at.maxCardinality {
+			// Recovered from overflow, reset.
+			at.observed = make(map[string]*counters)
+			at.overflowSince = time.Time{}
+			at.overflowCounter = counters{}
+			cardinality = 0
 		} else {
-			at.observedMtx.Lock()
+			// Extend the overflow period since we are still above the max cardinality after cleanup.
 			at.overflowSince = now
-			at.observedMtx.Unlock()
 		}
+		at.observedMtx.Unlock()
 	}
 
-	cardinality, _ := at.cardinality()
 	return cardinality
 }
 
@@ -317,13 +321,4 @@ func (at *activeSeriesTracker) cardinality() (cardinality int, overflown bool) {
 	at.observedMtx.RLock()
 	defer at.observedMtx.RUnlock()
 	return len(at.observed), !at.overflowSince.IsZero()
-}
-
-func (at *activeSeriesTracker) reset() {
-	at.observedMtx.Lock()
-	defer at.observedMtx.Unlock()
-
-	at.observed = make(map[string]*counters)
-	at.overflowSince = time.Time{}
-	at.overflowCounter = counters{}
 }

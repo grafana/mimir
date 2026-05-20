@@ -358,13 +358,13 @@ func (mt *managerTrackers[CT, IT]) purge(now, deadline time.Time, limits *valida
 	mt.RUnlock()
 
 	for userID := range trackersByUserID {
-		userCardinality := 0
 		composite, ok := mt.get(userID, limits, logger, true)
 		if !ok {
 			// get() might have deleted it if the user doesn't have configs anymore.
 			continue
 		}
 
+		userCardinality := 0
 		for _, tracker := range composite.getTrackers() {
 			userCardinality += tracker.purge(now, deadline)
 		}

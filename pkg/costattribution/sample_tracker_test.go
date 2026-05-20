@@ -156,16 +156,16 @@ func TestSampleTracker_inactiveObservations(t *testing.T) {
 
 	require.Len(t, st.observed, 3)
 
-	st.cleanupInactiveObservations(time.Unix(0, 0))
+	st.purge(time.Unix(0, 0), time.Unix(0, 0))
 	require.Len(t, st.observed, 3)
 
-	st.cleanupInactiveObservations(time.Unix(10, 0))
+	st.purge(time.Unix(10, 0), time.Unix(10, 0))
 	assert.Len(t, st.observed, 2)
 
-	st.cleanupInactiveObservations(time.Unix(15, 0))
+	st.purge(time.Unix(15, 0), time.Unix(15, 0))
 	assert.Len(t, st.observed, 1)
 
-	st.cleanupInactiveObservations(time.Unix(25, 0))
+	st.purge(time.Unix(25, 0), time.Unix(25, 0))
 	assert.Len(t, st.observed, 0)
 }
 
