@@ -32,17 +32,23 @@ func newTestManager() (manager *Manager, reg, costAttributionReg *prometheus.Reg
 }
 
 func getSampleTracker(m *Manager, userID string) *sampleTracker {
-	if trackers, ok := m.sampleTrackersByUserID[userID]; ok {
+	if trackers, ok := m.sampleTrackers.individual[userID]; ok {
 		return trackers[costattributionmodel.DefaultTrackerName]
 	}
 	return nil
 }
 
 func getActiveTracker(m *Manager, userID string) *activeSeriesTracker {
-	if trackers, ok := m.activeTrackersByUserID[userID]; ok {
+	if trackers, ok := m.activeSeriesTrackers.individual[userID]; ok {
 		return trackers[costattributionmodel.DefaultTrackerName]
 	}
 	return nil
+}
+
+func assertHasLabels(t *testing.T, tracker individualTracker, expected costattributionmodel.Labels) {
+	t.Helper()
+	l, _, _ := tracker.config()
+	assert.Equal(t, expected, l)
 }
 
 func withLockedActiveSeriesTracker(m *Manager, userID string, fn func(ast *activeSeriesTracker)) {
@@ -56,7 +62,7 @@ func withLockedActiveSeriesTracker(m *Manager, userID string, fn func(ast *activ
 func TestManager_New(t *testing.T) {
 	manager, _, _ := newTestManager()
 	assert.NotNil(t, manager)
-	assert.NotNil(t, manager.sampleTrackersByUserID)
+	assert.NotNil(t, manager.sampleTrackers.individual)
 	assert.Equal(t, 10*time.Second, manager.inactiveTimeout)
 }
 
@@ -66,14 +72,14 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
 		assert.NotNil(t, manager.SampleTracker("user1"))
 		st := getSampleTracker(manager, "user1")
-		assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
+		assertHasLabels(t, st, costattributionmodel.Labels{{Input: "team", Output: "my_team"}})
 		assert.Equal(t, 5, st.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
 		assert.NotNil(t, manager.ActiveSeriesTracker("user3"))
 		at := getActiveTracker(manager, "user3")
-		assert.True(t, at.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
+		assertHasLabels(t, at, costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}})
 		assert.Equal(t, 2, at.maxCardinality)
 	})
 
@@ -201,7 +207,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	t.Run("Disabling user cost attribution", func(t *testing.T) {
 		manager.limits = testutils.NewMockCostAttributionLimits(1)
 		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Add(manager.inactiveTimeout))
-		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
+		assert.Equal(t, 1, len(manager.sampleTrackers.individual))
 
 		expectedMetrics := `
 		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
@@ -214,13 +220,13 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	t.Run("Updating user cardinality and labels", func(t *testing.T) {
 		manager.limits = testutils.NewMockCostAttributionLimits(2)
 		manager.purgeInactiveAttributionsUntil(time.Unix(12, 0).Add(manager.inactiveTimeout))
-		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
 		manager.SampleTracker("user3")
+		assert.Equal(t, 1, len(manager.sampleTrackers.individual))
 		st := getSampleTracker(manager, "user3")
-		assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
+		assertHasLabels(t, st, costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}})
 		manager.ActiveSeriesTracker("user3")
 		at := getActiveTracker(manager, "user3")
-		assert.True(t, at.hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
+		assertHasLabels(t, at, costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}})
 
 		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
 		expectedMetrics := `
@@ -272,7 +278,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 	t.Run("Purge before inactive timeout", func(t *testing.T) {
 		manager.purgeInactiveAttributionsUntil(time.Unix(0, 0).Add(manager.inactiveTimeout))
-		assert.Equal(t, 2, len(manager.sampleTrackersByUserID))
+		assert.Equal(t, 2, len(manager.sampleTrackers.individual))
 
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
@@ -287,7 +293,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		manager.limits = testutils.NewMockCostAttributionLimits(1)
 		manager.purgeInactiveAttributionsUntil(time.Unix(5, 0).Add(manager.inactiveTimeout))
 
-		assert.Equal(t, 1, len(manager.sampleTrackersByUserID), "Expected one active tracker after purging")
+		assert.Equal(t, 1, len(manager.sampleTrackers.individual), "Expected one active tracker after purging")
 		assert.Nil(t, manager.SampleTracker("user1"), "Expected user1 tracker to be purged")
 		assert.Nil(t, manager.ActiveSeriesTracker("user1"), "Expected user1 tracker to be purged")
 
@@ -302,7 +308,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 	t.Run("Purge all trackers", func(t *testing.T) {
 		manager.purgeInactiveAttributionsUntil(time.Unix(20, 0).Add(manager.inactiveTimeout))
 
-		assert.Equal(t, 1, len(manager.sampleTrackersByUserID), "Expected one active tracker after full purge")
+		assert.Equal(t, 0, len(manager.sampleTrackers.individual), "Expected no active trackers after full purge")
 
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(""), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total"))
 	})
@@ -436,14 +442,14 @@ func TestManager_InvalidTrackers(t *testing.T) {
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
 		assert.NotNil(t, manager.SampleTracker("user1"))
 		st := getSampleTracker(manager, "user1")
-		assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
+		assertHasLabels(t, st, costattributionmodel.Labels{{Input: "team", Output: "my_team"}})
 		assert.Equal(t, 5, st.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
 		assert.NotNil(t, manager.ActiveSeriesTracker("user3"))
 		at := getActiveTracker(manager, "user3")
-		assert.True(t, at.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
+		assertHasLabels(t, at, costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}})
 		assert.Equal(t, 2, at.maxCardinality)
 	})
 

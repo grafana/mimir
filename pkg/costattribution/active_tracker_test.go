@@ -65,14 +65,14 @@ func TestNewActiveTracker(t *testing.T) {
 func TestActiveTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	manager.ActiveSeriesTracker("user1")
-	ast := manager.activeTrackersByUserID["user1"][costattributionmodel.DefaultTrackerName]
-	assert.True(t, ast.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
+	ast := manager.activeSeriesTrackers.individual["user1"][costattributionmodel.DefaultTrackerName]
+	assertHasLabels(t, ast, costattributionmodel.Labels{{Input: "team", Output: "my_team"}})
 }
 
 func TestActiveTracker_IncrementDecrement(t *testing.T) {
 	manager, _, _ := newTestManager()
 	cat := manager.ActiveSeriesTracker("user3")
-	ast := manager.activeTrackersByUserID["user3"][costattributionmodel.DefaultTrackerName]
+	ast := manager.activeSeriesTrackers.individual["user3"][costattributionmodel.DefaultTrackerName]
 	lbls1 := labels.FromStrings("department", "foo", "service", "bar")
 	lbls2 := labels.FromStrings("department", "bar", "service", "baz")
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
@@ -111,7 +111,7 @@ func TestActiveTracker_IncrementDecrement(t *testing.T) {
 func TestActiveTracker_Concurrency(t *testing.T) {
 	m, _, costAttributionReg := newTestManager()
 	cat := m.ActiveSeriesTracker("user1")
-	ast := m.activeTrackersByUserID["user1"][costattributionmodel.DefaultTrackerName]
+	ast := m.activeSeriesTrackers.individual["user1"][costattributionmodel.DefaultTrackerName]
 
 	var wg sync.WaitGroup
 	var i int64

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
@@ -15,14 +14,15 @@ import (
 
 // SampleTracker delegates to one or more internal sample trackers.
 type SampleTracker struct {
-	trackers []*sampleTracker
+	trackers   []*sampleTracker
+	configHash uint64
 }
 
-func newSampleTrackerComposite(trackers []*sampleTracker) *SampleTracker {
-	if len(trackers) == 0 {
-		return nil
-	}
-	return &SampleTracker{trackers: trackers}
+func (c *SampleTracker) getTrackers() []*sampleTracker { return c.trackers }
+func (c *SampleTracker) getConfigHash() uint64         { return c.configHash }
+
+func newSampleTrackerComposite(trackers []*sampleTracker, configHash uint64) *SampleTracker {
+	return &SampleTracker{trackers: trackers, configHash: configHash}
 }
 
 func (c *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
@@ -45,14 +45,15 @@ func (c *SampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, v
 
 // ActiveSeriesTracker delegates to one or more internal active series trackers.
 type ActiveSeriesTracker struct {
-	trackers []*activeSeriesTracker
+	trackers   []*activeSeriesTracker
+	configHash uint64
 }
 
-func newActiveSeriesTrackerComposite(trackers []*activeSeriesTracker) *ActiveSeriesTracker {
-	if len(trackers) == 0 {
-		return nil
-	}
-	return &ActiveSeriesTracker{trackers: trackers}
+func (c *ActiveSeriesTracker) getTrackers() []*activeSeriesTracker { return c.trackers }
+func (c *ActiveSeriesTracker) getConfigHash() uint64               { return c.configHash }
+
+func newActiveSeriesTrackerComposite(trackers []*activeSeriesTracker, configHash uint64) *ActiveSeriesTracker {
+	return &ActiveSeriesTracker{trackers: trackers, configHash: configHash}
 }
 
 // NewActiveSeriesTracker creates an ActiveSeriesTracker with a single tracker.
@@ -79,15 +80,6 @@ func (c *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucke
 	}
 	for _, t := range c.trackers {
 		t.Decrement(lbls, nativeHistogramBucketNum)
-	}
-}
-
-func (c *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
-	if c == nil {
-		return
-	}
-	for _, t := range c.trackers {
-		t.Collect(out)
 	}
 }
 

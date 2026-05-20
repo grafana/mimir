@@ -1219,9 +1219,10 @@ func (o *Overrides) CostAttributionConfig(userID string) CostAttributionConfig {
 
 // CostAttributionConfigHash returns a precomputed hash of all cost attribution
 // config fields for a tenant. The hash is stable within a config reload cycle.
-// A value of 0 means no cost attribution is configured for this tenant.
-func (o *Overrides) CostAttributionConfigHash(userID string) uint64 {
-	return o.getOverridesForUser(userID).costAttributionConfigHash
+// The second argument indicates whether the user has any cost attribution trackers configured.
+func (o *Overrides) CostAttributionConfigHash(userID string) (uint64, bool) {
+	user := o.getOverridesForUser(userID)
+	return o.getOverridesForUser(userID).costAttributionConfigHash, len(user.CostAttributionLabelsStructured)+len(user.AdditionalCostAttributionTrackers) > 0
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.

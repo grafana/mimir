@@ -5,7 +5,6 @@ package costattribution
 import (
 	"bytes"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +29,7 @@ type observation struct {
 
 type sampleTracker struct {
 	userID                     string
-	trackerName                string
+	name                       string
 	receivedSamplesAttribution *descriptor
 	discardedSampleAttribution *descriptor
 	logger                     log.Logger
@@ -60,7 +59,7 @@ func newSampleTracker(userID, trackerName string, trackedLabels costattributionm
 
 	tracker := &sampleTracker{
 		userID:           userID,
-		trackerName:      trackerName,
+		name:             trackerName,
 		labels:           trackedLabels,
 		maxCardinality:   limit,
 		observed:         make(map[string]*observation),
@@ -88,21 +87,24 @@ func (st *sampleTracker) createAndValidateDescriptors(trackedLabels costattribut
 	if st.receivedSamplesAttribution, err = newDescriptor("cortex_distributor_received_attributed_samples_total",
 		"The total number of samples that were received per attribution.",
 		variableLabels[:len(variableLabels)-1],
-		prometheus.Labels{trackerLabel: st.trackerName}); err != nil {
+		prometheus.Labels{trackerLabel: st.name}); err != nil {
 		return err
 	}
 
 	if st.discardedSampleAttribution, err = newDescriptor("cortex_discarded_attributed_samples_total",
 		"The total number of samples that were discarded per attribution.",
 		variableLabels,
-		prometheus.Labels{trackerLabel: st.trackerName}); err != nil {
+		prometheus.Labels{trackerLabel: st.name}); err != nil {
 		return err
 	}
 	return nil
 }
+func (st *sampleTracker) trackerName() string {
+	return st.name
+}
 
-func (st *sampleTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
-	return slices.Equal(st.labels, labels)
+func (st *sampleTracker) config() (labels costattributionmodel.Labels, limit int, cooldown time.Duration) {
+	return st.labels, st.maxCardinality, st.cooldownDuration
 }
 
 var bufferPool = sync.Pool{
@@ -322,6 +324,16 @@ func (st *sampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 	return false
 }
 
+func (st *sampleTracker) purge(_now, deadline time.Time) int {
+	st.cleanupInactiveObservations(deadline)
+	if st.recoveredFromOverflow(deadline) {
+		st.reset()
+	}
+
+	cardinality, _ := st.cardinality()
+	return cardinality
+}
+
 func (st *sampleTracker) cleanupInactiveObservations(deadline time.Time) {
 	// otherwise, we need to check all observations and clean up the ones that are inactive
 	var invalidKeys []string
@@ -338,6 +350,14 @@ func (st *sampleTracker) cleanupInactiveObservations(deadline time.Time) {
 		delete(st.observed, key)
 	}
 	st.observedMtx.Unlock()
+}
+
+func (st *sampleTracker) reset() {
+	st.observedMtx.Lock()
+	defer st.observedMtx.Unlock()
+	st.observed = make(map[string]*observation)
+	st.overflowSince = time.Time{}
+	st.overflowCounter = observation{}
 }
 
 func (st *sampleTracker) cardinality() (cardinality int, overflown bool) {
