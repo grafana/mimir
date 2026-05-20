@@ -199,7 +199,7 @@ details>summary::-webkit-details-marker{display:none}
 <h2>Readcache replicas (partition ownership)</h2>
 <p style="font-size:12px;color:#666;margin:-4px 0 8px">Live leases from the readcache assignment log. Load is from the most recent readcache slicer round.</p>
 <div id="resetBanner" style="display:none;background:#e6fcf5;border:1px solid #099268;color:#0b6e54;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px"></div>
-<form method="POST" action="readcache/reset" style="margin-bottom:8px;display:flex;align-items:center;gap:8px"
+<form method="POST" action="{{.AdminPathPrefix}}/readcache/reset" style="margin-bottom:8px;display:flex;align-items:center;gap:8px"
       onsubmit="return confirm('Force a round-robin (partition \u2192 readcache) assignment now?\n\nThis preempts every existing lease and broadcasts a fresh even-split snapshot. Use this only when the slicer is stuck (e.g. all partitions piled on one pod due to a zero-load tiebreak).');">
 	<button type="submit" style="background:#fff5f5;color:#c92a2a;border:1px solid #c92a2a;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600">Reset to even split</button>
 	<span style="font-size:11px;color:#666">Forces a fresh round-robin assignment across all healthy readcache instances. Operational escape hatch — use when the slicer is stuck (e.g. all partitions on one pod).</span>

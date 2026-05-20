@@ -315,7 +315,13 @@ type readcacheReplicaView struct {
 
 // adminPageData is the full data structure passed to the template.
 type adminPageData struct {
-	GeneratedAt       string
+	GeneratedAt string
+	// AdminPathPrefix is the URL prefix the rebalancer's admin
+	// handler is mounted on (see adminPathPrefix const). Templates
+	// use it to build absolute form actions and links: a relative
+	// form action like "readcache/reset" only works when the
+	// admin page was loaded with a trailing slash, which is brittle.
+	AdminPathPrefix   string
 	TotalMemorySeries int64 // Σ L_pid across partitions
 	TotalOwnedSeries  int64 // Σ per-range series, sanity-check against TotalMemorySeries
 	AboveAverage      int64 // Σ max(0, L_pid - meanL)
@@ -355,7 +361,8 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	current := r.store.latestActiveAssignment(time.Now())
 
 	data := adminPageData{
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
+		AdminPathPrefix: adminPathPrefix,
 	}
 
 	// Populate the readcache-side fields up front so the

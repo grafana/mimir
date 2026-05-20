@@ -264,7 +264,16 @@ func TestAdminHTML_ContainsResetButton(t *testing.T) {
 
 	body := rec.Body.String()
 	assert.Contains(t, body, "Reset to even split", "admin page must show the reset button label")
-	assert.Contains(t, body, `action="readcache/reset"`, "admin page must POST to the reset endpoint")
+	// The form action must be ABSOLUTE so it works regardless of
+	// whether the admin URL was hit with or without a trailing
+	// slash. A relative "readcache/reset" resolves to
+	// /nautilus/readcache/reset (a 404) when the page was loaded
+	// at /nautilus/rebalancer — exactly the bug this assertion is
+	// pinned against.
+	assert.Contains(t, body, `action="`+adminPathPrefix+`/readcache/reset"`,
+		"admin page must POST to the absolute reset endpoint")
+	assert.NotContains(t, body, `action="readcache/reset"`,
+		"form action must not be relative (resolves wrong without trailing slash)")
 	assert.Contains(t, body, "Forces a fresh round-robin assignment",
 		"admin page must explain what the button does")
 }
