@@ -101,9 +101,9 @@ func (c *ActiveSeriesTracker) Equals(other *ActiveSeriesTracker) bool {
 	return c.configHash == other.configHash
 }
 
-// NewActiveSeriesTracker creates an ActiveSeriesTracker with a single tracker.
+// NewActiveSeriesTrackerForTests creates an ActiveSeriesTracker with a single tracker.
 // This is a test helper for the activeseries package.
-func NewActiveSeriesTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
+func NewActiveSeriesTrackerForTests(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
 	t, err := newActiveSeriesTracker(userID, trackerName, trackedLabels, limit, cooldownDuration, logger)
 	if err != nil {
 		return nil, err
