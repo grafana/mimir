@@ -2601,19 +2601,18 @@ func TestSplitAndCacheMiddleware_ClosesSubResponsesOnPartialFailure(t *testing.T
 		producedMu sync.Mutex
 		produced   []*closeCountingResponse
 
-		// successSignals lets the failing handler wait until every non-failing
+		// successWg lets the failing handler wait until every non-failing
 		// goroutine has registered its response, so the test is deterministic and
 		// always exercises the partial-failure path (rather than the all-failed path
 		// triggered by errgroup ctx-cancel racing the success goroutines).
-		successSignals = make(chan struct{}, numSplits-1)
+		successWg sync.WaitGroup
 	)
+	successWg.Add(numSplits - 1)
 
-	downstream := HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+	downstream := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 		// The final sub-request fails after the others have completed.
 		if req.GetStart() == failStop {
-			for i := 0; i < numSplits-1; i++ {
-				<-successSignals
-			}
+			successWg.Wait()
 			return nil, context.DeadlineExceeded
 		}
 
@@ -2621,7 +2620,7 @@ func TestSplitAndCacheMiddleware_ClosesSubResponsesOnPartialFailure(t *testing.T
 		producedMu.Lock()
 		produced = append(produced, resp)
 		producedMu.Unlock()
-		successSignals <- struct{}{}
+		successWg.Done()
 		return resp, nil
 	})
 
