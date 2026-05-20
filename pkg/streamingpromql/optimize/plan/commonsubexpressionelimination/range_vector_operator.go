@@ -552,11 +552,12 @@ type bufferedRangeVectorStepData struct {
 func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStepData, error) {
 	buffered := bufferedRangeVectorStepData{
 		stepData: &types.RangeVectorStepData{
-			StepT:      stepData.StepT,
-			RangeStart: stepData.RangeStart,
-			RangeEnd:   stepData.RangeEnd,
-			Smoothed:   stepData.Smoothed,
-			Anchored:   stepData.Anchored,
+			StepT:                stepData.StepT,
+			RangeStart:           stepData.RangeStart,
+			RangeEnd:             stepData.RangeEnd,
+			Smoothed:             stepData.Smoothed,
+			Anchored:             stepData.Anchored,
+			MixedInExtendedRange: stepData.MixedInExtendedRange,
 		},
 	}
 

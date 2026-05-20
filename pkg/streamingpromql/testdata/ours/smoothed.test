@@ -313,15 +313,11 @@ load 1s
   nans 0 NaN 2 NaN NaN 5 NaN NaN NaN NaN NaN
   infs 0 Inf 2 Inf Inf 5 Inf Inf Inf Inf Inf
 
-# These tests have been commented out since upstream Prometheus has recently
-# added support for smoothed/anchored histograms.
-# These tests have been commented out whilst a Mimir implementation is completed.
-
+# Instant `mixed smoothed` cases hit an upstream Prometheus engine panic (engine.go indexes
+# s.Floats[0] / s.Histograms[0] without checking len > 0 when both buckets are empty after the
+# smoothed selection). The MQE-side coverage lives in ours-only/smoothed.test.
 # eval instant at 1s mixed smoothed
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
 # eval instant at 8s mixed smoothed
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
 eval instant at 0 missing smoothed
   missing 0
@@ -550,21 +546,20 @@ eval instant at 5m delta(metric{instance="1"}[1m] smoothed)
 
 eval instant at 5m delta(metric{instance="2"}[1m] smoothed)
 
-# These tests have been commented out since upstream Prometheus has recently
-# added support for smoothed/anchored histograms.
-# These tests have been commented out whilst a Mimir implementation is completed.
+# At t=11s the extended smoothed window for instance="3" mixes floats and a histogram, so the
+# series emits MixedFloatsHistogramsWarning and is dropped. instance="1" and instance="2" return
+# their float-only smoothed results.
+eval_warn instant at 11s increase(metric[1m] smoothed)
+  {instance="1"} 13.333333333333334
+  {instance="2"} NaN
 
-# MQE and Prometheus have different behaviour here.
-# MQE will fail a query where histograms are found within the query range, or in the points immediately either side of the range.
-# Prometheus will fail a query where histograms are found anywhere within the extended range window.
-# eval instant at 11s increase(metric[1m] smoothed)
-#   expect fail msg: smoothed and anchored modifiers do not work with native histograms
+eval_warn instant at 11s rate(metric[1m] smoothed)
+  {instance="1"} 0.22222222222222224
+  {instance="2"} NaN
 
-# eval instant at 11s rate(metric[1m] smoothed)
-#   expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
-# eval instant at 11s delta(metric[1m] smoothed)
-#   expect fail msg: smoothed and anchored modifiers do not work with native histograms
+eval_warn instant at 11s delta(metric[1m] smoothed)
+  {instance="1"} 9.666666666666666
+  {instance="2"} NaN
 
 clear
 load 1m

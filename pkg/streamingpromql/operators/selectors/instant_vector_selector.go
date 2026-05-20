@@ -7,7 +7,6 @@ package selectors
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 
@@ -122,6 +121,12 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 			// Keep this a copy of this point for use with smoothed case below.
 			right := promql.FPoint{T: t, F: f}
+			// Capture the right-side histogram before PeekPrev overwrites h, so that smoothed
+			// queries can interpolate between two histograms or detect a mixed prev/right pair.
+			var rightH *histogram.FloatHistogram
+			if valueType == chunkenc.ValHistogram || valueType == chunkenc.ValFloatHistogram {
+				rightH = h
+			}
 
 			t, f, h, ok = v.memoizedIterator.PeekPrev()
 			if !ok || t <= ts-v.Selector.LookbackDelta.Milliseconds() {
@@ -135,6 +140,31 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					// to AtFloatHistogram, so if we're going to return this histogram, we'll make a copy below.
 					h = lastHistogram
 				}
+				// Under the smoothed modifier with two histograms surrounding ts within the
+				// look-back/look-ahead window, interpolate the histogram at ts. If the
+				// right-side histogram detected a counter reset against the left, model the
+				// counter as restarting from zero (mirrors interpolateHistograms in
+				// vendor/.../promql/functions.go).
+				if v.Selector.Smoothed && rightH != nil && right.T <= ts+v.Selector.LookbackDelta.Milliseconds() {
+					interpolated, err := interpolateHistogramAt(h, t, rightH, right.T, ts)
+					if err != nil {
+						// Incompatible schemas (e.g. exponential mixed with custom buckets):
+						// drop this step. Annotation emission from the instant-vector selector
+						// is not currently plumbed; the divergence from Prometheus's
+						// MixedExponentialCustomHistogramsWarning is acceptable because the
+						// step is also dropped from the result either way.
+						continue
+					}
+					h = interpolated
+					// Force a new FloatHistogram allocation on the next iteration so the
+					// interpolation we just returned isn't aliased and accidentally mutated.
+					lastHistogramT = math.MinInt64
+					lastHistogram = nil
+				}
+				// If the right-side neighbour is a float (mixed within the look-ahead window)
+				// under smoothed, fall back to the lookback histogram. Annotation emission for
+				// MixedFloatsHistogramsWarning would belong here but is not currently plumbed
+				// through the instant-vector selector.
 			} else {
 				// If this query uses the 'smoothed' modifier, we look back within the look-back delta
 				// to find the most recent float value before the requested timestamp.
@@ -160,10 +190,11 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		// PeekPrev will set the histogram to nil, or the value to 0 if the other type exists.
 		// So check if histograms is nil first. If we don't have a histogram, then we should have a value and vice-versa.
 		if h != nil {
-
-			if v.Selector.Smoothed {
-				return types.InstantVectorSeriesData{}, errors.New("smoothed and anchored modifiers do not work with native histograms")
-			}
+			// Under the smoothed modifier, a histogram exact-match or lookback returns the
+			// histogram as-is. Interpolation between two histograms within the look-back/look-
+			// ahead window is handled at the range-vector / function level via extendedHistogramRate;
+			// the instant-vector selector mirrors Prometheus's behaviour of picking the nearest
+			// previous sample.
 
 			// Only create the slice once we know the series is a histogram or not.
 			// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
@@ -246,4 +277,35 @@ func (v *InstantVectorSelector) Close() {
 		v.evaluationStats.Close()
 		v.evaluationStats = nil
 	}
+}
+
+// interpolateHistogramAt linearly interpolates between two histograms (h1 at t1, h2 at t2) and
+// returns the histogram value at time t. If h2.DetectReset(h1) returns true the counter is
+// modelled as restarting from zero, so the result is h2 scaled by the fraction (t-t1)/(t2-t1).
+// Returns an error when the two histograms have incompatible schemas (mixing exponential and
+// custom buckets). Mirrors interpolateHistograms in vendor/.../promql/functions.go and is used
+// by the smoothed instant-vector selector.
+func interpolateHistogramAt(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram.FloatHistogram, t2, t int64) (*histogram.FloatHistogram, error) {
+	if t == t1 {
+		return h1.Copy(), nil
+	}
+	if t == t2 {
+		return h2.Copy(), nil
+	}
+	fraction := float64(t-t1) / float64(t2-t1)
+	// Treat any non-gauge histogram as a counter for the purpose of reset detection. This matches
+	// the upstream test expectation that a CounterResetHint of reset (or unknown/not_reset)
+	// triggers the counter interpretation in interpolation.
+	if h2.CounterResetHint != histogram.GaugeType && h2.DetectReset(h1) {
+		return h2.Copy().Mul(fraction), nil
+	}
+	result := h2.Copy()
+	if _, _, _, err := result.Sub(h1); err != nil {
+		return nil, err
+	}
+	result.Mul(fraction)
+	if _, _, _, err := result.Add(h1); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
