@@ -46,18 +46,36 @@ func rate(isRate bool) RangeVectorStepFunction {
 		hHead, hTail := step.Histograms.UnsafePoints()
 		hCount := len(hHead) + len(hTail)
 
-		if fCount > 0 && hCount > 0 {
-			// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a rate.
-			// Otherwise, emit a warning and drop this sample.
+		// Under the anchored/smoothed modifier, a float and a histogram anywhere in the extended
+		// look-back/look-ahead window count as mixed because either side may be touched by
+		// boundary interpolation. This mirrors Prometheus's extendedRate / extendedHistogramRate
+		// dispatch which inspects the full extended range matrix.
+		if step.MixedInExtendedRange || (fCount > 0 && hCount > 0) {
 			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 			return 0, false, nil, nil
 		}
 
 		rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
 
+		if step.Smoothed || step.Anchored {
+			if hCount >= 1 {
+				hExt := joinHistogramPoints(hHead, hTail)
+				val, err := extendedHistogramRate(hExt, step.RangeStart, step.RangeEnd, rangeSeconds, true, isRate, step.Smoothed, emitAnnotation)
+				if err != nil {
+					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+					return 0, false, nil, err
+				}
+				return 0, false, val, nil
+			}
+			if fCount >= 2 {
+				val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, true)
+				return val, true, nil, nil
+			}
+			return 0, false, nil, nil
+		}
+
 		if fCount >= 2 {
-			// TODO: just pass step here? (and below)
-			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed || step.Anchored)
+			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, false)
 			return val, true, nil, nil
 		}
 
@@ -72,6 +90,18 @@ func rate(isRate bool) RangeVectorStepFunction {
 
 		return 0, false, nil, nil
 	}
+}
+
+// joinHistogramPoints concatenates the head and tail slices returned by UnsafePoints into a
+// single slice. The returned slice aliases head when tail is empty.
+func joinHistogramPoints(head, tail []promql.HPoint) []promql.HPoint {
+	if len(tail) == 0 {
+		return head
+	}
+	joined := make([]promql.HPoint, 0, len(head)+len(tail))
+	joined = append(joined, head...)
+	joined = append(joined, tail...)
+	return joined
 }
 
 func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
@@ -350,17 +380,32 @@ func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryT
 	hHead, hTail := step.Histograms.UnsafePoints()
 	hCount := len(hHead) + len(hTail)
 
-	if fCount > 0 && hCount > 0 {
-		// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a delta.
-		// Otherwise, emit a warning and drop this sample.
+	if step.MixedInExtendedRange || (fCount > 0 && hCount > 0) {
 		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
 
 	rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
 
+	if step.Smoothed || step.Anchored {
+		if hCount >= 1 {
+			hExt := joinHistogramPoints(hHead, hTail)
+			val, err := extendedHistogramRate(hExt, step.RangeStart, step.RangeEnd, rangeSeconds, false, false, step.Smoothed, emitAnnotation)
+			if err != nil {
+				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				return 0, false, nil, err
+			}
+			return 0, false, val, nil
+		}
+		if fCount >= 2 {
+			val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, true)
+			return val, true, nil, nil
+		}
+		return 0, false, nil, nil
+	}
+
 	if fCount >= 2 {
-		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Anchored || step.Smoothed)
+		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, false)
 		return val, true, nil, nil
 	}
 

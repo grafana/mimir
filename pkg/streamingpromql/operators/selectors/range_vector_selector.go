@@ -7,7 +7,6 @@ package selectors
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/value"
@@ -151,10 +150,9 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	var err error
-	histogramObserved := false
 	if fillBufferRequired {
 		// Note - fillBuffer may result in the buffer having a point after the rangeEnd.
-		histogramObserved, err = m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd, m.Selector.Anchored || m.Selector.Smoothed)
+		_, err = m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd, m.Selector.Anchored || m.Selector.Smoothed)
 		if err != nil {
 			return nil, err
 		}
@@ -163,12 +161,13 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	// Update query stats before we perform any mutations for the anchored or smoothed modifier.
 	m.evaluationStats.TrackSamplesForRangeVectorSelector(m.stepData.StepT, m.floats, m.histograms, originalRangeStart, originalRangeEnd, m.Selector.Timestamp != nil, m.matchesSubsets)
 
-	if m.Selector.Anchored || m.Selector.Smoothed {
-		// Histograms are not supported for these modified range queries
-		if histogramObserved {
-			return nil, errors.New("smoothed and anchored modifiers do not work with native histograms")
-		}
+	// Pre-mutation snapshot of buffer counts. We use this to detect mixed-type ranges in the
+	// extended look-back/look-ahead window for the anchored/smoothed paths, matching Prometheus's
+	// extendedRate / extendedHistogramRate dispatch where mixed floats and histograms anywhere in
+	// the extended window force the query to drop the point with MixedFloatsHistogramsWarning.
+	m.stepData.MixedInExtendedRange = (m.Selector.Anchored || m.Selector.Smoothed) && m.floats.Count() > 0 && m.histograms.Count() > 0
 
+	if m.Selector.Anchored || m.Selector.Smoothed {
 		if m.floats.Count() > 0 && m.floats.PointAt(0).T > originalRangeEnd {
 			// This will be an empty set
 			m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(originalRangeEnd, m.stepData.Floats)
@@ -185,11 +184,18 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			m.stepData.Floats = m.floats.ViewAll(m.stepData.Floats)
 		}
 
+		// For histograms we do not mutate the underlying ring buffer. The view spans the extended
+		// look-back/look-ahead window (up to the extended rangeEnd) so that the rate/increase/
+		// delta family can pick or interpolate boundary values from points outside the original
+		// range, mirroring Prometheus's extendedHistogramRate. Other histogram-aware functions
+		// (e.g. resets, changes) see the same wider window, matching upstream Prometheus's
+		// behaviour where the engine's range buffer is uniformly extended for the modifier.
+		m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	} else {
 		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Floats)
+		m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	}
 
-	m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	m.stepData.RangeStart = originalRangeStart // important to return the original range start so that functions like rate() can determine the range duration regardless of smoothed / anchored
 	m.stepData.RangeEnd = originalRangeEnd
 

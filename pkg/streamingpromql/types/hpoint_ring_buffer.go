@@ -236,6 +236,11 @@ func (b *HPointRingBuffer) RemoveLastPoint() {
 	}
 }
 
+// Count returns the number of points currently in this buffer.
+func (b *HPointRingBuffer) Count() int {
+	return b.size
+}
+
 // Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
 func (b *HPointRingBuffer) Reset() {
 	b.firstIndex = 0
