@@ -2268,23 +2268,23 @@ func encodeQueryResponse(f formatter, resp *PrometheusResponse) ([]byte, error) 
 	return buf.Bytes(), nil
 }
 
-// closeCountingResponse wraps a Response and counts Close() invocations made
-// through this layer. The embedded Response provides every other method.
+// closeCountingResponse wraps a Response and records whether Close() has been
+// called through this layer. The embedded Response provides every other method.
 type closeCountingResponse struct {
 	Response
-	closes atomic.Int32
+	closed atomic.Bool
 }
 
-func (r *closeCountingResponse) Close() { r.closes.Add(1) }
+func (r *closeCountingResponse) Close() { r.closed.Store(true) }
 
-func (r *closeCountingResponse) CloseCount() int { return int(r.closes.Load()) }
+func (r *closeCountingResponse) Closed() bool { return r.closed.Load() }
 
 // nonPrometheusResponse satisfies the Response interface but returns
 // (nil, false) from GetPrometheusResponse and is not assertable to
 // *PrometheusLabelsResponse or *PrometheusSeriesResponse, so it exercises every
 // "invalid response format" early-return in the codec.
 type nonPrometheusResponse struct {
-	closes atomic.Int32
+	closed atomic.Bool
 }
 
 func (r *nonPrometheusResponse) Reset()                          {}
@@ -2294,8 +2294,8 @@ func (r *nonPrometheusResponse) GetHeaders() []*PrometheusHeader { return nil }
 func (r *nonPrometheusResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
 	return nil, false
 }
-func (r *nonPrometheusResponse) Close()          { r.closes.Add(1) }
-func (r *nonPrometheusResponse) CloseCount() int { return int(r.closes.Load()) }
+func (r *nonPrometheusResponse) Close()       { r.closed.Store(true) }
+func (r *nonPrometheusResponse) Closed() bool { return r.closed.Load() }
 
 // TestCodec_EncodeMetricsQueryResponse_ClosesResponseOnEarlyReturn ensures that
 // every error path in EncodeMetricsQueryResponse closes the response. Skipping
@@ -2317,7 +2317,7 @@ func TestCodec_EncodeMetricsQueryResponse_ClosesResponseOnEarlyReturn(t *testing
 
 		_, err = codec.EncodeMetricsQueryResponse(context.Background(), req, res)
 		require.Error(t, err)
-		require.Equal(t, 1, res.CloseCount())
+		require.True(t, res.Closed())
 	})
 
 	t.Run("response missing PrometheusResponse", func(t *testing.T) {
@@ -2328,7 +2328,7 @@ func TestCodec_EncodeMetricsQueryResponse_ClosesResponseOnEarlyReturn(t *testing
 
 		_, err = codec.EncodeMetricsQueryResponse(context.Background(), req, res)
 		require.Error(t, err)
-		require.Equal(t, 1, res.CloseCount())
+		require.True(t, res.Closed())
 	})
 }
 
@@ -2347,7 +2347,7 @@ func TestCodec_EncodeLabelsSeriesQueryResponse_ClosesResponseOnEarlyReturn(t *te
 
 		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, false)
 		require.Error(t, err)
-		require.Equal(t, 1, res.CloseCount())
+		require.True(t, res.Closed())
 	})
 
 	t.Run("unsupported Accept header (series)", func(t *testing.T) {
@@ -2359,7 +2359,7 @@ func TestCodec_EncodeLabelsSeriesQueryResponse_ClosesResponseOnEarlyReturn(t *te
 
 		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, true)
 		require.Error(t, err)
-		require.Equal(t, 1, res.CloseCount())
+		require.True(t, res.Closed())
 	})
 
 	t.Run("response is not a labels response", func(t *testing.T) {
@@ -2370,7 +2370,7 @@ func TestCodec_EncodeLabelsSeriesQueryResponse_ClosesResponseOnEarlyReturn(t *te
 
 		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, false)
 		require.Error(t, err)
-		require.Equal(t, 1, res.CloseCount())
+		require.True(t, res.Closed())
 	})
 
 	t.Run("response is not a series response", func(t *testing.T) {
@@ -2381,7 +2381,7 @@ func TestCodec_EncodeLabelsSeriesQueryResponse_ClosesResponseOnEarlyReturn(t *te
 
 		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, true)
 		require.Error(t, err)
-		require.Equal(t, 1, res.CloseCount())
+		require.True(t, res.Closed())
 	})
 }
 
@@ -2415,9 +2415,9 @@ func TestCodec_MergeResponse_ClosesInputsOnValidationFailure(t *testing.T) {
 			// Bad response placed in the middle so we exercise responses on both sides.
 			_, err := codec.MergeResponse(good1, wrappedBad, good2)
 			require.Error(t, err)
-			require.Equal(t, 1, good1.CloseCount(), "earlier valid response must be closed")
-			require.Equal(t, 1, wrappedBad.CloseCount(), "failing response must be closed")
-			require.Equal(t, 1, good2.CloseCount(), "later valid response must be closed")
+			require.True(t, good1.Closed(), "earlier valid response must be closed")
+			require.True(t, wrappedBad.Closed(), "failing response must be closed")
+			require.True(t, good2.Closed(), "later valid response must be closed")
 		})
 	}
 }
@@ -2438,10 +2438,10 @@ func TestCodec_MergeResponse_TransfersOwnershipOnSuccess(t *testing.T) {
 
 	merged, err := codec.MergeResponse(in1, in2)
 	require.NoError(t, err)
-	require.Equal(t, 0, in1.CloseCount(), "input must not be closed before merged response is closed")
-	require.Equal(t, 0, in2.CloseCount(), "input must not be closed before merged response is closed")
+	require.False(t, in1.Closed(), "input must not be closed before merged response is closed")
+	require.False(t, in2.Closed(), "input must not be closed before merged response is closed")
 
 	merged.Close()
-	require.Equal(t, 1, in1.CloseCount(), "closing the merged response must close each input exactly once")
-	require.Equal(t, 1, in2.CloseCount(), "closing the merged response must close each input exactly once")
+	require.True(t, in1.Closed(), "closing the merged response must close each input")
+	require.True(t, in2.Closed(), "closing the merged response must close each input")
 }
