@@ -38,7 +38,7 @@ func TestAggrChunk_GetChunkEncoding(t *testing.T) {
 		{
 			name:        "XOR2",
 			rawType:     Chunk_XOR2,
-			expectedEnc: chunk.PrometheusXOR2Chunk,
+			expectedEnc: chunk.PrometheusXor2Chunk,
 			expectedOK:  true,
 		},
 		{

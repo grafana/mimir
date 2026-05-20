@@ -27,7 +27,7 @@ func TestChunkFromMeta(t *testing.T) {
 		{
 			name:             "XOR2",
 			encoding:         chunkenc.EncXOR2,
-			expectedMimirEnc: chunk.PrometheusXOR2Chunk,
+			expectedMimirEnc: chunk.PrometheusXor2Chunk,
 		},
 		{
 			name:             "Histogram",
