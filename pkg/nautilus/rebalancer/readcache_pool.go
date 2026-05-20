@@ -49,8 +49,13 @@ type readcacheRingClient interface {
 // This is the rebalancer-side analogue of pkg/distributor/readcachePool;
 // keeping them separate avoids cross-package coupling (the rebalancer
 // shouldn't depend on the distributor) and lets the rebalancer pick
-// its own gRPC options (X-Scope-OrgID is not propagated because the
-// HashRangeStats / SetHashRanges RPCs are unauthenticated).
+// its own gRPC options. X-Scope-OrgID propagation IS required even
+// though the rebalancer's RPCs are administrative: the readcache
+// gRPC server reuses the ingester service surface, whose handlers
+// run behind ServerUserHeaderInterceptor and reject any inbound RPC
+// lacking X-Scope-OrgID with "no org id". rebalance() injects a
+// synthetic "nautilus-rebalancer" org ID upstream; the dial
+// interceptors below are what actually carries it onto the wire.
 type ReadcachePool struct {
 	ring     readcacheRingClient
 	dialOpts []grpc.DialOption
@@ -79,20 +84,29 @@ func NewReadcachePool(_ ReadcacheClientConfig, ringClient readcacheRingClient, c
 	if ringClient == nil {
 		return nil, errors.New("rebalancer readcache pool requires a non-nil ring client")
 	}
+	// X-Scope-OrgID propagation: the readcache pods run their gRPC
+	// surface behind ServerUserHeaderInterceptor (inherited from the
+	// shared ingester service registration), which rejects any
+	// inbound RPC whose context lacks an org ID. rebalance() injects
+	// a synthetic "nautilus-rebalancer" org ID into the Go context,
+	// but it only makes it onto the wire if we install
+	// ClientUserHeaderInterceptor on the dial. Omitting it (the
+	// previous behaviour) made every HashRangeStats / SetHashRanges
+	// / GetHashRanges call fail with "no org id" on the server side,
+	// which in turn forced reconstructRound's quorum check to fail
+	// and the rebalancer to fall into the FineEvenSplit cold-start
+	// branch every round, producing a self-sustaining outage.
+	unary := []grpc.UnaryClientInterceptor{middleware.ClientUserHeaderInterceptor}
+	if clusterValidationLabel != "" {
+		unary = append(unary, middleware.ClusterUnaryClientInterceptor(clusterValidationLabel, middleware.NoOpInvalidClusterValidationReporter))
+	}
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	}
-	if clusterValidationLabel != "" {
-		dialOpts = append(dialOpts, grpc.WithUnaryInterceptor(
-			middleware.ClusterUnaryClientInterceptor(clusterValidationLabel, middleware.NoOpInvalidClusterValidationReporter),
-		))
+		grpc.WithChainUnaryInterceptor(unary...),
+		grpc.WithStreamInterceptor(middleware.StreamClientUserHeaderInterceptor),
 	}
 	return &ReadcachePool{
-		ring: ringClient,
-		// The rebalancer's RPCs (HashRangeStats / SetHashRanges /
-		// GetHashRanges) are administrative; they don't carry a
-		// tenant header. We deliberately omit the
-		// ClientUserHeaderInterceptor that the distributor uses.
+		ring:     ringClient,
 		dialOpts: dialOpts,
 		logger:   logger,
 		clients:  map[string]readcacheClient{},
