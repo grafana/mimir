@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -232,7 +233,7 @@ func TestQuerySplitting_InstantQueryWith5hRange_CacheDisabledByRequest(t *testin
 		},
 	}
 
-	ctx := streamingpromql.ContextWithCacheDisabled(context.Background(), true)
+	ctx := requestoptions.WithOptions(context.Background(), requestoptions.Options{CacheDisabled: true})
 	result := runInstantQuery(t, ctx, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
 

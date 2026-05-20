@@ -16,6 +16,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 )
 
@@ -38,7 +39,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.
 		return expr, nil
 	}
 
-	options := querymiddleware.RequestOptionsFromContext(ctx)
+	options := requestoptions.FromContext(ctx)
 	if options.ShardingDisabled {
 		return expr, nil
 	}

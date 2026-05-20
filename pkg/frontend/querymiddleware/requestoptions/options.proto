@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package requestoptions;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "requestoptions";
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+// Options carries per-request toggles set by query-frontend middlewares and
+// consumed at later stages of the pipeline (AST optimization, query
+// materialization, range vector splitting cache).
+message Options {
+  bool CacheDisabled = 1;
+  bool ShardingDisabled = 2;
+  int32 TotalShards = 3;
+
+  reserved 4, 5; // Fields previously used by instant query splitting.
+}

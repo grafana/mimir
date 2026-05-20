@@ -1630,7 +1630,7 @@ func TestContextWithRequestHintsAndOptions(t *testing.T) {
 
 			require.Equal(t, tc.hints, RequestHintsFromContext(ctx))
 			require.Equal(t, tc.options, RequestOptionsFromContext(ctx))
-			require.Equal(t, tc.expectCacheDisabled, streamingpromql.CacheDisabledFromContext(ctx))
+			require.Equal(t, tc.expectCacheDisabled, RequestOptionsFromContext(ctx).CacheDisabled)
 		})
 	}
 }

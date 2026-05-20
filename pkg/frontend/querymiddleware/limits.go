@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
@@ -30,6 +31,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+// Options is an alias of requestoptions.Options, kept for callers that still
+// reference the type through the querymiddleware package.
+type Options = requestoptions.Options
 
 var errExecutingParallelQueriesFinished = cancellation.NewErrorf("executing parallel queries finished")
 
@@ -504,16 +509,12 @@ type requestContextKeyType int
 
 const (
 	requestHintsKey requestContextKeyType = iota
-	requestOptionsKey
 	parallelismLimiterKey
 )
 
 func ContextWithRequestHintsAndOptions(ctx context.Context, hints *Hints, options Options) context.Context {
 	ctx = context.WithValue(ctx, requestHintsKey, hints)
-	ctx = context.WithValue(ctx, requestOptionsKey, options)
-	// Mirror CacheDisabled onto the context so mqe packages (e.g. rangevectorsplitting) can read it without importing
-	// querymiddleware and causing an import cycle.
-	ctx = streamingpromql.ContextWithCacheDisabled(ctx, options.CacheDisabled)
+	ctx = requestoptions.WithOptions(ctx, options)
 	return ctx
 }
 
@@ -525,12 +526,11 @@ func RequestHintsFromContext(ctx context.Context) *Hints {
 	return nil
 }
 
+// RequestOptionsFromContext returns the request Options from ctx. It is a thin
+// wrapper around requestoptions.FromContext kept for callers that still go
+// through the querymiddleware package.
 func RequestOptionsFromContext(ctx context.Context) Options {
-	if v := ctx.Value(requestOptionsKey); v != nil {
-		return v.(Options)
-	}
-
-	return Options{}
+	return requestoptions.FromContext(ctx)
 }
 
 func ContextWithParallelismLimiter(ctx context.Context, limiter *ParallelismLimiter) context.Context {

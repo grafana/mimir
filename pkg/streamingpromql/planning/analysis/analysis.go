@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -123,7 +124,7 @@ func (h *handler) performAnalysis(w http.ResponseWriter, r *http.Request) ([]byt
 	}
 
 	ctx := r.Context()
-	var options querymiddleware.Options
+	var options requestoptions.Options
 	querymiddleware.DecodeOptions(r, &options)
 	ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, nil, options) // FIXME: populate hints as well (need cardinality estimation middleware for this)
 
