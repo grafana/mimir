@@ -73,22 +73,35 @@ type rangeStatsView struct {
 // hold both the lightweight Round summary (for HTML) and the full
 // inputs/outputs needed for deterministic replay.
 type adminState struct {
-	mu             sync.RWMutex
-	traces         []Trace
-	lastStats      map[partitionRangeKey]rangeStatsView
-	lastPartitionL map[int32]int64
-	lastMovable    map[int32]int64
+	mu                sync.RWMutex
+	traces            []Trace
+	lastStats         map[partitionRangeKey]rangeStatsView
+	lastPartitionL    map[int32]int64
+	lastPartitionRate map[int32]float64
+	lastMovable       map[int32]int64
 
 	// lastReadcacheRound is the most recent readcache slicer round's
 	// output. Empty before the first round, or when the readcache
-	// slicer is disabled.
+	// slicer is disabled. Updated on every readcache round so the
+	// admin page can answer "what does the slicer currently think
+	// the assignment should be?" without scanning history.
 	lastReadcacheRound readcacheRoundView
+
+	// readcacheRoundHistory keeps the most recent rounds that
+	// actually produced moves. Bounded by maxRoundLogs so a
+	// long-lived rebalancer doesn't accumulate state. No-op
+	// (zero-moves) rounds are intentionally excluded — they would
+	// flush the meaningful history out of a small ring buffer
+	// during quiescent periods.
+	readcacheRoundHistory []readcacheRoundView
 }
 
 // readcacheRoundView is the admin-side snapshot of a single
-// readcache slicer round. Used by the trace JSON and (eventually)
-// the HTML rounds page.
+// readcache slicer round. Used by the trace JSON and the HTML
+// rounds page.
 type readcacheRoundView struct {
+	// Time is the wall-clock instant the slicer round ran.
+	Time         time.Time                 `json:"time"`
 	PerInstance  map[string]float64        `json:"per_instance"`
 	PerPartition []readcachePartitionEntry `json:"per_partition"`
 	Moves        []readcacheMove           `json:"moves"`
@@ -102,9 +115,12 @@ type readcachePartitionEntry struct {
 
 // setLastReadcachePlan snapshots the most recent readcache slicer
 // round into the admin state. Called from runReadcacheSlicer after
-// the plan has been applied to the store.
-func (s *adminState) setLastReadcachePlan(plan readcachePlan, currentOwner map[int32]string) {
+// the plan has been applied to the store. Rounds that produced
+// moves are also appended to readcacheRoundHistory so the admin
+// page can render a "Recent Readcache Slicer Rounds" timeline.
+func (s *adminState) setLastReadcachePlan(now time.Time, plan readcachePlan, currentOwner map[int32]string) {
 	view := readcacheRoundView{
+		Time:         now,
 		PerInstance:  make(map[string]float64, len(plan.LoadByInstance)),
 		PerPartition: make([]readcachePartitionEntry, 0, len(plan.Assignment.Entries)),
 		Moves:        append([]readcacheMove(nil), plan.Moves...),
@@ -123,6 +139,40 @@ func (s *adminState) setLastReadcachePlan(plan readcachePlan, currentOwner map[i
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastReadcacheRound = view
+	if len(view.Moves) > 0 {
+		s.readcacheRoundHistory = append(s.readcacheRoundHistory, view)
+		if len(s.readcacheRoundHistory) > maxRoundLogs {
+			s.readcacheRoundHistory = s.readcacheRoundHistory[len(s.readcacheRoundHistory)-maxRoundLogs:]
+		}
+	}
+}
+
+// snapshotReadcacheHistory returns a copy of the most recent
+// readcache slicer rounds with moves, newest first. Returns an
+// empty slice when no move-bearing round has been recorded yet.
+func (s *adminState) snapshotReadcacheHistory() []readcacheRoundView {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.readcacheRoundHistory) == 0 {
+		return nil
+	}
+	out := make([]readcacheRoundView, len(s.readcacheRoundHistory))
+	for i, r := range s.readcacheRoundHistory {
+		j := len(s.readcacheRoundHistory) - 1 - i
+		// Deep-copy the inner maps/slices so callers can't mutate
+		// the admin-state store.
+		cp := readcacheRoundView{
+			Time:         r.Time,
+			PerInstance:  make(map[string]float64, len(r.PerInstance)),
+			PerPartition: append([]readcachePartitionEntry(nil), r.PerPartition...),
+			Moves:        append([]readcacheMove(nil), r.Moves...),
+		}
+		for k, v := range r.PerInstance {
+			cp.PerInstance[k] = v
+		}
+		out[j] = cp
+	}
+	return out
 }
 
 func (s *adminState) addTrace(tr Trace) {
@@ -144,6 +194,7 @@ func (s *adminState) addTrace(tr Trace) {
 func (s *adminState) setLastStats(
 	lm *loadMap,
 	partitionLByPID map[int32]int64,
+	partitionRateByPID map[int32]float64,
 	recentMoves map[int32][]moveRecord,
 	activePartitions []int32,
 ) {
@@ -162,10 +213,12 @@ func (s *adminState) setLastStats(
 	}
 
 	partitionLCopy := make(map[int32]int64, len(partitionLByPID))
+	partitionRateCopy := make(map[int32]float64, len(partitionRateByPID))
 	movable := make(map[int32]int64, len(partitionLByPID))
 	for _, pid := range activePartitions {
 		l := partitionLByPID[pid]
 		partitionLCopy[pid] = l
+		partitionRateCopy[pid] = partitionRateByPID[pid]
 		var sumRecent int64
 		for _, m := range recentMoves[pid] {
 			sumRecent += m.series
@@ -181,6 +234,7 @@ func (s *adminState) setLastStats(
 	defer s.mu.Unlock()
 	s.lastStats = stats
 	s.lastPartitionL = partitionLCopy
+	s.lastPartitionRate = partitionRateCopy
 	s.lastMovable = movable
 }
 
@@ -205,7 +259,7 @@ func (s *adminState) snapshotReadcacheRound() (readcacheRoundView, bool) {
 	return view, true
 }
 
-func (s *adminState) snapshot() ([]RoundLog, map[partitionRangeKey]rangeStatsView, map[int32]int64, map[int32]int64) {
+func (s *adminState) snapshot() ([]RoundLog, map[partitionRangeKey]rangeStatsView, map[int32]int64, map[int32]float64, map[int32]int64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -222,11 +276,15 @@ func (s *adminState) snapshot() ([]RoundLog, map[partitionRangeKey]rangeStatsVie
 	for k, v := range s.lastPartitionL {
 		partitionL[k] = v
 	}
+	partitionRate := make(map[int32]float64, len(s.lastPartitionRate))
+	for k, v := range s.lastPartitionRate {
+		partitionRate[k] = v
+	}
 	movable := make(map[int32]int64, len(s.lastMovable))
 	for k, v := range s.lastMovable {
 		movable[k] = v
 	}
-	return rounds, stats, partitionL, movable
+	return rounds, stats, partitionL, partitionRate, movable
 }
 
 // traceSnapshot returns a copy of all currently-buffered traces in
@@ -258,9 +316,10 @@ type partitionView struct {
 	PartitionID   int32
 	InstanceID    string
 	InstanceAddr  string
-	MemorySeries  int64 // L_pid, matches cortex_ingester_memory_series (max over owners)
-	MovableSeries int64 // max(0, L_pid - meanL) - sumRecentMoves(pid)
-	OwnedSeries   int64 // Σ per-range series on this partition (from lm.series)
+	MemorySeries  int64   // L_pid, matches cortex_ingester_memory_series (max over owners)
+	SampleRate    float64 // sum of per-range samples-per-second EWMA on this partition
+	MovableSeries int64   // max(0, L_pid - meanL) - sumRecentMoves(pid)
+	OwnedSeries   int64   // Σ per-range series on this partition (from lm.series)
 	HashSpacePct  float64
 	NumRanges     int
 	Ranges        []rangeView
@@ -286,14 +345,23 @@ type readcacheReplicaView struct {
 
 // adminPageData is the full data structure passed to the template.
 type adminPageData struct {
-	GeneratedAt        string
-	TotalMemorySeries  int64 // Σ L_pid across partitions
-	TotalOwnedSeries   int64 // Σ per-range series, sanity-check against TotalMemorySeries
-	AboveAverage       int64 // Σ max(0, L_pid - meanL)
-	MeanL              int64
-	MaxL               int64
-	MinL               int64
-	ImbalanceRatio     float64
+	GeneratedAt       string
+	TotalMemorySeries int64 // Σ L_pid across partitions
+	TotalOwnedSeries  int64 // Σ per-range series, sanity-check against TotalMemorySeries
+	AboveAverage      int64 // Σ max(0, L_pid - meanL)
+	MeanL             int64
+	MaxL              int64
+	MinL              int64
+	ImbalanceRatio    float64
+	// Rate-based balance summary. RateImbalance is max/mean of
+	// the per-partition samples-per-second EWMA; the mean and max
+	// values are surfaced separately so the UI can label units
+	// (samples/s) and apply human-readable formatting. Zero when
+	// no rate signal has been reported yet.
+	MeanRate           float64
+	MaxRate            float64
+	MinRate            float64
+	RateImbalance      float64
 	NumPartitions      int
 	NumEntries         int
 	MovedFraction      float64
@@ -306,10 +374,15 @@ type adminPageData struct {
 	ReadcacheReplicas   []readcacheReplicaView
 	ReadcacheLastRound  readcacheRoundView
 	ReadcacheHasRound   bool
+
+	// ReadcacheHistory holds the most recent readcache slicer
+	// rounds that produced moves, newest first. Used to render
+	// the "Recent Readcache Slicer Rounds" section.
+	ReadcacheHistory []readcacheRoundView
 }
 
 func (r *Rebalancer) buildAdminPageData() adminPageData {
-	rounds, lastStats, lastPartitionL, lastMovable := r.admin.snapshot()
+	rounds, lastStats, lastPartitionL, lastPartitionRate, lastMovable := r.admin.snapshot()
 	current := r.store.latestActiveAssignment(time.Now())
 
 	data := adminPageData{
@@ -326,6 +399,7 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	if data.ReadcacheConfigured {
 		data.ReadcacheReplicas = r.buildReadcacheReplicaViews()
 		data.ReadcacheLastRound, data.ReadcacheHasRound = r.admin.snapshotReadcacheRound()
+		data.ReadcacheHistory = r.admin.snapshotReadcacheHistory()
 	}
 
 	if current == nil {
@@ -396,6 +470,8 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	var totalMemorySeries int64
 	var maxL, minL int64
 	minL = math.MaxInt64
+	var totalRate, maxRate, minRate float64
+	minRate = math.Inf(1)
 	for pid, pv := range partMap {
 		owners := pRing.PartitionOwnerIDs(pid)
 		if len(owners) > 0 {
@@ -403,6 +479,7 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 			pv.InstanceAddr = idToAddr[owners[0]]
 		}
 		pv.MemorySeries = lastPartitionL[pid]
+		pv.SampleRate = lastPartitionRate[pid]
 		pv.MovableSeries = lastMovable[pid]
 		totalMemorySeries += pv.MemorySeries
 		if pv.MemorySeries > maxL {
@@ -411,9 +488,19 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		if pv.MemorySeries < minL {
 			minL = pv.MemorySeries
 		}
+		totalRate += pv.SampleRate
+		if pv.SampleRate > maxRate {
+			maxRate = pv.SampleRate
+		}
+		if pv.SampleRate < minRate {
+			minRate = pv.SampleRate
+		}
 	}
 	if minL == math.MaxInt64 {
 		minL = 0
+	}
+	if math.IsInf(minRate, 1) {
+		minRate = 0
 	}
 
 	// Sort partitions by ID, and within each partition sort ranges by
@@ -449,6 +536,20 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	imbalance := 0.0
 	if meanL > 0 {
 		imbalance = float64(maxL) / float64(meanL)
+	}
+
+	// Rate-based imbalance. Computed against the same partition set
+	// as the series imbalance so the two numbers describe the same
+	// population, just under different load metrics. Zero when no
+	// reporter has emitted a non-zero sample rate yet (cold start,
+	// or every readcache is still empty).
+	meanRate := 0.0
+	rateImbalance := 0.0
+	if numPartitions > 0 {
+		meanRate = totalRate / float64(numPartitions)
+	}
+	if meanRate > 0 {
+		rateImbalance = maxRate / meanRate
 	}
 
 	var aboveAverage int64
@@ -501,6 +602,10 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	data.MaxL = maxL
 	data.MinL = minL
 	data.ImbalanceRatio = imbalance
+	data.MeanRate = meanRate
+	data.MaxRate = maxRate
+	data.MinRate = minRate
+	data.RateImbalance = rateImbalance
 	data.NumPartitions = numPartitions
 	data.NumEntries = len(current.Entries)
 	data.MovedFraction = movedFraction

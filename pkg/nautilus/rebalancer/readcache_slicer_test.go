@@ -86,6 +86,17 @@ func TestPlanReadcacheAssignment_MovesOverloadedPartition(t *testing.T) {
 
 	assert.Less(t, plan.LoadByInstance["rc-a"], 250.0, "rc-a should have been relieved")
 	assert.Greater(t, plan.LoadByInstance["rc-b"], 0.0, "rc-b should have received load")
+
+	// Every move must carry a non-empty Reason so the admin UI's
+	// "Recent Readcache Slicer Rounds" history can explain why each
+	// partition was moved. Without this, operators chasing a bad
+	// move have no way to distinguish "src was over target" from
+	// "cooldown collision" by inspecting the trace alone.
+	for _, m := range plan.Moves {
+		assert.NotEmpty(t, m.Reason, "move %+v should record a reason", m)
+		assert.Contains(t, m.Reason, m.From, "reason should mention src instance")
+		assert.Contains(t, m.Reason, m.To, "reason should mention dst instance")
+	}
 }
 
 func TestPlanReadcacheAssignment_RespectsMoveCooldown(t *testing.T) {

@@ -607,7 +607,8 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	partitionLByPID := r.partitionLByPID(instanceTotals, partitionTotals, pRing, activePartitions, now)
 
 	lm := buildLoadMap(rates)
-	r.admin.setLastStats(lm, partitionLByPID, r.recentMoves, activePartitions)
+	partitionRateByPID := partitionLoadFromRates(rates, activePartitions)
+	r.admin.setLastStats(lm, partitionLByPID, partitionRateByPID, r.recentMoves, activePartitions)
 
 	// Snapshot pre-slicer state for the trace. Done BEFORE runSlicer
 	// mutates anything (it gets a fresh assignment, but the cooldown

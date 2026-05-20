@@ -83,7 +83,7 @@ func (r *Rebalancer) runReadcacheSlicer(
 	// per-instance load. The trace serializer reads
 	// r.admin.lastReadcachePlan so the in-process /rounds.json reflects
 	// the most recent round.
-	r.admin.setLastReadcachePlan(plan, currentOwner)
+	r.admin.setLastReadcachePlan(now, plan, currentOwner)
 
 	// Update load gauges. These are last-write-wins per partition /
 	// per instance, exactly as the partitionLByPID gauges in the

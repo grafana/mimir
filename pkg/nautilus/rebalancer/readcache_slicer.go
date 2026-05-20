@@ -4,6 +4,7 @@ package rebalancer
 
 import (
 	"flag"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -102,6 +103,12 @@ type readcacheMove struct {
 	PartitionID int32
 	From, To    string
 	Load        float64
+	// Reason is a short human-readable explanation of why the
+	// slicer chose to move this partition. Populated by
+	// planReadcacheAssignment so the admin page and trace can
+	// answer "why did P_n move from rc-x to rc-y?" without
+	// re-running the round.
+	Reason string
 }
 
 // planReadcacheAssignment runs the second slicer round and returns
@@ -206,10 +213,21 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 			break
 		}
 		from := proposed[bestPID]
+		srcLoadBefore := loadByInstance[from]
+		dstLoadBefore := loadByInstance[dst]
 		proposed[bestPID] = dst
 		loadByInstance[from] -= bestLoad
 		loadByInstance[dst] += bestLoad
-		moves = append(moves, readcacheMove{PartitionID: bestPID, From: from, To: dst, Load: bestLoad})
+		moves = append(moves, readcacheMove{
+			PartitionID: bestPID,
+			From:        from,
+			To:          dst,
+			Load:        bestLoad,
+			Reason: fmt.Sprintf(
+				"src %s over target by %.1f (load=%.1f, target=%.1f); dst %s at %.1f; partition load=%.1f",
+				from, srcLoadBefore-target, srcLoadBefore, target, dst, dstLoadBefore, bestLoad,
+			),
+		})
 		movedLoad += bestLoad
 	}
 

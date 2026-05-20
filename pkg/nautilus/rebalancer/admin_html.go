@@ -100,9 +100,21 @@ details>summary::-webkit-details-marker{display:none}
 		<div class="stat-label">Min L</div>
 		<div class="stat-value good">{{fmtSeries .MinL}}</div>
 	</div>
-	<div class="stat" title="maxL / meanL (Slicer paper definition). 1.00× means perfectly balanced; values above 1.00× indicate the hottest partition exceeds the average by that factor.">
-		<div class="stat-label">Imbalance</div>
+	<div class="stat" title="maxL / meanL (Slicer paper definition) over per-partition head series. 1.00× means perfectly balanced; values above 1.00× indicate the hottest partition exceeds the average by that factor on the cardinality axis.">
+		<div class="stat-label">Imbalance (series)</div>
 		<div class="stat-value{{if gt .ImbalanceRatio 1.5}} warn{{end}}">{{fmtImbalance .ImbalanceRatio}}</div>
+	</div>
+	<div class="stat" title="maxRate / meanRate over per-partition samples-per-second EWMA. This is the metric the slicer now optimizes; 1.00× means perfectly balanced on ingest throughput. Zero when no rate signal has been reported yet (cold start).">
+		<div class="stat-label">Imbalance (rate)</div>
+		<div class="stat-value{{if gt .RateImbalance 1.5}} warn{{end}}">{{fmtImbalance .RateImbalance}}</div>
+	</div>
+	<div class="stat" title="Σ samples/s / N_partitions across active partitions. Computed from the same per-partition aggregation runSlicer feeds to Pass 3.">
+		<div class="stat-label">Mean rate</div>
+		<div class="stat-value">{{fmtRate .MeanRate}}/s</div>
+	</div>
+	<div class="stat" title="Highest per-partition samples-per-second EWMA in the current snapshot. Compare against Mean rate to see absolute headroom on the busiest partition.">
+		<div class="stat-label">Max rate</div>
+		<div class="stat-value warn">{{fmtRate .MaxRate}}/s</div>
 	</div>
 	<div class="stat">
 		<div class="stat-label">Last Moved</div>
@@ -135,7 +147,8 @@ details>summary::-webkit-details-marker{display:none}
 		<span class="part-id">P{{.PartitionID}}</span>
 		<span class="part-instance" title="{{.InstanceAddr}}">{{.InstanceID}}</span>
 		<span class="part-stats">
-			<span title="L_pid: max-over-owners of TotalActiveSeries, matches cortex_ingester_memory_series. This is what the slicer balances.">{{fmtSeries .MemorySeries}} L</span>
+			<span title="L_pid: max-over-owners of TotalActiveSeries, matches cortex_ingester_memory_series. The legacy load signal — kept for observability; the slicer now balances on rate (next field).">{{fmtSeries .MemorySeries}} L</span>
+			<span title="Samples-per-second EWMA summed across the hash ranges currently on this partition. This is what the slicer balances on (Pass 3 in runSlicer).">{{fmtRate .SampleRate}}/s</span>
 			<span title="Per-round movable budget: max(0, L_pid - meanL) - Σ recentMoves[pid].series. Source-side only; decreases as the slicer books moves during the CompactionInterval window.">{{fmtSeries .MovableSeries}} movable</span>
 			<span title="Σ per-range series for ranges this partition currently owns. Should roughly match L; a gap indicates series still in the head from previously-owned ranges not yet compacted away.">{{fmtSeries .OwnedSeries}} owned</span>
 			<span>{{.NumRanges}} ranges</span>
@@ -235,11 +248,72 @@ details>summary::-webkit-details-marker{display:none}
 {{end}}
 </div>
 
-{{if .ReadcacheHasRound}}
-<details style="margin-bottom:16px">
-<summary style="cursor:pointer;font-size:12px;color:#666;margin-bottom:8px">Last readcache slicer round (planned vs current)</summary>
-<div class="log-section" style="max-height:300px">
-<table style="width:100%;border-collapse:collapse;font-size:12px">
+{{end}}
+
+{{if .ReadcacheConfigured}}
+<h2>Recent Readcache Slicer Rounds</h2>
+<p style="font-size:12px;color:#666;margin:-4px 0 8px">History of (partition → readcache) move rounds, newest first. Each round shows the per-instance load, the moves the slicer chose to make, and the reason for each move. Rounds that produced no moves are intentionally omitted.</p>
+<div class="log-section">
+{{if eq (len .ReadcacheHistory) 0}}
+<div class="no-data">No readcache slicer rounds with moves recorded yet.{{if .ReadcacheHasRound}} The most recent round produced no changes; the planned/current assignment for that quiescent round is shown below.{{end}}</div>
+{{else}}
+{{range $i, $rr := .ReadcacheHistory}}
+<div class="round">
+	<div class="round-header">
+		<strong>{{$rr.Time.Format "15:04:05"}}</strong>
+		<span>Moves: {{len $rr.Moves}}</span>
+		<span>Instances: {{len $rr.PerInstance}}</span>
+		<span>Partitions: {{len $rr.PerPartition}}</span>
+	</div>
+	<div class="round-actions" style="margin-bottom:6px">
+	{{range $rr.Moves}}
+		<span class="action-pill act-move" title="{{.Reason}}">P{{.PartitionID}} {{.From}}→{{.To}} ({{fmtRate .Load}}/s)</span>
+	{{end}}
+	</div>
+	<details>
+	<summary style="font-size:11px;color:#666;cursor:pointer">Per-instance load &amp; pod-to-partition assignments</summary>
+	<div style="display:flex;gap:24px;margin-top:6px;flex-wrap:wrap">
+		<div style="flex:1;min-width:240px">
+			<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Per-instance load (samples/s)</div>
+			<table style="width:100%;border-collapse:collapse;font-size:12px">
+			<tr style="text-align:left;border-bottom:1px solid #eee"><th>Instance</th><th style="text-align:right">Load</th></tr>
+			{{range $inst, $load := $rr.PerInstance}}
+			<tr style="border-bottom:1px solid #f5f5f5"><td>{{$inst}}</td><td style="text-align:right">{{fmtRate $load}}/s</td></tr>
+			{{end}}
+			</table>
+		</div>
+		<div style="flex:2;min-width:300px">
+			<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Pod-to-partition assignments</div>
+			<table style="width:100%;border-collapse:collapse;font-size:12px">
+			<tr style="text-align:left;border-bottom:1px solid #eee"><th>Partition</th><th>Current owner</th><th>Planned owner</th></tr>
+			{{range $rr.PerPartition}}
+			<tr style="border-bottom:1px solid #f5f5f5{{if and .CurrentOwner .PlannedOwner}}{{if ne .CurrentOwner .PlannedOwner}};background:#fff5f5{{end}}{{end}}">
+				<td>P{{.PartitionID}}</td>
+				<td>{{if .CurrentOwner}}{{.CurrentOwner}}{{else}}—{{end}}</td>
+				<td>{{if .PlannedOwner}}{{.PlannedOwner}}{{else}}—{{end}}</td>
+			</tr>
+			{{end}}
+			</table>
+		</div>
+	</div>
+	{{if $rr.Moves}}
+	<details style="margin-top:6px">
+	<summary style="font-size:11px;color:#666;cursor:pointer">Move reasons</summary>
+	<ul style="margin:4px 0 0 18px;font-size:11px;color:#555;line-height:1.6">
+	{{range $rr.Moves}}
+		<li><strong>P{{.PartitionID}}</strong> {{.From}}→{{.To}}: {{.Reason}}</li>
+	{{end}}
+	</ul>
+	</details>
+	{{end}}
+	</details>
+</div>
+{{end}}
+{{end}}
+{{if and .ReadcacheHasRound (eq (len .ReadcacheHistory) 0)}}
+<details style="margin-top:8px">
+<summary style="font-size:11px;color:#666;cursor:pointer">Last (no-move) round snapshot</summary>
+<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
 <tr style="text-align:left;border-bottom:1px solid #eee"><th>Partition</th><th>Current owner</th><th>Planned owner</th></tr>
 {{range .ReadcacheLastRound.PerPartition}}
 <tr style="border-bottom:1px solid #f5f5f5">
@@ -249,17 +323,9 @@ details>summary::-webkit-details-marker{display:none}
 </tr>
 {{end}}
 </table>
-{{if .ReadcacheLastRound.Moves}}
-<div style="margin-top:8px;font-size:11px;color:#666">Moves this round: {{len .ReadcacheLastRound.Moves}}</div>
-<div class="round-actions" style="margin-top:4px">
-{{range .ReadcacheLastRound.Moves}}
-	<span class="action-pill act-move" title="load {{fmtFloat .Load}}">P{{.PartitionID}} {{.From}}→{{.To}}</span>
-{{end}}
-</div>
-{{end}}
-</div>
 </details>
 {{end}}
+</div>
 {{end}}
 
 <div class="generated">Generated {{.GeneratedAt}} · Auto-refresh: <a href="" onclick="setTimeout(function(){location.reload()},0);return false">now</a></div>
