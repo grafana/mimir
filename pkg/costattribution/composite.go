@@ -19,15 +19,20 @@ type SampleTracker struct {
 	configHash uint64
 }
 
+// nolint:unused
 func (c *SampleTracker) getTrackers() []*sampleTracker { return c.trackers }
-func (c *SampleTracker) getConfigHash() uint64         { return c.configHash }
 
+// nolint:unused
+func (c *SampleTracker) getConfigHash() uint64 { return c.configHash }
+
+// nolint:unused
 func (c *SampleTracker) purge(now, deadline time.Time) int {
 	cardinality := 0
 	c.each(func(t *sampleTracker) { cardinality += t.purge(now, deadline) })
 	return cardinality
 }
 
+// nolint:unused
 func (c *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	c.each(func(t *sampleTracker) { t.collectCostAttribution(out) })
 }
@@ -59,15 +64,20 @@ type ActiveSeriesTracker struct {
 	configHash uint64
 }
 
+// nolint:unused
 func (c *ActiveSeriesTracker) getTrackers() []*activeSeriesTracker { return c.trackers }
-func (c *ActiveSeriesTracker) getConfigHash() uint64               { return c.configHash }
 
+// nolint:unused
+func (c *ActiveSeriesTracker) getConfigHash() uint64 { return c.configHash }
+
+// nolint:unused
 func (c *ActiveSeriesTracker) purge(now, deadline time.Time) int {
 	cardinality := 0
 	c.each(func(t *activeSeriesTracker) { cardinality += t.purge(now, deadline) })
 	return cardinality
 }
 
+// nolint:unused
 func (c *ActiveSeriesTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	c.each(func(t *activeSeriesTracker) { t.collectCostAttribution(out) })
 }

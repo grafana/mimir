@@ -301,29 +301,6 @@ func (st *sampleTracker) updateObservations(key string, ts time.Time, receivedSa
 	}
 }
 
-func (st *sampleTracker) recoveredFromOverflow(deadline time.Time) bool {
-	st.observedMtx.RLock()
-	if !st.overflowSince.IsZero() && st.overflowSince.Add(st.cooldownDuration).Before(deadline) {
-		if len(st.observed) < st.maxCardinality {
-			st.observedMtx.RUnlock()
-			return true
-		}
-		st.observedMtx.RUnlock()
-
-		// Increase the cooldown duration if the number of observations is still above the max cardinality
-		st.observedMtx.Lock()
-		if len(st.observed) < st.maxCardinality {
-			st.observedMtx.Unlock()
-			return true
-		}
-		st.overflowSince = deadline
-		st.observedMtx.Unlock()
-	} else {
-		st.observedMtx.RUnlock()
-	}
-	return false
-}
-
 func (st *sampleTracker) purge(now, deadline time.Time) int {
 	// First we check the inactive observations and collect them for cleanup, if applies.
 	var expired []string

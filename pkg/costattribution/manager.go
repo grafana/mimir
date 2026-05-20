@@ -43,11 +43,6 @@ type Manager struct {
 	logger log.Logger
 	limits *validation.Overrides
 
-	sampleTrackerCardinalityDesc       *descriptor
-	sampleTrackerOverflowDesc          *descriptor
-	activeSeriesTrackerCardinalityDesc *descriptor
-	activeSeriesTrackerOverflowDesc    *descriptor
-
 	inactiveTimeout time.Duration
 
 	sampleTrackers       *managerTrackers[*SampleTracker, *sampleTracker]
