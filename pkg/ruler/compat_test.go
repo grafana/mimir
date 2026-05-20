@@ -1349,17 +1349,12 @@ func TestEngineQueryFunc_ClosesQueryAndPreservesResult(t *testing.T) {
 
 	vec, err := qf(context.Background(), "up", time.Unix(120, 0))
 	require.NoError(t, err)
-	require.Len(t, vec, 2, "two series in the test storage at t=120s")
 
-	// Each sample's labels must still be intact after the deferred Close has
-	// returned the engine's internal slices to their pools. (If we had not
-	// deep-copied the Vector before Close, the labels would point into the
-	// SeriesMetadataSlicePool, which Close puts back.)
-	for _, s := range vec {
-		require.NotEmpty(t, s.Metric, "labels must survive qry.Close()")
-		require.Equal(t, "up", s.Metric.Get(model.MetricNameLabel))
-		require.Contains(t, []string{"a", "b"}, s.Metric.Get("instance"))
+	expected := promql.Vector{
+		{T: 120000, F: 1, Metric: labels.FromStrings(model.MetricNameLabel, "up", "instance", "a")},
+		{T: 120000, F: 0, Metric: labels.FromStrings(model.MetricNameLabel, "up", "instance", "b")},
 	}
+	require.ElementsMatch(t, expected, vec)
 
 	// And the underlying tracker must be out of the inflight map — the whole
 	// point of this wrapper.
