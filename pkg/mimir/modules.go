@@ -1508,7 +1508,12 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 	// Mount as a prefix so the rebalancer's ServeHTTP can dispatch
 	// sub-routes (e.g. /rounds.json, /rounds/{idx}.json) used by
 	// external trace-replay tools alongside the HTML dashboard.
-	t.API.RegisterRoutesWithPrefix("/nautilus/rebalancer", t.NautilusRebalancer, false, true, 0, "GET")
+	// POST is also accepted so the admin page's "Reset to even
+	// split" form (which targets /nautilus/rebalancer/readcache/reset)
+	// can reach its handler — without POST in the method list, the
+	// router rejects the form submission with a 405 before the
+	// rebalancer's ServeHTTP runs.
+	t.API.RegisterRoutesWithPrefix("/nautilus/rebalancer", t.NautilusRebalancer, false, true, 0, "GET", "POST")
 
 	return t.NautilusRebalancer, nil
 }
