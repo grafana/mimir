@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -51,15 +52,15 @@ type ShardedAvg struct {
 	Inner types.InstantVectorOperator
 }
 
-func (a *ShardedAvg) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	stats, err := a.Inner.Stats(ctx)
+func (a *ShardedAvg) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, annos, err := a.Inner.Stats(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	stats.HalveCounts()
 
-	return stats, nil
+	return stats, annos, nil
 }
 
 func (a *ShardedAvg) Prepare(ctx context.Context, params *types.PrepareParams) error {
