@@ -72,7 +72,7 @@ func (s *SortByLabel) SeriesMetadata(ctx context.Context, matchers types.Matcher
 	})
 
 	s.originalIndexes = indexes
-	s.buffer = operators.NewInstantVectorOperatorBuffer(s.inner, nil, len(innerMetadata), s.memoryConsumptionTracker)
+	s.buffer = operators.NewInstantVectorOperatorBuffer(s.inner, nil, len(innerMetadata)-1, s.memoryConsumptionTracker)
 
 	return innerMetadata, nil
 }
