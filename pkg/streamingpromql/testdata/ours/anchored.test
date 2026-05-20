@@ -342,6 +342,9 @@ load 1m
 eval instant at 1m resets(mixed[1m] anchored)
   {} 0
 
+# These tests have been commented out since upstream Prometheus has recently
+# added support for smoothed/anchored histograms.
+# These tests have been commented out whilst a Mimir implementation is completed.
 #eval instant at 3m resets(mixed[1m] anchored)
 #  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
