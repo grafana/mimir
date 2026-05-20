@@ -550,13 +550,13 @@ eval instant at 5m delta(metric{instance="2"}[1m] smoothed)
 # series emits MixedFloatsHistogramsWarning and is dropped. instance="1" and instance="2" return
 # their float-only smoothed results.
 eval instant at 11s increase(metric[1m] smoothed)
-  expect no_info
+  expect info
   expect warn
   {instance="1"} 13.333333333333334
   {instance="2"} NaN
 
 eval instant at 11s rate(metric[1m] smoothed)
-  expect no_info
+  expect info
   expect warn
   {instance="1"} 0.22222222222222224
   {instance="2"} NaN
