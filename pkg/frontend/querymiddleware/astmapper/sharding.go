@@ -20,6 +20,10 @@ import (
 
 type Squasher interface {
 	Squash(...EmbeddedQuery) (parser.Expr, error)
+
+	// WrapAvgResult wraps the result of a sharded avg() expression.
+	// Implementations that do not need to modify the result should return expr unchanged.
+	WrapAvgResult(expr parser.Expr) (parser.Expr, error)
 }
 
 type ShardLabeller interface {
@@ -587,14 +591,16 @@ func (summer *shardSummer) shardAvg(ctx context.Context, expr *parser.AggregateE
 		return nil, err
 	}
 
-	return &parser.ParenExpr{
+	divExpr := &parser.ParenExpr{
 		Expr: &parser.BinaryExpr{
 			Op:             parser.DIV,
 			LHS:            sumExpr,
 			RHS:            countExpr,
 			VectorMatching: &parser.VectorMatching{},
 		},
-	}, nil
+	}
+
+	return summer.squasher.WrapAvgResult(divExpr)
 }
 
 // shardAndSquashAggregateExpr returns a squashed CONCAT expression including N embedded

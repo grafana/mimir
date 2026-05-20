@@ -865,6 +865,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	mqeOpts.EagerLoadSelectors = true
 
 	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
+	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.AvgFunction.Name)
 
 	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 
