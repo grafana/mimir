@@ -158,9 +158,53 @@ details>summary::-webkit-details-marker{display:none}
 {{end}}
 </div>
 
+<h2>Recent Rebalance Rounds</h2>
+<div class="log-section">
+{{if eq (len .Rounds) 0}}
+<div class="no-data">No rebalance rounds recorded yet.</div>
+{{else}}
+{{range $i, $r := .Rounds}}
+<div class="round">
+	<div class="round-header">
+		<strong>{{$r.Time.Format "15:04:05"}}</strong>
+		<span>Σ L: {{fmtSeries $r.TotalL}}</span>
+		<span>Imbalance: {{fmtImbalance $r.ImbalanceRatio}}</span>
+		<span>Ranges: {{$r.NumEntries}}</span>
+		<span>Moved: {{fmtPct1 $r.MovedFraction}}</span>
+		<span>Actions: {{len $r.Actions}}</span>
+		<span><a href="/nautilus/rebalancer/rounds/{{$i}}.json" title="Download full input/output trace for this round (for replay/verification)">trace.json</a></span>
+	</div>
+	{{if $r.Actions}}
+	<div class="round-actions">
+	{{range $r.Actions}}
+		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}{{if .Series}} ({{fmtSeries .Series}}s){{end}}</span>
+	{{end}}
+	</div>
+	{{end}}
+</div>
+{{end}}
+{{end}}
+</div>
+{{end}}
+
 {{if .ReadcacheConfigured}}
 <h2>Readcache replicas (partition ownership)</h2>
 <p style="font-size:12px;color:#666;margin:-4px 0 8px">Live leases from the readcache assignment log. Load is from the most recent readcache slicer round.</p>
+<div id="resetBanner" style="display:none;background:#e6fcf5;border:1px solid #099268;color:#0b6e54;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px"></div>
+<form method="POST" action="readcache/reset" style="margin-bottom:8px;display:flex;align-items:center;gap:8px"
+      onsubmit="return confirm('Force a round-robin (partition \u2192 readcache) assignment now?\n\nThis preempts every existing lease and broadcasts a fresh even-split snapshot. Use this only when the slicer is stuck (e.g. all partitions piled on one pod due to a zero-load tiebreak).');">
+	<button type="submit" style="background:#fff5f5;color:#c92a2a;border:1px solid #c92a2a;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600">Reset to even split</button>
+	<span style="font-size:11px;color:#666">Forces a fresh round-robin assignment across all healthy readcache instances. Operational escape hatch — use when the slicer is stuck (e.g. all partitions on one pod).</span>
+</form>
+<script>
+(function() {
+	var p = new URLSearchParams(window.location.search);
+	if (p.get('reset') === 'ok') {
+		var b = document.getElementById('resetBanner');
+		if (b) { b.style.display = 'block'; b.textContent = 'Readcache assignment reset to even split. Subscribers will reconcile within one tick.'; }
+	}
+}());
+</script>
 <div class="partitions">
 {{range .ReadcacheReplicas}}
 <div class="partition">
@@ -216,35 +260,6 @@ details>summary::-webkit-details-marker{display:none}
 </div>
 </details>
 {{end}}
-{{end}}
-
-<h2>Recent Rebalance Rounds</h2>
-<div class="log-section">
-{{if eq (len .Rounds) 0}}
-<div class="no-data">No rebalance rounds recorded yet.</div>
-{{else}}
-{{range $i, $r := .Rounds}}
-<div class="round">
-	<div class="round-header">
-		<strong>{{$r.Time.Format "15:04:05"}}</strong>
-		<span>Σ L: {{fmtSeries $r.TotalL}}</span>
-		<span>Imbalance: {{fmtImbalance $r.ImbalanceRatio}}</span>
-		<span>Ranges: {{$r.NumEntries}}</span>
-		<span>Moved: {{fmtPct1 $r.MovedFraction}}</span>
-		<span>Actions: {{len $r.Actions}}</span>
-		<span><a href="/nautilus/rebalancer/rounds/{{$i}}.json" title="Download full input/output trace for this round (for replay/verification)">trace.json</a></span>
-	</div>
-	{{if $r.Actions}}
-	<div class="round-actions">
-	{{range $r.Actions}}
-		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}{{if .Series}} ({{fmtSeries .Series}}s){{end}}</span>
-	{{end}}
-	</div>
-	{{end}}
-</div>
-{{end}}
-{{end}}
-</div>
 {{end}}
 
 <div class="generated">Generated {{.GeneratedAt}} · Auto-refresh: <a href="" onclick="setTimeout(function(){location.reload()},0);return false">now</a></div>

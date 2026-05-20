@@ -317,6 +317,17 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		CompactionInterval: r.cfg.CompactionInterval,
 	}
 
+	// Populate the readcache-side fields up front so the
+	// (always-visible) reset button and per-replica list still
+	// render even when the first-tier slicer has not produced
+	// an assignment yet — that's exactly when an operator may
+	// need the manual override most.
+	data.ReadcacheConfigured = r.readcacheConfigured()
+	if data.ReadcacheConfigured {
+		data.ReadcacheReplicas = r.buildReadcacheReplicaViews()
+		data.ReadcacheLastRound, data.ReadcacheHasRound = r.admin.snapshotReadcacheRound()
+	}
+
 	if current == nil {
 		return data
 	}
@@ -497,12 +508,6 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	data.Rounds = reversedRounds
 	data.HeatmapData = string(heatmapJSON)
 
-	data.ReadcacheConfigured = r.readcacheConfigured()
-	if data.ReadcacheConfigured {
-		data.ReadcacheReplicas = r.buildReadcacheReplicaViews()
-		data.ReadcacheLastRound, data.ReadcacheHasRound = r.admin.snapshotReadcacheRound()
-	}
-
 	return data
 }
 
@@ -575,6 +580,8 @@ func (r *Rebalancer) buildReadcacheReplicaViews() []readcacheReplicaView {
 //	GET  /rounds.json            → list of recent round summaries
 //	GET  /rounds/{idx}.json      → full Trace for one round
 //	                               (idx 0 = newest, up to maxRoundLogs-1)
+//	POST /readcache/reset        → force an even-split
+//	                               (partition -> readcache) assignment
 //
 // The JSON endpoints exist so external tools — including AI
 // verification agents — can fetch a round's complete inputs and
@@ -595,6 +602,8 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	case strings.HasPrefix(sub, "/rounds/") && strings.HasSuffix(sub, ".json"):
 		idxStr := strings.TrimSuffix(strings.TrimPrefix(sub, "/rounds/"), ".json")
 		r.serveRoundTrace(w, idxStr)
+	case sub == "/readcache/reset":
+		r.serveReadcacheReset(w, req)
 	default:
 		http.NotFound(w, req)
 	}
@@ -650,4 +659,47 @@ func (r *Rebalancer) serveRoundTrace(w http.ResponseWriter, idxStr string) {
 	if err := enc.Encode(tr); err != nil {
 		http.Error(w, fmt.Sprintf("encode error: %v", err), http.StatusInternalServerError)
 	}
+}
+
+// serveReadcacheReset is the HTTP entry point for the "Reset to
+// even split" admin button. POST forces a round-robin
+// (partition -> readcache instance) assignment, preempting any
+// existing leases. Used to break the cluster out of a stuck state
+// where the slicer's load-based heuristics have piled all
+// partitions onto a single readcache pod.
+//
+// Browser POSTs from the admin form return 303 + Location so the
+// user lands back on the admin page (with a flash) instead of
+// staring at a JSON blob. Scripted callers can detect this with
+// Accept: application/json and get a JSON body instead.
+func (r *Rebalancer) serveReadcacheReset(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	result, err := r.ResetReadcacheAssignment(time.Now())
+	wantsJSON := strings.Contains(req.Header.Get("Accept"), "application/json")
+	if err != nil {
+		if wantsJSON {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(struct {
+				Error string `json:"error"`
+			}{Error: err.Error()})
+			return
+		}
+		http.Error(w, "reset failed: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if wantsJSON {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(result)
+		return
+	}
+	// Redirect back to the admin page so a refresh shows the new
+	// per-replica partition counts.
+	http.Redirect(w, req, adminPathPrefix+"/?reset=ok", http.StatusSeeOther)
 }
