@@ -68,7 +68,7 @@ type RemoteExecutionResponse interface {
 	//
 	// If there is any unread data for this request, it is discarded.
 	//
-	// If this is the last request in a group, it returns thegroup statistics from the remote evaluation, or otherwise returns an empty set of statistics.
+	// If this is the last request in a group, it returns the group statistics from the remote evaluation, or otherwise returns an empty set of statistics.
 	//
 	// Finalize can only be called before Close is called.
 	Finalize(ctx context.Context) (stats.Stats, error)
