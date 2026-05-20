@@ -1429,6 +1429,7 @@ func TestCopyVector_DeepCopiesFloatHistogram(t *testing.T) {
 	out := copyVector(in)
 	require.Len(t, out, 1)
 	require.NotNil(t, out[0].H)
+	require.Equal(t, original, out[0].H, "FloatHistogram values must match the original")
 	require.NotSame(t, original, out[0].H, "FloatHistogram pointer must be a fresh allocation")
 
 	// Mutating the original (as the engine's pool would when reusing the HPoint
