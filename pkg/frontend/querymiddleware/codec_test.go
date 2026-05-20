@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2265,4 +2266,184 @@ func encodeQueryResponse(f formatter, resp *PrometheusResponse) ([]byte, error) 
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// closeCountingResponse wraps a Response and counts Close() invocations made
+// through this layer. The embedded Response provides every other method.
+type closeCountingResponse struct {
+	Response
+	closes atomic.Int32
+}
+
+func (r *closeCountingResponse) Close() { r.closes.Add(1) }
+
+func (r *closeCountingResponse) CloseCount() int { return int(r.closes.Load()) }
+
+// nonPrometheusResponse satisfies the Response interface but returns
+// (nil, false) from GetPrometheusResponse and is not assertable to
+// *PrometheusLabelsResponse or *PrometheusSeriesResponse, so it exercises every
+// "invalid response format" early-return in the codec.
+type nonPrometheusResponse struct {
+	closes atomic.Int32
+}
+
+func (r *nonPrometheusResponse) Reset()                          {}
+func (r *nonPrometheusResponse) String() string                  { return "" }
+func (r *nonPrometheusResponse) ProtoMessage()                   {}
+func (r *nonPrometheusResponse) GetHeaders() []*PrometheusHeader { return nil }
+func (r *nonPrometheusResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return nil, false
+}
+func (r *nonPrometheusResponse) Close()          { r.closes.Add(1) }
+func (r *nonPrometheusResponse) CloseCount() int { return int(r.closes.Load()) }
+
+// TestCodec_EncodeMetricsQueryResponse_ClosesResponseOnEarlyReturn ensures that
+// every error path in EncodeMetricsQueryResponse closes the response. Skipping
+// Close on early returns leaks any resources the response holds — most
+// importantly the per-query MemoryConsumptionTracker the query-frontend
+// registers in InflightMemoryConsumptionTracker.
+func TestCodec_EncodeMetricsQueryResponse_ClosesResponseOnEarlyReturn(t *testing.T) {
+	codec := newTestCodec()
+
+	t.Run("unsupported Accept header", func(t *testing.T) {
+		res := &closeCountingResponse{
+			Response: &PrometheusResponse{
+				Status: statusSuccess,
+				Data:   &PrometheusData{ResultType: matrix},
+			},
+		}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+		req.Header.Set("Accept", "testing/not-a-supported-content-type")
+
+		_, err = codec.EncodeMetricsQueryResponse(context.Background(), req, res)
+		require.Error(t, err)
+		require.Equal(t, 1, res.CloseCount())
+	})
+
+	t.Run("response missing PrometheusResponse", func(t *testing.T) {
+		res := &nonPrometheusResponse{}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+
+		_, err = codec.EncodeMetricsQueryResponse(context.Background(), req, res)
+		require.Error(t, err)
+		require.Equal(t, 1, res.CloseCount())
+	})
+}
+
+// TestCodec_EncodeLabelsSeriesQueryResponse_ClosesResponseOnEarlyReturn covers
+// the same lifecycle contract as the metrics-query equivalent for the
+// labels/series encoder.
+func TestCodec_EncodeLabelsSeriesQueryResponse_ClosesResponseOnEarlyReturn(t *testing.T) {
+	codec := newTestCodec()
+
+	t.Run("unsupported Accept header (labels)", func(t *testing.T) {
+		res := &closeCountingResponse{Response: &PrometheusLabelsResponse{Status: statusSuccess}}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+		req.Header.Set("Accept", "testing/not-a-supported-content-type")
+
+		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, false)
+		require.Error(t, err)
+		require.Equal(t, 1, res.CloseCount())
+	})
+
+	t.Run("unsupported Accept header (series)", func(t *testing.T) {
+		res := &closeCountingResponse{Response: &PrometheusSeriesResponse{Status: statusSuccess}}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+		req.Header.Set("Accept", "testing/not-a-supported-content-type")
+
+		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, true)
+		require.Error(t, err)
+		require.Equal(t, 1, res.CloseCount())
+	})
+
+	t.Run("response is not a labels response", func(t *testing.T) {
+		res := &nonPrometheusResponse{}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+
+		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, false)
+		require.Error(t, err)
+		require.Equal(t, 1, res.CloseCount())
+	})
+
+	t.Run("response is not a series response", func(t *testing.T) {
+		res := &nonPrometheusResponse{}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+
+		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, true)
+		require.Error(t, err)
+		require.Equal(t, 1, res.CloseCount())
+	})
+}
+
+// TestCodec_MergeResponse_ClosesInputsOnValidationFailure ensures that when
+// MergeResponse rejects the batch mid-iteration it still closes every input
+// response. Without this, every response in the failing batch leaks its
+// finalizer (and any *promql.Query / MemoryConsumptionTracker it owns).
+func TestCodec_MergeResponse_ClosesInputsOnValidationFailure(t *testing.T) {
+	codec := Codec{}
+
+	matrixOK := func() Response {
+		return &PrometheusResponse{
+			Status: statusSuccess,
+			Data:   &PrometheusData{ResultType: matrix},
+		}
+	}
+
+	scenarios := map[string]Response{
+		"not a PrometheusResponse": &nonPrometheusResponse{},
+		"unsuccessful status":      &PrometheusResponse{Status: statusError},
+		"missing data":             &PrometheusResponse{Status: statusSuccess, Data: nil},
+		"non-matrix result type":   &PrometheusResponse{Status: statusSuccess, Data: &PrometheusData{ResultType: model.ValVector.String()}},
+	}
+
+	for name, bad := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			good1 := &closeCountingResponse{Response: matrixOK()}
+			good2 := &closeCountingResponse{Response: matrixOK()}
+			wrappedBad := &closeCountingResponse{Response: bad}
+
+			// Bad response placed in the middle so we exercise responses on both sides.
+			_, err := codec.MergeResponse(good1, wrappedBad, good2)
+			require.Error(t, err)
+			require.Equal(t, 1, good1.CloseCount(), "earlier valid response must be closed")
+			require.Equal(t, 1, wrappedBad.CloseCount(), "failing response must be closed")
+			require.Equal(t, 1, good2.CloseCount(), "later valid response must be closed")
+		})
+	}
+}
+
+// TestCodec_MergeResponse_TransfersOwnershipOnSuccess ensures the success path
+// does NOT close inputs eagerly — closing must happen exactly once, when the
+// caller closes the merged response.
+func TestCodec_MergeResponse_TransfersOwnershipOnSuccess(t *testing.T) {
+	codec := Codec{}
+	in1 := &closeCountingResponse{Response: &PrometheusResponse{
+		Status: statusSuccess,
+		Data:   &PrometheusData{ResultType: matrix},
+	}}
+	in2 := &closeCountingResponse{Response: &PrometheusResponse{
+		Status: statusSuccess,
+		Data:   &PrometheusData{ResultType: matrix},
+	}}
+
+	merged, err := codec.MergeResponse(in1, in2)
+	require.NoError(t, err)
+	require.Equal(t, 0, in1.CloseCount(), "input must not be closed before merged response is closed")
+	require.Equal(t, 0, in2.CloseCount(), "input must not be closed before merged response is closed")
+
+	merged.Close()
+	require.Equal(t, 1, in1.CloseCount(), "closing the merged response must close each input exactly once")
+	require.Equal(t, 1, in2.CloseCount(), "closing the merged response must close each input exactly once")
 }
