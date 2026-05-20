@@ -187,11 +187,11 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumer *InstantVectorDu
 }
 
 func (b *InstantVectorDuplicationBuffer) releaseBufferedData(consumer *InstantVectorDuplicationConsumer) {
-	if consumer.finalized {
+	if consumer.finishedReadingCalled {
 		return
 	}
 
-	consumer.finalized = true
+	consumer.finishedReadingCalled = true
 
 	defer consumer.subset.close(b.MemoryConsumptionTracker)
 
@@ -200,7 +200,7 @@ func (b *InstantVectorDuplicationBuffer) releaseBufferedData(consumer *InstantVe
 	earliestSeriesIndexStillToReturn := b.earliestSeriesIndexStillToReturn()
 
 	if earliestSeriesIndexStillToReturn == math.MaxInt {
-		// All other consumers are already finalized. Clean up everything.
+		// All other consumers have already had FinishedReading called. Clean up everything.
 		b.releaseAllBufferedData()
 		return
 	}
@@ -259,7 +259,7 @@ func (b *InstantVectorDuplicationBuffer) releaseAllBufferedData() {
 func (b *InstantVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 	idx := math.MaxInt
 	for _, consumer := range b.consumers {
-		if consumer.finalized {
+		if consumer.finishedReadingCalled {
 			continue
 		}
 
@@ -271,7 +271,7 @@ func (b *InstantVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int 
 
 func (b *InstantVectorDuplicationBuffer) allOpenConsumersHaveNoFilters() bool {
 	for _, consumer := range b.consumers {
-		if consumer.finalized {
+		if consumer.finishedReadingCalled {
 			continue
 		}
 
@@ -301,23 +301,23 @@ func (b *InstantVectorDuplicationBuffer) AfterPrepare(ctx context.Context) error
 	return b.Inner.AfterPrepare(ctx)
 }
 
-func (b *InstantVectorDuplicationBuffer) Finalize(ctx context.Context, consumer *InstantVectorDuplicationConsumer) error {
-	if consumer.finalized {
+func (b *InstantVectorDuplicationBuffer) FinishedReading(ctx context.Context, consumer *InstantVectorDuplicationConsumer) error {
+	if consumer.finishedReadingCalled {
 		return nil
 	}
 
 	b.releaseBufferedData(consumer)
 
-	if !b.allConsumersFinalized() {
+	if !b.allConsumersFinishedReading() {
 		return nil
 	}
 
-	return b.Inner.Finalize(ctx)
+	return b.Inner.FinishedReading(ctx)
 }
 
-func (b *InstantVectorDuplicationBuffer) allConsumersFinalized() bool {
+func (b *InstantVectorDuplicationBuffer) allConsumersFinishedReading() bool {
 	for _, consumer := range b.consumers {
-		if !consumer.finalized {
+		if !consumer.finishedReadingCalled {
 			return false
 		}
 	}
@@ -336,8 +336,8 @@ func (b *InstantVectorDuplicationBuffer) allConsumersClosed() bool {
 }
 
 func (b *InstantVectorDuplicationBuffer) Stats(ctx context.Context, consumer *InstantVectorDuplicationConsumer) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	if !b.allConsumersFinalized() {
-		return nil, nil, errors.New("InstantVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
+	if !b.allConsumersFinishedReading() {
+		return nil, nil, errors.New("InstantVectorDuplicationBuffer: cannot get stats when one or more consumers have not had FinishedReading called")
 	}
 
 	if consumer.hasReadStats {
@@ -409,7 +409,7 @@ type InstantVectorDuplicationConsumer struct {
 
 	nextUnfilteredSeriesIndex int
 	closed                    bool
-	finalized                 bool
+	finishedReadingCalled     bool
 	hasReadStats              bool
 }
 
@@ -427,7 +427,7 @@ func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, m
 }
 
 func (d *InstantVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
-	if d.finalized {
+	if d.finishedReadingCalled {
 		return false
 	}
 
@@ -462,8 +462,8 @@ func (d *InstantVectorDuplicationConsumer) AfterPrepare(ctx context.Context) err
 	return d.Buffer.AfterPrepare(ctx)
 }
 
-func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) error {
-	return d.Buffer.Finalize(ctx, d)
+func (d *InstantVectorDuplicationConsumer) FinishedReading(ctx context.Context) error {
+	return d.Buffer.FinishedReading(ctx, d)
 }
 
 func (d *InstantVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {

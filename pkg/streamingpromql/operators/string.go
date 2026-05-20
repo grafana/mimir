@@ -53,7 +53,7 @@ func (s *StringLiteral) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (s *StringLiteral) Finalize(_ context.Context) error {
+func (s *StringLiteral) FinishedReading(_ context.Context) error {
 	// Nothing to do.
 	return nil
 }

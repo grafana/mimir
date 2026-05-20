@@ -149,9 +149,9 @@ func (c *Concat) NextSeries(ctx context.Context) (types.InstantVectorSeriesData,
 	return d, err
 }
 
-func (c *Concat) Finalize(ctx context.Context) error {
+func (c *Concat) FinishedReading(ctx context.Context) error {
 	for _, o := range c.Inner {
-		if err := o.Finalize(ctx); err != nil {
+		if err := o.FinishedReading(ctx); err != nil {
 			return err
 		}
 	}

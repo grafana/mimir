@@ -845,7 +845,7 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 	}
 }
 
-func TestExecutionResponses_FinalizeAndStats(t *testing.T) {
+func TestExecutionResponses_FinishedReadingAndStats(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
 	responseCreators := map[string]func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
@@ -904,7 +904,7 @@ func TestExecutionResponses_FinalizeAndStats(t *testing.T) {
 				memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 				response := responseCreator(t, ctx, stream, memoryConsumptionTracker)
 
-				overallStats, err := response.Finalize(ctx)
+				overallStats, err := response.FinishedReading(ctx)
 				if !expectSuccess {
 					require.Equal(t, expectedError, err)
 					return
@@ -1286,9 +1286,9 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	returnedStats, err := resp1.Finalize(ctx)
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls FinishedReading")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	_, err = resp1.GetNextSeries(ctx)
@@ -1305,7 +1305,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	returnedStats, err = resp2.Finalize(ctx)
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
@@ -1325,7 +1325,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	_, err = resp2.GetNextSeries(ctx)
 	require.EqualError(t, err, "can't read next message for node stream at index 1, as it is already finished")
 
-	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 }
 
 func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
@@ -1425,18 +1425,18 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 
 	// Read the evaluation completed message for the first node, which should cause no buffering as we'll
 	// read the results when we are done with the second node.
-	returnedStats, err := resp1.Finalize(ctx)
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls FinishedReading")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	returnedStats, err = resp2.Finalize(ctx)
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 
 	_, annos, err := resp1.Stats(ctx)
 	require.NoError(t, err)
@@ -1509,17 +1509,17 @@ func TestRemoteExecutionGroupEvaluator_PerStepAnnotations(t *testing.T) {
 	require.Empty(t, series)
 
 	// Read the evaluation completed message for the first node.
-	returnedStats, err := resp1.Finalize(ctx)
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
 	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	returnedStats, err = resp2.Finalize(ctx)
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 
-	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 
 	_, annos, err := resp1.Stats(ctx)
 	require.NoError(t, err)
@@ -1627,7 +1627,7 @@ func TestRemoteExecutionGroupEvaluator_ReceiveUnexpectedMessageWithoutNodeIndex(
 	require.Empty(t, series)
 }
 
-func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing.T) {
+func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinishedReading(t *testing.T) {
 	ctx := context.Background()
 
 	stream := &mockResponseStream{
@@ -1695,10 +1695,10 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing
 	requireBufferedDataForNode(t, evaluator, node1, 1)
 	requireNoBufferedDataForNode(t, evaluator, node2)
 
-	// Finalize the first node, confirm the buffered message is dropped.
-	returnedStats, err := resp1.Finalize(ctx)
+	// Call FinishedReading on the first node, confirm the buffered message is dropped.
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls FinishedReading")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	// Read the second message from the second node, confirm nothing is buffered for the first node.
@@ -1708,14 +1708,14 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	// Finalize the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
-	returnedStats, err = resp2.Finalize(ctx)
+	// Call FinishedReading on the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 
 	_, annos, err := resp1.Stats(ctx)
 	require.NoError(t, err)
@@ -1808,14 +1808,14 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	// Finalize the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
-	returnedStats, err := resp2.Finalize(ctx)
+	// Call FinishedReading on the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	returnedStats, err := resp2.FinishedReading(ctx)
 	require.NoError(t, err)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 
 	_, annos, err := resp2.Stats(ctx)
 	require.NoError(t, err)

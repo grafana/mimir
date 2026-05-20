@@ -13,14 +13,14 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func TestFinalize(t *testing.T) {
+func TestFinishedReading(t *testing.T) {
 	querierStats, ctx := stats.ContextWithEmptyStats(context.Background())
 
 	resp := &mockResponse{
 		stats: stats.Stats{SamplesProcessed: 456, FetchedChunkBytes: 9000},
 	}
 
-	err := finalize(ctx, resp)
+	err := finishedReading(ctx, resp)
 	require.NoError(t, err)
 	require.Zero(t, querierStats.SamplesProcessed, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
 	require.Equal(t, uint64(9000), querierStats.FetchedChunkBytes)
@@ -34,7 +34,7 @@ func (m *mockResponse) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockResponse) Finalize(ctx context.Context) (stats.Stats, error) {
+func (m *mockResponse) FinishedReading(ctx context.Context) (stats.Stats, error) {
 	return m.stats, nil
 }
 
@@ -46,44 +46,44 @@ func (m *mockResponse) Close() {
 	panic("should not be called")
 }
 
-type finalizationTestMockResponse struct {
-	Closed    bool
-	Finalized bool
+type finishedReadingTestMockResponse struct {
+	Closed                bool
+	FinishedReadingCalled bool
 }
 
-func (m *finalizationTestMockResponse) Start(ctx context.Context) error {
+func (m *finishedReadingTestMockResponse) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *finalizationTestMockResponse) Finalize(ctx context.Context) (stats.Stats, error) {
-	m.Finalized = true
+func (m *finishedReadingTestMockResponse) FinishedReading(ctx context.Context) (stats.Stats, error) {
+	m.FinishedReadingCalled = true
 	return stats.Stats{}, nil
 }
 
-func (m *finalizationTestMockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (m *finishedReadingTestMockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not supported")
 }
 
-func (m *finalizationTestMockResponse) Close() {
+func (m *finishedReadingTestMockResponse) Close() {
 	m.Closed = true
 }
 
-func (m *finalizationTestMockResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (m *finishedReadingTestMockResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	panic("not supported")
 }
 
-func (m *finalizationTestMockResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (m *finishedReadingTestMockResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	panic("not supported")
 }
 
-func (m *finalizationTestMockResponse) AdvanceToNextSeries(ctx context.Context) error {
+func (m *finishedReadingTestMockResponse) AdvanceToNextSeries(ctx context.Context) error {
 	panic("not supported")
 }
 
-func (m *finalizationTestMockResponse) GetNextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
+func (m *finishedReadingTestMockResponse) GetNextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
 	panic("not supported")
 }
 
-func (m *finalizationTestMockResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
+func (m *finishedReadingTestMockResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
 	panic("not supported")
 }

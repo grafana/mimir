@@ -49,8 +49,8 @@ func (s *SortInRangeQueryWarning) AfterPrepare(ctx context.Context) error {
 	return s.Inner.AfterPrepare(ctx)
 }
 
-func (s *SortInRangeQueryWarning) Finalize(ctx context.Context) error {
-	return s.Inner.Finalize(ctx)
+func (s *SortInRangeQueryWarning) FinishedReading(ctx context.Context) error {
+	return s.Inner.FinishedReading(ctx)
 }
 
 func (s *SortInRangeQueryWarning) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {

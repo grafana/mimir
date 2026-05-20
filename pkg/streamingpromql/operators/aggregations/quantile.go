@@ -99,12 +99,12 @@ func (q *QuantileAggregation) AfterPrepare(ctx context.Context) error {
 	return q.Param.AfterPrepare(ctx)
 }
 
-func (q *QuantileAggregation) Finalize(ctx context.Context) error {
-	if err := q.Aggregation.Finalize(ctx); err != nil {
+func (q *QuantileAggregation) FinishedReading(ctx context.Context) error {
+	if err := q.Aggregation.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return q.Param.Finalize(ctx)
+	return q.Param.FinishedReading(ctx)
 }
 
 func (q *QuantileAggregation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {

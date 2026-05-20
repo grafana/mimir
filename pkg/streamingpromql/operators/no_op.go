@@ -49,7 +49,7 @@ func (n *NoOpInstant) NextSeries(_ context.Context) (types.InstantVectorSeriesDa
 	return types.InstantVectorSeriesData{}, types.EOS
 }
 
-func (n *NoOpInstant) Finalize(_ context.Context) error {
+func (n *NoOpInstant) FinishedReading(_ context.Context) error {
 	return nil
 }
 
@@ -90,7 +90,7 @@ func (n *NoOpRange) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (n *NoOpRange) Finalize(_ context.Context) error {
+func (n *NoOpRange) FinishedReading(_ context.Context) error {
 	return nil
 }
 

@@ -273,7 +273,7 @@ func (m *RangeVectorSelector) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
+func (m *RangeVectorSelector) FinishedReading(ctx context.Context) error {
 	m.floats.Close()
 	m.histograms.Close()
 	m.chunkIterator = nil
@@ -288,7 +288,7 @@ func (m *RangeVectorSelector) Stats(ctx context.Context) (*types.OperatorEvaluat
 }
 
 func (m *RangeVectorSelector) Close() {
-	// If the query fails, then Finalize above won't be called, so make sure to close the selector.
+	// If the query fails, then FinishedReading above won't be called, so make sure to close the selector.
 	m.Selector.Close()
 
 	if m.evaluationStats != nil {

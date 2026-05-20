@@ -167,7 +167,7 @@ func (s *Sort) AfterPrepare(ctx context.Context) error {
 	return s.inner.AfterPrepare(ctx)
 }
 
-func (s *Sort) Finalize(ctx context.Context) error {
+func (s *Sort) FinishedReading(ctx context.Context) error {
 	// Return any remaining data to the pool.
 	// Any data in allData that was previously passed to the calling operator by NextSeries does not need to be returned to the pool,
 	// as the calling operator is responsible for returning it to the pool.
@@ -178,7 +178,7 @@ func (s *Sort) Finalize(ctx context.Context) error {
 
 	s.allData = nil
 
-	return s.inner.Finalize(ctx)
+	return s.inner.FinishedReading(ctx)
 }
 
 func (s *Sort) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {

@@ -63,7 +63,7 @@ func (s *Time) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (s *Time) Finalize(_ context.Context) error {
+func (s *Time) FinishedReading(_ context.Context) error {
 	// Nothing to do.
 	return nil
 }

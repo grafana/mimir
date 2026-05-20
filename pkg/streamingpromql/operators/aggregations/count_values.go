@@ -263,18 +263,18 @@ func (c *CountValues) AfterPrepare(ctx context.Context) error {
 	return c.LabelName.AfterPrepare(ctx)
 }
 
-func (c *CountValues) Finalize(ctx context.Context) error {
+func (c *CountValues) FinishedReading(ctx context.Context) error {
 	for _, d := range c.series {
 		types.FPointSlicePool.Put(&d, c.MemoryConsumptionTracker)
 	}
 
 	c.series = nil
 
-	if err := c.Inner.Finalize(ctx); err != nil {
+	if err := c.Inner.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return c.LabelName.Finalize(ctx)
+	return c.LabelName.FinishedReading(ctx)
 }
 
 func (c *CountValues) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {

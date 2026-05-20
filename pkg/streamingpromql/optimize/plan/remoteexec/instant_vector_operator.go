@@ -18,8 +18,8 @@ type InstantVectorRemoteExec struct {
 	GroupEvaluator     GroupEvaluator
 	expressionPosition posrange.PositionRange
 
-	resp      InstantVectorRemoteExecutionResponse
-	finalized bool
+	resp                  InstantVectorRemoteExecutionResponse
+	finishedReadingCalled bool
 }
 
 var _ types.InstantVectorOperator = &InstantVectorRemoteExec{}
@@ -46,14 +46,14 @@ func (r *InstantVectorRemoteExec) NextSeries(ctx context.Context) (types.Instant
 	return r.resp.GetNextSeries(ctx)
 }
 
-func (r *InstantVectorRemoteExec) Finalize(ctx context.Context) error {
-	if r.finalized {
+func (r *InstantVectorRemoteExec) FinishedReading(ctx context.Context) error {
+	if r.finishedReadingCalled {
 		return nil
 	}
 
-	r.finalized = true
+	r.finishedReadingCalled = true
 
-	return finalize(ctx, r.resp)
+	return finishedReading(ctx, r.resp)
 }
 
 func (r *InstantVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
@@ -69,5 +69,5 @@ func (r *InstantVectorRemoteExec) Close() {
 		r.resp.Close()
 	}
 
-	r.finalized = true // Don't try to finalize from a closed stream.
+	r.finishedReadingCalled = true // Don't try to call FinishedReading from a closed stream.
 }

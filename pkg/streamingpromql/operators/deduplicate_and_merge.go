@@ -57,7 +57,7 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context, matchers types
 	}
 
 	d.groups = groups
-	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata), d.MemoryConsumptionTracker)
+	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata)-1, d.MemoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&innerMetadata, d.MemoryConsumptionTracker)
 
 	return outputMetadata, nil
@@ -152,13 +152,13 @@ func (d *DeduplicateAndMerge) AfterPrepare(ctx context.Context) error {
 	return d.Inner.AfterPrepare(ctx)
 }
 
-func (d *DeduplicateAndMerge) Finalize(ctx context.Context) error {
+func (d *DeduplicateAndMerge) FinishedReading(ctx context.Context) error {
 	if d.buffer != nil {
-		d.buffer.Finalize()
+		d.buffer.FinishedReading()
 		d.buffer = nil
 	}
 
-	return d.Inner.Finalize(ctx)
+	return d.Inner.FinishedReading(ctx)
 }
 
 func (d *DeduplicateAndMerge) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {

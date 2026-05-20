@@ -308,14 +308,14 @@ func (t *InstantQuery) AfterPrepare(ctx context.Context) error {
 	return t.Param.AfterPrepare(ctx)
 }
 
-func (t *InstantQuery) Finalize(ctx context.Context) error {
+func (t *InstantQuery) FinishedReading(ctx context.Context) error {
 	types.Float64SlicePool.Put(&t.values, t.MemoryConsumptionTracker)
 
-	if err := t.Inner.Finalize(ctx); err != nil {
+	if err := t.Inner.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return t.Param.Finalize(ctx)
+	return t.Param.FinishedReading(ctx)
 }
 
 func (t *InstantQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {

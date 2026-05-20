@@ -75,8 +75,8 @@ func (s *ScalarToInstantVector) AfterPrepare(ctx context.Context) error {
 	return s.Scalar.AfterPrepare(ctx)
 }
 
-func (s *ScalarToInstantVector) Finalize(ctx context.Context) error {
-	return s.Scalar.Finalize(ctx)
+func (s *ScalarToInstantVector) FinishedReading(ctx context.Context) error {
+	return s.Scalar.FinishedReading(ctx)
 }
 
 func (s *ScalarToInstantVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {

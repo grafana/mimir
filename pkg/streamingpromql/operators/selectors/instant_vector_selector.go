@@ -224,7 +224,7 @@ func (v *InstantVectorSelector) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
-func (v *InstantVectorSelector) Finalize(ctx context.Context) error {
+func (v *InstantVectorSelector) FinishedReading(ctx context.Context) error {
 	v.memoizedIterator = nil
 	v.chunkIterator = nil
 
@@ -239,7 +239,7 @@ func (v *InstantVectorSelector) Stats(ctx context.Context) (*types.OperatorEvalu
 }
 
 func (v *InstantVectorSelector) Close() {
-	// If the query fails, then Finalize above won't be called, so make sure to close the selector.
+	// If the query fails, then FinishedReading above won't be called, so make sure to close the selector.
 	v.Selector.Close()
 
 	if v.evaluationStats != nil {

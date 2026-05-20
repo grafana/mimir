@@ -79,8 +79,8 @@ func (a *ShardedAvg) NextSeries(ctx context.Context) (types.InstantVectorSeriesD
 	return a.Inner.NextSeries(ctx)
 }
 
-func (a *ShardedAvg) Finalize(ctx context.Context) error {
-	return a.Inner.Finalize(ctx)
+func (a *ShardedAvg) FinishedReading(ctx context.Context) error {
+	return a.Inner.FinishedReading(ctx)
 }
 
 func (a *ShardedAvg) ExpressionPosition() posrange.PositionRange {
