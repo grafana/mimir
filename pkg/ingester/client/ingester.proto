@@ -50,8 +50,11 @@ message HashRangeStatsRequest {}
 message HashRangeRate {
   uint32 lo = 1;
   uint32 hi = 2;
-  reserved 3; // formerly samples_per_second; dropped when the rebalancer
-  // switched to a series-only load model.
+  reserved 3; // formerly samples_per_second on a slightly different
+  // (and confusingly named) scale. Don't reuse: the new throughput
+  // field is sample_rate at id 6 below, so old replay traces still
+  // skip the abandoned scale rather than silently misinterpreting
+  // it.
   int64 active_series = 4;
   // partition_id is the Kafka partition whose TSDB head contains the
   // active_series counted in this entry. The same (lo, hi) range can
@@ -65,12 +68,27 @@ message HashRangeRate {
   // current owner. Zero is a valid partition id; the field is required
   // for readcache reporters and ignored by ingester reporters.
   int32 partition_id = 5;
+  // sample_rate is the EWMA of samples-per-second observed on the
+  // ingest hot path for this (partition, range), advanced once per
+  // loadstats.TickInterval (15s) with the same alpha as
+  // PartitionQueryLoad.samples_ewma. Used by the rebalancer as the
+  // primary load signal when balancing hash ranges: balancing on
+  // samples/sec is closer to "what work does this readcache do?"
+  // than active_series, which only measures churn-free cardinality
+  // and lags new tenants by minutes.
+  //
+  // Always zero for ingester reporters (they don't compute it).
+  // Newly-adopted ranges report 0 for the first ~15s while the EWMA
+  // is uninitialised; the rebalancer's slicer treats 0 the same as
+  // "no movable load" so cold ranges aren't yanked around.
+  double sample_rate = 6;
 }
 
 message HashRangeStatsResponse {
-  // rates is a misnomer left over from an earlier load model that
-  // included a samples/sec EWMA per range. The field now carries only
-  // per-range active-series counts; see HashRangeRate.
+  // rates carries one entry per (partition, range) the reporter
+  // owns or has residue for. Each entry includes both the cardinality
+  // signal (active_series) and the throughput signal (sample_rate);
+  // the rebalancer decides which to balance on.
   repeated HashRangeRate rates = 1 [(gogoproto.nullable) = false];
   // total_active_series is the total number of in-memory series on the
   // ingester, across all tenants. It includes series whose hashes fall

@@ -6,7 +6,12 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/prometheus/common/model"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/loadstats"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 // partitionRanges is the per-Kafka-partition hash-range bookkeeping
@@ -54,13 +59,40 @@ type partitionRanges struct {
 	// Walks that pass nil examples leave this map untouched; that
 	// keeps cost off the rebalancer's stats RPC path entirely.
 	exampleSeries map[assignment.HashRange]string
+
+	// sampleRates is an EWMA of samples-per-second per range. The
+	// ingest hot path (recordSampleBatch) buckets each timeseries
+	// into the matching current range and bumps that range's
+	// EwmaRate; tickSampleRates advances every EwmaRate once per
+	// loadstats.TickInterval (15s) so the rate field tracks recent
+	// throughput rather than cumulative work.
+	//
+	// Entries are created for every range that lands in
+	// currentRanges (setRanges and applyWalkResult both materialise
+	// missing entries) so the hot path does not need to allocate
+	// under contention. Entries are GC'd alongside rangeCounts /
+	// exampleSeries when a range falls out of currentRanges ∪
+	// historicalRanges. Historical ranges keep their EwmaRate so the
+	// natural decay continues to be visible to the rebalancer while
+	// residue series sit in the head.
+	sampleRates map[assignment.HashRange]*util_math.EwmaRate
 }
 
 func newPartitionRanges() *partitionRanges {
 	return &partitionRanges{
 		rangeCounts:   make(map[assignment.HashRange]int64),
 		exampleSeries: make(map[assignment.HashRange]string),
+		sampleRates:   make(map[assignment.HashRange]*util_math.EwmaRate),
 	}
+}
+
+// newPartitionRangeEWMA constructs an EwmaRate using the same alpha
+// and tick interval as the query-load tracker. Keeping the two
+// signals on the same smoothing constants means an operator reading
+// both off the admin page can compare them directly without
+// mentally rescaling.
+func newPartitionRangeEWMA() *util_math.EwmaRate {
+	return util_math.NewEWMARate(loadstats.Alpha, loadstats.TickInterval)
 }
 
 // setRanges applies a new set of currently-owned ranges. Hash space
@@ -92,8 +124,19 @@ func (pr *partitionRanges) setRanges(newRanges []assignment.HashRange) {
 
 	pr.currentRanges = sortedNew
 
+	// Pre-create EwmaRate entries for every current range so the
+	// ingest hot path (recordSampleBatch) never has to allocate or
+	// take the write lock to install a new rate. Historical ranges
+	// keep their existing entries; ranges that leave both sets are
+	// GC'd below.
+	for _, r := range pr.currentRanges {
+		if _, ok := pr.sampleRates[r]; !ok {
+			pr.sampleRates[r] = newPartitionRangeEWMA()
+		}
+	}
+
 	// Drop counts for ranges that are now in neither set.
-	if len(pr.rangeCounts) > 0 || len(pr.exampleSeries) > 0 {
+	if len(pr.rangeCounts) > 0 || len(pr.exampleSeries) > 0 || len(pr.sampleRates) > 0 {
 		live := make(map[assignment.HashRange]struct{}, len(pr.currentRanges)+len(pr.historicalRanges))
 		for _, r := range pr.currentRanges {
 			live[r] = struct{}{}
@@ -109,6 +152,11 @@ func (pr *partitionRanges) setRanges(newRanges []assignment.HashRange) {
 		for r := range pr.exampleSeries {
 			if _, ok := live[r]; !ok {
 				delete(pr.exampleSeries, r)
+			}
+		}
+		for r := range pr.sampleRates {
+			if _, ok := live[r]; !ok {
+				delete(pr.sampleRates, r)
 			}
 		}
 	}
@@ -217,11 +265,34 @@ func (pr *partitionRanges) applyWalkResult(forRanges []assignment.HashRange, cou
 	pr.historicalRanges = newHistorical
 	pr.rangeCounts = nextCounts
 	pr.exampleSeries = nextExamples
+
+	// GC sample-rate EwmaRates for ranges that just fell out of the
+	// working set (current ∪ historical). Without this, residue
+	// ranges whose head finally compacted would keep their EwmaRate
+	// alive forever, slowly leaking memory in proportion to the
+	// number of range moves over the lifetime of the pod.
+	if len(pr.sampleRates) > 0 {
+		live := make(map[assignment.HashRange]struct{}, len(pr.currentRanges)+len(pr.historicalRanges))
+		for _, r := range pr.currentRanges {
+			live[r] = struct{}{}
+		}
+		for _, r := range pr.historicalRanges {
+			live[r] = struct{}{}
+		}
+		for r := range pr.sampleRates {
+			if _, ok := live[r]; !ok {
+				delete(pr.sampleRates, r)
+			}
+		}
+	}
 	return true
 }
 
 // snapshotCounts returns a deep copy of the per-range counts. Used by
-// the HashRangeStats RPC.
+// the HashRangeStats RPC. Each entry carries the per-range
+// samples-per-second EWMA alongside the active-series count so the
+// rebalancer's load map can be keyed by either (or both) without a
+// second RPC.
 func (pr *partitionRanges) snapshotCounts() []hashRangeCount {
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
@@ -235,7 +306,11 @@ func (pr *partitionRanges) snapshotCounts() []hashRangeCount {
 	out := make([]hashRangeCount, 0, len(pr.currentRanges)+len(pr.historicalRanges))
 	seen := make(map[assignment.HashRange]struct{}, len(pr.currentRanges))
 	for _, r := range pr.currentRanges {
-		out = append(out, hashRangeCount{Range: r, Count: pr.rangeCounts[r]})
+		out = append(out, hashRangeCount{
+			Range:      r,
+			Count:      pr.rangeCounts[r],
+			SampleRate: rateOf(pr.sampleRates[r]),
+		})
 		seen[r] = struct{}{}
 	}
 	for _, r := range pr.historicalRanges {
@@ -243,7 +318,11 @@ func (pr *partitionRanges) snapshotCounts() []hashRangeCount {
 			continue
 		}
 		if c := pr.rangeCounts[r]; c > 0 {
-			out = append(out, hashRangeCount{Range: r, Count: c})
+			out = append(out, hashRangeCount{
+				Range:      r,
+				Count:      c,
+				SampleRate: rateOf(pr.sampleRates[r]),
+			})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Range.Lo < out[j].Range.Lo })
@@ -273,24 +352,139 @@ func (pr *partitionRanges) adminSnapshot() (current, historical []hashRangeCount
 
 	current = make([]hashRangeCount, 0, len(pr.currentRanges))
 	for _, r := range pr.currentRanges {
-		current = append(current, hashRangeCount{Range: r, Count: pr.rangeCounts[r], Example: pr.exampleSeries[r]})
+		current = append(current, hashRangeCount{
+			Range:      r,
+			Count:      pr.rangeCounts[r],
+			Example:    pr.exampleSeries[r],
+			SampleRate: rateOf(pr.sampleRates[r]),
+		})
 	}
 	historical = make([]hashRangeCount, 0, len(pr.historicalRanges))
 	for _, r := range pr.historicalRanges {
-		historical = append(historical, hashRangeCount{Range: r, Count: pr.rangeCounts[r], Example: pr.exampleSeries[r]})
+		historical = append(historical, hashRangeCount{
+			Range:      r,
+			Count:      pr.rangeCounts[r],
+			Example:    pr.exampleSeries[r],
+			SampleRate: rateOf(pr.sampleRates[r]),
+		})
 	}
 	return current, historical
 }
 
+// recordSampleBatch attributes a Kafka push's per-series sample
+// counts to the matching current ranges' EwmaRates. Called once per
+// PushToStorageAndReleaseRequest on the ingest hot path; no map
+// allocations are required because EwmaRate.Add is internally
+// lock-free and pr.sampleRates is mutated only under pr.mu.Lock by
+// setRanges / applyWalkResult.
+//
+// Samples that hash outside every current range are dropped on the
+// floor: they're either misrouted (a distributor bug worth tracking
+// elsewhere) or in flight across a range-move boundary. Either way
+// the rebalancer's per-range signal should reflect what's owned, not
+// what arrived.
+//
+// Each timeseries' contribution is len(Samples) + len(Histograms);
+// this matches the existing cortex_readcache_samples_ingested_total
+// counter so an operator can compare per-second rates here against
+// per-partition rates there for sanity.
+func (pr *partitionRanges) recordSampleBatch(userID string, timeseries []mimirpb.PreallocTimeseries) {
+	if len(timeseries) == 0 {
+		return
+	}
+	pr.mu.RLock()
+	defer pr.mu.RUnlock()
+	if len(pr.currentRanges) == 0 {
+		return
+	}
+	for _, ts := range timeseries {
+		n := int64(len(ts.Samples) + len(ts.Histograms))
+		if n == 0 {
+			continue
+		}
+		metric := metricNameOf(ts.Labels)
+		hash := mimirpb.ShardByMetricNameLocality(userID, metric, ts.Labels)
+		// Binary-search currentRanges for the tile containing hash.
+		// currentRanges is sorted by Lo and non-overlapping (the
+		// rebalancer's assignment guarantees this).
+		idx := sort.Search(len(pr.currentRanges), func(i int) bool {
+			return pr.currentRanges[i].Lo > hash
+		}) - 1
+		if idx < 0 {
+			continue
+		}
+		r := pr.currentRanges[idx]
+		if !r.Contains(hash) {
+			continue
+		}
+		if rate := pr.sampleRates[r]; rate != nil {
+			rate.Add(n)
+		}
+	}
+}
+
+// tickSampleRates advances every EwmaRate in this partition by one
+// tick. Must be called from the per-pod loadStats ticker at
+// loadstats.TickInterval cadence; calling more often does not
+// corrupt state but does inflate the EWMA bias (the alpha constant
+// is set on the assumption of a 15s tick).
+//
+// Historical ranges are ticked too: distributors no longer route to
+// those ranges, so each tick swaps a 0 into the EwmaRate and the
+// reported rate decays toward zero. That's the right behaviour —
+// the rebalancer should see the rate trail off after a move.
+func (pr *partitionRanges) tickSampleRates() {
+	// RLock is sufficient: EwmaRate.Tick is internally synchronised
+	// and the map itself is read-only here. Concurrent setRanges /
+	// applyWalkResult holds the writer side and is what would
+	// reshape pr.sampleRates.
+	pr.mu.RLock()
+	defer pr.mu.RUnlock()
+	for _, rate := range pr.sampleRates {
+		rate.Tick()
+	}
+}
+
+// metricNameOf returns the value of the __name__ label, or "" if it
+// is absent. Iterating LabelAdapters is cheap (labels are short
+// slices) and avoids materialising a labels.Labels just to read one
+// value.
+func metricNameOf(ls []mimirpb.LabelAdapter) string {
+	for i := range ls {
+		if ls[i].Name == model.MetricNameLabel {
+			return ls[i].Value
+		}
+	}
+	return ""
+}
+
+// rateOf returns the current EWMA rate for r, or 0 if no entry
+// exists (e.g. a range that's only in historicalRanges and whose
+// EwmaRate was already GC'd by applyWalkResult).
+func rateOf(r *util_math.EwmaRate) float64 {
+	if r == nil {
+		return 0
+	}
+	return r.Rate()
+}
+
 // hashRangeCount is the in-process shape of a per-(partition, range)
-// count emitted by HashRangeStats and rendered by the admin page.
+// load entry emitted by HashRangeStats and rendered by the admin page.
 // Partition association is implicit (it's the partition this came
 // from); the wire format adds it back. Example is only populated by
 // adminSnapshot — the RPC path leaves it empty.
+//
+// SampleRate is the EWMA of samples-per-second observed on the
+// ingest hot path. snapshotCounts emits it on the wire so the
+// rebalancer can balance by ingest throughput, not just by head
+// cardinality. A zero value can mean either "no samples" or "the
+// EwmaRate has not been ticked yet"; the latter is only true for
+// the first 15s after a partition is adopted.
 type hashRangeCount struct {
-	Range   assignment.HashRange
-	Count   int64
-	Example string
+	Range      assignment.HashRange
+	Count      int64
+	Example    string
+	SampleRate float64
 }
 
 // sortedNonOverlappingCopy returns a fresh sorted-by-Lo copy of the

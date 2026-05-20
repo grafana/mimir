@@ -135,9 +135,12 @@ func (s *adminState) addTrace(tr Trace) {
 }
 
 // setLastStats snapshots the current loadMap, partition L map, and
-// derived movable budgets into the admin state. The movable budget for
-// a partition is max(0, L_pid - meanL) - sumRecentMoves(pid), matching
-// the gate applied in Phase 3.
+// derived movable budgets into the admin state. The movable budget
+// rendered here intentionally mirrors what Phase 3 would compute
+// from partitionLByPID (head series count) — even though Phase 3
+// itself now balances on sample rate. The admin page still wants
+// the cardinality-based view for cluster-state debugging; a future
+// patch will surface a parallel sample-rate panel.
 func (s *adminState) setLastStats(
 	lm *loadMap,
 	partitionLByPID map[int32]int64,

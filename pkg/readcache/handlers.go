@@ -669,6 +669,7 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 				Lo:           hrc.Range.Lo,
 				Hi:           hrc.Range.Hi,
 				ActiveSeries: hrc.Count,
+				SampleRate:   hrc.SampleRate,
 				PartitionId:  p.partitionID,
 			})
 		}

@@ -29,7 +29,17 @@ import (
 // on a previous owner separate from growth on the new owner. Traces
 // captured under SlicerVersion "2" do not carry that field and
 // cannot be replayed deterministically against the v3 slicer.
-const SlicerVersion = "3"
+//
+// Version "4" swaps Phase 3's load metric from head-series count to
+// per-(partition, range) sample-rate EWMA. RangeRate gains
+// SampleRate and MoveRecord gains Load (the moved range's sample
+// rate at move time, used by the movable-budget math). Series stays
+// on both shapes for observability but is no longer load-bearing.
+// Traces captured under v3 zero-fill the new fields, so replaying
+// them under v4 will produce a different — and arguably broken —
+// Actions slice because Phase 3 will see no movable budget; the
+// determinism contract requires matching versions.
+const SlicerVersion = "4"
 
 // RangeRate is the JSON-serializable view of a per-(partition, range)
 // rate signal. Mirrors the unexported rangeRate but with JSON tags
@@ -40,19 +50,31 @@ const SlicerVersion = "3"
 // multiple times with different PartitionIDs to model residue (one
 // entry on the previous owner) alongside growth (one entry on the
 // current owner).
+//
+// SampleRate is the per-(partition, range) samples-per-second EWMA;
+// it is the slicer's primary load signal from v4 onward. Series is
+// retained as observability metadata and surfaces on the admin
+// page, but does not feed Phase 3's hot/cold scoring.
 type RangeRate struct {
-	Lo          uint32 `json:"lo"`
-	Hi          uint32 `json:"hi"`
-	Series      int64  `json:"series"`
-	PartitionID int32  `json:"partition_id"`
+	Lo          uint32  `json:"lo"`
+	Hi          uint32  `json:"hi"`
+	Series      int64   `json:"series"`
+	SampleRate  float64 `json:"sample_rate"`
+	PartitionID int32   `json:"partition_id"`
 }
 
 // MoveRecord is the JSON-serializable view of a moveRecord — a move
 // off a source partition that still counts against the partition's
 // movable budget while within the CompactionInterval window.
+//
+// Load is in the same units as RangeRate.SampleRate (samples per
+// second) and is what Phase 3's sumRecentMoves discounts. Series
+// is retained for admin-page continuity ("this many head series
+// moved") but is not load-bearing.
 type MoveRecord struct {
 	Lo     uint32    `json:"lo"`
 	Hi     uint32    `json:"hi"`
+	Load   float64   `json:"load"`
 	Series int64     `json:"series"`
 	At     time.Time `json:"at"`
 }
@@ -151,7 +173,13 @@ func ParseHashRangeKey(s string) (assignment.HashRange, error) {
 func ratesToWire(in []rangeRate) []RangeRate {
 	out := make([]RangeRate, len(in))
 	for i, r := range in {
-		out[i] = RangeRate{Lo: r.hr.Lo, Hi: r.hr.Hi, Series: r.series, PartitionID: r.partitionID}
+		out[i] = RangeRate{
+			Lo:          r.hr.Lo,
+			Hi:          r.hr.Hi,
+			Series:      r.series,
+			SampleRate:  r.sampleRate,
+			PartitionID: r.partitionID,
+		}
 	}
 	return out
 }
@@ -163,6 +191,7 @@ func ratesFromWire(in []RangeRate) []rangeRate {
 		out[i] = rangeRate{
 			hr:          assignment.HashRange{Lo: r.Lo, Hi: r.Hi},
 			series:      r.Series,
+			sampleRate:  r.SampleRate,
 			partitionID: r.PartitionID,
 		}
 	}
@@ -210,7 +239,13 @@ func recentMovesToWire(in map[int32][]moveRecord) map[string][]MoveRecord {
 		}
 		wire := make([]MoveRecord, len(records))
 		for i, m := range records {
-			wire[i] = MoveRecord{Lo: m.hr.Lo, Hi: m.hr.Hi, Series: m.series, At: m.at}
+			wire[i] = MoveRecord{
+				Lo:     m.hr.Lo,
+				Hi:     m.hr.Hi,
+				Load:   m.load,
+				Series: m.series,
+				At:     m.at,
+			}
 		}
 		out[strconv.FormatInt(int64(pid), 10)] = wire
 	}
@@ -230,6 +265,7 @@ func recentMovesFromWire(in map[string][]MoveRecord) map[int32][]moveRecord {
 		for i, m := range records {
 			list[i] = moveRecord{
 				hr:     assignment.HashRange{Lo: m.Lo, Hi: m.Hi},
+				load:   m.Load,
 				series: m.Series,
 				at:     m.At,
 			}

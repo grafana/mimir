@@ -304,6 +304,7 @@ func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate
 			rates[i] = rangeRate{
 				hr:          assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi},
 				series:      rate.ActiveSeries,
+				sampleRate:  rate.SampleRate,
 				partitionID: rate.PartitionId,
 			}
 		}

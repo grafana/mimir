@@ -365,6 +365,7 @@ func (r *Readcache) running(ctx context.Context) error {
 			r.applyPartitionTSDBTenantSettings()
 		case <-loadStatsTickT.C:
 			r.queryLoad.Tick()
+			r.tickSampleRates()
 			go r.refreshSeriesStats(ctx)
 		}
 	}

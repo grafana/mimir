@@ -33,4 +33,23 @@ var adminTemplate = template.Must(template.New("readcache-admin").Funcs(template
 		}
 		return fmt.Sprintf("%.1f%%", float64(residue)/float64(head)*100)
 	},
+	// fmtRate renders a samples-per-second EWMA in human-friendly
+	// units (K/M with two decimals, "0" for the EWMA-not-yet-warm
+	// case). The walker advances every loadstats.TickInterval
+	// (15s); single-digit values are stable signal, not noise.
+	"fmtRate": func(f float64) string {
+		if f <= 0 {
+			return "0"
+		}
+		if f >= 1e6 {
+			return fmt.Sprintf("%.2fM/s", f/1e6)
+		}
+		if f >= 1e3 {
+			return fmt.Sprintf("%.2fK/s", f/1e3)
+		}
+		if f < 1 {
+			return fmt.Sprintf("%.2f/s", f)
+		}
+		return fmt.Sprintf("%.1f/s", f)
+	},
 }).Parse(adminHTML))

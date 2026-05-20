@@ -10,6 +10,30 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/loadstats"
 )
 
+// tickSampleRates advances every per-(partition, range)
+// samples-per-second EwmaRate by one tick. Must be called every
+// loadstats.TickInterval; running() drives this off the same ticker
+// that fires refreshSeriesStats so the two background signals
+// progress on the same cadence.
+//
+// This runs synchronously on the running() goroutine because each
+// EwmaRate.Tick is a single atomic Swap + a short mutex acquire;
+// even thousands of (partition, range) pairs complete in well under
+// a millisecond. Going async would just add scheduling overhead and
+// would let multiple ticks queue up if the previous one was slow.
+func (r *Readcache) tickSampleRates() {
+	r.partitionMu.RLock()
+	parts := make([]*partitionState, 0, len(r.partitions))
+	for _, p := range r.partitions {
+		parts = append(parts, p)
+	}
+	r.partitionMu.RUnlock()
+
+	for _, p := range parts {
+		p.ranges.tickSampleRates()
+	}
+}
+
 // refreshSeriesStats walks owned partition TSDB heads and updates the
 // per-partition series and per-(partition, hash range) counts used by
 // HashRangeStats. It runs on the load-stats ticker, not on the RPC

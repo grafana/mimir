@@ -47,13 +47,15 @@ type adminPageData struct {
 	OwnedPartitionsFlag string
 	GeneratedAt         string
 
-	NumPartitions      int
-	NumTenants         int
-	TotalHeadSeries    int64
-	TotalCurrentSeries int64
-	TotalResidueSeries int64
-	HashSpaceCurrent   float64 // 0..100
-	HashSpaceResidue   float64 // 0..100
+	NumPartitions          int
+	NumTenants             int
+	TotalHeadSeries        int64
+	TotalCurrentSeries     int64
+	TotalResidueSeries     int64
+	TotalCurrentSampleRate float64 // Σ EWMA samples/sec over current ranges
+	TotalResidueSampleRate float64 // Σ EWMA samples/sec over historical ranges
+	HashSpaceCurrent       float64 // 0..100
+	HashSpaceResidue       float64 // 0..100
 
 	Partitions []adminPartitionView
 }
@@ -65,6 +67,8 @@ type adminPartitionView struct {
 	HeadSeries           int64
 	CurrentSeries        int64
 	ResidueSeries        int64
+	CurrentSampleRate    float64 // Σ EWMA samples/sec over current ranges
+	ResidueSampleRate    float64 // Σ EWMA samples/sec over historical ranges
 	NumTenants           int
 	CurrentRangeCount    int
 	HistoricalRangeCount int
@@ -80,8 +84,15 @@ type adminRangeView struct {
 	Lo     uint32
 	Hi     uint32
 	Series int64
-	SizeB  uint64  // raw size in hash units (Hi-Lo+1)
-	SizeP  float64 // size as % of 32-bit hash space
+	// SampleRate is the samples-per-second EWMA observed for this
+	// (partition, range), advanced once per loadstats.TickInterval
+	// (15s). It is what the rebalancer balances on from v4 onward.
+	// Zero is "no samples in the last few half-lives"; newly
+	// adopted ranges read 0 for the first 15s while the EWMA
+	// initialises.
+	SampleRate float64
+	SizeB      uint64  // raw size in hash units (Hi-Lo+1)
+	SizeP      float64 // size as % of 32-bit hash space
 	// Example is one representative series in this range, rendered
 	// as labels.Labels.String() (e.g. `{__name__="up", instance="…"}`)
 	// by the load-stats walker. Empty if the walker has not seen
@@ -145,14 +156,16 @@ func (r *Readcache) buildAdminPageData() adminPageData {
 		}
 		pv.Current = make([]adminRangeView, len(current))
 		for i, c := range current {
-			pv.Current[i] = makeRangeView(c.Range, c.Count, c.Example, hashSpaceTotal)
+			pv.Current[i] = makeRangeView(c.Range, c.Count, c.SampleRate, c.Example, hashSpaceTotal)
 			pv.CurrentSeries += c.Count
+			pv.CurrentSampleRate += c.SampleRate
 			pv.CurrentHashPct += pv.Current[i].SizeP
 		}
 		pv.Historical = make([]adminRangeView, len(historical))
 		for i, h := range historical {
-			pv.Historical[i] = makeRangeView(h.Range, h.Count, h.Example, hashSpaceTotal)
+			pv.Historical[i] = makeRangeView(h.Range, h.Count, h.SampleRate, h.Example, hashSpaceTotal)
 			pv.ResidueSeries += h.Count
+			pv.ResidueSampleRate += h.SampleRate
 			pv.HistoricalHashPct += pv.Historical[i].SizeP
 		}
 
@@ -173,6 +186,8 @@ func (r *Readcache) buildAdminPageData() adminPageData {
 		data.TotalHeadSeries += pv.HeadSeries
 		data.TotalCurrentSeries += pv.CurrentSeries
 		data.TotalResidueSeries += pv.ResidueSeries
+		data.TotalCurrentSampleRate += pv.CurrentSampleRate
+		data.TotalResidueSampleRate += pv.ResidueSampleRate
 		data.HashSpaceCurrent += pv.CurrentHashPct
 		data.HashSpaceResidue += pv.HistoricalHashPct
 	}
@@ -181,14 +196,15 @@ func (r *Readcache) buildAdminPageData() adminPageData {
 	return data
 }
 
-func makeRangeView(hr assignment.HashRange, series int64, example string, hashSpaceTotal float64) adminRangeView {
+func makeRangeView(hr assignment.HashRange, series int64, sampleRate float64, example string, hashSpaceTotal float64) adminRangeView {
 	size := hr.Size()
 	return adminRangeView{
-		Lo:      hr.Lo,
-		Hi:      hr.Hi,
-		Series:  series,
-		SizeB:   size,
-		SizeP:   float64(size) / hashSpaceTotal * 100,
-		Example: example,
+		Lo:         hr.Lo,
+		Hi:         hr.Hi,
+		Series:     series,
+		SampleRate: sampleRate,
+		SizeB:      size,
+		SizeP:      float64(size) / hashSpaceTotal * 100,
+		Example:    example,
 	}
 }

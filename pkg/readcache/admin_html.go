@@ -92,6 +92,8 @@ summary:hover { background: #f4f4f4; }
 		<th>Current-range series</th>
 		<th>Historical-range series (residue)</th>
 		<th>Residue / head</th>
+		<th>Current ingest rate (&Sigma; samples/s)</th>
+		<th>Residue ingest rate</th>
 		<th>Hash space (current)</th>
 		<th>Hash space (residue)</th>
 	</tr>
@@ -102,17 +104,19 @@ summary:hover { background: #f4f4f4; }
 		<td class="num">{{fmtSeries .TotalCurrentSeries}}</td>
 		<td class="num {{if gt .TotalResidueSeries 0}}warn{{end}}">{{fmtSeries .TotalResidueSeries}}</td>
 		<td class="num">{{residueRatio .TotalResidueSeries .TotalHeadSeries}}</td>
+		<td class="num">{{fmtRate .TotalCurrentSampleRate}}</td>
+		<td class="num">{{fmtRate .TotalResidueSampleRate}}</td>
 		<td class="num">{{fmtPct .HashSpaceCurrent}}</td>
 		<td class="num">{{fmtPct .HashSpaceResidue}}</td>
 	</tr>
 </table>
 
 <p class="muted">
-	<b>L_pid</b> is the per-partition active series count this readcache reports to the rebalancer's slicer.
-	The walker buckets each head's series into one of this partition's <i>current</i> ranges (growth) or
-	<i>historical</i> ranges (residue still in the head after a range moved off — drains on compaction).
-	&Sigma; current + &Sigma; historical per partition should approximately equal L_pid; any gap is series that
-	hash outside every tracked range and would be a bookkeeping bug.
+	<b>L_pid</b> is the per-partition active-series count; <b>ingest rate</b> is the per-(partition, range)
+	samples-per-second EWMA the rebalancer balances on from slicer version 4 onward. The walker buckets each
+	head's series into <i>current</i> ranges (growth) or <i>historical</i> ranges (residue still in the head
+	after a range moved off &mdash; drains on compaction). Sample rates on historical ranges decay toward 0
+	since the distributor stops routing into them after a move.
 </p>
 
 <h2>Partitions</h2>
@@ -130,6 +134,8 @@ all partitions have been moved off to other instances.</p>
 		<th>Current series</th>
 		<th>Residue series</th>
 		<th>Residue %</th>
+		<th>Current ingest</th>
+		<th>Residue ingest</th>
 		<th>Tenants</th>
 		<th>Current ranges</th>
 		<th>Historical ranges</th>
@@ -144,6 +150,8 @@ all partitions have been moved off to other instances.</p>
 		<td class="num">{{fmtSeries .CurrentSeries}}</td>
 		<td class="num {{if gt .ResidueSeries 0}}warn{{end}}">{{fmtSeries .ResidueSeries}}</td>
 		<td class="num">{{residueRatio .ResidueSeries .HeadSeries}}</td>
+		<td class="num">{{fmtRate .CurrentSampleRate}}</td>
+		<td class="num">{{fmtRate .ResidueSampleRate}}</td>
 		<td class="num">{{.NumTenants}}</td>
 		<td class="num">{{.CurrentRangeCount}}</td>
 		<td class="num">{{.HistoricalRangeCount}}</td>
@@ -159,6 +167,7 @@ all partitions have been moved off to other instances.</p>
 		&nbsp;&nbsp;L_pid={{fmtSeries .HeadSeries}}
 		&nbsp;current={{fmtSeries .CurrentSeries}}
 		&nbsp;residue={{fmtSeries .ResidueSeries}}
+		&nbsp;ingest={{fmtRate .CurrentSampleRate}}
 		{{if not .Warm}}<span class="warn">&nbsp;[COLD]</span>{{end}}
 	</h3>
 
@@ -171,13 +180,14 @@ all partitions have been moved off to other instances.</p>
 			<div class="empty">(no current ranges &mdash; this partition has nothing assigned to it on this instance)</div>
 			{{else}}
 			<table>
-				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Example series</th></tr>
+				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Ingest rate</th><th>Example series</th></tr>
 				{{range .Current}}
 				<tr>
 					<td class="hex">{{hexRange .Lo .Hi}}</td>
 					<td class="num">{{.SizeB}}</td>
 					<td class="num">{{fmtPct4 .SizeP}}</td>
 					<td class="num">{{fmtSeries .Series}}</td>
+					<td class="num">{{fmtRate .SampleRate}}</td>
 					<td class="example">{{if .Example}}{{.Example}}{{else}}<span class="muted">(no series sampled yet)</span>{{end}}</td>
 				</tr>
 				{{end}}
@@ -191,13 +201,14 @@ all partitions have been moved off to other instances.</p>
 			<div class="empty">(no residue &mdash; nothing has been moved off this partition recently, or it has already drained)</div>
 			{{else}}
 			<table>
-				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Example series</th></tr>
+				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Ingest rate</th><th>Example series</th></tr>
 				{{range .Historical}}
 				<tr>
 					<td class="hex">{{hexRange .Lo .Hi}}</td>
 					<td class="num">{{.SizeB}}</td>
 					<td class="num">{{fmtPct4 .SizeP}}</td>
 					<td class="num {{if gt .Series 0}}warn{{end}}">{{fmtSeries .Series}}</td>
+					<td class="num">{{fmtRate .SampleRate}}</td>
 					<td class="example">{{if .Example}}{{.Example}}{{else}}<span class="muted">(no series sampled yet)</span>{{end}}</td>
 				</tr>
 				{{end}}
@@ -223,6 +234,7 @@ all partitions have been moved off to other instances.</p>
 <div class="footer">
 	Page is server-rendered and does not auto-refresh; reload manually for fresh stats.
 	Per-range series counts come from the latest walker tick; head series counts (L_pid) are computed live on this request.
+	Ingest rates are per-(partition, range) samples-per-second EWMAs (~5min half-life, advanced every 15s).
 </div>
 
 </body>

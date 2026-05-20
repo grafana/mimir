@@ -26,6 +26,15 @@ import (
 type partitionPusher struct {
 	rc          *Readcache
 	partitionID int32
+	// ranges is a direct reference to the partitionState.ranges
+	// owned by this partition. Capturing it on the pusher avoids an
+	// extra partitionMu RLock per push just to look the
+	// partitionState back up; the partitionState (and therefore
+	// ranges) is guaranteed to outlive the pusher because the
+	// reader stop path runs before partitionState is dropped from
+	// r.partitions (see Readcache.removePartition for the ordering
+	// invariant).
+	ranges *partitionRanges
 	// samplesIngested is the pre-resolved CounterVec child for this
 	// partition. Resolving WithLabelValues once at construction time
 	// avoids a map lookup on every Kafka batch on the hot ingest
@@ -107,6 +116,14 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 			p.samplesIngested.Add(float64(n))
 		}
 	}
+	// Attribute the batch to its per-range EwmaRate so the
+	// rebalancer can balance by ingest throughput. recordSampleBatch
+	// is safe to call after Append: it only reads ts.Labels (deep
+	// copied into the head's intern pool by Append) and counts —
+	// no references are retained after the call returns.
+	if p.ranges != nil {
+		p.ranges.recordSampleBatch(userID, req.Timeseries)
+	}
 	if res.FirstPartialErr != nil {
 		return ingester.MapPushErrorToErrorWithStatus(res.FirstPartialErr)
 	}
@@ -162,7 +179,7 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	// underlying constant lives in pkg/storage/ingest/config.go.
 	kafkaCfg.ConsumeFromPositionAtStartup = "end"
 
-	pusher := &partitionPusher{rc: r, partitionID: p.partitionID}
+	pusher := &partitionPusher{rc: r, partitionID: p.partitionID, ranges: p.ranges}
 	if r.samplesIngestedTotal != nil {
 		pusher.samplesIngested = r.samplesIngestedTotal.WithLabelValues(strconv.Itoa(int(p.partitionID)))
 	}

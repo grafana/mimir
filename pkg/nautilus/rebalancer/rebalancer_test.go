@@ -965,6 +965,109 @@ func TestLoadMap_PartitionResidueSeparate(t *testing.T) {
 	assert.Equal(t, int64(200), lm.seriesAt(3, hr), "previous owner reports its residue")
 }
 
+// TestLoadMap_SampleRateAt verifies that buildLoadMap propagates the
+// new per-(partition, range) sample-rate signal from rates onto the
+// loadMap. Phase 3's hot/cold scoring and movable-budget math both
+// read via sampleRateAt; if the population step drops the field the
+// slicer silently sees zero load and never schedules a move.
+func TestLoadMap_SampleRateAt(t *testing.T) {
+	rates := []rangeRate{
+		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 100, sampleRate: 12345.5, partitionID: 0},
+		{hr: assignment.HashRange{Lo: 1000, Hi: 1999}, series: 0, sampleRate: 6789.25, partitionID: 1},
+	}
+	lm := buildLoadMap(rates)
+
+	assert.Equal(t, 12345.5, lm.sampleRateAt(0, assignment.HashRange{Lo: 0, Hi: 999}))
+	assert.Equal(t, 6789.25, lm.sampleRateAt(1, assignment.HashRange{Lo: 1000, Hi: 1999}))
+	assert.Equal(t, 0.0, lm.sampleRateAt(0, assignment.HashRange{Lo: 5000, Hi: 6000}))
+	// Different partition is a different key.
+	assert.Equal(t, 0.0, lm.sampleRateAt(1, assignment.HashRange{Lo: 0, Hi: 999}))
+}
+
+// TestLoadMap_SampleRateLegacyFallback verifies the transition shim
+// in buildLoadMap: when a reporter populates series but no
+// sampleRate (legacy ingester reporters during the readcache
+// rollout), the load map exposes float64(series) as the sample rate
+// so Phase 3 has a non-zero signal to work with.
+func TestLoadMap_SampleRateLegacyFallback(t *testing.T) {
+	hr := assignment.HashRange{Lo: 0, Hi: 999}
+	rates := []rangeRate{
+		{hr: hr, series: 42, partitionID: 0}, // legacy reporter
+	}
+	lm := buildLoadMap(rates)
+
+	assert.Equal(t, int64(42), lm.seriesAt(0, hr))
+	assert.Equal(t, 42.0, lm.sampleRateAt(0, hr),
+		"legacy reporters with no sampleRate must fall back to float64(series)")
+}
+
+// TestPartitionLoadFromRates verifies that the per-partition load
+// signal Phase 3 consumes is the sum of per-range sample rates,
+// restricted to the active partition set, with the same legacy
+// fallback as buildLoadMap.
+func TestPartitionLoadFromRates(t *testing.T) {
+	rates := []rangeRate{
+		{hr: assignment.HashRange{Lo: 0, Hi: 99}, sampleRate: 100, partitionID: 0},
+		{hr: assignment.HashRange{Lo: 100, Hi: 199}, sampleRate: 200, partitionID: 0},
+		{hr: assignment.HashRange{Lo: 200, Hi: 299}, sampleRate: 50, partitionID: 1},
+		// Inactive partition: still aggregated (so a partition that
+		// just went inactive can be observed as draining), but the
+		// caller decides whether to consume it.
+		{hr: assignment.HashRange{Lo: 300, Hi: 399}, sampleRate: 999, partitionID: 99},
+		// Legacy reporter: series only, no sampleRate.
+		{hr: assignment.HashRange{Lo: 400, Hi: 499}, series: 7, partitionID: 1},
+	}
+	out := partitionLoadFromRates(rates, []int32{0, 1})
+
+	assert.Equal(t, 300.0, out[0])
+	assert.Equal(t, 57.0, out[1], "legacy series count falls back as sample rate")
+	// active set entries always present (seeded).
+	_, ok0 := out[0]
+	_, ok1 := out[1]
+	assert.True(t, ok0 && ok1)
+}
+
+// TestRunSlicer_MovesBySampleRate verifies that, with sampleRate set
+// and series counts deliberately UNINFORMATIVE (all equal), the
+// slicer still detects skew and moves load from the hot partition
+// to a cold one. This is the headline behaviour change for v4: the
+// rebalancer now responds to ingest throughput, not just head
+// cardinality.
+func TestRunSlicer_MovesBySampleRate(t *testing.T) {
+	partitions := []int32{0, 1, 2, 3}
+	initial := assignment.FineEvenSplit(partitions, 4)
+	require.NoError(t, initial.Validate())
+
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		// Series counts: identical across partitions. If the slicer
+		// were still balancing on series it would see no skew at
+		// all and produce zero moves.
+		rr := rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID}
+		if e.PartitionID == 0 {
+			rr.sampleRate = 10000
+		} else {
+			rr.sampleRate = 100
+		}
+		rates = append(rates, rr)
+	}
+
+	r := &Rebalancer{cfg: seriesCfg(0.5)}
+	partL := partitionLFromRates(initial, rates) // unused by Phase 3 now
+	result, actions := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
+	require.NoError(t, result.Validate())
+
+	var movesOffHot int
+	for _, a := range actions {
+		if a.Kind == ActionMove && a.FromPart == 0 {
+			movesOffHot++
+		}
+	}
+	assert.Greater(t, movesOffHot, 0,
+		"slicer must move ranges off the partition with the higher sample rate "+
+			"even when head-series counts are identical across partitions")
+}
+
 // TestRunSlicer_MoveCooldown_BlocksRepeatMoves verifies that, when a
 // range is moved to balance load, it (and any range overlapping its
 // boundaries) is excluded from being moved again until the cooldown

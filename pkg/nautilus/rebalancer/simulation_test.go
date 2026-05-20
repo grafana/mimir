@@ -75,17 +75,21 @@ func (si *simulatedIngester) tick() {
 }
 
 // snapshot returns the ingester's per-range load as rangeRate values.
-// The EWMA rate is coerced to int64 and reported as series; the
-// simulation's concept of "load" is the per-range rate, which in the
-// new model stands in for R_r. All ranges are attributed to this
-// ingester's partition — the simulation models one partition per
-// simulated ingester with no residue.
+// The EWMA rate is reported on both the legacy series field (cast to
+// int64 for admin/observability continuity) and the new sampleRate
+// field — the slicer's Phase 3 balances on sampleRate from v4 onward,
+// so the simulation must populate it for the convergence asserts to
+// hold. All ranges are attributed to this ingester's partition —
+// the simulation models one partition per simulated ingester with no
+// residue.
 func (si *simulatedIngester) snapshot() []rangeRate {
 	out := make([]rangeRate, 0, len(si.ranges))
 	for i, r := range si.ranges {
+		rate := si.rates[i].Rate()
 		out = append(out, rangeRate{
 			hr:          r,
-			series:      int64(si.rates[i].Rate()),
+			series:      int64(rate),
+			sampleRate:  rate,
 			partitionID: si.partitionID,
 		})
 	}

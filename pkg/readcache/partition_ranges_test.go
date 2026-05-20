@@ -6,9 +6,11 @@ import (
 	"math"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
@@ -433,5 +435,176 @@ func TestPartitionRangesExampleSeries(t *testing.T) {
 		_, hasOld := pr.exampleSeries[hr(0, 99)]
 		pr.mu.RUnlock()
 		assert.False(t, hasOld, "examples for ranges no longer tracked must be GC'd")
+	})
+}
+
+// makeTSForHash builds a PreallocTimeseries whose locality hash will
+// land in a specific bucket: it sets __name__ such that the metric
+// half of ShardByMetricNameLocality is deterministic and adds one
+// sample. The exact hash value depends on userID + metric and is
+// computed by the test setup, not asserted here — what matters is
+// that the same labels always hash to the same bucket within a run.
+func makeTSForHash(metricName string, sampleCount int) mimirpb.PreallocTimeseries {
+	samples := make([]mimirpb.Sample, sampleCount)
+	for i := range samples {
+		samples[i] = mimirpb.Sample{Value: float64(i), TimestampMs: 1000 + int64(i)}
+	}
+	return mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: model.MetricNameLabel, Value: metricName},
+			},
+			Samples: samples,
+		},
+	}
+}
+
+func TestPartitionRanges_SampleRates(t *testing.T) {
+	t.Run("recordSampleBatch buckets by hash into current ranges", func(t *testing.T) {
+		pr := newPartitionRanges()
+		// Two non-overlapping ranges that together cover the full
+		// 32-bit hash space. Every sample must land in one or the
+		// other; if any sample is dropped on the floor then the
+		// fallthrough branches in recordSampleBatch are wrong.
+		ranges := []assignment.HashRange{
+			hr(0, math.MaxUint32/2),
+			hr(math.MaxUint32/2+1, math.MaxUint32),
+		}
+		pr.setRanges(ranges)
+
+		ts := []mimirpb.PreallocTimeseries{
+			makeTSForHash("metric_a", 3),
+			makeTSForHash("metric_b", 5),
+			makeTSForHash("metric_c", 7),
+			makeTSForHash("metric_d", 2),
+		}
+		pr.recordSampleBatch("user-1", ts)
+
+		// Sum of per-range EwmaRate.newEvents must equal total
+		// samples pushed in (3+5+7+2 = 17). Anything less would
+		// mean the binary search dropped some samples.
+		pr.mu.RLock()
+		var total int64
+		for _, rate := range pr.sampleRates {
+			// Tick converts newEvents → instantRate; calling it
+			// here lets us observe the per-tick total.
+			rate.Tick()
+		}
+		pr.mu.RUnlock()
+		_ = total
+
+		// After Tick, every range's Rate() is (newEvents / 15s).
+		// Sum and convert back to events.
+		var sumEvents float64
+		current, _ := pr.adminSnapshot()
+		for _, c := range current {
+			sumEvents += c.SampleRate
+		}
+		// One Tick at TickInterval seconds; first Tick initializes
+		// lastRate = instantRate, so sum(Rate * interval) ==
+		// total samples pushed (17).
+		// loadstats.TickInterval = 15s.
+		want := float64(17) / 15.0
+		assert.InDelta(t, want, sumEvents, 1e-9,
+			"per-range rates after one tick should sum to events/interval")
+	})
+
+	t.Run("samples outside current ranges are dropped", func(t *testing.T) {
+		pr := newPartitionRanges()
+		// Cover only a tiny slice of the hash space. Most samples
+		// will hash outside and must be ignored, not bucketed into
+		// some adjacent range.
+		pr.setRanges([]assignment.HashRange{hr(0, 0)})
+
+		ts := []mimirpb.PreallocTimeseries{
+			makeTSForHash("a", 1), makeTSForHash("b", 1), makeTSForHash("c", 1),
+			makeTSForHash("d", 1), makeTSForHash("e", 1), makeTSForHash("f", 1),
+		}
+		pr.recordSampleBatch("user-1", ts)
+
+		pr.tickSampleRates()
+
+		// All samples either land in [0,0] or are dropped. We
+		// don't know which (it depends on the hash function); what
+		// matters is that the rate is bounded by the number of
+		// samples (6/15s) and not erroneously multiplied by
+		// floor on the binary search.
+		pr.mu.RLock()
+		rate := pr.sampleRates[hr(0, 0)]
+		pr.mu.RUnlock()
+		require.NotNil(t, rate, "current range must have an EwmaRate")
+		assert.LessOrEqual(t, rate.Rate(), float64(6)/15.0)
+	})
+
+	t.Run("rates decay toward zero when ingest stops", func(t *testing.T) {
+		pr := newPartitionRanges()
+		pr.setRanges([]assignment.HashRange{hr(0, math.MaxUint32)})
+
+		// Push a burst, then tick until rate decays toward zero.
+		ts := []mimirpb.PreallocTimeseries{makeTSForHash("burst", 1000)}
+		pr.recordSampleBatch("user-1", ts)
+		pr.tickSampleRates()
+
+		current, _ := pr.adminSnapshot()
+		require.Len(t, current, 1)
+		initialRate := current[0].SampleRate
+		require.Greater(t, initialRate, 0.0, "first tick should establish a non-zero rate")
+
+		// 200 ticks with no new events. Alpha=0.034, so each tick
+		// the rate moves toward 0 by ~3.4% of its current value;
+		// after 200 ticks rate ≈ initialRate * (1-0.034)^200 ≈
+		// initialRate * 0.001. Bound the assert generously.
+		for i := 0; i < 200; i++ {
+			pr.tickSampleRates()
+		}
+		current, _ = pr.adminSnapshot()
+		assert.Less(t, current[0].SampleRate, initialRate*0.01,
+			"rate must decay toward zero when no samples are pushed")
+	})
+
+	t.Run("setRanges seeds an EwmaRate per current range", func(t *testing.T) {
+		pr := newPartitionRanges()
+		pr.setRanges([]assignment.HashRange{hr(0, 99), hr(200, 299)})
+
+		pr.mu.RLock()
+		defer pr.mu.RUnlock()
+		require.NotNil(t, pr.sampleRates[hr(0, 99)],
+			"setRanges must materialise EwmaRate for new current ranges")
+		require.NotNil(t, pr.sampleRates[hr(200, 299)],
+			"setRanges must materialise EwmaRate for new current ranges")
+	})
+
+	t.Run("rates are GC'd when ranges fall out of working set", func(t *testing.T) {
+		pr := newPartitionRanges()
+		pr.setRanges([]assignment.HashRange{hr(0, 99)})
+
+		// Push samples so applyWalkResult is satisfied with non-
+		// zero residue, then move the range off this partition.
+		pr.recordSampleBatch("user-1", []mimirpb.PreallocTimeseries{
+			makeTSForHash("metric", 1),
+		})
+
+		// Range moves to another partition; on our side it falls
+		// into historical until residue clears.
+		pr.setRanges([]assignment.HashRange{hr(500, 599)})
+		pr.mu.RLock()
+		_, stillHasOldRate := pr.sampleRates[hr(0, 99)]
+		pr.mu.RUnlock()
+		assert.True(t, stillHasOldRate,
+			"historical ranges keep their EwmaRate so decay is visible")
+
+		// Compaction empties the residue; applyWalkResult drops
+		// the historical range, and the GC sweep clears its
+		// EwmaRate.
+		require.True(t, pr.applyWalkResult(
+			[]assignment.HashRange{hr(0, 99), hr(500, 599)},
+			[]int64{0, 0},
+			nil,
+		))
+		pr.mu.RLock()
+		_, hasOldRate := pr.sampleRates[hr(0, 99)]
+		pr.mu.RUnlock()
+		assert.False(t, hasOldRate,
+			"applyWalkResult must GC EwmaRates whose range fell out of both sets")
 	})
 }

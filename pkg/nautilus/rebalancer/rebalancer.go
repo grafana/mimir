@@ -300,13 +300,19 @@ type readcacheRingReader interface {
 }
 
 // moveRecord tracks one past move off a source partition during the
-// CompactionInterval window. The source ingester's reported
-// TotalActiveSeries does NOT drop until its next TSDB head compaction
-// GCs the moved series, so during this window the slicer must discount
-// the partition's apparent "above mean" budget by the sum of
-// outstanding moveRecord.series.
+// CompactionInterval window. The source readcache's reported sample
+// rate for the moved range decays exponentially after the move stops
+// receiving traffic (rather than dropping instantly), so during the
+// window the slicer must discount the partition's apparent
+// "above mean" budget by the sum of outstanding moveRecord.load.
+//
+// load is in the same units as rangeLoad.load — per-second samples
+// EWMA at the time of the move. Series is retained as observability
+// metadata (admin UI shows "this many series moved") and is NOT
+// consumed by the movable-budget math.
 type moveRecord struct {
 	hr     assignment.HashRange
+	load   float64
 	series int64
 	at     time.Time
 }
@@ -786,6 +792,7 @@ func (r *Rebalancer) collectRates(ctx context.Context, current *assignment.Assig
 			rates[i] = rangeRate{
 				hr:          hr,
 				series:      rate.ActiveSeries,
+				sampleRate:  rate.SampleRate,
 				partitionID: pid,
 			}
 		}
@@ -1269,18 +1276,28 @@ const (
 type rangeRate struct {
 	hr          assignment.HashRange
 	series      int64
+	sampleRate  float64
 	partitionID int32
 }
 
 // rangeLoad carries a single assignment entry alongside its cost
-// metrics (head series count and the equivalent float used by Phase 2
-// /4 scoring helpers). `load` is defined as float64(series) so Phase
-// 2's merge score and Phase 4's split-threshold arithmetic don't need
-// a separate scaling.
+// metrics. `load` is the float the slicer's Phase 2 merge score and
+// Phase 4 split-threshold arithmetic balance on; today it is the
+// per-range samples-per-second EWMA (rangeRate.sampleRate). `series`
+// is kept as observability metadata so the trace tooling can still
+// surface head cardinality alongside the throughput signal, but no
+// slicer phase reads it.
+//
+// The series → sample_rate swap is intentional: head-series counts
+// lag new tenants by minutes (Head growth is gated by churn) and
+// over-weight residue from recently-moved ranges, while sample rate
+// reacts at the EWMA cadence and matches "what work does this
+// readcache do?". A future revision will blend both signals; for
+// now load == sampleRate.
 type rangeLoad struct {
 	entry  assignment.Entry
-	load   float64 // float view of series, used by merge/split scoring
-	series int64   // raw in-memory TSDB head series count
+	load   float64 // per-second samples EWMA, used by merge/split scoring
+	series int64   // raw in-memory TSDB head series count (observability only)
 }
 
 // runSlicer implements the Slicer weighted-move algorithm (Adya et al.,
@@ -1302,15 +1319,17 @@ type rangeLoad struct {
 // pass a deterministic value or the zero time to disable cooldown
 // filtering.
 //
-// partitionLByPID provides L (TSDB head series) per partition, used for
-// hot/cold selection and movable-budget computation. When nil or
-// empty, the slicer falls back to computing per-partition load from
-// the sum of per-range series (useful in unit tests that don't model
-// the L_pid signal; production always provides it).
+// partitionLByPID provides TSDB head-series counts per partition,
+// kept around for observability/admin even though Phase 3 no longer
+// balances on it. The slicer derives its float-precision load signal
+// directly from rates (sum of sampleRate per partition), so this
+// argument is information-only as far as the algorithm is concerned.
 //
 // recentMoves is the cross-round source-side budget state: moves off
-// each source partition that are still within CompactionInterval, and
-// therefore still counting against that partition's reported L_pid.
+// each source partition that are still within CompactionInterval and
+// therefore still counting against that partition's reported load.
+// moveRecord.load (the moved range's sample rate at the time of the
+// move) is what Phase 3's sumRecentMoves discounts.
 func (r *Rebalancer) runSlicer(
 	current *assignment.Assignment,
 	rates []rangeRate,
@@ -1342,9 +1361,10 @@ func (r *Rebalancer) runSlicer(
 	rrIdx := 0
 	for i, e := range current.Entries {
 		series := lm.seriesAt(e.PartitionID, e.Range)
+		rate := lm.sampleRateAt(e.PartitionID, e.Range)
 		entries[i] = rangeLoad{
 			entry:  e,
-			load:   float64(series),
+			load:   rate,
 			series: series,
 		}
 		if !activeSet[e.PartitionID] {
@@ -1390,10 +1410,16 @@ func (r *Rebalancer) runSlicer(
 		actions = actions[:pre2ActionsLen]
 	}
 
-	// --- Phase 3: weighted-move using L_pid -----------------------------
+	// --- Phase 3: weighted-move using per-partition sample rate ---------
 	pre3Entries := snapshotRangeLoads(entries)
 	pre3ActionsLen := len(actions)
-	phase3Actions := r.runPhase3(entries, partitionLByPID, recentMoves, activePartitions, now)
+	// L_pid (the per-partition load used by the movable-budget math) is
+	// now the float-precision sum of per-(partition, range) sample
+	// rates. partitionLByPID (head-series) stays around for admin /
+	// trace continuity but is unused by Phase 3.
+	_ = partitionLByPID
+	partitionLoadByPID := partitionLoadFromRates(rates, activePartitions)
+	phase3Actions := r.runPhase3(entries, partitionLoadByPID, recentMoves, activePartitions, now)
 	actions = append(actions, phase3Actions...)
 	if err := validateSlicerPhaseEntries(entries); err != nil {
 		logSlicerPhaseError(r.logger, entries, "phase3-move", err)
@@ -1450,8 +1476,8 @@ func (r *Rebalancer) runSlicer(
 				// from immediately re-merging.
 				leftSeries := lm.seriesAt(rl.entry.PartitionID, left)
 				rightSeries := lm.seriesAt(rl.entry.PartitionID, right)
-				leftLoad := float64(leftSeries)
-				rightLoad := float64(rightSeries)
+				leftLoad := lm.sampleRateAt(rl.entry.PartitionID, left)
+				rightLoad := lm.sampleRateAt(rl.entry.PartitionID, right)
 				if leftLoad == 0 && rightLoad == 0 && rl.load > 0 {
 					// Newly split sub-ranges have no per-range data yet.
 					// Distribute the parent's load proportionally so the
@@ -1632,11 +1658,19 @@ func formatSlicerWindow(snapshot []assignment.Entry, first, last int) string {
 //     already reflects writes routed to it (within one scrape
 //     interval), so there's nothing to carry forward.
 //
-// When partitionLByPID is nil/empty the slicer falls back to a
-// per-range-sum approximation (useful for unit tests).
+// partitionLoadByPID is the float-precision per-partition load
+// (sum of per-range samples-per-second) used by Phase 3's hot/cold
+// selection and movable-budget computation. Empty / zero entries
+// behave the same as "no load": the partition is never selected as
+// hot (movable is zero) and is always the coldest candidate.
+//
+// recentMoves stores moveRecord.load (sample rate at the time of
+// the move); sumRecentMoves discounts the source's apparent load by
+// that figure so a partition that just emptied itself in last round
+// is not endlessly nominated as hot.
 func (r *Rebalancer) runPhase3(
 	entries []rangeLoad,
-	partitionLByPID map[int32]int64,
+	partitionLoadByPID map[int32]float64,
 	recentMoves map[int32][]moveRecord,
 	activePartitions []int32,
 	now time.Time,
@@ -1646,57 +1680,56 @@ func (r *Rebalancer) runPhase3(
 		return nil
 	}
 
-	// Build effective L snapshot. If no partitionLByPID was provided
-	// (legacy callers), fall back to the per-range-sum approximation
-	// so tests without full ingester totals still exercise the
-	// phase. Production always provides partitionLByPID.
-	useRealL := len(partitionLByPID) > 0
-	effL := make(map[int32]int64, numPartitions)
+	// Build effective L snapshot. If no per-partition load map was
+	// provided (legacy callers / unit tests), fall back to the
+	// per-range-sum approximation so the phase still exercises.
+	useRealL := len(partitionLoadByPID) > 0
+	effL := make(map[int32]float64, numPartitions)
 	if useRealL {
 		for _, pid := range activePartitions {
-			effL[pid] = partitionLByPID[pid]
+			effL[pid] = partitionLoadByPID[pid]
 		}
 	} else {
 		for _, rl := range entries {
-			effL[rl.entry.PartitionID] += rl.series
+			effL[rl.entry.PartitionID] += rl.load
 		}
 	}
 
-	var totalL int64
+	var totalL float64
 	for _, pid := range activePartitions {
 		totalL += effL[pid]
 	}
-	meanL := int64(0)
+	var meanL float64
 	if numPartitions > 0 {
-		meanL = totalL / int64(numPartitions)
+		meanL = totalL / float64(numPartitions)
 	}
 
 	// plannedAdded accumulates within-round additions per destination.
 	// Reset each round by being local to this call.
-	plannedAdded := make(map[int32]int64, numPartitions)
+	plannedAdded := make(map[int32]float64, numPartitions)
 	// thisRoundMoves shadows the slicer's growing knowledge of moves
 	// off each source during this phase. Combined with the cross-round
 	// recentMoves passed in, it feeds sumRecentMoves.
-	thisRoundMoves := make(map[int32]int64, numPartitions)
+	thisRoundMoves := make(map[int32]float64, numPartitions)
 
-	sumRecentMoves := func(pid int32) int64 {
-		var s int64
+	sumRecentMoves := func(pid int32) float64 {
+		var s float64
 		for _, m := range recentMoves[pid] {
-			s += m.series
+			s += m.load
 		}
 		s += thisRoundMoves[pid]
 		return s
 	}
 
-	effectiveSource := func(pid int32) int64 {
+	effectiveSource := func(pid int32) float64 {
 		return effL[pid] - sumRecentMoves(pid)
 	}
 
-	effectiveDest := func(pid int32) int64 {
+	effectiveDest := func(pid int32) float64 {
 		return effL[pid] + plannedAdded[pid]
 	}
 
-	movable := func(pid int32) int64 {
+	movable := func(pid int32) float64 {
 		s := effectiveSource(pid)
 		if s <= meanL {
 			return 0
@@ -1721,8 +1754,8 @@ func (r *Rebalancer) runPhase3(
 		// Hot: argmax effectiveSource among partitions with movable > 0
 		// and not excluded.
 		var hotPID, coldPID int32
-		hotL := int64(math.MinInt64)
-		coldL := int64(math.MaxInt64)
+		hotL := math.Inf(-1)
+		coldL := math.Inf(1)
 		hotFound := false
 		coldFound := false
 		for _, pid := range activePartitions {
@@ -1762,23 +1795,23 @@ func (r *Rebalancer) runPhase3(
 			if moved+moveCost > movementBudget {
 				continue
 			}
-			// Per-source movable budget: can't move more series off
+			// Per-source movable budget: can't move more load off
 			// than the "above mean" surplus (net of recent moves).
-			if rl.series > mov {
+			if rl.load > mov {
 				continue
 			}
 			// Imbalance improvement: the spread between hot and cold
 			// should narrow after the move. Use absolute distance
 			// from meanL on both sides.
-			newHot := hotL - rl.series
-			newCold := coldL + rl.series
-			imbalanceBefore := absInt64(hotL-meanL) + absInt64(coldL-meanL)
-			imbalanceAfter := absInt64(newHot-meanL) + absInt64(newCold-meanL)
+			newHot := hotL - rl.load
+			newCold := coldL + rl.load
+			imbalanceBefore := math.Abs(hotL-meanL) + math.Abs(coldL-meanL)
+			imbalanceAfter := math.Abs(newHot-meanL) + math.Abs(newCold-meanL)
 			improvement := imbalanceBefore - imbalanceAfter
 			if improvement <= 0 {
 				continue
 			}
-			score := float64(improvement) / moveCost
+			score := improvement / moveCost
 			if score > bestScore {
 				bestScore = score
 				bestIdx = j
@@ -1797,14 +1830,15 @@ func (r *Rebalancer) runPhase3(
 
 		fromPID := entries[bestIdx].entry.PartitionID
 		moved += float64(entries[bestIdx].entry.Range.Size())
+		loadMoved := entries[bestIdx].load
 		seriesMoved := entries[bestIdx].series
 		entries[bestIdx].entry.PartitionID = coldPID
 
 		// Update phase-3 bookkeeping. plannedAdded delays re-picking
 		// the same cold in the next iteration; thisRoundMoves feeds
 		// movable() so the hot's budget shrinks as we move off it.
-		plannedAdded[coldPID] += seriesMoved
-		thisRoundMoves[fromPID] += seriesMoved
+		plannedAdded[coldPID] += loadMoved
+		thisRoundMoves[fromPID] += loadMoved
 
 		actions = append(actions, Action{
 			Kind:     ActionMove,
@@ -1812,20 +1846,11 @@ func (r *Rebalancer) runPhase3(
 			FromPart: fromPID,
 			ToPart:   coldPID,
 			Series:   seriesMoved,
-			Detail:   fmt.Sprintf("L=%d meanL=%d, P%d→P%d, series=%d, movable=%d", hotL, meanL, fromPID, coldPID, seriesMoved, mov),
+			Detail:   fmt.Sprintf("L=%.2f meanL=%.2f, P%d→P%d, load=%.2f series=%d, movable=%.2f", hotL, meanL, fromPID, coldPID, loadMoved, seriesMoved, mov),
 		})
 	}
 
 	return actions
-}
-
-// absInt64 returns the absolute value of x. Defined locally to avoid a
-// math.Abs float round-trip for int64 operands.
-func absInt64(x int64) int64 {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
 
 // computePartitionLoads sums the per-range combined load for each
@@ -1849,31 +1874,83 @@ type partitionRangeKey struct {
 	hr          assignment.HashRange
 }
 
-// loadMap holds per-(partition, range) raw series counts. Construct
-// via buildLoadMap and query via seriesAt().
-type loadMap struct {
-	series map[partitionRangeKey]int64
+// partitionLoadFromRates returns the per-partition sum of
+// sample-rate EWMAs, restricted to the active partition set. The
+// caller is responsible for ensuring rates were aggregated by
+// (partition, range) — passing raw per-reporter rangeRate slices
+// over-counts ranges that appear on multiple reporters; in practice
+// the readcache path emits at most one entry per (partition, range)
+// so this is a non-issue today. activePartitions seeds zero
+// entries so the slicer's iteration order is deterministic even
+// for partitions with no reported load yet.
+//
+// The legacy-reporter fallback mirrors buildLoadMap: when sampleRate
+// is zero but series is non-zero, substitute float64(series). This
+// keeps the partition-level signal consistent with the per-range
+// signal during the ingester → readcache transition.
+func partitionLoadFromRates(rates []rangeRate, activePartitions []int32) map[int32]float64 {
+	out := make(map[int32]float64, len(activePartitions))
+	for _, pid := range activePartitions {
+		out[pid] = 0
+	}
+	for _, rr := range rates {
+		rate := rr.sampleRate
+		if rate == 0 && rr.series > 0 {
+			rate = float64(rr.series)
+		}
+		out[rr.partitionID] += rate
+	}
+	return out
 }
 
-// buildLoadMap aggregates per-(partition, range) series counts across
-// all reporters by taking the max over reports of the same
-// (partition, range). Max (not sum) is intentional: where multiple
-// healthy owners report counts for the same partition (mirrored
-// ingester replicas), they are mirrors and summing would scale the
-// per-range signal by the replication factor while `partitionL` is
-// on a 1× (max-over-owners) scale. In the readcache path each
-// (partition, range) is reported by at most one instance so max
-// reduces to passthrough.
+// loadMap holds per-(partition, range) load signals: raw series
+// counts (for observability) and samples-per-second EWMA (the
+// rebalancer's primary balancing signal). Construct via buildLoadMap
+// and query via seriesAt() / sampleRateAt().
+type loadMap struct {
+	series     map[partitionRangeKey]int64
+	sampleRate map[partitionRangeKey]float64
+}
+
+// buildLoadMap aggregates per-(partition, range) signals across all
+// reporters by taking the max over reports of the same (partition,
+// range). Max (not sum) is intentional: where multiple healthy
+// owners report counts for the same partition (mirrored ingester
+// replicas), they are mirrors and summing would scale the per-range
+// signal by the replication factor while `partitionL` is on a 1×
+// (max-over-owners) scale. In the readcache path each (partition,
+// range) is reported by at most one instance so max reduces to
+// passthrough.
 //
 // Note that this is keyed by (partition, range), NOT just range:
 // residue on a previous owner's partition is reported with that
 // partition's id, separately from growth on the new owner.
+//
+// Legacy reporters that don't yet populate sampleRate (ingester
+// instances during the readcache rollout) implicitly fall back to
+// using the series count as the load signal: when sampleRate is
+// zero we substitute float64(series). This keeps the slicer's
+// balancing math meaningful during the transition window and lets
+// pre-existing tests that exercise the algorithm with raw series
+// counts continue to work without rewriting every fixture. Once
+// the readcache path is the only reporter, all sampleRate values
+// arrive non-zero and the fallback is dead code.
 func buildLoadMap(rates []rangeRate) *loadMap {
-	lm := &loadMap{series: make(map[partitionRangeKey]int64, len(rates))}
+	lm := &loadMap{
+		series:     make(map[partitionRangeKey]int64, len(rates)),
+		sampleRate: make(map[partitionRangeKey]float64, len(rates)),
+	}
 	for _, rr := range rates {
 		k := partitionRangeKey{partitionID: rr.partitionID, hr: rr.hr}
 		if rr.series > lm.series[k] {
 			lm.series[k] = rr.series
+		}
+		rate := rr.sampleRate
+		if rate == 0 && rr.series > 0 {
+			rate = float64(rr.series)
+		}
+		if rate > lm.sampleRate[k] {
+			lm.sampleRate[k] = rate
 		}
 	}
 	return lm
@@ -1888,6 +1965,14 @@ func buildLoadMap(rates []rangeRate) *loadMap {
 // load returned here for the current owner.
 func (lm *loadMap) seriesAt(partitionID int32, hr assignment.HashRange) int64 {
 	return lm.series[partitionRangeKey{partitionID: partitionID, hr: hr}]
+}
+
+// sampleRateAt returns the samples-per-second EWMA for the given
+// (partition, range), or 0 if the pair is unknown. This is the
+// primary load signal used by the slicer's Phase 2/3/4 scoring;
+// seriesAt is retained only for observability and trace continuity.
+func (lm *loadMap) sampleRateAt(partitionID int32, hr assignment.HashRange) float64 {
+	return lm.sampleRate[partitionRangeKey{partitionID: partitionID, hr: hr}]
 }
 
 // isInMoveCooldown reports whether the given range overlaps any range
@@ -1949,6 +2034,11 @@ func (r *Rebalancer) pruneExpiredCooldowns(now time.Time) {
 // against that source's movable budget in subsequent rounds until it
 // ages out of CompactionInterval. ActionReassign is intentionally
 // excluded (same rationale as recordMoveCooldowns).
+//
+// The budget-relevant field is moveRecord.load (the moved range's
+// sample-rate EWMA at the time of the move). series is also captured
+// from lm so the admin UI / trace tooling can still show "this many
+// series moved" even though the slicer's math runs on rate.
 func (r *Rebalancer) recordRecentMoves(now time.Time, actions []Action, lm *loadMap) {
 	if r.cfg.CompactionInterval <= 0 {
 		return
@@ -1961,15 +2051,19 @@ func (r *Rebalancer) recordRecentMoves(now time.Time, actions []Action, lm *load
 			continue
 		}
 		series := a.Series
-		if series == 0 && lm != nil {
-			// Defensive: if Action.Series wasn't populated (e.g.
-			// legacy callers), fall back to looking up by
-			// (source partition, range). The move records belong to
-			// the SOURCE partition so we look up under FromPart.
-			series = lm.seriesAt(a.FromPart, a.Range)
+		var load float64
+		if lm != nil {
+			// Move records belong to the SOURCE partition; look up
+			// (FromPart, Range) so residue is accounted for against
+			// the partition that previously owned the range.
+			if series == 0 {
+				series = lm.seriesAt(a.FromPart, a.Range)
+			}
+			load = lm.sampleRateAt(a.FromPart, a.Range)
 		}
 		r.recentMoves[a.FromPart] = append(r.recentMoves[a.FromPart], moveRecord{
 			hr:     a.Range,
+			load:   load,
 			series: series,
 			at:     now,
 		})
