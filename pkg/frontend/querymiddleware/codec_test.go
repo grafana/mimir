@@ -2299,9 +2299,7 @@ func (r *nonPrometheusResponse) CloseCount() int { return int(r.closes.Load()) }
 
 // TestCodec_EncodeMetricsQueryResponse_ClosesResponseOnEarlyReturn ensures that
 // every error path in EncodeMetricsQueryResponse closes the response. Skipping
-// Close on early returns leaks any resources the response holds — most
-// importantly the per-query MemoryConsumptionTracker the query-frontend
-// registers in InflightMemoryConsumptionTracker.
+// Close on early returns leaks any resources the response holds.
 func TestCodec_EncodeMetricsQueryResponse_ClosesResponseOnEarlyReturn(t *testing.T) {
 	codec := newTestCodec()
 

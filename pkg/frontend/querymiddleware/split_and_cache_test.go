@@ -2571,12 +2571,9 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 
 // TestSplitAndCacheMiddleware_ClosesSubResponsesOnPartialFailure exercises the
 // case where a range query is split into multiple sub-queries, some succeed and
-// at least one fails (here: with context.DeadlineExceeded, the shape a real
-// query timeout takes). The middleware must Close() every sub-response it
+// at least one fails. The middleware must Close() every sub-response it
 // received before returning the error, otherwise resources held by those
-// responses — most importantly the per-query MemoryConsumptionTracker each
-// PrometheusResponseWithFinalizer keeps in the InflightMemoryConsumptionTracker
-// map — accumulate and slowly OOM the query-frontend.
+// responses accumulate and leak memory within the query-frontend.
 func TestSplitAndCacheMiddleware_ClosesSubResponsesOnPartialFailure(t *testing.T) {
 	const numSplits = 4
 

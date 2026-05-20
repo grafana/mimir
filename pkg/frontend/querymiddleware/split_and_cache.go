@@ -261,10 +261,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	// After doRequests returns successfully we own the produced Responses until
 	// MergeResponse takes ownership of them. Any error that fires in between —
 	// storeDownstreamResponses consistency-check failures, cache-extent
-	// marshalling or merge errors, etc. — would leak each Response's resources
-	// (most importantly the per-query MemoryConsumptionTracker held by any
-	// PrometheusResponseWithFinalizer in the slice). Guard with a flag flipped
-	// off only when we hand the slice to MergeResponse.
+	// marshalling or merge errors, etc. — would leak each Response's resources.
 	var ownedExecResps []requestResponse
 	closeOwnedExecResps := false
 	defer func() {
@@ -674,9 +671,7 @@ type requestResponse struct {
 // On error this function closes every successfully-collected sub-response
 // itself and returns a nil slice. Without this cleanup, every sub-response
 // produced before a sibling sub-request failed would leak its underlying
-// resources — most importantly the per-query MemoryConsumptionTracker each
-// PrometheusResponseWithFinalizer keeps in the InflightMemoryConsumptionTracker
-// map.
+// resources.
 func doRequests(ctx context.Context, downstream MetricsQueryHandler, memoryTracker *limiter.MemoryConsumptionTracker, reqs []MetricsQueryRequest) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
