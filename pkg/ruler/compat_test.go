@@ -1409,12 +1409,12 @@ func TestEngineQueryFunc_VendoredEngineQueryFuncLeaks(t *testing.T) {
 		"if this assertion fails, vendored rules.EngineQueryFunc now closes its Query — ruler.EngineQueryFunc may be redundant")
 }
 
-// TestCopyVectorForRuleQuery_DeepCopiesFloatHistogram ensures the wrapper deep
-// copies *FloatHistogram values. The Prometheus engine returns matrix HPoint
-// slices (which hold the *FloatHistogram pointers) to a global pool that is
-// reused in place by later queries, so retaining the pointer past qry.Close()
-// would let a concurrent query mutate values consumed by AppendHistogram.
-func TestCopyVectorForRuleQuery_DeepCopiesFloatHistogram(t *testing.T) {
+// TestCopyVector_DeepCopiesFloatHistogram ensures the wrapper deep copies
+// *FloatHistogram values. The Prometheus engine returns matrix HPoint slices
+// (which hold the *FloatHistogram pointers) to a global pool that is reused
+// in place by later queries, so retaining the pointer past qry.Close() would
+// let a concurrent query mutate values consumed by AppendHistogram.
+func TestCopyVector_DeepCopiesFloatHistogram(t *testing.T) {
 	original := &histogram.FloatHistogram{
 		Schema:          1,
 		Count:           10,
@@ -1431,7 +1431,7 @@ func TestCopyVectorForRuleQuery_DeepCopiesFloatHistogram(t *testing.T) {
 		Metric: labels.FromStrings("__name__", "hist"),
 	}}
 
-	out := copyVectorForRuleQuery(in)
+	out := copyVector(in)
 	require.Len(t, out, 1)
 	require.NotNil(t, out[0].H)
 	require.NotSame(t, original, out[0].H, "FloatHistogram pointer must be a fresh allocation")

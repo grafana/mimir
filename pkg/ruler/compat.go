@@ -258,7 +258,7 @@ func EngineQueryFunc(engine promql.QueryEngine, q storage.Queryable) rules.Query
 		}
 		switch v := res.Value.(type) {
 		case promql.Vector:
-			return copyVectorForRuleQuery(v), nil
+			return copyVector(v), nil
 		case promql.Scalar:
 			return promql.Vector{promql.Sample{
 				T:      v.T,
@@ -271,14 +271,14 @@ func EngineQueryFunc(engine promql.QueryEngine, q storage.Queryable) rules.Query
 	}
 }
 
-// copyVectorForRuleQuery returns a Vector whose backing arrays, label slices,
-// and FloatHistogram values do not overlap with v. Required to detach a query
+// copyVector returns a Vector whose backing arrays, label slices, and
+// FloatHistogram values do not overlap with v. Required to detach a query
 // result from internal pools owned by either engine before Query.Close returns
 // those slices to the pools: the Mimir streaming engine pools the Vector slice
 // and SeriesMetadataSlicePool labels, and the Prometheus engine returns HPoint
 // slices (whose entries hold the *FloatHistogram values) to a global pool that
 // later/concurrent queries reuse in place.
-func copyVectorForRuleQuery(v promql.Vector) promql.Vector {
+func copyVector(v promql.Vector) promql.Vector {
 	out := make(promql.Vector, len(v))
 	for i, s := range v {
 		var h *histogram.FloatHistogram
