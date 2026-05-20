@@ -131,20 +131,20 @@ func (m *MultiAggregatorGroupEvaluator) findIndexOfLastInstanceToConsumeSeries(u
 	return -1
 }
 
-func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context) error {
-	// Only finalize the inner operator if all instances have been finalized.
+func (m *MultiAggregatorGroupEvaluator) FinishedReading(ctx context.Context) error {
+	// Only call FinishedReading on the inner operator if all instances have had FinishedReading called.
 	for _, instance := range m.instances {
-		if !instance.finalized {
+		if !instance.finishedReadingCalled {
 			return nil
 		}
 	}
 
-	return m.inner.Finalize(ctx)
+	return m.inner.FinishedReading(ctx)
 }
 
 func (m *MultiAggregatorGroupEvaluator) Stats(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, error) {
-	if !m.allInstancesFinalized() {
-		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats when one or more instances are not finalized")
+	if !m.allInstancesFinishedReading() {
+		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats when one or more instances have not had FinishedReading called")
 	}
 
 	if instance.hasReadStats {
@@ -194,9 +194,9 @@ func (m *MultiAggregatorGroupEvaluator) Stats(ctx context.Context, instance *Mul
 	return stats, nil
 }
 
-func (m *MultiAggregatorGroupEvaluator) allInstancesFinalized() bool {
+func (m *MultiAggregatorGroupEvaluator) allInstancesFinishedReading() bool {
 	for _, instance := range m.instances {
-		if !instance.finalized {
+		if !instance.finishedReadingCalled {
 			return false
 		}
 	}
@@ -244,9 +244,9 @@ type MultiAggregatorInstanceOperator struct {
 
 	outputSeriesMetadata []types.SeriesMetadata
 
-	finalized    bool
-	hasReadStats bool
-	closed       bool
+	finishedReadingCalled bool
+	hasReadStats          bool
+	closed                bool
 }
 
 var _ types.InstantVectorOperator = (*MultiAggregatorInstanceOperator)(nil)
@@ -378,21 +378,21 @@ func (m *MultiAggregatorInstanceOperator) needToConsumeSeries(unfilteredSeriesIn
 	return m.unfilteredSeriesBitmap[unfilteredSeriesIndex]
 }
 
-func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
-	if m.finalized {
+func (m *MultiAggregatorInstanceOperator) FinishedReading(ctx context.Context) error {
+	if m.finishedReadingCalled {
 		return nil
 	}
 
 	if m.aggregator != nil {
-		m.aggregator.Finalize()
+		m.aggregator.FinishedReading()
 		m.aggregator = nil
 	}
 
 	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
 
-	m.finalized = true
-	return m.group.Finalize(ctx)
+	m.finishedReadingCalled = true
+	return m.group.FinishedReading(ctx)
 }
 
 func (m *MultiAggregatorInstanceOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

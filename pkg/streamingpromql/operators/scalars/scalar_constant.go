@@ -65,7 +65,7 @@ func (s *ScalarConstant) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (s *ScalarConstant) Finalize(_ context.Context) error {
+func (s *ScalarConstant) FinishedReading(_ context.Context) error {
 	// Nothing to do.
 	return nil
 }

@@ -312,15 +312,15 @@ func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*f
 	return msg, nil
 }
 
-func (g *RemoteExecutionGroupEvaluator) finalizeStream(ctx context.Context, nodeStreamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
+func (g *RemoteExecutionGroupEvaluator) finishedReadingStream(ctx context.Context, nodeStreamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
 	nodeState := g.nodeStreams.streams[nodeStreamIndex]
 	if nodeState.finished {
-		return nil, stats.Stats{}, fmt.Errorf("can't finalize node stream index %v, as it is already finished", nodeState.nodeIndex)
+		return nil, stats.Stats{}, fmt.Errorf("can't call FinishedReading for node stream index %v, as it is already finished", nodeState.nodeIndex)
 	}
 
 	g.markStreamAsFinished(nodeStreamIndex)
 	if !g.nodeStreams.allFinished() {
-		// We'll return the actual evaluation information when the last node calls Finalize().
+		// We'll return the actual evaluation information when the last node calls FinishedReading().
 		return nil, stats.Stats{}, nil
 	}
 
@@ -530,8 +530,8 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 	return v, nil
 }
 
-func (r *scalarExecutionResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return r.group.finalizeStream(ctx, r.nodeStreamIndex)
+func (r *scalarExecutionResponse) FinishedReading(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
+	return r.group.finishedReadingStream(ctx, r.nodeStreamIndex)
 }
 
 func (r *scalarExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
@@ -621,8 +621,8 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 	return mqeData, nil
 }
 
-func (r *instantVectorExecutionResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return r.group.finalizeStream(ctx, r.nodeStreamIndex)
+func (r *instantVectorExecutionResponse) FinishedReading(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
+	return r.group.finishedReadingStream(ctx, r.nodeStreamIndex)
 }
 
 func (r *instantVectorExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
@@ -731,8 +731,8 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	return r.stepData, nil
 }
 
-func (r *rangeVectorExecutionResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return r.group.finalizeStream(ctx, r.nodeStreamIndex)
+func (r *rangeVectorExecutionResponse) FinishedReading(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
+	return r.group.finishedReadingStream(ctx, r.nodeStreamIndex)
 }
 
 func (r *rangeVectorExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

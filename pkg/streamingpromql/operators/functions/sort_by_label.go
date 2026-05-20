@@ -153,15 +153,15 @@ func (s *SortByLabel) AfterPrepare(ctx context.Context) error {
 	return s.inner.AfterPrepare(ctx)
 }
 
-func (s *SortByLabel) Finalize(ctx context.Context) error {
+func (s *SortByLabel) FinishedReading(ctx context.Context) error {
 	if s.buffer != nil {
-		s.buffer.Finalize()
+		s.buffer.FinishedReading()
 		s.buffer = nil
 	}
 
 	types.IntSlicePool.Put(&s.originalIndexes, s.memoryConsumptionTracker)
 
-	return s.inner.Finalize(ctx)
+	return s.inner.FinishedReading(ctx)
 }
 
 func (s *SortByLabel) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

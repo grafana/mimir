@@ -168,14 +168,14 @@ func (a *Aggregation) AfterPrepare(ctx context.Context) error {
 	return a.Inner.AfterPrepare(ctx)
 }
 
-func (a *Aggregation) Finalize(ctx context.Context) error {
-	// The wrapping operator (if any) is responsible for calling Finalize() on whatever provides a.ParamData, so we don't need to do it here.
+func (a *Aggregation) FinishedReading(ctx context.Context) error {
+	// The wrapping operator (if any) is responsible for calling FinishedReading() on whatever provides a.ParamData, so we don't need to do it here.
 	if a.aggregator != nil {
-		a.aggregator.Finalize()
+		a.aggregator.FinishedReading()
 		a.aggregator = nil
 	}
 
-	return a.Inner.Finalize(ctx)
+	return a.Inner.FinishedReading(ctx)
 }
 
 func (a *Aggregation) SetParamData(data types.ScalarData) {
@@ -464,7 +464,7 @@ func (a *Aggregator) emitAnnotation(generator types.AnnotationGenerator) {
 	a.Annotations.Add(generator(metricName, a.innerExpressionPosition))
 }
 
-func (a *Aggregator) Finalize() {
+func (a *Aggregator) FinishedReading() {
 	if a.ParamData.Samples != nil {
 		types.FPointSlicePool.Put(&a.ParamData.Samples, a.MemoryConsumptionTracker)
 	}

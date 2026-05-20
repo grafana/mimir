@@ -140,10 +140,10 @@ func (s *Subquery) AfterPrepare(ctx context.Context) error {
 	return s.Inner.AfterPrepare(ctx)
 }
 
-func (s *Subquery) Finalize(ctx context.Context) error {
+func (s *Subquery) FinishedReading(ctx context.Context) error {
 	s.histograms.Close()
 	s.floats.Close()
-	return s.Inner.Finalize(ctx)
+	return s.Inner.FinishedReading(ctx)
 }
 
 func (s *Subquery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

@@ -20,7 +20,7 @@ type RangeVectorRemoteExec struct {
 	expressionPosition posrange.PositionRange
 
 	resp                      RangeVectorRemoteExecutionResponse
-	finalized                 bool
+	finishedReadingCalled     bool
 	stepsReadForCurrentSeries int
 }
 
@@ -59,14 +59,14 @@ func (r *RangeVectorRemoteExec) NextStepSamples(ctx context.Context) (*types.Ran
 	return r.resp.GetNextStepSamples(ctx)
 }
 
-func (r *RangeVectorRemoteExec) Finalize(ctx context.Context) error {
-	if r.finalized {
+func (r *RangeVectorRemoteExec) FinishedReading(ctx context.Context) error {
+	if r.finishedReadingCalled {
 		return nil
 	}
 
-	r.finalized = true
+	r.finishedReadingCalled = true
 
-	return finalize(ctx, r.resp, r.Annotations)
+	return finishedReading(ctx, r.resp, r.Annotations)
 }
 
 func (r *RangeVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
@@ -82,5 +82,5 @@ func (r *RangeVectorRemoteExec) Close() {
 		r.resp.Close()
 	}
 
-	r.finalized = true // Don't try to finalize from a closed stream.
+	r.finishedReadingCalled = true // Don't try to call FinishedReading from a closed stream.
 }

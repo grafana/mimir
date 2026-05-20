@@ -696,12 +696,12 @@ func (f *InfoFunction) AfterPrepare(ctx context.Context) error {
 	return f.Info.AfterPrepare(ctx)
 }
 
-func (f *InfoFunction) Finalize(ctx context.Context) error {
-	if err := f.Inner.Finalize(ctx); err != nil {
+func (f *InfoFunction) FinishedReading(ctx context.Context) error {
+	if err := f.Inner.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return f.Info.Finalize(ctx)
+	return f.Info.FinishedReading(ctx)
 }
 
 func (f *InfoFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

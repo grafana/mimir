@@ -19,8 +19,8 @@ type ScalarRemoteExec struct {
 	Annotations        *annotations.Annotations
 	expressionPosition posrange.PositionRange
 
-	resp      ScalarRemoteExecutionResponse
-	finalized bool
+	resp                  ScalarRemoteExecutionResponse
+	finishedReadingCalled bool
 }
 
 var _ types.ScalarOperator = &ScalarRemoteExec{}
@@ -48,14 +48,14 @@ func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, err
 	return v, nil
 }
 
-func (s *ScalarRemoteExec) Finalize(ctx context.Context) error {
-	if s.finalized {
+func (s *ScalarRemoteExec) FinishedReading(ctx context.Context) error {
+	if s.finishedReadingCalled {
 		return nil
 	}
 
-	s.finalized = true
+	s.finishedReadingCalled = true
 
-	return finalize(ctx, s.resp, s.Annotations)
+	return finishedReading(ctx, s.resp, s.Annotations)
 }
 
 func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {
@@ -71,5 +71,5 @@ func (s *ScalarRemoteExec) Close() {
 		s.resp.Close()
 	}
 
-	s.finalized = true // Don't try to finalize from a closed stream.
+	s.finishedReadingCalled = true // Don't try to call FinishedReading from a closed stream.
 }

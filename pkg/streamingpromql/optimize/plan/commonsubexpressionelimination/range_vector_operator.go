@@ -125,8 +125,8 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, match
 }
 
 func (b *RangeVectorDuplicationBuffer) NextSeries(consumer *RangeVectorDuplicationConsumer) error {
-	if consumer.finalized {
-		return fmt.Errorf("consumer %p is already finalized, can't advance to next series", consumer)
+	if consumer.finishedReadingCalled {
+		return fmt.Errorf("consumer %p has already had FinishedReading called, can't advance to next series", consumer)
 	}
 
 	thisSeriesIndex := consumer.nextUnfilteredSeriesIndex
@@ -320,15 +320,15 @@ func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumer *RangeVectorDuplic
 }
 
 func (b *RangeVectorDuplicationBuffer) releaseBufferedData(consumer *RangeVectorDuplicationConsumer) {
-	if consumer.finalized {
+	if consumer.finishedReadingCalled {
 		return
 	}
 
-	consumer.finalized = true
+	consumer.finishedReadingCalled = true
 
 	defer consumer.subset.close(b.MemoryConsumptionTracker)
 
-	if b.allConsumersFinalized() {
+	if b.allConsumersFinishedReading() {
 		b.releaseAllBufferedData()
 		return
 	}
@@ -392,7 +392,7 @@ func (b *RangeVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 	idx := math.MaxInt
 
 	for _, consumer := range b.consumers {
-		if consumer.finalized {
+		if consumer.finishedReadingCalled {
 			continue
 		}
 
@@ -410,7 +410,7 @@ func (b *RangeVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 
 func (b *RangeVectorDuplicationBuffer) allOpenConsumersHaveNoFilters() bool {
 	for _, consumer := range b.consumers {
-		if consumer.finalized {
+		if consumer.finishedReadingCalled {
 			continue
 		}
 
@@ -450,23 +450,23 @@ func (b *RangeVectorDuplicationBuffer) AfterPrepare(ctx context.Context) error {
 	return b.Inner.AfterPrepare(ctx)
 }
 
-func (b *RangeVectorDuplicationBuffer) Finalize(ctx context.Context, consumer *RangeVectorDuplicationConsumer) error {
-	if consumer.finalized {
+func (b *RangeVectorDuplicationBuffer) FinishedReading(ctx context.Context, consumer *RangeVectorDuplicationConsumer) error {
+	if consumer.finishedReadingCalled {
 		return nil
 	}
 
 	b.releaseBufferedData(consumer)
 
-	if !b.allConsumersFinalized() {
+	if !b.allConsumersFinishedReading() {
 		return nil
 	}
 
-	return b.Inner.Finalize(ctx)
+	return b.Inner.FinishedReading(ctx)
 }
 
-func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
+func (b *RangeVectorDuplicationBuffer) allConsumersFinishedReading() bool {
 	for _, consumer := range b.consumers {
-		if !consumer.finalized {
+		if !consumer.finishedReadingCalled {
 			return false
 		}
 	}
@@ -475,8 +475,8 @@ func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
 }
 
 func (b *RangeVectorDuplicationBuffer) Stats(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
-	if !b.allConsumersFinalized() {
-		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
+	if !b.allConsumersFinishedReading() {
+		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats when one or more consumers have not had FinishedReading called")
 	}
 
 	if consumer.hasReadStats {
@@ -586,7 +586,7 @@ type RangeVectorDuplicationConsumer struct {
 	currentUnfilteredSeriesIndex int // -1 means the consumer hasn't advanced to the first series yet.
 	nextUnfilteredSeriesIndex    int
 	currentSeriesStepIndex       int // -1 means the consumer hasn't called NextStepSamples for the current series yet.
-	finalized                    bool
+	finishedReadingCalled        bool
 	closed                       bool
 	hasReadStats                 bool
 }
@@ -605,7 +605,7 @@ func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, mat
 }
 
 func (d *RangeVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
-	if d.finalized {
+	if d.finishedReadingCalled {
 		return false
 	}
 
@@ -625,7 +625,7 @@ func (d *RangeVectorDuplicationConsumer) advanceToNextUnfilteredSeries() {
 }
 
 func (d *RangeVectorDuplicationConsumer) hasReadAllStepsForCurrentSeries() bool {
-	return d.finalized || d.currentSeriesStepIndex >= d.Buffer.timeRange.StepCount-1
+	return d.finishedReadingCalled || d.currentSeriesStepIndex >= d.Buffer.timeRange.StepCount-1
 }
 
 func (d *RangeVectorDuplicationConsumer) NextSeries(_ context.Context) error {
@@ -648,8 +648,8 @@ func (d *RangeVectorDuplicationConsumer) AfterPrepare(ctx context.Context) error
 	return d.Buffer.AfterPrepare(ctx)
 }
 
-func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) error {
-	return d.Buffer.Finalize(ctx, d)
+func (d *RangeVectorDuplicationConsumer) FinishedReading(ctx context.Context) error {
+	return d.Buffer.FinishedReading(ctx, d)
 }
 
 func (d *RangeVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

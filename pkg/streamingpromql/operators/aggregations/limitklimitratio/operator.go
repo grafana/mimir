@@ -186,7 +186,7 @@ func (o *Operator) AfterPrepare(ctx context.Context) error {
 	return o.Param.AfterPrepare(ctx)
 }
 
-func (o *Operator) Finalize(ctx context.Context) error {
+func (o *Operator) FinishedReading(ctx context.Context) error {
 	if o.stepArg != nil {
 		o.stepArg.close()
 	}
@@ -199,11 +199,11 @@ func (o *Operator) Finalize(ctx context.Context) error {
 	}
 	o.seriesToGroups = nil
 
-	if err := o.Inner.Finalize(ctx); err != nil {
+	if err := o.Inner.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return o.Param.Finalize(ctx)
+	return o.Param.FinishedReading(ctx)
 }
 
 func (o *Operator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

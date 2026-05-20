@@ -43,8 +43,8 @@ func (s *StepInvariantScalarOperator) AfterPrepare(ctx context.Context) error {
 	return s.inner.AfterPrepare(ctx)
 }
 
-func (s *StepInvariantScalarOperator) Finalize(ctx context.Context) error {
-	return s.inner.Finalize(ctx)
+func (s *StepInvariantScalarOperator) FinishedReading(ctx context.Context) error {
+	return s.inner.FinishedReading(ctx)
 }
 
 func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.ScalarData, error) {

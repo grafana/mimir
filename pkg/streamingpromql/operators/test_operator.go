@@ -19,7 +19,7 @@ type TestOperator struct {
 	DropName                 []bool
 	Data                     []types.InstantVectorSeriesData
 	Prepared                 bool
-	Finalized                bool
+	FinishedReadingCalled    bool
 	Closed                   bool
 	Position                 posrange.PositionRange
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
@@ -118,8 +118,8 @@ func (t *TestOperator) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (t *TestOperator) Finalize(_ context.Context) error {
-	t.Finalized = true
+func (t *TestOperator) FinishedReading(_ context.Context) error {
+	t.FinishedReadingCalled = true
 	return nil
 }
 
@@ -144,9 +144,9 @@ type TestRangeOperator struct {
 	Histograms                 *types.HPointRingBuffer
 	HistogramsView             *types.HPointRingBufferView
 
-	Finalized        bool
-	Closed           bool
-	MatchersProvided types.Matchers
+	FinishedReadingCalled bool
+	Closed                bool
+	MatchersProvided      types.Matchers
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
@@ -260,8 +260,8 @@ func (t *TestRangeOperator) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (t *TestRangeOperator) Finalize(_ context.Context) error {
-	t.Finalized = true
+func (t *TestRangeOperator) FinishedReading(_ context.Context) error {
+	t.FinishedReadingCalled = true
 
 	if t.Floats != nil {
 		t.Floats.Close()

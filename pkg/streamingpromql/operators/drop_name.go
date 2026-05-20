@@ -52,8 +52,8 @@ func (n *DropNameInstant) AfterPrepare(ctx context.Context) error {
 	return n.Inner.AfterPrepare(ctx)
 }
 
-func (n *DropNameInstant) Finalize(ctx context.Context) error {
-	return n.Inner.Finalize(ctx)
+func (n *DropNameInstant) FinishedReading(ctx context.Context) error {
+	return n.Inner.FinishedReading(ctx)
 }
 
 func (n *DropNameInstant) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
@@ -108,8 +108,8 @@ func (n *DropNameRange) AfterPrepare(ctx context.Context) error {
 	return n.Inner.AfterPrepare(ctx)
 }
 
-func (n *DropNameRange) Finalize(ctx context.Context) error {
-	return n.Inner.Finalize(ctx)
+func (n *DropNameRange) FinishedReading(ctx context.Context) error {
+	return n.Inner.FinishedReading(ctx)
 }
 
 func (n *DropNameRange) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
