@@ -378,7 +378,7 @@ func (g *RemoteExecutionGroupEvaluator) statsForStream(ctx context.Context, node
 
 	nodeState := g.nodeStreams.streams[nodeStreamIndex]
 
-	var annotations annotations.Annotations
+	var annos annotations.Annotations
 	if g.combinedAnnotations != nil {
 		// If this group was evaluated by a querier that does not support per-node annotations, return all annotations for the group
 		// to the first node that calls Stats(), and then do not return them again for subsequent nodes.
@@ -387,10 +387,10 @@ func (g *RemoteExecutionGroupEvaluator) statsForStream(ctx context.Context, node
 			level.Warn(g.logger).Log("msg", "RemoteExecutionGroupEvaluator received a combined set of annotations for a request with multiple nodes. This is expected during an upgrade from queriers without per-node annotation support, but a bug otherwise, and may lead to incorrect annotations being cached if this response is being cached.")
 		}
 
-		annotations = g.combinedAnnotations
+		annos = g.combinedAnnotations
 		g.combinedAnnotations = nil
 	} else {
-		annotations = g.perNodeAnnotations[nodeState.nodeIndex]
+		annos = g.perNodeAnnotations[nodeState.nodeIndex]
 	}
 
 	if len(g.perNodeStats) == 0 {
@@ -400,7 +400,7 @@ func (g *RemoteExecutionGroupEvaluator) statsForStream(ctx context.Context, node
 		if err != nil {
 			return nil, nil, err
 		}
-		return stats, annotations, nil
+		return stats, annos, nil
 	}
 
 	stats, ok := g.perNodeStats[nodeState.nodeIndex]
@@ -412,7 +412,7 @@ func (g *RemoteExecutionGroupEvaluator) statsForStream(ctx context.Context, node
 	if err != nil {
 		return nil, nil, err
 	}
-	return decodedStats, annotations, nil
+	return decodedStats, annos, nil
 }
 
 func (g *RemoteExecutionGroupEvaluator) closeStream(nodeStreamIndex remoteExecutionNodeStreamIndex) {
