@@ -1,0 +1,29 @@
+load 1s
+  mixed 0 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 2 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 6 {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  missing 0 _ 2 _ _ 5 _ _ _ _ _
+  nans 0 NaN 2 NaN NaN 5 NaN NaN NaN NaN NaN
+  infs 0 Inf 2 Inf Inf 5 Inf Inf Inf Inf Inf
+
+eval instant at 1s mixed smoothed
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 8s mixed smoothed
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+clear
+load 1s
+  metric{instance="1"} 1+1x10 _ _ 10-1x10
+  metric{instance="2"} 1 5 6 3 1 8 7 3 0 19 NaN NaN 10-1x10
+  metric{instance="3"} 0x10 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 10-1x10
+
+# MQE and Prometheus have different behaviour here.
+# MQE will fail a query where histograms are found within the query range, or in the points immediately either side of the range.
+# Prometheus will fail a query where histograms are found anywhere within the extended range window.
+eval instant at 11s increase(metric[1m] smoothed)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 11s rate(metric[1m] smoothed)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 11s delta(metric[1m] smoothed)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
