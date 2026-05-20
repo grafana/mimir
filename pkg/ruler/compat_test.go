@@ -1357,7 +1357,7 @@ func TestEngineQueryFunc_ClosesQueryAndPreservesResult(t *testing.T) {
 	// SeriesMetadataSlicePool, which Close puts back.)
 	for _, s := range vec {
 		require.NotEmpty(t, s.Metric, "labels must survive qry.Close()")
-		require.Equal(t, "up", s.Metric.Get(labels.MetricName))
+		require.Equal(t, "up", s.Metric.Get(model.MetricNameLabel))
 		require.Contains(t, []string{"a", "b"}, s.Metric.Get("instance"))
 	}
 
