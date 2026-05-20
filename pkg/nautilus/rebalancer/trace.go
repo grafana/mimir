@@ -39,7 +39,17 @@ import (
 // them under v4 will produce a different — and arguably broken —
 // Actions slice because Phase 3 will see no movable budget; the
 // determinism contract requires matching versions.
-const SlicerVersion = "4"
+//
+// Version "5" drops the CompactionInterval / recentMoves cross-round
+// movable-budget bookkeeping entirely. The sample-rate signal is
+// near-instantaneous (no TSDB-head compaction lag) so the discount
+// model from v4 was unnecessary. RecentMoves disappears from the
+// wire payload and CompactionInterval is removed from ConfigSnapshot.
+// Traces captured under v4 will replay deterministically against v5
+// only if their RecentMoves slice was already empty; otherwise the
+// v5 binary refuses them (the slicer's Phase 3 would now ignore
+// those records and produce different actions).
+const SlicerVersion = "5"
 
 // RangeRate is the JSON-serializable view of a per-(partition, range)
 // rate signal. Mirrors the unexported rangeRate but with JSON tags
@@ -63,30 +73,13 @@ type RangeRate struct {
 	PartitionID int32   `json:"partition_id"`
 }
 
-// MoveRecord is the JSON-serializable view of a moveRecord — a move
-// off a source partition that still counts against the partition's
-// movable budget while within the CompactionInterval window.
-//
-// Load is in the same units as RangeRate.SampleRate (samples per
-// second) and is what Phase 3's sumRecentMoves discounts. Series
-// is retained for admin-page continuity ("this many head series
-// moved") but is not load-bearing.
-type MoveRecord struct {
-	Lo     uint32    `json:"lo"`
-	Hi     uint32    `json:"hi"`
-	Load   float64   `json:"load"`
-	Series int64     `json:"series"`
-	At     time.Time `json:"at"`
-}
-
 // ConfigSnapshot freezes the slicer-relevant config knobs at the
 // moment a rebalance round was captured, so replays use the same
 // parameters even if production config changes between capture and
 // replay.
 type ConfigSnapshot struct {
-	MovementBudget     float64       `json:"movement_budget"`
-	MoveCooldown       time.Duration `json:"move_cooldown"`
-	CompactionInterval time.Duration `json:"compaction_interval"`
+	MovementBudget float64       `json:"movement_budget"`
+	MoveCooldown   time.Duration `json:"move_cooldown"`
 }
 
 // Trace is the full input/output of a single rebalance round, with
@@ -131,10 +124,7 @@ type Trace struct {
 	// monitor the unnamed/named ratio and detect when locality-based
 	// rebalancing is hitting its ceiling.
 	UnnamedQuerySamples map[string]float64 `json:"unnamed_query_samples,omitempty"`
-	// RecentMoves is keyed by partition ID (decimal string) so the
-	// JSON map is well-formed.
-	RecentMoves      map[string][]MoveRecord `json:"recent_moves"`
-	ActivePartitions []int32                 `json:"active_partitions"`
+	ActivePartitions    []int32            `json:"active_partitions"`
 	// Cooldowns is keyed by "lo:hi" (decimal) so the JSON map is
 	// well-formed; use FormatHashRangeKey / ParseHashRangeKey.
 	Cooldowns map[string]time.Time `json:"cooldowns"`
@@ -226,55 +216,6 @@ func cooldownsFromWire(in map[string]time.Time) map[assignment.HashRange]time.Ti
 	return out
 }
 
-// recentMovesToWire converts the slicer's internal recentMoves map
-// (keyed by partition ID) into the trace's string-keyed form. Like
-// cooldowns, entries older than CompactionInterval are carried through
-// because ReplayTrace invokes pruneRecentMoves before running the
-// slicer.
-func recentMovesToWire(in map[int32][]moveRecord) map[string][]MoveRecord {
-	out := make(map[string][]MoveRecord, len(in))
-	for pid, records := range in {
-		if len(records) == 0 {
-			continue
-		}
-		wire := make([]MoveRecord, len(records))
-		for i, m := range records {
-			wire[i] = MoveRecord{
-				Lo:     m.hr.Lo,
-				Hi:     m.hr.Hi,
-				Load:   m.load,
-				Series: m.series,
-				At:     m.at,
-			}
-		}
-		out[strconv.FormatInt(int64(pid), 10)] = wire
-	}
-	return out
-}
-
-// recentMovesFromWire is the inverse of recentMovesToWire. Malformed
-// partition keys are silently dropped.
-func recentMovesFromWire(in map[string][]MoveRecord) map[int32][]moveRecord {
-	out := make(map[int32][]moveRecord, len(in))
-	for k, records := range in {
-		pid, err := strconv.ParseInt(k, 10, 32)
-		if err != nil {
-			continue
-		}
-		list := make([]moveRecord, len(records))
-		for i, m := range records {
-			list[i] = moveRecord{
-				hr:     assignment.HashRange{Lo: m.Lo, Hi: m.Hi},
-				load:   m.Load,
-				series: m.Series,
-				at:     m.At,
-			}
-		}
-		out[int32(pid)] = list
-	}
-	return out
-}
-
 // ReplayTrace runs runSlicer with the inputs captured in t and
 // returns the resulting assignment and actions. Used by external
 // verification tools (and the package's own determinism tests) to
@@ -285,15 +226,18 @@ func recentMovesFromWire(in map[string][]MoveRecord) map[int32][]moveRecord {
 func ReplayTrace(t Trace) (*assignment.Assignment, []Action) {
 	r := &Rebalancer{
 		cfg: Config{
-			MovementBudget:     t.Config.MovementBudget,
-			MoveCooldown:       t.Config.MoveCooldown,
-			CompactionInterval: t.Config.CompactionInterval,
+			MovementBudget: t.Config.MovementBudget,
+			MoveCooldown:   t.Config.MoveCooldown,
 		},
 		moveCooldowns: cooldownsFromWire(t.Cooldowns),
-		recentMoves:   recentMovesFromWire(t.RecentMoves),
 	}
 	start := &assignment.Assignment{
 		Entries: append([]assignment.Entry(nil), t.Start...),
 	}
-	return r.runSlicer(start, ratesFromWire(t.Rates), t.PartitionL, r.recentMoves, t.ActivePartitions, t.Now)
+	// Reconstruct the per-partition rate map from rates so the
+	// slicer doesn't have to recompute it (and so the determinism
+	// contract doesn't depend on partitionLoadFromRates being
+	// called in exactly the same place as in production).
+	partitionRateByPID := partitionLoadFromRates(ratesFromWire(t.Rates), t.ActivePartitions)
+	return r.runSlicer(start, ratesFromWire(t.Rates), partitionRateByPID, t.ActivePartitions, t.Now)
 }

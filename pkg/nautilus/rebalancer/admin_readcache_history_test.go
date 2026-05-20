@@ -118,8 +118,8 @@ func TestAdminState_LastStats_TracksPartitionRate(t *testing.T) {
 	partitionL := map[int32]int64{0: 100, 1: 200}
 	partitionRate := map[int32]float64{0: 50.5, 1: 150.5}
 
-	s.setLastStats(lm, partitionL, partitionRate, nil, []int32{0, 1})
-	_, _, _, rates, _ := s.snapshot()
+	s.setLastStats(lm, partitionL, partitionRate, []int32{0, 1})
+	_, _, _, rates := s.snapshot()
 	assert.Equal(t, 50.5, rates[0])
 	assert.Equal(t, 150.5, rates[1])
 }
@@ -185,21 +185,20 @@ func TestAdminHTML_RendersRecentReadcacheRoundsHistory(t *testing.T) {
 func TestAdminHTML_RendersBothImbalanceStats(t *testing.T) {
 	var buf bytesBuffer
 	data := adminPageData{
-		GeneratedAt:        "2026-05-20T00:00:00Z",
-		TotalMemorySeries:  100,
-		AboveAverage:       20,
-		MeanL:              50,
-		MaxL:               80,
-		MinL:               20,
-		ImbalanceRatio:     1.6,
-		MeanRate:           1200,
-		MaxRate:            2400,
-		MinRate:            600,
-		RateImbalance:      2.0,
-		NumPartitions:      2,
-		NumEntries:         4,
-		MovedFraction:      0.05,
-		CompactionInterval: 2 * time.Hour,
+		GeneratedAt:       "2026-05-20T00:00:00Z",
+		TotalMemorySeries: 100,
+		AboveAverage:      20,
+		MeanL:             50,
+		MaxL:              80,
+		MinL:              20,
+		ImbalanceRatio:    1.6,
+		MeanRate:          1200,
+		MaxRate:           2400,
+		MinRate:           600,
+		RateImbalance:     2.0,
+		NumPartitions:     2,
+		NumEntries:        4,
+		MovedFraction:     0.05,
 		Partitions: []partitionView{
 			{PartitionID: 0, MemorySeries: 80, SampleRate: 2400},
 			{PartitionID: 1, MemorySeries: 20, SampleRate: 600},

@@ -30,11 +30,14 @@ type ReadcacheSlicerConfig struct {
 
 	// Alpha and Beta are the per-partition load weights:
 	//
-	//     load(pid) = Alpha * ActiveSeries(pid) + Beta * SamplesEWMA(pid)
+	//     load(pid) = Alpha * SamplesEWMA(pid) + Beta * QuerySamplesEWMA(pid)
 	//
-	// Alpha measures memory pressure (cost of holding the partition
-	// in head), Beta measures query CPU/IO pressure (cost of serving
-	// reads). The slicer balances total load per readcache instance.
+	// Alpha measures ingest pressure (samples-per-second flowing into
+	// the partition's TSDB head, the same signal the first-tier
+	// slicer balances on), Beta measures query CPU/IO pressure (cost
+	// of serving reads). The slicer balances total load per readcache
+	// instance, so two pods with the same Σ Alpha*write_rate +
+	// Beta*query_rate are considered evenly loaded.
 	Alpha float64 `yaml:"alpha"`
 	Beta  float64 `yaml:"beta"`
 
@@ -54,8 +57,8 @@ type ReadcacheSlicerConfig struct {
 func (cfg *ReadcacheSlicerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable the second slicer round that balances partition->readcache-instance mappings.")
 	f.Var(&cfg.Instances, prefix+"instances", "Comma-separated list of readcache instance IDs the rebalancer may assign partitions to. Replaced by ring-based discovery in a follow-up patch.")
-	f.Float64Var(&cfg.Alpha, prefix+"alpha", 1.0, "Weight applied to per-partition active series count in the load function.")
-	f.Float64Var(&cfg.Beta, prefix+"beta", 0.0, "Weight applied to per-partition query samples EWMA in the load function. Zero (the default) makes the slicer balance memory only; set to a non-zero value once query-load telemetry is reliable.")
+	f.Float64Var(&cfg.Alpha, prefix+"alpha", 1.0, "Weight applied to per-partition samples-per-second EWMA (write rate) in the load function. This is the same signal the first-tier slicer balances ranges on.")
+	f.Float64Var(&cfg.Beta, prefix+"beta", 0.0, "Weight applied to per-partition query samples EWMA (read rate) in the load function. Zero (the default) makes the slicer balance write pressure only; set to a non-zero value once query-load telemetry is reliable.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.10, "Maximum fraction of total load that may be moved between instances in a single round.")
 	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 5*time.Minute, "Minimum time between consecutive moves of the same partition.")
 }
@@ -67,7 +70,7 @@ type readcachePlanInput struct {
 	partitions []int32
 
 	// loadByPartition is the weighted load per partition (alpha *
-	// active_series + beta * samples_ewma) used by the slicer.
+	// samples_ewma + beta * query_samples_ewma) used by the slicer.
 	loadByPartition map[int32]float64
 
 	// instances is the set of readcache instance IDs eligible to own

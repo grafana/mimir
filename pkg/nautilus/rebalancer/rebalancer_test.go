@@ -17,22 +17,37 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
-// seriesCfg returns a Config with the given movement budget and a
-// long-enough compaction interval that recentMoves pruning won't fire
-// in a single-round test.
+// seriesCfg returns a Config with the given movement budget. Tests
+// model load by populating rangeRate.series; withSampleRateFromSeries
+// then copies the integer count into the float sampleRate field so
+// the slicer (which balances on sampleRate) treats one series as one
+// sample-per-second of load.
 func seriesCfg(movementBudget float64) Config {
 	return Config{
-		MovementBudget:     movementBudget,
-		CompactionInterval: 2 * time.Hour,
+		MovementBudget: movementBudget,
 	}
 }
 
-// partitionLFromRates returns a partitionLByPID map derived by summing
-// per-(partition, range) series on each partition, the natural
-// "ground-truth" L_pid for a test that doesn't otherwise model
-// ingester totals. Counts attached to a partition that isn't the
-// current owner of the range (residue) are still summed into that
-// partition's L — they're real series on its head.
+// withSampleRateFromSeries fills in rangeRate.sampleRate for every
+// entry that has a non-zero series count but no sample rate. Tests
+// have historically driven the slicer with raw series counts (the
+// pre-v5 implicit fallback in buildLoadMap); now that the fallback
+// is gone, tests opt in to the same effective behavior by calling
+// this helper on the rates they build. Production code does NOT use
+// this — the readcache reports sampleRate directly.
+func withSampleRateFromSeries(rates []rangeRate) []rangeRate {
+	for i := range rates {
+		if rates[i].sampleRate == 0 && rates[i].series > 0 {
+			rates[i].sampleRate = float64(rates[i].series)
+		}
+	}
+	return rates
+}
+
+// partitionLFromRates returns a per-partition sum of rangeRate.series.
+// Kept as a test helper so existing fixtures that build a "ground-truth
+// L_pid" for assertion narratives still compile, even though the
+// slicer no longer takes such a map as input.
 func partitionLFromRates(_ *assignment.Assignment, rates []rangeRate) map[int32]int64 {
 	out := make(map[int32]int64)
 	for _, r := range rates {
@@ -59,7 +74,9 @@ func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 	r := &Rebalancer{cfg: seriesCfg(0.5)}
 	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	_ = partL
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// After rebalancing, partition 0 should own less hash space than
@@ -100,7 +117,9 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 	r := &Rebalancer{cfg: seriesCfg(0.09)}
 	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	_ = partL
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// Sum series per partition on the output assignment and check
@@ -141,7 +160,9 @@ func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
 	r := &Rebalancer{cfg: seriesCfg(0.5)}
 	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, partL, nil, activePartitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	_ = partL
+	result, _ := r.runSlicer(initial, rates, nil, activePartitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	for _, e := range result.Entries {
@@ -166,7 +187,9 @@ func TestRunSlicer_SliceCountCapped(t *testing.T) {
 	r := &Rebalancer{cfg: seriesCfg(0.09)}
 	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	_ = partL
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	assert.LessOrEqual(t, len(result.Entries), maxSlicesPerPartition*len(partitions)+len(partitions),
@@ -301,7 +324,9 @@ func TestRunSlicer_Phase1_DistributesAcrossPartitions(t *testing.T) {
 	r := &Rebalancer{cfg: seriesCfg(0.0)}
 	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, partL, nil, activePartitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	_ = partL
+	result, _ := r.runSlicer(initial, rates, nil, activePartitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	counts := make(map[int32]int)
@@ -336,7 +361,9 @@ func TestRunSlicer_Phase3_ExhaustsBudget(t *testing.T) {
 	r := &Rebalancer{cfg: seriesCfg(0.5)}
 	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	_ = partL
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// Sum per-range series per partition on the result.
@@ -522,7 +549,9 @@ func TestRunSlicer_Phase4_SplitsAnyHotSlice(t *testing.T) {
 	r := &Rebalancer{cfg: seriesCfg(0.0)}
 	partL := partitionLFromRates(initial, rates)
 
-	result, _ := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	_ = partL
+	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// The hot slice on the overloaded partition should have been split.
@@ -984,27 +1013,67 @@ func TestLoadMap_SampleRateAt(t *testing.T) {
 	assert.Equal(t, 0.0, lm.sampleRateAt(1, assignment.HashRange{Lo: 0, Hi: 999}))
 }
 
-// TestLoadMap_SampleRateLegacyFallback verifies the transition shim
-// in buildLoadMap: when a reporter populates series but no
-// sampleRate (legacy ingester reporters during the readcache
-// rollout), the load map exposes float64(series) as the sample rate
-// so Phase 3 has a non-zero signal to work with.
-func TestLoadMap_SampleRateLegacyFallback(t *testing.T) {
+// TestRunSlicer_SeriesOnlyReporterProducesNoMoves verifies that with
+// the v5 fallback removed, a reporter that populated only series and
+// no sampleRate produces no Phase 3 moves: the slicer sees zero load
+// everywhere and has nothing to balance. Tests that want raw series
+// counts to drive Phase 3 must opt in via withSampleRateFromSeries.
+func TestRunSlicer_SeriesOnlyReporterProducesNoMoves(t *testing.T) {
+	partitions := []int32{0, 1}
+	initial := assignment.FineEvenSplit(partitions, 4)
+
+	// Heavily skewed series counts; deliberately no sampleRate set.
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		if e.PartitionID == 0 {
+			rates = append(rates, rangeRate{hr: e.Range, series: 10000, partitionID: e.PartitionID})
+		} else {
+			rates = append(rates, rangeRate{hr: e.Range, series: 1, partitionID: e.PartitionID})
+		}
+	}
+
+	r := &Rebalancer{
+		cfg:           seriesCfg(0.5),
+		moveCooldowns: make(map[assignment.HashRange]time.Time),
+	}
+	_, actions := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+
+	var moves int
+	for _, a := range actions {
+		if a.Kind == ActionMove {
+			moves++
+		}
+	}
+	assert.Equalf(t, 0, moves,
+		"expected zero Phase 3 moves when reporters only populate series "+
+			"(no sample-rate signal means no load gradient for the slicer to balance); "+
+			"got %d moves", moves)
+}
+
+// TestLoadMap_SeriesOnlyReporterContributesZeroLoad verifies that a
+// reporter populating series but no sampleRate (legacy ingester
+// reporters during the readcache rollout, or a faulty new reporter)
+// contributes ZERO load: from v5 onward sampleRate is the sole load
+// signal and there is no implicit fallback to head-series count.
+// Tests that want raw series counts to drive the slicer can opt in
+// via withSampleRateFromSeries.
+func TestLoadMap_SeriesOnlyReporterContributesZeroLoad(t *testing.T) {
 	hr := assignment.HashRange{Lo: 0, Hi: 999}
 	rates := []rangeRate{
-		{hr: hr, series: 42, partitionID: 0}, // legacy reporter
+		{hr: hr, series: 42, partitionID: 0}, // no sampleRate set
 	}
 	lm := buildLoadMap(rates)
 
-	assert.Equal(t, int64(42), lm.seriesAt(0, hr))
-	assert.Equal(t, 42.0, lm.sampleRateAt(0, hr),
-		"legacy reporters with no sampleRate must fall back to float64(series)")
+	assert.Equal(t, int64(42), lm.seriesAt(0, hr),
+		"series count is still surfaced for observability")
+	assert.Equal(t, 0.0, lm.sampleRateAt(0, hr),
+		"reporters with no sampleRate contribute zero to the slicer's load signal")
 }
 
 // TestPartitionLoadFromRates verifies that the per-partition load
 // signal Phase 3 consumes is the sum of per-range sample rates,
-// restricted to the active partition set, with the same legacy
-// fallback as buildLoadMap.
+// restricted to the active partition set. Reporters that didn't
+// populate sampleRate add nothing — series counts are not a fallback.
 func TestPartitionLoadFromRates(t *testing.T) {
 	rates := []rangeRate{
 		{hr: assignment.HashRange{Lo: 0, Hi: 99}, sampleRate: 100, partitionID: 0},
@@ -1014,13 +1083,14 @@ func TestPartitionLoadFromRates(t *testing.T) {
 		// just went inactive can be observed as draining), but the
 		// caller decides whether to consume it.
 		{hr: assignment.HashRange{Lo: 300, Hi: 399}, sampleRate: 999, partitionID: 99},
-		// Legacy reporter: series only, no sampleRate.
+		// Series-only reporter contributes zero — no fallback.
 		{hr: assignment.HashRange{Lo: 400, Hi: 499}, series: 7, partitionID: 1},
 	}
 	out := partitionLoadFromRates(rates, []int32{0, 1})
 
 	assert.Equal(t, 300.0, out[0])
-	assert.Equal(t, 57.0, out[1], "legacy series count falls back as sample rate")
+	assert.Equal(t, 50.0, out[1],
+		"series-only reporters contribute zero; only sampleRate is summed")
 	// active set entries always present (seeded).
 	_, ok0 := out[0]
 	_, ok1 := out[1]
@@ -1054,7 +1124,9 @@ func TestRunSlicer_MovesBySampleRate(t *testing.T) {
 
 	r := &Rebalancer{cfg: seriesCfg(0.5)}
 	partL := partitionLFromRates(initial, rates) // unused by Phase 3 now
-	result, actions := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	_ = partL
+	result, actions := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 	require.NoError(t, result.Validate())
 
 	var movesOffHot int
@@ -1095,8 +1167,8 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// First round: produces some moves and arms cooldowns.
-	partL := partitionLFromRates(initial, rates)
-	result1, actions1 := r.runSlicer(initial, rates, partL, nil, partitions, t0)
+	rates = withSampleRateFromSeries(rates)
+	result1, actions1 := r.runSlicer(initial, rates, nil, partitions, t0)
 	require.NoError(t, result1.Validate())
 	r.recordMoveCooldowns(t0, actions1)
 
@@ -1113,7 +1185,7 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 	// pretend no stats have updated yet, which is the worst case).
 	t1 := t0.Add(30 * time.Second)
 	r.pruneExpiredCooldowns(t1)
-	_, actions2 := r.runSlicer(result1, rates, partL, nil, partitions, t1)
+	_, actions2 := r.runSlicer(result1, rates, nil, partitions, t1)
 	for _, a := range actions2 {
 		if a.Kind != ActionMove {
 			continue
@@ -1225,9 +1297,9 @@ func TestPartitionL_MissingOwnerIsZero(t *testing.T) {
 // TestRunSlicer_ExhaustedBudgetDoesNotStallOthers reproduces the bug
 // (previously expressed as "orphan-locked partition"): Phase 3 of the
 // slicer must not terminate its loop when the nominally-hottest
-// partition has no profitable range to move. With the movable budget
-// as the primary gate, a partition whose entire above-mean surplus has
-// already been scheduled-out (sumRecentMoves >= L - meanL) simply
+// partition has no profitable range to move. With the within-round
+// movable budget as the primary gate, a partition whose entire
+// above-mean surplus has already been scheduled-out this round simply
 // won't be selected as hot; but even when it is selected and no move
 // improves imbalance, the loop must exclude it and proceed to the
 // next-hottest partition, not break.
@@ -1271,7 +1343,9 @@ func TestRunSlicer_ExhaustedBudgetDoesNotStallOthers(t *testing.T) {
 	cfg := seriesCfg(0.5)
 	r := &Rebalancer{cfg: cfg, moveCooldowns: make(map[assignment.HashRange]time.Time)}
 
-	_, actions := r.runSlicer(initial, rates, partL, nil, partitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	_ = partL
+	_, actions := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 
 	movesFromP1 := 0
 	for _, a := range actions {
@@ -1284,130 +1358,6 @@ func TestRunSlicer_ExhaustedBudgetDoesNotStallOthers(t *testing.T) {
 	}
 	assert.Greaterf(t, movesFromP1, 0,
 		"exhausted-budget P0 must not stall draining of hot P1; got actions=%v", actions)
-}
-
-// TestRunSlicer_MovableBudgetCapsMovesPerWindow verifies that the
-// cross-round source-side budget shrinks with each move and caps total
-// moves off a partition within one CompactionInterval. The window
-// guards against the "keep draining what appears hot but has already
-// been moved off" case: the source's reported L_pid doesn't drop until
-// head compaction, so the budget must subtract in-flight moves.
-func TestRunSlicer_MovableBudgetCapsMovesPerWindow(t *testing.T) {
-	partitions := []int32{0, 1}
-	initial := assignment.FineEvenSplit(partitions, 16)
-
-	// Set up a heavily-skewed starting state: P0 has a large
-	// above-mean surplus. We model L_pid directly, keeping per-range
-	// series constant so the slicer has ranges to move.
-	var rates []rangeRate
-	for _, e := range initial.Entries {
-		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID})
-		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 10, partitionID: e.PartitionID})
-		}
-	}
-
-	partL := map[int32]int64{
-		0: 2000, // above mean: 2000 vs mean 1050
-		1: 100,
-	}
-	// meanL = 1050; movable(0) initially = 2000 - 1050 = 950.
-
-	cfg := seriesCfg(0.5)
-	cfg.CompactionInterval = 2 * time.Hour
-	r := &Rebalancer{
-		cfg:           cfg,
-		moveCooldowns: make(map[assignment.HashRange]time.Time),
-		recentMoves:   make(map[int32][]moveRecord),
-	}
-
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	// Round 1: run slicer, record moves into r.recentMoves.
-	result1, actions1 := r.runSlicer(initial, rates, partL, r.recentMoves, partitions, now)
-	require.NoError(t, result1.Validate())
-	r.recordRecentMoves(now, actions1, buildLoadMap(rates))
-
-	var round1Moved int64
-	for _, a := range actions1 {
-		if a.Kind == ActionMove && a.FromPart == 0 {
-			round1Moved += a.Series
-		}
-	}
-	require.Greater(t, round1Moved, int64(0), "round 1 must move something off P0")
-	// The per-source budget should cap total series moved off P0 at
-	// movable(0) = 950. Some slack for float/int rounding and the
-	// stride of available range sizes.
-	assert.LessOrEqual(t, round1Moved, int64(950),
-		"round 1 must not exceed initial movable(P0) budget of ~950 series")
-
-	// Round 2 inside the CompactionInterval: L_pid hasn't dropped on
-	// P0 because the moved series are still uncompacted. recentMoves
-	// carries 950 from round 1, so movable(0) ~= 2000 - 1050 - 950 = 0.
-	// The slicer must not move anything more off P0.
-	now2 := now.Add(5 * time.Minute)
-	r.pruneRecentMoves(now2)
-	_, actions2 := r.runSlicer(result1, rates, partL, r.recentMoves, partitions, now2)
-
-	var round2Moved int64
-	for _, a := range actions2 {
-		if a.Kind == ActionMove && a.FromPart == 0 {
-			round2Moved += a.Series
-		}
-	}
-	assert.Equalf(t, int64(0), round2Moved,
-		"round 2 inside compaction window must not drain further; got %d", round2Moved)
-}
-
-// TestRunSlicer_BudgetResetsAfterCompactionInterval verifies that once
-// a move record ages past CompactionInterval, it no longer counts
-// against the source's movable budget (the moved series have
-// compacted away by assumption).
-func TestRunSlicer_BudgetResetsAfterCompactionInterval(t *testing.T) {
-	partitions := []int32{0, 1}
-	initial := assignment.FineEvenSplit(partitions, 16)
-
-	var rates []rangeRate
-	for _, e := range initial.Entries {
-		if e.PartitionID == 0 {
-			rates = append(rates, rangeRate{hr: e.Range, series: 100, partitionID: e.PartitionID})
-		} else {
-			rates = append(rates, rangeRate{hr: e.Range, series: 10, partitionID: e.PartitionID})
-		}
-	}
-
-	partL := map[int32]int64{0: 2000, 1: 100}
-
-	cfg := seriesCfg(0.5)
-	cfg.CompactionInterval = time.Hour
-	r := &Rebalancer{
-		cfg:           cfg,
-		moveCooldowns: make(map[assignment.HashRange]time.Time),
-		recentMoves:   make(map[int32][]moveRecord),
-	}
-
-	// Seed recentMoves with an old record from a previous window.
-	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	r.recentMoves[0] = []moveRecord{
-		{hr: assignment.HashRange{Lo: 0, Hi: 999}, series: 900, at: old},
-	}
-
-	// Advance past the window. pruneRecentMoves should drop the old
-	// record, restoring the full movable budget.
-	fresh := old.Add(2 * time.Hour)
-	r.pruneRecentMoves(fresh)
-	assert.Empty(t, r.recentMoves[0], "old records past CompactionInterval should prune")
-
-	_, actions := r.runSlicer(initial, rates, partL, r.recentMoves, partitions, fresh)
-	var moved int64
-	for _, a := range actions {
-		if a.Kind == ActionMove && a.FromPart == 0 {
-			moved += a.Series
-		}
-	}
-	assert.Greater(t, moved, int64(0),
-		"after CompactionInterval elapsed, source should be free to move again")
 }
 
 // TestRunSlicer_PlannedAdditionsPreventDestinationStuffing verifies the
@@ -1440,10 +1390,14 @@ func TestRunSlicer_PlannedAdditionsPreventDestinationStuffing(t *testing.T) {
 	r := &Rebalancer{
 		cfg:           cfg,
 		moveCooldowns: make(map[assignment.HashRange]time.Time),
-		recentMoves:   make(map[int32][]moveRecord),
 	}
 
-	_, actions := r.runSlicer(initial, rates, partL, r.recentMoves, partitions, time.Time{})
+	rates = withSampleRateFromSeries(rates)
+	// partL is left in the fixture for narrative clarity but is no
+	// longer passed to the slicer — Phase 3 reads sampleRate via
+	// rates. We still validate it as a sanity check.
+	_ = partL
+	_, actions := r.runSlicer(initial, rates, nil, partitions, time.Time{})
 
 	destCounts := make(map[int32]int)
 	for _, a := range actions {
@@ -1460,8 +1414,8 @@ func TestRunSlicer_PlannedAdditionsPreventDestinationStuffing(t *testing.T) {
 
 // TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds verifies that
 // within-round plannedAdded state does NOT carry across rounds. In
-// round 2 the slicer should see fresh L_pid values (the test re-
-// submits the same partitionL) and be free to target the same cold
+// round 2 the slicer should see fresh load values (the test re-
+// submits the same rates) and be free to target the same cold
 // destinations again — no "this partition received moves last round"
 // penalty.
 func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
@@ -1476,32 +1430,25 @@ func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
 			rates = append(rates, rangeRate{hr: e.Range, series: 1, partitionID: e.PartitionID})
 		}
 	}
+	rates = withSampleRateFromSeries(rates)
 
-	partL := map[int32]int64{0: 2000, 1: 100}
 	cfg := seriesCfg(0.5)
-	// Long compaction interval so recentMoves state doesn't
-	// interfere with observing destination selection freedom.
-	cfg.CompactionInterval = 2 * time.Hour
 	r := &Rebalancer{
 		cfg:           cfg,
 		moveCooldowns: make(map[assignment.HashRange]time.Time),
-		recentMoves:   make(map[int32][]moveRecord),
 	}
 
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	result1, actions1 := r.runSlicer(initial, rates, partL, r.recentMoves, partitions, now)
-	r.recordRecentMoves(now, actions1, buildLoadMap(rates))
+	result1, _ := r.runSlicer(initial, rates, nil, partitions, now)
 
-	// Round 2: we give the slicer a fresh partitionL where P1 is
-	// back to being cold (pretend distributors haven't re-aimed at
-	// it yet, or that a re-measurement showed it absorbed the moves
-	// and then compacted). P0 is still the hottest but with the
-	// budget now smaller due to recentMoves. The slicer must be
-	// willing to target P1 again as the (still-only) cold destination
-	// for whatever budget remains.
+	// Round 2: pretend distributors haven't re-aimed at P1 yet — the
+	// rates fixture is unchanged so P0 is still hotter. The slicer
+	// must be willing to target P1 again as the (still-only) cold
+	// destination; there is no cross-round destination penalty in
+	// the new design (and never was anything that survived the round
+	// once recentMoves was removed).
 	now2 := now.Add(time.Minute)
-	r.pruneRecentMoves(now2)
-	_, actions2 := r.runSlicer(result1, rates, partL, r.recentMoves, partitions, now2)
+	_, actions2 := r.runSlicer(result1, rates, nil, partitions, now2)
 
 	// If any move happens in round 2, its destination must be P1
 	// (no prohibition from round 1's plannedAdded).
@@ -1527,45 +1474,6 @@ func TestFineEvenSplit(t *testing.T) {
 	for _, pid := range partitions {
 		assert.Equal(t, 4, counts[pid])
 	}
-}
-
-// TestPruneRecentMoves_DropsOldRecords verifies the pruning logic used
-// between rounds: records at or older than the cutoff are dropped.
-func TestPruneRecentMoves_DropsOldRecords(t *testing.T) {
-	cfg := seriesCfg(0.5)
-	cfg.CompactionInterval = time.Hour
-	r := &Rebalancer{cfg: cfg, recentMoves: make(map[int32][]moveRecord)}
-
-	now := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
-	r.recentMoves[0] = []moveRecord{
-		{hr: assignment.HashRange{Lo: 0, Hi: 1}, series: 100, at: now.Add(-2 * time.Hour)},
-		{hr: assignment.HashRange{Lo: 2, Hi: 3}, series: 200, at: now.Add(-30 * time.Minute)},
-	}
-	r.recentMoves[1] = []moveRecord{
-		{hr: assignment.HashRange{Lo: 4, Hi: 5}, series: 50, at: now.Add(-90 * time.Minute)},
-	}
-
-	r.pruneRecentMoves(now)
-
-	require.Len(t, r.recentMoves[0], 1)
-	assert.Equal(t, int64(200), r.recentMoves[0][0].series)
-	_, hasP1 := r.recentMoves[1]
-	assert.False(t, hasP1, "P1's only record was past the cutoff; entry should be deleted")
-}
-
-// TestPruneRecentMoves_DisabledClearsAll verifies that disabling the
-// window (CompactionInterval=0) clears any accumulated records, so a
-// later re-enable doesn't silently gate moves against stale state.
-func TestPruneRecentMoves_DisabledClearsAll(t *testing.T) {
-	cfg := seriesCfg(0.5)
-	cfg.CompactionInterval = 0
-	r := &Rebalancer{cfg: cfg, recentMoves: make(map[int32][]moveRecord)}
-	r.recentMoves[0] = []moveRecord{
-		{hr: assignment.HashRange{Lo: 0, Hi: 1}, series: 100, at: time.Now()},
-	}
-
-	r.pruneRecentMoves(time.Now())
-	assert.Empty(t, r.recentMoves)
 }
 
 // TestStitchReportedEntries_FullCoverageNoGaps verifies the easy case:

@@ -28,9 +28,8 @@ const (
 
 // Action records a single slicer operation from a rebalance round.
 // Series is populated for ActionMove and records the per-range head
-// series count moved off the source; it's both informational (for the
-// admin UI) and load-bearing (recordRecentMoves uses it to accumulate
-// each source's outstanding CompactionInterval budget).
+// series count moved off the source. It is purely informational —
+// the slicer's algorithm runs on sample rate, not series.
 type Action struct {
 	Kind     ActionKind           `json:"kind"`
 	Range    assignment.HashRange `json:"range"`
@@ -78,7 +77,6 @@ type adminState struct {
 	lastStats         map[partitionRangeKey]rangeStatsView
 	lastPartitionL    map[int32]int64
 	lastPartitionRate map[int32]float64
-	lastMovable       map[int32]int64
 
 	// lastReadcacheRound is the most recent readcache slicer round's
 	// output. Empty before the first round, or when the readcache
@@ -184,18 +182,16 @@ func (s *adminState) addTrace(tr Trace) {
 	}
 }
 
-// setLastStats snapshots the current loadMap, partition L map, and
-// derived movable budgets into the admin state. The movable budget
-// rendered here intentionally mirrors what Phase 3 would compute
-// from partitionLByPID (head series count) — even though Phase 3
-// itself now balances on sample rate. The admin page still wants
-// the cardinality-based view for cluster-state debugging; a future
-// patch will surface a parallel sample-rate panel.
+// setLastStats snapshots the current loadMap, the per-partition
+// head-series count (kept for observability), and the per-partition
+// samples-per-second EWMA (the slicer's primary load signal) into
+// the admin state. With cross-round movable-budget bookkeeping
+// removed alongside CompactionInterval, both signals are pure
+// passthrough of the round's reporters.
 func (s *adminState) setLastStats(
 	lm *loadMap,
 	partitionLByPID map[int32]int64,
 	partitionRateByPID map[int32]float64,
-	recentMoves map[int32][]moveRecord,
 	activePartitions []int32,
 ) {
 	stats := make(map[partitionRangeKey]rangeStatsView, len(lm.series))
@@ -203,31 +199,11 @@ func (s *adminState) setLastStats(
 		stats[k] = rangeStatsView{Series: n}
 	}
 
-	var totalL int64
-	for _, pid := range activePartitions {
-		totalL += partitionLByPID[pid]
-	}
-	var meanL int64
-	if len(activePartitions) > 0 {
-		meanL = totalL / int64(len(activePartitions))
-	}
-
 	partitionLCopy := make(map[int32]int64, len(partitionLByPID))
 	partitionRateCopy := make(map[int32]float64, len(partitionRateByPID))
-	movable := make(map[int32]int64, len(partitionLByPID))
 	for _, pid := range activePartitions {
-		l := partitionLByPID[pid]
-		partitionLCopy[pid] = l
+		partitionLCopy[pid] = partitionLByPID[pid]
 		partitionRateCopy[pid] = partitionRateByPID[pid]
-		var sumRecent int64
-		for _, m := range recentMoves[pid] {
-			sumRecent += m.series
-		}
-		above := l - meanL - sumRecent
-		if above < 0 {
-			above = 0
-		}
-		movable[pid] = above
 	}
 
 	s.mu.Lock()
@@ -235,7 +211,6 @@ func (s *adminState) setLastStats(
 	s.lastStats = stats
 	s.lastPartitionL = partitionLCopy
 	s.lastPartitionRate = partitionRateCopy
-	s.lastMovable = movable
 }
 
 // snapshot returns the current admin state for rendering. Returns
@@ -259,7 +234,7 @@ func (s *adminState) snapshotReadcacheRound() (readcacheRoundView, bool) {
 	return view, true
 }
 
-func (s *adminState) snapshot() ([]RoundLog, map[partitionRangeKey]rangeStatsView, map[int32]int64, map[int32]float64, map[int32]int64) {
+func (s *adminState) snapshot() ([]RoundLog, map[partitionRangeKey]rangeStatsView, map[int32]int64, map[int32]float64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -280,11 +255,7 @@ func (s *adminState) snapshot() ([]RoundLog, map[partitionRangeKey]rangeStatsVie
 	for k, v := range s.lastPartitionRate {
 		partitionRate[k] = v
 	}
-	movable := make(map[int32]int64, len(s.lastMovable))
-	for k, v := range s.lastMovable {
-		movable[k] = v
-	}
-	return rounds, stats, partitionL, partitionRate, movable
+	return rounds, stats, partitionL, partitionRate
 }
 
 // traceSnapshot returns a copy of all currently-buffered traces in
@@ -313,16 +284,15 @@ func (s *adminState) traceAt(displayIdx int) (Trace, bool) {
 
 // partitionView is the data for one partition row in the admin page.
 type partitionView struct {
-	PartitionID   int32
-	InstanceID    string
-	InstanceAddr  string
-	MemorySeries  int64   // L_pid, matches cortex_ingester_memory_series (max over owners)
-	SampleRate    float64 // sum of per-range samples-per-second EWMA on this partition
-	MovableSeries int64   // max(0, L_pid - meanL) - sumRecentMoves(pid)
-	OwnedSeries   int64   // Σ per-range series on this partition (from lm.series)
-	HashSpacePct  float64
-	NumRanges     int
-	Ranges        []rangeView
+	PartitionID  int32
+	InstanceID   string
+	InstanceAddr string
+	MemorySeries int64   // L_pid, matches cortex_ingester_memory_series (max over owners)
+	SampleRate   float64 // sum of per-range samples-per-second EWMA on this partition
+	OwnedSeries  int64   // Σ per-range series on this partition (from lm.series)
+	HashSpacePct float64
+	NumRanges    int
+	Ranges       []rangeView
 }
 
 // rangeView is the data for one hash range in the admin page.
@@ -358,17 +328,16 @@ type adminPageData struct {
 	// values are surfaced separately so the UI can label units
 	// (samples/s) and apply human-readable formatting. Zero when
 	// no rate signal has been reported yet.
-	MeanRate           float64
-	MaxRate            float64
-	MinRate            float64
-	RateImbalance      float64
-	NumPartitions      int
-	NumEntries         int
-	MovedFraction      float64
-	CompactionInterval time.Duration
-	Partitions         []partitionView
-	Rounds             []RoundLog
-	HeatmapData        string
+	MeanRate      float64
+	MaxRate       float64
+	MinRate       float64
+	RateImbalance float64
+	NumPartitions int
+	NumEntries    int
+	MovedFraction float64
+	Partitions    []partitionView
+	Rounds        []RoundLog
+	HeatmapData   string
 
 	ReadcacheConfigured bool
 	ReadcacheReplicas   []readcacheReplicaView
@@ -382,12 +351,11 @@ type adminPageData struct {
 }
 
 func (r *Rebalancer) buildAdminPageData() adminPageData {
-	rounds, lastStats, lastPartitionL, lastPartitionRate, lastMovable := r.admin.snapshot()
+	rounds, lastStats, lastPartitionL, lastPartitionRate := r.admin.snapshot()
 	current := r.store.latestActiveAssignment(time.Now())
 
 	data := adminPageData{
-		GeneratedAt:        time.Now().UTC().Format(time.RFC3339),
-		CompactionInterval: r.cfg.CompactionInterval,
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
 	// Populate the readcache-side fields up front so the
@@ -480,7 +448,6 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		}
 		pv.MemorySeries = lastPartitionL[pid]
 		pv.SampleRate = lastPartitionRate[pid]
-		pv.MovableSeries = lastMovable[pid]
 		totalMemorySeries += pv.MemorySeries
 		if pv.MemorySeries > maxL {
 			maxL = pv.MemorySeries

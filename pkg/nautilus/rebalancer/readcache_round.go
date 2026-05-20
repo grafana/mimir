@@ -26,25 +26,32 @@ import (
 //  1. Reads the current (partition -> instance) mapping from
 //     readcacheStore.
 //  2. Builds the per-partition load vector as
-//     alpha*active_series + beta*samples_ewma.
+//     alpha*samples_ewma + beta*query_samples_ewma.
 //  3. Calls planReadcacheAssignment to produce the next mapping.
 //  4. Records the moves into the cooldown map.
 //  5. Applies the plan to readcacheStore (which broadcasts to
 //     subscribers and persists the new state if a data-dir is
 //     configured).
+//
+// partitionRateByPID is the per-partition write-rate EWMA — the
+// same signal the first-tier slicer balances hash ranges on. Using
+// rate (rather than head-series count, which lags by the TSDB head
+// compaction interval) means a partition's reported load drops as
+// soon as its writes are routed elsewhere, so the second-tier
+// slicer can react in the same round as a first-tier reassignment.
 func (r *Rebalancer) runReadcacheSlicer(
 	now time.Time,
 	activePartitions []int32,
-	partitionLByPID map[int32]int64,
+	partitionRateByPID map[int32]float64,
 	partitionQuerySamples map[int32]float64,
 	activeInstances []string,
 ) {
 	cfg := r.cfg.ReadcacheSlicer
 
-	// Build the load function: alpha * active_series + beta * EWMA.
+	// Build the load function: alpha * write rate + beta * query rate.
 	loadByPartition := make(map[int32]float64, len(activePartitions))
 	for _, pid := range activePartitions {
-		loadByPartition[pid] = cfg.Alpha*float64(partitionLByPID[pid]) + cfg.Beta*partitionQuerySamples[pid]
+		loadByPartition[pid] = cfg.Alpha*partitionRateByPID[pid] + cfg.Beta*partitionQuerySamples[pid]
 	}
 
 	// Build the current owner map from the live readcache log.

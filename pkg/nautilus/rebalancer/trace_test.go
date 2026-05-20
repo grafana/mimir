@@ -54,7 +54,7 @@ func TestTrace_QueryLoadFields_JSONRoundTrip(t *testing.T) {
 		// bucket.
 		PartitionQuerySamples: map[int32]float64{0: 11.5, 1: 222.0, 2: 33.333},
 		UnnamedQuerySamples:   map[string]float64{"ingester-zone-a-0": 100.0, "ingester-zone-a-1": 0.0},
-		Config:                ConfigSnapshot{MovementBudget: 0.5, MoveCooldown: 90 * time.Second, CompactionInterval: 2 * time.Hour},
+		Config:                ConfigSnapshot{MovementBudget: 0.5, MoveCooldown: 90 * time.Second},
 	}
 
 	buf, err := json.Marshal(tr)
@@ -71,8 +71,8 @@ func TestTrace_QueryLoadFields_JSONRoundTrip(t *testing.T) {
 
 // captureTrace builds a Trace as if rebalance() had just run with
 // the given inputs. Mirrors the production capture path so tests
-// exercise the same conversions (ratesToWire, cooldownsToWire,
-// recentMovesToWire) used in production.
+// exercise the same conversions (ratesToWire, cooldownsToWire) used
+// in production.
 func captureTrace(
 	t *testing.T,
 	r *Rebalancer,
@@ -85,8 +85,8 @@ func captureTrace(
 	t.Helper()
 	startEntries := append([]assignment.Entry(nil), current.Entries...)
 	cooldownsSnapshot := cooldownsToWire(r.moveCooldowns)
-	recentMovesSnapshot := recentMovesToWire(r.recentMoves)
-	end, actions := r.runSlicer(current, rates, partitionLByPID, r.recentMoves, activePartitions, now)
+	partitionRateByPID := partitionLoadFromRates(rates, activePartitions)
+	end, actions := r.runSlicer(current, rates, partitionRateByPID, activePartitions, now)
 	require.NoError(t, end.Validate())
 	return Trace{
 		SlicerVersion: SlicerVersion,
@@ -98,13 +98,11 @@ func captureTrace(
 		Start:            startEntries,
 		Rates:            ratesToWire(rates),
 		PartitionL:       partitionLByPID,
-		RecentMoves:      recentMovesSnapshot,
 		ActivePartitions: append([]int32(nil), activePartitions...),
 		Cooldowns:        cooldownsSnapshot,
 		Config: ConfigSnapshot{
-			MovementBudget:     r.cfg.MovementBudget,
-			MoveCooldown:       r.cfg.MoveCooldown,
-			CompactionInterval: r.cfg.CompactionInterval,
+			MovementBudget: r.cfg.MovementBudget,
+			MoveCooldown:   r.cfg.MoveCooldown,
 		},
 		End: append([]assignment.Entry(nil), end.Entries...),
 	}
@@ -113,8 +111,7 @@ func captureTrace(
 // nonTrivialTrace constructs a captured trace from a scenario that
 // exercises every Phase of runSlicer: skewed per-range load, an
 // above-average partition that the slicer must drain, multiple
-// partitions, pre-seeded cooldowns and recentMoves for serialization
-// coverage.
+// partitions, and pre-seeded cooldowns for serialization coverage.
 func nonTrivialTrace(t *testing.T) Trace {
 	t.Helper()
 	partitions := []int32{0, 1, 2, 3}
@@ -133,6 +130,7 @@ func nonTrivialTrace(t *testing.T) Trace {
 			rates = append(rates, rangeRate{hr: e.Range, series: 10, partitionID: e.PartitionID})
 		}
 	}
+	rates = withSampleRateFromSeries(rates)
 
 	// PartitionL skewed to match: P1 hottest, P0 elevated, P2/P3 cold.
 	partL := map[int32]int64{
@@ -143,22 +141,15 @@ func nonTrivialTrace(t *testing.T) Trace {
 	}
 
 	cfg := Config{
-		MovementBudget:     0.5,
-		MoveCooldown:       90 * time.Second,
-		CompactionInterval: 2 * time.Hour,
+		MovementBudget: 0.5,
+		MoveCooldown:   90 * time.Second,
 	}
 	r := &Rebalancer{
 		cfg:           cfg,
 		moveCooldowns: make(map[assignment.HashRange]time.Time),
-		recentMoves:   make(map[int32][]moveRecord),
 	}
 	// Pre-seed a cooldown so cooldown serialization is also exercised.
 	r.moveCooldowns[initial.Entries[0].Range] = time.Unix(2_000_000, 0)
-	// Pre-seed a recent move off P1 so recentMoves serialization is
-	// exercised and so a nonzero sumRecentMoves is in play.
-	r.recentMoves[1] = []moveRecord{
-		{hr: initial.Entries[10].Range, series: 500, at: time.Unix(999_000, 0)},
-	}
 
 	now := time.Unix(1_000_000, 0)
 	return captureTrace(t, r, initial, rates, partL, partitions, now)

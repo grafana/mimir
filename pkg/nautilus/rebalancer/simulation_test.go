@@ -134,7 +134,7 @@ func newSimulation(numPartitions int, cfg Config) *simulation {
 	return &simulation{
 		partitions: partitions,
 		ingesters:  ingesters,
-		rebalancer: &Rebalancer{cfg: cfg, recentMoves: make(map[int32][]moveRecord)},
+		rebalancer: &Rebalancer{cfg: cfg},
 		assignment: assignment.FineEvenSplit(partitions, initialSlicesPerPartition),
 	}
 }
@@ -174,28 +174,13 @@ func (s *simulation) collectRates() []rangeRate {
 	return all
 }
 
-// partitionLFromIngesters returns the simulated partitionLByPID the
-// rebalancer would compute in production: per-partition L, max over
-// owners. Since the simulation has a single owner per partition, this
-// is just each ingester's totalSeries.
-func (s *simulation) partitionLFromIngesters() map[int32]int64 {
-	out := make(map[int32]int64, len(s.ingesters))
-	for pid, ing := range s.ingesters {
-		out[pid] = ing.totalSeries()
-	}
-	return out
-}
-
 func (s *simulation) rebalance() {
 	rates := s.collectRates()
 	now := time.Now()
 	s.rebalancer.pruneExpiredCooldowns(now)
-	s.rebalancer.pruneRecentMoves(now)
-	partL := s.partitionLFromIngesters()
 	var actions []Action
-	s.assignment, actions = s.rebalancer.runSlicer(s.assignment, rates, partL, s.rebalancer.recentMoves, s.partitions, now)
+	s.assignment, actions = s.rebalancer.runSlicer(s.assignment, rates, nil, s.partitions, now)
 	s.rebalancer.recordMoveCooldowns(now, actions)
-	s.rebalancer.recordRecentMoves(now, actions, buildLoadMap(rates))
 	s.pushRangesToIngesters()
 }
 
@@ -246,17 +231,12 @@ func logRound(t *testing.T, round int, s *simulation) {
 		round, strings.Join(parts, " "), total, avg, imbalance, len(s.assignment.Entries))
 }
 
-// simCfg returns a Config suited for the simulation: series-only load
-// model with the movable-budget guard disabled. The simulation's
-// ingesters update their reported L immediately when ranges move
-// (no TSDB head compaction lag), so the recentMoves accounting —
-// which exists specifically to compensate for that lag in production
-// — would over-constrain the simulation and prevent convergence.
-// MovementBudget and MoveCooldown remain as churn guards.
+// simCfg returns a Config suited for the simulation: the rebalancer
+// runs the same way it does in production, with MovementBudget /
+// MoveCooldown as the only churn guards.
 func simCfg(movementBudget float64) Config {
 	return Config{
-		MovementBudget:     movementBudget,
-		CompactionInterval: 0,
+		MovementBudget: movementBudget,
 	}
 }
 

@@ -76,7 +76,7 @@ details>summary::-webkit-details-marker{display:none}
 		<div class="stat-label">Head Series</div>
 		<div class="stat-value">{{fmtSeries .TotalMemorySeries}}</div>
 	</div>
-	<div class="stat" title="Σ max(0, L_pid - meanL). Instantaneous imbalance across partitions before the recent-moves budget discount. The slicer's per-source movable budget equals this partition's contribution minus outstanding recentMoves series.">
+	<div class="stat" title="Σ max(0, L_pid - meanL). Cardinality-only summary of imbalance across partitions; the slicer balances on rate, not series.">
 		<div class="stat-label">Above Average</div>
 		<div class="stat-value{{if gt .AboveAverage 0}} warn{{end}}">{{fmtSeries .AboveAverage}}</div>
 	</div>
@@ -120,10 +120,6 @@ details>summary::-webkit-details-marker{display:none}
 		<div class="stat-label">Last Moved</div>
 		<div class="stat-value">{{fmtPct1 .MovedFraction}}</div>
 	</div>
-	<div class="stat" title="Window over which moves off a source partition count against its movable budget. Matches the ingester's TSDB head compaction interval; L on a source does not drop until compaction.">
-		<div class="stat-label">Compaction Window</div>
-		<div class="stat-value" style="font-size:13px">{{.CompactionInterval}}</div>
-	</div>
 </div>
 
 <div class="heatmap-container">
@@ -147,9 +143,8 @@ details>summary::-webkit-details-marker{display:none}
 		<span class="part-id">P{{.PartitionID}}</span>
 		<span class="part-instance" title="{{.InstanceAddr}}">{{.InstanceID}}</span>
 		<span class="part-stats">
-			<span title="L_pid: max-over-owners of TotalActiveSeries, matches cortex_ingester_memory_series. The legacy load signal — kept for observability; the slicer now balances on rate (next field).">{{fmtSeries .MemorySeries}} L</span>
+			<span title="L_pid: max-over-owners of TotalActiveSeries, matches cortex_ingester_memory_series. The legacy load signal — kept for observability; the slicer balances on rate (next field).">{{fmtSeries .MemorySeries}} L</span>
 			<span title="Samples-per-second EWMA summed across the hash ranges currently on this partition. This is what the slicer balances on (Pass 3 in runSlicer).">{{fmtRate .SampleRate}}/s</span>
-			<span title="Per-round movable budget: max(0, L_pid - meanL) - Σ recentMoves[pid].series. Source-side only; decreases as the slicer books moves during the CompactionInterval window.">{{fmtSeries .MovableSeries}} movable</span>
 			<span title="Σ per-range series for ranges this partition currently owns. Should roughly match L; a gap indicates series still in the head from previously-owned ranges not yet compacted away.">{{fmtSeries .OwnedSeries}} owned</span>
 			<span>{{.NumRanges}} ranges</span>
 			<span>{{fmtPct .HashSpacePct}} hash</span>
