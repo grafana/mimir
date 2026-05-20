@@ -262,13 +262,13 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	// MergeResponse takes ownership of them. Any error that fires in between —
 	// storeDownstreamResponses consistency-check failures, cache-extent
 	// marshalling or merge errors, etc. — would leak each Response's resources.
-	var ownedExecResps []requestResponse
-	closeOwnedExecResps := false
+	var execResps []requestResponse
+	closeExecResps := false
 	defer func() {
-		if !closeOwnedExecResps {
+		if !closeExecResps {
 			return
 		}
-		for _, rr := range ownedExecResps {
+		for _, rr := range execResps {
 			if rr.Response != nil {
 				rr.Response.Close()
 			}
@@ -276,14 +276,14 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	}()
 
 	if len(execReqs) > 0 {
-		ownedExecResps, err = doRequests(ctx, s.next, memoryTracker, execReqs)
+		execResps, err = doRequests(ctx, s.next, memoryTracker, execReqs)
 		if err != nil {
 			return nil, err
 		}
-		closeOwnedExecResps = true
+		closeExecResps = true
 
 		// Store the downstream responses in our internal data structure.
-		if err := splitReqs.storeDownstreamResponses(ownedExecResps); err != nil {
+		if err := splitReqs.storeDownstreamResponses(execResps); err != nil {
 			return nil, err
 		}
 
@@ -359,7 +359,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	// MergeResponse takes ownership of every input Response (closing them on
 	// validation failure, or attaching their Close to the merged response's
 	// finalizer on success). Disarm our defer so we don't double-close.
-	closeOwnedExecResps = false
+	closeExecResps = false
 	return s.merger.MergeResponse(responses...)
 }
 
