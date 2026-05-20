@@ -33,9 +33,9 @@ import (
 )
 
 const (
-	notCachableReasonUnalignedTimeRange                   = "unaligned-time-range"
-	notCachableReasonTooNew                               = "too-new"
-	notCachableReasonModifiersNotCachable                 = "has-modifiers"
+	NotCachableReasonUnalignedTimeRange                   = "unaligned-time-range"
+	NotCachableReasonTooNew                               = "too-new"
+	NotCachableReasonModifiersNotCachable                 = "has-modifiers"
 	notCachableReasonModifiersNotCachableFailedParse      = "has-modifiers-failed-parse"
 	notCachableReasonModifiersNotCachableFailedPreprocess = "has-modifiers-failed-preprocess"
 )
@@ -46,35 +46,35 @@ var (
 	defaultMinCacheExtent = (5 * time.Minute).Milliseconds()
 )
 
-type splitAndCacheMiddlewareMetrics struct {
-	*resultsCacheMetrics
+type SplitAndCacheMetrics struct {
+	*ResultsCacheMetrics
 
-	splitQueriesCount              prometheus.Counter
-	queryResultCacheAttemptedCount prometheus.Counter
-	queryResultCacheSkippedCount   *prometheus.CounterVec
+	SplitQueriesCount              prometheus.Counter
+	QueryResultCacheAttemptedCount prometheus.Counter
+	QueryResultCacheSkippedCount   *prometheus.CounterVec
 }
 
-func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
-	m := &splitAndCacheMiddlewareMetrics{
-		resultsCacheMetrics: newResultsCacheMetrics("query_range", reg),
-		splitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+func NewSplitAndCacheMetrics(reg prometheus.Registerer) *SplitAndCacheMetrics {
+	m := &SplitAndCacheMetrics{
+		ResultsCacheMetrics: NewResultsCacheMetrics("query_range", reg),
+		SplitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_split_queries_total",
 			Help: "Total number of underlying query requests after the split by interval is applied.",
 		}),
-		queryResultCacheAttemptedCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		QueryResultCacheAttemptedCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_query_result_cache_attempted_total",
 			Help: "Total number of queries that were attempted to be fetched from cache.",
 		}),
-		queryResultCacheSkippedCount: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		QueryResultCacheSkippedCount: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_frontend_query_result_cache_skipped_total",
 			Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.",
 		}, []string{"reason"}),
 	}
 
 	// Initialize known label values.
-	for _, reason := range []string{notCachableReasonUnalignedTimeRange, notCachableReasonTooNew,
-		notCachableReasonModifiersNotCachable} {
-		m.queryResultCacheSkippedCount.WithLabelValues(reason)
+	for _, reason := range []string{NotCachableReasonUnalignedTimeRange, NotCachableReasonTooNew,
+		NotCachableReasonModifiersNotCachable} {
+		m.QueryResultCacheSkippedCount.WithLabelValues(reason)
 	}
 
 	return m
@@ -89,7 +89,7 @@ type splitAndCacheMiddleware struct {
 
 	merger  Merger
 	logger  log.Logger
-	metrics *splitAndCacheMiddlewareMetrics
+	metrics *SplitAndCacheMetrics
 
 	// Split by interval.
 	splitEnabled  bool
@@ -124,7 +124,7 @@ func newSplitAndCacheMiddleware(
 	logger log.Logger,
 	reg prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker) MetricsQueryMiddleware {
-	metrics := newSplitAndCacheMiddlewareMetrics(reg)
+	metrics := NewSplitAndCacheMetrics(reg)
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitAndCacheMiddleware{
@@ -177,7 +177,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	}
 	// Lookup the results cache.
 	if isCacheEnabled {
-		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
+		s.metrics.QueryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
 
 		// Build the cache keys for all requests to try to fetch from cache.
 		lookupReqs := make([]*splitRequest, 0, len(splitReqs))
@@ -188,7 +188,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
 				level.Debug(spanLog).Log("msg", "skipping response cache as query is not cacheable", "query", splitReq.orig.GetQuery(), "reason", reason, "tenants", tenant.JoinTenantIDs(tenantIDs))
 				splitReq.downstreamRequests = []MetricsQueryRequest{splitReq.orig}
-				s.metrics.queryResultCacheSkippedCount.WithLabelValues(reason).Inc()
+				s.metrics.QueryResultCacheSkippedCount.WithLabelValues(reason).Inc()
 				continue
 			}
 
@@ -352,7 +352,7 @@ func (s *splitAndCacheMiddleware) splitRequestByInterval(req MetricsQueryRequest
 		return nil, err
 	}
 
-	s.metrics.splitQueriesCount.Add(float64(len(splitReqs)))
+	s.metrics.SplitQueriesCount.Add(float64(len(splitReqs)))
 
 	// Wrap the split requests into our internal data structure.
 	out := make(splitRequests, 0, len(splitReqs))
@@ -388,9 +388,9 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 	}
 
 	// Lookup the cache.
-	s.metrics.cacheRequests.Add(float64(len(keys)))
+	s.metrics.CacheRequests.Add(float64(len(keys)))
 	founds := s.cache.GetMulti(ctx, hashedKeys)
-	s.metrics.cacheHits.Add(float64(len(founds)))
+	s.metrics.CacheHits.Add(float64(len(founds)))
 
 	// Decode all cached responses.
 	extents := make([][]Extent, len(keys))

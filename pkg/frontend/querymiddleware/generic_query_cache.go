@@ -40,12 +40,12 @@ type genericQueryCache struct {
 	cache     cache.Cache
 	tenantTTL tenantCacheTTL
 	cacheKey  keyingFunc
-	metrics   *resultsCacheMetrics
+	metrics   *ResultsCacheMetrics
 	next      http.RoundTripper
 	logger    log.Logger
 }
 
-func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
+func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *ResultsCacheMetrics) http.RoundTripper {
 	return &genericQueryCache{
 		cache:     cache,
 		tenantTTL: tenantTTL,
@@ -95,11 +95,11 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 
 	// Lookup the cache.
-	c.metrics.cacheRequests.Inc()
+	c.metrics.CacheRequests.Inc()
 	cacheKey, hashedCacheKey := generateGenericQueryRequestCacheKey(tenantIDs, queryReq)
 	res := c.fetchCachedResponse(ctx, cacheKey, hashedCacheKey)
 	if res != nil {
-		c.metrics.cacheHits.Inc()
+		c.metrics.CacheHits.Inc()
 		spanLog.DebugLog("msg", "response fetched from the cache")
 		return res, nil
 	}
