@@ -6,7 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,8 +13,7 @@ func TestInstantVectorRemoteExec_FinalizeCalledAfterClosed(t *testing.T) {
 	resp := &finalizationTestMockResponse{}
 
 	o := &InstantVectorRemoteExec{
-		Annotations: annotations.New(),
-		resp:        resp,
+		resp: resp,
 	}
 
 	o.Close()

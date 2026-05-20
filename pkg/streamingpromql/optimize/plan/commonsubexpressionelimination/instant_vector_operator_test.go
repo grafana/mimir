@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -822,7 +823,7 @@ func (o *failingInstantVectorOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (o *failingInstantVectorOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+func (o *failingInstantVectorOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not implemented")
 }
 
@@ -913,7 +914,7 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 }
 
 func requireStats(t *testing.T, o types.Operator, ctx context.Context, expectedProcessed int64, expectedRead int64) {
-	operatorStats, err := o.Stats(ctx)
+	operatorStats, _, err := o.Stats(ctx)
 	require.NoError(t, err)
 
 	require.False(t, operatorStats.HasSubsets(), "subsets should not be present in statistics returned by duplication consumer")

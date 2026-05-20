@@ -16,7 +16,6 @@ type ScalarRemoteExec struct {
 	Node               planning.Node
 	TimeRange          types.QueryTimeRange
 	GroupEvaluator     GroupEvaluator
-	Annotations        *annotations.Annotations
 	expressionPosition posrange.PositionRange
 
 	resp      ScalarRemoteExecutionResponse
@@ -55,14 +54,14 @@ func (s *ScalarRemoteExec) Finalize(ctx context.Context) error {
 
 	s.finalized = true
 
-	return finalize(ctx, s.resp, s.Annotations)
+	return finalize(ctx, s.resp)
 }
 
 func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
-func (s *ScalarRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (s *ScalarRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return s.resp.Stats(ctx)
 }
 

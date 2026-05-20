@@ -25,7 +25,7 @@ type FunctionOverRangeVector struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Func                     FunctionOverRangeVectorDefinition
 
-	Annotations *annotations.Annotations
+	Annotations annotations.Annotations
 
 	scalarArgsData []types.ScalarData
 
@@ -47,7 +47,6 @@ func NewFunctionOverRangeVector(
 	scalarArgs []types.ScalarOperator,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	f FunctionOverRangeVectorDefinition,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 	enableDelayedNameRemoval bool,
@@ -57,7 +56,6 @@ func NewFunctionOverRangeVector(
 		ScalarArgs:               scalarArgs,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Func:                     f,
-		Annotations:              annotations,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
 		enableDelayedNameRemoval: enableDelayedNameRemoval,
@@ -240,13 +238,21 @@ func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
 	return nil
 }
 
-func (m *FunctionOverRangeVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (m *FunctionOverRangeVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	ops := make([]types.Operator, 1+len(m.ScalarArgs))
 	ops[0] = m.Inner
 	for i, sa := range m.ScalarArgs {
 		ops[1+i] = sa
 	}
-	return types.CombineStats(ctx, ops...)
+
+	stats, childAnnos, err := types.CombineStatsAndAnnotations(ctx, ops...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	m.Annotations.Merge(childAnnos)
+
+	return stats, m.Annotations, nil
 }
 
 func (m *FunctionOverRangeVector) Close() {

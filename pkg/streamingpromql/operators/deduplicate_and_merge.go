@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -160,7 +161,7 @@ func (d *DeduplicateAndMerge) Finalize(ctx context.Context) error {
 	return d.Inner.Finalize(ctx)
 }
 
-func (d *DeduplicateAndMerge) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (d *DeduplicateAndMerge) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return d.Inner.Stats(ctx)
 }
 

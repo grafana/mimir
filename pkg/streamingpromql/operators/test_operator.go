@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -123,7 +124,7 @@ func (t *TestOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (t *TestOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+func (t *TestOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not implemented")
 }
 
@@ -279,7 +280,7 @@ func (t *TestRangeOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (t *TestRangeOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+func (t *TestRangeOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not implemented")
 }
 

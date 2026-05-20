@@ -31,7 +31,8 @@ type MultiAggregatorGroupEvaluator struct {
 	prepareCalled              bool
 	afterPrepareCalled         bool
 
-	cachedStats *types.OperatorEvaluationStats
+	cachedStats       *types.OperatorEvaluationStats
+	cachedAnnotations annotations.Annotations
 }
 
 func NewMultiAggregatorGroupEvaluator(
@@ -142,35 +143,39 @@ func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context) error {
 	return m.inner.Finalize(ctx)
 }
 
-func (m *MultiAggregatorGroupEvaluator) Stats(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, error) {
+func (m *MultiAggregatorGroupEvaluator) Stats(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	if !m.allInstancesFinalized() {
-		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats when one or more instances are not finalized")
+		return nil, nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats when one or more instances are not finalized")
 	}
 
 	if instance.hasReadStats {
-		return nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats twice for the same instance")
+		return nil, nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats twice for the same instance")
 	}
 
 	if m.cachedStats == nil {
 		var err error
-		m.cachedStats, err = m.inner.Stats(ctx)
+		m.cachedStats, m.cachedAnnotations, err = m.inner.Stats(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	instance.hasReadStats = true
 	stats := m.cachedStats
+	annos := m.cachedAnnotations
 
 	if m.allInstancesHaveReadStats() {
-		// Last call: return stats without cloning, and clear reference to existing stats.
+		// Last call: return stats without cloning, and clear references to existing stats and annotations.
 		m.cachedStats = nil
+		m.cachedAnnotations = nil
 	} else {
 		var err error
 		stats, err = stats.Clone() // FIXME: this is wasteful, we could just clone the subset needed
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+
+		annos = types.CloneAnnotations(annos)
 	}
 
 	if len(instance.filters) > 0 {
@@ -183,7 +188,8 @@ func (m *MultiAggregatorGroupEvaluator) Stats(ctx context.Context, instance *Mul
 			stats.Close()
 
 			level.Warn(m.logger).Log("msg", "MultiAggregatorGroupEvaluator expected subset statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
-			return types.NewOperatorEvaluationStats(ctx, m.timeRange, m.memoryConsumptionTracker, 0)
+			emptyStats, err := types.NewOperatorEvaluationStats(ctx, m.timeRange, m.memoryConsumptionTracker, 0)
+			return emptyStats, annos, err
 		}
 
 		stats.UseSubset(instance.subsetIndex)
@@ -191,7 +197,7 @@ func (m *MultiAggregatorGroupEvaluator) Stats(ctx context.Context, instance *Mul
 		stats.RemoveAllSubsets()
 	}
 
-	return stats, nil
+	return stats, annos, nil
 }
 
 func (m *MultiAggregatorGroupEvaluator) allInstancesFinalized() bool {
@@ -258,12 +264,11 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	filters []*labels.Matcher,
 	subsetIndex int,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
 ) error {
 	var err error
-	m.aggregator, err = aggregations.NewAggregator(op, grouping, without, memoryConsumptionTracker, annotations, timeRange, m.group.inner.ExpressionPosition())
+	m.aggregator, err = aggregations.NewAggregator(op, grouping, without, memoryConsumptionTracker, timeRange, m.group.inner.ExpressionPosition())
 	if err != nil {
 		return err
 	}
@@ -366,8 +371,7 @@ func (m *MultiAggregatorInstanceOperator) NextSeries(ctx context.Context) (types
 }
 
 func (m *MultiAggregatorInstanceOperator) needToConsumeSeries(unfilteredSeriesIndex int) bool {
-	if m.aggregator == nil {
-		// Closed.
+	if m.finalized {
 		return false
 	}
 
@@ -383,10 +387,7 @@ func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
 		return nil
 	}
 
-	if m.aggregator != nil {
-		m.aggregator.Finalize()
-		m.aggregator = nil
-	}
+	m.aggregator.Finalize()
 
 	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
@@ -395,8 +396,15 @@ func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
 	return m.group.Finalize(ctx)
 }
 
-func (m *MultiAggregatorInstanceOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return m.group.Stats(ctx, m)
+func (m *MultiAggregatorInstanceOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := m.group.Stats(ctx, m)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	m.aggregator.Annotations.Merge(childAnnos)
+
+	return stats, m.aggregator.Annotations, nil
 }
 
 func (m *MultiAggregatorInstanceOperator) Close() {

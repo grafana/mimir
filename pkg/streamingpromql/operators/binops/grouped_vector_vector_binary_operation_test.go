@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -312,7 +311,6 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 				testCase.op,
 				testCase.returnBool,
 				memoryConsumptionTracker,
-				nil,
 				posrange.PositionRange{},
 				types.QueryTimeRange{},
 				nil,
@@ -478,7 +476,7 @@ func TestGroupedVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossi
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Card: parser.CardOneToMany}
-			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			outputSeries, err := o.SeriesMetadata(ctx, nil)
@@ -664,7 +662,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Include: []string{"env"}, Card: parser.CardManyToOne}
-			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			outputSeries, err := o.SeriesMetadata(ctx, nil)
@@ -862,7 +860,6 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 				parser.ADD,
 				false,
 				memoryConsumptionTracker,
-				nil,
 				posrange.PositionRange{},
 				types.QueryTimeRange{},
 				testCase.hints,
@@ -1104,7 +1101,6 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 				parser.ADD,
 				false,
 				memoryConsumptionTracker,
-				nil,
 				posrange.PositionRange{},
 				types.QueryTimeRange{},
 				testCase.hints,
@@ -1155,7 +1151,6 @@ func TestGroupedVectorVectorBinaryOperation_ManySideMatchersWhenHintsProduceNoMa
 			parser.ADD,
 			false,
 			memoryConsumptionTracker,
-			nil,
 			posrange.PositionRange{},
 			types.QueryTimeRange{},
 			hints,
@@ -1203,7 +1198,6 @@ func TestGroupedVectorVectorBinaryOperation_ManySideMatchersWhenHintsProduceNoMa
 			parser.ADD,
 			false,
 			memoryConsumptionTracker,
-			nil,
 			posrange.PositionRange{},
 			types.QueryTimeRange{},
 			hints,
@@ -1323,7 +1317,7 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 			vectorMatching := parser.VectorMatching{Card: card, MatchingLabels: []string{"env"}, On: true}
 			op, err := NewGroupedVectorVectorBinaryOperation(
 				left, right, vectorMatching, parser.MUL, false,
-				memTracker, annotations.New(), posrange.PositionRange{}, timeRange, h, log.NewNopLogger(),
+				memTracker, posrange.PositionRange{}, timeRange, h, log.NewNopLogger(),
 			)
 			if err != nil {
 				b.Fatal(err)

@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -46,7 +47,8 @@ type RangeVectorDuplicationBuffer struct {
 	prepareCalled      bool
 	afterPrepareCalled bool
 
-	stats *types.OperatorEvaluationStats
+	stats       *types.OperatorEvaluationStats
+	annotations annotations.Annotations
 }
 
 func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange, logger log.Logger) *RangeVectorDuplicationBuffer {
@@ -474,35 +476,39 @@ func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
 	return true
 }
 
-func (b *RangeVectorDuplicationBuffer) Stats(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
+func (b *RangeVectorDuplicationBuffer) Stats(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	if !b.allConsumersFinalized() {
-		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
+		return nil, nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
 	}
 
 	if consumer.hasReadStats {
-		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats twice for the same consumer")
+		return nil, nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats twice for the same consumer")
 	}
 
 	if b.stats == nil {
 		var err error
-		b.stats, err = b.Inner.Stats(ctx)
+		b.stats, b.annotations, err = b.Inner.Stats(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	consumer.hasReadStats = true
 	stats := b.stats
+	annos := b.annotations
 
 	if b.allConsumersHaveReadStats() {
-		// Last consumer, return stats without cloning, and clear reference to existing stats.
+		// Last consumer, return stats without cloning, and clear references to existing stats and annotations.
 		b.stats = nil
+		b.annotations = nil
 	} else {
 		var err error
 		stats, err = stats.Clone() // FIXME: this is wasteful, we could just clone the subset needed
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+
+		annos = types.CloneAnnotations(b.annotations)
 	}
 
 	if consumer.subset.applicable() {
@@ -515,7 +521,8 @@ func (b *RangeVectorDuplicationBuffer) Stats(ctx context.Context, consumer *Rang
 			stats.Close()
 
 			level.Warn(b.logger).Log("msg", "RangeVectorDuplicationBuffer expected subset statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
-			return types.NewOperatorEvaluationStats(ctx, b.timeRange, b.MemoryConsumptionTracker, 0)
+			emptyStats, err := types.NewOperatorEvaluationStats(ctx, b.timeRange, b.MemoryConsumptionTracker, 0)
+			return emptyStats, annos, err
 		}
 
 		stats.UseSubset(consumer.subset.subsetIndex)
@@ -523,7 +530,7 @@ func (b *RangeVectorDuplicationBuffer) Stats(ctx context.Context, consumer *Rang
 		stats.RemoveAllSubsets()
 	}
 
-	return stats, nil
+	return stats, annos, nil
 }
 
 func (b *RangeVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
@@ -652,7 +659,7 @@ func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) error {
 	return d.Buffer.Finalize(ctx, d)
 }
 
-func (d *RangeVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (d *RangeVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return d.Buffer.Stats(ctx, d)
 }
 

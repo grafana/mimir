@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -276,8 +277,8 @@ func (c *CountValues) Finalize(ctx context.Context) error {
 	return c.LabelName.Finalize(ctx)
 }
 
-func (c *CountValues) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats[types.StatsProvider](ctx, c.Inner, c.LabelName)
+func (c *CountValues) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, c.Inner, c.LabelName)
 }
 
 func (c *CountValues) Close() {

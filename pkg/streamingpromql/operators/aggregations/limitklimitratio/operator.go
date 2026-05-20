@@ -31,7 +31,6 @@ type Operator struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
 
 	// the next output series to be returned in NextSeries()
 	nextSeriesIndex int
@@ -52,7 +51,7 @@ type Operator struct {
 func (o *Operator) initParam(ctx context.Context) (canReturnAnyResults bool, err error) {
 
 	if o.isRatio {
-		stepArg, zeros, err := newLimitRatioArgument(ctx, o.annotations, o.MemoryConsumptionTracker, o.TimeRange.StepCount, o.Param)
+		stepArg, zeros, err := newLimitRatioArgument(ctx, o.MemoryConsumptionTracker, o.TimeRange.StepCount, o.Param)
 		if err != nil {
 			return false, err
 		}
@@ -187,10 +186,7 @@ func (o *Operator) AfterPrepare(ctx context.Context) error {
 }
 
 func (o *Operator) Finalize(ctx context.Context) error {
-	if o.stepArg != nil {
-		o.stepArg.close()
-	}
-	o.stepArg = nil
+	o.stepArg.close()
 
 	for _, g := range o.seriesToGroups {
 		if g != nil {
@@ -206,8 +202,15 @@ func (o *Operator) Finalize(ctx context.Context) error {
 	return o.Param.Finalize(ctx)
 }
 
-func (o *Operator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats[types.StatsProvider](ctx, o.Inner, o.Param)
+func (o *Operator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, annos, err := types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, o.Inner, o.Param)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	annos.Merge(o.stepArg.getAnnotations())
+
+	return stats, annos, nil
 }
 
 func (o *Operator) Close() {
@@ -222,7 +225,6 @@ func NewLimitK(
 	grouping []string,
 	without bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
 	grouping = initGrouping(grouping, without)
@@ -235,7 +237,6 @@ func NewLimitK(
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
-		annotations:              annotations,
 		isRatio:                  false,
 	}
 }
@@ -247,7 +248,6 @@ func NewLimitRatio(
 	grouping []string,
 	without bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
 	grouping = initGrouping(grouping, without)
@@ -260,7 +260,6 @@ func NewLimitRatio(
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
-		annotations:              annotations,
 		isRatio:                  true,
 	}
 }

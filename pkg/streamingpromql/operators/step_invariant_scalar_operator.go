@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -84,12 +85,13 @@ func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.Scal
 	return data, nil
 }
 
-func (s *StepInvariantScalarOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	inner, err := s.inner.Stats(ctx)
+func (s *StepInvariantScalarOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	inner, annos, err := s.inner.Stats(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer inner.Close()
-	return inner.ExtendStepInvariantToFullRange(s.originalTimeRange)
+	stats, err := inner.ExtendStepInvariantToFullRange(s.originalTimeRange)
+	return stats, annos, err
 }

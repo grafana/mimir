@@ -311,7 +311,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			Node:               node,
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
-			Annotations:        params.Annotations,
 			expressionPosition: expressionPosition,
 		}, nil
 
@@ -320,7 +319,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			Node:               node,
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
-			Annotations:        params.Annotations,
 			expressionPosition: expressionPosition,
 		}, nil
 
@@ -329,7 +327,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			Node:               node,
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
-			Annotations:        params.Annotations,
 			expressionPosition: expressionPosition,
 		}, nil
 

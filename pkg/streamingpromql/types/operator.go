@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type PrepareParams struct {
@@ -55,12 +56,13 @@ type Operator interface {
 	// Once Finalize has been called, calling methods other than Stats or Close may result in unpredictable behaviour, corruption or crashes.
 	Finalize(ctx context.Context) error
 
-	// Stats returns the statistics for this operator, including any nested operators.
+	// Stats returns the statistics and annotations for this operator, including any nested operators.
 	// Stats must only be called after Finalize has been called.
-	// Calling Stats multiple times may result in unpredictable behaviour, corruption or crashes.
-	// The caller may mutate the returned OperatorEvaluationStats instance.
+	// Stats must only be called once, calling Stats multiple times may result in unpredictable behaviour, corruption or crashes.
+	// The caller may mutate the returned statistics and annotations.
 	// It is the caller's responsibility to call Close on the returned OperatorEvaluationStats instance.
-	Stats(ctx context.Context) (*OperatorEvaluationStats, error)
+	// The returned annotations may be nil if there are no annotations to report.
+	Stats(ctx context.Context) (*OperatorEvaluationStats, annotations.Annotations, error)
 }
 
 // SeriesOperator represents all operators that return one or more series.

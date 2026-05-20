@@ -7,6 +7,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -401,8 +402,8 @@ func (o *OrBinaryOperation) Finalize(ctx context.Context) error {
 	return o.Right.Finalize(ctx)
 }
 
-func (o *OrBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, o.Left, o.Right)
+func (o *OrBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.CombineStatsAndAnnotations(ctx, o.Left, o.Right)
 }
 
 func (o *OrBinaryOperation) Close() {

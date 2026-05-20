@@ -38,12 +38,11 @@ type GroupedVectorVectorBinaryOperation struct {
 	VectorMatching parser.VectorMatching
 
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
 	hints              *Hints
 	logger             log.Logger
 
-	evaluator       vectorVectorBinaryOperationEvaluator
+	evaluator       *vectorVectorBinaryOperationEvaluator
 	remainingSeries []*groupedBinaryOperationOutputSeries
 	oneSide         types.InstantVectorOperator // Either Left or Right
 	manySide        types.InstantVectorOperator
@@ -151,13 +150,12 @@ func NewGroupedVectorVectorBinaryOperation(
 	op parser.ItemType,
 	returnBool bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 	hints *Hints,
 	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +170,6 @@ func NewGroupedVectorVectorBinaryOperation(
 
 		evaluator:          e,
 		expressionPosition: expressionPosition,
-		annotations:        annotations,
 		timeRange:          timeRange,
 		hints:              hints,
 		logger:             logger,
@@ -867,8 +864,15 @@ func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error
 	return g.Right.Finalize(ctx)
 }
 
-func (g *GroupedVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, g.Left, g.Right)
+func (g *GroupedVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.CombineStatsAndAnnotations(ctx, g.Left, g.Right)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	g.evaluator.annotations.Merge(childAnnos)
+
+	return stats, g.evaluator.annotations, nil
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Close() {

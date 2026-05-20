@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -164,8 +165,8 @@ func (t *testScalarOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (t *testScalarOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
-	return nil, nil
+func (t *testScalarOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return nil, nil, nil
 }
 
 func (t *testScalarOperator) Close() {

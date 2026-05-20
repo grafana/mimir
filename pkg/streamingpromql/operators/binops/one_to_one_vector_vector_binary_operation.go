@@ -40,10 +40,9 @@ type OneToOneVectorVectorBinaryOperation struct {
 	remainingSeries []*oneToOneBinaryOperationOutputSeries
 	leftBuffer      *operators.InstantVectorOperatorBuffer
 	rightBuffer     *operators.InstantVectorOperatorBuffer
-	evaluator       vectorVectorBinaryOperationEvaluator
+	evaluator       *vectorVectorBinaryOperationEvaluator
 
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
 	hints              *Hints
 	logger             log.Logger
@@ -127,13 +126,12 @@ func NewOneToOneVectorVectorBinaryOperation(
 	op parser.ItemType,
 	returnBool bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 	hints *Hints,
 	logger log.Logger,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +146,6 @@ func NewOneToOneVectorVectorBinaryOperation(
 
 		evaluator:          e,
 		expressionPosition: expressionPosition,
-		annotations:        annotations,
 		timeRange:          timeRange,
 		hints:              hints,
 		logger:             logger,
@@ -640,8 +637,15 @@ func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) erro
 	return b.Right.Finalize(ctx)
 }
 
-func (b *OneToOneVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, b.Left, b.Right)
+func (b *OneToOneVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.CombineStatsAndAnnotations(ctx, b.Left, b.Right)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	b.evaluator.annotations.Merge(childAnnos)
+
+	return stats, b.evaluator.annotations, nil
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Close() {

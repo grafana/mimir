@@ -10,6 +10,8 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	promstats "github.com/prometheus/prometheus/util/stats"
 	"github.com/stretchr/testify/require"
 
@@ -1513,6 +1515,68 @@ func TestOperatorEvaluationStats_GetTotalSamplesProcessed(t *testing.T) {
 
 	stats.Close()
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+// statsAndAnnotationsProvider is a minimal StatsAndAnnotationsProvider used by CombineStatsAndAnnotations tests.
+type statsAndAnnotationsProvider struct {
+	stats *OperatorEvaluationStats
+	annos annotations.Annotations
+	err   error
+}
+
+func (p *statsAndAnnotationsProvider) Stats(_ context.Context) (*OperatorEvaluationStats, annotations.Annotations, error) {
+	return p.stats, p.annos, p.err
+}
+
+func makeAnnotations(errs ...error) annotations.Annotations {
+	var a annotations.Annotations
+
+	for _, err := range errs {
+		a.Add(err)
+	}
+
+	return a
+}
+
+func TestCombineStatsAndAnnotations_AnnotationHandling(t *testing.T) {
+	ctx := context.Background()
+	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	timeRange := NewInstantQueryTimeRange(timestamp.Time(0))
+
+	warning1 := annotations.NewBadBucketLabelWarning("a", "1", posrange.PositionRange{Start: 1, End: 2})
+	warning2 := annotations.NewBadBucketLabelWarning("b", "2", posrange.PositionRange{Start: 3, End: 4})
+	info1 := annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{Start: 5, End: 6})
+
+	newStats := func(t *testing.T) *OperatorEvaluationStats {
+		stats, err := NewOperatorEvaluationStats(ctx, timeRange, tracker, 0)
+		require.NoError(t, err)
+		return stats
+	}
+
+	t.Run("single operator with no annotations", func(t *testing.T) {
+		_, combinedAnnos, err := CombineStatsAndAnnotations(ctx, &statsAndAnnotationsProvider{stats: newStats(t)})
+		require.NoError(t, err)
+		require.Nil(t, combinedAnnos)
+	})
+
+	t.Run("single operator with annotations", func(t *testing.T) {
+		_, combinedAnnos, err := CombineStatsAndAnnotations(ctx, &statsAndAnnotationsProvider{
+			stats: newStats(t),
+			annos: makeAnnotations(warning1),
+		})
+		require.NoError(t, err)
+		require.ElementsMatch(t, []error{warning1}, combinedAnnos.AsErrors())
+	})
+
+	t.Run("multiple operators with mixed annotations", func(t *testing.T) {
+		_, combinedAnnos, err := CombineStatsAndAnnotations(ctx,
+			&statsAndAnnotationsProvider{stats: newStats(t), annos: makeAnnotations(warning1)},
+			&statsAndAnnotationsProvider{stats: newStats(t)},
+			&statsAndAnnotationsProvider{stats: newStats(t), annos: makeAnnotations(warning2, info1)},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []error{warning1, warning2, info1}, combinedAnnos.AsErrors())
+	})
 }
 
 func TestOperatorEvaluationStats_HalveCounts(t *testing.T) {

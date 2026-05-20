@@ -41,7 +41,7 @@ type Query struct {
 	vector         promql.Vector
 	string         *promql.String
 	scalar         *promql.Scalar
-	annotations    *annotations.Annotations
+	annotations    annotations.Annotations
 	stats          *types.OperatorEvaluationStats
 	finalizedStats *promstats.QuerySamples
 
@@ -66,10 +66,8 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	// so we can safely return it now.
 	types.SeriesMetadataSlicePool.Put(&q.seriesMetadata, q.memoryConsumptionTracker)
 
-	result := &promql.Result{}
-
-	if q.annotations != nil {
-		result.Warnings = *q.annotations
+	result := &promql.Result{
+		Warnings: q.annotations,
 	}
 
 	switch {
@@ -245,14 +243,14 @@ func (q *Query) StringEvaluated(_ context.Context, _ *Evaluator, _ planning.Node
 }
 
 // EvaluationCompleted implements the EvaluationObserver interface.
-func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
-	q.annotations = annotations
-
-	if len(stats) != 1 {
-		return fmt.Errorf("expected exactly one stats entry, but got %d", len(stats))
+func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, nodeInfo map[planning.Node]NodeCompletionInfo) error {
+	if len(nodeInfo) != 1 {
+		return fmt.Errorf("expected exactly one node completion info entry, but got %d", len(nodeInfo))
 	}
 
-	q.stats = stats[q.evaluator.nodeRequests[0].Node]
+	nodeCompletionInfo := nodeInfo[q.evaluator.nodeRequests[0].Node]
+	q.stats = nodeCompletionInfo.Stats
+	q.annotations = nodeCompletionInfo.Annotations
 
 	var err error
 	q.finalizedStats, err = q.stats.FinalizeAndComputePrometheusStats()

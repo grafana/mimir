@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -52,8 +53,9 @@ func (n *NoOpInstant) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (n *NoOpInstant) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.NewOperatorEvaluationStats(ctx, n.timeRange, n.memoryConsumptionTracker, 0)
+func (n *NoOpInstant) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, err := types.NewOperatorEvaluationStats(ctx, n.timeRange, n.memoryConsumptionTracker, 0)
+	return stats, nil, err
 }
 
 func (n *NoOpInstant) Close() {
@@ -92,8 +94,9 @@ func (n *NoOpRange) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (n *NoOpRange) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.NewOperatorEvaluationStats(ctx, n.timeRange, n.memoryConsumptionTracker, 0)
+func (n *NoOpRange) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, err := types.NewOperatorEvaluationStats(ctx, n.timeRange, n.memoryConsumptionTracker, 0)
+	return stats, nil, err
 }
 
 func (n *NoOpRange) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {

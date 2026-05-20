@@ -9,6 +9,7 @@ import (
 	"github.com/facette/natsort"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -164,7 +165,7 @@ func (s *SortByLabel) Finalize(ctx context.Context) error {
 	return s.inner.Finalize(ctx)
 }
 
-func (s *SortByLabel) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (s *SortByLabel) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return s.inner.Stats(ctx)
 }
 
