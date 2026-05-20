@@ -278,6 +278,19 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 		return NewEmptyPrometheusResponse(), nil
 	}
 
+	// Ownership of the input responses transfers to the merged response's finalizer on
+	// success. Until then, any early return must close every input, otherwise resources
+	// held by them (e.g. an underlying *promql.Query and its memory consumption tracker)
+	// leak.
+	closeInputs := true
+	defer func() {
+		if closeInputs {
+			for _, res := range responses {
+				res.Close()
+			}
+		}
+	}()
+
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
 	promCloses := make([]func(), 0, len(responses))
 	promWarningsMap := make(map[string]struct{}, 0)
@@ -322,6 +335,7 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 		return cmp.Compare(firstSeriesTimestamp(a), firstSeriesTimestamp(b))
 	})
 
+	closeInputs = false
 	return &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
 			Status: statusSuccess,
@@ -1101,6 +1115,16 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		}
 	}()
 
+	// Ownership of res is transferred to the streaming goroutine on success. Until then,
+	// any early return must close res itself, otherwise resources held by the response
+	// (e.g. an underlying *promql.Query and its memory consumption tracker) leak.
+	closeResponse := true
+	defer func() {
+		if closeResponse {
+			res.Close()
+		}
+	}()
+
 	a, ok := res.GetPrometheusResponse()
 	if !ok {
 		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -1117,6 +1141,7 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 	queryStats := stats.FromContext(ctx)
 	pr, pw := io.Pipe()
 	endTraceSpan = false
+	closeResponse = false
 	go func() {
 		var encErr error
 		defer func() {
@@ -1189,6 +1214,16 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		}
 	}()
 
+	// Ownership of res is transferred to the streaming goroutine on success. Until then,
+	// any early return must close res itself, otherwise resources held by the response
+	// (e.g. an underlying *promql.Query and its memory consumption tracker) leak.
+	closeResponse := true
+	defer func() {
+		if closeResponse {
+			res.Close()
+		}
+	}()
+
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
@@ -1218,6 +1253,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 
 	pr, pw := io.Pipe()
 	endTraceSpan = false
+	closeResponse = false
 	go func() {
 		var encErr error
 		defer func() {

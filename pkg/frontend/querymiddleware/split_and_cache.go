@@ -258,11 +258,29 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 	queryTime := s.currentTime()
 
+	// After doRequests returns successfully we own the produced Responses until
+	// MergeResponse takes ownership of them. Any error that fires in between —
+	// storeDownstreamResponses consistency-check failures, cache-extent
+	// marshalling or merge errors, etc. — would leak each Response's resources.
+	var execResps []requestResponse
+	closeExecResps := false
+	defer func() {
+		if !closeExecResps {
+			return
+		}
+		for _, rr := range execResps {
+			if rr.Response != nil {
+				rr.Response.Close()
+			}
+		}
+	}()
+
 	if len(execReqs) > 0 {
-		execResps, err := doRequests(ctx, s.next, memoryTracker, execReqs)
+		execResps, err = doRequests(ctx, s.next, memoryTracker, execReqs)
 		if err != nil {
 			return nil, err
 		}
+		closeExecResps = true
 
 		// Store the downstream responses in our internal data structure.
 		if err := splitReqs.storeDownstreamResponses(execResps); err != nil {
@@ -338,6 +356,10 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 		responses = append(responses, splitReq.downstreamResponses...)
 	}
 
+	// MergeResponse takes ownership of every input Response (closing them on
+	// validation failure, or attaching their Close to the merged response's
+	// finalizer on success). Disarm our defer so we don't double-close.
+	closeExecResps = false
 	return s.merger.MergeResponse(responses...)
 }
 
@@ -641,6 +663,15 @@ type requestResponse struct {
 }
 
 // doRequests executes a list of requests in parallel.
+//
+// On success the caller owns every Response in the returned slice and is
+// responsible for Closing them (typically by handing them to MergeResponse,
+// whose merged finalizer fans the closes back out).
+//
+// On error this function closes every successfully-collected sub-response
+// itself and returns a nil slice. Without this cleanup, every sub-response
+// produced before a sibling sub-request failed would leak its underlying
+// resources.
 func doRequests(ctx context.Context, downstream MetricsQueryHandler, memoryTracker *limiter.MemoryConsumptionTracker, reqs []MetricsQueryRequest) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
@@ -675,7 +706,15 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, memoryTrack
 		})
 	}
 
-	return resps, g.Wait()
+	if err := g.Wait(); err != nil {
+		for _, rr := range resps {
+			if rr.Response != nil {
+				rr.Response.Close()
+			}
+		}
+		return nil, err
+	}
+	return resps, nil
 }
 
 func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]MetricsQueryRequest, error) {
