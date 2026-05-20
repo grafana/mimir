@@ -346,7 +346,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
         ( # Classic storage
           sum by (%(groupByCluster)s, %(groupByLabels)s) (
-            %(perIngesterQuery)s unless on (job)
+            %(perIngesterQuery)s unless on (%(groupByCluster)s, job)
             cortex_partition_ring_partitions{%(ingester)s}
           )
           / on (%(groupByCluster)s) group_left()
