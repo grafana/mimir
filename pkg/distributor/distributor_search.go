@@ -55,7 +55,7 @@ func (d *Distributor) SearchLabelNames(
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
-	return mimirstorage.PairwiseMergeSearchSetsWithHints(sources, hints)
+	return storage.MergeSearchResultSets(sources, hints)
 }
 
 // SearchLabelValues mirrors SearchLabelNames; the wire request additionally
@@ -82,7 +82,7 @@ func (d *Distributor) SearchLabelValues(
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
-	return mimirstorage.PairwiseMergeSearchSetsWithHints(sources, hints)
+	return storage.MergeSearchResultSets(sources, hints)
 }
 
 // searchStream is the Recv surface shared by Ingester_SearchLabelNamesClient

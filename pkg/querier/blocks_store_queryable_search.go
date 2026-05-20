@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 
-	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -104,7 +103,7 @@ func wrapAsMergingSearchResultSet(perSG [][]storage.SearchResult, extraWarnings 
 	if len(extraWarnings) > 0 {
 		sources = append(sources, storage.NewSearchResultSetFromSlice(nil, extraWarnings))
 	}
-	return mimirstorage.PairwiseMergeSearchSetsWithHints(sources, hints)
+	return storage.MergeSearchResultSets(sources, hints)
 }
 
 // fetchSearchLabelNamesFromStore drains every SG client in parallel and

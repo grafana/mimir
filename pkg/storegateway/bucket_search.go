@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
@@ -107,7 +106,7 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 		return status.Error(codes.Internal, err.Error())
 	}
 
-	merged := mimirstorage.PairwiseMergeSearchSets(sets, order, limit)
+	merged := storage.MergeSearchResultSets(sets, &storage.SearchHints{OrderBy: order, Limit: limit})
 	defer merged.Close()
 	return streamBucketSearchResults(ctx, merged, queriedBlocks, srv.Send)
 }
@@ -191,7 +190,7 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 		return status.Error(codes.Internal, err.Error())
 	}
 
-	merged := mimirstorage.PairwiseMergeSearchSets(sets, order, limit)
+	merged := storage.MergeSearchResultSets(sets, &storage.SearchHints{OrderBy: order, Limit: limit})
 	defer merged.Close()
 	return streamBucketSearchResults(ctx, merged, queriedBlocks, srv.Send)
 }
