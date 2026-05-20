@@ -19,6 +19,9 @@ func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &TimeRangeSplit{TimeRangeSplitDetails: &TimeRangeSplitDetails{}}
 	})
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &Cache{CacheDetails: &CacheDetails{}}
+	})
 }
 
 //node:generate
@@ -111,4 +114,85 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 		target -= step
 	}
 	return target
+}
+
+type Cache struct {
+	*CacheDetails
+	Inner planning.Node
+}
+
+func (c *Cache) Details() proto.Message {
+	return c.CacheDetails
+}
+
+func (c *Cache) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_CACHE
+}
+
+func (c *Cache) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type Cache supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return c.Inner
+}
+
+func (c *Cache) ChildCount() int {
+	return 1
+}
+
+func (c *Cache) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type Cache requires 1 child, but got %d", len(children))
+	}
+
+	c.Inner = children[0]
+	return nil
+}
+
+func (c *Cache) ReplaceChild(idx int, child planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type Cache supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	c.Inner = child
+	return nil
+}
+
+func (c *Cache) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*Cache)
+
+	return ok
+}
+
+func (c *Cache) MergeHints(other planning.Node) error {
+	return nil
+}
+
+func (c *Cache) Describe() string {
+	return ""
+}
+
+func (c *Cache) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (c *Cache) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+	return timeRange
+}
+
+func (c *Cache) ResultType() (parser.ValueType, error) {
+	return c.Inner.ResultType()
+}
+
+func (c *Cache) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return c.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (c *Cache) ExpressionPosition() (posrange.PositionRange, error) {
+	return c.Inner.ExpressionPosition()
+}
+
+func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV16, nil
 }
