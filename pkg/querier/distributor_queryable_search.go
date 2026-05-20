@@ -22,9 +22,6 @@ import (
 // The signature intentionally diverges from storage.Searcher by taking a
 // *streaminglabelvalues.Params alongside the SearchHints (the upstream
 // interface has no field for fuzzy-algorithm/threshold/case-sensitivity).
-// The HTTP wiring in the follow-up PR therefore reaches this method
-// through a Mimir-local interface, not via a storage.Searcher type
-// assertion.
 func (q *distributorQuerier) SearchLabelNames(
 	ctx context.Context,
 	params *streaminglabelvalues.Params,
