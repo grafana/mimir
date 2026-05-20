@@ -116,7 +116,7 @@ type BucketConfig struct {
 }
 
 func (c *BucketConfig) RegisterFlags(f *flag.FlagSet) {
-	c.registerFlags("", f, false)
+	c.registerFlags("", f, nil)
 }
 
 func ifNotEmptySuffix(s, suffix string) string {
@@ -126,12 +126,10 @@ func ifNotEmptySuffix(s, suffix string) string {
 	return s + suffix
 }
 
-func (c *BucketConfig) registerFlags(descriptor string, f *flag.FlagSet, backfill bool) {
+func (c *BucketConfig) registerFlags(descriptor string, f *flag.FlagSet, externalBackends []string) {
 	descriptorFlagPrefix := ifNotEmptySuffix(descriptor, ".")
-	acceptedBackends := fmt.Sprintf("%s, %s or %s.", bucket.Azure, bucket.GCS, bucket.S3)
-	if backfill {
-		acceptedBackends = fmt.Sprintf("%s, %s, %s or backfill.", bucket.Azure, bucket.GCS, bucket.S3)
-	}
+	allBackends := append([]string{bucket.Azure, bucket.GCS, bucket.S3}, externalBackends...)
+	acceptedBackends := strings.Join(allBackends[:len(allBackends)-1], ", ") + " or " + allBackends[len(allBackends)-1] + "."
 	f.StringVar(&c.backend, descriptorFlagPrefix+"backend", "",
 		fmt.Sprintf("The %sobject storage backend. Accepted values are: %s", ifNotEmptySuffix(descriptor, " "), acceptedBackends))
 	c.azure.RegisterFlags(bucket.Azure+"."+descriptorFlagPrefix, f)
@@ -210,10 +208,10 @@ type CopyBucketConfig struct {
 	destination    BucketConfig
 }
 
-func (c *CopyBucketConfig) RegisterFlags(f *flag.FlagSet, includeBackfill bool) {
+func (c *CopyBucketConfig) RegisterFlags(f *flag.FlagSet, extraDestBackends []string) {
 	f.BoolVar(&c.clientSideCopy, "client-side-copy", false, "Use client side copying. This option is only respected if copying between two buckets of the same backend service. Client side copying is always used when copying between different backend services.")
-	c.source.registerFlags("source", f, false)
-	c.destination.registerFlags("destination", f, includeBackfill)
+	c.source.registerFlags("source", f, nil)
+	c.destination.registerFlags("destination", f, extraDestBackends)
 }
 
 func (c *CopyBucketConfig) Validate() error {

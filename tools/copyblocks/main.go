@@ -56,7 +56,7 @@ type config struct {
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
-	c.copyConfig.RegisterFlags(f, true)
+	c.copyConfig.RegisterFlags(f, []string{backfillBackend})
 	c.backfill.RegisterFlags(f)
 	f.DurationVar(&c.minBlockDuration, "min-block-duration", 0, "If non-zero, ignore blocks that cover block range smaller than this.")
 	f.Var(&c.minTime, "min-time", fmt.Sprintf("If set, only blocks with MinTime >= this value are copied. The supported time format is %q.", time.RFC3339))

@@ -27,7 +27,7 @@ type config struct {
 }
 
 func (c *config) RegisterFlags(f *flag.FlagSet) {
-	c.copyConfig.RegisterFlags(f, false)
+	c.copyConfig.RegisterFlags(f, nil)
 	f.StringVar(&c.sourcePrefix, "source-prefix", "", "The prefix to copy from the source. If the prefix is not empty and does not end in '"+objtools.Delim+"' then it is appended.")
 	f.StringVar(&c.destinationPrefix, "destination-prefix", "", "Replaces the source prefix in the object name of objects copied to the destination. If not provided the object name from the source is used.")
 	f.BoolVar(&c.skipOverwrites, "skip-overwrites", false, "If true a listing will be performed on the destination bucket to skip copying objects already present there. The presence check is best effort.")
