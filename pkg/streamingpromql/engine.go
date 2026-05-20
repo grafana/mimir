@@ -107,7 +107,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE: planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationInstance](multiaggregation.MaterializeMultiAggregationInstance),
 
 		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, intermediateCache, opts.Logger),
-		planning.NODE_TYPE_SPLIT:                            planning.NodeMaterializerFunc[*splitandcache.Split](splitandcache.MaterializeSplit),
+		planning.NODE_TYPE_TIME_RANGE_SPLIT:                 planning.NodeMaterializerFunc[*splitandcache.TimeRangeSplit](splitandcache.MaterializeSplit),
 	}
 
 	memoryConsumptionTrackerFactory := opts.MemoryConsumptionTrackerFactory

@@ -14,7 +14,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type SplitOperator struct {
+// TimeRangeSplitOperator evaluates a range query by concatenating the results of multiple shorter-range queries.
+type TimeRangeSplitOperator struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	TimeRange                types.QueryTimeRange
 
@@ -31,12 +32,12 @@ type splitOutputSeries struct {
 	sourceSeriesIndices []int // One entry per range. -1 indicates that the series is not present in the range.
 }
 
-// newSplitOperator creates a new SplitOperator.
+// newTimeRangeSplitOperator creates a new TimeRangeSplitOperator.
 //
 // ranges must be sorted in descending time order and must not overlap.
 // ranges must not be empty.
-func newSplitOperator(ranges []*splitRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) *SplitOperator {
-	return &SplitOperator{
+func newTimeRangeSplitOperator(ranges []*splitRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) *TimeRangeSplitOperator {
+	return &TimeRangeSplitOperator{
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		TimeRange:                timeRange,
 		ranges:                   ranges,
@@ -47,7 +48,7 @@ func newSplitRange(operator types.InstantVectorOperator) *splitRange {
 	return &splitRange{operator: operator}
 }
 
-func (s *SplitOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (s *TimeRangeSplitOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	for _, r := range s.ranges {
 		if err := r.operator.Prepare(ctx, params); err != nil {
 			return err
@@ -56,7 +57,7 @@ func (s *SplitOperator) Prepare(ctx context.Context, params *types.PrepareParams
 	return nil
 }
 
-func (s *SplitOperator) AfterPrepare(ctx context.Context) error {
+func (s *TimeRangeSplitOperator) AfterPrepare(ctx context.Context) error {
 	for _, r := range s.ranges {
 		if err := r.operator.AfterPrepare(ctx); err != nil {
 			return err
@@ -65,7 +66,7 @@ func (s *SplitOperator) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
-func (s *SplitOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Use the slice from the first range as the base for the returned series metadata.
 	allSeries, err := s.ranges[0].operator.SeriesMetadata(ctx, matchers)
 	if err != nil {
@@ -131,7 +132,7 @@ func (s *SplitOperator) SeriesMetadata(ctx context.Context, matchers types.Match
 	return allSeries, nil
 }
 
-func (s *SplitOperator) addNewOutputSeries(sourceRangeIndex int, sourceRangeSeriesIndex int) error {
+func (s *TimeRangeSplitOperator) addNewOutputSeries(sourceRangeIndex int, sourceRangeSeriesIndex int) error {
 	sourceSeriesIndices, err := types.IntSlicePool.Get(len(s.ranges), s.MemoryConsumptionTracker)
 	if err != nil {
 		return err
@@ -151,7 +152,7 @@ func (s *SplitOperator) addNewOutputSeries(sourceRangeIndex int, sourceRangeSeri
 	return nil
 }
 
-func (s *SplitOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (s *TimeRangeSplitOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(s.outputSeries) == 0 {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
@@ -202,7 +203,7 @@ func (s *SplitOperator) NextSeries(ctx context.Context) (types.InstantVectorSeri
 	}, nil
 }
 
-func (s *SplitOperator) Finalize(ctx context.Context) error {
+func (s *TimeRangeSplitOperator) Finalize(ctx context.Context) error {
 	for _, r := range s.ranges {
 		if err := r.operator.Finalize(ctx); err != nil {
 			return err
@@ -213,7 +214,7 @@ func (s *SplitOperator) Finalize(ctx context.Context) error {
 	return nil
 }
 
-func (s *SplitOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (s *TimeRangeSplitOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
 	combinedStats, err := types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, 0)
 	if err != nil {
 		return nil, err
@@ -235,16 +236,16 @@ func (s *SplitOperator) Stats(ctx context.Context) (*types.OperatorEvaluationSta
 	return combinedStats, nil
 }
 
-func (s *SplitOperator) Close() {
+func (s *TimeRangeSplitOperator) Close() {
 	for _, r := range s.ranges {
 		r.operator.Close()
 	}
 }
 
-func (s *SplitOperator) ExpressionPosition() posrange.PositionRange {
+func (s *TimeRangeSplitOperator) ExpressionPosition() posrange.PositionRange {
 	// All ranges should be derived from the same expression, so use the first one.
 	// It is not valid to have a split operator with no ranges, so we don't need to check for the case where there are no ranges.
 	return s.ranges[0].operator.ExpressionPosition()
 }
 
-var _ types.InstantVectorOperator = (*SplitOperator)(nil)
+var _ types.InstantVectorOperator = (*TimeRangeSplitOperator)(nil)

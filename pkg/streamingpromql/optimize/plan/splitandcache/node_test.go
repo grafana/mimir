@@ -188,8 +188,8 @@ func TestMaterializeSplit(t *testing.T) {
 				},
 			}
 
-			splitNode := &Split{
-				SplitDetails: &SplitDetails{
+			splitNode := &TimeRangeSplit{
+				TimeRangeSplitDetails: &TimeRangeSplitDetails{
 					SplitInterval: testCase.splitInterval,
 				},
 				Inner: innerNode,
@@ -200,8 +200,8 @@ func TestMaterializeSplit(t *testing.T) {
 			}
 
 			materializer := planning.NewMaterializer(params, map[planning.NodeType]planning.NodeMaterializer{
-				planning.NODE_TYPE_VECTOR_SELECTOR: planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
-				planning.NODE_TYPE_SPLIT:           planning.NodeMaterializerFunc[*Split](MaterializeSplit),
+				planning.NODE_TYPE_VECTOR_SELECTOR:  planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
+				planning.NODE_TYPE_TIME_RANGE_SPLIT: planning.NodeMaterializerFunc[*TimeRangeSplit](MaterializeSplit),
 			})
 
 			resultFactory, err := MaterializeSplit(splitNode, materializer, testCase.timeRange, params)
@@ -215,8 +215,8 @@ func TestMaterializeSplit(t *testing.T) {
 				selector := result.(*selectors.InstantVectorSelector)
 				require.Equal(t, testCase.expectedTimeRanges[0], selector.Selector.TimeRange, "time range should match expected")
 			} else {
-				require.IsType(t, &SplitOperator{}, result, "should return split operator if multiple ranges expected")
-				splitOperator := result.(*SplitOperator)
+				require.IsType(t, &TimeRangeSplitOperator{}, result, "should return split operator if multiple ranges expected")
+				splitOperator := result.(*TimeRangeSplitOperator)
 
 				var actualTimeRanges []types.QueryTimeRange
 				for _, r := range splitOperator.ranges {

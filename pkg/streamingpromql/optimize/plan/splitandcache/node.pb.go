@@ -29,21 +29,21 @@ var _ = time.Kitchen
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-type SplitDetails struct {
+type TimeRangeSplitDetails struct {
 	SplitInterval time.Duration `protobuf:"bytes,1,opt,name=splitInterval,proto3,stdduration" json:"splitInterval"`
 }
 
-func (m *SplitDetails) Reset()      { *m = SplitDetails{} }
-func (*SplitDetails) ProtoMessage() {}
-func (*SplitDetails) Descriptor() ([]byte, []int) {
+func (m *TimeRangeSplitDetails) Reset()      { *m = TimeRangeSplitDetails{} }
+func (*TimeRangeSplitDetails) ProtoMessage() {}
+func (*TimeRangeSplitDetails) Descriptor() ([]byte, []int) {
 	return fileDescriptor_0c843d59d2d938e7, []int{0}
 }
-func (m *SplitDetails) XXX_Unmarshal(b []byte) error {
+func (m *TimeRangeSplitDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *SplitDetails) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *TimeRangeSplitDetails) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_SplitDetails.Marshal(b, m, deterministic)
+		return xxx_messageInfo_TimeRangeSplitDetails.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -53,58 +53,58 @@ func (m *SplitDetails) XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
 		return b[:n], nil
 	}
 }
-func (m *SplitDetails) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SplitDetails.Merge(m, src)
+func (m *TimeRangeSplitDetails) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TimeRangeSplitDetails.Merge(m, src)
 }
-func (m *SplitDetails) XXX_Size() int {
+func (m *TimeRangeSplitDetails) XXX_Size() int {
 	return m.Size()
 }
-func (m *SplitDetails) XXX_DiscardUnknown() {
-	xxx_messageInfo_SplitDetails.DiscardUnknown(m)
+func (m *TimeRangeSplitDetails) XXX_DiscardUnknown() {
+	xxx_messageInfo_TimeRangeSplitDetails.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_SplitDetails proto.InternalMessageInfo
+var xxx_messageInfo_TimeRangeSplitDetails proto.InternalMessageInfo
 
-func (m *SplitDetails) GetSplitInterval() time.Duration {
+func (m *TimeRangeSplitDetails) GetSplitInterval() time.Duration {
 	if m != nil {
 		return m.SplitInterval
 	}
 	return 0
 }
 
-func (*SplitDetails) XXX_MessageName() string {
-	return "splitandcache.SplitDetails"
+func (*TimeRangeSplitDetails) XXX_MessageName() string {
+	return "splitandcache.TimeRangeSplitDetails"
 }
 func init() {
-	proto.RegisterType((*SplitDetails)(nil), "splitandcache.SplitDetails")
+	proto.RegisterType((*TimeRangeSplitDetails)(nil), "splitandcache.TimeRangeSplitDetails")
 }
 
 func init() { proto.RegisterFile("node.proto", fileDescriptor_0c843d59d2d938e7) }
 
 var fileDescriptor_0c843d59d2d938e7 = []byte{
-	// 214 bytes of a gzipped FileDescriptorProto
+	// 223 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0xca, 0xcb, 0x4f, 0x49,
 	0xd5, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0x2d, 0x2e, 0xc8, 0xc9, 0x2c, 0x49, 0xcc, 0x4b,
 	0x49, 0x4e, 0x4c, 0xce, 0x48, 0x95, 0x12, 0x49, 0xcf, 0x4f, 0xcf, 0x07, 0xcb, 0xe8, 0x83, 0x58,
 	0x10, 0x45, 0x52, 0x72, 0xe9, 0xf9, 0xf9, 0xe9, 0x39, 0xa9, 0xfa, 0x60, 0x5e, 0x52, 0x69, 0x9a,
-	0x7e, 0x4a, 0x69, 0x51, 0x62, 0x49, 0x66, 0x7e, 0x1e, 0x44, 0x5e, 0x29, 0x92, 0x8b, 0x27, 0x18,
-	0x64, 0x8c, 0x4b, 0x6a, 0x49, 0x62, 0x66, 0x4e, 0xb1, 0x90, 0x27, 0x17, 0xc4, 0x58, 0xcf, 0xbc,
-	0x92, 0xd4, 0xa2, 0xb2, 0xc4, 0x1c, 0x09, 0x46, 0x05, 0x46, 0x0d, 0x6e, 0x23, 0x49, 0x3d, 0x88,
-	0x39, 0x7a, 0x30, 0x73, 0xf4, 0x5c, 0xa0, 0xe6, 0x38, 0x71, 0x9c, 0xb8, 0x27, 0xcf, 0x30, 0xe3,
-	0xbe, 0x3c, 0x63, 0x10, 0xaa, 0x4e, 0x27, 0x8b, 0x0b, 0x0f, 0xe5, 0x18, 0x6e, 0x3c, 0x94, 0x63,
-	0xf8, 0xf0, 0x50, 0x8e, 0xb1, 0xe1, 0x91, 0x1c, 0xe3, 0x8a, 0x47, 0x72, 0x0c, 0x27, 0x1e, 0xc9,
-	0x31, 0x5e, 0x78, 0x24, 0xc7, 0xf8, 0xe0, 0x91, 0x1c, 0xe3, 0x8b, 0x47, 0x72, 0x0c, 0x1f, 0x1e,
-	0xc9, 0x31, 0x4e, 0x78, 0x2c, 0xc7, 0x70, 0xe2, 0xb1, 0x1c, 0xe3, 0x85, 0xc7, 0x72, 0x0c, 0x37,
-	0x1e, 0xcb, 0x31, 0x24, 0xb1, 0x81, 0x6d, 0x31, 0x06, 0x04, 0x00, 0x00, 0xff, 0xff, 0x53, 0x48,
-	0xa1, 0xba, 0xee, 0x00, 0x00, 0x00,
+	0x7e, 0x4a, 0x69, 0x51, 0x62, 0x49, 0x66, 0x7e, 0x1e, 0x44, 0x5e, 0x29, 0x89, 0x4b, 0x34, 0x24,
+	0x33, 0x37, 0x35, 0x28, 0x31, 0x2f, 0x3d, 0x35, 0x18, 0x64, 0x9e, 0x4b, 0x6a, 0x49, 0x62, 0x66,
+	0x4e, 0xb1, 0x90, 0x27, 0x17, 0xc4, 0x7c, 0xcf, 0xbc, 0x92, 0xd4, 0xa2, 0xb2, 0xc4, 0x1c, 0x09,
+	0x46, 0x05, 0x46, 0x0d, 0x6e, 0x23, 0x49, 0x3d, 0x88, 0x81, 0x7a, 0x30, 0x03, 0xf5, 0x5c, 0xa0,
+	0x06, 0x3a, 0x71, 0x9c, 0xb8, 0x27, 0xcf, 0x30, 0xe3, 0xbe, 0x3c, 0x63, 0x10, 0xaa, 0x4e, 0x27,
+	0x8b, 0x0b, 0x0f, 0xe5, 0x18, 0x6e, 0x3c, 0x94, 0x63, 0xf8, 0xf0, 0x50, 0x8e, 0xb1, 0xe1, 0x91,
+	0x1c, 0xe3, 0x8a, 0x47, 0x72, 0x0c, 0x27, 0x1e, 0xc9, 0x31, 0x5e, 0x78, 0x24, 0xc7, 0xf8, 0xe0,
+	0x91, 0x1c, 0xe3, 0x8b, 0x47, 0x72, 0x0c, 0x1f, 0x1e, 0xc9, 0x31, 0x4e, 0x78, 0x2c, 0xc7, 0x70,
+	0xe2, 0xb1, 0x1c, 0xe3, 0x85, 0xc7, 0x72, 0x0c, 0x37, 0x1e, 0xcb, 0x31, 0x24, 0xb1, 0x81, 0x6d,
+	0x31, 0x06, 0x04, 0x00, 0x00, 0xff, 0xff, 0x3e, 0xc8, 0x20, 0xdf, 0xf7, 0x00, 0x00, 0x00,
 }
 
-func (this *SplitDetails) GoString() string {
+func (this *TimeRangeSplitDetails) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 5)
-	s = append(s, "&splitandcache.SplitDetails{")
+	s = append(s, "&splitandcache.TimeRangeSplitDetails{")
 	s = append(s, "SplitInterval: "+fmt.Sprintf("%#v", this.SplitInterval)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
@@ -117,7 +117,7 @@ func valueToGoStringNode(v interface{}, typ string) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
 }
-func (m *SplitDetails) Marshal() (dAtA []byte, err error) {
+func (m *TimeRangeSplitDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -127,12 +127,12 @@ func (m *SplitDetails) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *SplitDetails) MarshalTo(dAtA []byte) (int, error) {
+func (m *TimeRangeSplitDetails) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *SplitDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *TimeRangeSplitDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -159,7 +159,7 @@ func encodeVarintNode(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *SplitDetails) Size() (n int) {
+func (m *TimeRangeSplitDetails) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -176,11 +176,11 @@ func sovNode(x uint64) (n int) {
 func sozNode(x uint64) (n int) {
 	return sovNode(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (this *SplitDetails) String() string {
+func (this *TimeRangeSplitDetails) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&SplitDetails{`,
+	s := strings.Join([]string{`&TimeRangeSplitDetails{`,
 		`SplitInterval:` + strings.Replace(strings.Replace(fmt.Sprintf("%v", this.SplitInterval), "Duration", "durationpb.Duration", 1), `&`, ``, 1) + `,`,
 		`}`,
 	}, "")
@@ -194,7 +194,7 @@ func valueToStringNode(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
-func (m *SplitDetails) Unmarshal(dAtA []byte) error {
+func (m *TimeRangeSplitDetails) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -217,10 +217,10 @@ func (m *SplitDetails) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: SplitDetails: wiretype end group for non-group")
+			return fmt.Errorf("proto: TimeRangeSplitDetails: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: SplitDetails: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: TimeRangeSplitDetails: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:

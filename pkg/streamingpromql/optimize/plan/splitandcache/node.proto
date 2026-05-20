@@ -12,7 +12,7 @@ option (gogoproto.marshaler_all) = true;
 option (gogoproto.messagename_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-message SplitDetails {
+message TimeRangeSplitDetails {
   google.protobuf.Duration splitInterval = 1 [
     (gogoproto.stdduration) = true,
     (gogoproto.nullable) = false

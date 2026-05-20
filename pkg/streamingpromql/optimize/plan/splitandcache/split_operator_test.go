@@ -579,7 +579,7 @@ func TestSplitOperator(t *testing.T) {
 				ranges[i] = newSplitRange(o)
 			}
 
-			o := newSplitOperator(ranges, memoryConsumptionTracker, testCase.expectedStats.TimeRange.Decode())
+			o := newTimeRangeSplitOperator(ranges, memoryConsumptionTracker, testCase.expectedStats.TimeRange.Decode())
 
 			require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 			for i, o := range innerOperators {
@@ -639,7 +639,7 @@ func TestSplitOperator_ConflictingDropNameValuesForSameSeries(t *testing.T) {
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
 
-	o := newSplitOperator([]*splitRange{newSplitRange(range1), newSplitRange(range2)}, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()))
+	o := newTimeRangeSplitOperator([]*splitRange{newSplitRange(range1), newSplitRange(range2)}, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()))
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))

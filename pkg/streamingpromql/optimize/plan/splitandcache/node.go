@@ -17,24 +17,24 @@ import (
 
 func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
-		return &Split{SplitDetails: &SplitDetails{}}
+		return &TimeRangeSplit{TimeRangeSplitDetails: &TimeRangeSplitDetails{}}
 	})
 }
 
-type Split struct {
-	*SplitDetails
+type TimeRangeSplit struct {
+	*TimeRangeSplitDetails
 	Inner planning.Node
 }
 
-func (s *Split) Details() proto.Message {
-	return s.SplitDetails
+func (s *TimeRangeSplit) Details() proto.Message {
+	return s.TimeRangeSplitDetails
 }
 
-func (s *Split) NodeType() planning.NodeType {
-	return planning.NODE_TYPE_SPLIT
+func (s *TimeRangeSplit) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_TIME_RANGE_SPLIT
 }
 
-func (s *Split) Child(idx int) planning.Node {
+func (s *TimeRangeSplit) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type Split supports 1 child, but attempted to get child at index %d", idx))
 	}
@@ -42,11 +42,11 @@ func (s *Split) Child(idx int) planning.Node {
 	return s.Inner
 }
 
-func (s *Split) ChildCount() int {
+func (s *TimeRangeSplit) ChildCount() int {
 	return 1
 }
 
-func (s *Split) SetChildren(children []planning.Node) error {
+func (s *TimeRangeSplit) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type Split requires 1 child, but got %d", len(children))
 	}
@@ -55,7 +55,7 @@ func (s *Split) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *Split) ReplaceChild(idx int, child planning.Node) error {
+func (s *TimeRangeSplit) ReplaceChild(idx int, child planning.Node) error {
 	if idx != 0 {
 		return fmt.Errorf("node of type Split supports 1 child, but attempted to replace child at index %d", idx)
 	}
@@ -64,46 +64,46 @@ func (s *Split) ReplaceChild(idx int, child planning.Node) error {
 	return nil
 }
 
-func (s *Split) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherConsumer, ok := other.(*Split)
+func (s *TimeRangeSplit) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	otherConsumer, ok := other.(*TimeRangeSplit)
 
 	return ok && s.SplitInterval == otherConsumer.SplitInterval
 }
 
-func (s *Split) MergeHints(other planning.Node) error {
+func (s *TimeRangeSplit) MergeHints(other planning.Node) error {
 	return nil
 }
 
-func (s *Split) Describe() string {
+func (s *TimeRangeSplit) Describe() string {
 	return fmt.Sprintf("interval %s", s.SplitInterval.String())
 }
 
-func (s *Split) ChildrenLabels() []string {
+func (s *TimeRangeSplit) ChildrenLabels() []string {
 	return []string{""}
 }
 
-func (s *Split) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+func (s *TimeRangeSplit) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
 	return timeRange
 }
 
-func (s *Split) ResultType() (parser.ValueType, error) {
+func (s *TimeRangeSplit) ResultType() (parser.ValueType, error) {
 	return s.Inner.ResultType()
 }
 
-func (s *Split) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+func (s *TimeRangeSplit) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return s.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (s *Split) ExpressionPosition() (posrange.PositionRange, error) {
+func (s *TimeRangeSplit) ExpressionPosition() (posrange.PositionRange, error) {
 	return s.Inner.ExpressionPosition()
 }
 
-func (s *Split) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+func (s *TimeRangeSplit) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanV14, nil
 }
 
 // The logic below is based on the equivalent middleware logic in splitQueryByInterval.
-func MaterializeSplit(node *Split, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	ranges := make([]*splitRange, 0, (timeRange.EndT-timeRange.StartT)/timeRange.IntervalMilliseconds+1) // Over-allocate in case the time range straddles an interval boundary.
 
 	for start := timeRange.StartT; start <= timeRange.EndT; {
@@ -130,7 +130,7 @@ func MaterializeSplit(node *Split, materializer *planning.Materializer, timeRang
 		return planning.NewSingleUseOperatorFactory(ranges[0].operator), nil
 	}
 
-	operator := newSplitOperator(ranges, params.MemoryConsumptionTracker, timeRange)
+	operator := newTimeRangeSplitOperator(ranges, params.MemoryConsumptionTracker, timeRange)
 	return planning.NewSingleUseOperatorFactory(operator), nil
 }
 
