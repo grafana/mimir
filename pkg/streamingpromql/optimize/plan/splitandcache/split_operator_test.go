@@ -613,7 +613,7 @@ func TestSplitOperator(t *testing.T) {
 
 			stats, err := o.Stats(ctx)
 			require.NoError(t, err)
-			require.Equal(t, testCase.expectedStats, *stats.Encode(), "expected stats to match expected")
+			require.Equal(t, testCase.expectedStats, stats.Encode(), "expected stats to match expected")
 
 			stats.Close()
 
