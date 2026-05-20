@@ -73,11 +73,11 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.M
 		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
 		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
-		if err := o.Left.Finalize(ctx); err != nil {
+		if err := o.Left.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
-		if err := o.Right.Finalize(ctx); err != nil {
+		if err := o.Right.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -90,7 +90,7 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.M
 		o.rightSeriesCount = []int{len(rightMetadata)}
 		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
 
-		if err := o.Left.Finalize(ctx); err != nil {
+		if err := o.Left.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -103,7 +103,7 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.M
 		o.leftSeriesCount = []int{len(leftMetadata)}
 		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
-		if err := o.Right.Finalize(ctx); err != nil {
+		if err := o.Right.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -264,8 +264,8 @@ func (o *OrBinaryOperation) nextLeftSeries(ctx context.Context) (types.InstantVe
 	}
 
 	if len(o.leftSeriesCount) == 0 {
-		// No more series from left side remaining, finalize it.
-		if err := o.Left.Finalize(ctx); err != nil {
+		// No more series from left side remaining, call FinishedReading on it.
+		if err := o.Left.FinishedReading(ctx); err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 	}
@@ -311,8 +311,8 @@ func (o *OrBinaryOperation) nextRightSeries(ctx context.Context) (types.InstantV
 	}
 
 	if len(o.rightSeriesCount) == 0 {
-		// No more series from right side remaining, finalize it.
-		if err := o.Right.Finalize(ctx); err != nil {
+		// No more series from right side remaining, call FinishedReading on it.
+		if err := o.Right.FinishedReading(ctx); err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 	}
@@ -347,7 +347,7 @@ func (o *OrBinaryOperation) readNextRightSeries(ctx context.Context) (types.Inst
 	group.rightSeriesCount--
 	if group.rightSeriesCount == 0 {
 		// This is the last right series for the group, return it to the pool.
-		group.Finalize(o.MemoryConsumptionTracker)
+		group.FinishedReading(o.MemoryConsumptionTracker)
 	}
 
 	return data, nil
@@ -373,13 +373,13 @@ func (o *OrBinaryOperation) AfterPrepare(ctx context.Context) error {
 	return o.Right.AfterPrepare(ctx)
 }
 
-func (o *OrBinaryOperation) Finalize(ctx context.Context) error {
+func (o *OrBinaryOperation) FinishedReading(ctx context.Context) error {
 	for _, g := range o.leftSeriesGroups {
 		if g == nil {
 			continue
 		}
 
-		g.Finalize(o.MemoryConsumptionTracker)
+		g.FinishedReading(o.MemoryConsumptionTracker)
 	}
 
 	o.leftSeriesGroups = nil
@@ -389,16 +389,16 @@ func (o *OrBinaryOperation) Finalize(ctx context.Context) error {
 			continue
 		}
 
-		g.Finalize(o.MemoryConsumptionTracker)
+		g.FinishedReading(o.MemoryConsumptionTracker)
 	}
 
 	o.rightSeriesGroups = nil
 
-	if err := o.Left.Finalize(ctx); err != nil {
+	if err := o.Left.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return o.Right.Finalize(ctx)
+	return o.Right.FinishedReading(ctx)
 }
 
 func (o *OrBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
@@ -446,6 +446,6 @@ func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, mem
 	return filterSeries(rightData, g.leftSamplePresence, false, memoryConsumptionTracker, timeRange)
 }
 
-func (g *orGroup) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *orGroup) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(&g.leftSamplePresence, memoryConsumptionTracker)
 }

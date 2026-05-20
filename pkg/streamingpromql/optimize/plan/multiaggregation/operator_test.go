@@ -25,7 +25,7 @@ import (
 
 // Most of the operator logic is exercised by the tests in pkg/streamingpromql/testdata/ours/multi_aggregation.test.
 // The tests below cover behaviour that is difficult or impossible to exercise through PromQL test scripts.
-func TestOperator_FinalizeAndCloseBehaviour(t *testing.T) {
+func TestOperator_FinishedReadingAndCloseBehaviour(t *testing.T) {
 	ctx := context.Background()
 	inner := &operators.TestOperator{}
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
@@ -34,12 +34,12 @@ func TestOperator_FinalizeAndCloseBehaviour(t *testing.T) {
 	instance1 := group.AddInstance()
 	instance2 := group.AddInstance()
 
-	require.NoError(t, instance1.Finalize(ctx))
-	require.False(t, inner.Finalized, "should only finalize inner operator after all instances have been finalized")
-	require.NoError(t, instance1.Finalize(ctx))
-	require.False(t, inner.Finalized, "should ignore second Finalize call from instance already finalized")
-	require.NoError(t, instance2.Finalize(ctx))
-	require.True(t, inner.Finalized, "should finalize inner operator after all instances have been finalized")
+	require.NoError(t, instance1.FinishedReading(ctx))
+	require.False(t, inner.FinishedReadingCalled, "should only call FinishedReading on inner operator after all instances have had FinishedReading called")
+	require.NoError(t, instance1.FinishedReading(ctx))
+	require.False(t, inner.FinishedReadingCalled, "should ignore second FinishedReading call from instance that already had FinishedReading called")
+	require.NoError(t, instance2.FinishedReading(ctx))
+	require.True(t, inner.FinishedReadingCalled, "should call FinishedReading on inner operator after all instances have had FinishedReading called")
 
 	instance1.Close()
 	require.False(t, inner.Closed, "should only close inner operator after all instances have been closed")
@@ -111,9 +111,9 @@ func TestOperator_Stats(t *testing.T) {
 	require.Equal(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: float64(3)}}}, data, "second consumer should get expected result")
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 
-	// Finalize both operators, and check that the statistics are calculated correctly.
-	require.NoError(t, instance1.Finalize(ctx))
-	require.NoError(t, instance2.Finalize(ctx))
+	// Call FinishedReading on both operators, and check that the statistics are calculated correctly.
+	require.NoError(t, instance1.FinishedReading(ctx))
+	require.NoError(t, instance2.FinishedReading(ctx))
 
 	requireStats(t, instance1, ctx, 3, 3)
 	requireStats(t, instance2, ctx, 1, 1)

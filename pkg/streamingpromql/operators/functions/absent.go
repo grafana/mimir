@@ -122,9 +122,9 @@ func (a *Absent) AfterPrepare(ctx context.Context) error {
 	return a.Inner.AfterPrepare(ctx)
 }
 
-func (a *Absent) Finalize(ctx context.Context) error {
+func (a *Absent) FinishedReading(ctx context.Context) error {
 	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
-	return a.Inner.Finalize(ctx)
+	return a.Inner.FinishedReading(ctx)
 }
 
 func (a *Absent) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

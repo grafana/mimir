@@ -130,12 +130,12 @@ func (s *ScalarScalarBinaryOperation) AfterPrepare(ctx context.Context) error {
 	return s.Right.AfterPrepare(ctx)
 }
 
-func (s *ScalarScalarBinaryOperation) Finalize(ctx context.Context) error {
-	if err := s.Left.Finalize(ctx); err != nil {
+func (s *ScalarScalarBinaryOperation) FinishedReading(ctx context.Context) error {
+	if err := s.Left.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return s.Right.Finalize(ctx)
+	return s.Right.FinishedReading(ctx)
 }
 
 func (s *ScalarScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

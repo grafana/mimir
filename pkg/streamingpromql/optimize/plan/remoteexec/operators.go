@@ -10,8 +10,8 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
-func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations) error {
-	newAnnos, remoteStats, err := resp.Finalize(ctx)
+func finishedReading(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations) error {
+	newAnnos, remoteStats, err := resp.FinishedReading(ctx)
 	if err != nil {
 		return err
 	}

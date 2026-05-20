@@ -43,8 +43,8 @@ func (s *StepInvariantInstantVectorOperator) AfterPrepare(ctx context.Context) e
 	return s.inner.AfterPrepare(ctx)
 }
 
-func (s *StepInvariantInstantVectorOperator) Finalize(ctx context.Context) error {
-	return s.inner.Finalize(ctx)
+func (s *StepInvariantInstantVectorOperator) FinishedReading(ctx context.Context) error {
+	return s.inner.FinishedReading(ctx)
 }
 
 func (s *StepInvariantInstantVectorOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {

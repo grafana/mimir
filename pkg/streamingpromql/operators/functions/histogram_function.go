@@ -547,16 +547,16 @@ func (h *HistogramFunction) AfterPrepare(ctx context.Context) error {
 	return h.inner.AfterPrepare(ctx)
 }
 
-func (h *HistogramFunction) Finalize(ctx context.Context) error {
+func (h *HistogramFunction) FinishedReading(ctx context.Context) error {
 	seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
 	bucketGroupPointerSlicePool.Put(&h.remainingGroups, h.memoryConsumptionTracker)
 	h.nextGroupIdx = 0
 
-	if err := h.f.Finalize(ctx); err != nil {
+	if err := h.f.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return h.inner.Finalize(ctx)
+	return h.inner.FinishedReading(ctx)
 }
 
 func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
@@ -596,7 +596,7 @@ type histogramFunction interface {
 	ComputeNativeHistogramResult(pointIndex int, seriesIndex int, h *histogram.FloatHistogram) (float64, annotations.Annotations)
 	Prepare(ctx context.Context, params *types.PrepareParams) error
 	AfterPrepare(ctx context.Context) error
-	Finalize(ctx context.Context) error
+	FinishedReading(ctx context.Context) error
 	Stats(ctx context.Context) (*types.OperatorEvaluationStats, error)
 	Close()
 }
@@ -672,9 +672,9 @@ func (q *histogramQuantile) AfterPrepare(ctx context.Context) error {
 	return q.phArg.AfterPrepare(ctx)
 }
 
-func (q *histogramQuantile) Finalize(ctx context.Context) error {
+func (q *histogramQuantile) FinishedReading(ctx context.Context) error {
 	types.FPointSlicePool.Put(&q.phValues.Samples, q.memoryConsumptionTracker)
-	return q.phArg.Finalize(ctx)
+	return q.phArg.FinishedReading(ctx)
 }
 
 func (q *histogramQuantile) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
@@ -741,16 +741,16 @@ func (f *histogramFraction) AfterPrepare(ctx context.Context) error {
 	return f.upperArg.AfterPrepare(ctx)
 }
 
-func (f *histogramFraction) Finalize(ctx context.Context) error {
+func (f *histogramFraction) FinishedReading(ctx context.Context) error {
 	types.FPointSlicePool.Put(&f.lowerValues.Samples, f.memoryConsumptionTracker)
 	types.FPointSlicePool.Put(&f.upperValues.Samples, f.memoryConsumptionTracker)
 
-	err := f.lowerArg.Finalize(ctx)
+	err := f.lowerArg.FinishedReading(ctx)
 	if err != nil {
 		return err
 	}
 
-	return f.upperArg.Finalize(ctx)
+	return f.upperArg.FinishedReading(ctx)
 }
 
 func (f *histogramFraction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

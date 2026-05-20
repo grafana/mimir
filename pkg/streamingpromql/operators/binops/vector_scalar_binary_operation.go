@@ -267,14 +267,14 @@ func (v *VectorScalarBinaryOperation) AfterPrepare(ctx context.Context) error {
 	return v.Vector.AfterPrepare(ctx)
 }
 
-func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
+func (v *VectorScalarBinaryOperation) FinishedReading(ctx context.Context) error {
 	types.FPointSlicePool.Put(&v.scalarData.Samples, v.MemoryConsumptionTracker)
 
-	if err := v.Scalar.Finalize(ctx); err != nil {
+	if err := v.Scalar.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return v.Vector.Finalize(ctx)
+	return v.Vector.FinishedReading(ctx)
 }
 
 func (v *VectorScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {

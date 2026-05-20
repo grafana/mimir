@@ -387,8 +387,8 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 			types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
 
-			// Finalize the operator and confirm all memory has been released.
-			require.NoError(t, o.Finalize(ctx))
+			// Call FinishedReading on the operator and confirm all memory has been released.
+			require.NoError(t, o.FinishedReading(ctx))
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 			o.Close()
 		})
