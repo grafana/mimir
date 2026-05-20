@@ -40,25 +40,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Retrieve GitHub App credentials to get a token with org member read permissions.
-      # GITHUB_TOKEN doesn't have org-level permissions, so we use the mimir-github-bot GitHub App.
-      - name: Retrieve GitHub App Credentials from Vault
+      # We use the mimir-github-bot GitHub App because GITHUB_TOKEN doesn't have org-level permissions.
+      - name: Generate GitHub App Token for Membership
         if: steps.check_dockerfile.outputs.modified == 'true'
-        id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@28361cdb22223e5f1e34358c86c20908e7248760 # v1.1.0
+        id: app-token-for-membership
+        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
         with:
-          repo_secrets: |
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
-
-      - name: Generate GitHub App Token
-        if: steps.check_dockerfile.outputs.modified == 'true'
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          github_app: mimir-github-bot
 
       # Check if PR author is a Grafana organization member using the GitHub API.
       # This is more reliable than author_association which depends on public membership visibility.
@@ -81,7 +69,7 @@ jobs:
             echo "✗ User ${PR_AUTHOR} is not a Grafana organization member (HTTP $status_code)"
           fi
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token-for-membership.outputs.token }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
 
       # We want to allow running github actions for all contributors, but don't want all contributors to be able to
@@ -192,6 +180,15 @@ jobs:
             echo "isDifferent=true" >> $GITHUB_OUTPUT
           fi
 
+      # Tokens expire after 1h. Since building the image can take a long time, we create a fresh App Token for the last
+      # step of the build.
+      - name: Generate GitHub App Token
+        if: steps.check_dockerfile.outputs.modified == 'true'
+        id: app-token-for-commit
+        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
+        with:
+          github_app: mimir-github-bot
+
       # This step uses "Mimir bot" token (generated at the start of the workflow) instead of
       # "github-actions bot" (secrets.GITHUB_TOKEN) because any events triggered by the latter
       # don't spawn GitHub actions.
@@ -215,7 +212,7 @@ jobs:
             git push origin HEAD
           fi
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token-for-commit.outputs.token }}
           GITHUB_LOGIN: ${{ github.event.pull_request.user.login }}
           TAG: ${{ steps.compute_hash.outputs.tag }}
           MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}
