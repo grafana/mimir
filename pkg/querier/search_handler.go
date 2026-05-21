@@ -170,7 +170,6 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, err
 	}
 
-	// Limit (default 100).
 	limit := searchDefaultLimit
 	if v := q.Get("limit"); v != "" {
 		parsed, err := strconv.Atoi(v)
@@ -183,9 +182,6 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		limit = parsed
 	}
 
-	// Batch size (default searchDefaultBatchSize). batch_size=0 means
-	// "server-determined" and keeps the default; negative values rejected.
-	// Capped at maxSearchBatchSize to bound the per-batch pre-allocation.
 	batchSize := searchDefaultBatchSize
 	if v := q.Get("batch_size"); v != "" {
 		parsed, err := strconv.Atoi(v)
@@ -265,10 +261,6 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	}, nil
 }
 
-// parseSortOrder maps (sort_by, sort_dir) to storage.Ordering. sortDirExplicit
-// reports whether the caller supplied a sort_dir; when sort_by=score and
-// sort_dir is explicit we reject per Prometheus PR #18573 (score ordering is
-// always desc).
 func parseSortOrder(sortBy, sortDir string, sortDirExplicit bool) (storage.Ordering, error) {
 	switch sortBy {
 	case "alpha":
