@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // LoadMetaFilesAndMarkers reads the bucket and loads the meta files for the provided user.
@@ -196,7 +196,7 @@ func GetFormattedBlockSize(b *block.Meta) string {
 
 	size := GetBlockSizeBytes(b)
 
-	return humanize.IBytes(size)
+	return util.FormatIBytes(size)
 }
 
 func GetBlockSizeBytes(b *block.Meta) uint64 {

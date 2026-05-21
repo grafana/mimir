@@ -17,7 +17,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dustin/go-humanize"
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -354,7 +353,7 @@ func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 			return memberlist.EncodedNodeMetadata(meta).Role().String()
 		},
 		"FormatBytes": func(bytes int) string {
-			return humanize.IBytes(uint64(bytes))
+			return util.FormatIBytes(uint64(bytes))
 		},
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))
