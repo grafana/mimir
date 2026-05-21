@@ -19,10 +19,6 @@ import (
 	"strings"
 )
 
-// DefaultHTTPClient is the *http.Client used by mimirtool callers of NewClient.
-// Exported so it can be globally redefined.
-var DefaultHTTPClient = http.DefaultClient
-
 // Client is a minimal Grafana REST API client. It implements only the
 // subset of the API used by mimirtool.
 type Client struct {

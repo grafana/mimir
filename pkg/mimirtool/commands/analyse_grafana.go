@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"slices"
 	"sort"
@@ -52,7 +53,7 @@ func (f folderTitles) IsCumulative() bool {
 }
 
 func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	c, err := minisdk.NewClient(cmd.address, cmd.apiKey, minisdk.DefaultHTTPClient)
+	c, err := minisdk.NewClient(cmd.address, cmd.apiKey, http.DefaultClient)
 	if err != nil {
 		return err
 	}
