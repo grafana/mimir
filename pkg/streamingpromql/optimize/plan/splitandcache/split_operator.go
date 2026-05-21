@@ -24,6 +24,8 @@ type TimeRangeSplitOperator struct {
 	outputSeries []splitOutputSeries
 }
 
+var _ types.InstantVectorOperator = &TimeRangeSplitOperator{}
+
 type splitRange struct {
 	operator types.InstantVectorOperator
 	buffer   *operators.InstantVectorOperatorBuffer
@@ -83,7 +85,7 @@ func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers ty
 	labelBytesBuf := make([]byte, 0, 1024)
 	for seriesIdx, series := range allSeries {
 		labelBytesBuf = series.Labels.Bytes(labelBytesBuf)
-		seriesIndices[string(labelBytesBuf)] = seriesIdx
+		seriesIndices[string(labelBytesBuf)] = seriesIdx // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if err := s.addNewOutputSeries(0, seriesIdx); err != nil {
 			return nil, err
@@ -101,6 +103,7 @@ func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers ty
 		for rangeSeriesIdx, series := range rangeSeries {
 			labelBytesBuf = series.Labels.Bytes(labelBytesBuf)
 
+			// Important: don't extract the string(...) call in the map lookup below - passing it directly allows us to avoid allocating it.
 			if outputSeriesIdx, seenAlready := seriesIndices[string(labelBytesBuf)]; seenAlready {
 				if series.DropName != allSeries[outputSeriesIdx].DropName {
 					return nil, fmt.Errorf("series with labels %s has conflicting drop name values in different ranges", series.Labels.String())
@@ -108,7 +111,7 @@ func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers ty
 
 				s.outputSeries[outputSeriesIdx].sourceSeriesIndices[rangeIdx] = rangeSeriesIdx
 
-				// We're not doing to keep this labels instance (we already have it from a previous range), so
+				// We're not going to keep this labels instance (we already have it from a previous range), so
 				// decrease memory consumption now.
 				s.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(series.Labels)
 			} else {
