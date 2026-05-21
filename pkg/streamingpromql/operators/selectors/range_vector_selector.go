@@ -281,7 +281,7 @@ func (m *RangeVectorSelector) FinishedReading(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (m *RangeVectorSelector) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats := m.evaluationStats
 	m.evaluationStats = nil
 	return stats, nil, nil

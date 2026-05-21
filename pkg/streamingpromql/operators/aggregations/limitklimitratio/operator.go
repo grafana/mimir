@@ -204,8 +204,8 @@ func (o *Operator) FinishedReading(ctx context.Context) error {
 	return o.Param.FinishedReading(ctx)
 }
 
-func (o *Operator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, annos, err := types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, o.Inner, o.Param)
+func (o *Operator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, annos, err := types.FinalizeAndCombine[types.Finalizer](ctx, o.Inner, o.Param)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -823,7 +823,7 @@ func (o *failingInstantVectorOperator) FinishedReading(_ context.Context) error 
 	return nil
 }
 
-func (o *failingInstantVectorOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (o *failingInstantVectorOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not implemented")
 }
 
@@ -831,7 +831,7 @@ func (o *failingInstantVectorOperator) Close() {
 	// Nothing to do.
 }
 
-func TestInstantVectorOperator_Stats(t *testing.T) {
+func TestInstantVectorOperator_Finalize(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
@@ -914,7 +914,7 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 }
 
 func requireStats(t *testing.T, o types.Operator, ctx context.Context, expectedProcessed int64, expectedRead int64) {
-	operatorStats, _, err := o.Stats(ctx)
+	operatorStats, _, err := o.Finalize(ctx)
 	require.NoError(t, err)
 
 	require.False(t, operatorStats.HasSubsets(), "subsets should not be present in statistics returned by duplication consumer")

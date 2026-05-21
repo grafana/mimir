@@ -1517,14 +1517,14 @@ func TestOperatorEvaluationStats_GetTotalSamplesProcessed(t *testing.T) {
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
-// statsAndAnnotationsProvider is a minimal StatsAndAnnotationsProvider used by CombineStatsAndAnnotations tests.
+// statsAndAnnotationsProvider is a minimal Finalizer used by FinalizeAndCombine tests.
 type statsAndAnnotationsProvider struct {
 	stats *OperatorEvaluationStats
 	annos annotations.Annotations
 	err   error
 }
 
-func (p *statsAndAnnotationsProvider) Stats(_ context.Context) (*OperatorEvaluationStats, annotations.Annotations, error) {
+func (p *statsAndAnnotationsProvider) Finalize(_ context.Context) (*OperatorEvaluationStats, annotations.Annotations, error) {
 	return p.stats, p.annos, p.err
 }
 
@@ -1538,7 +1538,7 @@ func makeAnnotations(errs ...error) annotations.Annotations {
 	return a
 }
 
-func TestCombineStatsAndAnnotations_AnnotationHandling(t *testing.T) {
+func TestFinalizeAndCombine_AnnotationHandling(t *testing.T) {
 	ctx := context.Background()
 	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	timeRange := NewInstantQueryTimeRange(timestamp.Time(0))
@@ -1554,13 +1554,13 @@ func TestCombineStatsAndAnnotations_AnnotationHandling(t *testing.T) {
 	}
 
 	t.Run("single operator with no annotations", func(t *testing.T) {
-		_, combinedAnnos, err := CombineStatsAndAnnotations(ctx, &statsAndAnnotationsProvider{stats: newStats(t)})
+		_, combinedAnnos, err := FinalizeAndCombine(ctx, &statsAndAnnotationsProvider{stats: newStats(t)})
 		require.NoError(t, err)
 		require.Nil(t, combinedAnnos)
 	})
 
 	t.Run("single operator with annotations", func(t *testing.T) {
-		_, combinedAnnos, err := CombineStatsAndAnnotations(ctx, &statsAndAnnotationsProvider{
+		_, combinedAnnos, err := FinalizeAndCombine(ctx, &statsAndAnnotationsProvider{
 			stats: newStats(t),
 			annos: makeAnnotations(warning1),
 		})
@@ -1569,7 +1569,7 @@ func TestCombineStatsAndAnnotations_AnnotationHandling(t *testing.T) {
 	})
 
 	t.Run("multiple operators with mixed annotations", func(t *testing.T) {
-		_, combinedAnnos, err := CombineStatsAndAnnotations(ctx,
+		_, combinedAnnos, err := FinalizeAndCombine(ctx,
 			&statsAndAnnotationsProvider{stats: newStats(t), annos: makeAnnotations(warning1)},
 			&statsAndAnnotationsProvider{stats: newStats(t)},
 			&statsAndAnnotationsProvider{stats: newStats(t), annos: makeAnnotations(warning2, info1)},

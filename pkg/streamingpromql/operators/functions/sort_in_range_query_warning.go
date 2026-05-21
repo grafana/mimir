@@ -12,7 +12,7 @@ import (
 )
 
 // SortInRangeQueryWarning is a wrapper that delegates everything to its inner operator but
-// emits a "sort is ineffective for range queries" warning annotation from Stats.
+// emits a "sort is ineffective for range queries" warning annotation from Finalize.
 // It is used by the sort/sort_desc/sort_by_label/sort_by_label_desc factories when the query
 // is a range query.
 type SortInRangeQueryWarning struct {
@@ -53,8 +53,8 @@ func (s *SortInRangeQueryWarning) FinishedReading(ctx context.Context) error {
 	return s.Inner.FinishedReading(ctx)
 }
 
-func (s *SortInRangeQueryWarning) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := s.Inner.Stats(ctx)
+func (s *SortInRangeQueryWarning) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := s.Inner.Finalize(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

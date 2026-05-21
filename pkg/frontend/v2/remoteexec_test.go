@@ -845,7 +845,7 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 	}
 }
 
-func TestExecutionResponses_FinishedReadingAndStats(t *testing.T) {
+func TestExecutionResponses_FinishedReadingAndFinalize(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
 	responseCreators := map[string]func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
@@ -922,7 +922,7 @@ func TestExecutionResponses_FinishedReadingAndStats(t *testing.T) {
 					expectedOperatorStats.TrackSampleForInstantVectorSelector(timeRange.StartT, 123, nil)
 				}
 
-				operatorStats, annos, err := response.Stats(ctx)
+				operatorStats, annos, err := response.Finalize(ctx)
 				require.NoError(t, err)
 				require.Equal(t, expectedOperatorStats, operatorStats)
 
@@ -1311,16 +1311,16 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	_, annos, err := resp1.Stats(ctx)
+	_, annos, err := resp1.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.Annotations{}
 	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
 	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 
-	_, annos, err = resp2.Stats(ctx)
+	_, annos, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Stats")
+	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Finalize")
 
 	_, err = resp2.GetNextSeries(ctx)
 	require.EqualError(t, err, "can't read next message for node stream at index 1, as it is already finished")
@@ -1438,16 +1438,16 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 
 	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 
-	_, annos, err := resp1.Stats(ctx)
+	_, annos, err := resp1.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.Annotations{}
 	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
 	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 
-	_, annos, err = resp2.Stats(ctx)
+	_, annos, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Stats")
+	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Finalize")
 }
 
 func TestRemoteExecutionGroupEvaluator_PerStepAnnotations(t *testing.T) {
@@ -1521,14 +1521,14 @@ func TestRemoteExecutionGroupEvaluator_PerStepAnnotations(t *testing.T) {
 
 	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 
-	_, annos, err := resp1.Stats(ctx)
+	_, annos, err := resp1.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.Annotations{}
 	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation for node index 0"))
 	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation for node index 0"))
 	require.Equal(t, expectedAnnos, annos)
 
-	_, annos, err = resp2.Stats(ctx)
+	_, annos, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos = annotations.Annotations{}
 	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation for node index 1"))
@@ -1717,16 +1717,16 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinishedReading(t *
 
 	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 
-	_, annos, err := resp1.Stats(ctx)
+	_, annos, err := resp1.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.Annotations{}
 	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
 	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
 	require.Equal(t, expectedAnnos, annos)
 
-	_, annos, err = resp2.Stats(ctx)
+	_, annos, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Stats")
+	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Finalize")
 }
 
 func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode(t *testing.T) {
@@ -1817,7 +1817,7 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 
 	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 
-	_, annos, err := resp2.Stats(ctx)
+	_, annos, err := resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.Annotations{}
 	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))

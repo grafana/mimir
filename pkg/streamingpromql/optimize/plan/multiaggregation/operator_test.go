@@ -52,7 +52,7 @@ func TestOperator_FinishedReadingAndCloseBehaviour(t *testing.T) {
 	require.True(t, inner.Closed, "should close inner operator after all instances have been closed")
 }
 
-func TestOperator_Stats(t *testing.T) {
+func TestOperator_Finalize(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
@@ -127,7 +127,7 @@ func TestOperator_Stats(t *testing.T) {
 }
 
 func requireStats(t *testing.T, o types.Operator, ctx context.Context, expectedProcessed int64, expectedRead int64) {
-	operatorStats, _, err := o.Stats(ctx)
+	operatorStats, _, err := o.Finalize(ctx)
 	require.NoError(t, err)
 
 	require.False(t, operatorStats.HasSubsets(), "subsets should not be present in statistics returned by duplication consumer")

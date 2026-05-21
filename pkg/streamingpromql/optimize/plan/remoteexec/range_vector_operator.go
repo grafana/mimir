@@ -72,8 +72,8 @@ func (r *RangeVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
 	return r.expressionPosition
 }
 
-func (r *RangeVectorRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return r.resp.Stats(ctx)
+func (r *RangeVectorRemoteExec) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return r.resp.Finalize(ctx)
 }
 
 func (r *RangeVectorRemoteExec) Close() {

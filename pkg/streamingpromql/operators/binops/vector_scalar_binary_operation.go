@@ -276,8 +276,8 @@ func (v *VectorScalarBinaryOperation) FinishedReading(ctx context.Context) error
 	return v.Vector.FinishedReading(ctx)
 }
 
-func (v *VectorScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, v.Vector, v.Scalar)
+func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine[types.Finalizer](ctx, v.Vector, v.Scalar)
 	if err != nil {
 		return nil, nil, err
 	}

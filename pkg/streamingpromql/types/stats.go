@@ -627,15 +627,15 @@ func (s *subsetStats) Close() {
 	Int64SlicePool.Put(&s.samplesReadIfFirstStep, s.memoryConsumptionTracker)
 }
 
-// CombineStatsAndAnnotations retrieves and combines query stats and annotations from multiple operators.
+// FinalizeAndCombine retrieves and combines query stats and annotations from multiple operators.
 // The caller is responsible for calling Close() on the returned stats.
 // The returned annotations may be nil if none of the operators reported any annotations.
-func CombineStatsAndAnnotations[T StatsAndAnnotationsProvider](ctx context.Context, operators ...T) (*OperatorEvaluationStats, annotations.Annotations, error) {
+func FinalizeAndCombine[T Finalizer](ctx context.Context, operators ...T) (*OperatorEvaluationStats, annotations.Annotations, error) {
 	var combinedStats *OperatorEvaluationStats
 	var combinedAnnos annotations.Annotations
 
 	for _, op := range operators {
-		stats, annos, err := op.Stats(ctx)
+		stats, annos, err := op.Finalize(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -659,6 +659,6 @@ func CombineStatsAndAnnotations[T StatsAndAnnotationsProvider](ctx context.Conte
 	return combinedStats, combinedAnnos, nil
 }
 
-type StatsAndAnnotationsProvider interface {
-	Stats(context.Context) (*OperatorEvaluationStats, annotations.Annotations, error)
+type Finalizer interface {
+	Finalize(context.Context) (*OperatorEvaluationStats, annotations.Annotations, error)
 }

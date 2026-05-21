@@ -277,8 +277,8 @@ func (c *CountValues) FinishedReading(ctx context.Context) error {
 	return c.LabelName.FinishedReading(ctx)
 }
 
-func (c *CountValues) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, c.Inner, c.LabelName)
+func (c *CountValues) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.FinalizeAndCombine[types.Finalizer](ctx, c.Inner, c.LabelName)
 }
 
 func (c *CountValues) Close() {

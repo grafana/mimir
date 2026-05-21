@@ -73,10 +73,10 @@ type RemoteExecutionResponse interface {
 	// FinishedReading can only be called before Close is called.
 	FinishedReading(ctx context.Context) (stats.Stats, error)
 
-	// Stats returns the evaluation stats for this request.
+	// Finalize returns the evaluation stats and annotations for this request.
 	//
-	// Stats must only be called once. It may only be called after FinishedReading has been called for all requests in the group and before Close.
-	Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error)
+	// Finalize must only be called once per request. It may only be called after FinishedReading has been called for all requests in the group and before Close.
+	Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error)
 
 	// Close cleans up any resources associated with this request.
 	//

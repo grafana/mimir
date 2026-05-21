@@ -232,7 +232,7 @@ func (v *InstantVectorSelector) FinishedReading(ctx context.Context) error {
 	return nil
 }
 
-func (v *InstantVectorSelector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (v *InstantVectorSelector) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats := v.evaluationStats
 	v.evaluationStats = nil
 	return stats, nil, nil

@@ -178,8 +178,8 @@ func (a *Aggregation) SetParamData(data types.ScalarData) {
 	a.aggregator.ParamData = data
 }
 
-func (a *Aggregation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := a.Inner.Stats(ctx)
+func (a *Aggregation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := a.Inner.Finalize(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -1067,7 +1067,7 @@ func (o *failingRangeVectorOperator) Close() {
 	o.histogramsView = nil
 }
 
-func (o *failingRangeVectorOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (o *failingRangeVectorOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not implemented")
 }
 
@@ -1075,7 +1075,7 @@ func requireNoMemoryConsumption(t *testing.T, memoryConsumptionTracker *limiter.
 	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
-func TestRangeVectorOperator_Stats(t *testing.T) {
+func TestRangeVectorOperator_Finalize(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 

@@ -381,7 +381,7 @@ func (g *RemoteExecutionGroupEvaluator) statsForStream(ctx context.Context, node
 	var annos annotations.Annotations
 	if g.combinedAnnotations != nil {
 		// If this group was evaluated by a querier that does not support per-node annotations, return all annotations for the group
-		// to the first node that calls Stats(), and then do not return them again for subsequent nodes.
+		// to the first node that calls Finalize(), and then do not return them again for subsequent nodes.
 		// combinedAnnotations and perNodeAnnotations will never both be set, so falling through to the else branch below for subsequent nodes is OK.
 		if len(g.nodeStreams.streams) > 1 {
 			level.Warn(g.logger).Log("msg", "RemoteExecutionGroupEvaluator received a combined set of annotations for a request with multiple nodes. This is expected during an upgrade from queriers without per-node annotation support, but a bug otherwise, and may lead to incorrect annotations being cached if this response is being cached.")
@@ -566,7 +566,7 @@ func (r *scalarExecutionResponse) FinishedReading(ctx context.Context) (stats.St
 	return r.group.finishedReadingStream(ctx, r.nodeStreamIndex)
 }
 
-func (r *scalarExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (r *scalarExecutionResponse) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return r.group.statsForStream(ctx, r.nodeStreamIndex)
 }
 
@@ -657,7 +657,7 @@ func (r *instantVectorExecutionResponse) FinishedReading(ctx context.Context) (s
 	return r.group.finishedReadingStream(ctx, r.nodeStreamIndex)
 }
 
-func (r *instantVectorExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (r *instantVectorExecutionResponse) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return r.group.statsForStream(ctx, r.nodeStreamIndex)
 }
 
@@ -767,7 +767,7 @@ func (r *rangeVectorExecutionResponse) FinishedReading(ctx context.Context) (sta
 	return r.group.finishedReadingStream(ctx, r.nodeStreamIndex)
 }
 
-func (r *rangeVectorExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (r *rangeVectorExecutionResponse) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return r.group.statsForStream(ctx, r.nodeStreamIndex)
 }
 

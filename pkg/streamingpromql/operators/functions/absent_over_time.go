@@ -133,8 +133,8 @@ func (a *AbsentOverTime) FinishedReading(ctx context.Context) error {
 	return a.Inner.FinishedReading(ctx)
 }
 
-func (a *AbsentOverTime) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return a.Inner.Stats(ctx)
+func (a *AbsentOverTime) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return a.Inner.Finalize(ctx)
 }
 
 func (a *AbsentOverTime) Close() {

@@ -53,7 +53,7 @@ func (n *NoOpInstant) FinishedReading(_ context.Context) error {
 	return nil
 }
 
-func (n *NoOpInstant) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (n *NoOpInstant) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats, err := types.NewOperatorEvaluationStats(ctx, n.timeRange, n.memoryConsumptionTracker, 0)
 	return stats, nil, err
 }
@@ -94,7 +94,7 @@ func (n *NoOpRange) FinishedReading(_ context.Context) error {
 	return nil
 }
 
-func (n *NoOpRange) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (n *NoOpRange) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats, err := types.NewOperatorEvaluationStats(ctx, n.timeRange, n.memoryConsumptionTracker, 0)
 	return stats, nil, err
 }

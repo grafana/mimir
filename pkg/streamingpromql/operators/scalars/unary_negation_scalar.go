@@ -54,8 +54,8 @@ func (u *UnaryNegationOfScalar) FinishedReading(ctx context.Context) error {
 	return u.Inner.FinishedReading(ctx)
 }
 
-func (u *UnaryNegationOfScalar) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return u.Inner.Stats(ctx)
+func (u *UnaryNegationOfScalar) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return u.Inner.Finalize(ctx)
 }
 
 func (u *UnaryNegationOfScalar) Close() {

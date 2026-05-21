@@ -336,8 +336,8 @@ func (a *AndUnlessBinaryOperation) FinishedReading(ctx context.Context) error {
 	return a.Right.FinishedReading(ctx)
 }
 
-func (a *AndUnlessBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return types.CombineStatsAndAnnotations(ctx, a.Left, a.Right)
+func (a *AndUnlessBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.FinalizeAndCombine(ctx, a.Left, a.Right)
 }
 
 func (a *AndUnlessBinaryOperation) Close() {

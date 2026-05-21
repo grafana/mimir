@@ -546,11 +546,11 @@ func (m *FunctionOverRangeVectorSplit[T]) storeResultsInCache(ctx context.Contex
 	return nil
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	var finalStats *types.OperatorEvaluationStats
 
 	for _, split := range m.splits {
-		rangeStats, err := split.Stats(ctx)
+		rangeStats, rangeAnnos, err := split.Finalize(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -569,6 +569,8 @@ func (m *FunctionOverRangeVectorSplit[T]) Stats(ctx context.Context) (*types.Ope
 				return nil, nil, err
 			}
 		}
+
+		m.Annotations.Merge(rangeAnnos)
 	}
 
 	// Now that we've retrieved stats for all splits, store the results in the cache.
@@ -597,10 +599,10 @@ type Split[T any] interface {
 	// correct metric name.
 	AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int)
 	FinishedReading(ctx context.Context) error
-	// Stats returns the stats for the split, with one OperatorEvaluationStats instance per range.
+	// Finalize returns the stats and annotations for the split, with one OperatorEvaluationStats instance per range.
 	// The caller must not modify the returned slice or the instances within it.
 	// The implementation is responsible for closing the returned stats instances when Close() is called.
-	Stats(ctx context.Context) ([]*types.OperatorEvaluationStats, error)
+	Finalize(ctx context.Context) ([]*types.OperatorEvaluationStats, annotations.Annotations, error)
 	StoreResultsInCache(ctx context.Context) error
 	Close()
 	IsCached() bool
@@ -617,8 +619,6 @@ type CachedSplit[T any] struct {
 	annotations    querierpb.Annotations
 	results        []T
 	stats          *types.OperatorEvaluationStats
-
-	parent *FunctionOverRangeVectorSplit[T]
 }
 
 func (c *CachedSplit[T]) RangeCount() int {
@@ -658,7 +658,6 @@ func NewCachedSplit[T any](
 		annotations:    annotations,
 		results:        results,
 		stats:          stats,
-		parent:         parent,
 	}, nil
 }
 
@@ -685,17 +684,20 @@ func (c *CachedSplit[T]) GetResultsAt(_ context.Context, idx int) ([]T, error) {
 }
 
 func (c *CachedSplit[T]) FinishedReading(_ context.Context) error {
-	for _, w := range c.annotations.Warnings {
-		c.parent.Annotations.Add(querierpb.NewWarningAnnotation(w))
-	}
-	for _, i := range c.annotations.Infos {
-		c.parent.Annotations.Add(querierpb.NewInfoAnnotation(i))
-	}
 	return nil
 }
 
-func (c *CachedSplit[T]) Stats(_ context.Context) ([]*types.OperatorEvaluationStats, error) {
-	return []*types.OperatorEvaluationStats{c.stats}, nil
+func (c *CachedSplit[T]) Finalize(ctx context.Context) ([]*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	var annos annotations.Annotations
+
+	for _, w := range c.annotations.Warnings {
+		annos.Add(querierpb.NewWarningAnnotation(w))
+	}
+	for _, i := range c.annotations.Infos {
+		annos.Add(querierpb.NewInfoAnnotation(i))
+	}
+
+	return []*types.OperatorEvaluationStats{c.stats}, annos, nil
 }
 
 func (c *CachedSplit[T]) StoreResultsInCache(_ context.Context) error {
@@ -841,7 +843,6 @@ func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, localSeriesIdx
 		metricName = p.parent.metricNames.GetMetricNameForSeries(mergedIdx)
 	}
 	annotationErr := generator(metricName, p.parent.innerNodeExpressionPosition)
-	p.parent.Annotations.Add(annotationErr)
 	p.rangeAnnotations[rangeIdx].Add(annotationErr)
 }
 
@@ -859,27 +860,31 @@ func (p *UncachedSplit[T]) FinishedReading(ctx context.Context) error {
 	return nil
 }
 
-func (p *UncachedSplit[T]) Stats(ctx context.Context) ([]*types.OperatorEvaluationStats, error) {
-	combinedStatsForAllRanges, annos, err := p.operator.Stats(ctx)
+func (p *UncachedSplit[T]) Finalize(ctx context.Context) ([]*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	combinedStatsForAllRanges, combinedAnnos, err := p.operator.Finalize(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer combinedStatsForAllRanges.Close()
 
-	p.parent.Annotations.Merge(annos)
+	for _, annos := range p.rangeAnnotations {
+		if len(*annos) > 0 {
+			combinedAnnos.Merge(*annos)
+		}
+	}
 
 	p.stats = make([]*types.OperatorEvaluationStats, 0, len(p.ranges))
 	for _, rng := range p.ranges {
 		rangeStats, err := combinedStatsForAllRanges.CloneSingleStep(types.NewInstantQueryTimeRange(promts.Time(rng.End)))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		p.stats = append(p.stats, rangeStats)
 	}
 
-	return p.stats, nil
+	return p.stats, combinedAnnos, nil
 }
 
 func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {

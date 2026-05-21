@@ -52,8 +52,8 @@ type ShardedAvg struct {
 	Inner types.InstantVectorOperator
 }
 
-func (a *ShardedAvg) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, annos, err := a.Inner.Stats(ctx)
+func (a *ShardedAvg) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, annos, err := a.Inner.Finalize(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

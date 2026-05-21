@@ -56,8 +56,8 @@ type Concat struct {
 	nextOperatorIndex int
 }
 
-func (c *Concat) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return types.CombineStatsAndAnnotations(ctx, c.Inner...)
+func (c *Concat) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.FinalizeAndCombine(ctx, c.Inner...)
 }
 
 func NewConcat(inner []types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*Concat, error) {

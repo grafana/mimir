@@ -238,14 +238,14 @@ func (m *FunctionOverRangeVector) FinishedReading(ctx context.Context) error {
 	return nil
 }
 
-func (m *FunctionOverRangeVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (m *FunctionOverRangeVector) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	ops := make([]types.Operator, 1+len(m.ScalarArgs))
 	ops[0] = m.Inner
 	for i, sa := range m.ScalarArgs {
 		ops[1+i] = sa
 	}
 
-	stats, childAnnos, err := types.CombineStatsAndAnnotations(ctx, ops...)
+	stats, childAnnos, err := types.FinalizeAndCombine(ctx, ops...)
 	if err != nil {
 		return nil, nil, err
 	}
