@@ -665,12 +665,6 @@ github.com/googleapis/gax-go/v2/iterator
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
-# github.com/gosimple/slug v1.1.1
-## explicit
-github.com/gosimple/slug
-# github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-## explicit; go 1.13
-github.com/grafana-tools/sdk
 # github.com/grafana/dskit v0.0.0-20260505171221-7f6e6a43e255
 ## explicit; go 1.25.8
 github.com/grafana/dskit/backoff
@@ -893,8 +887,6 @@ github.com/kylelemons/godebug/pretty
 # github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0
 ## explicit; go 1.16
 github.com/lufia/plan9stats
-# github.com/mailru/easyjson v0.9.0
-## explicit; go 1.20
 # github.com/mattn/go-colorable v0.1.14
 ## explicit; go 1.18
 github.com/mattn/go-colorable
@@ -1227,9 +1219,6 @@ github.com/prometheus/sigv4
 # github.com/puzpuzpuz/xsync/v4 v4.5.0
 ## explicit; go 1.24
 github.com/puzpuzpuz/xsync/v4
-# github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be
-## explicit
-github.com/rainycape/unidecode
 # github.com/rs/cors v1.11.1
 ## explicit; go 1.13
 github.com/rs/cors
