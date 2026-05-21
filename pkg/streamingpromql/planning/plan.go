@@ -77,7 +77,10 @@ const QueryPlanV12 = QueryPlanVersion(12)
 // rather than reading it from the proto.
 const QueryPlanV13 = QueryPlanVersion(13)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV13
+// QueryPlanV14 introduces support for splitting a range query into smaller sub ranges.
+const QueryPlanV14 = QueryPlanVersion(14)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV14
 
 type QueryPlan struct {
 	Root       Node

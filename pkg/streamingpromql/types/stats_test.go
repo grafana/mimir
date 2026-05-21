@@ -598,6 +598,113 @@ func TestOperatorEvaluationStats_AddSingleStep_MultipleSteps(t *testing.T) {
 	require.EqualError(t, multipleSteps.AddSingleStep(oneStep), "cannot add a single step to a OperatorEvaluationStats instance with 6 steps")
 }
 
+func TestOperatorEvaluationStats_AddSubRange(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	startT := timestamp.Time(0)
+	destination, err := NewOperatorEvaluationStats(ctx, NewRangeQueryTimeRange(startT, startT.Add(5*time.Minute), time.Minute), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+
+	multiStepSource, err := NewOperatorEvaluationStats(ctx, NewRangeQueryTimeRange(startT.Add(time.Minute), startT.Add(3*time.Minute), time.Minute), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+	multiStepSource.allSeries.samplesProcessedPerStep[0] = 1
+	multiStepSource.allSeries.samplesProcessedPerStep[1] = 2
+	multiStepSource.allSeries.samplesProcessedPerStep[2] = 3
+	multiStepSource.allSeries.samplesReadIfSubsequentStep[0] = 11
+	multiStepSource.allSeries.samplesReadIfSubsequentStep[1] = 12
+	multiStepSource.allSeries.samplesReadIfSubsequentStep[2] = 13
+	multiStepSource.allSeries.samplesReadIfFirstStep[0] = 101
+	multiStepSource.allSeries.samplesReadIfFirstStep[1] = 102
+	multiStepSource.allSeries.samplesReadIfFirstStep[2] = 103
+
+	require.NoError(t, destination.AddSubRange(multiStepSource))
+	require.Equal(t, []int64{0, 1, 2, 3, 0, 0}, destination.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{0, 11, 12, 13, 0, 0}, destination.allSeries.samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{0, 101, 102, 103, 0, 0}, destination.allSeries.samplesReadIfFirstStep)
+
+	// Even if the step isn't the same, adding a single step range should still work.
+	singleStepSource, err := NewOperatorEvaluationStats(ctx, NewRangeQueryTimeRange(startT.Add(4*time.Minute), startT.Add(4*time.Minute), time.Millisecond), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+	singleStepSource.allSeries.samplesProcessedPerStep[0] = 4
+	singleStepSource.allSeries.samplesReadIfSubsequentStep[0] = 14
+	singleStepSource.allSeries.samplesReadIfFirstStep[0] = 104
+
+	require.NoError(t, destination.AddSubRange(singleStepSource))
+	require.Equal(t, []int64{0, 1, 2, 3, 4, 0}, destination.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{0, 11, 12, 13, 14, 0}, destination.allSeries.samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{0, 101, 102, 103, 104, 0}, destination.allSeries.samplesReadIfFirstStep)
+
+}
+
+func TestOperatorEvaluationStats_AddSubRange_ErrorCases(t *testing.T) {
+	create := func(timeRange QueryTimeRange, subsetCount int) *OperatorEvaluationStats {
+		ctx := context.Background()
+		stats, err := NewOperatorEvaluationStats(ctx, timeRange, limiter.NewUnlimitedMemoryConsumptionTracker(ctx), subsetCount)
+		require.NoError(t, err)
+		return stats
+	}
+
+	testCases := map[string]struct {
+		receiver      *OperatorEvaluationStats
+		other         *OperatorEvaluationStats
+		expectedError string
+	}{
+		"receiver has no subsets, other does": {
+			receiver:      create(NewInstantQueryTimeRange(time.Now()), 0),
+			other:         create(NewInstantQueryTimeRange(time.Now()), 1),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance that has subsets",
+		},
+		"receiver has subsets, other does not": {
+			receiver:      create(NewInstantQueryTimeRange(time.Now()), 1),
+			other:         create(NewInstantQueryTimeRange(time.Now()), 0),
+			expectedError: "cannot add a sub-range to an OperatorEvaluationStats instance that has subsets",
+		},
+		"both have subsets": {
+			receiver:      create(NewInstantQueryTimeRange(time.Now()), 1),
+			other:         create(NewInstantQueryTimeRange(time.Now()), 1),
+			expectedError: "cannot add a sub-range to an OperatorEvaluationStats instance that has subsets",
+		},
+		"both have multiple steps and a different interval": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(1), timestamp.Time(50), time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(3), timestamp.Time(7), 2*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with multiple steps and interval 2 ms to another instance with multiple steps and interval 1 ms",
+		},
+		"both have the same step, but other instance ends after receiver": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(300), timestamp.Time(700), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [300, 700] to another instance with time range [100, 500]",
+		},
+		"both have the same step, but other instance is entirely after receiver": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(1000), timestamp.Time(1500), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [1000, 1500] to another instance with time range [100, 500]",
+		},
+		"both have the same step, but other instance starts before receiver": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(50), timestamp.Time(300), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [50, 300] to another instance with time range [100, 500]",
+		},
+		"both have the same step, but other instance is entirely before receiver": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(50), timestamp.Time(80), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [50, 80] to another instance with time range [100, 500]",
+		},
+		"both have the same step and other instance is within receiver, but steps do not align": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(151), timestamp.Time(351), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [151, 351] and interval 10 ms to another instance with time range [100, 500] and interval 10 ms",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			err := testCase.receiver.AddSubRange(testCase.other)
+			require.EqualError(t, err, testCase.expectedError)
+		})
+	}
+}
+
 func TestOperatorEvaluationStats_Clone(t *testing.T) {
 	start := timestamp.Time(0)
 	step := time.Minute
