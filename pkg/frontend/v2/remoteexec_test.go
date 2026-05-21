@@ -1042,8 +1042,6 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 	require.ElementsMatch(t, []string{"info: you should know about this", "info: you should know about this too"}, infos)
 
 	require.Empty(t, perNodeAnnotations)
-
-	// TODO: test case where per-node annotations are present
 }
 
 func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRequest {

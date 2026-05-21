@@ -603,7 +603,7 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 			combinedAnnos = combinedAnnos.Merge(s.Annotations)
 		} else if len(s.Annotations) > 0 {
 			// Only bother populating the map if there are any annotations.
-			encodedAnnotations[nodeIndex] = o.encodeAnnotations(s.Annotations)
+			encodedAnnotations[nodeIndex] = querierpb.EncodeAnnotations(s.Annotations, o.originalExpression)
 		}
 	}
 
@@ -618,26 +618,13 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-				Annotations:        o.encodeAnnotations(combinedAnnos),
+				Annotations:        querierpb.EncodeAnnotations(combinedAnnos, o.originalExpression),
 				Stats:              o.populateStats(ctx, nodeInfo),
 				PerNodeStats:       encodedStats,
 				PerNodeAnnotations: encodedAnnotations,
 			},
 		},
 	})
-}
-
-func (o *evaluationObserver) encodeAnnotations(a annotations.Annotations) querierpb.Annotations {
-	if len(a) == 0 {
-		return querierpb.Annotations{}
-	}
-
-	warnings, infos := a.AsStrings(o.originalExpression, 0, 0)
-
-	return querierpb.Annotations{
-		Warnings: warnings,
-		Infos:    infos,
-	}
 }
 
 func (o *evaluationObserver) populateStats(ctx context.Context, nodeInfo map[planning.Node]streamingpromql.NodeCompletionInfo) querier_stats.Stats {

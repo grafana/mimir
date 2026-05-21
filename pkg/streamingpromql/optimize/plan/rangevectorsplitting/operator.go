@@ -688,16 +688,7 @@ func (c *CachedSplit[T]) FinishedReading(_ context.Context) error {
 }
 
 func (c *CachedSplit[T]) Finalize(ctx context.Context) ([]*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	var annos annotations.Annotations
-
-	for _, w := range c.annotations.Warnings {
-		annos.Add(querierpb.NewWarningAnnotation(w))
-	}
-	for _, i := range c.annotations.Infos {
-		annos.Add(querierpb.NewInfoAnnotation(i))
-	}
-
-	return []*types.OperatorEvaluationStats{c.stats}, annos, nil
+	return []*types.OperatorEvaluationStats{c.stats}, c.annotations.Decode(), nil
 }
 
 func (c *CachedSplit[T]) StoreResultsInCache(_ context.Context) error {
@@ -894,9 +885,6 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			continue
 		}
 
-		var ann querierpb.Annotations
-		ann.Warnings, ann.Infos = p.rangeAnnotations[rangeIdx].AsStrings("", 0, 0)
-
 		seriesMetadata := make([]querierpb.SeriesMetadata, 0, len(p.rangeSeriesMetadata[rangeIdx]))
 		for _, seriesMetadataIdx := range p.rangeSeriesMetadata[rangeIdx] {
 			seriesMetadata = append(seriesMetadata, p.seriesMetadata[seriesMetadataIdx])
@@ -909,7 +897,7 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			splitRange.Start,
 			splitRange.End,
 			seriesMetadata,
-			ann,
+			querierpb.EncodeAnnotations(*p.rangeAnnotations[rangeIdx], ""),
 			p.rangeResults[rangeIdx],
 			p.stats[rangeIdx].Encode(),
 			len(p.seriesMetadata),

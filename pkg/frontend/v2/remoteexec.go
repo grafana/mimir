@@ -838,31 +838,13 @@ func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluato
 }
 
 func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (annotations.Annotations, stats.Stats, map[int64]types.EncodedOperatorEvaluationStats, map[int64]annotations.Annotations) {
-	combinedAnnotations := decodeAnnotations(msg.Annotations)
+	combinedAnnotations := msg.Annotations.Decode()
 	perNodeAnnotations := make(map[int64]annotations.Annotations, len(msg.PerNodeAnnotations))
 	for nodeIdx, a := range msg.PerNodeAnnotations {
-		perNodeAnnotations[nodeIdx] = decodeAnnotations(a)
+		perNodeAnnotations[nodeIdx] = a.Decode()
 	}
 
 	return combinedAnnotations, msg.Stats, msg.PerNodeStats, perNodeAnnotations
-}
-
-func decodeAnnotations(encoded querierpb.Annotations) annotations.Annotations {
-	if len(encoded.Infos) == 0 && len(encoded.Warnings) == 0 {
-		return nil
-	}
-
-	annos := make(annotations.Annotations, len(encoded.Infos)+len(encoded.Warnings))
-
-	for _, a := range encoded.Infos {
-		annos.Add(querierpb.NewInfoAnnotation(a))
-	}
-
-	for _, a := range encoded.Warnings {
-		annos.Add(querierpb.NewWarningAnnotation(a))
-	}
-
-	return annos
 }
 
 func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
