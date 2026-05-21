@@ -84,6 +84,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		var t int64
 		var f float64
 		var h *histogram.FloatHistogram
+		// hInterpolated is true when h is a freshly-interpolated histogram (not a source sample),
+		// so we know not to feed it into the lastHistogram reuse path on the next iteration.
+		hInterpolated := false
 
 		ts := stepT
 
@@ -156,10 +159,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 						continue
 					}
 					h = interpolated
-					// Force a new FloatHistogram allocation on the next iteration so the
-					// interpolation we just returned isn't aliased and accidentally mutated.
-					lastHistogramT = math.MinInt64
-					lastHistogram = nil
+					hInterpolated = true
 				}
 				// If the right-side neighbour is a float (mixed within the look-ahead window)
 				// under smoothed, fall back to the lookback histogram. Annotation emission for
@@ -213,8 +213,16 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			}
 
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
-			lastHistogramT = t
-			lastHistogram = h
+			if hInterpolated {
+				// Don't cache a smoothed-interpolated histogram under the source-sample timestamp
+				// t; on the next step the PeekPrev reuse check would otherwise feed the previous
+				// interpolation back in as the left endpoint and drift the result.
+				lastHistogramT = math.MinInt64
+				lastHistogram = nil
+			} else {
+				lastHistogramT = t
+				lastHistogram = h
+			}
 
 			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
 			sampleCount := types.EquivalentFloatSampleCount(h)
@@ -293,10 +301,12 @@ func interpolateHistogramAt(h1 *histogram.FloatHistogram, t1 int64, h2 *histogra
 		return h2.Copy(), nil
 	}
 	fraction := float64(t-t1) / float64(t2-t1)
-	// Treat any non-gauge histogram as a counter for the purpose of reset detection. This matches
-	// the upstream test expectation that a CounterResetHint of reset (or unknown/not_reset)
-	// triggers the counter interpretation in interpolation.
-	if h2.CounterResetHint != histogram.GaugeType && h2.DetectReset(h1) {
+	// Treat the pair as counter data unless BOTH samples explicitly carry the gauge hint. If
+	// either side could be a counter (UnknownCounterReset / CounterReset / NotCounterReset),
+	// model a detected decrease as a reset from zero. Matches upstream Prometheus's
+	// interpolateHistograms behaviour.
+	isCounter := h1.CounterResetHint != histogram.GaugeType || h2.CounterResetHint != histogram.GaugeType
+	if isCounter && h2.DetectReset(h1) {
 		return h2.Copy().Mul(fraction), nil
 	}
 	result := h2.Copy()

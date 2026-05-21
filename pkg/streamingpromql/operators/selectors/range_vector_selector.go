@@ -135,16 +135,18 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	fillBufferRequired := true
 
 	// We may already have a point in the buffer after the range end. If we continue to
-	// fill the float buffer we may have multiple points after the rangeEnd.
+	// fill the float (or histogram) buffer we may pull in samples that are well outside the
+	// current step's window.
 	//
-	// This can occur in a range query where there are missing samples.
-	// The last point can be well past the rangeEnd and we do not need to get another point until
-	// the step iterations takes us to a new rangeEnd beyond this point.
-	//
-	// Note that we only do this for smoothed/anchored since it does not care about histograms.
-	if (m.Selector.Anchored || m.Selector.Smoothed) && m.floats.Count() > 0 {
-		last := m.floats.Last()
-		if last.T >= originalRangeEnd {
+	// This can occur in a range query where there are missing samples or where a sparse
+	// histogram series sits next to a dense float series: the last sample can be well past
+	// rangeEnd and we do not need to fetch another sample until a future step's rangeEnd
+	// moves beyond it.
+	if m.Selector.Anchored || m.Selector.Smoothed {
+		switch {
+		case m.floats.Count() > 0 && m.floats.Last().T >= originalRangeEnd:
+			fillBufferRequired = false
+		case m.histograms.Count() > 0 && m.histograms.Last().T >= originalRangeEnd:
 			fillBufferRequired = false
 		}
 	}
@@ -165,7 +167,15 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	// extended look-back/look-ahead window for the anchored/smoothed paths, matching Prometheus's
 	// extendedRate / extendedHistogramRate dispatch where mixed floats and histograms anywhere in
 	// the extended window force the query to drop the point with MixedFloatsHistogramsWarning.
-	m.stepData.MixedInExtendedRange = (m.Selector.Anchored || m.Selector.Smoothed) && m.floats.Count() > 0 && m.histograms.Count() > 0
+	//
+	// The ring buffers can legitimately hold samples outside the current step's
+	// (extendedRangeStart, extendedRangeEnd] window (a single trailing sample is retained after
+	// fillBuffer stops, and gaps in the data can leave that sample far past extendedRangeEnd for
+	// many subsequent steps). Restricting the count to the active window prevents an
+	// out-of-window stray sample from spuriously flagging this step as mixed.
+	m.stepData.MixedInExtendedRange = (m.Selector.Anchored || m.Selector.Smoothed) &&
+		m.floats.CountBetween(rangeStart, rangeEnd) > 0 &&
+		m.histograms.CountBetween(rangeStart, rangeEnd) > 0
 
 	if m.Selector.Anchored || m.Selector.Smoothed {
 		if m.floats.Count() > 0 && m.floats.PointAt(0).T > originalRangeEnd {

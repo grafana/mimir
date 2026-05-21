@@ -241,6 +241,43 @@ func (b *HPointRingBuffer) Count() int {
 	return b.size
 }
 
+// Last returns the last point in the buffer.
+// Note that it is the caller's responsibility to have checked that the buffer size is not empty.
+func (b *HPointRingBuffer) Last() promql.HPoint {
+	return b.pointAt(b.size - 1)
+}
+
+// CountUntil returns the number of samples in this buffer with timestamp up to and including maxT.
+func (b *HPointRingBuffer) CountUntil(maxT int64) int {
+	count := b.size
+
+	for count > 0 && b.pointAt(count-1).T > maxT {
+		count--
+	}
+
+	return count
+}
+
+// CountBetween returns the number of samples in this buffer with timestamp after minT and up to and including maxT.
+func (b *HPointRingBuffer) CountBetween(minT, maxT int64) int {
+	// Why do this rather than just loop over all the elements?
+	// It's expected that most of the elements in the buffer are in the time range, so it's faster
+	// to check for points outside the range at the start and end to count how many are in the range.
+	countToMaxT := b.CountUntil(maxT)
+
+	if countToMaxT == 0 {
+		return 0
+	}
+
+	countAtOrBeforeMinT := 0
+
+	for countAtOrBeforeMinT < countToMaxT && b.pointAt(countAtOrBeforeMinT).T <= minT {
+		countAtOrBeforeMinT++
+	}
+
+	return countToMaxT - countAtOrBeforeMinT
+}
+
 // Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
 func (b *HPointRingBuffer) Reset() {
 	b.firstIndex = 0
