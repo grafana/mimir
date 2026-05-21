@@ -19,7 +19,8 @@ import (
 	"strings"
 )
 
-// DefaultHTTPClient is the default *http.Client used by NewClient when callers do not provide one.
+// DefaultHTTPClient is the *http.Client used by mimirtool callers of NewClient.
+// Exported so it can be globally redefined.
 var DefaultHTTPClient = http.DefaultClient
 
 // Client is a minimal Grafana REST API client. It implements only the
@@ -35,9 +36,6 @@ type Client struct {
 // apiKeyOrBasicAuth accepts either 'username:password' basic authentication
 // credentials, or a Grafana API key. If empty, no authentication is used.
 func NewClient(apiURL, apiKeyOrBasicAuth string, client *http.Client) (*Client, error) {
-	if client == nil {
-		client = DefaultHTTPClient
-	}
 	baseURL, err := url.Parse(apiURL)
 	if err != nil {
 		return nil, err
