@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -18,9 +19,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	grpc_metadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
@@ -128,6 +131,8 @@ type searchStoreGatewayClientMock struct {
 	searchLabelValuesErr       error
 	searchLabelValuesStreamErr error
 	queriedBlockIDs            []ulid.ULID
+	lastSearchLabelNamesCtx    context.Context
+	lastSearchLabelValuesCtx   context.Context
 	lastSearchLabelValuesReq   *storepb.SearchLabelValuesRequest
 	calls                      atomicCounter
 }
@@ -138,8 +143,9 @@ type atomicCounter struct {
 
 func (c *atomicCounter) inc() { c.n++ }
 
-func (m *searchStoreGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
+func (m *searchStoreGatewayClientMock) SearchLabelNames(ctx context.Context, _ *storepb.SearchLabelNamesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
 	m.calls.inc()
+	m.lastSearchLabelNamesCtx = ctx
 	if m.searchLabelNamesErr != nil {
 		return nil, m.searchLabelNamesErr
 	}
@@ -153,8 +159,9 @@ func (m *searchStoreGatewayClientMock) SearchLabelNames(context.Context, *storep
 	}, nil
 }
 
-func (m *searchStoreGatewayClientMock) SearchLabelValues(_ context.Context, req *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
+func (m *searchStoreGatewayClientMock) SearchLabelValues(ctx context.Context, req *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
 	m.calls.inc()
+	m.lastSearchLabelValuesCtx = ctx
 	m.lastSearchLabelValuesReq = req
 	if m.searchLabelValuesErr != nil {
 		return nil, m.searchLabelValuesErr
@@ -618,6 +625,95 @@ func TestBlocksStoreQuerier_SearchLabelValues_HappyPath(t *testing.T) {
 	assert.Equal(t, "dev", got[0].Value)
 	assert.Equal(t, "prod", got[1].Value)
 	assert.Equal(t, "staging", got[2].Value)
+}
+
+// TestBlocksStoreQuerier_SearchLabelNames_PropagatesBucketStoreMetadata pins
+// the gRPC outgoing-metadata contract: tenant ID and bucket-index updated-at
+// must reach the SG via the per-stream ctx. Mirrors the propagation done by
+// the legacy unary fetchLabelNamesFromStore path (which uses gCtx, rooted in
+// reqCtx). The header live-streaming refactor rooted streams in the caller's
+// ctx for lifecycle reasons; this test pins that the ctx used for stream open
+// still carries the bucket-store metadata appended by
+// grpcContextWithBucketStoreRequestMeta, so the SG can route to the right
+// tenant and apply bucket-index versioning.
+func TestBlocksStoreQuerier_SearchLabelNames_PropagatesBucketStoreMetadata(t *testing.T) {
+	const (
+		minT         = int64(10)
+		maxT         = int64(20)
+		indexUpdated = int64(1234567890)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	store := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{{Value: "a", Score: 1.0}},
+		}},
+		queriedBlockIDs: []ulid.ULID{block1},
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{UpdatedAt: indexUpdated}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	_ = drainSearchResults(t, rs)
+
+	require.NotNil(t, store.lastSearchLabelNamesCtx, "mock must have captured the stream ctx")
+	md, ok := grpc_metadata.FromOutgoingContext(store.lastSearchLabelNamesCtx)
+	require.True(t, ok, "stream ctx must carry outgoing gRPC metadata")
+	assert.Equal(t, []string{"user-1"}, md.Get(storegateway.GrpcContextMetadataTenantID),
+		"tenant ID must be propagated as gRPC outgoing metadata")
+	assert.Equal(t, []string{strconv.FormatInt(indexUpdated, 10)}, md.Get(storegateway.GrpcContextMetadataBucketIndexUpdatedAt),
+		"bucket-index updated-at must be propagated as gRPC outgoing metadata")
+}
+
+// TestBlocksStoreQuerier_SearchLabelValues_PropagatesBucketStoreMetadata
+// mirrors the SearchLabelNames variant for the SearchLabelValues RPC.
+func TestBlocksStoreQuerier_SearchLabelValues_PropagatesBucketStoreMetadata(t *testing.T) {
+	const (
+		minT         = int64(10)
+		maxT         = int64(20)
+		indexUpdated = int64(987654321)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	store := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelValuesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{{Value: "prod", Score: 1.0}},
+		}},
+		queriedBlockIDs: []ulid.ULID{block1},
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{UpdatedAt: indexUpdated}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelValues(ctx, "env", nil, nil)
+	defer rs.Close()
+	_ = drainSearchResults(t, rs)
+
+	require.NotNil(t, store.lastSearchLabelValuesCtx, "mock must have captured the stream ctx")
+	md, ok := grpc_metadata.FromOutgoingContext(store.lastSearchLabelValuesCtx)
+	require.True(t, ok, "stream ctx must carry outgoing gRPC metadata")
+	assert.Equal(t, []string{"user-1"}, md.Get(storegateway.GrpcContextMetadataTenantID),
+		"tenant ID must be propagated as gRPC outgoing metadata")
+	assert.Equal(t, []string{strconv.FormatInt(indexUpdated, 10)}, md.Get(storegateway.GrpcContextMetadataBucketIndexUpdatedAt),
+		"bucket-index updated-at must be propagated as gRPC outgoing metadata")
 }
 
 // TestBlocksStoreQuerier_SearchLabelValues_PassesLabelName asserts the label

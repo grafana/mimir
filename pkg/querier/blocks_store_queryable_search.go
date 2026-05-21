@@ -181,7 +181,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			source, myBlocks, retriable, err := q.openSearchLabelNamesStream(ctx, gCtx, c, blockIDs, minT, maxT, params, hints, wireMatchers)
+			source, myBlocks, retriable, err := q.openSearchLabelNamesStream(reqCtx, gCtx, c, blockIDs, minT, maxT, params, hints, wireMatchers)
 			if err != nil {
 				if retriable {
 					level.Warn(spanLog).Log("msg", "failed to open search label names stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
@@ -235,7 +235,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			source, myBlocks, retriable, err := q.openSearchLabelValuesStream(ctx, gCtx, c, name, blockIDs, minT, maxT, params, hints, wireMatchers)
+			source, myBlocks, retriable, err := q.openSearchLabelValuesStream(reqCtx, gCtx, c, name, blockIDs, minT, maxT, params, hints, wireMatchers)
 			if err != nil {
 				if retriable {
 					level.Warn(spanLog).Log("msg", "failed to open search label values stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
