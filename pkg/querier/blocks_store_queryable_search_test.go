@@ -4,7 +4,6 @@ package querier
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -14,7 +13,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -28,37 +26,44 @@ import (
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
-// searchLabelNamesClientMock drains preset batches then surfaces err (if
-// set) instead of EOF, letting tests inject a mid-stream Recv error.
+// searchLabelNamesClientMock emits a header batch (carrying queriedBlockIDs in
+// response_hints) as the first message — matching the SG-side wire contract
+// in pkg/storegateway/bucket_search.go::streamBucketSearchResults — then walks
+// through preset batches and finally surfaces err (if set) instead of EOF,
+// letting tests inject a mid-stream Recv error.
 //
-// queriedBlockIDs is attached as SearchResponseHints to the final batch on
-// the way out so the querier's consistency check credits the queried blocks.
+// omitHeader skips the mandatory header batch so the protocol-violation path
+// can be exercised. headerErr fires on the very first Recv to simulate an
+// open-succeeded-but-header-Recv-failed condition.
 type searchLabelNamesClientMock struct {
 	grpc.ClientStream
 	batches         []*storepb.SearchResultBatch
 	err             error
 	queriedBlockIDs []ulid.ULID
+	omitHeader      bool
+	headerErr       error
+	headerSent      bool
 	idx             int
 }
 
 func (m *searchLabelNamesClientMock) Recv() (*storepb.SearchResultBatch, error) {
+	if !m.headerSent {
+		m.headerSent = true
+		if m.headerErr != nil {
+			return nil, m.headerErr
+		}
+		if !m.omitHeader {
+			return &storepb.SearchResultBatch{ResponseHints: newSearchResponseHints(m.queriedBlockIDs)}, nil
+		}
+	}
 	if m.idx >= len(m.batches) {
 		if m.err != nil {
 			return nil, m.err
-		}
-		if len(m.queriedBlockIDs) > 0 {
-			batch := &storepb.SearchResultBatch{ResponseHints: newSearchResponseHints(m.queriedBlockIDs)}
-			m.queriedBlockIDs = nil
-			return batch, nil
 		}
 		return nil, io.EOF
 	}
 	b := m.batches[m.idx]
 	m.idx++
-	if m.idx == len(m.batches) && len(m.queriedBlockIDs) > 0 && b.ResponseHints == nil {
-		b.ResponseHints = newSearchResponseHints(m.queriedBlockIDs)
-		m.queriedBlockIDs = nil
-	}
 	return b, nil
 }
 
@@ -67,30 +72,35 @@ type searchLabelValuesClientMock struct {
 	batches         []*storepb.SearchResultBatch
 	err             error
 	queriedBlockIDs []ulid.ULID
+	omitHeader      bool
+	headerErr       error
+	headerSent      bool
 	idx             int
 }
 
 func (m *searchLabelValuesClientMock) Recv() (*storepb.SearchResultBatch, error) {
+	if !m.headerSent {
+		m.headerSent = true
+		if m.headerErr != nil {
+			return nil, m.headerErr
+		}
+		if !m.omitHeader {
+			return &storepb.SearchResultBatch{ResponseHints: newSearchResponseHints(m.queriedBlockIDs)}, nil
+		}
+	}
 	if m.idx >= len(m.batches) {
 		if m.err != nil {
 			return nil, m.err
-		}
-		if len(m.queriedBlockIDs) > 0 {
-			batch := &storepb.SearchResultBatch{ResponseHints: newSearchResponseHints(m.queriedBlockIDs)}
-			m.queriedBlockIDs = nil
-			return batch, nil
 		}
 		return nil, io.EOF
 	}
 	b := m.batches[m.idx]
 	m.idx++
-	if m.idx == len(m.batches) && len(m.queriedBlockIDs) > 0 && b.ResponseHints == nil {
-		b.ResponseHints = newSearchResponseHints(m.queriedBlockIDs)
-		m.queriedBlockIDs = nil
-	}
 	return b, nil
 }
 
+// newSearchResponseHints always returns a non-nil hint struct (matching the
+// SG-side contract) so a nil-or-empty ids slice still produces a valid header.
 func newSearchResponseHints(ids []ulid.ULID) *storepb.SearchResponseHints {
 	hints := &storepb.SearchResponseHints{}
 	for _, id := range ids {
@@ -103,13 +113,17 @@ func newSearchResponseHints(ids []ulid.ULID) *storepb.SearchResponseHints {
 // SearchLabel{Names,Values} streams. lastSearchLabelValuesReq lets tests
 // assert the wire request shape.
 //
-// queriedBlockIDs, when set, is attached as SearchResponseHints to the trailer
-// batch so the querier's consistency check credits these blocks.
+// queriedBlockIDs, when set, populates response_hints.queried_blocks on the
+// header batch the mock client sends as its first message. omitHeader and
+// headerErr drive protocol-violation and header-Recv-error coverage
+// respectively.
 type searchStoreGatewayClientMock struct {
 	storeGatewayClientMock
 	searchLabelNamesBatches    []*storepb.SearchResultBatch
 	searchLabelNamesErr        error
 	searchLabelNamesStreamErr  error
+	searchLabelNamesHeaderErr  error
+	searchLabelNamesOmitHeader bool
 	searchLabelValuesBatches   []*storepb.SearchResultBatch
 	searchLabelValuesErr       error
 	searchLabelValuesStreamErr error
@@ -134,6 +148,8 @@ func (m *searchStoreGatewayClientMock) SearchLabelNames(context.Context, *storep
 		batches:         m.searchLabelNamesBatches,
 		err:             m.searchLabelNamesStreamErr,
 		queriedBlockIDs: m.queriedBlockIDs,
+		omitHeader:      m.searchLabelNamesOmitHeader,
+		headerErr:       m.searchLabelNamesHeaderErr,
 	}, nil
 }
 
@@ -415,12 +431,15 @@ func TestBlocksStoreQuerier_SearchLabelNames_NonRetriableErrorBubblesUp(t *testi
 }
 
 // TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError pins the
-// mid-stream-retry contract: a retriable error after partial delivery
-// drops the failing SG's pre-error batches and re-runs against a
-// different SG. This is "all-or-nothing per replica" — the goroutine
-// bails before appending to nameSets, so the consistency tracker sees
-// the blocks as missing and retries. SearchLabelValues inherits the
-// same behaviour via drainSGSearchLabelStream.
+// mid-stream-failure contract under the header-first wire protocol: once the
+// SG's header has credited the requested blocks, the consistency tracker
+// considers the SG's contribution accepted, so there is no block to refetch
+// against another SG. A retriable Recv error mid-stream therefore propagates
+// to the merger's Err() and fails the query — matching the ingester-path
+// semantics in pkg/distributor/distributor_search.go (which also has no
+// mid-stream-retry path). Pre-error rows that already crossed the merger
+// boundary stay visible to the client; the failure is signalled via Err()
+// after iteration ends.
 func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
 	const (
 		minT = int64(10)
@@ -428,10 +447,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
 	)
 	block1 := ulid.MustNew(1, nil)
 
-	// First SG: delivers one batch, then errors with Unavailable on the next
-	// Recv — drainSGSearchLabelStream returns the error, shouldRetry classifies
-	// it retriable, the goroutine logs and returns nil, no result is appended.
-	storeMidStreamErr := &searchStoreGatewayClientMock{
+	store := &searchStoreGatewayClientMock{
 		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
 		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
 			Results: []storepb.SearchResultBatch_Result{
@@ -439,20 +455,56 @@ func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
 			},
 		}},
 		searchLabelNamesStreamErr: status.Error(codes.Unavailable, "transient mid-stream"),
+		// Header credits block1 — consistency check accepts the SG's contribution.
+		queriedBlockIDs: []ulid.ULID{block1},
 	}
-	// Retry SG: clean drain with a different value.
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+
+	require.True(t, rs.Next(), "pre-error row should be emitted")
+	assert.Equal(t, "pre_error_value", rs.At().Value)
+	assert.False(t, rs.Next(), "mid-stream error must terminate iteration")
+	require.Error(t, rs.Err())
+	assert.Contains(t, rs.Err().Error(), "transient mid-stream")
+	assert.Equal(t, 1, store.calls.n, "SG must be tried once; no block-level retry once the header has credited the block")
+}
+
+// TestBlocksStoreQuerier_SearchLabelNames_HeaderRecvErrorIsRetriable proves
+// that a retriable error on the header Recv is treated like an open failure:
+// the SG's contribution is dropped, the consistency tracker sees the blocks
+// as missing, and another SG is tried. This is the only retry path the
+// header-first wire contract preserves.
+func TestBlocksStoreQuerier_SearchLabelNames_HeaderRecvErrorIsRetriable(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	storeHeaderErr := &searchStoreGatewayClientMock{
+		storeGatewayClientMock:    storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesHeaderErr: status.Error(codes.Unavailable, "transient header"),
+	}
 	storeOK := &searchStoreGatewayClientMock{
 		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
 		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
-			Results: []storepb.SearchResultBatch_Result{
-				{Value: "retry_value", Score: 1.0},
-			},
+			Results: []storepb.SearchResultBatch_Result{{Value: "retry_value", Score: 1.0}},
 		}},
 		queriedBlockIDs: []ulid.ULID{block1},
 	}
-
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{storeMidStreamErr: {block1}},
+		map[BlocksStoreClient][]ulid.ULID{storeHeaderErr: {block1}},
 		map[BlocksStoreClient][]ulid.ULID{storeOK: {block1}},
 	}}
 	finder := &blocksFinderMock{}
@@ -466,16 +518,46 @@ func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
 	rs := q.SearchLabelNames(ctx, nil, nil)
 	defer rs.Close()
 	got := drainSearchResults(t, rs)
-
-	// Documented behaviour: the first SG's pre-error batch is DROPPED. Only
-	// the retry SG's value appears in the final result.
 	require.Len(t, got, 1)
 	assert.Equal(t, "retry_value", got[0].Value)
-	assert.NotContains(t, []string{got[0].Value}, "pre_error_value",
-		"pre-error data from failed replica must NOT leak through")
-
-	assert.Equal(t, 1, storeMidStreamErr.calls.n, "failing SG should be tried once")
+	assert.Equal(t, 1, storeHeaderErr.calls.n, "header-failing SG should be tried once")
 	assert.Equal(t, 1, storeOK.calls.n, "retry SG should be tried once")
+}
+
+// TestBlocksStoreQuerier_SearchLabelNames_MissingHeaderIsProtocolViolation
+// asserts the non-retriable hard-fail when an SG emits result data without
+// the mandatory header batch. The consistency tracker cannot run without the
+// header, so we refuse to merge from a non-conforming SG.
+func TestBlocksStoreQuerier_SearchLabelNames_MissingHeaderIsProtocolViolation(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	storeNoHeader := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Results: []storepb.SearchResultBatch_Result{{Value: "should_not_appear", Score: 1.0}},
+		}},
+		searchLabelNamesOmitHeader: true,
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{storeNoHeader: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	assert.False(t, rs.Next())
+	require.Error(t, rs.Err())
+	assert.Contains(t, rs.Err().Error(), "header")
 }
 
 // TestBlocksStoreQuerier_SearchLabelValues_HappyPath mirrors the SearchLabelNames
@@ -625,52 +707,41 @@ func TestOrderingToSGProto(t *testing.T) {
 	}
 }
 
-func TestWrapAsMergingSearchResultSet_ExtraWarningsSurfaceViaSyntheticSource(t *testing.T) {
-	// extraWarnings is for warnings collected outside any SG stream — e.g.
-	// retriable open errors logged as warnings before a stream was ever
-	// established. The merger surfaces them via a warnings-only synthetic
-	// source. Without this path, those warnings would silently disappear.
-	perSG := [][]storage.SearchResult{
-		{{Value: "alpha", Score: 1.0}},
-	}
-	var extra annotations.Annotations
-	extra.Add(errors.New("retried-open-error"))
-	rs := wrapAsMergingSearchResultSet(perSG, extra, &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 10})
-	defer rs.Close()
-	var got []storage.SearchResult
-	for rs.Next() {
-		got = append(got, rs.At())
-	}
-	require.NoError(t, rs.Err())
-	assert.Equal(t, []storage.SearchResult{{Value: "alpha", Score: 1.0}}, got)
-	msgs := make([]string, 0, 1)
-	for _, w := range rs.Warnings() {
-		msgs = append(msgs, w.Error())
-	}
-	assert.Equal(t, []string{"retried-open-error"}, msgs)
-}
+// TestBlocksStoreQuerier_SearchLabelNames_MalformedHeaderBlockHintHardFails
+// pins a non-retriable hard fail when a header batch carries an unparseable
+// queried-block ID. The consistency tracker would otherwise be fed a
+// silently-dropped block and miscredit the SG's contribution.
+func TestBlocksStoreQuerier_SearchLabelNames_MalformedHeaderBlockHintHardFails(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
 
-func TestWrapAsMergingSearchResultSet_NoSourcesNoWarnings(t *testing.T) {
-	// Empty per-SG slice with no extra warnings should yield an empty
-	// SearchResultSet with no warnings.
-	rs := wrapAsMergingSearchResultSet(nil, nil, nil)
-	defer rs.Close()
-	assert.False(t, rs.Next())
-	assert.NoError(t, rs.Err())
-	assert.Empty(t, rs.Warnings())
-}
-
-func TestDrainSGSearchLabelStream_MalformedBlockHintErrorsOut(t *testing.T) {
-	// SearchResponseHints carries an unparseable block ID. The drain must
-	// surface this as an error rather than silently dropping the bad ID
-	// (which would mislead the consistency check).
-	stream := &searchLabelNamesClientMock{
-		batches: []*storepb.SearchResultBatch{{
-			Results:       []storepb.SearchResultBatch_Result{{Value: "a", Score: 1.0}},
+	// The header is sent on the first Recv but the mock's omitHeader=true
+	// skips it and the first batch carries the malformed hint directly.
+	// readSGSearchHeader reads the first message and rejects the bad block ID.
+	storeBadHeader := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
 			ResponseHints: &storepb.SearchResponseHints{QueriedBlocks: []storepb.Block{{Id: "not-a-ulid"}}},
 		}},
+		searchLabelNamesOmitHeader: true,
 	}
-	_, _, _, err := drainSGSearchLabelStream(stream)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "queried block IDs")
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{storeBadHeader: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	assert.False(t, rs.Next())
+	require.Error(t, rs.Err())
+	assert.Contains(t, rs.Err().Error(), "queried block IDs")
 }

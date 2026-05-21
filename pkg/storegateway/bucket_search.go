@@ -32,9 +32,13 @@ const searchBatchSize = 256
 // concurrency-safe). The per-block SearchResultSets are then streamed through
 // a pairwise k-way merge that respects the requested ordering, deduplicates
 // across blocks, and stops after the request limit — without materialising
-// the merged set. The IDs of every block we consulted are returned on the
-// final batch as response_hints so the querier's consistency check can credit
-// the blocks this store-gateway actually queried.
+// the merged set.
+//
+// Wire contract: the first message on the stream is a header-only
+// SearchResultBatch carrying response_hints.queried_blocks (the IDs of every
+// block this store-gateway will consult); result-bearing batches follow.
+// The querier's consistency check reads this header before any result is
+// forwarded upstream so it can decide whether to refetch missing blocks.
 func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
 	ctx := srv.Context()
 
@@ -273,17 +277,22 @@ func storepbToOrdering(o storepb.SearchOrdering) storage.Ordering {
 	}
 }
 
-// streamBucketSearchResults pulls from the merged SearchResultSet in batches
-// of searchBatchSize and ships each batch over send. Any warnings accumulated
-// by the merge and the response hints (queried block IDs) ride on the final
-// batch. The stream context is checked at each batch boundary so a cancelled
-// client stops the loop promptly.
+// streamBucketSearchResults sends the queried-block set as a header-only batch
+// before any result-bearing batch, then pulls from the merged SearchResultSet
+// in batches of searchBatchSize and ships each batch over send. Warnings
+// accumulated by the merge ride on the trailer batch. The stream context is
+// checked at each batch boundary so a cancelled client stops the loop promptly.
 //
-// The trailer batch is always sent — even when results and warnings are both
-// empty — so the querier's consistency check can credit the blocks this
-// store-gateway actually queried via the response_hints field.
+// The header is always sent — even when no blocks were queried — so the
+// querier's consistency check can credit (or correctly classify as
+// still-missing) the blocks this store-gateway actually queried before any
+// result is forwarded upstream. The trailer never carries response_hints; it
+// exists only when there are trailing warnings.
 func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, queriedBlocks []ulid.ULID, send func(*storepb.SearchResultBatch) error) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := send(&storepb.SearchResultBatch{ResponseHints: buildSearchResponseHints(queriedBlocks)}); err != nil {
 		return err
 	}
 	batch := &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
@@ -304,16 +313,16 @@ func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, 
 		return err
 	}
 	batch.Warnings = warningsToStrings(rs.Warnings())
-	batch.ResponseHints = buildSearchResponseHints(queriedBlocks)
+	if len(batch.Results) == 0 && len(batch.Warnings) == 0 {
+		return nil
+	}
 	return send(batch)
 }
 
-// buildSearchResponseHints builds the per-RPC SearchResponseHints. Returns nil
-// if no blocks were queried so the wire field is omitted.
+// buildSearchResponseHints builds the per-RPC SearchResponseHints. Always
+// returns a non-nil value so the header batch carries an explicit (possibly
+// empty) queried-blocks set the client can rely on for its consistency check.
 func buildSearchResponseHints(queriedBlocks []ulid.ULID) *storepb.SearchResponseHints {
-	if len(queriedBlocks) == 0 {
-		return nil
-	}
 	hints := &storepb.SearchResponseHints{QueriedBlocks: make([]storepb.Block, 0, len(queriedBlocks))}
 	for _, id := range queriedBlocks {
 		hints.QueriedBlocks = append(hints.QueriedBlocks, storepb.Block{Id: id.String()})
