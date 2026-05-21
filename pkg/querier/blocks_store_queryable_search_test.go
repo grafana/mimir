@@ -115,36 +115,41 @@ type searchStoreGatewayClientMock struct {
 	searchLabelValuesStreamErr error
 	queriedBlockIDs            []ulid.ULID
 	lastSearchLabelValuesReq   *storepb.SearchLabelValuesRequest
-	calls                      atomicCounter
+	calls                      callCounter
 }
 
-type atomicCounter struct {
+// callCounter tracks how many times a mock RPC was invoked. Tests rely on each
+// mock being keyed uniquely in the BlocksStoreClient map (so no two goroutines
+// touch the same counter); the name avoids the misleading "atomic" connotation.
+type callCounter struct {
 	n int
 }
 
-func (c *atomicCounter) inc() { c.n++ }
+func (c *callCounter) inc() { c.n++ }
 
-func (m *searchStoreGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
+func (m *searchStoreGatewayClientMock) SearchLabelNames(ctx context.Context, _ *storepb.SearchLabelNamesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
 	m.calls.inc()
 	if m.searchLabelNamesErr != nil {
 		return nil, m.searchLabelNamesErr
 	}
+	// Derive the stream's Context() from the request ctx, matching the
+	// production gRPC stream contract.
 	return &searchLabelNamesClientMock{
-		ClientStream:    grpcClientStreamMock{ctx: context.Background()},
+		ClientStream:    grpcClientStreamMock{ctx: ctx},
 		batches:         m.searchLabelNamesBatches,
 		err:             m.searchLabelNamesStreamErr,
 		queriedBlockIDs: m.queriedBlockIDs,
 	}, nil
 }
 
-func (m *searchStoreGatewayClientMock) SearchLabelValues(_ context.Context, req *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
+func (m *searchStoreGatewayClientMock) SearchLabelValues(ctx context.Context, req *storepb.SearchLabelValuesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
 	m.calls.inc()
 	m.lastSearchLabelValuesReq = req
 	if m.searchLabelValuesErr != nil {
 		return nil, m.searchLabelValuesErr
 	}
 	return &searchLabelValuesClientMock{
-		ClientStream:    grpcClientStreamMock{ctx: context.Background()},
+		ClientStream:    grpcClientStreamMock{ctx: ctx},
 		batches:         m.searchLabelValuesBatches,
 		err:             m.searchLabelValuesStreamErr,
 		queriedBlockIDs: m.queriedBlockIDs,
@@ -375,6 +380,46 @@ func TestBlocksStoreQuerier_SearchLabelNames_WarningsPropagated(t *testing.T) {
 	gotWarnings := warns.AsErrors()
 	require.Len(t, gotWarnings, 1)
 	assert.Contains(t, gotWarnings[0].Error(), "sg-warning: partial results")
+}
+
+// TestBlocksStoreQuerier_SearchLabelNames_WarningsOnlyNoResults pins the
+// wrapAsMergingSearchResultSet path where every SG returns zero results but a
+// non-empty warning: perSG is empty, only the synthetic warnings-only source
+// gets appended. Without it, the warning would be silently dropped.
+func TestBlocksStoreQuerier_SearchLabelNames_WarningsOnlyNoResults(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	store := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			Warnings: []string{"sg-only-warning"},
+		}},
+		queriedBlockIDs: []ulid.ULID{block1},
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(t.Context(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	got := drainSearchResults(t, rs)
+	require.Empty(t, got, "no results expected when SG returns no values")
+
+	warns := rs.Warnings().AsErrors()
+	require.Len(t, warns, 1)
+	assert.Contains(t, warns[0].Error(), "sg-only-warning",
+		"warnings from a results-less SG must reach the caller via the synthetic warnings-only source")
 }
 
 func TestBlocksStoreQuerier_SearchLabelNames_NoTenant(t *testing.T) {

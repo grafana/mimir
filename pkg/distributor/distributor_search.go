@@ -20,6 +20,12 @@ import (
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
+// searchWarning lifts a wire warning string to an error without the per-call
+// allocation of errors.New. Used to feed annotations.Annotations.Add.
+type searchWarning string
+
+func (w searchWarning) Error() string { return string(w) }
+
 // ingesterSearchPrefetchBuffer sizes the per-replica prefetch channel to
 // match pkg/ingester.searchBatchSize: one wire batch can sit in the
 // channel while the producer is in its next Recv, hiding ~one round-trip
@@ -108,6 +114,13 @@ type searchStream interface {
 // jobs would otherwise leak (their context is the caller's, so ForEachJob's
 // internal cancellation does not reach them). The deferred cleanup closes
 // anything we have already collected when the function returns an error.
+//
+// We do not use ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation
+// (as pkg/distributor/query.go does) because it drops the per-set result
+// slice when a sibling set errors, with no cleanup hook — which would leak
+// the gRPC streams rooted in the caller's ctx. ForEachJob plus a per-set
+// DoUntilQuorum plus collectOrCleanupSearchSets gives us the cross-set
+// teardown the multi variant lacks.
 func (d *Distributor) openIngesterSearchStreams(
 	ctx context.Context,
 	replicationSets []ring.ReplicationSet,
@@ -232,7 +245,7 @@ func (s *ingesterSearchResultSet) Next() bool {
 			return false
 		}
 		for _, w := range batch.Warnings {
-			s.warnings.Add(errors.New(w))
+			s.warnings.Add(searchWarning(w))
 		}
 		if len(batch.Results) > 0 {
 			s.batch = batch

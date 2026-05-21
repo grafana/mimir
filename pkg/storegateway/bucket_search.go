@@ -4,6 +4,7 @@ package storegateway
 
 import (
 	"context"
+	stderrors "errors"
 	"sync"
 	"time"
 
@@ -281,31 +282,52 @@ func storepbToOrdering(o storepb.SearchOrdering) storage.Ordering {
 //
 // The trailer batch is always sent — even when results and warnings are both
 // empty — so the querier's consistency check can credit the blocks this
-// store-gateway actually queried via the response_hints field.
+// store-gateway actually queried via the response_hints field. The result
+// slice is allocated lazily so zero-result responses cost no slice alloc.
 func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, queriedBlocks []ulid.ULID, send func(*storepb.SearchResultBatch) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	batch := &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
+	var batch *storepb.SearchResultBatch
 	for rs.Next() {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if batch == nil {
+			batch = &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
 		}
 		r := rs.At()
 		batch.Results = append(batch.Results, storepb.SearchResultBatch_Result{Value: r.Value, Score: r.Score})
 		if len(batch.Results) >= searchBatchSize {
 			if err := send(batch); err != nil {
-				return err
+				// Forward-looking: today's slice-backed leaves never error,
+				// so rs.Err() is always nil here. Kept as a hook for future
+				// error-bearing leaves whose error could land between the
+				// last rs.Next() and the failed send.
+				return joinWithMergerErr(err, rs.Err())
 			}
-			batch = &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
+			batch = nil
 		}
 	}
 	if err := rs.Err(); err != nil {
 		return err
 	}
+	if batch == nil {
+		batch = &storepb.SearchResultBatch{}
+	}
 	batch.Warnings = warningsToStrings(rs.Warnings())
 	batch.ResponseHints = buildSearchResponseHints(queriedBlocks)
 	return send(batch)
+}
+
+// joinWithMergerErr surfaces the merger's accumulated error alongside a
+// send-side failure so that ops traces preserve the upstream cause when
+// the client disconnects mid-stream.
+func joinWithMergerErr(sendErr, mergerErr error) error {
+	if mergerErr != nil {
+		return stderrors.Join(sendErr, mergerErr)
+	}
+	return sendErr
 }
 
 // buildSearchResponseHints builds the per-RPC SearchResponseHints. Returns nil

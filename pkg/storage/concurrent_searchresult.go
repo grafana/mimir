@@ -4,6 +4,7 @@ package storage
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"sync"
 
@@ -66,15 +67,30 @@ func NewConcurrentSearchResultSet(ctx context.Context, child storage.SearchResul
 		defer close(ch)
 		defer func() {
 			err := child.Err()
-			warns := child.Warnings()
+			// Clone so c.warns is uniformly a private snapshot — matches the
+			// incremental-update path above and prevents consumers from
+			// observing the child's internal map.
+			warns := maps.Clone(child.Warnings())
 			c.mu.Lock()
 			c.err = err
 			c.warns = warns
 			c.mu.Unlock()
 		}()
+		// Track the child's warning count so we can snapshot incrementally.
+		// Without this, a caller that reads Warnings() before Close() (e.g.
+		// after the merger short-circuits on hints.Limit) sees an empty set,
+		// because the terminal defer only fires once the producer exits.
+		var lastWarnCount int
 		for child.Next() {
 			r := child.At()
 			r.Value = strings.Clone(r.Value)
+			if cw := child.Warnings(); len(cw) > lastWarnCount {
+				snap := maps.Clone(cw)
+				c.mu.Lock()
+				c.warns = snap
+				c.mu.Unlock()
+				lastWarnCount = len(cw)
+			}
 			select {
 			case ch <- r:
 			case <-ctx.Done():

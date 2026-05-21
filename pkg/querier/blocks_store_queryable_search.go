@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,12 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+// searchWarning lifts a wire warning string to an error without the per-call
+// allocation of errors.New. Used to feed annotations.Annotations.Add.
+type searchWarning string
+
+func (w searchWarning) Error() string { return string(w) }
 
 // SearchLabelNames fans out across the store-gateways owning the relevant
 // blocks, drains each stream into a scored []storage.SearchResult, and
@@ -203,15 +210,23 @@ func buildSGSearchLabelNamesRequest(
 // blockIDsToBlockMatchers builds the per-RPC block_matchers hint. Returns nil
 // for an empty slice so the SG's BlockMatchers branch is not taken when no
 // scoping is requested (matches LabelNames/LabelValues semantics).
+//
+// regexp.QuoteMeta is a no-op for ULIDs today (they're Crockford base32 — no
+// regex metacharacters), but we escape defensively so future ID-format changes
+// don't silently turn into a broken matcher.
 func blockIDsToBlockMatchers(blockIDs []ulid.ULID) []storepb.LabelMatcher {
 	if len(blockIDs) == 0 {
 		return nil
+	}
+	ids := convertULIDsToString(blockIDs)
+	for i, id := range ids {
+		ids[i] = regexp.QuoteMeta(id)
 	}
 	return []storepb.LabelMatcher{
 		{
 			Type:  storepb.LabelMatcher_RE,
 			Name:  block.BlockIDLabel,
-			Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+			Value: strings.Join(ids, "|"),
 		},
 	}
 }
@@ -406,10 +421,12 @@ func buildSGSearchLabelValuesRequest(
 // scored results into []storage.SearchResult and accumulating warnings into
 // annotations. Scores are preserved.
 //
-// The store-gateway reports the blocks it actually queried via the
-// SearchResponseHints on (at least) the trailer batch; queriedBlocks
-// accumulates them across all batches so the caller can feed only the
-// reported blocks into queryWithConsistencyCheck.
+// Response-hints contract: SearchResponseHints.QueriedBlocks may be carried
+// on any batch and the drain accumulates them across the full stream. Today
+// the store-gateway only attaches them to the trailer batch (see
+// pkg/storegateway/bucket_search.go::streamBucketSearchResults), but the
+// accumulator tolerates hints on intermediate batches — change the SG and
+// the querier remains correct without code-changes here.
 func drainSGSearchLabelStream(stream sgSearchStream) ([]storage.SearchResult, annotations.Annotations, []ulid.ULID, error) {
 	var (
 		results       []storage.SearchResult
@@ -428,7 +445,7 @@ func drainSGSearchLabelStream(stream sgSearchStream) ([]storage.SearchResult, an
 			results = append(results, storage.SearchResult{Value: r.Value, Score: r.Score})
 		}
 		for _, w := range batch.Warnings {
-			warnings.Add(errors.New(w))
+			warnings.Add(searchWarning(w))
 		}
 		if batch.ResponseHints != nil {
 			ids, err := convertBlockHintsToULIDs(batch.ResponseHints.QueriedBlocks)
