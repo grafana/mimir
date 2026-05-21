@@ -25,13 +25,16 @@ type Client struct {
 	baseURL   string
 	key       string
 	basicAuth bool
+	userAgent string
 	client    *http.Client
 }
 
 // NewClient initializes a client for interacting with a Grafana server.
 // apiKeyOrBasicAuth accepts either 'username:password' basic authentication
 // credentials, or a Grafana API key. If empty, no authentication is used.
-func NewClient(apiURL, apiKeyOrBasicAuth string, client *http.Client) (*Client, error) {
+// userAgent is set on every request; if empty, the standard library default
+// is used.
+func NewClient(apiURL, apiKeyOrBasicAuth string, client *http.Client, userAgent string) (*Client, error) {
 	baseURL, err := url.Parse(apiURL)
 	if err != nil {
 		return nil, err
@@ -46,7 +49,7 @@ func NewClient(apiURL, apiKeyOrBasicAuth string, client *http.Client) (*Client, 
 			key = "Bearer " + apiKeyOrBasicAuth
 		}
 	}
-	return &Client{baseURL: baseURL.String(), basicAuth: basicAuth, key: key, client: client}, nil
+	return &Client{baseURL: baseURL.String(), basicAuth: basicAuth, key: key, userAgent: userAgent, client: client}, nil
 }
 
 // FoundBoard keeps result of search with metadata of a dashboard.
@@ -141,6 +144,9 @@ func (c *Client) get(ctx context.Context, query string, params url.Values) ([]by
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
+	if c.userAgent != "" {
+		req.Header.Set("User-Agent", c.userAgent)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, 0, err

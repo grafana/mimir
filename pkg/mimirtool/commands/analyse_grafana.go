@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
@@ -53,7 +54,7 @@ func (f folderTitles) IsCumulative() bool {
 }
 
 func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	c, err := minisdk.NewClient(cmd.address, cmd.apiKey, http.DefaultClient)
+	c, err := minisdk.NewClient(cmd.address, cmd.apiKey, http.DefaultClient, client.UserAgent())
 	if err != nil {
 		return err
 	}

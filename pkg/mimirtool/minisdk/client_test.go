@@ -73,7 +73,7 @@ func TestClient_Search(t *testing.T) {
 			}))
 			defer ts.Close()
 
-			c, err := minisdk.NewClient(ts.URL, "", ts.Client())
+			c, err := minisdk.NewClient(ts.URL, "", ts.Client(), "")
 			require.NoError(t, err)
 
 			got, err := c.Search(context.Background(), tc.in...)
@@ -89,7 +89,7 @@ func TestClient_Search_NonOKStatus(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c, err := minisdk.NewClient(ts.URL, "", ts.Client())
+	c, err := minisdk.NewClient(ts.URL, "", ts.Client(), "")
 	require.NoError(t, err)
 
 	_, err = c.Search(context.Background())
@@ -108,7 +108,7 @@ func TestClient_GetRawDashboardByUID(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c, err := minisdk.NewClient(ts.URL, "", ts.Client())
+	c, err := minisdk.NewClient(ts.URL, "", ts.Client(), "")
 	require.NoError(t, err)
 
 	got, err := c.GetRawDashboardByUID(context.Background(), "abc")
@@ -122,7 +122,7 @@ func TestClient_GetRawDashboardByUID_NonOKStatus(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c, err := minisdk.NewClient(ts.URL, "", ts.Client())
+	c, err := minisdk.NewClient(ts.URL, "", ts.Client(), "")
 	require.NoError(t, err)
 
 	_, err = c.GetRawDashboardByUID(context.Background(), "missing")
@@ -171,7 +171,7 @@ func TestNewClient_Auth(t *testing.T) {
 			}))
 			defer ts.Close()
 
-			c, err := minisdk.NewClient(ts.URL, tc.credentials, ts.Client())
+			c, err := minisdk.NewClient(ts.URL, tc.credentials, ts.Client(), "")
 			require.NoError(t, err)
 			_, err = c.Search(context.Background())
 			require.NoError(t, err)
