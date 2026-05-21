@@ -5,13 +5,14 @@ on:
     branches:
       - main
       - "mimir-distributed-release-[0-9]+.[0-9]+"
+      - vrnkn/*
 
 # No default permissions.
 permissions: {}
 
 jobs:
   call-update-helm-repo:
-    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@main
+    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@wip-20260521-b75cf8
     permissions:
       id-token: write
       contents: write
