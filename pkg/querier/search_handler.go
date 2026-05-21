@@ -353,7 +353,7 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 		}
 		searcher, querier, err := searcherForRequest(r.Context(), queryable, req.startMs, req.endMs)
 		if err != nil {
-			writeSearchBadRequest(w, err)
+			writeSearcherForRequestError(w, err)
 			return
 		}
 		defer querier.Close()
@@ -379,7 +379,7 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		}
 		searcher, querier, err := searcherForRequest(r.Context(), queryable, req.startMs, req.endMs)
 		if err != nil {
-			writeSearchBadRequest(w, err)
+			writeSearcherForRequestError(w, err)
 			return
 		}
 		defer querier.Close()
@@ -405,7 +405,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		}
 		searcher, querier, err := searcherForRequest(r.Context(), queryable, req.startMs, req.endMs)
 		if err != nil {
-			writeSearchBadRequest(w, err)
+			writeSearcherForRequestError(w, err)
 			return
 		}
 		defer querier.Close()
@@ -417,14 +417,28 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 	})
 }
 
+// searcherClientError marks an error from searcherForRequest as a
+// client-side failure (e.g. missing or invalid tenant on the request
+// context). Handlers map it to HTTP 400; everything else from
+// searcherForRequest is a server-side failure and maps to HTTP 500/503/499
+// via writePreFlushSearchError.
+type searcherClientError struct{ err error }
+
+func (e *searcherClientError) Error() string { return e.err.Error() }
+func (e *searcherClientError) Unwrap() error { return e.err }
+
 // searcherForRequest opens a querier for the time range and type-asserts it
 // to mimirSearcher. The caller is responsible for calling querier.Close().
 // Uses tenant.TenantIDs (plural) rather than TenantID so multi-tenant
 // requests routed through tenantfederation.NewQueryable are not rejected
 // here — the federation layer resolves per-tenant IDs internally.
+//
+// Tenant-resolution failures are wrapped in *searcherClientError so callers
+// can route them to HTTP 400; other failures (Querier open, type-assertion)
+// are server-side and returned bare.
 func searcherForRequest(ctx context.Context, queryable storage.Queryable, startMs, endMs int64) (mimirSearcher, storage.Querier, error) {
 	if _, err := tenant.TenantIDs(ctx); err != nil {
-		return nil, nil, err
+		return nil, nil, &searcherClientError{err: err}
 	}
 	q, err := queryable.Querier(startMs, endMs)
 	if err != nil {
@@ -436,6 +450,18 @@ func searcherForRequest(ctx context.Context, queryable storage.Queryable, startM
 		return nil, nil, fmt.Errorf("queryable does not support search (type %T)", q)
 	}
 	return s, q, nil
+}
+
+// writeSearcherForRequestError classifies err from searcherForRequest and
+// routes it to the bad-request envelope (client error) or the pre-flush
+// server-error envelope.
+func writeSearcherForRequestError(w http.ResponseWriter, err error) {
+	var ce *searcherClientError
+	if errors.As(err, &ce) {
+		writeSearchBadRequest(w, err)
+		return
+	}
+	writePreFlushSearchError(w, err)
 }
 
 // streamSearchNDJSON drains rs and writes NDJSON to w. One JSON object per
@@ -544,9 +570,9 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 		w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 	}
 	clampFired := false
-	for _, w := range rs.Warnings() {
-		trailer.Warnings = append(trailer.Warnings, w.Error())
-		if isSearchLimitWarning(w) {
+	for _, warn := range rs.Warnings() {
+		trailer.Warnings = append(trailer.Warnings, warn.Error())
+		if isSearchLimitWarning(warn) {
 			clampFired = true
 		}
 	}

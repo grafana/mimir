@@ -777,28 +777,39 @@ func TestSearchLabelNamesHandler_MissingTenantReturns400(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+	lines := drainNDJSON(t, w.Body.String())
+	require.Len(t, lines, 1)
+	assert.Equal(t, "error", lines[0]["status"])
+	assert.Equal(t, "bad_data", lines[0]["errorType"])
 }
 
-func TestSearchLabelNamesHandler_QueryableOpenError(t *testing.T) {
+func TestSearchLabelNamesHandler_QueryableOpenErrorReturns500(t *testing.T) {
 	wantErr := errors.New("open boom")
 	h := SearchLabelNamesHandler(&erroringQueryable{err: wantErr}, enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 1)
+	assert.Equal(t, "error", lines[0]["status"])
+	assert.Equal(t, "internal", lines[0]["errorType"])
 	assert.Contains(t, lines[0]["error"], "open querier")
 }
 
-func TestSearchLabelNamesHandler_QuerierNotMimirSearcherReturns400(t *testing.T) {
+func TestSearchLabelNamesHandler_QuerierNotMimirSearcherReturns500(t *testing.T) {
 	h := SearchLabelNamesHandler(plainQueryable{}, enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 1)
+	assert.Equal(t, "error", lines[0]["status"])
+	assert.Equal(t, "internal", lines[0]["errorType"])
 	assert.Contains(t, lines[0]["error"], "does not support search")
 }
 
