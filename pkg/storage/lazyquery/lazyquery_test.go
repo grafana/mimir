@@ -38,7 +38,7 @@ func TestCopyParamsDeepCopy(t *testing.T) {
 
 		switch originalField.Kind() {
 		// For reference types, ensure they point to different memory
-		case reflect.Slice, reflect.Map, reflect.Ptr:
+		case reflect.Slice, reflect.Map, reflect.Pointer:
 			if !originalField.IsNil() {
 				assert.NotEqual(t, originalField.UnsafePointer(), copiedField.UnsafePointer(), "Field %s shares memory between original and copy", typ.Field(i).Name)
 			}

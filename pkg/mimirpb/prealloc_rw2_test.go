@@ -674,7 +674,7 @@ func TestWriteRequestRW2Conversion_WriteRequestHasChanged(t *testing.T) {
 	val := reflect.ValueOf(&WriteRequest{})
 	typ := val.Type()
 
-	if typ.Kind() == reflect.Ptr {
+	if typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
 
