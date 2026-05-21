@@ -7,6 +7,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -74,11 +75,11 @@ func (s *ScalarToInstantVector) AfterPrepare(ctx context.Context) error {
 	return s.Scalar.AfterPrepare(ctx)
 }
 
-func (s *ScalarToInstantVector) Finalize(ctx context.Context) error {
-	return s.Scalar.Finalize(ctx)
+func (s *ScalarToInstantVector) FinishedReading(ctx context.Context) error {
+	return s.Scalar.FinishedReading(ctx)
 }
 
-func (s *ScalarToInstantVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (s *ScalarToInstantVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return s.Scalar.Stats(ctx)
 }
 

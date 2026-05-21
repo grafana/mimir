@@ -38,7 +38,7 @@ type InstantQuery struct {
 	values          []float64
 	nextSeriesIndex int
 
-	annotations                            *annotations.Annotations
+	annotations                            annotations.Annotations
 	haveEmittedIgnoredHistogramsAnnotation bool
 
 	// Reuse the same heap instance to allow us to avoid allocating a new one every time.
@@ -308,18 +308,25 @@ func (t *InstantQuery) AfterPrepare(ctx context.Context) error {
 	return t.Param.AfterPrepare(ctx)
 }
 
-func (t *InstantQuery) Finalize(ctx context.Context) error {
+func (t *InstantQuery) FinishedReading(ctx context.Context) error {
 	types.Float64SlicePool.Put(&t.values, t.MemoryConsumptionTracker)
 
-	if err := t.Inner.Finalize(ctx); err != nil {
+	if err := t.Inner.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return t.Param.Finalize(ctx)
+	return t.Param.FinishedReading(ctx)
 }
 
-func (t *InstantQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats[types.StatsProvider](ctx, t.Inner, t.Param)
+func (t *InstantQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, t.Inner, t.Param)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	t.annotations.Merge(childAnnos)
+
+	return stats, t.annotations, nil
 }
 
 func (t *InstantQuery) Close() {

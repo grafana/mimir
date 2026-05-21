@@ -11,6 +11,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -31,9 +33,10 @@ func TestSplitOperator(t *testing.T) {
 	overallTimeRangeForSingleStepCase := types.NewRangeQueryTimeRange(timestamp.Time(1), timestamp.Time(4), time.Millisecond)
 
 	testCases := map[string]struct {
-		ranges        []testRange
-		expectedData  testSeriesSet
-		expectedStats types.EncodedOperatorEvaluationStats
+		ranges              []testRange
+		expectedData        testSeriesSet
+		expectedStats       types.EncodedOperatorEvaluationStats
+		expectedAnnotations annotations.Annotations
 	}{
 		"all ranges return no series": {
 			ranges: []testRange{
@@ -555,6 +558,45 @@ func TestSplitOperator(t *testing.T) {
 				TimeRange: twoRangeCaseOverallTimeRange.Encode(),
 			},
 		},
+		"ranges emit annotations": {
+			ranges: []testRange{
+				{
+					stats: types.EncodedOperatorEvaluationStats{
+						AllSeries: types.EncodedSubsetStats{
+							SamplesProcessedPerStep:     []int64{0, 0, 0},
+							SamplesReadIfSubsequentStep: []int64{0, 0, 0},
+							SamplesReadIfFirstStep:      []int64{0, 0, 0},
+						},
+						TimeRange: firstRangeTimeRange.Encode(),
+					},
+					annotations: annotationsFrom(annotations.NewBadBucketLabelWarning("my_metric", "the_label", posrange.PositionRange{Start: 1, End: 3})),
+				},
+				{
+					stats: types.EncodedOperatorEvaluationStats{
+						AllSeries: types.EncodedSubsetStats{
+							SamplesProcessedPerStep:     []int64{0, 0, 0},
+							SamplesReadIfSubsequentStep: []int64{0, 0, 0},
+							SamplesReadIfFirstStep:      []int64{0, 0, 0},
+						},
+						TimeRange: secondRangeTimeRange.Encode(),
+					},
+					annotations: annotationsFrom(annotations.NewHistogramIgnoredInAggregationInfo("average", posrange.PositionRange{Start: 7, End: 10})),
+				},
+			},
+			expectedData: testSeriesSet{},
+			expectedStats: types.EncodedOperatorEvaluationStats{
+				AllSeries: types.EncodedSubsetStats{
+					SamplesProcessedPerStep:     []int64{0, 0, 0, 0, 0, 0},
+					SamplesReadIfSubsequentStep: []int64{0, 0, 0, 0, 0, 0},
+					SamplesReadIfFirstStep:      []int64{0, 0, 0, 0, 0, 0},
+				},
+				TimeRange: twoRangeCaseOverallTimeRange.Encode(),
+			},
+			expectedAnnotations: annotationsFrom(
+				annotations.NewBadBucketLabelWarning("my_metric", "the_label", posrange.PositionRange{Start: 1, End: 3}),
+				annotations.NewHistogramIgnoredInAggregationInfo("average", posrange.PositionRange{Start: 7, End: 10}),
+			),
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -571,6 +613,7 @@ func TestSplitOperator(t *testing.T) {
 					Series:                   r.data.seriesLabels(),
 					Data:                     r.data.seriesData(t, memoryConsumptionTracker),
 					EvaluationStats:          s,
+					Annotations:              r.annotations,
 					MemoryConsumptionTracker: memoryConsumptionTracker,
 				}
 			}
@@ -608,14 +651,15 @@ func TestSplitOperator(t *testing.T) {
 
 			types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
 
-			require.NoError(t, o.Finalize(ctx))
+			require.NoError(t, o.FinishedReading(ctx))
 			for i, o := range innerOperators {
-				require.Truef(t, o.Finalized, "expected inner operator %d to be finalized", i)
+				require.Truef(t, o.FinishedReadingCalled, "expected inner operator %d to have had FinishedReading called", i)
 			}
 
-			operatorStats, err := o.Stats(ctx)
+			operatorStats, annos, err := o.Stats(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedStats, operatorStats.Encode(), "expected stats to match expected")
+			require.Equal(t, testCase.expectedAnnotations, annos, "expected annotations to match expected")
 
 			operatorStats.Close()
 
@@ -651,8 +695,9 @@ func TestSplitOperator_ConflictingDropNameValuesForSameSeries(t *testing.T) {
 }
 
 type testRange struct {
-	data  testSeriesSet
-	stats types.EncodedOperatorEvaluationStats
+	data        testSeriesSet
+	stats       types.EncodedOperatorEvaluationStats
+	annotations annotations.Annotations
 }
 
 type testSeries struct {
@@ -687,4 +732,14 @@ func (s testSeriesSet) seriesData(t *testing.T, memoryConsumptionTracker *limite
 
 func createHistogram(v float64) *histogram.FloatHistogram {
 	return &histogram.FloatHistogram{Count: v}
+}
+
+func annotationsFrom(annos ...error) annotations.Annotations {
+	all := annotations.Annotations{}
+
+	for _, a := range annos {
+		all.Add(a)
+	}
+
+	return all
 }

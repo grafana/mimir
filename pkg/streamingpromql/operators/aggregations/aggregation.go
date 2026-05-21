@@ -41,10 +41,9 @@ func NewAggregation(
 	without bool,
 	op parser.ItemType,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*Aggregation, error) {
-	aggregator, err := NewAggregator(op, grouping, without, memoryConsumptionTracker, annotations, timeRange, inner.ExpressionPosition())
+	aggregator, err := NewAggregator(op, grouping, without, memoryConsumptionTracker, timeRange, inner.ExpressionPosition())
 	if err != nil {
 		return nil, err
 	}
@@ -168,22 +167,26 @@ func (a *Aggregation) AfterPrepare(ctx context.Context) error {
 	return a.Inner.AfterPrepare(ctx)
 }
 
-func (a *Aggregation) Finalize(ctx context.Context) error {
-	// The wrapping operator (if any) is responsible for calling Finalize() on whatever provides a.ParamData, so we don't need to do it here.
-	if a.aggregator != nil {
-		a.aggregator.Finalize()
-		a.aggregator = nil
-	}
+func (a *Aggregation) FinishedReading(ctx context.Context) error {
+	// The wrapping operator (if any) is responsible for calling FinishedReading() on whatever provides a.ParamData, so we don't need to do it here.
+	a.aggregator.FinishedReading()
 
-	return a.Inner.Finalize(ctx)
+	return a.Inner.FinishedReading(ctx)
 }
 
 func (a *Aggregation) SetParamData(data types.ScalarData) {
 	a.aggregator.ParamData = data
 }
 
-func (a *Aggregation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return a.Inner.Stats(ctx)
+func (a *Aggregation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := a.Inner.Stats(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	a.aggregator.Annotations.Merge(childAnnos)
+
+	return stats, a.aggregator.Annotations, nil
 }
 
 func (a *Aggregation) Close() {
@@ -223,7 +226,7 @@ type Aggregator struct {
 	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
 	Without                  bool
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
+	Annotations              annotations.Annotations
 	TimeRange                types.QueryTimeRange
 
 	// If the aggregation has a parameter, its values are expected
@@ -253,7 +256,6 @@ func NewAggregator(
 	grouping []string,
 	without bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	timeRange types.QueryTimeRange,
 	innerExpressionPosition posrange.PositionRange,
 ) (*Aggregator, error) {
@@ -272,7 +274,6 @@ func NewAggregator(
 		Grouping:                 grouping,
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		Annotations:              annotations,
 		TimeRange:                timeRange,
 
 		metricNames:             &operators.MetricNames{},
@@ -464,7 +465,7 @@ func (a *Aggregator) emitAnnotation(generator types.AnnotationGenerator) {
 	a.Annotations.Add(generator(metricName, a.innerExpressionPosition))
 }
 
-func (a *Aggregator) Finalize() {
+func (a *Aggregator) FinishedReading() {
 	if a.ParamData.Samples != nil {
 		types.FPointSlicePool.Put(&a.ParamData.Samples, a.MemoryConsumptionTracker)
 	}

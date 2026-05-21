@@ -125,7 +125,7 @@ func TestAndUnlessBinaryOperation_PassesHintMatchersToRHS(t *testing.T) {
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 
 			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
-			require.NoError(t, o.Finalize(ctx))
+			require.NoError(t, o.FinishedReading(ctx))
 			o.Close()
 		})
 	}
@@ -272,21 +272,21 @@ func TestAndUnlessBinaryOperation_PassesExcludeHintMatchersToRHS(t *testing.T) {
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 
 			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
-			require.NoError(t, o.Finalize(ctx))
+			require.NoError(t, o.FinishedReading(ctx))
 			o.Close()
 		})
 	}
 }
 
-func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *testing.T) {
+func TestAndUnlessBinaryOperation_CallsFinishedReadingOnInnerOperatorsAsSoonAsPossible(t *testing.T) {
 	testCases := map[string]struct {
 		isUnless    bool
 		leftSeries  []labels.Labels
 		rightSeries []labels.Labels
 
-		expectedOutputSeries                           []labels.Labels
-		expectLeftSideFinalizedAfterOutputSeriesIndex  int
-		expectRightSideFinalizedAfterOutputSeriesIndex int
+		expectedOutputSeries                                       []labels.Labels
+		expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex  int
+		expectRightSideFinishedReadingCalledAfterOutputSeriesIndex int
 	}{
 		"and: reach end of both sides at the same time": {
 			isUnless: false,
@@ -306,8 +306,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-2"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 2,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  2,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 2,
 		},
 		"unless: reach end of both sides at the same time": {
 			isUnless: true,
@@ -327,8 +327,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-2"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 2,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  2,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 2,
 		},
 		"and: no more matches with unmatched series still to read on both sides": {
 			isUnless: false,
@@ -347,8 +347,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "1", "series", "left-2"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"unless: no more matches with unmatched series still to read on both sides": {
 			isUnless: true,
@@ -368,8 +368,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-2"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  2,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"and: no more matches with unmatched series still to read on left side": {
 			isUnless: false,
@@ -387,8 +387,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "1", "series", "left-2"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"unless: no more matches with unmatched series still to read on left side": {
 			isUnless: true,
@@ -407,8 +407,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-2"),
 				labels.FromStrings("group", "2", "series", "left-3"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  2,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"and: no more matches with unmatched series still to read on right side": {
 			isUnless: false,
@@ -426,8 +426,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "1", "series", "left-2"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"unless: no more matches with unmatched series still to read on right side": {
 			isUnless: true,
@@ -445,8 +445,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "1", "series", "left-2"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"and: some series do not match anything on the right": {
 			isUnless: false,
@@ -467,8 +467,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-3"),
 				labels.FromStrings("group", "3", "series", "left-4"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 2,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  2,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 2,
 		},
 		"and: no series match": {
 			isUnless: false,
@@ -480,9 +480,9 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "3", "series", "right-1"),
 			},
 
-			expectedOutputSeries:                           []labels.Labels{},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries: []labels.Labels{},
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  -1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: -1,
 		},
 		"unless: no series match": {
 			isUnless: true,
@@ -498,8 +498,8 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "1", "series", "left-1"),
 				labels.FromStrings("group", "2", "series", "left-2"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: -1,
 		},
 		"and: no series on left": {
 			isUnless:   false,
@@ -510,9 +510,9 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "3", "series", "right-3"),
 			},
 
-			expectedOutputSeries:                           []labels.Labels{},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries: []labels.Labels{},
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  -1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: -1,
 		},
 		"unless: no series on left": {
 			isUnless:   true,
@@ -523,9 +523,9 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "3", "series", "right-3"),
 			},
 
-			expectedOutputSeries:                           []labels.Labels{},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries: []labels.Labels{},
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  -1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: -1,
 		},
 		"and: no series on right": {
 			isUnless: false,
@@ -536,9 +536,9 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 			},
 			rightSeries: []labels.Labels{},
 
-			expectedOutputSeries:                           []labels.Labels{},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries: []labels.Labels{},
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  -1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: -1,
 		},
 		"unless: no series on right": {
 			isUnless: true,
@@ -554,19 +554,19 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				labels.FromStrings("group", "2", "series", "left-2"),
 				labels.FromStrings("group", "3", "series", "left-3"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  2,
-			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  2,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: -1,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			if testCase.expectLeftSideFinalizedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
-				require.Failf(t, "invalid test case", "expectLeftSideFinalizedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideFinalizedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			if testCase.expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
-			if testCase.expectRightSideFinalizedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
-				require.Failf(t, "invalid test case", "expectRightSideFinalizedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideFinalizedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			if testCase.expectRightSideFinishedReadingCalledAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectRightSideFinishedReadingCalledAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideFinishedReadingCalledAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
 			ctx := context.Background()
@@ -586,16 +586,16 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
 
-			if testCase.expectLeftSideFinalizedAfterOutputSeriesIndex == -1 {
-				require.True(t, left.Finalized, "left side should be finalized after SeriesMetadata, but it is not")
+			if testCase.expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex == -1 {
+				require.True(t, left.FinishedReadingCalled, "left side should have FinishedReading called after SeriesMetadata, but it is not")
 			} else {
-				require.False(t, left.Finalized, "left side should not be finalized after SeriesMetadata, but it is")
+				require.False(t, left.FinishedReadingCalled, "left side should not have FinishedReading called after SeriesMetadata, but it is")
 			}
 
-			if testCase.expectRightSideFinalizedAfterOutputSeriesIndex == -1 {
-				require.True(t, right.Finalized, "right side should be finalized after SeriesMetadata, but it is not")
+			if testCase.expectRightSideFinishedReadingCalledAfterOutputSeriesIndex == -1 {
+				require.True(t, right.FinishedReadingCalled, "right side should have FinishedReading called after SeriesMetadata, but it is not")
 			} else {
-				require.False(t, right.Finalized, "right side should not be finalized after SeriesMetadata, but it is")
+				require.False(t, right.FinishedReadingCalled, "right side should not have FinishedReading called after SeriesMetadata, but it is")
 			}
 
 			require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
@@ -605,16 +605,16 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 				_, err := o.NextSeries(ctx)
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
-				if outputSeriesIdx >= testCase.expectLeftSideFinalizedAfterOutputSeriesIndex {
-					require.Truef(t, left.Finalized, "left side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
+				if outputSeriesIdx >= testCase.expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex {
+					require.Truef(t, left.FinishedReadingCalled, "left side should have FinishedReading called after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
-					require.Falsef(t, left.Finalized, "left side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
+					require.Falsef(t, left.FinishedReadingCalled, "left side should not have FinishedReading called after output series at index %v, but it is", outputSeriesIdx)
 				}
 
-				if outputSeriesIdx >= testCase.expectRightSideFinalizedAfterOutputSeriesIndex {
-					require.Truef(t, right.Finalized, "right side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
+				if outputSeriesIdx >= testCase.expectRightSideFinishedReadingCalledAfterOutputSeriesIndex {
+					require.Truef(t, right.FinishedReadingCalled, "right side should have FinishedReading called after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
-					require.Falsef(t, right.Finalized, "right side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
+					require.Falsef(t, right.FinishedReadingCalled, "right side should not have FinishedReading called after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
 
@@ -626,9 +626,9 @@ func TestAndUnlessBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *tes
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
 
-			require.NoError(t, o.Finalize(ctx))
-			require.True(t, left.Finalized, "left side should be finalized after calling Finalize, but it is not")
-			require.True(t, right.Finalized, "right side should be finalized after calling Finalize, but it is not")
+			require.NoError(t, o.FinishedReading(ctx))
+			require.True(t, left.FinishedReadingCalled, "left side should have FinishedReading called after calling FinishedReading, but it is not")
+			require.True(t, right.FinishedReadingCalled, "right side should have FinishedReading called after calling FinishedReading, but it is not")
 			// Make sure we've returned everything to their pools.
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
@@ -726,8 +726,8 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 					_, err = o.NextSeries(ctx)
 					require.NoError(t, err)
 
-					// Finalize the operator and confirm that we've returned everything to their pools.
-					require.NoError(t, o.Finalize(ctx))
+					// Call FinishedReading on the operator and confirm that we've returned everything to their pools.
+					require.NoError(t, o.FinishedReading(ctx))
 					require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 					o.Close()
 				})
@@ -799,7 +799,7 @@ func BenchmarkAndUnlessBinaryOperation_ExcludeHintRHSFiltering(b *testing.B) {
 			// so its length reflects how many RHS series were actually fetched.
 			totalRHSSeries += len(right.Series)
 
-			if err := o.Finalize(ctx); err != nil {
+			if err := o.FinishedReading(ctx); err != nil {
 				b.Fatal(err)
 			}
 			o.Close()

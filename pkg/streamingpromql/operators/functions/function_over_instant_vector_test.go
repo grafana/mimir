@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -125,11 +126,11 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	expectedSeriesDataFuncCalledTimes++
 	require.Equal(t, expectedSeriesDataFuncCalledTimes, seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
 
-	require.NoError(t, operator.Finalize(ctx))
-	require.True(t, inner.Finalized)
-	require.True(t, scalarOperator1.finalized)
-	require.True(t, scalarOperator2.finalized)
-	require.Equalf(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes(), "expected 0 memory consumption after Finalize, but have\n%s", tracker.DescribeCurrentMemoryConsumption())
+	require.NoError(t, operator.FinishedReading(ctx))
+	require.True(t, inner.FinishedReadingCalled)
+	require.True(t, scalarOperator1.finishedReadingCalled)
+	require.True(t, scalarOperator2.finishedReadingCalled)
+	require.Equalf(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes(), "expected 0 memory consumption after FinishedReading, but have\n%s", tracker.DescribeCurrentMemoryConsumption())
 
 	operator.Close()
 	require.True(t, inner.Closed)
@@ -138,9 +139,9 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 }
 
 type testScalarOperator struct {
-	value     types.ScalarData
-	finalized bool
-	closed    bool
+	value                 types.ScalarData
+	finishedReadingCalled bool
+	closed                bool
 }
 
 func (t *testScalarOperator) GetValues(_ context.Context) (types.ScalarData, error) {
@@ -159,13 +160,13 @@ func (t *testScalarOperator) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (t *testScalarOperator) Finalize(_ context.Context) error {
-	t.finalized = true
+func (t *testScalarOperator) FinishedReading(_ context.Context) error {
+	t.finishedReadingCalled = true
 	return nil
 }
 
-func (t *testScalarOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
-	return nil, nil
+func (t *testScalarOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return nil, nil, nil
 }
 
 func (t *testScalarOperator) Close() {

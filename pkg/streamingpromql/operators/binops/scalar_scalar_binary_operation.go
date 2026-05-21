@@ -24,7 +24,7 @@ type ScalarScalarBinaryOperation struct {
 	opFunc             binaryOperationFunc
 	emitAnnotation     types.EmitAnnotationFunc
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
+	annotations        annotations.Annotations
 }
 
 var _ types.ScalarOperator = &ScalarScalarBinaryOperation{}
@@ -33,7 +33,6 @@ func NewScalarScalarBinaryOperation(
 	left, right types.ScalarOperator,
 	op parser.ItemType,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*ScalarScalarBinaryOperation, error) {
 	s := &ScalarScalarBinaryOperation{
@@ -41,7 +40,6 @@ func NewScalarScalarBinaryOperation(
 		Right:                    right,
 		Op:                       op,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		annotations:              annotations,
 		expressionPosition:       expressionPosition,
 	}
 
@@ -130,16 +128,23 @@ func (s *ScalarScalarBinaryOperation) AfterPrepare(ctx context.Context) error {
 	return s.Right.AfterPrepare(ctx)
 }
 
-func (s *ScalarScalarBinaryOperation) Finalize(ctx context.Context) error {
-	if err := s.Left.Finalize(ctx); err != nil {
+func (s *ScalarScalarBinaryOperation) FinishedReading(ctx context.Context) error {
+	if err := s.Left.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return s.Right.Finalize(ctx)
+	return s.Right.FinishedReading(ctx)
 }
 
-func (s *ScalarScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, s.Left, s.Right)
+func (s *ScalarScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.CombineStatsAndAnnotations(ctx, s.Left, s.Right)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	s.annotations.Merge(childAnnos)
+
+	return stats, s.annotations, nil
 }
 
 func (s *ScalarScalarBinaryOperation) Close() {

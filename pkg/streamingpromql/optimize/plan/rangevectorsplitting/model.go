@@ -6,7 +6,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
@@ -52,7 +51,6 @@ type SplitOperatorFactory func(
 	cacheKey []byte,
 	irCache *cache.CacheFactory,
 	expressionPosition posrange.PositionRange,
-	annotations *annotations.Annotations,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
 	logger log.Logger,
@@ -73,7 +71,6 @@ func NewSplitOperatorFactory[T any](
 		cacheKey []byte,
 		irCache *cache.CacheFactory,
 		expressionPosition posrange.PositionRange,
-		annotations *annotations.Annotations,
 		memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 		enableDelayedNameRemoval bool,
 		logger log.Logger,
@@ -91,7 +88,6 @@ func NewSplitOperatorFactory[T any](
 			combine,
 			codec,
 			expressionPosition,
-			annotations,
 			memoryConsumptionTracker,
 			enableDelayedNameRemoval,
 			logger,

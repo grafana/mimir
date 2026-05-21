@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -55,8 +56,8 @@ type Concat struct {
 	nextOperatorIndex int
 }
 
-func (c *Concat) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, c.Inner...)
+func (c *Concat) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.CombineStatsAndAnnotations(ctx, c.Inner...)
 }
 
 func NewConcat(inner []types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*Concat, error) {
@@ -148,9 +149,9 @@ func (c *Concat) NextSeries(ctx context.Context) (types.InstantVectorSeriesData,
 	return d, err
 }
 
-func (c *Concat) Finalize(ctx context.Context) error {
+func (c *Concat) FinishedReading(ctx context.Context) error {
 	for _, o := range c.Inner {
-		if err := o.Finalize(ctx); err != nil {
+		if err := o.FinishedReading(ctx); err != nil {
 			return err
 		}
 	}

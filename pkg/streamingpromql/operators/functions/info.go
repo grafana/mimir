@@ -16,6 +16,7 @@ import (
 	model_timestamp "github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -696,16 +697,16 @@ func (f *InfoFunction) AfterPrepare(ctx context.Context) error {
 	return f.Info.AfterPrepare(ctx)
 }
 
-func (f *InfoFunction) Finalize(ctx context.Context) error {
-	if err := f.Inner.Finalize(ctx); err != nil {
+func (f *InfoFunction) FinishedReading(ctx context.Context) error {
+	if err := f.Inner.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return f.Info.Finalize(ctx)
+	return f.Info.FinishedReading(ctx)
 }
 
-func (f *InfoFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats[types.StatsProvider](ctx, f.Inner, f.Info)
+func (f *InfoFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, f.Inner, f.Info)
 }
 
 func (f *InfoFunction) Close() {

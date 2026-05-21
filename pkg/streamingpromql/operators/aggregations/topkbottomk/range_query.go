@@ -43,7 +43,7 @@ type RangeQuery struct {
 	currentGroup              *rangeQueryGroup
 	seriesIndexInCurrentGroup int
 
-	annotations                            *annotations.Annotations
+	annotations                            annotations.Annotations
 	haveEmittedIgnoredHistogramsAnnotation bool
 
 	// Reuse the same heap instance to allow us to avoid allocating a new one every time.
@@ -430,7 +430,7 @@ func (t *RangeQuery) AfterPrepare(ctx context.Context) error {
 	return t.Param.AfterPrepare(ctx)
 }
 
-func (t *RangeQuery) Finalize(ctx context.Context) error {
+func (t *RangeQuery) FinishedReading(ctx context.Context) error {
 	types.Int64SlicePool.Put(&t.k, t.MemoryConsumptionTracker)
 
 	if t.currentGroup != nil {
@@ -444,15 +444,22 @@ func (t *RangeQuery) Finalize(ctx context.Context) error {
 
 	t.remainingGroups = nil
 
-	if err := t.Inner.Finalize(ctx); err != nil {
+	if err := t.Inner.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return t.Param.Finalize(ctx)
+	return t.Param.FinishedReading(ctx)
 }
 
-func (t *RangeQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats[types.StatsProvider](ctx, t.Inner, t.Param)
+func (t *RangeQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, t.Inner, t.Param)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	t.annotations.Merge(childAnnos)
+
+	return stats, t.annotations, nil
 }
 
 func (t *RangeQuery) Close() {

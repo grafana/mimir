@@ -211,7 +211,6 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		innerCacheKey,
 		m.cache,
 		expressionPos,
-		params.Annotations,
 		params.MemoryConsumptionTracker,
 		params.QueryParameters.EnableDelayedNameRemoval,
 		params.Logger,

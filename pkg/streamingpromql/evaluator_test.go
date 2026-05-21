@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/promqltest"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -113,7 +112,6 @@ func TestEvaluator(t *testing.T) {
 
 	params := &planning.OperatorParameters{
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		Annotations:              annotations.New(),
 	}
 
 	evaluator, err := NewEvaluator(nodeRequests, params, engine, "this expression is not used")
@@ -148,12 +146,11 @@ func TestEvaluator(t *testing.T) {
 		{
 			event: "EvaluationCompleted",
 			details: testutils.TrimIndent(`
-				annotations: <nil>
-				stats:
-				  instantVectorNode: processed: [4 4 4], read if subsequent step: [4 4 4], read if first step: [4 4 4]
-				  rangeVectorNode: processed: [2 6 6], read if subsequent step: [2 6 6], read if first step: [2 6 6]
-				  scalarNode: processed: [0 0 0], read if subsequent step: [0 0 0], read if first step: [0 0 0]
-				  stringNode: processed: [0 0 0], read if subsequent step: [0 0 0], read if first step: [0 0 0]
+				node info:
+				  instantVectorNode: annotations: [], stats: {processed: [4 4 4], read if subsequent step: [4 4 4], read if first step: [4 4 4]}
+				  rangeVectorNode: annotations: [], stats: {processed: [2 6 6], read if subsequent step: [2 6 6], read if first step: [2 6 6]}
+				  scalarNode: annotations: [], stats: {processed: [0 0 0], read if subsequent step: [0 0 0], read if first step: [0 0 0]}
+				  stringNode: annotations: [], stats: {processed: [0 0 0], read if subsequent step: [0 0 0], read if first step: [0 0 0]}
 			`),
 		},
 	}
@@ -207,25 +204,24 @@ func (l *loggingEvaluationObserver) StringEvaluated(ctx context.Context, evaluat
 	return nil
 }
 
-func (l *loggingEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error {
-	formattedStats := make(map[string]string, len(stats))
+func (l *loggingEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, nodeInfo map[planning.Node]NodeCompletionInfo) error {
+	formattedInfo := make(map[string]string, len(nodeInfo))
 
-	for node, nodeStats := range stats {
+	for node, nodeInfo := range nodeInfo {
 		name, ok := l.nodeNames[node]
 		if !ok {
 			return fmt.Errorf("unknown %[1]T node passed to loggingEvaluationObserver.EvaluationCompleted: %[1]v", node)
 		}
 
-		encoded := nodeStats.Encode().AllSeries
-		formattedStats[name] = fmt.Sprintf("processed: %v, read if subsequent step: %v, read if first step: %v", encoded.SamplesProcessedPerStep, encoded.SamplesReadIfSubsequentStep, encoded.SamplesReadIfFirstStep)
+		encoded := nodeInfo.Stats.Encode().AllSeries
+		formattedInfo[name] = fmt.Sprintf("annotations: %v, stats: {processed: %v, read if subsequent step: %v, read if first step: %v}", nodeInfo.Annotations.AsErrors(), encoded.SamplesProcessedPerStep, encoded.SamplesReadIfSubsequentStep, encoded.SamplesReadIfFirstStep)
 	}
 
 	details := &strings.Builder{}
-	fmt.Fprintf(details, "annotations: %v\n", annotations)
-	details.WriteString("stats:\n")
+	details.WriteString("node info:\n")
 
-	for _, name := range slices.Sorted(maps.Keys(formattedStats)) {
-		formatted := formattedStats[name]
+	for _, name := range slices.Sorted(maps.Keys(formattedInfo)) {
+		formatted := formattedInfo[name]
 		fmt.Fprintf(details, "  %v: %v\n", name, formatted)
 	}
 

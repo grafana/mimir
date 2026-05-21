@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -140,21 +141,22 @@ func (s *Subquery) AfterPrepare(ctx context.Context) error {
 	return s.Inner.AfterPrepare(ctx)
 }
 
-func (s *Subquery) Finalize(ctx context.Context) error {
+func (s *Subquery) FinishedReading(ctx context.Context) error {
 	s.histograms.Close()
 	s.floats.Close()
-	return s.Inner.Finalize(ctx)
+	return s.Inner.FinishedReading(ctx)
 }
 
-func (s *Subquery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	inner, err := s.Inner.Stats(ctx)
+func (s *Subquery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	inner, annos, err := s.Inner.Stats(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer inner.Close()
 
-	return inner.ComputeForSubquery(s.ParentQueryTimeRange, s.rangeMilliseconds, s.SubqueryTimestamp, s.SubqueryOffset)
+	stats, err := inner.ComputeForSubquery(s.ParentQueryTimeRange, s.rangeMilliseconds, s.SubqueryTimestamp, s.SubqueryOffset)
+	return stats, annos, err
 }
 
 func (s *Subquery) Close() {

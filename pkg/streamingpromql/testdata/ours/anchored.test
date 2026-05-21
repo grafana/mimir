@@ -342,18 +342,21 @@ load 1m
 eval instant at 1m resets(mixed[1m] anchored)
   {} 0
 
-eval instant at 3m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+# These tests have been commented out since upstream Prometheus has recently
+# added support for smoothed/anchored histograms.
+# These tests have been commented out whilst a Mimir implementation is completed.
+#eval instant at 3m resets(mixed[1m] anchored)
+#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
-eval instant at 4m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+#eval instant at 4m resets(mixed[1m] anchored)
+#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
-eval instant at 5m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+#eval instant at 5m resets(mixed[1m] anchored)
+#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
 # Whilst the histogram is within the range + look-back window the query will fail
-eval instant at 8m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+#eval instant at 8m resets(mixed[1m] anchored)
+#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
 eval instant at 10m resets(mixed[1m] anchored)
   {} 0

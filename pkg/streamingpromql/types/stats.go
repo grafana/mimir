@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/util/annotations"
 	promstats "github.com/prometheus/prometheus/util/stats"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -662,31 +663,38 @@ func (s *subsetStats) Close() {
 	Int64SlicePool.Put(&s.samplesReadIfFirstStep, s.memoryConsumptionTracker)
 }
 
-// CombineStats retrieves and combines query stats from multiple operators.
+// CombineStatsAndAnnotations retrieves and combines query stats and annotations from multiple operators.
 // The caller is responsible for calling Close() on the returned stats.
-func CombineStats[T StatsProvider](ctx context.Context, operators ...T) (*OperatorEvaluationStats, error) {
-	var combined *OperatorEvaluationStats
+// The returned annotations may be nil if none of the operators reported any annotations.
+func CombineStatsAndAnnotations[T StatsAndAnnotationsProvider](ctx context.Context, operators ...T) (*OperatorEvaluationStats, annotations.Annotations, error) {
+	var combinedStats *OperatorEvaluationStats
+	var combinedAnnos annotations.Annotations
 
 	for _, op := range operators {
-		stats, err := op.Stats(ctx)
+		stats, annos, err := op.Stats(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		if combined == nil {
-			combined = stats
-			continue
+		if combinedStats == nil {
+			combinedStats = stats
+		} else {
+			if err := combinedStats.Add(stats); err != nil {
+				return nil, nil, err
+			}
+			stats.Close()
 		}
 
-		if err := combined.Add(stats); err != nil {
-			return nil, err
+		if combinedAnnos == nil {
+			combinedAnnos = annos
+		} else {
+			combinedAnnos.Merge(annos)
 		}
-		stats.Close()
 	}
 
-	return combined, nil
+	return combinedStats, combinedAnnos, nil
 }
 
-type StatsProvider interface {
-	Stats(context.Context) (*OperatorEvaluationStats, error)
+type StatsAndAnnotationsProvider interface {
+	Stats(context.Context) (*OperatorEvaluationStats, annotations.Annotations, error)
 }

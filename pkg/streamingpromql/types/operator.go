@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type PrepareParams struct {
@@ -27,8 +28,8 @@ type Operator interface {
 	// Close must not modify query results, annotations or statistics.
 	Close()
 
-	// Prepare prepares the operator for execution. It must be called before calling SeriesMetadata, NextSeries, NextStepSamples or Finalize.
-	// Prepare must not call SeriesMetadata, NextSeries, NextStepSamples or Finalize on another operator, and is expected to call Prepare on
+	// Prepare prepares the operator for execution. It must be called before calling SeriesMetadata, NextSeries, NextStepSamples or FinishedReading.
+	// Prepare must not call SeriesMetadata, NextSeries, NextStepSamples or FinishedReading on another operator, and is expected to call Prepare on
 	// any nested operators.
 	//
 	// Prepare must only be called once.
@@ -36,8 +37,8 @@ type Operator interface {
 
 	// AfterPrepare is called after Prepare has returned successfully for all operators in an evaluation.
 	//
-	// It must be called before calling SeriesMetadata, NextSeries, NextStepSamples or Finalize.
-	// AfterPrepare must not call SeriesMetadata, NextSeries, NextStepSamples or Finalize on another operator, and is expected to call AfterPrepare on
+	// It must be called before calling SeriesMetadata, NextSeries, NextStepSamples or FinishedReading.
+	// AfterPrepare must not call SeriesMetadata, NextSeries, NextStepSamples or FinishedReading on another operator, and is expected to call AfterPrepare on
 	// any nested operators.
 	//
 	// AfterPrepare must only be called once.
@@ -46,21 +47,22 @@ type Operator interface {
 	// Prepare having already been called on all operators (eg. operators that collect requests from other operators).
 	AfterPrepare(ctx context.Context) error
 
-	// Finalize signals that no further data will be requested from this operator.
+	// FinishedReading signals that no further data will be read from this operator.
 	// Implementations may use this to clean up any buffered or outstanding data in memory.
-	// It must be safe to call Finalize even if other methods on the operator have not been called or returned an error.
-	// It must be safe to call Finalize multiple times.
-	// Finalize must not call any method other than Finalize on another operator and is expected to call Finalize on
+	// It must be safe to call FinishedReading even if other methods on the operator have not been called or returned an error.
+	// It must be safe to call FinishedReading multiple times.
+	// FinishedReading must not call any method other than FinishedReading on another operator and is expected to call FinishedReading on
 	// any nested operators.
-	// Once Finalize has been called, calling methods other than Stats or Close may result in unpredictable behaviour, corruption or crashes.
-	Finalize(ctx context.Context) error
+	// Once FinishedReading has been called, calling methods other than Stats or Close may result in unpredictable behaviour, corruption or crashes.
+	FinishedReading(ctx context.Context) error
 
-	// Stats returns the statistics for this operator, including any nested operators.
-	// Stats must only be called after Finalize has been called.
-	// Calling Stats multiple times may result in unpredictable behaviour, corruption or crashes.
-	// The caller may mutate the returned OperatorEvaluationStats instance.
+	// Stats returns the statistics and annotations for this operator, including any nested operators.
+	// Stats must only be called after FinishedReading has been called.
+	// Stats must only be called once, calling Stats multiple times may result in unpredictable behaviour, corruption or crashes.
+	// The caller may mutate the returned statistics and annotations.
 	// It is the caller's responsibility to call Close on the returned OperatorEvaluationStats instance.
-	Stats(ctx context.Context) (*OperatorEvaluationStats, error)
+	// The returned annotations may be nil if there are no annotations to report.
+	Stats(ctx context.Context) (*OperatorEvaluationStats, annotations.Annotations, error)
 }
 
 // SeriesOperator represents all operators that return one or more series.

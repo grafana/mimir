@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -293,7 +292,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	operatorParams := &planning.OperatorParameters{
 		Queryable:          queryable,
-		Annotations:        annotations.New(),
 		EagerLoadSelectors: e.eagerLoadSelectors,
 		QueryParameters:    params,
 		Logger:             e.logger,

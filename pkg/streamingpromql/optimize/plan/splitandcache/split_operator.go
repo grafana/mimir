@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -210,38 +211,41 @@ func (s *TimeRangeSplitOperator) NextSeries(ctx context.Context) (types.InstantV
 	}, nil
 }
 
-func (s *TimeRangeSplitOperator) Finalize(ctx context.Context) error {
+func (s *TimeRangeSplitOperator) FinishedReading(ctx context.Context) error {
 	for _, r := range s.ranges {
-		if err := r.operator.Finalize(ctx); err != nil {
+		if err := r.operator.FinishedReading(ctx); err != nil {
 			return err
 		}
 
-		r.buffer.Finalize()
+		r.buffer.FinishedReading()
 	}
 
 	return nil
 }
 
-func (s *TimeRangeSplitOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (s *TimeRangeSplitOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	combinedStats, err := types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, 0)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	var combinedAnnotations annotations.Annotations
+
 	for _, r := range s.ranges {
-		rangeStats, err := r.operator.Stats(ctx)
+		rangeStats, rangeAnnotations, err := r.operator.Stats(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if err := combinedStats.AddSubRange(rangeStats); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		rangeStats.Close()
+		combinedAnnotations.Merge(rangeAnnotations)
 	}
 
-	return combinedStats, nil
+	return combinedStats, combinedAnnotations, nil
 }
 
 func (s *TimeRangeSplitOperator) Close() {
