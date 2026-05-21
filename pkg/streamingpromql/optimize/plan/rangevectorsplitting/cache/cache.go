@@ -5,9 +5,7 @@ package cache
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"fmt"
-	"hash/fnv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -19,21 +17,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/querier/querierpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
-
-type Backend interface {
-	GetMulti(ctx context.Context, keys []string, opts ...cache.Option) map[string][]byte
-	SetAsync(key string, value []byte, ttl time.Duration)
-}
 
 type TTLProvider interface {
 	GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error)
 }
 
 type CacheFactory struct {
-	backend     Backend
+	backend     caching.Backend
 	ttlProvider TTLProvider
 	metrics     *cacheMetrics
 	logger      log.Logger
@@ -75,7 +69,7 @@ func NewCacheFactory(cfg Config, ttlProvider TTLProvider, logger log.Logger, reg
 	return NewCacheFactoryWithBackend(backend, ttlProvider, reg, logger), nil
 }
 
-func NewCacheFactoryWithBackend(backend Backend, ttlProvider TTLProvider, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
+func NewCacheFactoryWithBackend(backend caching.Backend, ttlProvider TTLProvider, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
 	return &CacheFactory{
 		backend:     backend,
 		ttlProvider: ttlProvider,
@@ -88,17 +82,10 @@ func generateCacheKey(tenant string, function functions.Function, selector []byt
 	return fmt.Appendf(nil, "%s:%d:%s:%d:%d", tenant, function, selector, start, end)
 }
 
-// hashCacheKey is needed due to memcached key limit
-func hashCacheKey(key []byte) string {
-	hasher := fnv.New64a()
-	_, _ = hasher.Write(key)
-	return hex.EncodeToString(hasher.Sum(nil))
-}
-
 // TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals.
 // This should only be used in tests.
 func TestGenerateHashedCacheKey(tenant string, function functions.Function, selector []byte, start, end int64) string {
-	return hashCacheKey(generateCacheKey(tenant, function, selector, start, end))
+	return caching.HashCacheKey(generateCacheKey(tenant, function, selector, start, end))
 }
 
 // SplitCodec handles serialization of intermediate results for query splitting.
@@ -111,7 +98,7 @@ type SplitCodec[T any] interface {
 }
 
 type Cache[T any] struct {
-	backend     Backend
+	backend     caching.Backend
 	ttlProvider TTLProvider
 	metrics     *cacheMetrics
 	logger      log.Logger
@@ -142,7 +129,7 @@ func (c *Cache[T]) Get(
 
 	c.metrics.cacheRequests.Inc()
 	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
-	hashedKey := hashCacheKey(cacheKey)
+	hashedKey := caching.HashCacheKey(cacheKey)
 
 	foundData := c.backend.GetMulti(ctx, []string{hashedKey})
 	data, ok := foundData[hashedKey]
@@ -218,7 +205,7 @@ func (c *Cache[T]) Set(
 		return fmt.Errorf("marshalling cached series: %w", err)
 	}
 
-	hashedKey := hashCacheKey(cacheKey)
+	hashedKey := caching.HashCacheKey(cacheKey)
 	c.backend.SetAsync(hashedKey, data, ttl)
 
 	seriesCount := len(seriesMetadata)
