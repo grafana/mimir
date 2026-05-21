@@ -705,8 +705,8 @@ func (f *InfoFunction) FinishedReading(ctx context.Context) error {
 	return f.Info.FinishedReading(ctx)
 }
 
-func (f *InfoFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, f.Inner, f.Info)
+func (f *InfoFunction) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.FinalizeAndCombine[types.Finalizer](ctx, f.Inner, f.Info)
 }
 
 func (f *InfoFunction) Close() {

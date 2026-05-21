@@ -38,7 +38,7 @@ func (m *mockResponse) FinishedReading(ctx context.Context) (stats.Stats, error)
 	return m.stats, nil
 }
 
-func (m *mockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (m *mockResponse) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not supported")
 }
 
@@ -60,7 +60,7 @@ func (m *finishedReadingTestMockResponse) FinishedReading(ctx context.Context) (
 	return stats.Stats{}, nil
 }
 
-func (m *finishedReadingTestMockResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (m *finishedReadingTestMockResponse) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not supported")
 }
 

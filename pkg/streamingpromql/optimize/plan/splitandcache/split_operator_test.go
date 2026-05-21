@@ -656,7 +656,7 @@ func TestSplitOperator(t *testing.T) {
 				require.Truef(t, o.FinishedReadingCalled, "expected inner operator %d to have had FinishedReading called", i)
 			}
 
-			operatorStats, annos, err := o.Stats(ctx)
+			operatorStats, annos, err := o.Finalize(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedStats, operatorStats.Encode(), "expected stats to match expected")
 			require.Equal(t, testCase.expectedAnnotations, annos, "expected annotations to match expected")

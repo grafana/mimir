@@ -554,8 +554,8 @@ func (h *HistogramFunction) FinishedReading(ctx context.Context) error {
 	return h.inner.FinishedReading(ctx)
 }
 
-func (h *HistogramFunction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, h.f, h.inner)
+func (h *HistogramFunction) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine[types.Finalizer](ctx, h.f, h.inner)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -599,7 +599,7 @@ type histogramFunction interface {
 	Prepare(ctx context.Context, params *types.PrepareParams) error
 	AfterPrepare(ctx context.Context) error
 	FinishedReading(ctx context.Context) error
-	Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error)
+	Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error)
 	Close()
 }
 
@@ -679,8 +679,8 @@ func (q *histogramQuantile) FinishedReading(ctx context.Context) error {
 	return q.phArg.FinishedReading(ctx)
 }
 
-func (q *histogramQuantile) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := q.phArg.Stats(ctx)
+func (q *histogramQuantile) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := q.phArg.Finalize(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -762,8 +762,8 @@ func (f *histogramFraction) FinishedReading(ctx context.Context) error {
 	return f.upperArg.FinishedReading(ctx)
 }
 
-func (f *histogramFraction) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return types.CombineStatsAndAnnotations(ctx, f.lowerArg, f.upperArg)
+func (f *histogramFraction) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.FinalizeAndCombine(ctx, f.lowerArg, f.upperArg)
 }
 
 func (f *histogramFraction) Close() {

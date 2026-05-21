@@ -107,8 +107,8 @@ func (q *QuantileAggregation) FinishedReading(ctx context.Context) error {
 	return q.Param.FinishedReading(ctx)
 }
 
-func (q *QuantileAggregation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, annos, err := types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, q.Aggregation, q.Param)
+func (q *QuantileAggregation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, annos, err := types.FinalizeAndCombine[types.Finalizer](ctx, q.Aggregation, q.Param)
 
 	if err != nil {
 		return nil, nil, err

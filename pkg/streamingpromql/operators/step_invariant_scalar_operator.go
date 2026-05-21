@@ -85,8 +85,8 @@ func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.Scal
 	return data, nil
 }
 
-func (s *StepInvariantScalarOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	inner, annos, err := s.inner.Stats(ctx)
+func (s *StepInvariantScalarOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	inner, annos, err := s.inner.Finalize(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

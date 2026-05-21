@@ -143,28 +143,28 @@ func (m *MultiAggregatorGroupEvaluator) FinishedReading(ctx context.Context) err
 	return m.inner.FinishedReading(ctx)
 }
 
-func (m *MultiAggregatorGroupEvaluator) Stats(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	if !m.allInstancesFinishedReading() {
-		return nil, nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats when one or more instances have not had FinishedReading called")
+		return nil, nil, errors.New("MultiAggregatorGroupEvaluator: cannot finalize when one or more instances have not had FinishedReading called")
 	}
 
-	if instance.hasReadStats {
-		return nil, nil, errors.New("MultiAggregatorGroupEvaluator: cannot get stats twice for the same instance")
+	if instance.finalized {
+		return nil, nil, errors.New("MultiAggregatorGroupEvaluator: cannot finalize the same instance twice")
 	}
 
 	if m.cachedStats == nil {
 		var err error
-		m.cachedStats, m.cachedAnnotations, err = m.inner.Stats(ctx)
+		m.cachedStats, m.cachedAnnotations, err = m.inner.Finalize(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 
-	instance.hasReadStats = true
+	instance.finalized = true
 	stats := m.cachedStats
 	annos := m.cachedAnnotations
 
-	if m.allInstancesHaveReadStats() {
+	if m.allInstancesFinalized() {
 		// Last call: return stats without cloning, and clear references to existing stats and annotations.
 		m.cachedStats = nil
 		m.cachedAnnotations = nil
@@ -210,9 +210,9 @@ func (m *MultiAggregatorGroupEvaluator) allInstancesFinishedReading() bool {
 	return true
 }
 
-func (m *MultiAggregatorGroupEvaluator) allInstancesHaveReadStats() bool {
+func (m *MultiAggregatorGroupEvaluator) allInstancesFinalized() bool {
 	for _, instance := range m.instances {
-		if !instance.hasReadStats {
+		if !instance.finalized {
 			return false
 		}
 	}
@@ -251,7 +251,7 @@ type MultiAggregatorInstanceOperator struct {
 	outputSeriesMetadata []types.SeriesMetadata
 
 	finishedReadingCalled bool
-	hasReadStats          bool
+	finalized             bool
 	closed                bool
 }
 
@@ -396,8 +396,8 @@ func (m *MultiAggregatorInstanceOperator) FinishedReading(ctx context.Context) e
 	return m.group.FinishedReading(ctx)
 }
 
-func (m *MultiAggregatorInstanceOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := m.group.Stats(ctx, m)
+func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := m.group.Finalize(ctx, m)
 	if err != nil {
 		return nil, nil, err
 	}

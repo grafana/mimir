@@ -53,16 +53,16 @@ type Operator interface {
 	// It must be safe to call FinishedReading multiple times.
 	// FinishedReading must not call any method other than FinishedReading on another operator and is expected to call FinishedReading on
 	// any nested operators.
-	// Once FinishedReading has been called, calling methods other than Stats or Close may result in unpredictable behaviour, corruption or crashes.
+	// Once FinishedReading has been called, calling methods other than Finalize or Close may result in unpredictable behaviour, corruption or crashes.
 	FinishedReading(ctx context.Context) error
 
-	// Stats returns the statistics and annotations for this operator, including any nested operators.
-	// Stats must only be called after FinishedReading has been called.
-	// Stats must only be called once, calling Stats multiple times may result in unpredictable behaviour, corruption or crashes.
+	// Finalize performs any final work (eg. storing results in a cache) and returns the statistics and annotations for this operator, including any nested operators.
+	// Finalize must only be called after FinishedReading has been called.
+	// Finalize must only be called once. Calling Finalize multiple times may result in unpredictable behaviour, corruption or crashes.
 	// The caller may mutate the returned statistics and annotations.
 	// It is the caller's responsibility to call Close on the returned OperatorEvaluationStats instance.
 	// The returned annotations may be nil if there are no annotations to report.
-	Stats(ctx context.Context) (*OperatorEvaluationStats, annotations.Annotations, error)
+	Finalize(ctx context.Context) (*OperatorEvaluationStats, annotations.Annotations, error)
 }
 
 // SeriesOperator represents all operators that return one or more series.

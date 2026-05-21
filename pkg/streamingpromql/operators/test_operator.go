@@ -128,7 +128,7 @@ func (t *TestOperator) FinishedReading(_ context.Context) error {
 	return nil
 }
 
-func (t *TestOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (t *TestOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return t.EvaluationStats, t.Annotations, nil
 }
 
@@ -284,7 +284,7 @@ func (t *TestRangeOperator) FinishedReading(_ context.Context) error {
 	return nil
 }
 
-func (t *TestRangeOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (t *TestRangeOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not implemented")
 }
 

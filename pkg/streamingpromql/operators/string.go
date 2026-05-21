@@ -58,7 +58,7 @@ func (s *StringLiteral) FinishedReading(_ context.Context) error {
 	return nil
 }
 
-func (s *StringLiteral) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (s *StringLiteral) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats, err := types.NewOperatorEvaluationStats(ctx, s.timeRange, s.memoryConsumptionTracker, 0)
 	return stats, nil, err
 }

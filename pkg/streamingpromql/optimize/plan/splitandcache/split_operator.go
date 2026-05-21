@@ -223,7 +223,7 @@ func (s *TimeRangeSplitOperator) FinishedReading(ctx context.Context) error {
 	return nil
 }
 
-func (s *TimeRangeSplitOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (s *TimeRangeSplitOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	combinedStats, err := types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, 0)
 	if err != nil {
 		return nil, nil, err
@@ -232,7 +232,7 @@ func (s *TimeRangeSplitOperator) Stats(ctx context.Context) (*types.OperatorEval
 	var combinedAnnotations annotations.Annotations
 
 	for _, r := range s.ranges {
-		rangeStats, rangeAnnotations, err := r.operator.Stats(ctx)
+		rangeStats, rangeAnnotations, err := r.operator.Finalize(ctx)
 		if err != nil {
 			return nil, nil, err
 		}

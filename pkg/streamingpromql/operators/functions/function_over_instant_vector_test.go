@@ -165,7 +165,7 @@ func (t *testScalarOperator) FinishedReading(_ context.Context) error {
 	return nil
 }
 
-func (t *testScalarOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (t *testScalarOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 

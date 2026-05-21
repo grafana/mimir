@@ -186,7 +186,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 
 	nodeInfo := make(map[planning.Node]NodeCompletionInfo, len(e.nodeRequests))
 	for _, req := range e.nodeRequests {
-		s, a, err := req.operator.Stats(ctx)
+		s, a, err := req.operator.Finalize(ctx)
 		if err != nil {
 			return err
 		}

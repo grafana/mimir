@@ -153,14 +153,14 @@ func (m *FunctionOverInstantVector) FinishedReading(ctx context.Context) error {
 	return nil
 }
 
-func (m *FunctionOverInstantVector) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (m *FunctionOverInstantVector) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	ops := make([]types.Operator, 1+len(m.ScalarArgs))
 	ops[0] = m.Inner
 	for i, sa := range m.ScalarArgs {
 		ops[1+i] = sa
 	}
 
-	return types.CombineStatsAndAnnotations(ctx, ops...)
+	return types.FinalizeAndCombine(ctx, ops...)
 }
 
 func (m *FunctionOverInstantVector) Close() {

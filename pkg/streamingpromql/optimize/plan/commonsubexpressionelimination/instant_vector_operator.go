@@ -335,28 +335,28 @@ func (b *InstantVectorDuplicationBuffer) allConsumersClosed() bool {
 	return true
 }
 
-func (b *InstantVectorDuplicationBuffer) Stats(ctx context.Context, consumer *InstantVectorDuplicationConsumer) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (b *InstantVectorDuplicationBuffer) Finalize(ctx context.Context, consumer *InstantVectorDuplicationConsumer) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	if !b.allConsumersFinishedReading() {
-		return nil, nil, errors.New("InstantVectorDuplicationBuffer: cannot get stats when one or more consumers have not had FinishedReading called")
+		return nil, nil, errors.New("InstantVectorDuplicationBuffer: cannot finalize when one or more consumers have not had FinishedReading called")
 	}
 
-	if consumer.hasReadStats {
-		return nil, nil, errors.New("InstantVectorDuplicationBuffer: cannot get stats twice for the same consumer")
+	if consumer.finalized {
+		return nil, nil, errors.New("InstantVectorDuplicationBuffer: cannot finalize the same consumer twice")
 	}
 
 	if b.stats == nil {
 		var err error
-		b.stats, b.annotations, err = b.Inner.Stats(ctx)
+		b.stats, b.annotations, err = b.Inner.Finalize(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 
-	consumer.hasReadStats = true
+	consumer.finalized = true
 	stats := b.stats
 	annos := b.annotations
 
-	if b.allConsumersHaveReadStats() {
+	if b.allConsumersFinalized() {
 		// Last consumer, return stats without cloning, and clear references to existing stats and annotations.
 		b.stats = nil
 		b.annotations = nil
@@ -392,9 +392,9 @@ func (b *InstantVectorDuplicationBuffer) Stats(ctx context.Context, consumer *In
 	return stats, annos, nil
 }
 
-func (b *InstantVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
+func (b *InstantVectorDuplicationBuffer) allConsumersFinalized() bool {
 	for _, consumer := range b.consumers {
-		if !consumer.hasReadStats {
+		if !consumer.finalized {
 			return false
 		}
 	}
@@ -410,7 +410,7 @@ type InstantVectorDuplicationConsumer struct {
 	nextUnfilteredSeriesIndex int
 	closed                    bool
 	finishedReadingCalled     bool
-	hasReadStats              bool
+	finalized                 bool
 }
 
 var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
@@ -466,8 +466,8 @@ func (d *InstantVectorDuplicationConsumer) FinishedReading(ctx context.Context) 
 	return d.Buffer.FinishedReading(ctx, d)
 }
 
-func (d *InstantVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return d.Buffer.Stats(ctx, d)
+func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return d.Buffer.Finalize(ctx, d)
 }
 
 func (d *InstantVectorDuplicationConsumer) Close() {

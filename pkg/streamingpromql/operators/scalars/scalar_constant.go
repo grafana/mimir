@@ -71,7 +71,7 @@ func (s *ScalarConstant) FinishedReading(_ context.Context) error {
 	return nil
 }
 
-func (s *ScalarConstant) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+func (s *ScalarConstant) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats, err := types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, 0)
 	return stats, nil, err
 }

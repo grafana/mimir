@@ -147,8 +147,8 @@ func (s *Subquery) FinishedReading(ctx context.Context) error {
 	return s.Inner.FinishedReading(ctx)
 }
 
-func (s *Subquery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	inner, annos, err := s.Inner.Stats(ctx)
+func (s *Subquery) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	inner, annos, err := s.Inner.Finalize(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

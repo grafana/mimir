@@ -637,8 +637,8 @@ func (b *OneToOneVectorVectorBinaryOperation) FinishedReading(ctx context.Contex
 	return b.Right.FinishedReading(ctx)
 }
 
-func (b *OneToOneVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := types.CombineStatsAndAnnotations(ctx, b.Left, b.Right)
+func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine(ctx, b.Left, b.Right)
 	if err != nil {
 		return nil, nil, err
 	}

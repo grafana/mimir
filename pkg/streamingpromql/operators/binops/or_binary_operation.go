@@ -402,8 +402,8 @@ func (o *OrBinaryOperation) FinishedReading(ctx context.Context) error {
 	return o.Right.FinishedReading(ctx)
 }
 
-func (o *OrBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return types.CombineStatsAndAnnotations(ctx, o.Left, o.Right)
+func (o *OrBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.FinalizeAndCombine(ctx, o.Left, o.Right)
 }
 
 func (o *OrBinaryOperation) Close() {

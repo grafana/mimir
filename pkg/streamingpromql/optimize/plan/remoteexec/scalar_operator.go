@@ -61,8 +61,8 @@ func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
-func (s *ScalarRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return s.resp.Stats(ctx)
+func (s *ScalarRemoteExec) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return s.resp.Finalize(ctx)
 }
 
 func (s *ScalarRemoteExec) Close() {

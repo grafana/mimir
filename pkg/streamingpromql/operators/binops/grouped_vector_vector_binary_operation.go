@@ -864,8 +864,8 @@ func (g *GroupedVectorVectorBinaryOperation) FinishedReading(ctx context.Context
 	return g.Right.FinishedReading(ctx)
 }
 
-func (g *GroupedVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := types.CombineStatsAndAnnotations(ctx, g.Left, g.Right)
+func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine(ctx, g.Left, g.Right)
 	if err != nil {
 		return nil, nil, err
 	}

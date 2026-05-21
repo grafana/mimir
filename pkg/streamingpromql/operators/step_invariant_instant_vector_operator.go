@@ -112,8 +112,8 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 	return data, err
 }
 
-func (s *StepInvariantInstantVectorOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	inner, annos, err := s.inner.Stats(ctx)
+func (s *StepInvariantInstantVectorOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	inner, annos, err := s.inner.Finalize(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

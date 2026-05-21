@@ -136,8 +136,8 @@ func (s *ScalarScalarBinaryOperation) FinishedReading(ctx context.Context) error
 	return s.Right.FinishedReading(ctx)
 }
 
-func (s *ScalarScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := types.CombineStatsAndAnnotations(ctx, s.Left, s.Right)
+func (s *ScalarScalarBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine(ctx, s.Left, s.Right)
 	if err != nil {
 		return nil, nil, err
 	}

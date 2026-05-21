@@ -128,8 +128,8 @@ func (a *Absent) FinishedReading(ctx context.Context) error {
 	return a.Inner.FinishedReading(ctx)
 }
 
-func (a *Absent) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return a.Inner.Stats(ctx)
+func (a *Absent) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return a.Inner.Finalize(ctx)
 }
 
 func (a *Absent) Close() {

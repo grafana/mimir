@@ -451,8 +451,8 @@ func (t *RangeQuery) FinishedReading(ctx context.Context) error {
 	return t.Param.FinishedReading(ctx)
 }
 
-func (t *RangeQuery) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	stats, childAnnos, err := types.CombineStatsAndAnnotations[types.StatsAndAnnotationsProvider](ctx, t.Inner, t.Param)
+func (t *RangeQuery) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine[types.Finalizer](ctx, t.Inner, t.Param)
 	if err != nil {
 		return nil, nil, err
 	}

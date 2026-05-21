@@ -181,8 +181,8 @@ func (s *Sort) FinishedReading(ctx context.Context) error {
 	return s.inner.FinishedReading(ctx)
 }
 
-func (s *Sort) Stats(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	return s.inner.Stats(ctx)
+func (s *Sort) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return s.inner.Finalize(ctx)
 }
 
 func (s *Sort) Close() {
