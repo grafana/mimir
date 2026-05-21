@@ -130,6 +130,16 @@ func TestClient_GetRawDashboardByUID_NonOKStatus(t *testing.T) {
 	assert.Contains(t, err.Error(), "HTTP error 404")
 }
 
+func TestNewClient_NilHTTPClientUsesDefault(t *testing.T) {
+	c, err := minisdk.NewClient("http://example.invalid", "", nil)
+	require.NoError(t, err)
+	// The client must be usable without a nil panic. Issue a request that will
+	// fail at the transport layer (unresolvable host) and verify we get a
+	// regular error, not a nil-pointer panic.
+	_, err = c.Search(context.Background())
+	require.Error(t, err)
+}
+
 func TestNewClient_Auth(t *testing.T) {
 	tests := []struct {
 		name              string
