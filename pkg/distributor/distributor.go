@@ -174,6 +174,7 @@ type Distributor struct {
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
+	queryReadcacheInstancesHit       prometheus.Histogram
 	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
@@ -649,6 +650,17 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:    "Time spent executing expression and exemplar queries.",
 			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"method", "status_code"})),
+		queryReadcacheInstancesHit: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_distributor_query_readcache_instances_hit_per_query",
+			// One observation per Distributor.QueryStream call. The count is the
+			// number of *distinct* readcache instances the distributor committed
+			// to using to serve the query (deduped across partitions). A value
+			// of 0 means the query was served entirely from ingesters; tracking
+			// it explicitly lets us watch the read-path migration drift upward
+			// without needing a separate "any readcache used" counter.
+			Help:    "Number of distinct readcache instances queried while serving a Distributor.QueryStream call. 0 means the query was served entirely from ingesters.",
+			Buckets: []float64{0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048},
+		}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_requests_total",
 			Help: "The total number of received requests, excluding rejected and deduped requests.",

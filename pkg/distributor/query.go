@@ -86,6 +86,18 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 // QueryStream queries multiple ingesters via the streaming interface and returns a big ol' set of chunks.
 func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, projectionInclude bool, projectionLabels []string, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
 	var result ingester_client.CombinedQueryStreamResponse
+	// Allocate the per-query readcache hit tracker outside the
+	// instrument.CollectedRequest closure so the histogram is
+	// always observed exactly once per call — including the error
+	// paths below where the closure returns early. Zero observations
+	// (errored or all-ingester queries) are intentional: they form
+	// the baseline that the readcache routing migration drifts
+	// upward from.
+	hits := newReadcacheHitTracker()
+	defer func() {
+		d.queryReadcacheInstancesHit.Observe(float64(hits.count()))
+	}()
+
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		req, err := ingester_client.ToQueryRequest(from, to, projectionInclude, projectionLabels, matchers)
 		if err != nil {
@@ -99,13 +111,14 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSets, partitionByInstance, req, queryMetrics)
+		result, err = d.queryIngesterStream(ctx, replicationSets, partitionByInstance, hits, req, queryMetrics)
 		if err != nil {
 			return err
 		}
 
 		s := trace.SpanFromContext(ctx)
 		s.SetAttributes(attribute.Int("streaming-series", len(result.StreamingSeries)))
+		s.SetAttributes(attribute.Int("readcache-instances-hit", hits.count()))
 		return nil
 	})
 
@@ -344,11 +357,15 @@ type ingesterQueryResult struct {
 // to the readcache pod currently owning its partition (per the log
 // streamed from the rebalancer); on lookup miss, expired lease, or
 // transport error during dial, the call falls back transparently to
-// the ingester. Once the per-tenant runtime-config knob (see
-// phase2c-feature-flag) is added, this routing will be gated on
-// tenant opt-in; until then, the swap is "best effort" and only
-// fires when an address is configured.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, partitionByInstance map[string]int32, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
+// the ingester. The tenant runtime knob ReadcacheReadRouting gates
+// the swap (see shouldRouteReadToReadcache).
+//
+// Each readcache instance committed to (including any warmup-fallback
+// to a previous lease owner) is recorded in hits so QueryStream can
+// emit the per-query histogram observation. hits is per-call and
+// must not be nil; record() is a no-op when no readcache is dialed,
+// which is the desired behaviour for the all-ingester baseline.
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, partitionByInstance map[string]int32, hits *readcacheHitTracker, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
@@ -384,7 +401,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 		var result ingesterQueryResult
 
-		queryClient, err := d.queryClientForInstance(ctx, *ing, partitionByInstance, log)
+		queryClient, err := d.queryClientForInstance(ctx, *ing, partitionByInstance, hits, log)
 		if err != nil {
 			return result, err
 		}
@@ -399,8 +416,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			// failure semantics of a full ingester outage.
 			if readcache.IsStillWarming(err) {
 				if partID, hasPart := partitionByInstance[ing.Id]; hasPart {
-					if prev, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
+					if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
 						level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
+						hits.record(prevID)
 						stream, err = prev.QueryStream(ctx, req)
 					}
 				}

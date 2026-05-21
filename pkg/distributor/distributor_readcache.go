@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -17,6 +18,54 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+// readcacheHitTracker accumulates the set of distinct readcache
+// instance IDs the distributor committed to using for a single
+// query (typically one Distributor.QueryStream call). It is
+// thread-safe because queryIngesterStream fans out to per-replica
+// goroutines via ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation,
+// and each goroutine may independently resolve a readcache instance
+// via queryClientForInstance.
+//
+// At the end of a query the tracker's count feeds the
+// cortex_distributor_query_readcache_instances_hit_per_query
+// histogram. A count of 0 is a load-bearing datapoint: it means the
+// query was served entirely from ingesters (either because the
+// tenant isn't on nautilus-only routing, the assignment log was
+// empty, or every partition's readcache owner failed to dial and
+// the path fell back to ingesters). Tracking that "0" lets us
+// observe the migration as the value drifts upward.
+type readcacheHitTracker struct {
+	mu        sync.Mutex
+	instances map[string]struct{}
+}
+
+func newReadcacheHitTracker() *readcacheHitTracker {
+	return &readcacheHitTracker{instances: make(map[string]struct{})}
+}
+
+// record marks instanceID as having served (part of) this query.
+// Safe to call concurrently; duplicates are ignored.
+func (t *readcacheHitTracker) record(instanceID string) {
+	if t == nil || instanceID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.instances[instanceID] = struct{}{}
+}
+
+// count returns the number of distinct readcache instances recorded
+// so far. Reading is also safe under the mutex so callers don't
+// observe a torn map size during concurrent record() calls.
+func (t *readcacheHitTracker) count() int {
+	if t == nil {
+		return 0
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.instances)
+}
 
 // GetReadcacheLog returns the current (partition -> readcache
 // instance) log streamed from the rebalancer, or nil if no snapshot
@@ -83,7 +132,7 @@ const (
 
 // resolveReadcacheClientForPartition looks up the readcache instance
 // currently owning partitionID and returns a typed gRPC client for
-// it. Returns ok=false when:
+// it along with the resolved instance ID. Returns ok=false when:
 //
 //   - the readcache log has no snapshot yet (cold start, rebalancer
 //     unreachable);
@@ -96,29 +145,33 @@ const (
 // readcache coverage degrades to "served by ingester" rather than
 // "served by nothing".
 //
+// The returned instanceID is the readcache instance the client
+// dials; callers use it for per-query observability (which
+// readcache pods served this query) rather than for routing.
+//
 // In ok=false cases where err is non-nil, the caller may log it; nil
 // err with ok=false simply means the partition is not currently
 // covered by a readcache lease.
-func (d *Distributor) resolveReadcacheClientForPartition(ctx context.Context, partitionID int32) (client.IngesterClient, bool, error) {
+func (d *Distributor) resolveReadcacheClientForPartition(ctx context.Context, partitionID int32) (cli client.IngesterClient, instanceID string, ok bool, err error) {
 	if d.readcachePool == nil {
-		return nil, false, nil
+		return nil, "", false, nil
 	}
 	log := d.readcacheLog.Load()
 	if log == nil {
-		return nil, false, nil
+		return nil, "", false, nil
 	}
 	owners := log.Lookup(d.now(), partitionID)
 	if len(owners) == 0 {
-		return nil, false, nil
+		return nil, "", false, nil
 	}
 	// Phase 2C is single-owner-per-partition; multi-owner mode
 	// from readcacheassignment.Log is reserved for future drain/
 	// handoff work. Pick the first owner deterministically.
-	cli, err := d.readcachePool.GetClientForInstance(ctx, owners[0])
+	cli, err = d.readcachePool.GetClientForInstance(ctx, owners[0])
 	if err != nil {
-		return nil, false, err
+		return nil, "", false, err
 	}
-	return cli, true, nil
+	return cli, owners[0], true, nil
 }
 
 // previousReadcacheOwnerForPartition returns the readcache instance
@@ -182,18 +235,26 @@ func (d *Distributor) previousReadcacheOwnerForPartition(partitionID int32) (str
 // client is returned; otherwise the ingester client from the
 // shared pool is returned.
 //
+// When the returned client is a readcache client and hits is
+// non-nil, the chosen readcache instance ID is recorded in hits so
+// the caller can emit a per-query histogram observation. The
+// ingester branch never records into hits (a readcache count of
+// zero means "served entirely from ingesters", which is the
+// migration baseline).
+//
 // Errors from readcache resolution are logged but never bubble up:
 // a failed readcache dial degrades to "served by ingester".
 // Transport errors observed mid-stream (after the dial succeeded)
 // surface to the caller in the usual way and are handled by the
 // normal ring-quorum retry machinery.
-func (d *Distributor) queryClientForInstance(ctx context.Context, ing ring.InstanceDesc, partitionByInstance map[string]int32, logger log.Logger) (client.IngesterClient, error) {
+func (d *Distributor) queryClientForInstance(ctx context.Context, ing ring.InstanceDesc, partitionByInstance map[string]int32, hits *readcacheHitTracker, logger log.Logger) (client.IngesterClient, error) {
 	if d.shouldRouteReadToReadcache(ctx) && partitionByInstance != nil && d.readcachePool != nil {
 		if partID, ok := partitionByInstance[ing.Id]; ok {
-			rcClient, ok, err := d.resolveReadcacheClientForPartition(ctx, partID)
+			rcClient, instanceID, ok, err := d.resolveReadcacheClientForPartition(ctx, partID)
 			if err != nil {
 				level.Warn(logger).Log("msg", "readcache resolution failed; falling back to ingester", "partition", partID, "err", err)
 			} else if ok {
+				hits.record(instanceID)
 				return rcClient, nil
 			}
 		}
@@ -207,24 +268,26 @@ func (d *Distributor) queryClientForInstance(ctx context.Context, ing ring.Insta
 
 // previousReadcacheClientForPartition returns the gRPC client for
 // the readcache instance that owned partitionID in the lease
-// immediately preceding the current one. Used by the caller to
-// fall back when the current owner returns errStillWarming.
+// immediately preceding the current one, along with that instance
+// ID. Used by the caller to fall back when the current owner
+// returns errStillWarming.
 //
 // Returns ok=false if there is no recoverable previous owner (no
-// log, lease pruned, address unconfigured, or dial error).
-func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, partitionID int32) (client.IngesterClient, bool) {
+// log, lease pruned, address unconfigured, or dial error). The
+// instance ID is empty in that case.
+func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, partitionID int32) (client.IngesterClient, string, bool) {
 	if d.readcachePool == nil {
-		return nil, false
+		return nil, "", false
 	}
 	prevID, ok := d.previousReadcacheOwnerForPartition(partitionID)
 	if !ok {
-		return nil, false
+		return nil, "", false
 	}
 	cli, err := d.readcachePool.GetClientForInstance(ctx, prevID)
 	if err != nil {
-		return nil, false
+		return nil, "", false
 	}
-	return cli, true
+	return cli, prevID, true
 }
 
 // shouldRouteReadToReadcache reports whether the per-tenant read
