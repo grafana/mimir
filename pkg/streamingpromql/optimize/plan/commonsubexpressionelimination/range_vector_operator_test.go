@@ -793,12 +793,12 @@ func TestRangeVectorOperator_Cloning_SmoothedAnchored(t *testing.T) {
 func TestRangeVectorOperator_Cloning(t *testing.T) {
 	series := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
-			{T: 0, F: 0},
 			{T: 1, F: 1},
+			{T: 2, F: 2},
 		},
 		Histograms: []promql.HPoint{
-			{T: 2, H: &histogram.FloatHistogram{Count: 2}},
 			{T: 3, H: &histogram.FloatHistogram{Count: 3}},
+			{T: 4, H: &histogram.FloatHistogram{Count: 4}},
 		},
 	}
 
@@ -871,7 +871,7 @@ func createTestRangeVectorOperator(t *testing.T, seriesCount int, memoryConsumpt
 
 		data = append(data, types.InstantVectorSeriesData{
 			Floats: []promql.FPoint{
-				{T: 0, F: float64(i)},
+				{T: 60_000, F: float64(i)},
 			},
 		})
 	}
