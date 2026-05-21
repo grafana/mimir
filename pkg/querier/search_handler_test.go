@@ -589,7 +589,8 @@ func TestSearchLabelNamesHandler_BadParams_Return400(t *testing.T) {
 		{name: "invalid fuzz_threshold (non-integer)", query: "fuzz_threshold=abc"},
 		{name: "invalid fuzz_threshold (out of range)", query: "fuzz_threshold=200"},
 		{name: "invalid sort_by", query: "sort_by=cosine"},
-		{name: "sort_dir with sort_by=score rejected", query: "sort_by=score&sort_dir=asc"},
+		// Include a search[] term so parseSortOrder validates the sort_dir+score combination.
+		{name: "sort_dir with sort_by=score rejected", query: "search[]=foo&sort_by=score&sort_dir=asc"},
 		{name: "invalid sort_dir", query: "sort_dir=sideways"},
 		{name: "negative limit", query: "limit=-1"},
 		{name: "negative batch_size", query: "batch_size=-1"},
