@@ -536,6 +536,13 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 	//      effective limit below req.limit before the probe even reaches
 	//      the data, so the probe alone is not enough.
 	trailer := searchTrailerEnvelope{Status: "success"}
+	// If no batches were flushed (e.g. the result set is empty), ensure the
+	// NDJSON content type and the internal streaming header are still set
+	// before writing the trailer so clients see the expected Content-Type.
+	if !flushedAny {
+		w.Header().Set("Content-Type", searchAPIContentType)
+		w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
+	}
 	clampFired := false
 	for _, w := range rs.Warnings() {
 		trailer.Warnings = append(trailer.Warnings, w.Error())
@@ -619,7 +626,7 @@ func writePreFlushSearchError(w http.ResponseWriter, err error) {
 // writeSearchFeatureDisabled emits the 404 + feature_not_enabled body per
 // Prometheus PR #18573.
 func writeSearchFeatureDisabled(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", searchAPIContentType)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNotFound)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
@@ -632,7 +639,7 @@ func writeSearchFeatureDisabled(w http.ResponseWriter) {
 
 // writeSearchBadRequest emits a JSON 400 with the parser error.
 func writeSearchBadRequest(w http.ResponseWriter, err error) {
-	w.Header().Set("Content-Type", searchAPIContentType)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
