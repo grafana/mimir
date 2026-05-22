@@ -19683,6 +19683,17 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "inflight_max_age_metric_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "query-scheduler.inflight-max-age-metric-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "grpc_client_config",
           "required": false,
