@@ -235,8 +235,34 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	// Only expose per-partition metrics on the main registerer once the
 	// reader is running. Registering earlier leaks a collector when startup
 	// fails after metrics have been created on the isolated registry.
+	//
+	// We wrap partitionReg in a frozen-descriptor collector before
+	// registering. The reason is subtle: the outer Registry identifies
+	// each registered Collector by the XOR of its descriptor IDs (see
+	// vendor/github.com/prometheus/client_golang/prometheus/registry.go:
+	// Register and Unregister both call c.Describe and hash the IDs).
+	// PartitionReader registers some metrics lazily during operation
+	// (e.g. WithLabelValues for new label combinations), so by the time
+	// stopKafkaReaderLocked calls Unregister, partitionReg.Describe
+	// returns a *different* set of descs than at Register time, and the
+	// outer Registry's Unregister silently returns false because the
+	// recomputed collectorID doesn't match anything. The stale entry
+	// then collides on the *next* addPartition for the same partition
+	// ID with "duplicate metrics collector registration attempted",
+	// because the freshly-recreated partitionReg's initial desc set
+	// happens to match the old (still-registered) collectorID.
+	//
+	// Snapshotting descs at Register time and reusing them at
+	// Unregister time gives the wrapper a stable collectorID identity
+	// across the partition's lifecycle. Collect still delegates to the
+	// live partitionReg, so all metrics — including those added after
+	// the snapshot — still appear in scrape output (the default,
+	// non-pedantic Registry does not enforce desc/metric consistency
+	// at Gather time).
+	var partitionCollector prometheus.Collector
 	if partitionReg != nil {
-		if err := r.reg.Register(partitionReg); err != nil {
+		partitionCollector = newFrozenDescCollector(partitionReg)
+		if err := r.reg.Register(partitionCollector); err != nil {
 			stopCtx := context.Background()
 			if stopErr := services.StopAndAwaitTerminated(stopCtx, reader); stopErr != nil {
 				level.Warn(r.logger).Log("msg", "stopping partition reader after metric registration failure",
@@ -247,13 +273,19 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	}
 
 	p.reader = reader
-	p.readerMetrics = partitionReg
+	p.readerMetrics = partitionCollector
 	return nil
 }
 
 // unregisterPartitionMetricsRegistry removes a per-partition metric
-// registry from the main registerer. partitionID is only used for logs.
-func (r *Readcache) unregisterPartitionMetricsRegistry(partitionReg *prometheus.Registry, partitionID int32) {
+// collector from the main registerer. The Collector must be the
+// exact value that was passed to Register (a *frozenDescCollector
+// wrapping the per-partition prometheus.Registry); the wrapper's
+// stable Describe output is what lets the outer Registry's
+// collector-ID hash match the original registration even though the
+// inner Registry has accumulated new descriptors since.
+// partitionID is only used for logs.
+func (r *Readcache) unregisterPartitionMetricsRegistry(partitionReg prometheus.Collector, partitionID int32) {
 	if partitionReg == nil || r.reg == nil {
 		return
 	}

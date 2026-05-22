@@ -405,12 +405,25 @@ func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
 // (currently 24h) rather than the active+successor working set.
 // The store conflates updates so a slow subscriber sees only the
 // most recent snapshot.
+//
+// If the rebalancer has not yet completed its first apply() the
+// initial Send is skipped; the subscriber waits on the updates
+// channel for the first broadcast triggered by the cold-start or
+// first slicer round. This prevents a freshly-restarted rebalancer
+// from broadcasting an empty snapshot derived from stale persisted
+// state (whose leases have all expired during the restart window).
 func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream NautilusRebalancer_WatchAssignmentsServer) error {
 	initial, updates, unsubscribe := r.store.subscribe(time.Now())
 	defer unsubscribe()
 
-	if err := stream.Send(&WatchAssignmentsResponse{Entries: EntriesToProto(initial)}); err != nil {
-		return err
+	// subscribe returns initial=nil when the store has not yet run
+	// its first apply(); skip the initial Send in that case and let
+	// the first apply's broadcast (delivered on updates) prime the
+	// subscriber.
+	if initial != nil {
+		if err := stream.Send(&WatchAssignmentsResponse{Entries: EntriesToProto(initial)}); err != nil {
+			return err
+		}
 	}
 	ctx := stream.Context()
 	for {
@@ -432,13 +445,21 @@ func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream Nautilu
 // WatchAssignments: instead of (hash range -> ingester partition) it
 // streams (Kafka partition -> readcache instance) leases. The wire
 // contract is identical (snapshot on connect, conflated updates,
-// only live entries transmitted).
+// only live entries transmitted). The same first-apply gate applies:
+// the initial Send is skipped until the readcache log has been
+// touched by apply() at least once (cold start, regular slicer
+// round, or admin reset), so a rebalancer restart never broadcasts
+// an empty/expired view that would tell every readcache to drop all
+// partitions.
 func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
 	initial, updates, unsubscribe := r.readcacheStore.subscribe(time.Now())
 	defer unsubscribe()
 
-	if err := stream.Send(&WatchReadcacheAssignmentsResponse{Entries: ReadcacheEntriesToProto(initial)}); err != nil {
-		return err
+	// See WatchAssignments for why we may skip the initial Send.
+	if initial != nil {
+		if err := stream.Send(&WatchReadcacheAssignmentsResponse{Entries: ReadcacheEntriesToProto(initial)}); err != nil {
+			return err
+		}
 	}
 	ctx := stream.Context()
 	for {

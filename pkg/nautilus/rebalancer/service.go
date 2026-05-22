@@ -25,6 +25,21 @@ type logStore struct {
 	log         *assignment.Log
 	subscribers map[*subscription]struct{}
 
+	// ready flips to true the first time apply() runs. Until then,
+	// subscribe() returns a nil initial snapshot so the gRPC handler
+	// skips its initial Send: a rebalancer that has just restarted
+	// may have only stale persisted entries in s.log whose leases
+	// already expired, and broadcasting that view as "live" tells
+	// readcaches/distributors to drop everything they own and refuse
+	// new traffic until the next apply runs. Waiting for the first
+	// apply guarantees that whatever we broadcast as "initial"
+	// reflects an actual rebalancer decision, not residual state.
+	//
+	// See pkg/nautilus/rebalancer/rebalancer.go for the cold-start
+	// path that triggers the first apply, and apply()'s !changed
+	// fall-through below for the broadcast on the ready transition.
+	ready bool
+
 	// persistFn, if non-nil, is called inside apply() under the mutex
 	// after the log is mutated but before the broadcast. A non-nil
 	// error is logged at error level and otherwise ignored — the
@@ -72,12 +87,21 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 	if retention > 0 {
 		s.log.Prune(at.Add(-retention))
 	}
-	if !changed {
+	// becameReady tracks the !ready -> ready transition so subscribers
+	// that connected before the first apply can be primed even when
+	// this apply makes no log change (e.g. a steady-state round that
+	// finds existing successors already cover the lookahead window).
+	// Without this, a subscriber attached at startup would never see
+	// any snapshot until the next mutation-bearing round, which can
+	// be up to LeaseDuration away.
+	becameReady := !s.ready
+	s.ready = true
+	if !changed && !becameReady {
 		s.mu.Unlock()
 		return false
 	}
 	snap := s.log.LiveEntries(at)
-	if s.persistFn != nil {
+	if changed && s.persistFn != nil {
 		// Persist while still holding the mutex so a concurrent
 		// subscribe()'s initial snapshot can't see a state that
 		// hasn't been durably committed yet.
@@ -94,7 +118,7 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 	for _, sub := range subs {
 		conflateSend(sub.ch, snap)
 	}
-	return true
+	return changed
 }
 
 // setPersistFn installs a persist callback. Safe to call once at
@@ -141,19 +165,33 @@ func (s *logStore) latestActiveAssignment(at time.Time) *assignment.Assignment {
 	return s.log.LatestActiveAssignment(at)
 }
 
-// subscribe registers a new watcher. It returns a snapshot of the
-// log's live entries (those with To > at) so the caller can prime
-// its consumer atomically with the subscription, a channel that
-// receives subsequent snapshots, and an unsubscribe function the
-// caller MUST invoke when finished. Expired entries are omitted
-// from the initial snapshot and from subsequent broadcasts: a
-// fresh subscriber can never use them and including them would
-// inflate the wire message by the full retention window's worth of
-// history.
+// subscribe registers a new watcher. If apply() has run at least
+// once (s.ready), it returns a snapshot of the log's live entries
+// (those with To > at) so the caller can prime its consumer
+// atomically with the subscription. If no apply has run yet, the
+// returned initial is nil — the caller MUST skip its initial send
+// in that case, and instead wait for the first broadcast on the
+// updates channel. apply() guarantees a broadcast on the
+// !ready -> ready transition so the subscriber is eventually
+// primed.
+//
+// Returning nil initial before the first apply prevents a freshly
+// restarted rebalancer from telling subscribers "the assignment is
+// empty" based solely on stale persisted entries whose leases
+// already expired during the restart window.
+//
+// Expired entries are omitted from both the initial snapshot and
+// subsequent broadcasts: a fresh subscriber can never use them and
+// including them would inflate the gRPC message by the full
+// retention window's worth of history.
+//
+// The caller MUST invoke unsubscribe when finished.
 func (s *logStore) subscribe(at time.Time) (initial []assignment.LogEntry, updates <-chan []assignment.LogEntry, unsubscribe func()) {
 	sub := &subscription{ch: make(chan []assignment.LogEntry, 1)}
 	s.mu.Lock()
-	initial = s.log.LiveEntries(at)
+	if s.ready {
+		initial = s.log.LiveEntries(at)
+	}
 	s.subscribers[sub] = struct{}{}
 	s.mu.Unlock()
 	return initial, sub.ch, func() {

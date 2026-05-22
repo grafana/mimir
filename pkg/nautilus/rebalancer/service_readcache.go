@@ -20,6 +20,15 @@ type readcacheLogStore struct {
 	log         *readcacheassignment.Log
 	subscribers map[*readcacheSubscription]struct{}
 
+	// ready flips to true on the first apply() call. Until then,
+	// subscribe() returns nil initial and the gRPC handler skips its
+	// initial send: a freshly-restarted rebalancer whose persisted
+	// readcache log loaded only stale entries (To <= now) would
+	// otherwise tell every readcache "you own nothing", causing the
+	// fleet to drop all partitions. See logStore.ready for the full
+	// rationale.
+	ready bool
+
 	// persistFn, if non-nil, is invoked inside apply() to persist
 	// the post-mutation snapshot. See logStore.persistFn for
 	// semantics.
@@ -47,12 +56,17 @@ func (s *readcacheLogStore) apply(at time.Time, next *readcacheassignment.Assign
 	if retention > 0 {
 		s.log.Prune(at.Add(-retention))
 	}
-	if !changed {
+	// becameReady primes subscribers attached before the first apply
+	// even if this apply makes no log change. See logStore.apply for
+	// the full rationale.
+	becameReady := !s.ready
+	s.ready = true
+	if !changed && !becameReady {
 		s.mu.Unlock()
 		return false
 	}
 	snap := s.log.LiveEntries(at)
-	if s.persistFn != nil {
+	if changed && s.persistFn != nil {
 		if err := s.persistFn(snap); err != nil && s.logger != nil {
 			level.Error(s.logger).Log("msg", "failed to persist readcache assignment log", "err", err)
 		}
@@ -66,7 +80,7 @@ func (s *readcacheLogStore) apply(at time.Time, next *readcacheassignment.Assign
 	for _, sub := range subs {
 		conflateSendReadcache(sub.ch, snap)
 	}
-	return true
+	return changed
 }
 
 // setPersistFn installs a persist callback.
@@ -108,11 +122,16 @@ func (s *readcacheLogStore) activeEntries(at time.Time) []readcacheassignment.Lo
 }
 
 // subscribe registers a new watcher. Same semantics as
-// logStore.subscribe.
+// logStore.subscribe, including the !s.ready -> nil initial gate
+// that prevents a freshly-restarted rebalancer from broadcasting a
+// stale-but-expired persisted log as the authoritative "you own
+// nothing" snapshot. See logStore.subscribe for the full rationale.
 func (s *readcacheLogStore) subscribe(at time.Time) (initial []readcacheassignment.LogEntry, updates <-chan []readcacheassignment.LogEntry, unsubscribe func()) {
 	sub := &readcacheSubscription{ch: make(chan []readcacheassignment.LogEntry, 1)}
 	s.mu.Lock()
-	initial = s.log.LiveEntries(at)
+	if s.ready {
+		initial = s.log.LiveEntries(at)
+	}
 	s.subscribers[sub] = struct{}{}
 	s.mu.Unlock()
 	return initial, sub.ch, func() {

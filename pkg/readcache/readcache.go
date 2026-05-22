@@ -131,14 +131,17 @@ type partitionState struct {
 	// partition. Nil until startKafkaReader is called.
 	reader *ingest.PartitionReader
 
-	// readerMetrics is the isolated metric registry the
-	// PartitionReader uses for its own counters/histograms. We keep
-	// it on partitionState so that on partition removal we can
-	// unregister it from the main Mimir registry; this is what lets
-	// the rebalancer move a partition off and back onto the same
-	// readcache pod without panicking on duplicate metric
-	// registrations.
-	readerMetrics *prometheus.Registry
+	// readerMetrics is the Collector actually registered on the main
+	// Mimir registry: a *frozenDescCollector wrapping the per-partition
+	// prometheus.Registry that the PartitionReader writes its own
+	// counters/histograms into. We keep it on partitionState so that
+	// on partition removal we can unregister it from the main Mimir
+	// registry; this is what lets the rebalancer move a partition off
+	// and back onto the same readcache pod without panicking on
+	// duplicate metric registrations. See newFrozenDescCollector and
+	// startKafkaReader for the rationale behind wrapping the inner
+	// Registry instead of registering it directly.
+	readerMetrics prometheus.Collector
 
 	// warm flips to true once the Kafka reader has caught up to the
 	// starting fetch offset enough that read RPCs can be served
@@ -853,10 +856,12 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 	)
 
 	var firstErr error
+	var addFailed, removeFailed []int32
 	for _, pid := range toAdd {
 		if err := r.addPartition(ctx, pid); err != nil {
 			level.Warn(r.logger).Log("msg", "failed to add partition from rebalancer assignment",
 				"partition", pid, "err", err)
+			addFailed = append(addFailed, pid)
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -867,6 +872,7 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 		if err := r.removePartition(pid); err != nil {
 			level.Warn(r.logger).Log("msg", "failed to remove partition from rebalancer assignment",
 				"partition", pid, "err", err)
+			removeFailed = append(removeFailed, pid)
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -874,10 +880,27 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 		}
 	}
 	if len(toAdd) > 0 || len(toRemove) > 0 {
+		// owned reports len(r.partitions) after the add/remove fan-out
+		// rather than len(wanted) so the log doesn't lie when an add
+		// fails (e.g. the metric-registry collision the partition
+		// lifecycle used to leak): wanted is the goal, owned is the
+		// reality. add_failed / remove_failed surface the gap so an
+		// operator can see at a glance whether the reconcile achieved
+		// what the rebalancer asked for.
+		r.partitionMu.RLock()
+		ownedNow := len(r.partitions)
+		r.partitionMu.RUnlock()
 		level.Info(r.logger).Log("msg", "readcache reconciled partition assignment",
-			"added", len(toAdd), "removed", len(toRemove), "owned", len(wanted),
+			"added", len(toAdd)-len(addFailed),
+			"removed", len(toRemove)-len(removeFailed),
+			"add_failed", len(addFailed),
+			"remove_failed", len(removeFailed),
+			"wanted", len(wanted),
+			"owned", ownedNow,
 			"added_partition_ids", formatPartitionIDs(toAdd, 20),
 			"removed_partition_ids", formatPartitionIDs(toRemove, 20),
+			"add_failed_partition_ids", formatPartitionIDs(addFailed, 20),
+			"remove_failed_partition_ids", formatPartitionIDs(removeFailed, 20),
 		)
 	}
 	return firstErr

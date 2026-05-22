@@ -651,6 +651,124 @@ func TestLogStore_UnsubscribeReleasesSubscriber(t *testing.T) {
 	require.Equal(t, 0, s.numSubscribers())
 }
 
+// TestLogStore_SubscribeBeforeFirstApplyReturnsNilInitial is the
+// regression test for the empty-snapshot-before-ready bug: a
+// rebalancer that has just restarted loads its persisted log from
+// disk; those entries may all be expired by the time a subscriber
+// connects. Returning the (empty) LiveEntries as the "initial"
+// snapshot would tell readcaches/distributors "you own nothing" and
+// trigger a fleet-wide drop. subscribe must return nil until
+// apply() has run, signalling the gRPC handler to skip its initial
+// Send and wait for the first real broadcast instead.
+func TestLogStore_SubscribeBeforeFirstApplyReturnsNilInitial(t *testing.T) {
+	s := newLogStore()
+
+	// Seed the in-memory log directly to mimic a startup that loaded
+	// persisted entries off disk. We do NOT call apply(), mirroring
+	// the production cold-start order: seedFromEntries runs in
+	// starting() before the first rebalance round.
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	seeded := []assignment.LogEntry{
+		{Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 0, From: t0, To: t0.Add(time.Hour)},
+	}
+	s.seedFromEntries(seeded)
+
+	initial, _, unsubscribe := s.subscribe(t0)
+	defer unsubscribe()
+	assert.Nil(t, initial,
+		"subscribe must return nil initial before the first apply, even when the log has live entries, to prevent a freshly-restarted rebalancer from broadcasting stale state as authoritative")
+}
+
+// TestLogStore_FirstApplyPrimesSubscribersAttachedEarly verifies
+// that a subscriber attached before any apply still receives the
+// first snapshot once apply runs. The previous design also delivered
+// the broadcast here because Apply naturally returns changed=true on
+// the first call to a fresh store; this test pins the contract.
+func TestLogStore_FirstApplyPrimesSubscribersAttachedEarly(t *testing.T) {
+	s := newLogStore()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	initial, updates, unsubscribe := s.subscribe(t0)
+	defer unsubscribe()
+	require.Nil(t, initial, "subscribe before ready returns nil initial")
+
+	a := assignment.EvenSplit([]int32{0, 1})
+	require.True(t, s.apply(t0, a, testStoreLease, testStoreLookahead, time.Hour))
+
+	select {
+	case snap := <-updates:
+		assert.NotEmpty(t, snap,
+			"first apply after subscribe must prime the subscriber with the current live state")
+	case <-time.After(time.Second):
+		t.Fatal("subscriber attached before first apply did not receive a priming broadcast")
+	}
+}
+
+// TestLogStore_NoOpApplyStillPrimesEarlySubscriber covers the more
+// subtle case: subscriber connects before any apply, then an apply
+// runs but produces no log change (e.g. the log was seeded from
+// disk and the slicer round produced the same assignment). Without
+// the !changed && becameReady carve-out in apply, the subscriber
+// would be stuck waiting indefinitely. With it, the !ready -> ready
+// transition forces one broadcast so the subscriber learns the
+// current live state.
+func TestLogStore_NoOpApplyStillPrimesEarlySubscriber(t *testing.T) {
+	s := newLogStore()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Seed the in-memory log to simulate a startup that loaded
+	// persisted state. Note: seedFromEntries does NOT flip ready.
+	a := assignment.EvenSplit([]int32{0, 1})
+	seedEntries := make([]assignment.LogEntry, 0, len(a.Entries))
+	for _, e := range a.Entries {
+		seedEntries = append(seedEntries, assignment.LogEntry{
+			Range:       e.Range,
+			PartitionID: e.PartitionID,
+			From:        t0,
+			To:          t0.Add(testStoreLease),
+		})
+	}
+	s.seedFromEntries(seedEntries)
+
+	// Subscriber connects before any apply.
+	initial, updates, unsubscribe := s.subscribe(t0)
+	defer unsubscribe()
+	require.Nil(t, initial, "subscribe before ready returns nil initial even when log is non-empty")
+
+	// Apply the same assignment we seeded with at a time that
+	// keeps the existing entries comfortably outside the lookahead
+	// window, so Apply produces no successor and returns
+	// changed=false. The rebalancer must still broadcast on the
+	// !ready -> ready edge.
+	changed := s.apply(t0.Add(time.Second), a, testStoreLease, testStoreLookahead, time.Hour)
+	assert.False(t, changed, "fixture must reproduce the no-op apply case")
+
+	select {
+	case snap := <-updates:
+		assert.NotEmpty(t, snap,
+			"a no-op apply on the !ready -> ready edge must still prime the subscriber")
+	case <-time.After(time.Second):
+		t.Fatal("subscriber did not receive a priming broadcast on the no-op-but-becameReady apply")
+	}
+}
+
+// TestLogStore_SubscribeAfterApplyReturnsLiveEntries restates the
+// happy-path contract: once apply has run, subscribe returns the
+// current live entries as initial, matching the pre-fix behavior
+// for established rebalancers.
+func TestLogStore_SubscribeAfterApplyReturnsLiveEntries(t *testing.T) {
+	s := newLogStore()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	a := assignment.EvenSplit([]int32{0, 1})
+	require.True(t, s.apply(t0, a, testStoreLease, testStoreLookahead, time.Hour))
+
+	initial, _, unsubscribe := s.subscribe(t0)
+	defer unsubscribe()
+	assert.Len(t, initial, len(a.Entries),
+		"after first apply, subscribe must return the current live snapshot as initial")
+}
+
 func TestLogStore_SubscribeOmitsExpiredEntries(t *testing.T) {
 	s := newLogStore()
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -893,6 +1011,46 @@ func TestRebalancer_NextRoundDelay(t *testing.T) {
 	rFar := &Rebalancer{cfg: cfg, store: newLogStore()}
 	require.True(t, rFar.store.apply(t0, assignment.EvenSplit([]int32{0, 1}), 24*time.Hour, cfg.LeaseLookahead, time.Hour))
 	assert.Equal(t, cfg.MaxRebalanceInterval, rFar.nextRoundDelay(t0))
+}
+
+// TestRebalancer_WatchAssignments_SkipsInitialBeforeFirstApply
+// pins the wire-level contract that complements the
+// subscribe-returns-nil-initial fix: the gRPC handler must NOT send
+// an empty Entries response before the rebalancer's first apply.
+// Sending one would tell every connected distributor / readcache
+// "the assignment is empty" — which is exactly the misread that
+// triggered the readcache fleet drop after a rebalancer restart.
+func TestRebalancer_WatchAssignments_SkipsInitialBeforeFirstApply(t *testing.T) {
+	r := &Rebalancer{store: newLogStore()}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := newFakeStream(ctx, 4)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- r.WatchAssignments(&WatchAssignmentsRequest{}, stream)
+	}()
+
+	// No apply has run; handler must not Send anything yet.
+	select {
+	case msg := <-stream.sent:
+		t.Fatalf("WatchAssignments must not send before first apply, got %+v", msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// First apply primes the subscriber via the broadcast path.
+	require.True(t, r.store.apply(time.Now(), assignment.EvenSplit([]int32{0, 1}), testStoreLease, testStoreLookahead, time.Hour))
+	select {
+	case msg := <-stream.sent:
+		require.NotEmpty(t, msg.Entries,
+			"first apply must broadcast the primed snapshot to subscribers attached pre-ready")
+	case <-time.After(time.Second):
+		t.Fatal("did not receive priming broadcast after first apply")
+	}
+
+	cancel()
+	<-done
 }
 
 func TestRebalancer_WatchAssignments_SendsInitialAndUpdates(t *testing.T) {
