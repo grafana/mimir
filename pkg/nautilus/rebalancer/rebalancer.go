@@ -506,6 +506,11 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				"total_entries", len(current.Entries))
 		}
 		r.store.apply(time.Now(), current, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+		level.Info(r.logger).Log(
+			"msg", "cold start hash assignment log seeded",
+			"entries", len(current.Entries),
+			"subscribers", r.store.numSubscribers(),
+		)
 		r.pushRanges(ctx, current, time.Now())
 		// Seed the readcache slicer too: without this the readcache
 		// log stays empty until the next round, which is up to
@@ -519,11 +524,23 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// spread, which is exactly what we want at cold start.
 		if r.cfg.ReadcacheSlicer.Enabled {
 			if instances := r.activeReadcacheInstances(); len(instances) > 0 {
-				r.runReadcacheSlicer(time.Now(), activePartitions, nil, nil, instances)
+				if r.runReadcacheSlicer(time.Now(), activePartitions, nil, nil, instances) {
+					level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
+				}
 			}
 		}
 		return nil
 	}
+
+	now := time.Now()
+	level.Info(r.logger).Log(
+		"msg", "rebalance round starting",
+		"active_partitions", len(activePartitions),
+		"current_slices", len(current.Entries),
+		"lease_horizon", r.store.leaseHorizon(now).Format(time.RFC3339),
+		"hash_log_subscribers", r.store.numSubscribers(),
+		"readcache_log_subscribers", r.readcacheStore.numSubscribers(),
+	)
 
 	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx, current)
 	if err != nil {
@@ -532,8 +549,6 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	}
 
 	r.metrics.updateRound(partitionQuerySamples, unnamedPerInstance)
-
-	now := time.Now()
 	r.pruneExpiredCooldowns(now)
 
 	// Compute per-partition L (head-series). With the readcache pool
@@ -561,9 +576,29 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 
 	r.recordMoveCooldowns(now, actions)
 
-	r.store.apply(now, newAssignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+	actionSummary := countActions(actions)
+	if n := actionSummary.moves + actionSummary.reassigns + actionSummary.splits + actionSummary.merges; n > 0 {
+		level.Info(r.logger).Log(
+			"msg", "slicer produced actions",
+			"moves", actionSummary.moves,
+			"reassigns", actionSummary.reassigns,
+			"splits", actionSummary.splits,
+			"merges", actionSummary.merges,
+		)
+	}
+
+	hashLogChanged := r.store.apply(now, newAssignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+	if hashLogChanged {
+		level.Info(r.logger).Log(
+			"msg", "hash assignment log updated",
+			"live_entries", len(r.store.snapshot()),
+			"lease_horizon", r.store.leaseHorizon(now).Format(time.RFC3339),
+			"subscribers", r.store.numSubscribers(),
+		)
+	}
 	r.pushRanges(ctx, newAssignment, now)
 
+	readcacheLogChanged := false
 	// Second slicer round: balance partition -> readcache instance
 	// using the per-partition load signal we just collected. Only
 	// runs when explicitly enabled and an instance set is available
@@ -572,7 +607,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// is the production default during the Phase 2A bring-up.
 	if r.cfg.ReadcacheSlicer.Enabled {
 		if instances := r.activeReadcacheInstances(); len(instances) > 0 {
-			r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances)
+			readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances)
 		}
 	}
 
@@ -643,7 +678,22 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		End: append([]assignment.Entry(nil), newAssignment.Entries...),
 	})
 
-	level.Info(r.logger).Log("msg", "rebalance complete", "entries", len(newAssignment.Entries), "log_entries", len(r.store.snapshot()))
+	level.Info(r.logger).Log(
+		"msg", "rebalance complete",
+		"entries", len(newAssignment.Entries),
+		"log_entries", len(r.store.snapshot()),
+		"hash_log_changed", hashLogChanged,
+		"readcache_log_changed", readcacheLogChanged,
+		"moves", actionSummary.moves,
+		"reassigns", actionSummary.reassigns,
+		"splits", actionSummary.splits,
+		"merges", actionSummary.merges,
+		"moved_fraction", movedFraction,
+		"imbalance_ratio", imbalance,
+		"total_l", totalL,
+		"max_l", maxL,
+		"mean_l", meanL,
+	)
 	return nil
 }
 

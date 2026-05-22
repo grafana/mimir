@@ -710,9 +710,17 @@ func (r *Readcache) setHashRanges(_ context.Context, req *client.SetHashRangesRe
 	r.partitionMu.RUnlock()
 
 	owned := make(map[int32]struct{}, len(parts))
+	var updatedPartitions, clearedPartitions []int32
+	var ignoredUnowned []int32
 	for _, p := range parts {
 		owned[p.partitionID] = struct{}{}
-		p.ranges.setRanges(byPartition[p.partitionID])
+		ranges := byPartition[p.partitionID]
+		p.ranges.setRanges(ranges)
+		if len(ranges) > 0 {
+			updatedPartitions = append(updatedPartitions, p.partitionID)
+		} else {
+			clearedPartitions = append(clearedPartitions, p.partitionID)
+		}
 	}
 
 	// Surface entries the rebalancer routed to us but for partitions
@@ -721,9 +729,27 @@ func (r *Readcache) setHashRanges(_ context.Context, req *client.SetHashRangesRe
 	// it up.
 	for pid := range byPartition {
 		if _, ok := owned[pid]; !ok {
-			level.Debug(r.logger).Log("msg", "SetHashRanges entry for unowned partition; ignoring", "partition", pid)
+			ignoredUnowned = append(ignoredUnowned, pid)
+			level.Warn(r.logger).Log("msg", "SetHashRanges entry for unowned partition; ignoring", "partition", pid, "instance_id", r.cfg.InstanceID)
 		}
 	}
+
+	sort.Slice(updatedPartitions, func(i, j int) bool { return updatedPartitions[i] < updatedPartitions[j] })
+	sort.Slice(clearedPartitions, func(i, j int) bool { return clearedPartitions[i] < clearedPartitions[j] })
+	sort.Slice(ignoredUnowned, func(i, j int) bool { return ignoredUnowned[i] < ignoredUnowned[j] })
+
+	level.Info(r.logger).Log(
+		"msg", "SetHashRanges applied",
+		"instance_id", r.cfg.InstanceID,
+		"owned_partitions", len(parts),
+		"updated_partitions", len(updatedPartitions),
+		"cleared_partitions", len(clearedPartitions),
+		"ignored_unowned", len(ignoredUnowned),
+		"total_ranges", len(req.Ranges),
+		"updated_partition_ids", formatPartitionIDs(updatedPartitions, 20),
+		"cleared_partition_ids", formatPartitionIDs(clearedPartitions, 20),
+		"ignored_unowned_ids", formatPartitionIDs(ignoredUnowned, 20),
+	)
 	return &client.SetHashRangesResponse{}, nil
 }
 

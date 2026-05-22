@@ -4,6 +4,7 @@ package rebalancer
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -311,7 +312,7 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		}
 	}
 
-	level.Info(r.logger).Log("msg", "collected readcache stats", "healthy", len(instances), "ok", ok.Load(), "failed", failed.Load())
+	level.Info(r.logger).Log("msg", "collected readcache stats", "healthy", len(instances), "ok", ok.Load(), "failed", failed.Load(), "rate_entries", len(all), "partitions_reported", len(partitionTotals))
 	return all, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, nil
 }
 
@@ -341,7 +342,9 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 	// entry so the receiving readcache can route each range into the
 	// per-partition bookkeeping that backs HashRangeStats.
 	rangesByInstance := make(map[string][]ingester_client.HashRangeEntry)
+	partitionsInAssignment := make(map[int32]struct{})
 	for _, e := range a.Entries {
+		partitionsInAssignment[e.PartitionID] = struct{}{}
 		owner, ok := ownerByPartition[e.PartitionID]
 		if !ok || owner == "" {
 			continue
@@ -349,9 +352,44 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 		rangesByInstance[owner] = append(rangesByInstance[owner],
 			ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi, PartitionId: e.PartitionID})
 	}
+
+	var partitionsWithoutOwner []int32
+	for pid := range partitionsInAssignment {
+		if owner, ok := ownerByPartition[pid]; !ok || owner == "" {
+			partitionsWithoutOwner = append(partitionsWithoutOwner, pid)
+		}
+	}
+	sort.Slice(partitionsWithoutOwner, func(i, j int) bool { return partitionsWithoutOwner[i] < partitionsWithoutOwner[j] })
+
 	if len(rangesByInstance) == 0 {
+		level.Warn(r.logger).Log(
+			"msg", "skipping SetHashRanges push: no readcache owners resolved",
+			"partitions_in_assignment", len(partitionsInAssignment),
+			"partitions_without_owner", len(partitionsWithoutOwner),
+			"partitions_without_owner_ids", formatInt32IDs(partitionsWithoutOwner, 20),
+			"readcache_log_entries", len(r.readcacheStore.snapshot()),
+		)
 		return
 	}
+
+	if len(partitionsWithoutOwner) > 0 {
+		level.Warn(r.logger).Log(
+			"msg", "SetHashRanges push skipping partitions without readcache owner",
+			"count", len(partitionsWithoutOwner),
+			"partition_ids", formatInt32IDs(partitionsWithoutOwner, 20),
+		)
+	}
+
+	totalRanges := 0
+	for _, rs := range rangesByInstance {
+		totalRanges += len(rs)
+	}
+	level.Info(r.logger).Log(
+		"msg", "pushing hash ranges to readcache",
+		"instances", len(rangesByInstance),
+		"total_ranges", totalRanges,
+		"partitions_without_owner", len(partitionsWithoutOwner),
+	)
 
 	// Resolve instance IDs to ring entries (need Addr for dialling).
 	instances, err := r.readcachePool.healthyInstances()
@@ -399,10 +437,16 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 
 		if _, err := c.SetHashRanges(callCtx, &ingester_client.SetHashRangesRequest{Ranges: j.ranges}); err != nil {
 			failed.Add(1)
-			level.Warn(r.logger).Log("msg", "SetHashRanges RPC failed", "readcache", j.inst.Addr, "err", err)
+			level.Warn(r.logger).Log("msg", "SetHashRanges RPC failed", "readcache", j.inst.Addr, "instance_id", j.instanceID, "ranges", len(j.ranges), "err", err)
 			return nil
 		}
 		ok.Add(1)
+		level.Info(r.logger).Log(
+			"msg", "SetHashRanges RPC succeeded",
+			"readcache", j.inst.Addr,
+			"instance_id", j.instanceID,
+			"ranges", len(j.ranges),
+		)
 		return nil
 	})
 

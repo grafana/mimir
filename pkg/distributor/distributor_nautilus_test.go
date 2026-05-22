@@ -83,7 +83,7 @@ func TestGetKeysByAssignment_RequiredRejectsKeyNotCovered(t *testing.T) {
 	}).ActiveTable(time.Now())
 	require.NotNil(t, gappy)
 
-	_, err := d.getKeysByAssignment(context.Background(), gappy, []uint32{50, 1000})
+	_, err := d.getKeysByAssignment(context.Background(), "test", gappy, []uint32{50, 1000})
 	require.Error(t, err)
 	var rejErr nautilusRoutingUnavailableError
 	require.ErrorAs(t, err, &rejErr)
@@ -99,7 +99,7 @@ func TestGetKeysByAssignment_RequiredPassesThroughWhenCovered(t *testing.T) {
 	tbl := buildActiveTable(t, []int32{1, 2, 3}, []uint32{99, 199})
 
 	// Keys at 50, 150, 250 should map to partitions 1, 2, 3.
-	got, err := d.getKeysByAssignment(context.Background(), tbl, []uint32{50, 150, 250})
+	got, err := d.getKeysByAssignment(context.Background(), "test", tbl, []uint32{50, 150, 250})
 	require.NoError(t, err)
 
 	byPID := map[int32][]int{}
@@ -126,7 +126,7 @@ func TestGetKeysByAssignment_NotRequiredFallsBackToPartitionRing(t *testing.T) {
 	tbl := buildActiveTable(t, []int32{1, 2}, []uint32{math.MaxUint32 / 2})
 
 	// All keys covered → no fallback.
-	got, err := d.getKeysByAssignment(context.Background(), tbl, []uint32{0, math.MaxUint32})
+	got, err := d.getKeysByAssignment(context.Background(), "test", tbl, []uint32{0, math.MaxUint32})
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 

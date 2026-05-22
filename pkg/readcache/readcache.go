@@ -805,10 +805,12 @@ func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalanc
 // transitions happen at the same instant on both sides.
 func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassignment.LogEntry, at time.Time) error {
 	wanted := map[int32]struct{}{}
+	var snapshotForInstance int
 	for _, e := range entries {
 		if e.InstanceID != r.cfg.InstanceID {
 			continue
 		}
+		snapshotForInstance++
 		if !e.ActiveAt(at) {
 			continue
 		}
@@ -836,6 +838,20 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 	sort.Slice(toAdd, func(i, j int) bool { return toAdd[i] < toAdd[j] })
 	sort.Slice(toRemove, func(i, j int) bool { return toRemove[i] < toRemove[j] })
 
+	level.Info(r.logger).Log(
+		"msg", "readcache assignment snapshot received",
+		"instance_id", r.cfg.InstanceID,
+		"snapshot_entries", len(entries),
+		"entries_for_instance", snapshotForInstance,
+		"wanted_partitions", len(wanted),
+		"current_partitions", len(current),
+		"to_add", len(toAdd),
+		"to_remove", len(toRemove),
+		"wanted_partition_ids", formatPartitionIDs(partitionIDsFromSet(wanted), 20),
+		"add_partition_ids", formatPartitionIDs(toAdd, 20),
+		"remove_partition_ids", formatPartitionIDs(toRemove, 20),
+	)
+
 	var firstErr error
 	for _, pid := range toAdd {
 		if err := r.addPartition(ctx, pid); err != nil {
@@ -859,9 +875,21 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 	}
 	if len(toAdd) > 0 || len(toRemove) > 0 {
 		level.Info(r.logger).Log("msg", "readcache reconciled partition assignment",
-			"added", len(toAdd), "removed", len(toRemove), "owned", len(wanted))
+			"added", len(toAdd), "removed", len(toRemove), "owned", len(wanted),
+			"added_partition_ids", formatPartitionIDs(toAdd, 20),
+			"removed_partition_ids", formatPartitionIDs(toRemove, 20),
+		)
 	}
 	return firstErr
+}
+
+func partitionIDsFromSet(set map[int32]struct{}) []int32 {
+	out := make([]int32, 0, len(set))
+	for pid := range set {
+		out = append(out, pid)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // sleepWithCtx sleeps for d unless ctx is cancelled first.

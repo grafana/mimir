@@ -1163,11 +1163,31 @@ func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer
 		// request hits the fast path immediately. Hold the rebuild
 		// mutex so a concurrent stale-rebuild from getKeysByAssignment
 		// doesn't overwrite us with an older snapshot.
+		now := d.now()
+		table := log.ActiveTable(now)
 		d.nautilusActiveTableMu.Lock()
-		d.nautilusActiveTable.Store(log.ActiveTable(d.now()))
+		d.nautilusActiveTable.Store(table)
 		d.nautilusActiveTableMu.Unlock()
 		d.nautilusAssignmentsReceived.Inc()
-		level.Debug(d.log).Log("msg", "received nautilus assignment snapshot", "entries", len(resp.Entries))
+
+		fields := []interface{}{
+			"msg", "received nautilus assignment snapshot",
+			"entries", len(resp.Entries),
+		}
+		if table != nil {
+			fields = append(fields,
+				"active_tiles", table.Len(),
+				"valid_until", table.ValidUntil().Format(time.RFC3339),
+				"built_at", table.BuiltAt().Format(time.RFC3339),
+			)
+		} else {
+			fields = append(fields, "active_tiles", 0)
+		}
+		if err := log.ActiveTilesFullSpace(now); err != nil {
+			level.Warn(d.log).Log(append(fields, "validation_err", err.Error())...)
+		} else {
+			level.Info(d.log).Log(fields...)
+		}
 	}
 }
 
@@ -2651,8 +2671,14 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	// the same point-in-time view of the assignment log.
 	now := d.now()
 	if table := d.nautilusActiveTableFor(now); table != nil {
-		partitionKeys, err = d.getKeysByAssignment(ctx, table, keys)
+		partitionKeys, err = d.getKeysByAssignment(ctx, tenantID, table, keys)
 	} else if d.cfg.NautilusRequired {
+		level.Warn(d.log).Log(
+			"msg", "nautilus routing rejected: assignment table unavailable",
+			"tenant", tenantID,
+			"keys", len(keys),
+			"nautilus_required", true,
+		)
 		// Authoritative-nautilus mode: refuse to silently route via
 		// the partition ring's hash-mod sharding, since that would
 		// defeat query locality. The writer will see a 503 and
@@ -2662,6 +2688,12 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 		d.nautilusRoutingRejected.WithLabelValues("table_unavailable").Inc()
 		return errors.Wrap(newNautilusRoutingUnavailableError("no live assignment log snapshot is available"), "send data to partitions")
 	} else {
+		level.Warn(d.log).Log(
+			"msg", "nautilus assignment table unavailable; using partition ring",
+			"tenant", tenantID,
+			"keys", len(keys),
+			"nautilus_required", false,
+		)
 		partitionKeys, err = tenantRing.GetKeysByPartition(ctx, keys)
 	}
 	if err != nil {
@@ -2689,6 +2721,16 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	if d.limits != nil && d.limits.NautilusIngestRouting(tenantID) == validation.NautilusIngestRoutingNautilus && d.cfg.NautilusIngestTopic != "" {
 		topic = d.cfg.NautilusIngestTopic
 	}
+
+	level.Debug(d.log).Log(
+		"msg", "routed write request to partitions",
+		"tenant", tenantID,
+		"keys", len(keys),
+		"partitions", len(partitionKeys),
+		"partition_summary", formatPartitionKeySummary(partitionKeys),
+		"nautilus_ingest_topic", topic != d.cfg.IngestStorageConfig.KafkaConfig.Topic,
+		"topic", topic,
+	)
 
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
@@ -2784,11 +2826,12 @@ func (d *Distributor) nautilusActiveTableFor(at time.Time) *assignment.ActiveTab
 // partition ring's ActivePartitionForKey; if true, return a 503
 // nautilusRoutingUnavailableError so the writer retries instead of
 // silently routing through hash-mod sharding.
-func (d *Distributor) getKeysByAssignment(ctx context.Context, table *assignment.ActiveTable, keys []uint32) ([]ring.PartitionKeys, error) {
+func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, table *assignment.ActiveTable, keys []uint32) ([]ring.PartitionKeys, error) {
 	// pRing is fetched lazily — a fully-covering table means we
 	// never consult it, and in NautilusRequired mode we never
 	// consult it at all.
 	var pRing *ring.PartitionRing
+	var ringFallbackKeys int
 
 	partitionIndexes := make(map[int32][]int)
 	for i, key := range keys {
@@ -2802,9 +2845,15 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, table *assignment
 		if !ok {
 			if d.cfg.NautilusRequired {
 				d.nautilusRoutingRejected.WithLabelValues("key_not_covered").Inc()
+				level.Warn(d.log).Log(
+					"msg", "nautilus routing rejected: key not covered by assignment",
+					"tenant", tenantID,
+					"key", key,
+					"total_keys", len(keys),
+				)
 				return nil, newNautilusRoutingUnavailableError(fmt.Sprintf("assignment log does not cover key %d", key))
 			}
-			level.Warn(d.log).Log("msg", "key not found in assignment log; falling back to partition ring", "key", key)
+			ringFallbackKeys++
 			if pRing == nil {
 				pRing = d.partitionsRing.PartitionRing()
 			}
@@ -2815,6 +2864,15 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, table *assignment
 			}
 		}
 		partitionIndexes[pid] = append(partitionIndexes[pid], i)
+	}
+
+	if ringFallbackKeys > 0 {
+		level.Warn(d.log).Log(
+			"msg", "keys missing from nautilus assignment; fell back to partition ring",
+			"tenant", tenantID,
+			"ring_fallback_keys", ringFallbackKeys,
+			"total_keys", len(keys),
+		)
 	}
 
 	result := make([]ring.PartitionKeys, 0, len(partitionIndexes))

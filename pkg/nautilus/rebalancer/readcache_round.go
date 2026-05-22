@@ -45,7 +45,7 @@ func (r *Rebalancer) runReadcacheSlicer(
 	partitionRateByPID map[int32]float64,
 	partitionQuerySamples map[int32]float64,
 	activeInstances []string,
-) {
+) bool {
 	cfg := r.cfg.ReadcacheSlicer
 
 	// Build the load function: alpha * write rate + beta * query rate.
@@ -76,10 +76,29 @@ func (r *Rebalancer) runReadcacheSlicer(
 
 	r.readcacheCooldowns.extendForMoves(now, cfg.MoveCooldown, plan.Moves)
 
-	if changed := r.readcacheStore.apply(now, plan.Assignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention); changed {
+	changed := r.readcacheStore.apply(now, plan.Assignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+	if changed {
 		level.Info(r.logger).Log(
 			"msg", "readcache slicer round produced changes",
 			"moves", len(plan.Moves),
+			"partitions", len(activePartitions),
+			"instances", len(activeInstances),
+			"subscribers", r.readcacheStore.numSubscribers(),
+			"lease_horizon", r.readcacheStore.leaseHorizon(now).Format(time.RFC3339),
+		)
+		for _, m := range plan.Moves {
+			level.Info(r.logger).Log(
+				"msg", "readcache partition move planned",
+				"partition", m.PartitionID,
+				"from", m.From,
+				"to", m.To,
+				"load", m.Load,
+				"reason", m.Reason,
+			)
+		}
+	} else {
+		level.Info(r.logger).Log(
+			"msg", "readcache slicer round unchanged",
 			"partitions", len(activePartitions),
 			"instances", len(activeInstances),
 		)
@@ -96,4 +115,5 @@ func (r *Rebalancer) runReadcacheSlicer(
 	// per instance, exactly as the partitionLByPID gauges in the
 	// existing slicer.
 	_ = readcacheassignment.LogEntry{} // keep package import warm if no flag branch uses it directly
+	return changed
 }
