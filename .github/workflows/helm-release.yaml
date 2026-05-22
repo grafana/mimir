@@ -11,7 +11,7 @@ permissions: {}
 
 jobs:
   call-update-helm-repo:
-    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@main
+    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@77e5ea2de369fa1ff3441b08765c164be209eaa2 # main
     permissions:
       id-token: write
       contents: write
