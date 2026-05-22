@@ -25,7 +25,12 @@ jobs:
         id: release_branches
         run: |
           set -euo pipefail
-          branches=$(git ls-remote --heads "https://github.com/${{ github.repository }}" 'release-[0-9]*.[0-9]*' | sed 's|.*refs/heads/||' | xargs)
+          branches=$(git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}" 'release-*' \
+            | sed 's|.*refs/heads/||' \
+            | grep -E '^release-[0-9]+\.[0-9]+$' \
+            | sort -t- -k2,2V \
+            | tail -3 \
+            | xargs)
           echo "branches=$branches" >> "$GITHUB_OUTPUT"
           if [ -z "$branches" ]; then
             echo "No release branches found"
