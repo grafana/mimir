@@ -1,0 +1,212 @@
+name: Auto-backport build/CI changes
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  auto-backport:
+    runs-on: ubuntu-latest
+
+    # Don't run on PRs from forks (can't access secrets) or on PRs that already have backport labels.
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+
+    steps:
+      - name: List release branches
+        id: release_branches
+        run: |
+          set -euo pipefail
+          branches=$(git ls-remote --heads "https://github.com/${{ github.repository }}" 'release-[0-9]*.[0-9]*' | sed 's|.*refs/heads/||' | xargs)
+          echo "branches=$branches" >> "$GITHUB_OUTPUT"
+          if [ -z "$branches" ]; then
+            echo "No release branches found"
+          else
+            echo "Found release branches: $branches"
+          fi
+
+      - name: Get changed files
+        if: steps.release_branches.outputs.branches != ''
+        id: changed_files
+        run: |
+          set -euo pipefail
+          files=$(gh api --paginate \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --jq '.[].filename')
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$files" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if build/CI files changed
+        if: steps.release_branches.outputs.branches != ''
+        id: check_build_files
+        run: |
+          set -euo pipefail
+
+          matched_files=""
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+
+            match=false
+
+            case "$file" in
+              # Build image
+              mimir-build-image/*)               match=true ;;
+
+              # Dockerfiles anywhere in the repo (excluding vendor/)
+              */Dockerfile|*/Dockerfile.*)
+                case "$file" in vendor/*) ;; *) match=true ;; esac
+                ;;
+              Dockerfile|Dockerfile.*)           match=true ;;
+
+              # Makefiles at any level (excluding vendor/)
+              Makefile|Makefile.*|*/Makefile|*/Makefile.*)
+                case "$file" in vendor/*) ;; *) match=true ;; esac
+                ;;
+
+              # GitHub Actions workflows and scripts
+              .github/workflows/*)               match=true ;;
+              .github/actions/*)                 match=true ;;
+
+              # Build scripts and tools
+              tools/*)                           match=true ;;
+
+              # Linter configuration
+              .golangci.yml|.golangci.yaml)      match=true ;;
+
+              # CI / release / packaging related
+              packaging/*)                       match=true ;;
+
+              # Build configuration files
+              .goreleaser.yml|.goreleaser.yaml)  match=true ;;
+              .promu.yml)                        match=true ;;
+
+              # Docker Compose files used in CI
+              development/*/docker-compose.yml)  match=true ;;
+              development/*/*.sh)                match=true ;;
+
+
+            esac
+
+            if [ "$match" = true ]; then
+              matched_files="${matched_files}${file}\n"
+            fi
+          done <<< "${{ steps.changed_files.outputs.files }}"
+
+          if [ -n "$matched_files" ]; then
+            echo "should_backport=true" >> "$GITHUB_OUTPUT"
+            # Store a summary of matched files for the comment
+            echo "matched_files<<EOF" >> "$GITHUB_OUTPUT"
+            echo -e "$matched_files" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            echo "Build/CI files changed — backport labels will be added."
+          else
+            echo "should_backport=false" >> "$GITHUB_OUTPUT"
+            echo "No build/CI files changed."
+          fi
+
+      - name: Check if backport comment already posted
+        if: steps.check_build_files.outputs.should_backport == 'true'
+        id: check_comment
+        run: |
+          set -euo pipefail
+          # Search for our marker in existing PR comments. If found, we've already
+          # labelled this PR and should not re-add labels the author may have removed.
+          comments=$(gh api --paginate \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq '.[].body')
+          if echo "$comments" | grep -qF '<!-- auto-backport-build-changes -->'; then
+            echo "already_commented=true" >> "$GITHUB_OUTPUT"
+            echo "Backport comment already exists — skipping."
+          else
+            echo "already_commented=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate GitHub App Token
+        if: steps.check_build_files.outputs.should_backport == 'true' && steps.check_comment.outputs.already_commented == 'false'
+        id: app-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
+        with:
+          github_app: mimir-github-bot
+
+      - name: Add backport labels and comment
+        if: steps.check_build_files.outputs.should_backport == 'true' && steps.check_comment.outputs.already_commented == 'false'
+        run: |
+          set -euo pipefail
+
+          pr_number="${{ github.event.pull_request.number }}"
+          pr_author="${{ github.event.pull_request.user.login }}"
+
+          # Collect existing labels on the PR.
+          existing_labels=$(gh pr view "$pr_number" --json labels --jq '.labels[].name')
+
+          labels_added=""
+          for branch in ${{ steps.release_branches.outputs.branches }}; do
+            label="backport $branch"
+
+            # Create the label if it doesn't exist yet (ignore errors if it already exists).
+            gh label create "$label" --color "0E8A16" --description "Backport to $branch" 2>/dev/null || true
+
+            # Skip if the label is already on the PR.
+            if echo "$existing_labels" | grep -qxF "$label"; then
+              echo "Label '$label' already present — skipping."
+              continue
+            fi
+
+            gh pr edit "$pr_number" --add-label "$label"
+            labels_added="${labels_added}- \`${label}\`\n"
+          done
+
+          if [ -z "$labels_added" ]; then
+            echo "All backport labels were already present — skipping comment."
+            exit 0
+          fi
+
+          # Build the list of matched files for the comment.
+          matched_files_list=""
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            matched_files_list="${matched_files_list}- \`${f}\`\n"
+          done <<< "${{ steps.check_build_files.outputs.matched_files }}"
+
+          comment_body=$(cat <<COMMENT_EOF
+          <!-- auto-backport-build-changes -->
+          ### 🔄 Automatic backport labels added
+
+          This PR modifies **build, CI, or release-related files** that should typically be backported to active release branches.
+
+          **Labels added:**
+          $(echo -e "$labels_added")
+
+          <details>
+          <summary>Changed build/CI files in this PR</summary>
+
+          $(echo -e "$matched_files_list")
+          </details>
+
+          ---
+
+          @${pr_author} Once this PR is merged, backport PRs will be created automatically for the branches above. **Please review and merge the resulting backport PRs** to ensure these changes reach the release branches.
+
+          > This label was added automatically. If this change should **not** be backported, please remove the \`backport …\` labels before merging.
+          COMMENT_EOF
+          )
+
+          gh pr comment "$pr_number" --body "$comment_body"
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
