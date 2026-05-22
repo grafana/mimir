@@ -4,13 +4,9 @@ package ingester
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"path/filepath"
-	"strconv"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
@@ -27,9 +23,7 @@ type NullIngester struct {
 	services.Service
 
 	logger  log.Logger
-	readers []*ingest.PartitionReader
-	manager *services.Manager
-	watcher *services.FailureWatcher
+	readers *ingest.CompartmentReaders
 	metrics *ingesterMetrics
 }
 
@@ -46,17 +40,10 @@ func NewNullIngester(cfg Config, logger log.Logger, reg prometheus.Registerer) (
 		return nil, errors.New("compartments must be enabled for null ingester")
 	}
 
-	if compartmentsCfg.WriteKafkaAddressFormat == "" {
-		return nil, errors.New("ingest-storage.compartments.write-kafka-address-format must be configured for null ingester")
-	}
-
 	partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 	if err != nil {
 		return nil, errors.Wrap(err, "calculating ingester partition ID")
 	}
-
-	router := ingest.NewCompartmentRouter(compartmentsCfg)
-	readTopic := router.Topic(compartmentsCfg.ReadCompartmentID)
 
 	offsetDir := cfg.NullIngesterOffsetDir
 	if offsetDir == "" {
@@ -71,37 +58,13 @@ func NewNullIngester(cfg Config, logger log.Logger, reg prometheus.Registerer) (
 		metrics: newIngesterMetrics(reg, false, func() *InstanceLimits { return nil }, nil, nil, nil),
 	}
 
-	// One reader per write compartment VC, all consuming the same read compartment topic.
-	// Each VC has its own Kafka address (and optionally distinct SASL credentials).
-	readers := make([]*ingest.PartitionReader, compartmentsCfg.NumCompartments)
-	for writeCompartmentID := 0; writeCompartmentID < compartmentsCfg.NumCompartments; writeCompartmentID++ {
-		vcKafkaCfg := kafkaCfg
-		vcKafkaCfg.Topic = readTopic
-		vcKafkaCfg.Address = flagext.StringSliceCSV{compartmentsCfg.WriteKafkaAddress(writeCompartmentID)}
-		vcKafkaCfg.ConsumerGroupOffsetCommitFileEnforced = false
-		if compartmentsCfg.WriteKafkaSASLUsernameFormat != "" {
-			vcKafkaCfg.SASL.Username = compartmentsCfg.WriteKafkaSASLUsername(writeCompartmentID)
-			vcKafkaCfg.SASL.Password = flagext.SecretWithValue(compartmentsCfg.WriteKafkaSASLPassword(writeCompartmentID))
-		}
-
-		offsetFilePath := filepath.Join(offsetDir, fmt.Sprintf("kafka-offset-write-vc-%d.json", writeCompartmentID))
-
-		// Each write VC reader needs its own consumer group, so we embed the write VC index
-		// in the instance ID. The partition ID stays the same across all write VCs.
-		instanceID := fmt.Sprintf("%s-write-%d", cfg.IngesterRing.InstanceID, writeCompartmentID)
-
-		vcReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(writeCompartmentID)}, reg)
-		vcLogger := log.With(logger, "component", "null_ingest_reader", "write_compartment", writeCompartmentID)
-
-		reader, err := ingest.NewPartitionReaderForPusher(vcKafkaCfg, partitionID, instanceID, offsetFilePath, ni, vcLogger, vcReg)
-		if err != nil {
-			return nil, errors.Wrapf(err, "creating partition reader for write compartment VC %d", writeCompartmentID)
-		}
-		readers[writeCompartmentID] = reader
+	readers, err := ingest.NewCompartmentReaders(kafkaCfg, compartmentsCfg, partitionID, cfg.IngesterRing.InstanceID, offsetDir, ni, logger, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating compartment readers")
 	}
-
 	ni.readers = readers
-	ni.Service = services.NewBasicService(ni.starting, ni.running, ni.stopping).WithName("null-ingester")
+
+	ni.Service = services.NewIdleService(ni.starting, ni.stopping).WithName("null-ingester")
 	return ni, nil
 }
 
@@ -130,37 +93,9 @@ func (ni *NullIngester) NotifyPreCommit(_ context.Context) error {
 }
 
 func (ni *NullIngester) starting(ctx context.Context) error {
-	svcs := make([]services.Service, 0, len(ni.readers))
-	for _, r := range ni.readers {
-		svcs = append(svcs, r)
-	}
-
-	var err error
-	ni.manager, err = services.NewManager(svcs...)
-	if err != nil {
-		return errors.Wrap(err, "creating services manager")
-	}
-
-	ni.watcher = services.NewFailureWatcher()
-	ni.watcher.WatchManager(ni.manager)
-
-	return services.StartManagerAndAwaitHealthy(ctx, ni.manager)
-}
-
-func (ni *NullIngester) running(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return nil
-	case err := <-ni.watcher.Chan():
-		return errors.Wrap(err, "null ingester subservice failed")
-	}
+	return services.StartAndAwaitRunning(ctx, ni.readers)
 }
 
 func (ni *NullIngester) stopping(_ error) error {
-	ni.watcher.Close()
-	if ni.manager != nil {
-		ni.manager.StopAsync()
-		return ni.manager.AwaitStopped(context.Background())
-	}
-	return nil
+	return services.StopAndAwaitTerminated(context.Background(), ni.readers)
 }
