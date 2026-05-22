@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -85,14 +86,15 @@ type Scheduler struct {
 	subservicesWatcher *services.FailureWatcher
 
 	// Metrics.
-	queueLength              *prometheus.GaugeVec
-	discardedRequests        *prometheus.CounterVec
-	cancelledRequests        *prometheus.CounterVec
-	connectedQuerierClients  prometheus.GaugeFunc
-	connectedFrontendClients prometheus.GaugeFunc
-	queueDuration            *prometheus.HistogramVec
-	inflightRequests         prometheus.Summary
-	invalidClusterValidation *prometheus.CounterVec
+	queueLength                   *prometheus.GaugeVec
+	discardedRequests             *prometheus.CounterVec
+	cancelledRequests             *prometheus.CounterVec
+	connectedQuerierClients       prometheus.GaugeFunc
+	connectedFrontendClients      prometheus.GaugeFunc
+	queueDuration                 *prometheus.HistogramVec
+	inflightRequests              prometheus.Summary
+	invalidClusterValidation      *prometheus.CounterVec
+	oldestInflightRequestDuration prometheus.Gauge
 }
 
 type connectedFrontend struct {
@@ -156,6 +158,10 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	enqueueDuration := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 		Name: "cortex_query_scheduler_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
+	})
+	s.oldestInflightRequestDuration = promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_query_scheduler_oldest_inflight_request_duration_seconds",
+		Help: "Time since the oldest inflight request (queued or being processed) was enqueued. NaN if there are no inflight requests.",
 	})
 	querierInflightRequestsMetric := promauto.With(registerer).NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -433,6 +439,7 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reas
 
 	delete(s.schedulerInflightRequests, key)
 	s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
+	s.observeOldestInflightRequestDuration()
 	return req
 }
 
@@ -716,6 +723,9 @@ func (s *Scheduler) running(ctx context.Context) error {
 		select {
 		case <-inflightRequestsTicker.C:
 			s.inflightRequests.Observe(float64(s.schedulerInflightRequestCount.Load()))
+			s.inflightRequestsMu.Lock()
+			s.observeOldestInflightRequestDuration()
+			s.inflightRequestsMu.Unlock()
 		case <-ctx.Done():
 			return nil
 		case err := <-s.subservicesWatcher.Chan():
@@ -749,6 +759,25 @@ func (s *Scheduler) getConnectedFrontendClientsMetric() float64 {
 	}
 
 	return float64(count)
+}
+
+// NOTE: s.inflightRequestsMu must be held by caller.
+func (s *Scheduler) observeOldestInflightRequestDuration() {
+	if s.schedulerInflightRequestCount.Load() == 0 {
+		// no inflight requests
+		s.oldestInflightRequestDuration.Set(math.NaN())
+		return
+	}
+
+	var oldest time.Time
+	for _, req := range s.schedulerInflightRequests {
+		if oldest.IsZero() || req.EnqueueTime.Before(oldest) {
+			oldest = req.EnqueueTime
+		}
+	}
+
+	latency := time.Since(oldest).Seconds()
+	s.oldestInflightRequestDuration.Set(latency)
 }
 
 func (s *Scheduler) RingHandler(w http.ResponseWriter, req *http.Request) {
