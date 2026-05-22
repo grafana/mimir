@@ -4712,17 +4712,16 @@ cost_attribution_labels_structured:
 
     [output: <string> | default = ""]
 
-# (experimental) Maximum cardinality of cost attribution labels allowed per
-# user.
-# CLI flag: -validation.max-cost-attribution-cardinality
-[max_cost_attribution_cardinality: <int> | default = 2000]
+# (experimental) Base cost attribution trackers configuration as JSON. Each
+# tracker defines labels to track for cost attribution. Example:
+# '{"by-team":{"labels":[{"input":"team"}]}}'.
+# CLI flag: -validation.cost-attribution-trackers
+[cost_attribution_trackers:]
+  <string>:
+    labels:
+      -         [input: <string> | default = ""]
 
-# (experimental) Defines how long cost attribution stays in overflow before
-# attempting a reset, with received/discarded samples extending the cooldown if
-# overflow persists, while active series reset and restart tracking after the
-# cooldown.
-# CLI flag: -validation.cost-attribution-cooldown
-[cost_attribution_cooldown: <duration> | default = 0s]
+        [output: <string> | default = ""]
 
 # (experimental)
 [additional_cost_attribution_trackers:]
@@ -4731,6 +4730,18 @@ cost_attribution_labels_structured:
       -         [input: <string> | default = ""]
 
         [output: <string> | default = ""]
+
+# (experimental) Defines how long cost attribution stays in overflow before
+# attempting a reset, with received/discarded samples extending the cooldown if
+# overflow persists, while active series reset and restart tracking after the
+# cooldown.
+# CLI flag: -validation.cost-attribution-cooldown
+[cost_attribution_cooldown: <duration> | default = 0s]
+
+# (experimental) Maximum cardinality of cost attribution labels allowed per
+# user.
+# CLI flag: -validation.max-cost-attribution-cardinality
+[max_cost_attribution_cardinality: <int> | default = 2000]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.

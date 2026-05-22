@@ -31,7 +31,6 @@ const (
 	samplesTrackerType      = "samples"
 )
 
-
 type Manager struct {
 	services.Service
 	logger log.Logger
