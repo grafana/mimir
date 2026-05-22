@@ -342,7 +342,7 @@ func NewQuerierHandler(
 	// -querier.experimental-search-api-enabled flag at the handler level).
 	// Mirror Prometheus PR #18573's HTTP API surface.
 	searchQueryStats := usagestats.NewRequestsMiddleware("querier_search_query_requests")
-	router.Path(path.Join(promPrefix, "/search/metric_names")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchMetricNamesHandler(queryable, querierCfg, metadataSupplier, limits)))
+	router.Path(path.Join(promPrefix, "/search/metric_names")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchMetricNamesHandler(queryable, querierCfg, limits)))
 	router.Path(path.Join(promPrefix, "/search/label_names")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchLabelNamesHandler(queryable, querierCfg, limits)))
 	router.Path(path.Join(promPrefix, "/search/label_values")).Methods("GET", "POST").Handler(searchQueryStats.Wrap(querier.SearchLabelValuesHandler(queryable, querierCfg, limits)))
 

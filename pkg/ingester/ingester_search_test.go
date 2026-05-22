@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -226,7 +227,7 @@ func TestStreamSearchResultsPropagatesWarnings(t *testing.T) {
 				sent = append(sent, b)
 				return nil
 			}
-			require.NoError(t, streamSearchResults(context.Background(), rs, send))
+			require.NoError(t, streamSearchResults(context.Background(), rs, send, nil))
 			assert.Equal(t, tc.wantSent, sent)
 		})
 	}
@@ -259,7 +260,7 @@ func TestStreamSearchResultsPropagatesErrInsteadOfWarnings(t *testing.T) {
 		sent = append(sent, &client.SearchResultBatch{Results: out, Warnings: b.Warnings})
 		return nil
 	}
-	require.ErrorIs(t, streamSearchResults(context.Background(), rs, send), want)
+	require.ErrorIs(t, streamSearchResults(context.Background(), rs, send, nil), want)
 	require.Len(t, sent, 1, "trailer batch carrying warnings must be suppressed when rs.Err() is non-nil")
 	assert.Len(t, sent[0].Results, searchBatchSize, "the mid-iteration flush carried the full batch")
 	assert.Empty(t, sent[0].Warnings, "warnings must never ride on mid-iteration batches")
@@ -286,7 +287,7 @@ func TestStreamSearchResultsBatching(t *testing.T) {
 		sent = append(sent, &client.SearchResultBatch{Results: results, Warnings: b.Warnings})
 		return nil
 	}
-	require.NoError(t, streamSearchResults(context.Background(), rs, send))
+	require.NoError(t, streamSearchResults(context.Background(), rs, send, nil))
 	require.Len(t, sent, 2, "257 results must split into 2 batches at the searchBatchSize=256 boundary")
 	assert.Len(t, sent[0].Results, searchBatchSize, "first batch is full")
 	assert.Len(t, sent[1].Results, 1, "second batch carries the remainder")
@@ -323,6 +324,208 @@ func TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument(t
 	assert.Equal(t, codes.InvalidArgument, st.Code(), "wire-shape errors must surface as codes.InvalidArgument, not codes.Internal")
 }
 
+// TestStreamSearchResultsDecorator covers the contract between
+// streamSearchResults and the metadataBatchDecoratorFunc it accepts.
+func TestStreamSearchResultsDecorator(t *testing.T) {
+	t.Run("decorates each batch and is invoked once per batch", func(t *testing.T) {
+		// Force a two-batch split so the per-batch invocation count is
+		// observable. The lock-amortisation contract is the whole point of
+		// the batch-shaped decorator.
+		const total = searchBatchSize + 1
+		results := make([]storage.SearchResult, total)
+		for i := 0; i < total; i++ {
+			results[i] = storage.SearchResult{Value: fmt.Sprintf("metric_%04d", i), Score: 1.0}
+		}
+		known := map[string]mimirpb.MetricMetadata{
+			results[0].Value:       {Type: mimirpb.COUNTER, Help: "first"},
+			results[total-1].Value: {Type: mimirpb.GAUGE, Help: "last", Unit: "s"},
+		}
+		decoratorCalls := 0
+		decorator := func(batch *client.SearchResultBatch) {
+			decoratorCalls++
+			for i := range batch.Results {
+				if md, ok := known[batch.Results[i].Value]; ok {
+					mCopy := md
+					batch.Results[i].Metadata = &mCopy
+				}
+			}
+		}
+
+		rs := &fakeSearchResultSet{results: results}
+		var sent []*client.SearchResultBatch
+		send := func(b *client.SearchResultBatch) error {
+			out := make([]client.SearchResultBatch_Result, len(b.Results))
+			copy(out, b.Results)
+			sent = append(sent, &client.SearchResultBatch{Results: out, Warnings: b.Warnings})
+			return nil
+		}
+		require.NoError(t, streamSearchResults(context.Background(), rs, send, decorator))
+		require.Len(t, sent, 2)
+		assert.Equal(t, 2, decoratorCalls, "decorator must be called once per wire batch, not per record")
+
+		require.Len(t, sent[0].Results, searchBatchSize)
+		first := sent[0].Results[0]
+		require.NotNil(t, first.Metadata)
+		assert.Equal(t, mimirpb.COUNTER, first.Metadata.Type)
+		assert.Equal(t, "first", first.Metadata.Help)
+		assert.Nil(t, sent[0].Results[1].Metadata, "values without metadata stay un-decorated")
+
+		require.Len(t, sent[1].Results, 1)
+		last := sent[1].Results[0]
+		require.NotNil(t, last.Metadata)
+		assert.Equal(t, mimirpb.GAUGE, last.Metadata.Type)
+		assert.Equal(t, "s", last.Metadata.Unit)
+	})
+
+	t.Run("skipped on warnings-only batch", func(t *testing.T) {
+		// Warnings-only trailers shouldn't acquire the metadata-store RLock,
+		// so the decorator must not be called when there are no results.
+		rs := &fakeSearchResultSet{warns: addAnnotation(nil, "all clamped")}
+		calls := 0
+		decorator := func(_ *client.SearchResultBatch) { calls++ }
+		var sent []*client.SearchResultBatch
+		send := func(b *client.SearchResultBatch) error {
+			sent = append(sent, &client.SearchResultBatch{Results: append([]client.SearchResultBatch_Result(nil), b.Results...), Warnings: b.Warnings})
+			return nil
+		}
+		require.NoError(t, streamSearchResults(context.Background(), rs, send, decorator))
+		require.Len(t, sent, 1)
+		assert.Empty(t, sent[0].Results)
+		assert.Equal(t, []string{"all clamped"}, sent[0].Warnings)
+		assert.Equal(t, 0, calls, "decorator must be skipped on a warnings-only batch")
+	})
+}
+
+// TestNewMetadataBatchDecoratorFunc covers the factory's gating logic — when
+// it should return a non-nil decorator and when it should short-circuit so
+// streamSearchResults can skip the decoration step entirely.
+func TestNewMetadataBatchDecoratorFunc(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	// Wire metadata for the "test" tenant so a non-nil userMetricsMetadata
+	// exists; rows that target a different userID exercise the "never
+	// pushed" branch.
+	require.NoError(t, i.getOrCreateUserMetadata("test").add("metric_a",
+		&mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "metric_a", Help: "h"}))
+
+	tests := []struct {
+		name    string
+		userID  string
+		req     *client.SearchLabelValuesRequest
+		wantSet bool
+	}{
+		{name: "nil request", userID: "test", req: nil},
+		{name: "include_metadata false", userID: "test", req: &client.SearchLabelValuesRequest{Name: model.MetricNameLabel, IncludeMetadata: false}},
+		{name: "include_metadata true but non-__name__ label", userID: "test", req: &client.SearchLabelValuesRequest{Name: "env", IncludeMetadata: true}},
+		{name: "tenant has never pushed metadata", userID: "never-pushed", req: &client.SearchLabelValuesRequest{Name: model.MetricNameLabel, IncludeMetadata: true}},
+		{name: "include_metadata true and __name__ label and tenant has metadata", userID: "test", req: &client.SearchLabelValuesRequest{Name: model.MetricNameLabel, IncludeMetadata: true}, wantSet: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := i.newMetadataBatchDecoratorFunc(tc.userID, tc.req)
+			if tc.wantSet {
+				assert.NotNil(t, got, "decorator must be wired up for valid metric-names enrichment requests")
+			} else {
+				assert.Nil(t, got, "decorator must be nil when enrichment is not applicable")
+			}
+		})
+	}
+}
+
+// TestIngesterSearchLabelValuesMetadataEnrichment covers the end-to-end
+// metric-name enrichment path through SearchLabelValues. Each case wires
+// the series + metadata + request shape it needs, runs the RPC, and
+// asserts per-record Metadata on the wire batches.
+func TestIngesterSearchLabelValuesMetadataEnrichment(t *testing.T) {
+	type metadataEntry struct {
+		metric string
+		md     *mimirpb.MetricMetadata
+	}
+	tests := map[string]struct {
+		series        []util_test.Series
+		metadataAdded []metadataEntry
+		req           *client.SearchLabelValuesRequest
+		// wantMetadata is keyed by result Value. A non-nil expected entry is
+		// matched field-by-field; an explicitly nil entry asserts the result
+		// must come back un-decorated.
+		wantMetadata map[string]*mimirpb.MetricMetadata
+	}{
+		"include_metadata enriches matching metrics and leaves unrecorded ones alone": {
+			series: []util_test.Series{
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric_b"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+			},
+			metadataAdded: []metadataEntry{
+				{"metric_a", &mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "metric_a", Help: "Total a.", Unit: "s"}},
+			},
+			req: &client.SearchLabelValuesRequest{StartTimestampMs: 0, EndTimestampMs: 200_000, Name: model.MetricNameLabel, IncludeMetadata: true},
+			wantMetadata: map[string]*mimirpb.MetricMetadata{
+				"metric_a": {Type: mimirpb.COUNTER, Help: "Total a.", Unit: "s"},
+				"metric_b": nil,
+			},
+		},
+		"include_metadata is ignored for non-__name__ labels": {
+			series: []util_test.Series{
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a", "env", "prod"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+			},
+			metadataAdded: []metadataEntry{
+				{"metric_a", &mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "metric_a", Help: "ignored"}},
+			},
+			req: &client.SearchLabelValuesRequest{StartTimestampMs: 0, EndTimestampMs: 200_000, Name: "env", IncludeMetadata: true},
+			wantMetadata: map[string]*mimirpb.MetricMetadata{
+				"prod": nil,
+			},
+		},
+		"most recently added metadata wins when multiple entries exist": {
+			series: []util_test.Series{
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric_a"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+			},
+			// time.Now() is monotonically increasing across the two add()
+			// calls below, so the second one is unambiguously "most recent".
+			metadataAdded: []metadataEntry{
+				{"metric_a", &mimirpb.MetricMetadata{Type: mimirpb.COUNTER, MetricFamilyName: "metric_a", Help: "old", Unit: ""}},
+				{"metric_a", &mimirpb.MetricMetadata{Type: mimirpb.GAUGE, MetricFamilyName: "metric_a", Help: "new", Unit: "s"}},
+			},
+			req: &client.SearchLabelValuesRequest{StartTimestampMs: 0, EndTimestampMs: 200_000, Name: model.MetricNameLabel, IncludeMetadata: true},
+			wantMetadata: map[string]*mimirpb.MetricMetadata{
+				"metric_a": {Type: mimirpb.GAUGE, Help: "new", Unit: "s"},
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ing := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+			ctx := user.InjectOrgID(context.Background(), "test")
+			require.NoError(t, pushSeriesToIngester(ctx, t, ing, tc.series))
+			um := ing.getOrCreateUserMetadata("test")
+			for _, m := range tc.metadataAdded {
+				require.NoError(t, um.add(m.metric, m.md))
+			}
+
+			s := &mockSearchLabelValuesStream{ctx: ctx}
+			require.NoError(t, ing.SearchLabelValues(tc.req, s))
+
+			got := map[string]*client.SearchResultBatch_Result{}
+			for _, b := range s.sent {
+				for idx := range b.Results {
+					r := b.Results[idx]
+					got[r.Value] = &r
+				}
+			}
+			for value, want := range tc.wantMetadata {
+				require.Contains(t, got, value, "result %q must be present on the wire", value)
+				if want == nil {
+					assert.Nil(t, got[value].Metadata, "%q must come back un-decorated", value)
+					continue
+				}
+				require.NotNil(t, got[value].Metadata, "%q must come back decorated", value)
+				assert.Equal(t, want.Type, got[value].Metadata.Type, "%q Type", value)
+				assert.Equal(t, want.Help, got[value].Metadata.Help, "%q Help", value)
+				assert.Equal(t, want.Unit, got[value].Metadata.Unit, "%q Unit", value)
+			}
+		})
+	}
+}
+
 func TestStreamSearchResultsHonoursCtxCancellation(t *testing.T) {
 	// Drive the loop with results, cancel ctx between iterations, and assert
 	// streamSearchResults returns the cancellation error before draining the
@@ -335,6 +538,6 @@ func TestStreamSearchResultsHonoursCtxCancellation(t *testing.T) {
 	rs := &fakeSearchResultSet{results: results}
 	send := func(_ *client.SearchResultBatch) error { return nil }
 	cancel()
-	err := streamSearchResults(ctx, rs, send)
+	err := streamSearchResults(ctx, rs, send, nil)
 	require.ErrorIs(t, err, context.Canceled)
 }

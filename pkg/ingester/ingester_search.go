@@ -5,8 +5,11 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -14,6 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
@@ -59,7 +63,7 @@ func (i *Ingester) SearchLabelNames(req *client.SearchLabelNamesRequest, stream 
 
 	rs := searcher.SearchLabelNames(ctx, hints, matchers...)
 	defer rs.Close()
-	return streamSearchResults(ctx, rs, stream.Send)
+	return streamSearchResults(ctx, rs, stream.Send, nil)
 }
 
 // SearchLabelValues streams label values for req.Name matching the search filter.
@@ -97,7 +101,66 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 
 	rs := searcher.SearchLabelValues(ctx, req.Name, hints, matchers...)
 	defer rs.Close()
-	return streamSearchResults(ctx, rs, stream.Send)
+	return streamSearchResults(ctx, rs, stream.Send, i.newMetadataBatchDecoratorFunc(userID, req))
+}
+
+// newMetadataBatchDecoratorFunc returns a metadataBatchDecoratorFunc, or
+// nil when enrichment is not applicable.
+//
+// A decorator is returned only when (1) the request asked for
+// include_metadata=true, (2) the requested label is __name__ (only metric
+// names carry MetricMetadata), and (3) the tenant has any recorded
+// metadata. Returning nil in every other case lets streamSearchResults
+// skip the per-batch decoration step entirely.
+//
+// The returned closure takes a single RLock per outgoing wire batch (not
+// per result) and clones strings out from under the lock so the wire batch
+// can outlive the critical section. For metrics with multiple recorded
+// metadata entries, the most recently-added entry wins; this matches the
+// expected user model (current state of the metric).
+func (i *Ingester) newMetadataBatchDecoratorFunc(userID string, req *client.SearchLabelValuesRequest) metadataBatchDecoratorFunc {
+	if req == nil || !req.IncludeMetadata {
+		return nil
+	}
+	if req.Name != model.MetricNameLabel {
+		return nil
+	}
+	mm := i.getUserMetadata(userID)
+	if mm == nil {
+		return nil
+	}
+
+	return func(batch *client.SearchResultBatch) {
+		if batch == nil || len(batch.Results) == 0 {
+			return
+		}
+		var (
+			bestM mimirpb.MetricMetadata
+			bestT time.Time
+			found bool
+		)
+		mm.mtx.RLock()
+		defer mm.mtx.RUnlock()
+		for i := range batch.Results {
+			set, ok := mm.metricToMetadata[batch.Results[i].Value]
+			if !ok || len(set) == 0 {
+				continue
+			}
+			found = false
+			for m, t := range set {
+				if !found || t.After(bestT) {
+					bestM, bestT, found = m, t, true
+				}
+			}
+			if found {
+				batch.Results[i].Metadata = &mimirpb.MetricMetadata{
+					Type: bestM.Type,
+					Help: strings.Clone(bestM.Help),
+					Unit: strings.Clone(bestM.Unit),
+				}
+			}
+		}
+	}
 }
 
 // buildSearchHints constructs storage.SearchHints from the wire request.
@@ -152,17 +215,32 @@ func protoToOrdering(o client.SearchOrdering) storage.Ordering {
 // Ingester_SearchLabelNamesServer and Ingester_SearchLabelValuesServer.
 type searchResultSender func(*client.SearchResultBatch) error
 
+// metadataBatchDecoratorFunc enriches a wire batch in place with metric
+// metadata. Called at most once per outgoing batch so the implementation
+// can amortise lock acquisition across all results in the batch.
+type metadataBatchDecoratorFunc func(batch *client.SearchResultBatch)
+
 // streamSearchResults reads from rs in batches of searchBatchSize and emits
 // each batch via send. Any warnings accumulated by rs are attached to the
 // final batch (or sent alone if no results were produced). Returns rs.Err()
 // at termination. The stream context is checked before iteration starts and
 // at each batch boundary so a cancelled client stops the loop promptly even
 // when rs.Next() does not yet honour context cancellation itself.
-func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send searchResultSender) error {
+//
+// When decorate is non-nil it is invoked exactly once per outgoing batch
+// with len(batch.Results) > 0, just before send. Warnings-only batches do
+// not invoke the decorator — there's nothing to enrich.
+func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send searchResultSender, decorate metadataBatchDecoratorFunc) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	batch := &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
+	flush := func() error {
+		if decorate != nil && len(batch.Results) > 0 {
+			decorate(batch)
+		}
+		return send(batch)
+	}
 	for rs.Next() {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -170,7 +248,7 @@ func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send s
 		v := rs.At()
 		batch.Results = append(batch.Results, client.SearchResultBatch_Result{Value: v.Value, Score: v.Score})
 		if len(batch.Results) >= searchBatchSize {
-			if err := send(batch); err != nil {
+			if err := flush(); err != nil {
 				return err
 			}
 			batch = &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
@@ -181,7 +259,7 @@ func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send s
 	}
 	batch.Warnings = warningsToStrings(rs.Warnings())
 	if len(batch.Results) > 0 || len(batch.Warnings) > 0 {
-		if err := send(batch); err != nil {
+		if err := flush(); err != nil {
 			return err
 		}
 	}

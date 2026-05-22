@@ -18,13 +18,12 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -34,13 +33,18 @@ import (
 // methods return whatever ResultSet was wired in via the closure-based
 // fields, letting each test express exactly the iterator behaviour it wants
 // (results, mid-stream error, warnings, etc.).
+//
+// includeMetadataSeen captures the include-metadata context bit observed by
+// SearchLabelValues so tests can assert the handler propagated the URL
+// param through to the searcher chain.
 type searchMockQuerier struct {
-	namesFn      func(params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
-	valuesFn     func(name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
-	lastName     string
-	lastParams   *streaminglabelvalues.Params
-	lastHints    *storage.SearchHints
-	lastMatchers []*labels.Matcher
+	namesFn             func(params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	valuesFn            func(name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	includeMetadataSeen bool
+	lastName            string
+	lastParams          *streaminglabelvalues.Params
+	lastHints           *storage.SearchHints
+	lastMatchers        []*labels.Matcher
 }
 
 func (s *searchMockQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
@@ -69,6 +73,9 @@ func (s *searchMockQuerier) SearchLabelValues(_ context.Context, name string, pa
 	s.lastParams = params
 	s.lastHints = hints
 	s.lastMatchers = matchers
+	if params != nil {
+		s.includeMetadataSeen = params.IncludeMetadata
+	}
 	if s.valuesFn == nil {
 		return storage.EmptySearchResultSet()
 	}
@@ -89,6 +96,21 @@ func newSearchMockQueryable(q *searchMockQuerier) *searchMockQueryable {
 
 func sr(v string, score float64) storage.SearchResult {
 	return storage.SearchResult{Value: v, Score: score}
+}
+
+// srMD constructs a SearchResult decorated with metadata — the fixture
+// that simulates what the wire-decode boundary in distributor_search.go
+// produces when the ingester returns a result with inline MetricMetadata.
+func srMD(v string, score float64, mt model.MetricType, help, unit string) storage.SearchResult {
+	return storage.SearchResult{
+		Value: v,
+		Score: score,
+		Metadata: &metadata.Metadata{
+			Type: mt,
+			Help: help,
+			Unit: unit,
+		},
+	}
 }
 
 // erroringQueryable returns an error from Querier(); used to exercise the
@@ -803,7 +825,7 @@ func TestSearchMetricNamesHandler_ForwardsMetricNameLabel(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("metric_a", 1.0)}, nil)
 		},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names"))
@@ -1031,40 +1053,25 @@ func TestSearchLabelNamesHandler_RepeatedMatchUnionsSelectors(t *testing.T) {
 	assert.ElementsMatch(t, []string{"a", "b", "shared"}, got, "selectors unioned and duplicates collapsed")
 }
 
-// mockMetadataSupplier satisfies querier.MetadataSupplier with closure-based
-// fields so each test wires exactly the response (or error) it needs.
-type mockMetadataSupplier struct {
-	fn     func() ([]scrape.MetricMetadata, error)
-	called int
-}
-
-func (m *mockMetadataSupplier) MetricsMetadata(_ context.Context, _ *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	m.called++
-	if m.fn == nil {
-		return nil, nil
-	}
-	return m.fn()
-}
-
 func TestSearchMetricNamesHandler_MetadataEnrichesRecords(t *testing.T) {
+	// The mock simulates what the wire-decode boundary in
+	// pkg/distributor/distributor_search.go produces: SearchResults that
+	// carry *metadata.Metadata directly. The handler reads them off the
+	// result; no side channel involved.
 	mq := &searchMockQuerier{
 		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("http_requests_total", 1.0), sr("cpu_usage_seconds", 1.0)}, nil)
+			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{
+				srMD("http_requests_total", 1.0, model.MetricTypeCounter, "Total HTTP requests.", ""),
+				srMD("cpu_usage_seconds", 1.0, model.MetricTypeGauge, "CPU usage.", "seconds"),
+			}, nil)
 		},
 	}
-	sup := &mockMetadataSupplier{
-		fn: func() ([]scrape.MetricMetadata, error) {
-			return []scrape.MetricMetadata{
-				{MetricFamily: "http_requests_total", Type: model.MetricTypeCounter, Help: "Total HTTP requests.", Unit: ""},
-				{MetricFamily: "cpu_usage_seconds", Type: model.MetricTypeGauge, Help: "CPU usage.", Unit: "seconds"},
-			}, nil
-		},
-	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), sup, nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, mq.includeMetadataSeen, "include_metadata context bit must reach the downstream search call")
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 2)
 	batch := lines[0]["results"].([]any)
@@ -1079,26 +1086,23 @@ func TestSearchMetricNamesHandler_MetadataEnrichesRecords(t *testing.T) {
 	assert.Equal(t, "cpu_usage_seconds", second["name"])
 	assert.Equal(t, "gauge", second["type"])
 	assert.Equal(t, "seconds", second["unit"])
-	assert.Equal(t, 1, sup.called)
 }
 
 func TestSearchMetricNamesHandler_MetadataDefaultFalseOmitsFields(t *testing.T) {
+	// include_metadata defaults to false: the context bit is not set, the
+	// ingester would not populate Metadata on the wire, and even if a
+	// result somehow carried metadata the handler would still omit those
+	// fields. Use a plain sr() (no metadata) to mirror the real off-path.
 	mq := &searchMockQuerier{
 		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("http_requests_total", 1.0)}, nil)
 		},
 	}
-	sup := &mockMetadataSupplier{
-		fn: func() ([]scrape.MetricMetadata, error) {
-			return []scrape.MetricMetadata{{MetricFamily: "http_requests_total", Type: model.MetricTypeCounter, Help: "h"}}, nil
-		},
-	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), sup, nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
-	// metadata defaults to false; supplier must NOT be called.
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names"))
-	assert.Equal(t, 0, sup.called, "supplier must not be called when metadata=false (default)")
+	assert.False(t, mq.includeMetadataSeen, "include_metadata context bit must not be set when the URL param is false")
 	lines := drainNDJSON(t, w.Body.String())
 	rec := lines[0]["results"].([]any)[0].(map[string]any)
 	_, hasType := rec["type"]
@@ -1109,47 +1113,16 @@ func TestSearchMetricNamesHandler_MetadataDefaultFalseOmitsFields(t *testing.T) 
 	assert.False(t, hasUnit)
 }
 
-func TestSearchMetricNamesHandler_SupplierErrorDegradesToTrailerWarning(t *testing.T) {
-	mq := &searchMockQuerier{
-		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("http_requests_total", 1.0)}, nil)
-		},
-	}
-	sup := &mockMetadataSupplier{
-		fn: func() ([]scrape.MetricMetadata, error) {
-			return nil, errors.New("ingester unreachable")
-		},
-	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), sup, nil)
-
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
-	assert.Equal(t, http.StatusOK, w.Code, "supplier errors must not fail the search request")
-	lines := drainNDJSON(t, w.Body.String())
-	require.Len(t, lines, 2)
-	// Record is emitted without enrichment.
-	rec := lines[0]["results"].([]any)[0].(map[string]any)
-	_, hasType := rec["type"]
-	assert.False(t, hasType, "record must not carry enrichment when supplier errored")
-	// Warning rides on the trailer.
-	warns := lines[1]["warnings"].([]any)
-	require.Len(t, warns, 1)
-	assert.Contains(t, warns[0], "metadata enrichment failed")
-	assert.Contains(t, warns[0], "ingester unreachable")
-}
-
-func TestSearchMetricNamesHandler_EmptyMetadataEmitsRecordsAnyway(t *testing.T) {
+func TestSearchMetricNamesHandler_MissingMetadataLeavesFieldsEmpty(t *testing.T) {
+	// Result without inline metadata — simulates store-gateway-sourced
+	// hits (no metadata available) or metrics the ingester didn't have
+	// recorded metadata for. The handler must leave Type/Help/Unit absent.
 	mq := &searchMockQuerier{
 		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("orphan_metric", 1.0)}, nil)
 		},
 	}
-	sup := &mockMetadataSupplier{
-		fn: func() ([]scrape.MetricMetadata, error) {
-			return nil, nil // empty metadata
-		},
-	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), sup, nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
@@ -1160,7 +1133,6 @@ func TestSearchMetricNamesHandler_EmptyMetadataEmitsRecordsAnyway(t *testing.T) 
 	assert.Equal(t, "orphan_metric", rec["name"])
 	_, hasType := rec["type"]
 	assert.False(t, hasType, "missing metadata leaves enrichment fields absent")
-	// No spurious warning.
 	_, hasWarns := lines[1]["warnings"]
 	assert.False(t, hasWarns)
 }
@@ -1168,15 +1140,12 @@ func TestSearchMetricNamesHandler_EmptyMetadataEmitsRecordsAnyway(t *testing.T) 
 func TestSearchMetricNamesHandler_IncludeScoreAndMetadataCompose(t *testing.T) {
 	mq := &searchMockQuerier{
 		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("http_requests_total", 0.92)}, nil)
+			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{
+				srMD("http_requests_total", 0.92, model.MetricTypeCounter, "h", ""),
+			}, nil)
 		},
 	}
-	sup := &mockMetadataSupplier{
-		fn: func() ([]scrape.MetricMetadata, error) {
-			return []scrape.MetricMetadata{{MetricFamily: "http_requests_total", Type: model.MetricTypeCounter, Help: "h"}}, nil
-		},
-	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), sup, nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true&include_score=true"))
@@ -1186,20 +1155,6 @@ func TestSearchMetricNamesHandler_IncludeScoreAndMetadataCompose(t *testing.T) {
 	assert.InDelta(t, 0.92, rec["score"], 1e-9)
 	assert.Equal(t, "counter", rec["type"])
 	assert.Equal(t, "h", rec["help"])
-}
-
-func TestSearchMetricNamesHandler_NilSupplierDisablesEnrichmentSilently(t *testing.T) {
-	mq := &searchMockQuerier{
-		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("metric", 1.0)}, nil)
-		},
-	}
-	// nil supplier: include_metadata=true must not panic; just skip enrichment.
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, nil)
-
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
-	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
@@ -1223,7 +1178,7 @@ func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
 }
 
 func TestSearchMetricNamesHandler_InvalidMetadataParamReturns400(t *testing.T) {
-	h := SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil, nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=maybe"))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
