@@ -436,6 +436,129 @@ func TestManager_OutputLabels(t *testing.T) {
 	))
 }
 
+func TestManager_MultipleTrackers(t *testing.T) {
+	manager, reg, costAttributionReg := newTestManager()
+
+	t.Run("Default plus additional tracker", func(t *testing.T) {
+		// user8 has default tracker (team) + additional tracker (by-platform).
+		st := manager.SampleTracker("user8")
+		require.NotNil(t, st)
+		require.Len(t, st.trackers, 2)
+
+		at := manager.ActiveSeriesTracker("user8")
+		require.NotNil(t, at)
+		require.Len(t, at.trackers, 2)
+
+		// Verify individual tracker labels.
+		defaultST := manager.sampleTrackers.individual["user8"][costattributionmodel.DefaultTrackerName]
+		require.NotNil(t, defaultST)
+		assertHasLabels(t, defaultST, costattributionmodel.Labels{{Input: "team", Output: "my_team"}})
+
+		platformST := manager.sampleTrackers.individual["user8"]["by-platform"]
+		require.NotNil(t, platformST)
+		assertHasLabels(t, platformST, costattributionmodel.Labels{{Input: "platform", Output: "my_platform"}})
+	})
+
+	t.Run("Only additional trackers", func(t *testing.T) {
+		// user9 has no default tracker, only additional trackers (by-team, by-service).
+		st := manager.SampleTracker("user9")
+		require.NotNil(t, st)
+		require.Len(t, st.trackers, 2)
+
+		require.Nil(t, manager.sampleTrackers.individual["user9"][costattributionmodel.DefaultTrackerName])
+		require.NotNil(t, manager.sampleTrackers.individual["user9"]["by-team"])
+		require.NotNil(t, manager.sampleTrackers.individual["user9"]["by-service"])
+	})
+
+	t.Run("Metrics fan out to all trackers", func(t *testing.T) {
+		// Increment samples on user8 — both trackers should see the data.
+		manager.SampleTracker("user8").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+			{LabelValues: []string{"team", "backend", "platform", "k8s"}, SamplesCount: 5},
+		}), time.Unix(10, 0))
+
+		manager.SampleTracker("user8").IncrementDiscardedSamples(
+			[]mimirpb.LabelAdapter{{Name: "team", Value: "backend"}, {Name: "platform", Value: "k8s"}},
+			2, "sample-out-of-order", time.Unix(11, 0),
+		)
+
+		expectedMetrics := `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+		# TYPE cortex_discarded_attributed_samples_total counter
+		cortex_discarded_attributed_samples_total{my_platform="k8s",reason="sample-out-of-order",tenant="user8",tracker="by-platform"} 2
+		cortex_discarded_attributed_samples_total{my_team="backend",reason="sample-out-of-order",tenant="user8",tracker="cost-attribution"} 2
+		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_distributor_received_attributed_samples_total counter
+		cortex_distributor_received_attributed_samples_total{my_platform="k8s",tenant="user8",tracker="by-platform"} 5
+		cortex_distributor_received_attributed_samples_total{my_team="backend",tenant="user8",tracker="cost-attribution"} 5
+		`
+		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics),
+			"cortex_distributor_received_attributed_samples_total",
+			"cortex_discarded_attributed_samples_total",
+		))
+	})
+
+	t.Run("Active series fan out to all trackers", func(t *testing.T) {
+		manager.ActiveSeriesTracker("user8").Increment(labels.FromStrings("team", "frontend", "platform", "bare-metal"), time.Unix(20, 0), 3)
+
+		expectedMetrics := `
+		# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+		# TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+		cortex_ingester_attributed_active_native_histogram_buckets{my_platform="bare-metal",tenant="user8",tracker="by-platform"} 3
+		cortex_ingester_attributed_active_native_histogram_buckets{my_team="frontend",tenant="user8",tracker="cost-attribution"} 3
+		# HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+		# TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+		cortex_ingester_attributed_active_native_histogram_series{my_platform="bare-metal",tenant="user8",tracker="by-platform"} 1
+		cortex_ingester_attributed_active_native_histogram_series{my_team="frontend",tenant="user8",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+		# TYPE cortex_ingester_attributed_active_series gauge
+		cortex_ingester_attributed_active_series{my_platform="bare-metal",tenant="user8",tracker="by-platform"} 1
+		cortex_ingester_attributed_active_series{my_team="frontend",tenant="user8",tracker="cost-attribution"} 1
+		`
+		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics),
+			"cortex_ingester_attributed_active_series",
+			"cortex_ingester_attributed_active_native_histogram_series",
+			"cortex_ingester_attributed_active_native_histogram_buckets",
+		))
+	})
+
+	t.Run("Operational metrics include tracker name", func(t *testing.T) {
+		expectedMetrics := `
+		# HELP cortex_cost_attribution_sample_tracker_cardinality The cardinality of a cost attribution sample tracker for each user.
+		# TYPE cortex_cost_attribution_sample_tracker_cardinality gauge
+		cortex_cost_attribution_sample_tracker_cardinality{tracker="by-platform",user="user8"} 1
+		cortex_cost_attribution_sample_tracker_cardinality{tracker="by-service",user="user9"} 0
+		cortex_cost_attribution_sample_tracker_cardinality{tracker="by-team",user="user9"} 0
+		cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user8"} 1
+		# HELP cortex_cost_attribution_active_series_tracker_cardinality The cardinality of a cost attribution active series tracker for each user.
+		# TYPE cortex_cost_attribution_active_series_tracker_cardinality gauge
+		cortex_cost_attribution_active_series_tracker_cardinality{tracker="by-platform",user="user8"} 1
+		cortex_cost_attribution_active_series_tracker_cardinality{tracker="cost-attribution",user="user8"} 1
+		`
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
+			"cortex_cost_attribution_sample_tracker_cardinality",
+			"cortex_cost_attribution_active_series_tracker_cardinality",
+		))
+	})
+
+	t.Run("Purge removes all trackers for a user when inactive", func(t *testing.T) {
+		// user9 with two additional trackers — add some data then purge.
+		manager.SampleTracker("user9").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+			{LabelValues: []string{"team", "ops", "service", "gateway"}, SamplesCount: 1},
+		}), time.Unix(100, 0))
+
+		require.Len(t, manager.sampleTrackers.individual["user9"], 2)
+
+		// Purge at t=105 → deadline=95. Data at 100 > 95, survives.
+		manager.purgeInactiveAttributionsUntil(time.Unix(105, 0))
+		require.Len(t, manager.sampleTrackers.individual["user9"], 2, "user9 trackers should survive after early purge")
+
+		// Purge at t=120 → deadline=110. Data at 100 <= 110, expired. Cardinality → 0, user removed.
+		manager.purgeInactiveAttributionsUntil(time.Unix(120, 0))
+		assert.Empty(t, manager.sampleTrackers.individual["user9"], "user9 trackers should be purged")
+		assert.Empty(t, manager.sampleTrackers.composite["user9"], "user9 composite should be purged")
+	})
+}
+
 func TestManager_InvalidTrackers(t *testing.T) {
 	manager, reg, costAttributionReg := newTestManager()
 

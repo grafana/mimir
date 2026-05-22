@@ -34,6 +34,22 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 		// user6 has opted to rename team to eng_team.
 		"user6": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "eng_team"}}},
 		"user7": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}, CostAttributionCooldown: model.Duration(TestAttributionCooldown)},
+		// user8 has a default tracker and an additional tracker.
+		"user8": {
+			MaxCostAttributionCardinality:   5,
+			CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "my_team"}},
+			AdditionalCostAttributionTrackers: costattributionmodel.TrackerConfigs{
+				"by-platform": {Labels: costattributionmodel.Labels{{Input: "platform", Output: "my_platform"}}},
+			},
+		},
+		// user9 has only additional trackers (no default).
+		"user9": {
+			MaxCostAttributionCardinality: 3,
+			AdditionalCostAttributionTrackers: costattributionmodel.TrackerConfigs{
+				"by-team":    {Labels: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}},
+				"by-service": {Labels: costattributionmodel.Labels{{Input: "service", Output: "my_service"}}},
+			},
+		},
 	}
 	for _, uls := range userLabels {
 		costAttributionLabels := make(costattributionmodel.Labels, 0, len(uls)-1)
