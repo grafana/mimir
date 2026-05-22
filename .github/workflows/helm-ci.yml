@@ -7,12 +7,12 @@ permissions:
 
 jobs:
   call-lint:
-    uses: grafana/helm-charts/.github/workflows/linter.yml@main
+    uses: grafana/helm-charts/.github/workflows/linter.yml@77e5ea2de369fa1ff3441b08765c164be209eaa2 # main
     with:
       filter_regex_include: .*operations/helm/.*
 
   call-lint-test:
-    uses: grafana/helm-charts/.github/workflows/lint-test.yaml@main
+    uses: grafana/helm-charts/.github/workflows/lint-test.yaml@77e5ea2de369fa1ff3441b08765c164be209eaa2 # main
     with:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
