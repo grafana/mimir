@@ -233,6 +233,11 @@ func (t *TestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVect
 			return nil, err
 		}
 	}
+
+	// We use `0` for RangeStart of the only step we emit for each series which is
+	// exclusive, so we need to drop anything at or before that timestamp. This logic
+	// matches the logic used by the RangeVectorSelector.
+	t.Floats.DiscardPointsAtOrBefore(0)
 	t.FloatsView = t.Floats.ViewUntilSearchingBackwards(endT, t.FloatsView)
 
 	t.Histograms.Reset()
@@ -241,6 +246,8 @@ func (t *TestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVect
 			return nil, err
 		}
 	}
+
+	t.Histograms.DiscardPointsAtOrBefore(0)
 	t.HistogramsView = t.Histograms.ViewUntilSearchingBackwards(endT, t.HistogramsView)
 
 	return &types.RangeVectorStepData{
