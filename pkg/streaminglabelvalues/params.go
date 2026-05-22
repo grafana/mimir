@@ -44,7 +44,7 @@ type Params struct {
 	FuzzThreshold int
 	// IncludeMetadata asks the source (e.g. ingester) to attach metric
 	// MetricMetadata to each result on the wire. Only valid for use on
-	// metric names and for requests send to the ingesters.
+	// metric names and for requests sent to the ingesters.
 	IncludeMetadata bool
 }
 

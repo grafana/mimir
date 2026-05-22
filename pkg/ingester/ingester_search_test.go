@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
@@ -499,6 +501,7 @@ func TestIngesterSearchLabelValuesMetadataEnrichment(t *testing.T) {
 			um := ing.getOrCreateUserMetadata("test")
 			for _, m := range tc.metadataAdded {
 				require.NoError(t, um.add(m.metric, m.md))
+				time.Sleep(5 * time.Millisecond) // a very short sleep to help ensure our time increases between added metadata
 			}
 
 			s := &mockSearchLabelValuesStream{ctx: ctx}
@@ -540,4 +543,32 @@ func TestStreamSearchResultsHonoursCtxCancellation(t *testing.T) {
 	cancel()
 	err := streamSearchResults(ctx, rs, send, nil)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestBuildSearchHintsLimitGuard(t *testing.T) {
+	tests := []struct {
+		name    string
+		limit   int64
+		wantErr bool
+		want    int
+	}{
+		{name: "zero is no-limit", limit: 0, want: 0},
+		{name: "positive passes through", limit: 1000, want: 1000},
+		{name: "negative is rejected", limit: -1, wantErr: true},
+		{name: "min int64 is rejected", limit: math.MinInt64, wantErr: true},
+		{name: "max int64 clamps to math.MaxInt", limit: math.MaxInt64, want: math.MaxInt},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hints, _, err := buildSearchHints(nil, client.ORDER_BY_VALUE_ASC, tc.limit, nil)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Nil(t, hints)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, hints)
+			assert.Equal(t, tc.want, hints.Limit)
+		})
+	}
 }

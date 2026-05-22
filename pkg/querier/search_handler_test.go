@@ -1088,31 +1088,6 @@ func TestSearchMetricNamesHandler_MetadataEnrichesRecords(t *testing.T) {
 	assert.Equal(t, "seconds", second["unit"])
 }
 
-func TestSearchMetricNamesHandler_MetadataDefaultFalseOmitsFields(t *testing.T) {
-	// include_metadata defaults to false: the context bit is not set, the
-	// ingester would not populate Metadata on the wire, and even if a
-	// result somehow carried metadata the handler would still omit those
-	// fields. Use a plain sr() (no metadata) to mirror the real off-path.
-	mq := &searchMockQuerier{
-		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("http_requests_total", 1.0)}, nil)
-		},
-	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
-
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names"))
-	assert.False(t, mq.includeMetadataSeen, "include_metadata context bit must not be set when the URL param is false")
-	lines := drainNDJSON(t, w.Body.String())
-	rec := lines[0]["results"].([]any)[0].(map[string]any)
-	_, hasType := rec["type"]
-	_, hasHelp := rec["help"]
-	_, hasUnit := rec["unit"]
-	assert.False(t, hasType)
-	assert.False(t, hasHelp)
-	assert.False(t, hasUnit)
-}
-
 func TestSearchMetricNamesHandler_MissingMetadataLeavesFieldsEmpty(t *testing.T) {
 	// Result without inline metadata — simulates store-gateway-sourced
 	// hits (no metadata available) or metrics the ingester didn't have

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -136,13 +137,9 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	}
 
 	// Case sensitivity defaults to true per Prometheus URL polarity.
-	caseSensitive := true
-	if v := q.Get("case_sensitive"); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid case_sensitive: %w", err)
-		}
-		caseSensitive = parsed
+	caseSensitive, err := parseBoolParam(q, "case_sensitive", true)
+	if err != nil {
+		return nil, err
 	}
 
 	// Fuzz algorithm (default subsequence).
@@ -215,22 +212,14 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		}
 	}
 
-	includeScore := false
-	if v := q.Get("include_score"); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid include_score: %w", err)
-		}
-		includeScore = parsed
+	includeScore, err := parseBoolParam(q, "include_score", false)
+	if err != nil {
+		return nil, err
 	}
 
-	includeMetadata := false
-	if v := q.Get("include_metadata"); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid include_metadata: %w", err)
-		}
-		includeMetadata = parsed
+	includeMetadata, err := parseBoolParam(q, "include_metadata", false)
+	if err != nil {
+		return nil, err
 	}
 
 	// Time range. Defaults match Prometheus PR #18573: start defaults to one
@@ -276,7 +265,7 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 
 	// This is poked in after the params validation. Noting that this will be
 	// ignored for non-metric name searches. It is also only actioned on
-	// search requests sent to ingesters
+	// search requests sent to ingesters.
 	params.IncludeMetadata = includeMetadata
 
 	// hintsLimit asks downstream for one extra result so the handler can
@@ -298,6 +287,21 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		includeScore: includeScore,
 		labelName:    labelName,
 	}, nil
+}
+
+// parseBoolParam reads key from q and parses it with strconv.ParseBool. If
+// the value is absent, def is returned. Parse errors are wrapped so the
+// caller can surface them as HTTP 400.
+func parseBoolParam(q url.Values, key string, def bool) (bool, error) {
+	v := q.Get(key)
+	if v == "" {
+		return def, nil
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s: %w", key, err)
+	}
+	return parsed, nil
 }
 
 func parseSortOrder(sortBy, sortDir string, sortDirExplicit bool) (storage.Ordering, error) {

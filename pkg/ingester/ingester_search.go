@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -113,11 +114,14 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 // metadata. Returning nil in every other case lets streamSearchResults
 // skip the per-batch decoration step entirely.
 //
-// The returned closure takes a single RLock per outgoing wire batch (not
-// per result) and clones strings out from under the lock so the wire batch
-// can outlive the critical section. For metrics with multiple recorded
-// metadata entries, the most recently-added entry wins; this matches the
-// expected user model (current state of the metric).
+// Snapshot semantics: the *userMetricsMetadata pointer is captured once at
+// decorator construction and re-used for every batch. Per-batch reads run
+// under mm.mtx.RLock(), so a concurrent deleteUserMetadata for the same
+// tenant leaves the decorator holding a detached-but-race-safe snapshot
+// for the remainder of the RPC. Acceptable because RPC lifetimes are
+// bounded, the caller is the tenant whose data is being served, and the
+// alternative (re-acquire per batch) trades a negligible cost for live
+// state we don't otherwise need here.
 func (i *Ingester) newMetadataBatchDecoratorFunc(userID string, req *client.SearchLabelValuesRequest) metadataBatchDecoratorFunc {
 	if req == nil || !req.IncludeMetadata {
 		return nil
@@ -134,26 +138,31 @@ func (i *Ingester) newMetadataBatchDecoratorFunc(userID string, req *client.Sear
 		if batch == nil || len(batch.Results) == 0 {
 			return
 		}
-		var (
-			bestM mimirpb.MetricMetadata
-			bestT time.Time
-			found bool
-		)
 		mm.mtx.RLock()
 		defer mm.mtx.RUnlock()
-		for i := range batch.Results {
-			set, ok := mm.metricToMetadata[batch.Results[i].Value]
+		for idx := range batch.Results {
+			set, ok := mm.metricToMetadata[batch.Results[idx].Value]
 			if !ok || len(set) == 0 {
 				continue
 			}
-			found = false
+			// Note - although we return the most recent record on this ingester, it is possible that
+			// during a k-way merge in the ingester fan-out an older ingester record may win.
+			// There is no guarantee that the most recent metadata record across all ingesters is returned.
+			var (
+				bestM mimirpb.MetricMetadata
+				bestT time.Time
+				found bool
+			)
 			for m, t := range set {
 				if !found || t.After(bestT) {
 					bestM, bestT, found = m, t, true
 				}
 			}
 			if found {
-				batch.Results[i].Metadata = &mimirpb.MetricMetadata{
+				// Defensive copies: Help/Unit are owned by the long-lived
+				// metadata store, so we clone them to keep the wire batch
+				// independent of any later mutation of the source map.
+				batch.Results[idx].Metadata = &mimirpb.MetricMetadata{
 					Type: bestM.Type,
 					Help: strings.Clone(bestM.Help),
 					Unit: strings.Clone(bestM.Unit),
@@ -164,6 +173,10 @@ func (i *Ingester) newMetadataBatchDecoratorFunc(userID string, req *client.Sear
 }
 
 // buildSearchHints constructs storage.SearchHints from the wire request.
+// limit follows the Prometheus PR #18573 convention: 0 means no limit;
+// negatives are rejected as malformed input (the querier never sends them);
+// values above math.MaxInt are clamped to math.MaxInt so the int(limit)
+// cast cannot wrap on 32-bit builds.
 func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit int64, wireMatchers []*client.LabelMatcher) (*storage.SearchHints, []*labels.Matcher, error) {
 	matchers, err := client.FromLabelMatchers(wireMatchers)
 	if err != nil {
@@ -177,10 +190,17 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	if err != nil {
 		return nil, nil, err
 	}
+	if limit < 0 {
+		return nil, nil, fmt.Errorf("limit must be >= 0, got %d", limit)
+	}
+	hintsLimit := int(limit)
+	if limit > int64(math.MaxInt) {
+		hintsLimit = math.MaxInt
+	}
 	hints := &storage.SearchHints{
 		Filter:  filter,
 		OrderBy: protoToOrdering(ord),
-		Limit:   int(limit),
+		Limit:   hintsLimit,
 	}
 	return hints, matchers, nil
 }
@@ -235,12 +255,6 @@ func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send s
 		return err
 	}
 	batch := &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
-	flush := func() error {
-		if decorate != nil && len(batch.Results) > 0 {
-			decorate(batch)
-		}
-		return send(batch)
-	}
 	for rs.Next() {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -248,10 +262,15 @@ func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send s
 		v := rs.At()
 		batch.Results = append(batch.Results, client.SearchResultBatch_Result{Value: v.Value, Score: v.Score})
 		if len(batch.Results) >= searchBatchSize {
-			if err := flush(); err != nil {
+			if decorate != nil {
+				decorate(batch)
+			}
+			if err := send(batch); err != nil {
 				return err
 			}
-			batch = &client.SearchResultBatch{Results: make([]client.SearchResultBatch_Result, 0, searchBatchSize)}
+			// stream.Send is synchronous (gogoproto marshals before
+			// returning) so the backing array can be reset in place.
+			batch.Results = batch.Results[:0]
 		}
 	}
 	if err := rs.Err(); err != nil {
@@ -259,7 +278,10 @@ func streamSearchResults(ctx context.Context, rs storage.SearchResultSet, send s
 	}
 	batch.Warnings = warningsToStrings(rs.Warnings())
 	if len(batch.Results) > 0 || len(batch.Warnings) > 0 {
-		if err := flush(); err != nil {
+		if decorate != nil && len(batch.Results) > 0 {
+			decorate(batch)
+		}
+		if err := send(batch); err != nil {
 			return err
 		}
 	}

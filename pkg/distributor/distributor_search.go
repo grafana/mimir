@@ -255,22 +255,15 @@ func (s *ingesterSearchResultSet) Next() bool {
 }
 
 func convertToStorageResult(r ingester_client.SearchResultBatch_Result) storage.SearchResult {
-	return storage.SearchResult{
-		Value:    r.Value,
-		Score:    r.Score,
-		Metadata: convertMetadata(r.Metadata),
+	res := storage.SearchResult{Value: r.Value, Score: r.Score}
+	if r.Metadata != nil {
+		res.Metadata = &metadata.Metadata{
+			Type: mimirpb.MetricMetadataMetricTypeToMetricType(r.Metadata.Type),
+			Help: r.Metadata.Help,
+			Unit: r.Metadata.Unit,
+		}
 	}
-}
-
-func convertMetadata(wm *mimirpb.MetricMetadata) *metadata.Metadata {
-	if wm == nil {
-		return nil
-	}
-	return &metadata.Metadata{
-		Type: mimirpb.MetricMetadataMetricTypeToMetricType(wm.Type),
-		Help: wm.Help,
-		Unit: wm.Unit,
-	}
+	return res
 }
 
 func (s *ingesterSearchResultSet) At() storage.SearchResult { return s.cur }
