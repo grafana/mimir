@@ -45,13 +45,14 @@ jobs:
           set -euo pipefail
           files=$(gh api --paginate \
             -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            "/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
             --jq '.[].filename')
           echo "files<<EOF" >> "$GITHUB_OUTPUT"
           echo "$files" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
 
       - name: Check if build/CI files changed
         if: steps.release_branches.outputs.branches != ''
@@ -108,7 +109,7 @@ jobs:
             if [ "$match" = true ]; then
               matched_files="${matched_files}${file}\n"
             fi
-          done <<< "${{ steps.changed_files.outputs.files }}"
+          done <<< "$CHANGED_FILES"
 
           if [ -n "$matched_files" ]; then
             echo "should_backport=true" >> "$GITHUB_OUTPUT"
@@ -121,6 +122,8 @@ jobs:
             echo "should_backport=false" >> "$GITHUB_OUTPUT"
             echo "No build/CI files changed."
           fi
+        env:
+          CHANGED_FILES: ${{ steps.changed_files.outputs.files }}
 
       - name: Check if backport comment already posted
         if: steps.check_build_files.outputs.should_backport == 'true'
@@ -131,7 +134,7 @@ jobs:
           # labelled this PR and should not re-add labels the author may have removed.
           comments=$(gh api --paginate \
             -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            "/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
             --jq '.[].body')
           if echo "$comments" | grep -qF '<!-- auto-backport-build-changes -->'; then
             echo "already_commented=true" >> "$GITHUB_OUTPUT"
@@ -141,6 +144,7 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
 
       - name: Generate GitHub App Token
         if: steps.check_build_files.outputs.should_backport == 'true' && steps.check_comment.outputs.already_commented == 'false'
@@ -154,14 +158,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          pr_number="${{ github.event.pull_request.number }}"
-          pr_author="${{ github.event.pull_request.user.login }}"
-
           # Collect existing labels on the PR.
-          existing_labels=$(gh pr view "$pr_number" --json labels --jq '.labels[].name')
+          existing_labels=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
 
           labels_added=""
-          for branch in ${{ steps.release_branches.outputs.branches }}; do
+          while IFS= read -r branch; do
+            [ -z "$branch" ] && continue
             label="backport $branch"
 
             # Create the label if it doesn't exist yet (ignore errors if it already exists).
@@ -173,9 +175,9 @@ jobs:
               continue
             fi
 
-            gh pr edit "$pr_number" --add-label "$label"
+            gh pr edit "$PR_NUMBER" --add-label "$label"
             labels_added="${labels_added}- \`${label}\`\n"
-          done
+          done <<< "$(echo "$RELEASE_BRANCHES" | tr ' ' '\n')"
 
           if [ -z "$labels_added" ]; then
             echo "All backport labels were already present — skipping comment."
@@ -187,7 +189,7 @@ jobs:
           while IFS= read -r f; do
             [ -z "$f" ] && continue
             matched_files_list="${matched_files_list}- \`${f}\`\n"
-          done <<< "${{ steps.check_build_files.outputs.matched_files }}"
+          done <<< "$MATCHED_FILES"
 
           comment_body=$(cat <<COMMENT_EOF
           <!-- auto-backport-build-changes -->
@@ -206,12 +208,16 @@ jobs:
 
           ---
 
-          @${pr_author} Once this PR is merged, backport PRs will be created automatically for the branches above. **Please review and merge the resulting backport PRs** to ensure these changes reach the release branches.
+          @${PR_AUTHOR} Once this PR is merged, backport PRs will be created automatically for the branches above. **Please review and merge the resulting backport PRs** to ensure these changes reach the release branches.
 
           > This label was added automatically. If this change should **not** be backported, please remove the \`backport …\` labels before merging.
           COMMENT_EOF
           )
 
-          gh pr comment "$pr_number" --body "$comment_body"
+          gh pr comment "$PR_NUMBER" --body "$comment_body"
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          RELEASE_BRANCHES: ${{ steps.release_branches.outputs.branches }}
+          MATCHED_FILES: ${{ steps.check_build_files.outputs.matched_files }}
