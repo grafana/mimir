@@ -632,7 +632,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	// Utility to get the name of the struct.
 	getName := func(i interface{}) string {
 		t := reflect.TypeOf(i)
-		if t.Kind() == reflect.Ptr {
+		if t.Kind() == reflect.Pointer {
 			t = t.Elem()
 		}
 		return t.Name()

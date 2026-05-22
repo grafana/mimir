@@ -222,7 +222,7 @@ func TestCodec_ResponseParsingEdgeCases(t *testing.T) {
 						buf.WriteString(",")
 					}
 					buf.WriteString(`{"index":`)
-					buf.WriteString(fmt.Sprintf("%d", i))
+					fmt.Fprintf(&buf, "%d", i)
 					buf.WriteString(`,"data":"`)
 					buf.WriteString(strings.Repeat("1234567890", 10)) // 100 chars per item
 					buf.WriteString(`"}`)

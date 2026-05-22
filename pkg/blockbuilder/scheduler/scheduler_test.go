@@ -250,20 +250,17 @@ func requireGaps(t *testing.T, reg *prometheus.Registry, partition int32, planne
 	t.Helper()
 
 	var b strings.Builder
-
-	if planned != 0 || committed != 0 {
-		b.WriteString(`# HELP cortex_blockbuilder_scheduler_job_gap_detected The number of times an unexpected gap was detected between jobs.
+	b.WriteString(`# HELP cortex_blockbuilder_scheduler_job_gap_detected The number of times an unexpected gap was detected between jobs.
 		# TYPE cortex_blockbuilder_scheduler_job_gap_detected counter
 		`)
 
-		if planned != 0 {
-			b.WriteString(fmt.Sprintf(
-				"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"planned\",partition=\"%d\"} %d\n", partition, planned))
-		}
-		if committed != 0 {
-			b.WriteString(fmt.Sprintf(
-				"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"committed\",partition=\"%d\"} %d\n", partition, committed))
-		}
+	if planned != 0 {
+		fmt.Fprintf(&b,
+			"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"planned\",partition=\"%d\"} %d\n", partition, planned)
+	}
+	if committed != 0 {
+		fmt.Fprintf(&b,
+			"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"committed\",partition=\"%d\"} %d\n", partition, committed)
 	}
 
 	require.NoError(t,
