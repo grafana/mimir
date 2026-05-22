@@ -15,23 +15,40 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
-// reconstructRound dispatches to the readcache or ingester
-// reconstruction path. Both produce a fresh assignment by walking
-// what the owners locally remember owning. Returns nil to signal a
-// fall-back to FineEvenSplit.
+// reconstructRound queries readcache pods and reassembles a fresh
+// assignment from what the owners locally remember owning. Returns
+// nil to signal a fall-back to FineEvenSplit.
 func (r *Rebalancer) reconstructRound(ctx context.Context, activePartitions []int32) *assignment.Assignment {
-	if r.readcachePool != nil {
-		return r.reconstructAssignmentFromReadcache(ctx, activePartitions)
-	}
-	return r.reconstructAssignment(ctx, activePartitions)
+	return r.reconstructAssignmentFromReadcache(ctx, activePartitions)
 }
 
-// reconstructAssignmentFromReadcache mirrors reconstructAssignment
-// but iterates the readcache fleet (via the ring + pool) instead of
-// the ingester ring. The partition->owner mapping comes from the
-// readcache assignment log; readcache pods not currently mapped to
-// any partition (cold-start with empty log) are ignored, mirroring
-// the ingester path's "unmapped" handling.
+// collectRoundStats queries all healthy readcache pods for per-range
+// stats and per-partition totals.
+func (r *Rebalancer) collectRoundStats(ctx context.Context, _ *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
+	return r.collectRatesFromReadcache(ctx)
+}
+
+// pushRanges calls SetHashRanges on each readcache that owns at least
+// one partition in the new assignment.
+func (r *Rebalancer) pushRanges(ctx context.Context, a *assignment.Assignment, at time.Time) {
+	r.pushRangesToReadcache(ctx, a, at)
+}
+
+// partitionLByPID returns per-partition head-series load from
+// HashRangeStats partition totals reported by readcache pods.
+func (r *Rebalancer) partitionLByPID(partitionTotals map[int32]int64, activePartitions []int32) map[int32]int64 {
+	out := make(map[int32]int64, len(activePartitions))
+	for _, pid := range activePartitions {
+		out[pid] = partitionTotals[pid]
+	}
+	return out
+}
+
+// reconstructAssignmentFromReadcache walks the readcache fleet and
+// reassembles a fleet-wide hash-range assignment. The partition->owner
+// mapping comes from the readcache assignment log; readcache pods not
+// currently mapped to any partition (cold-start with empty log) are
+// ignored.
 func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, activePartitions []int32) *assignment.Assignment {
 	instances, err := r.readcachePool.healthyInstances()
 	if err != nil {
@@ -190,57 +207,8 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 	return a
 }
 
-// collectRoundStats picks the right stats source for this rebalance
-// round. With the readcache pool wired (production path), it queries
-// readcache pods through the ring; otherwise it falls back to the
-// legacy ingester-pool path (used by tests and pre-readcache
-// phase 1 deployments).
-//
-// `current` is the rebalancer's current assignment; the ingester path
-// needs it to attribute each reported range to the partition that
-// currently owns it (legacy ingesters don't fill in partition_id on
-// HashRangeStats responses). The readcache path takes partition_id
-// straight from the proto so it can correctly report residue against
-// the previous owner rather than the new one.
-func (r *Rebalancer) collectRoundStats(ctx context.Context, current *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
-	if r.readcachePool != nil {
-		return r.collectRatesFromReadcache(ctx)
-	}
-	rates, instanceTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRates(ctx, current)
-	return rates, instanceTotals, nil, partitionQuerySamples, unnamedPerInstance, err
-}
-
-// pushRanges dispatches to the readcache or the ingester push path
-// based on whether the readcache pool is wired.
-func (r *Rebalancer) pushRanges(ctx context.Context, a *assignment.Assignment, at time.Time) {
-	if r.readcachePool != nil {
-		r.pushRangesToReadcache(ctx, a, at)
-		return
-	}
-	r.pushRangesToIngesters(ctx, a)
-}
-
-// partitionLByPID computes per-partition head-series load. With the
-// readcache pool wired, L comes from partitionTotals reported by
-// HashRangeStats (one entry per Kafka partition per readcache pod);
-// otherwise the helper falls back to partitionL backed by the ingester
-// partition ring and per-instance totals.
-func (r *Rebalancer) partitionLByPID(instanceTotals map[string]int64, partitionTotals map[int32]int64, pRing partitionRingView, activePartitions []int32, at time.Time) map[int32]int64 {
-	if r.readcachePool == nil {
-		return partitionL(instanceTotals, pRing, activePartitions)
-	}
-
-	out := make(map[int32]int64, len(activePartitions))
-	for _, pid := range activePartitions {
-		out[pid] = partitionTotals[pid]
-	}
-	return out
-}
-
-// collectRatesFromReadcache queries all healthy readcache pods (via
-// the readcache ring) for per-range ingestion rates and per-instance
-// totals. Returns the same shape as the legacy collectRates path so
-// the slicer is agnostic to source.
+// collectRatesFromReadcache queries all healthy readcache pods for
+// per-range ingestion rates and per-partition totals.
 //
 // Source-of-truth contract:
 //
@@ -259,8 +227,7 @@ func (r *Rebalancer) partitionLByPID(instanceTotals map[string]int64, partitionT
 //
 // On any per-pod failure the round continues with whatever the
 // other pods returned; a single misbehaving readcache cannot block
-// the rebalance round behind TCP timeouts (see
-// Config.IngesterRPCTimeout).
+// the rebalance round behind TCP timeouts (see Config.IngesterRPCTimeout).
 func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
 	instances, err := r.readcachePool.healthyInstances()
 	if err != nil {
@@ -352,11 +319,6 @@ func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate
 // owns at least one partition in the new assignment, sending only
 // the hash ranges for the partitions that pod is the current owner
 // of (per the readcache assignment log).
-//
-// This is the readcache analogue of pushRangesToIngesters. It runs
-// only when the readcache pool is wired; without it, the rebalancer
-// falls back to pushRangesToIngesters which targets the legacy
-// ingester ring.
 //
 // Ownership is resolved at `at` (typically time.Now() for the round):
 // only LogEntries whose [From, To) brackets `at` count. If a

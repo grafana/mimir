@@ -11,19 +11,15 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
-	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 
-	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
@@ -141,12 +137,11 @@ type Config struct {
 	// round.
 	PartitionCount int32 `yaml:"partition_count"`
 
-	// ActivePartitionCount, when > 0, caps the rebalancer's logical
-	// view of "active partitions" to the first K partition IDs
-	// [0, K) regardless of what the ingester partition ring
-	// reports. This decouples the nautilus partition space from the
-	// ingester partition ring so a cell with N ingester partitions
-	// can experiment with K nautilus partitions (K != N).
+	// ActivePartitionCount caps the rebalancer's logical view of
+	// "active partitions" to the first K partition IDs [0, K).
+	// When zero, the rebalancer slices over [0, PartitionCount).
+	// Nautilus is decoupled from the ingester partition ring; both
+	// values refer to Kafka partitions on KafkaTopic.
 	//
 	// Constraints:
 	//   - 0 < ActivePartitionCount <= PartitionCount (validated at
@@ -157,8 +152,6 @@ type Config struct {
 	//     online cold and the slicer assigns them). Lowering it
 	//     orphans data on partitions [K_new, K_old) until those
 	//     partitions are re-included or their data ages out.
-	//
-	// Default 0 means "use pRing.ActivePartitionIDs() as before".
 	ActivePartitionCount int32 `yaml:"active_partition_count"`
 
 	// Kafka is the shared ingest-storage Kafka config, injected by
@@ -183,7 +176,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.DataDir, prefix+"data-dir", "", "Directory where the rebalancer persists its assignment logs. Empty disables persistence; on restart the log is seeded from FineEvenSplit / ingester reports as before. Set this to a persistent volume in production so rebalancer restarts don't shuffle routing.")
 	f.StringVar(&cfg.KafkaTopic, prefix+"kafka-topic", "nautilus_ingest", "Name of the Kafka topic the nautilus pipeline runs on. The rebalancer auto-creates this topic on startup (gated by -ingest-storage.kafka.auto-create-topic-enabled); distributors forward nautilus-only tenant writes here; readcache pods consume from it.")
 	f.Var(asInt32Var{&cfg.PartitionCount}, prefix+"partition-count", "Number of partitions on -nautilus.rebalancer.kafka-topic. Used both for auto-creation and to size the slicer's initial partition set when seeding the in-memory log. Must be > 0 when persistence is empty; otherwise the seeded value from disk wins.")
-	f.Var(asInt32Var{&cfg.ActivePartitionCount}, prefix+"active-partition-count", "Cap on the rebalancer's logical active-partition set: when > 0 the rebalancer slices over partition IDs [0, K) instead of consulting the ingester partition ring. Use this to decouple the nautilus partition space from the ingester ring (e.g. test 320 nautilus partitions in a cell with 80 ingesters). Must be <= -nautilus-rebalancer.partition-count. Default 0 falls back to the ingester partition ring.")
+	f.Var(asInt32Var{&cfg.ActivePartitionCount}, prefix+"active-partition-count", "Cap on the rebalancer's logical active-partition set: when > 0 the rebalancer slices over partition IDs [0, K); when 0 it uses -nautilus-rebalancer.partition-count. Must be <= -nautilus-rebalancer.partition-count when both are set.")
 	cfg.ReadcacheSlicer.RegisterFlagsWithPrefix(prefix+"readcache-slicer.", f)
 	cfg.ReadcacheClient.RegisterFlagsWithPrefix(prefix+"readcache-client.", f)
 }
@@ -196,6 +189,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.ActivePartitionCount > 0 && cfg.PartitionCount > 0 && cfg.ActivePartitionCount > cfg.PartitionCount {
 		return fmt.Errorf("nautilus-rebalancer.active-partition-count (%d) must be <= nautilus-rebalancer.partition-count (%d); the cap can't exceed the topic's provisioned partitions", cfg.ActivePartitionCount, cfg.PartitionCount)
+	}
+	if cfg.ActivePartitionCount <= 0 && cfg.PartitionCount <= 0 {
+		return fmt.Errorf("nautilus-rebalancer requires either -nautilus-rebalancer.partition-count or -nautilus-rebalancer.active-partition-count > 0")
 	}
 	return nil
 }
@@ -220,38 +216,27 @@ func (a asInt32Var) Set(s string) error {
 	return nil
 }
 
-// Rebalancer is a Mimir module that periodically queries ingesters for
-// per-hash-range ingestion rates, rebalances hash-range-to-partition
-// assignments, pushes ownership to ingesters, and serves the
-// assignment history to distributors.
+// Rebalancer is a Mimir module that periodically queries readcache
+// pods for per-hash-range ingestion rates, rebalances
+// hash-range-to-partition assignments, pushes hash ranges to readcache
+// owners, and serves assignment logs to distributors and readcache
+// pods.
 type Rebalancer struct {
 	services.Service
 
 	cfg    Config
 	logger log.Logger
 
-	ingesterRing  ring.ReadRing
-	pool          *ring_client.Pool
-	partitionRing *ring.PartitionInstanceRing
-
-	// readcachePool dials readcache pods discovered via the
-	// readcache instance ring. Nil when running without the ring
-	// (degraded mode / tests); when nil the rebalancer falls back
-	// to the legacy ingester-pool path for HashRangeStats /
-	// SetHashRanges / GetHashRanges. With the ring wired, the
-	// readcache fleet is the authoritative source of per-partition
-	// load and the destination of computed assignments — the
-	// ingester contract (Unimplemented) is bypassed.
+	// readcachePool dials readcache pods for HashRangeStats,
+	// SetHashRanges, and GetHashRanges. Required in production;
+	// unit tests may construct a Rebalancer without a pool and
+	// inject synthetic stats directly into runSlicer.
 	readcachePool *ReadcachePool
 
 	store          *logStore
 	readcacheStore *readcacheLogStore
 	admin          adminState
 	metrics        *metrics
-
-	// prevInstanceRanges tracks the last set of ranges pushed to each
-	// ingester, keyed by instance ID, so we can log changes.
-	prevInstanceRanges map[string][]ingester_client.HashRangeEntry
 
 	// moveCooldowns records, for each hash range that was recently
 	// moved, the wall-clock time at which it (and any range overlapping
@@ -280,25 +265,16 @@ type readcacheRingReader interface {
 	GetAllHealthy(op ring.Operation) (ring.ReplicationSet, error)
 }
 
-// New creates and returns a new Rebalancer.
-//
-// readcacheRing and readcachePool are optional but always travel
-// together. When both are non-nil, the rebalancer treats readcache
-// as the authoritative source of nautilus stats and the destination
-// of computed hash-range assignments: collectRates and
-// pushRangesToIngesters target readcache pods through the pool, and
-// the readcache slicer enumerates the ring instead of
-// ReadcacheSlicerConfig.Instances. When nil, the rebalancer falls
-// back to the legacy ingester-pool path (used by tests and by the
-// pre-readcache phase 1 deployments where the ingester still
-// implements the nautilus RPCs).
-func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partitionRing *ring.PartitionInstanceRing, readcacheRing readcacheRingReader, readcachePool *ReadcachePool, registerer prometheus.Registerer, logger log.Logger) *Rebalancer {
+// New creates and returns a new Rebalancer. readcachePool is required
+// for production rebalance rounds; readcacheRing may be nil when the
+// operator pins instances via ReadcacheSlicer.Instances.
+func New(cfg Config, readcacheRing readcacheRingReader, readcachePool *ReadcachePool, registerer prometheus.Registerer, logger log.Logger) (*Rebalancer, error) {
+	if readcachePool == nil {
+		return nil, fmt.Errorf("readcache pool is required")
+	}
 	r := &Rebalancer{
 		cfg:                cfg,
 		logger:             logger,
-		ingesterRing:       ingesterRing,
-		pool:               pool,
-		partitionRing:      partitionRing,
 		readcacheRing:      readcacheRing,
 		readcachePool:      readcachePool,
 		store:              newLogStore(),
@@ -309,7 +285,7 @@ func New(cfg Config, ingesterRing ring.ReadRing, pool *ring_client.Pool, partiti
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.running, nil)
-	return r
+	return r, nil
 }
 
 func (r *Rebalancer) starting(_ context.Context) error {
@@ -481,22 +457,21 @@ func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsReque
 }
 
 // activePartitionsForRound returns the partition ID set the
-// rebalancer should slice over for this round. When
-// cfg.ActivePartitionCount is set, the rebalancer synthesizes
-// [0, K) and ignores the ingester partition ring entirely; this is
-// the lever for decoupling the nautilus partition space from the
-// ingester ring (e.g. running a 320-partition nautilus topic in a
-// cell with 80 ingester partitions). Otherwise the rebalancer
-// honors whatever the ingester partition ring reports.
-func (r *Rebalancer) activePartitionsForRound(pRing partitionRingView) []int32 {
-	if r.cfg.ActivePartitionCount > 0 {
-		out := make([]int32, r.cfg.ActivePartitionCount)
-		for i := range out {
-			out[i] = int32(i)
-		}
-		return out
+// rebalancer slices over for this round: [0, K) where K is
+// ActivePartitionCount when set, otherwise PartitionCount.
+func (r *Rebalancer) activePartitionsForRound() []int32 {
+	n := int(r.cfg.ActivePartitionCount)
+	if n <= 0 {
+		n = int(r.cfg.PartitionCount)
 	}
-	return pRing.ActivePartitionIDs()
+	if n <= 0 {
+		return nil
+	}
+	out := make([]int32, n)
+	for i := 0; i < n; i++ {
+		out[i] = int32(i)
+	}
+	return out
 }
 
 func (r *Rebalancer) rebalance(ctx context.Context) error {
@@ -505,10 +480,9 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// rebalancer RPCs are not tenant-scoped.
 	ctx = user.InjectOrgID(ctx, "nautilus-rebalancer")
 
-	pRing := r.partitionRing.PartitionRing()
-	activePartitions := r.activePartitionsForRound(pRing)
+	activePartitions := r.activePartitionsForRound()
 	if len(activePartitions) == 0 {
-		level.Warn(r.logger).Log("msg", "no active partitions, skipping rebalance")
+		level.Warn(r.logger).Log("msg", "no active partitions configured, skipping rebalance")
 		return nil
 	}
 
@@ -527,7 +501,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				"slices_per_partition", initialSlicesPerPartition,
 				"total_slices", len(current.Entries))
 		} else {
-			level.Info(r.logger).Log("msg", "initialized assignment from ingester reports",
+			level.Info(r.logger).Log("msg", "initialized assignment from readcache reports",
 				"partitions", len(activePartitions),
 				"total_entries", len(current.Entries))
 		}
@@ -551,7 +525,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	rates, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx, current)
+	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx, current)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)
 		return nil
@@ -566,7 +540,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// wired, L comes from per-partition HashRangeStats; otherwise fall
 	// back to the ingester partition ring (max across the replica set).
 	// L is observability-only since the slicer balances on sample rate.
-	partitionLByPID := r.partitionLByPID(instanceTotals, partitionTotals, pRing, activePartitions, now)
+	partitionLByPID := r.partitionLByPID(partitionTotals, activePartitions)
 
 	lm := buildLoadMap(rates)
 	partitionRateByPID := partitionLoadFromRates(rates, activePartitions)
@@ -673,121 +647,6 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	return nil
 }
 
-// collectRates queries all ingesters for per-range ingestion rates and
-// returns a global view: one rate per reported hash range. Since
-// ingesters only report rates for ranges they own, the results are
-// already partitioned; we aggregate into a single map keyed by range.
-//
-// RPCs are issued in parallel with a per-call timeout (see
-// Config.IngesterRPCTimeout) so a single stuck ingester (e.g. mid-
-// rollout, with a stale pool connection) cannot block the whole
-// round behind TCP-level timeouts.
-//
-// The second return value is keyed by ingester instance ID and holds
-// the total in-memory series count on that ingester (across all
-// tenants and all hash buckets). It is the L_i signal that feeds into
-// partitionL and the movable-budget calculation.
-//
-// The third return value is per-partition query-load (samples-per-
-// second EWMA) summed across owners that report the same partition.
-// Today most partitions have one owner so the sum is degenerate, but
-// it generalizes to multi-replica configs.
-//
-// The fourth return value is the per-ingester unnamed query-load
-// EWMA: samples scanned by full-fanout queries that arrived without
-// a partition hint. Reported per ingester (not per partition) because
-// the work intrinsically scours all owned partitions on that
-// ingester. The rebalancer surfaces it as an observability signal but
-// does not feed it into per-partition deltas.
-func (r *Rebalancer) collectRates(ctx context.Context, current *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]float64, map[string]float64, error) {
-	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-
-	type result struct {
-		instanceID    string
-		totalSeries   int64
-		rates         []rangeRate
-		partitionLoad []ingester_client.PartitionQueryLoad
-		unnamedLoad   float64
-	}
-
-	results := make([]result, len(instances.Instances))
-	var ok, failed atomic.Int32
-
-	_ = concurrency.ForEachJob(ctx, len(instances.Instances), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
-		inst := instances.Instances[idx]
-
-		c, err := r.pool.GetClientForInstance(inst)
-		if err != nil {
-			failed.Add(1)
-			level.Warn(r.logger).Log("msg", "failed to get client for ingester", "ingester", inst.Addr, "err", err)
-			return nil
-		}
-
-		callCtx, cancel := r.withRPCTimeout(jobCtx)
-		defer cancel()
-
-		resp, err := c.(ingester_client.IngesterClient).HashRangeStats(callCtx, &ingester_client.HashRangeStatsRequest{})
-		if err != nil {
-			failed.Add(1)
-			level.Warn(r.logger).Log("msg", "HashRangeStats RPC failed", "ingester", inst.Addr, "err", err)
-			return nil
-		}
-
-		rates := make([]rangeRate, len(resp.Rates))
-		for i, rate := range resp.Rates {
-			hr := assignment.HashRange{Lo: rate.Lo, Hi: rate.Hi}
-			// Legacy ingesters don't fill in partition_id in their
-			// HashRangeStats response; attribute the range to its
-			// current owner per the rebalancer's assignment.
-			pid := rate.PartitionId
-			if pid == 0 && current != nil {
-				if owner, ok := current.Lookup(hr.Lo); ok {
-					pid = owner
-				}
-			}
-			rates[i] = rangeRate{
-				hr:          hr,
-				series:      rate.ActiveSeries,
-				sampleRate:  rate.SampleRate,
-				partitionID: pid,
-			}
-		}
-		results[idx] = result{
-			instanceID:    inst.GetId(),
-			totalSeries:   resp.TotalActiveSeries,
-			rates:         rates,
-			partitionLoad: resp.PartitionQueryLoads,
-			unnamedLoad:   resp.UnnamedQuerySamplesEwma,
-		}
-		ok.Add(1)
-		return nil
-	})
-
-	var all []rangeRate
-	instanceTotals := make(map[string]int64, len(instances.Instances))
-	partitionQuerySamples := map[int32]float64{}
-	unnamedPerInstance := map[string]float64{}
-	for _, res := range results {
-		if res.instanceID == "" {
-			continue
-		}
-		instanceTotals[res.instanceID] = res.totalSeries
-		all = append(all, res.rates...)
-		for _, p := range res.partitionLoad {
-			partitionQuerySamples[p.PartitionId] += p.SamplesEwma
-		}
-		if res.unnamedLoad > 0 {
-			unnamedPerInstance[res.instanceID] = res.unnamedLoad
-		}
-	}
-
-	level.Info(r.logger).Log("msg", "collected ingester stats", "healthy", len(instances.Instances), "ok", ok.Load(), "failed", failed.Load())
-	return all, instanceTotals, partitionQuerySamples, unnamedPerInstance, nil
-}
-
 // withRPCTimeout wraps ctx with the configured per-call timeout. When
 // the timeout is disabled (<=0), returns the parent context and a
 // no-op cancel.
@@ -799,7 +658,7 @@ func (r *Rebalancer) withRPCTimeout(ctx context.Context) (context.Context, conte
 }
 
 // reconstructionQuorumNum / reconstructionQuorumDen together express the
-// minimum fraction of expected ingesters that must successfully return
+// minimum fraction of expected readcache pods that must successfully return
 // their hash ranges for reconstruction to be trusted. Below this, we
 // fall back to FineEvenSplit rather than take a destructive action
 // (e.g. blowing up a range's ownership) on a minority view.
@@ -807,161 +666,6 @@ const (
 	reconstructionQuorumNum = 1
 	reconstructionQuorumDen = 2
 )
-
-// reconstructAssignment queries all healthy ingesters for their
-// currently-owned hash ranges (via GetHashRanges) and reassembles a
-// fleet-wide assignment by mapping each reported range to the
-// partition its owner ingester belongs to. This lets the rebalancer
-// resume from whatever assignment is actually in effect on the fleet,
-// rather than destroying rebalanced state with a fresh even split on
-// cold start.
-//
-// Policy:
-//   - First-replica-wins on any overlap between different partitions:
-//     whichever partition's range we encounter first (in sorted-Lo
-//     order) keeps the overlapping hash space; any later range that
-//     overlaps is truncated or dropped. The next pushRangesToIngesters
-//     will reconcile the losing replica's view.
-//   - Gaps (holes in [0, MaxUint32] after merging) are filled verbatim:
-//     one entry per gap, round-robin across active partitions. The
-//     slicer may subsequently split the filler as part of normal
-//     Phase 4 (split hot slices) if it ends up carrying load.
-//   - If fewer than reconstructionQuorumNum/reconstructionQuorumDen of
-//     the expected ingesters respond, or if no ingester reports any
-//     ranges (truly-cold cluster), returns nil so the caller falls
-//     back to FineEvenSplit.
-//   - Any ingester whose instance ID doesn't map to an active
-//     partition (e.g. mid-scale-down) is silently ignored; its ranges
-//     become gaps that get refilled from the active partition set.
-func (r *Rebalancer) reconstructAssignment(ctx context.Context, activePartitions []int32) *assignment.Assignment {
-	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
-	if err != nil {
-		level.Warn(r.logger).Log("msg", "reconstructAssignment: failed to get healthy ingesters", "err", err)
-		return nil
-	}
-	if len(instances.Instances) == 0 {
-		return nil
-	}
-
-	pRing := r.partitionRing.PartitionRing()
-
-	// Build instanceID -> partitionID from active partitions only. An
-	// ingester not in this map is either unassigned or owns an
-	// inactive partition; either way, we ignore its reported ranges.
-	instanceToPartition := make(map[string]int32)
-	for _, pid := range activePartitions {
-		for _, ownerID := range pRing.PartitionOwnerIDs(pid) {
-			instanceToPartition[ownerID] = pid
-		}
-	}
-
-	reports := make([][]reportedEntry, len(instances.Instances))
-	var ok, failed, unmapped atomic.Int32
-
-	_ = concurrency.ForEachJob(ctx, len(instances.Instances), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
-		inst := instances.Instances[idx]
-
-		pid, known := instanceToPartition[inst.GetId()]
-		if !known {
-			unmapped.Add(1)
-			return nil
-		}
-
-		c, err := r.pool.GetClientForInstance(inst)
-		if err != nil {
-			failed.Add(1)
-			level.Warn(r.logger).Log("msg", "reconstructAssignment: failed to get client", "ingester", inst.Addr, "err", err)
-			return nil
-		}
-
-		callCtx, cancel := r.withRPCTimeout(jobCtx)
-		defer cancel()
-
-		resp, err := c.(ingester_client.IngesterClient).GetHashRanges(callCtx, &ingester_client.GetHashRangesRequest{})
-		if err != nil {
-			failed.Add(1)
-			level.Warn(r.logger).Log("msg", "reconstructAssignment: GetHashRanges RPC failed", "ingester", inst.Addr, "err", err)
-			return nil
-		}
-
-		entries := make([]reportedEntry, len(resp.Ranges))
-		for i, hr := range resp.Ranges {
-			entries[i] = reportedEntry{
-				partitionID: pid,
-				hr:          assignment.HashRange{Lo: hr.Lo, Hi: hr.Hi},
-			}
-		}
-		reports[idx] = entries
-		ok.Add(1)
-		return nil
-	})
-
-	expected := int32(len(instances.Instances)) - unmapped.Load()
-	if expected <= 0 {
-		level.Info(r.logger).Log("msg", "reconstructAssignment: no ingesters mapped to active partitions, falling back to even split")
-		return nil
-	}
-	// Quorum: ok.Load() / expected >= num/den.
-	if int64(ok.Load())*int64(reconstructionQuorumDen) < int64(expected)*int64(reconstructionQuorumNum) {
-		level.Warn(r.logger).Log(
-			"msg", "reconstructAssignment: not enough ingesters responded, falling back to even split",
-			"healthy", len(instances.Instances),
-			"unmapped", unmapped.Load(),
-			"ok", ok.Load(),
-			"failed", failed.Load(),
-			"quorum_num", reconstructionQuorumNum,
-			"quorum_den", reconstructionQuorumDen,
-		)
-		return nil
-	}
-
-	// Deduplicate (partitionID, range) pairs — different replicas of
-	// the same partition will redundantly report the same ranges.
-	type pRange struct {
-		pid int32
-		hr  assignment.HashRange
-	}
-	seen := make(map[pRange]struct{})
-	var merged []reportedEntry
-	for _, list := range reports {
-		for _, e := range list {
-			k := pRange{pid: e.partitionID, hr: e.hr}
-			if _, dup := seen[k]; dup {
-				continue
-			}
-			seen[k] = struct{}{}
-			merged = append(merged, e)
-		}
-	}
-
-	if len(merged) == 0 {
-		level.Info(r.logger).Log("msg", "reconstructAssignment: no ranges reported, falling back to even split")
-		return nil
-	}
-
-	// Sort by (Lo, partitionID) so first-replica-wins has a stable,
-	// deterministic ordering and tests are reproducible.
-	sortReportedEntries(merged)
-
-	entries := stitchReportedEntries(merged, activePartitions, r.logger)
-
-	a := &assignment.Assignment{Entries: entries}
-	if err := a.Validate(); err != nil {
-		level.Error(r.logger).Log("msg", "reconstructAssignment: stitched assignment invalid, falling back to even split", "err", err)
-		return nil
-	}
-
-	level.Info(r.logger).Log(
-		"msg", "reconstructAssignment: reassembled assignment from healthy ingesters",
-		"healthy", len(instances.Instances),
-		"unmapped", unmapped.Load(),
-		"ok", ok.Load(),
-		"failed", failed.Load(),
-		"reported_entries", len(merged),
-		"final_entries", len(entries),
-	)
-	return a
-}
 
 // reportedEntry is a (partition, range) pair collected from a
 // GetHashRanges response during assignment reconstruction.
@@ -971,8 +675,8 @@ type reportedEntry struct {
 }
 
 // sortReportedEntries sorts reported entries ascending by (Lo,
-// partitionID). Used both in production (reconstructAssignment) and in
-// tests to establish stitchReportedEntries' precondition.
+// partitionID). Used in tests and by reconstructAssignmentFromReadcache
+// to establish stitchReportedEntries' precondition.
 func sortReportedEntries(entries []reportedEntry) {
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].hr.Lo != entries[j].hr.Lo {
@@ -1065,140 +769,6 @@ func stitchReportedEntries(sorted []reportedEntry, activePartitions []int32, log
 	}
 
 	return out
-}
-
-// partitionL returns the per-partition L (TSDB head series) value,
-// derived from each partition's owner ingesters. For replicated
-// partitions (typically one owner per zone) the value is the max over
-// owners — i.e., the worst-case memory pressure across replicas. The
-// rebalancer balances on worst-case to keep any single ingester from
-// approaching OOM, even if other zones are cooler.
-//
-// Returns a map keyed by partition ID. Partitions with no healthy
-// owner in instanceTotals map to zero.
-func partitionL(instanceTotals map[string]int64, pRing partitionRingView, activePartitions []int32) map[int32]int64 {
-	if pRing == nil {
-		return nil
-	}
-	m := make(map[int32]int64, len(activePartitions))
-	for _, pid := range activePartitions {
-		owners := pRing.PartitionOwnerIDs(pid)
-		var worst int64
-		for _, id := range owners {
-			if v, ok := instanceTotals[id]; ok && v > worst {
-				worst = v
-			}
-		}
-		m[pid] = worst
-	}
-	return m
-}
-
-// partitionRingView is the subset of the partition ring API that the
-// partitionL helper needs. Defined as an interface so tests can
-// inject a stub without spinning up a full PartitionRing.
-type partitionRingView interface {
-	PartitionOwnerIDs(int32) []string
-	ActivePartitionIDs() []int32
-}
-
-// pushRangesToIngesters calls SetHashRanges on each ingester with
-// only the hash ranges belonging to the partitions that ingester owns.
-func (r *Rebalancer) pushRangesToIngesters(ctx context.Context, a *assignment.Assignment) {
-	instances, err := r.ingesterRing.GetAllHealthy(ring.Read)
-	if err != nil {
-		level.Warn(r.logger).Log("msg", "failed to get healthy ingesters for push", "err", err)
-		return
-	}
-
-	pRing := r.partitionRing.PartitionRing()
-
-	// Build instance ID → address lookup from the ingester ring.
-	idToInst := make(map[string]ring.InstanceDesc, len(instances.Instances))
-	for _, inst := range instances.Instances {
-		idToInst[inst.GetId()] = inst
-	}
-
-	// Build partition → hash ranges from the assignment.
-	partitionRanges := make(map[int32][]ingester_client.HashRangeEntry)
-	for _, e := range a.Entries {
-		partitionRanges[e.PartitionID] = append(partitionRanges[e.PartitionID],
-			ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi})
-	}
-
-	// For each active partition, find its owner ingester(s) and collect
-	// the hash ranges that should be sent to each.
-	instanceRanges := make(map[string][]ingester_client.HashRangeEntry)
-	for _, pid := range pRing.ActivePartitionIDs() {
-		owners := pRing.PartitionOwnerIDs(pid)
-		ranges := partitionRanges[pid]
-		for _, ownerID := range owners {
-			instanceRanges[ownerID] = append(instanceRanges[ownerID], ranges...)
-		}
-	}
-
-	// Flatten the per-instance work into an indexed slice so we can
-	// fan out the SetHashRanges RPCs in parallel. Each job is bounded
-	// by the configured per-call timeout; one stuck pod can no longer
-	// stall the whole round behind TCP-level timeouts.
-	type job struct {
-		instanceID string
-		inst       ring.InstanceDesc
-		ranges     []ingester_client.HashRangeEntry
-	}
-	jobs := make([]job, 0, len(instanceRanges))
-	for instanceID, ranges := range instanceRanges {
-		inst, ok := idToInst[instanceID]
-		if !ok {
-			continue
-		}
-
-		prev := r.prevInstanceRanges[instanceID]
-		added, removed, changed := diffRanges(prev, ranges)
-		if changed {
-			prevCoverage := hashSpaceCoverage(prev)
-			newCoverage := hashSpaceCoverage(ranges)
-			level.Info(r.logger).Log(
-				"msg", "ingester assignment changed",
-				"ingester", inst.Addr,
-				"instance", instanceID,
-				"prev_ranges", len(prev),
-				"new_ranges", len(ranges),
-				"added", added,
-				"removed", removed,
-				"prev_hash_space_pct", fmt.Sprintf("%.2f", prevCoverage*100),
-				"new_hash_space_pct", fmt.Sprintf("%.2f", newCoverage*100),
-			)
-		}
-
-		jobs = append(jobs, job{instanceID: instanceID, inst: inst, ranges: ranges})
-	}
-
-	var ok, failed atomic.Int32
-	_ = concurrency.ForEachJob(ctx, len(jobs), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
-		j := jobs[idx]
-
-		c, err := r.pool.GetClientForInstance(j.inst)
-		if err != nil {
-			failed.Add(1)
-			level.Warn(r.logger).Log("msg", "failed to get client for ingester", "ingester", j.inst.Addr, "err", err)
-			return nil
-		}
-
-		callCtx, cancel := r.withRPCTimeout(jobCtx)
-		defer cancel()
-
-		if _, err := c.(ingester_client.IngesterClient).SetHashRanges(callCtx, &ingester_client.SetHashRangesRequest{Ranges: j.ranges}); err != nil {
-			failed.Add(1)
-			level.Warn(r.logger).Log("msg", "SetHashRanges RPC failed", "ingester", j.inst.Addr, "err", err)
-			return nil
-		}
-		ok.Add(1)
-		return nil
-	})
-
-	level.Info(r.logger).Log("msg", "pushed ranges to ingesters", "ok", ok.Load(), "failed", failed.Load())
-	r.prevInstanceRanges = instanceRanges
 }
 
 const (
@@ -2084,41 +1654,4 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 		result = append(result, curr)
 	}
 	return result, actions
-}
-
-type rangeKey struct{ lo, hi uint32 }
-
-// diffRanges returns the number of ranges added and removed between prev
-// and next, and whether any change occurred at all.
-func diffRanges(prev, next []ingester_client.HashRangeEntry) (added, removed int, changed bool) {
-	prevSet := make(map[rangeKey]struct{}, len(prev))
-	for _, r := range prev {
-		prevSet[rangeKey{r.Lo, r.Hi}] = struct{}{}
-	}
-	nextSet := make(map[rangeKey]struct{}, len(next))
-	for _, r := range next {
-		nextSet[rangeKey{r.Lo, r.Hi}] = struct{}{}
-	}
-	for k := range nextSet {
-		if _, ok := prevSet[k]; !ok {
-			added++
-		}
-	}
-	for k := range prevSet {
-		if _, ok := nextSet[k]; !ok {
-			removed++
-		}
-	}
-	changed = added > 0 || removed > 0
-	return
-}
-
-// hashSpaceCoverage returns the fraction of the 32-bit hash space covered
-// by the given ranges.
-func hashSpaceCoverage(ranges []ingester_client.HashRangeEntry) float64 {
-	var total uint64
-	for _, r := range ranges {
-		total += uint64(r.Hi) - uint64(r.Lo) + 1
-	}
-	return float64(total) / float64(uint64(math.MaxUint32)+1)
 }

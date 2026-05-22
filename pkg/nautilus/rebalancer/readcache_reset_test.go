@@ -20,11 +20,8 @@ import (
 )
 
 // newTestRebalancerForReset returns a minimally-wired Rebalancer
-// suitable for reset-path tests: an in-memory readcache log store,
-// the partition source pinned to ActivePartitionCount=N so we don't
-// need a real partition ring, and the readcache instance set pinned
-// via the static Instances flag. Everything else (rings, pools,
-// metrics) is left at zero.
+// suitable for reset-path tests: an in-memory readcache log store and
+// the partition source pinned via ActivePartitionCount.
 func newTestRebalancerForReset(t *testing.T, numPartitions int, instances []string) *Rebalancer {
 	t.Helper()
 	cfg := Config{
@@ -143,7 +140,7 @@ func TestResetReadcacheAssignment_NoInstancesIsError(t *testing.T) {
 // other gating path.
 func TestResetReadcacheAssignment_NoPartitionsIsError(t *testing.T) {
 	r := newTestRebalancerForReset(t, 0, []string{"rc-a"})
-	// ActivePartitionCount=0 and no partition ring → no source.
+	// ActivePartitionCount=0 and PartitionCount=0 → no partition source.
 	_, err := r.ResetReadcacheAssignment(time.Unix(1000, 0))
 	require.Error(t, err)
 	// Either error string is acceptable depending on which check

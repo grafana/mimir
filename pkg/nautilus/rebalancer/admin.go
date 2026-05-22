@@ -420,26 +420,29 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	}
 
 	// Partitions that don't currently own any hash ranges but still
-	// report a non-zero L_pid (or exist in the ring) need rows too,
-	// otherwise the table and the header stats silently exclude:
-	//   - "zombie" partitions that the slicer has drained but whose
-	//     TSDB head series haven't been compacted away yet, and
-	//   - partitions that exist in the ring but haven't received any
-	//     assignment yet (e.g. freshly scaled-up replicas).
-	// Without this, max_l / min_l / imbalance on the dashboard disagree
-	// with what the JSON trace reports.
+	// report a non-zero L_pid need rows too, otherwise the table and
+	// the header stats silently exclude zombie partitions whose TSDB
+	// head series haven't compacted away yet.
 	for pid := range lastPartitionL {
 		if _, ok := partMap[pid]; !ok {
 			partMap[pid] = &partitionView{PartitionID: pid}
 		}
 	}
 
-	// Resolve instance IDs from the partition ring.
-	pRing := r.partitionRing.PartitionRing()
-	instances, _ := r.ingesterRing.GetAllHealthy(0)
+	now := time.Now()
+	ownerByPartition := make(map[int32]string)
+	for _, e := range r.readcacheStore.snapshot() {
+		if e.ActiveAt(now) {
+			ownerByPartition[e.PartitionID] = e.InstanceID
+		}
+	}
 	idToAddr := make(map[string]string)
-	for _, inst := range instances.Instances {
-		idToAddr[inst.GetId()] = inst.Addr
+	if r.readcacheRing != nil {
+		if set, err := r.readcacheRing.GetAllHealthy(readcacheRingOp); err == nil {
+			for _, inst := range set.Instances {
+				idToAddr[inst.Id] = inst.Addr
+			}
+		}
 	}
 
 	var totalMemorySeries int64
@@ -448,10 +451,9 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	var totalRate, maxRate, minRate float64
 	minRate = math.Inf(1)
 	for pid, pv := range partMap {
-		owners := pRing.PartitionOwnerIDs(pid)
-		if len(owners) > 0 {
-			pv.InstanceID = owners[0]
-			pv.InstanceAddr = idToAddr[owners[0]]
+		if inst, ok := ownerByPartition[pid]; ok {
+			pv.InstanceID = inst
+			pv.InstanceAddr = idToAddr[inst]
 		}
 		pv.MemorySeries = lastPartitionL[pid]
 		pv.SampleRate = lastPartitionRate[pid]

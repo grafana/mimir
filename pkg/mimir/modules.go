@@ -1476,9 +1476,8 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 	t.Cfg.NautilusRebalancer.Kafka = t.Cfg.IngestStorage.KafkaConfig
 
-	// Build a readcache client pool when the ring is wired. When
-	// nil, the rebalancer falls back to the legacy ingester-pool
-	// path (used by tests and pre-readcache phase 1 deployments).
+	// Build a readcache client pool. Required: the rebalancer only
+	// operates against readcache pods in the nautilus pipeline.
 	var rcPool *rebalancer.ReadcachePool
 	if t.ReadcacheInstanceRing != nil {
 		p, err := rebalancer.NewReadcachePool(
@@ -1493,16 +1492,21 @@ func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
 		rcPool = p
 	}
 
-	t.NautilusRebalancer = rebalancer.New(
+	if rcPool == nil {
+		return nil, errors.New("readcache instance ring is required for nautilus rebalancer")
+	}
+
+	var err error
+	t.NautilusRebalancer, err = rebalancer.New(
 		t.Cfg.NautilusRebalancer,
-		t.IngesterRing,
-		t.Distributor.GetIngesterPool(),
-		t.IngesterPartitionInstanceRing,
 		t.ReadcacheInstanceRing,
 		rcPool,
 		t.Registerer,
 		util_log.Logger,
 	)
+	if err != nil {
+		return nil, errors.Wrap(err, "nautilus rebalancer init")
+	}
 	rebalancer.RegisterNautilusRebalancerServer(t.Server.GRPC, t.NautilusRebalancer)
 
 	// Mount as a prefix so the rebalancer's ServeHTTP can dispatch
@@ -1646,7 +1650,7 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
 		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
 		MemberlistKV:                     {API, Vault},
-		NautilusRebalancer:               {Distributor, IngesterRing, IngesterPartitionRing, ReadcacheInstanceRing},
+		NautilusRebalancer:               {Distributor, ReadcacheInstanceRing},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},

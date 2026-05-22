@@ -36,9 +36,8 @@ type ResetReadcacheResult struct {
 //
 // Semantics:
 //
-//  1. Active partition IDs are resolved exactly like a rebalance
-//     round does (cfg.ActivePartitionCount when set, else the
-//     ingester partition ring).
+//  1. Active partition IDs are [0, K) from config (ActivePartitionCount
+//     when set, otherwise PartitionCount).
 //  2. Active readcache instance IDs are resolved via
 //     activeReadcacheInstances (static list first, then ring).
 //  3. Partition i is assigned to instance i % len(instances),
@@ -62,14 +61,7 @@ func (r *Rebalancer) ResetReadcacheAssignment(now time.Time) (ResetReadcacheResu
 	if len(instances) == 0 {
 		return ResetReadcacheResult{}, errors.New("no active readcache instances available (check the ring and -nautilus-rebalancer.readcache-slicer.instances)")
 	}
-	if r.partitionRing == nil && r.cfg.ActivePartitionCount <= 0 {
-		return ResetReadcacheResult{}, errors.New("no partition source available (need either the ingester partition ring or -nautilus-rebalancer.active-partition-count > 0)")
-	}
-	var pRing partitionRingView
-	if r.partitionRing != nil {
-		pRing = r.partitionRing.PartitionRing()
-	}
-	active := r.activePartitionsForRound(pRing)
+	active := r.activePartitionsForRound()
 	if len(active) == 0 {
 		return ResetReadcacheResult{}, errors.New("no active partitions to assign")
 	}
