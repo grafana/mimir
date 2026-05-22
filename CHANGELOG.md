@@ -28,6 +28,7 @@
 
 ### Mixin
 
+* [CHANGE] Alerts: Replace `MimirSchedulerQueriesStuck` expression to use the new `cortex_query_scheduler_oldest_inflight_request_duration_seconds` gauge, which detects genuinely stuck queries rather than non-draining queues. #15419
 * [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
 * [ENHANCEMENT] Alerts: Widen the `MimirBlockBuilderPersistentJobFailure` lookback window to 20m to prevent the alert from flapping. #15332

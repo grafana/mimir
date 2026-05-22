@@ -226,27 +226,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
-            # There are some queries in the queue.
-            (sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length) > 0)
-
-            # And the queue size doesn't decrease.
-            # We use a hardcoded 5s subquery step rather than a dynamic step interval. Prometheus aligns subquery
-            # evaluation times to the Unix epoch modulo the step, so a larger step can miss brief decreases in
-            # queue length that fall between evaluation points, causing delta() to appear non-negative even when
-            # the queue is slowly draining. With 5s we get dense sampling to detect any short-term downward trend.
-            and (
-              min_over_time(
-                delta(
-                  sum by (%(group_by)s, %(job_label)s) (cortex_query_scheduler_queue_length)
-                  [%(rate_interval)s:5s]
-                )
-                [%(rate_interval)s:5s]
-              ) >= 0
-            )
+            max by (%(group_by)s, %(job_label)s) (
+              cortex_query_scheduler_oldest_inflight_request_duration_seconds
+            ) > 60
           ||| % {
             group_by: $._config.alert_aggregation_labels,
             job_label: $._config.per_job_label,
-            rate_interval: $.rateInterval('1m'),
           },
           'for': '7m',  // We don't want to block for longer.
           labels: {
@@ -255,7 +240,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           annotations: (
             {
               message: |||
-                There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
+                The oldest inflight query in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }} has been waiting for {{ printf "%%.0f" $value }} seconds.
               ||| % $._config,
             }
           ) + (
