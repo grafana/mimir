@@ -343,14 +343,29 @@ func (q *blocksStoreQuerier) openSearchLabelValuesStream(
 // dropped. A header batch may itself carry warnings, which are seeded into
 // the adapter so they are still surfaced to the merger's Warnings().
 //
-// gCtx is the errgroup ctx; if it is already cancelled (a peer goroutine
-// errored), we bail without reading to avoid blocking on a stream we'll
-// abandon anyway.
+// gCtx is the errgroup ctx. The pre-Recv check bails without reading when a
+// peer goroutine has already errored. A watcher goroutine then propagates any
+// in-flight gCtx cancellation onto streamCancel: the SG only sends the header
+// after its full per-block scan completes, so without this watcher a
+// peer-goroutine failure would leave every surviving SG's Recv blocked for
+// the duration of its own scan, holding up g.Wait() and wasting SG work whose
+// results would be discarded. On the success path the deferred close exits
+// the watcher before the live source is handed to the caller, so a healthy
+// stream is never cancelled by the watcher.
 func readSGSearchHeader(gCtx context.Context, stream sgSearchStream, streamCancel context.CancelCauseFunc) (storage.SearchResultSet, []ulid.ULID, bool, error) {
 	if err := gCtx.Err(); err != nil {
 		streamCancel(err)
 		return nil, nil, false, err
 	}
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		select {
+		case <-gCtx.Done():
+			streamCancel(gCtx.Err())
+		case <-stop:
+		}
+	}()
 	header, err := stream.Recv()
 	if err != nil {
 		streamCancel(err)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
@@ -45,13 +46,26 @@ type searchLabelNamesClientMock struct {
 	queriedBlockIDs []ulid.ULID
 	omitHeader      bool
 	headerErr       error
-	headerSent      bool
-	idx             int
+	// headerBlock, when non-nil, makes the first Recv block on either a
+	// channel send/close or the stream context being cancelled. Used to model
+	// the real wire timing where the SG sends the header only after its full
+	// per-block scan completes, so a test can assert that peer-goroutine
+	// cancellation unblocks our Recv.
+	headerBlock <-chan struct{}
+	headerSent  bool
+	idx         int
 }
 
 func (m *searchLabelNamesClientMock) Recv() (*storepb.SearchResultBatch, error) {
 	if !m.headerSent {
 		m.headerSent = true
+		if m.headerBlock != nil {
+			select {
+			case <-m.headerBlock:
+			case <-m.Context().Done():
+				return nil, m.Context().Err()
+			}
+		}
 		if m.headerErr != nil {
 			return nil, m.headerErr
 		}
@@ -77,6 +91,7 @@ type searchLabelValuesClientMock struct {
 	queriedBlockIDs []ulid.ULID
 	omitHeader      bool
 	headerErr       error
+	headerBlock     <-chan struct{}
 	headerSent      bool
 	idx             int
 }
@@ -84,6 +99,13 @@ type searchLabelValuesClientMock struct {
 func (m *searchLabelValuesClientMock) Recv() (*storepb.SearchResultBatch, error) {
 	if !m.headerSent {
 		m.headerSent = true
+		if m.headerBlock != nil {
+			select {
+			case <-m.headerBlock:
+			case <-m.Context().Done():
+				return nil, m.Context().Err()
+			}
+		}
 		if m.headerErr != nil {
 			return nil, m.headerErr
 		}
@@ -122,19 +144,21 @@ func newSearchResponseHints(ids []ulid.ULID) *storepb.SearchResponseHints {
 // respectively.
 type searchStoreGatewayClientMock struct {
 	storeGatewayClientMock
-	searchLabelNamesBatches    []*storepb.SearchResultBatch
-	searchLabelNamesErr        error
-	searchLabelNamesStreamErr  error
-	searchLabelNamesHeaderErr  error
-	searchLabelNamesOmitHeader bool
-	searchLabelValuesBatches   []*storepb.SearchResultBatch
-	searchLabelValuesErr       error
-	searchLabelValuesStreamErr error
-	queriedBlockIDs            []ulid.ULID
-	lastSearchLabelNamesCtx    context.Context
-	lastSearchLabelValuesCtx   context.Context
-	lastSearchLabelValuesReq   *storepb.SearchLabelValuesRequest
-	calls                      callCounter
+	searchLabelNamesBatches      []*storepb.SearchResultBatch
+	searchLabelNamesErr          error
+	searchLabelNamesStreamErr    error
+	searchLabelNamesHeaderErr    error
+	searchLabelNamesOmitHeader   bool
+	searchLabelNamesHeaderBlock  <-chan struct{}
+	searchLabelValuesBatches     []*storepb.SearchResultBatch
+	searchLabelValuesErr         error
+	searchLabelValuesStreamErr   error
+	searchLabelValuesHeaderBlock <-chan struct{}
+	queriedBlockIDs              []ulid.ULID
+	lastSearchLabelNamesCtx      context.Context
+	lastSearchLabelValuesCtx     context.Context
+	lastSearchLabelValuesReq     *storepb.SearchLabelValuesRequest
+	calls                        callCounter
 }
 
 // callCounter tracks how many times a mock RPC was invoked. Tests rely on each
@@ -161,6 +185,7 @@ func (m *searchStoreGatewayClientMock) SearchLabelNames(ctx context.Context, _ *
 		queriedBlockIDs: m.queriedBlockIDs,
 		omitHeader:      m.searchLabelNamesOmitHeader,
 		headerErr:       m.searchLabelNamesHeaderErr,
+		headerBlock:     m.searchLabelNamesHeaderBlock,
 	}, nil
 }
 
@@ -176,6 +201,7 @@ func (m *searchStoreGatewayClientMock) SearchLabelValues(ctx context.Context, re
 		batches:         m.searchLabelValuesBatches,
 		err:             m.searchLabelValuesStreamErr,
 		queriedBlockIDs: m.queriedBlockIDs,
+		headerBlock:     m.searchLabelValuesHeaderBlock,
 	}, nil
 }
 
@@ -481,6 +507,119 @@ func TestBlocksStoreQuerier_SearchLabelNames_NonRetriableErrorBubblesUp(t *testi
 	assert.False(t, rs.Next())
 	require.Error(t, rs.Err())
 	assert.Contains(t, rs.Err().Error(), "non-retriable")
+}
+
+// TestBlocksStoreQuerier_SearchLabelNames_PeerNonRetriableCancelsBlockedHeaderRecv
+// pins the watcher contract inside readSGSearchHeader: when one SG goroutine
+// returns a non-retriable error, the errgroup cancels gCtx, and peer
+// goroutines blocked on their header Recv must be unblocked via the watcher
+// that propagates the cancellation onto their stream context. Without the
+// watcher the surviving Recv would only return once the slow SG finished
+// its full per-block scan, holding up g.Wait() (and wasting SG work whose
+// results would be discarded). The test pins this by blocking storeB's
+// header Recv indefinitely and asserting the call still returns promptly.
+func TestBlocksStoreQuerier_SearchLabelNames_PeerNonRetriableCancelsBlockedHeaderRecv(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+
+	storeA := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesErr:    status.Error(codes.Code(http.StatusUnprocessableEntity), "validation"),
+	}
+	headerBlock := make(chan struct{}) // never closed: only ctx cancellation can unblock storeB
+	storeB := &searchStoreGatewayClientMock{
+		storeGatewayClientMock:      storeGatewayClientMock{remoteAddr: "2.2.2.2"},
+		searchLabelNamesHeaderBlock: headerBlock,
+		queriedBlockIDs:             []ulid.ULID{block2},
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{storeA: {block1}, storeB: {block2}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1}, {ID: block2},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	type result struct {
+		rs storage.SearchResultSet
+	}
+	resCh := make(chan result, 1)
+	go func() { resCh <- result{rs: q.SearchLabelNames(ctx, nil, nil)} }()
+
+	var res result
+	select {
+	case res = <-resCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SearchLabelNames did not return — the gCtx-cancellation watcher in readSGSearchHeader is missing or broken")
+	}
+
+	defer res.rs.Close()
+	assert.False(t, res.rs.Next())
+	require.Error(t, res.rs.Err())
+	assert.Contains(t, res.rs.Err().Error(), "non-retriable")
+
+	require.NotNil(t, storeB.lastSearchLabelNamesCtx, "storeB must have been opened before the watcher fired")
+	require.Error(t, storeB.lastSearchLabelNamesCtx.Err(), "storeB's stream ctx must be cancelled by the watcher")
+}
+
+// TestBlocksStoreQuerier_SearchLabelValues_PeerNonRetriableCancelsBlockedHeaderRecv
+// mirrors the SearchLabelNames variant for the SearchLabelValues RPC.
+func TestBlocksStoreQuerier_SearchLabelValues_PeerNonRetriableCancelsBlockedHeaderRecv(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+
+	storeA := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelValuesErr:   status.Error(codes.Code(http.StatusUnprocessableEntity), "validation"),
+	}
+	headerBlock := make(chan struct{})
+	storeB := &searchStoreGatewayClientMock{
+		storeGatewayClientMock:       storeGatewayClientMock{remoteAddr: "2.2.2.2"},
+		searchLabelValuesHeaderBlock: headerBlock,
+		queriedBlockIDs:              []ulid.ULID{block2},
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{storeA: {block1}, storeB: {block2}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1}, {ID: block2},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	type result struct {
+		rs storage.SearchResultSet
+	}
+	resCh := make(chan result, 1)
+	go func() { resCh <- result{rs: q.SearchLabelValues(ctx, "namespace", nil, nil)} }()
+
+	var res result
+	select {
+	case res = <-resCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SearchLabelValues did not return — the gCtx-cancellation watcher in readSGSearchHeader is missing or broken")
+	}
+
+	defer res.rs.Close()
+	assert.False(t, res.rs.Next())
+	require.Error(t, res.rs.Err())
+	assert.Contains(t, res.rs.Err().Error(), "non-retriable")
+
+	require.NotNil(t, storeB.lastSearchLabelValuesCtx, "storeB must have been opened before the watcher fired")
+	require.Error(t, storeB.lastSearchLabelValuesCtx.Err(), "storeB's stream ctx must be cancelled by the watcher")
 }
 
 // TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError pins the
