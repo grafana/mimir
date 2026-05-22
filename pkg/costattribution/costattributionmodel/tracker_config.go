@@ -3,7 +3,10 @@
 package costattributionmodel
 
 import (
+	"encoding/json"
 	"fmt"
+	"maps"
+	"strings"
 
 	"github.com/prometheus/common/model"
 )
@@ -36,4 +39,48 @@ func (tc TrackerConfigs) Validate() error {
 		}
 	}
 	return nil
+}
+
+// String implements flag.Value. Returns JSON representation.
+func (tc TrackerConfigs) String() string {
+	if len(tc) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(tc)
+	return string(b)
+}
+
+// Set implements flag.Value. Parses JSON input.
+func (tc *TrackerConfigs) Set(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	var parsed TrackerConfigs
+	if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+		return fmt.Errorf("failed to parse cost attribution trackers: %w", err)
+	}
+	if err := parsed.Validate(); err != nil {
+		return err
+	}
+	*tc = parsed
+	return nil
+}
+
+// MergeTrackerConfigs returns a new TrackerConfigs containing the merge of the two
+// TrackerConfigs in input. If a key exists in both, second wins.
+func MergeTrackerConfigs(first, second TrackerConfigs) TrackerConfigs {
+	if len(first) == 0 && len(second) == 0 {
+		return nil
+	}
+	if len(second) == 0 {
+		return first
+	}
+	if len(first) == 0 {
+		return second
+	}
+	merged := make(TrackerConfigs, len(first)+len(second))
+	maps.Copy(merged, first)
+	maps.Copy(merged, second)
+	return merged
 }

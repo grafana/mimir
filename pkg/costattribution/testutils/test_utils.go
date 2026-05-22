@@ -14,6 +14,12 @@ import (
 
 const TestAttributionCooldown = 20 * time.Minute
 
+func defaultTracker(labels ...costattributionmodel.Label) costattributionmodel.TrackerConfigs {
+	return costattributionmodel.TrackerConfigs{
+		costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels(labels)},
+	}
+}
+
 func NewMockCostAttributionLimits(idx int, userLabels ...[]string) *validation.Overrides {
 	return NewMockCostAttributionOverrides(validation.Limits{}, nil, idx, userLabels...)
 }
@@ -23,26 +29,26 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 		overrides = map[string]*validation.Limits{}
 	}
 	baseLimits := map[string]*validation.Limits{
-		"user1": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}},
-		"user2": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: costattributionmodel.Labels{}},
-		"user3": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: costattributionmodel.Labels{
-			{Input: "department", Output: "my_department"},
-			{Input: "service", Output: "my_service"},
-		}},
-		"user4": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "platform", Output: "my_platform"}}},
-		"user5": {MaxCostAttributionCardinality: 10, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "a", Output: "a"}}},
+		"user1": {MaxCostAttributionCardinality: 5, CostAttributionBaseTrackers: defaultTracker(costattributionmodel.Label{Input: "team", Output: "my_team"})},
+		"user2": {MaxCostAttributionCardinality: 2},
+		"user3": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTracker(
+			costattributionmodel.Label{Input: "department", Output: "my_department"},
+			costattributionmodel.Label{Input: "service", Output: "my_service"},
+		)},
+		"user4": {MaxCostAttributionCardinality: 5, CostAttributionBaseTrackers: defaultTracker(costattributionmodel.Label{Input: "platform", Output: "my_platform"})},
+		"user5": {MaxCostAttributionCardinality: 10, CostAttributionBaseTrackers: defaultTracker(costattributionmodel.Label{Input: "a", Output: "a"})},
 		// user6 has opted to rename team to eng_team.
-		"user6": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "eng_team"}}},
-		"user7": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}, CostAttributionCooldown: model.Duration(TestAttributionCooldown)},
-		// user8 has a default tracker and an additional tracker.
+		"user6": {MaxCostAttributionCardinality: 5, CostAttributionBaseTrackers: defaultTracker(costattributionmodel.Label{Input: "team", Output: "eng_team"})},
+		"user7": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTracker(costattributionmodel.Label{Input: "team", Output: "my_team"}), CostAttributionCooldown: model.Duration(TestAttributionCooldown)},
+		// user8 has a base tracker and an additional tracker.
 		"user8": {
-			MaxCostAttributionCardinality:   5,
-			CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "my_team"}},
+			MaxCostAttributionCardinality: 5,
+			CostAttributionBaseTrackers:   defaultTracker(costattributionmodel.Label{Input: "team", Output: "my_team"}),
 			AdditionalCostAttributionTrackers: costattributionmodel.TrackerConfigs{
 				"by-platform": {Labels: costattributionmodel.Labels{{Input: "platform", Output: "my_platform"}}},
 			},
 		},
-		// user9 has only additional trackers (no default).
+		// user9 has only additional trackers (no base).
 		"user9": {
 			MaxCostAttributionCardinality: 3,
 			AdditionalCostAttributionTrackers: costattributionmodel.TrackerConfigs{
@@ -57,8 +63,10 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 			costAttributionLabels = append(costAttributionLabels, costattributionmodel.Label{Input: uls[i]})
 		}
 		baseLimits[uls[0]] = &validation.Limits{
-			MaxCostAttributionCardinality:   10,
-			CostAttributionLabelsStructured: costAttributionLabels,
+			MaxCostAttributionCardinality: 10,
+			CostAttributionBaseTrackers: costattributionmodel.TrackerConfigs{
+				costattributionmodel.DefaultTrackerName: {Labels: costAttributionLabels},
+			},
 		}
 	}
 	for userID, l := range baseLimits {
@@ -66,23 +74,24 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 			overrides[userID] = l
 		} else {
 			overrides[userID].MaxCostAttributionCardinality = l.MaxCostAttributionCardinality
-			overrides[userID].CostAttributionLabelsStructured = l.CostAttributionLabelsStructured
+			overrides[userID].CostAttributionBaseTrackers = l.CostAttributionBaseTrackers
+			overrides[userID].AdditionalCostAttributionTrackers = l.AdditionalCostAttributionTrackers
 		}
 	}
 	switch idx {
 	case 1:
-		overrides["user1"].CostAttributionLabelsStructured = costattributionmodel.Labels{}
+		overrides["user1"].CostAttributionBaseTrackers = nil
 	case 2:
-		overrides["user3"].CostAttributionLabelsStructured = costattributionmodel.Labels{
-			{Input: "team", Output: "my_team"},
-			{Input: "feature", Output: "my_feature"},
-		}
+		overrides["user3"].CostAttributionBaseTrackers = defaultTracker(
+			costattributionmodel.Label{Input: "team", Output: "my_team"},
+			costattributionmodel.Label{Input: "feature", Output: "my_feature"},
+		)
 	case 3:
 		overrides["user3"].MaxCostAttributionCardinality = 3
 	case 4:
 		overrides["user1"].MaxCostAttributionCardinality = 2
 	case 5:
-		overrides["user1"].CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "department", Output: "my_department"}}
+		overrides["user1"].CostAttributionBaseTrackers = defaultTracker(costattributionmodel.Label{Input: "department", Output: "my_department"})
 	}
 
 	for _, l := range overrides {

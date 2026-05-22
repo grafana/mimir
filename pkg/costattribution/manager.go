@@ -31,12 +31,6 @@ const (
 	samplesTrackerType      = "samples"
 )
 
-// resolvedTrackerConfig is a TrackerConfig with all defaults filled in.
-type resolvedTrackerConfig struct {
-	labels           costattributionmodel.Labels
-	maxCardinality   int
-	cooldownDuration time.Duration
-}
 
 type Manager struct {
 	services.Service
@@ -155,37 +149,6 @@ func (m *Manager) iteration(_ context.Context) error {
 	return nil
 }
 
-// effectiveTrackerConfigs resolves the effective tracker configs for a user,
-// merging the default tracker config with the additional trackers map.
-func effectiveTrackerConfigs(limits *validation.Overrides, userID string) map[string]resolvedTrackerConfig {
-	cfg := limits.CostAttributionConfig(userID)
-	defaultMaxCardinality := cfg.MaxCardinality
-	defaultCooldown := cfg.Cooldown
-
-	result := make(map[string]resolvedTrackerConfig, len(cfg.AdditionalTrackers)+1)
-
-	if len(cfg.Labels) > 0 {
-		result[costattributionmodel.DefaultTrackerName] = resolvedTrackerConfig{
-			labels:           cfg.Labels,
-			maxCardinality:   defaultMaxCardinality,
-			cooldownDuration: defaultCooldown,
-		}
-	}
-
-	for name, tcfg := range cfg.AdditionalTrackers {
-		if len(tcfg.Labels) == 0 {
-			continue
-		}
-		result[name] = resolvedTrackerConfig{
-			labels:           tcfg.Labels,
-			maxCardinality:   defaultMaxCardinality,
-			cooldownDuration: defaultCooldown,
-		}
-	}
-
-	return result
-}
-
 func sortLabels(labels costattributionmodel.Labels) costattributionmodel.Labels {
 	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
 		return strings.Compare(a.Input, b.Input)
@@ -255,31 +218,31 @@ func (mt *managerTrackers[CT, IT]) rebuild(userID string, limits *validation.Ove
 		return tracker, true
 	}
 
-	configs := effectiveTrackerConfigs(limits, userID)
+	cfg := limits.CostAttributionConfig(userID)
 
 	individualUserTrackers, ok := mt.individual[userID]
 	if !ok {
-		individualUserTrackers = make(map[string]IT, len(configs))
+		individualUserTrackers = make(map[string]IT, len(cfg.Trackers))
 		mt.individual[userID] = individualUserTrackers
 	}
 
 	// Remove the ones that are no longer in the config.
 	for name := range individualUserTrackers {
-		if _, ok := configs[name]; !ok {
+		if _, ok := cfg.Trackers[name]; !ok {
 			delete(individualUserTrackers, name)
 		}
 	}
 
 	// Add the missing ones.
-	for name, cfg := range configs {
-		cfgLabels := sortLabels(cfg.labels)
+	for name, tcfg := range cfg.Trackers {
+		cfgLabels := sortLabels(tcfg.Labels)
 		if existing, ok := individualUserTrackers[name]; ok {
 			lbls, maxCardinality, cooldown := existing.config()
-			if maxCardinality == cfg.maxCardinality && cooldown == cfg.cooldownDuration && slices.Equal(lbls, cfgLabels) {
+			if maxCardinality == cfg.MaxCardinality && cooldown == cfg.Cooldown && slices.Equal(lbls, cfgLabels) {
 				continue
 			}
 		}
-		tracker, err := mt.newIndividual(userID, name, cfgLabels, cfg.maxCardinality, cfg.cooldownDuration, logger)
+		tracker, err := mt.newIndividual(userID, name, cfgLabels, cfg.MaxCardinality, cfg.Cooldown, logger)
 		if err != nil {
 			mt.creationErrors.With(prometheus.Labels{"user": userID, "tracker_name": name}).Inc()
 			level.Warn(logger).Log("msg", "error creating cost attribution tracker, skipping it", "user", userID, "tracker_name", name, "error", err)
