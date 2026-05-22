@@ -7,17 +7,22 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 )
 
 // CompartmentReaders runs one PartitionReader per write compartment VC, all consuming the
-// same read compartment topic and pushing into the supplied Pusher. It presents itself as
-// a single services.Service so callers can manage it like a regular PartitionReader.
+// same read compartment topic. Records from every VC are funneled through a shared
+// HeapMerger that orders them by Kafka record timestamp before forwarding to the supplied
+// Pusher. CompartmentReaders presents itself as a single services.Service so callers can
+// manage it like a regular PartitionReader.
 //
 // Each reader has its own consumer group, offset file, and Kafka connection. The partition
 // ID is shared across all VCs (e.g. "ingester-0" reads partition 0 from every VC).
@@ -26,6 +31,7 @@ type CompartmentReaders struct {
 
 	logger  log.Logger
 	readers []*PartitionReader
+	merger  *HeapMerger
 	manager *services.Manager
 	watcher *services.FailureWatcher
 }
@@ -56,6 +62,17 @@ func NewCompartmentReaders(
 	router := NewCompartmentRouter(cfg)
 	readTopic := router.Topic(cfg.ReadCompartmentID)
 
+	// The merger's downstream consumer is a PusherConsumer that turns the merged record
+	// stream into per-tenant WriteRequests and pushes them to the real Pusher. Metrics are
+	// registered once at the CompartmentReaders level (not per-VC) since all VCs share this
+	// downstream path.
+	mergerLogger := log.With(logger, "component", "compartment_merger")
+	pusherMetrics := NewPusherConsumerMetrics(reg)
+	mergerDownstream := consumerFactoryFunc(func() RecordConsumer {
+		return NewPusherConsumer(pusher, kafkaCfg, pusherMetrics, mergerLogger)
+	})
+	merger := NewHeapMerger(HeapMergerConfig{}, mergerDownstream, mergerLogger)
+
 	readers := make([]*PartitionReader, cfg.NumCompartments)
 	for writeCompartmentID := 0; writeCompartmentID < cfg.NumCompartments; writeCompartmentID++ {
 		vcKafkaCfg := kafkaCfg
@@ -73,7 +90,13 @@ func NewCompartmentReaders(
 		vcReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(writeCompartmentID)}, reg)
 		vcLogger := log.With(logger, "component", "compartment_reader", "write_compartment", writeCompartmentID)
 
-		reader, err := NewPartitionReaderForPusher(vcKafkaCfg, partitionID, readerInstanceID, offsetFilePath, pusher, vcLogger, vcReg)
+		// The per-VC PartitionReader's RecordConsumer streams records into the shared merger;
+		// the real Pusher remains the PreCommitNotifier so offset commits still notify it directly.
+		vcID := writeCompartmentID
+		submitterFactory := consumerFactoryFunc(func() RecordConsumer {
+			return merger.NewSubmittingConsumer(vcID)
+		})
+		reader, err := newPartitionReader(vcKafkaCfg, partitionID, readerInstanceID, offsetFilePath, submitterFactory, pusher, vcLogger, vcReg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "creating partition reader for write compartment VC %d", writeCompartmentID)
 		}
@@ -83,13 +106,15 @@ func NewCompartmentReaders(
 	cr := &CompartmentReaders{
 		logger:  logger,
 		readers: readers,
+		merger:  merger,
 	}
 	cr.Service = services.NewBasicService(cr.starting, cr.running, cr.stopping).WithName("compartment-readers")
 	return cr, nil
 }
 
 func (cr *CompartmentReaders) starting(ctx context.Context) error {
-	svcs := make([]services.Service, 0, len(cr.readers))
+	svcs := make([]services.Service, 0, len(cr.readers)+1)
+	svcs = append(svcs, cr.merger)
 	for _, r := range cr.readers {
 		svcs = append(svcs, r)
 	}
@@ -122,4 +147,44 @@ func (cr *CompartmentReaders) stopping(_ error) error {
 		return cr.manager.AwaitStopped(context.Background())
 	}
 	return nil
+}
+
+// LastSeenOffset is not meaningful across VCs since each VC has its own offset space. It
+// returns -1 to signal the value is unavailable; callers that rely on it (notably the
+// per-tenant offset catalogue) should not enable that feature when compartments are in use.
+func (cr *CompartmentReaders) LastSeenOffset() int64 {
+	return -1
+}
+
+// EnforceReadMaxDelay returns an error if any VC reader is lagging more than maxDelay.
+func (cr *CompartmentReaders) EnforceReadMaxDelay(maxDelay time.Duration) error {
+	var errs multierror.MultiError
+	for i, r := range cr.readers {
+		if err := r.EnforceReadMaxDelay(maxDelay); err != nil {
+			errs.Add(errors.Wrapf(err, "write compartment %d", i))
+		}
+	}
+	return errs.Err()
+}
+
+// WaitReadConsistencyUntilOffset is not directly representable across VCs since the
+// supplied offset belongs to a single VC's offset space. We fall back to waiting until
+// every VC has consumed up to its last-produced offset, which is the stronger guarantee.
+func (cr *CompartmentReaders) WaitReadConsistencyUntilOffset(ctx context.Context, _ int64) error {
+	return cr.WaitReadConsistencyUntilLastProducedOffset(ctx)
+}
+
+// WaitReadConsistencyUntilLastProducedOffset waits until every VC has consumed up to its
+// last-produced offset, in parallel.
+func (cr *CompartmentReaders) WaitReadConsistencyUntilLastProducedOffset(ctx context.Context) error {
+	g, gctx := errgroup.WithContext(ctx)
+	for i, r := range cr.readers {
+		g.Go(func() error {
+			if err := r.WaitReadConsistencyUntilLastProducedOffset(gctx); err != nil {
+				return errors.Wrapf(err, "write compartment %d", i)
+			}
+			return nil
+		})
+	}
+	return g.Wait()
 }

@@ -358,7 +358,9 @@ type Ingester struct {
 	errorSamplers ingesterErrSamplers
 
 	// The following is used by ingest storage (when enabled).
-	ingestReader              *ingest.PartitionReader
+	// ingestReader is either a *ingest.PartitionReader (single-VC) or a *ingest.CompartmentReaders
+	// (when compartments are enabled).
+	ingestReader              ingest.Reader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
@@ -545,10 +547,13 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
 		profilingIngester := NewIngesterProfilingWrapper(i)
 
-		// The offset file is always stored in the TSDB directory alongside the ingester's data.
-		offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
-
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+		if compartmentsCfg := ingestCfg.Compartments; compartmentsCfg.Enabled {
+			i.ingestReader, err = ingest.NewCompartmentReaders(kafkaCfg, compartmentsCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, cfg.BlocksStorageConfig.TSDB.Dir, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+		} else {
+			// The offset file is always stored in the TSDB directory alongside the ingester's data.
+			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
+			i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+		}
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}

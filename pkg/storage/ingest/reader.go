@@ -64,6 +64,26 @@ func (c consumerFactoryFunc) consumer() RecordConsumer {
 	return c()
 }
 
+// Reader is the surface area the Ingester uses to interact with its ingest-storage consumer.
+// It is satisfied by both *PartitionReader (single-VC) and *CompartmentReaders (multi-VC).
+type Reader interface {
+	services.Service
+
+	// LastSeenOffset returns the highest record offset seen by the reader, or -1 if the
+	// value isn't meaningful (e.g. across multiple VCs with separate offset spaces).
+	LastSeenOffset() int64
+
+	// EnforceReadMaxDelay returns an error if the reader is lagging more than maxDelay.
+	EnforceReadMaxDelay(maxDelay time.Duration) error
+
+	// WaitReadConsistencyUntilOffset waits until the supplied offset has been consumed.
+	WaitReadConsistencyUntilOffset(ctx context.Context, offset int64) error
+
+	// WaitReadConsistencyUntilLastProducedOffset waits until the reader has caught up with
+	// the broker's last-produced offset.
+	WaitReadConsistencyUntilLastProducedOffset(ctx context.Context) error
+}
+
 type PartitionReader struct {
 	services.Service
 	dependencies *services.Manager
