@@ -32,19 +32,19 @@ import (
 // cannot run without it, so we treat this as a non-retriable protocol violation.
 var errMissingSearchHeader = errors.New("store-gateway omitted the header batch on the Search* stream (response_hints.queried_blocks must be the first message)")
 
+// errUnexpectedResultsInSearchHeader is returned when a store-gateway sends a
+// header batch (one carrying response_hints.queried_blocks) that also populates
+// results. The header batch must be header-only: readSGSearchHeader consumes
+// it and constructs the live source over the remainder of the stream, so any
+// results on the header batch would be silently dropped.
+var errUnexpectedResultsInSearchHeader = errors.New("store-gateway sent results on the Search* header batch (the header batch must carry only response_hints.queried_blocks)")
+
 // SearchLabelNames fans out across the store-gateways owning the relevant
 // blocks, reads each stream's header batch synchronously to capture the
 // queried-block set for the consistency check, and returns a k-way streaming
 // merger over the live per-SG sources. Per-SG memory is bounded to one wire
 // batch in flight. Leaf scores propagate verbatim — no re-filter at the merge
 // layer.
-//
-// The signature intentionally diverges from storage.Searcher by taking a
-// *streaminglabelvalues.Params alongside the SearchHints (the upstream
-// interface has no field for fuzzy-algorithm/threshold/case-sensitivity).
-// The HTTP wiring in the follow-up PR therefore reaches this method
-// through a Mimir-local interface, not via a storage.Searcher type
-// assertion.
 func (q *blocksStoreQuerier) SearchLabelNames(
 	ctx context.Context,
 	params *streaminglabelvalues.Params,
@@ -329,9 +329,12 @@ func (q *blocksStoreQuerier) openSearchLabelValuesStream(
 //
 // A nil response_hints field is treated as a non-retriable protocol violation
 // — the consistency tracker has no way to credit (or correctly classify as
-// missing) the SG's blocks without it. A header batch may itself carry
-// warnings, which are seeded into the adapter so they are still surfaced to
-// the merger's Warnings().
+// missing) the SG's blocks without it. A non-empty results field on the
+// header batch is likewise rejected as a non-retriable protocol violation:
+// the header batch must be header-only because it is consumed before the
+// live source is constructed, so any results on it would be silently
+// dropped. A header batch may itself carry warnings, which are seeded into
+// the adapter so they are still surfaced to the merger's Warnings().
 //
 // gCtx is the errgroup ctx; if it is already cancelled (a peer goroutine
 // errored), we bail without reading to avoid blocking on a stream we'll
@@ -349,6 +352,10 @@ func readSGSearchHeader(gCtx context.Context, stream sgSearchStream, streamCance
 	if header.ResponseHints == nil {
 		streamCancel(errMissingSearchHeader)
 		return nil, nil, false, errMissingSearchHeader
+	}
+	if len(header.Results) > 0 {
+		streamCancel(errUnexpectedResultsInSearchHeader)
+		return nil, nil, false, errUnexpectedResultsInSearchHeader
 	}
 	myBlocks, err := convertBlockHintsToULIDs(header.ResponseHints.QueriedBlocks)
 	if err != nil {

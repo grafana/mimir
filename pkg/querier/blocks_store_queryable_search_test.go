@@ -567,6 +567,47 @@ func TestBlocksStoreQuerier_SearchLabelNames_MissingHeaderIsProtocolViolation(t 
 	assert.Contains(t, rs.Err().Error(), "header")
 }
 
+// TestBlocksStoreQuerier_SearchLabelNames_ResultsOnHeaderIsProtocolViolation
+// asserts the non-retriable hard-fail when an SG packs result entries onto the
+// mandatory header batch. The header is consumed before the live source is
+// constructed, so any results on it would be silently dropped; readSGSearchHeader
+// must reject the contract drift loudly instead.
+func TestBlocksStoreQuerier_SearchLabelNames_ResultsOnHeaderIsProtocolViolation(t *testing.T) {
+	const (
+		minT = int64(10)
+		maxT = int64(20)
+	)
+	block1 := ulid.MustNew(1, nil)
+
+	// omitHeader=true skips the mock's auto-synthesised header so the
+	// hand-crafted first batch below IS the header — and it carries both
+	// ResponseHints (valid) and Results (the contract violation under test).
+	storeResultsOnHeader := &searchStoreGatewayClientMock{
+		storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
+		searchLabelNamesBatches: []*storepb.SearchResultBatch{{
+			ResponseHints: newSearchResponseHints([]ulid.ULID{block1}),
+			Results:       []storepb.SearchResultBatch_Result{{Value: "should_not_appear", Score: 1.0}},
+		}},
+		searchLabelNamesOmitHeader: true,
+	}
+	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{storeResultsOnHeader: {block1}},
+	}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
+		{ID: block1},
+	}, &bucketindex.Metadata{}, error(nil))
+
+	q := newBlocksStoreSearchQuerier(t, stores, finder, minT, maxT)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	rs := q.SearchLabelNames(ctx, nil, nil)
+	defer rs.Close()
+	assert.False(t, rs.Next())
+	require.Error(t, rs.Err())
+	assert.Contains(t, rs.Err().Error(), "results on the Search* header batch")
+}
+
 // TestBlocksStoreQuerier_SearchLabelValues_HappyPath mirrors the SearchLabelNames
 // happy path: two SGs return overlapping values for label "env"; the querier
 // merges, deduplicates and sorts. The retry / warnings / no-tenant /
