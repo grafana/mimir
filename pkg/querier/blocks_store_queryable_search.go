@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,12 @@ var errMissingSearchHeader = errors.New("store-gateway omitted the header batch 
 // it and constructs the live source over the remainder of the stream, so any
 // results on the header batch would be silently dropped.
 var errUnexpectedResultsInSearchHeader = errors.New("store-gateway sent results on the Search* header batch (the header batch must carry only response_hints.queried_blocks)")
+
+// searchWarning lifts a wire warning string to an error without the per-call
+// allocation of errors.New. Used to feed annotations.Annotations.Add.
+type searchWarning string
+
+func (w searchWarning) Error() string { return string(w) }
 
 // SearchLabelNames fans out across the store-gateways owning the relevant
 // blocks, reads each stream's header batch synchronously to capture the
@@ -375,7 +382,7 @@ func headerWarnings(header *storepb.SearchResultBatch) annotations.Annotations {
 	}
 	out := make(annotations.Annotations, len(header.Warnings))
 	for _, w := range header.Warnings {
-		out.Add(errors.New(w))
+		out.Add(searchWarning(w))
 	}
 	return out
 }
@@ -434,7 +441,7 @@ func (s *sgSearchResultSet) Next() bool {
 			return false
 		}
 		for _, w := range batch.Warnings {
-			s.warnings.Add(errors.New(w))
+			s.warnings.Add(searchWarning(w))
 		}
 		if len(batch.Results) > 0 {
 			s.batch = batch
@@ -510,15 +517,23 @@ func buildSGSearchLabelValuesRequest(
 // blockIDsToBlockMatchers builds the per-RPC block_matchers hint. Returns nil
 // for an empty slice so the SG's BlockMatchers branch is not taken when no
 // scoping is requested (matches LabelNames/LabelValues semantics).
+//
+// regexp.QuoteMeta is a no-op for ULIDs today (they're Crockford base32 — no
+// regex metacharacters), but we escape defensively so future ID-format changes
+// don't silently turn into a broken matcher.
 func blockIDsToBlockMatchers(blockIDs []ulid.ULID) []storepb.LabelMatcher {
 	if len(blockIDs) == 0 {
 		return nil
+	}
+	ids := convertULIDsToString(blockIDs)
+	for i, id := range ids {
+		ids[i] = regexp.QuoteMeta(id)
 	}
 	return []storepb.LabelMatcher{
 		{
 			Type:  storepb.LabelMatcher_RE,
 			Name:  block.BlockIDLabel,
-			Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+			Value: strings.Join(ids, "|"),
 		},
 	}
 }

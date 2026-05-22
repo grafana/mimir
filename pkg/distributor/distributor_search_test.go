@@ -5,6 +5,7 @@ package distributor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -218,6 +219,120 @@ func TestDistributor_SearchLabelNames_QuorumShortCircuit(t *testing.T) {
 	}
 	require.NoError(t, rs.Err())
 	assert.ElementsMatch(t, shared, got, "every value returned by the quorum-reached replicas must survive merge+dedup")
+}
+
+// TestDistributor_SearchLabelNames_WarningsPreservedUnderLimit pins the
+// concurrentSearchResultSet warning-snapshot contract under hints.Limit:
+// the merger short-circuits before draining all per-replica results, so the
+// prefetcher's producer goroutine is still alive (blocked on ch <- r) when
+// the caller reads Warnings(). Without the producer's incremental warnings
+// snapshot, c.warns is still its zero value at this point and the warning
+// is silently dropped.
+func TestDistributor_SearchLabelNames_WarningsPreservedUnderLimit(t *testing.T) {
+	// Need more results than the prefetch buffer (256) so the producer blocks
+	// on ch <- r once the buffer fills and limit halts the consumer.
+	const total = 1024
+	scored := make([]scoredValue, total)
+	for i := range total {
+		scored[i] = scoredValue{value: fmt.Sprintf("v%04d", i), score: 1.0}
+	}
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors:   1,
+		numIngesters:      1,
+		happyIngesters:    1,
+		replicationFactor: 1,
+		searchLabelNamesHook: func(_ int, _ *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
+			batches := makeScoredSearchBatches(scored)
+			batches[0].Warnings = []string{"replica-warn"}
+			return batches
+		},
+	})
+	rs := ds[0].SearchLabelNames(
+		user.InjectOrgID(context.Background(), "user-1"),
+		model.Earliest, model.Latest,
+		nil,
+		&storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 5},
+		nil,
+	)
+	defer rs.Close()
+
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	require.Len(t, got, 5, "merger must surface exactly hints.Limit results")
+
+	// Read Warnings BEFORE Close — the bug is that c.warns is only populated
+	// in the producer's terminal defer, which hasn't fired yet under limit.
+	msgs := make([]string, 0, 1)
+	for _, w := range rs.Warnings() {
+		msgs = append(msgs, w.Error())
+	}
+	assert.Equal(t, []string{"replica-warn"}, msgs,
+		"per-replica warnings must surface even when hints.Limit prevents the producer from exiting naturally")
+}
+
+// TestDistributor_SearchLabelNames_ContextCancelledMidStream verifies the
+// distributor's stream lifecycle on caller-initiated cancellation: continued
+// iteration must terminate, and Close must return promptly. Otherwise the
+// prefetcher goroutines leak.
+func TestDistributor_SearchLabelNames_ContextCancelledMidStream(t *testing.T) {
+	// >256 results forces producer to block on ch <- r once the prefetch
+	// channel fills; the cancel-cause path is the only way for it to exit.
+	const total = 1024
+	scored := make([]scoredValue, total)
+	for i := range total {
+		scored[i] = scoredValue{value: fmt.Sprintf("v%04d", i), score: 1.0}
+	}
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors:   1,
+		numIngesters:      1,
+		happyIngesters:    1,
+		replicationFactor: 1,
+		searchLabelNamesHook: func(_ int, _ *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
+			return makeScoredSearchBatches(scored)
+		},
+	})
+
+	ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "user-1"))
+	rs := ds[0].SearchLabelNames(
+		ctx,
+		model.Earliest, model.Latest,
+		nil,
+		&storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: total + 1},
+		nil,
+	)
+
+	// Read a few results, then cancel mid-stream.
+	for range 5 {
+		require.True(t, rs.Next())
+	}
+	cancel()
+
+	// Continued iteration must terminate within a deadline; otherwise the
+	// prefetcher would have leaked its producer goroutine indefinitely.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for rs.Next() { //nolint:revive // intentional drain after cancel
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("rs.Next did not terminate within 5s after ctx cancel")
+	}
+
+	// Close must not hang — it depends on the producer goroutine exiting.
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- rs.Close() }()
+	select {
+	case err := <-closeDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("rs.Close hung after ctx cancel")
+	}
 }
 
 func TestDistributor_SearchLabelValues_FanOutAndMerge(t *testing.T) {

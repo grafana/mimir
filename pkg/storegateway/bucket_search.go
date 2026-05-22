@@ -4,6 +4,7 @@ package storegateway
 
 import (
 	"context"
+	stderrors "errors"
 	"sync"
 	"time"
 
@@ -287,7 +288,9 @@ func storepbToOrdering(o storepb.SearchOrdering) storage.Ordering {
 // querier's consistency check can credit (or correctly classify as
 // still-missing) the blocks this store-gateway actually queried before any
 // result is forwarded upstream. The trailer never carries response_hints; it
-// exists only when there are trailing warnings.
+// exists only when there are trailing warnings. The result slice is allocated
+// lazily so zero-result, zero-warning responses cost no slice alloc beyond
+// the header.
 func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, queriedBlocks []ulid.ULID, send func(*storepb.SearchResultBatch) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -295,28 +298,49 @@ func streamBucketSearchResults(ctx context.Context, rs storage.SearchResultSet, 
 	if err := send(&storepb.SearchResultBatch{ResponseHints: buildSearchResponseHints(queriedBlocks)}); err != nil {
 		return err
 	}
-	batch := &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
+	var batch *storepb.SearchResultBatch
 	for rs.Next() {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if batch == nil {
+			batch = &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
 		}
 		r := rs.At()
 		batch.Results = append(batch.Results, storepb.SearchResultBatch_Result{Value: r.Value, Score: r.Score})
 		if len(batch.Results) >= searchBatchSize {
 			if err := send(batch); err != nil {
-				return err
+				// Forward-looking: today's slice-backed leaves never error,
+				// so rs.Err() is always nil here. Kept as a hook for future
+				// error-bearing leaves whose error could land between the
+				// last rs.Next() and the failed send.
+				return joinWithMergerErr(err, rs.Err())
 			}
-			batch = &storepb.SearchResultBatch{Results: make([]storepb.SearchResultBatch_Result, 0, searchBatchSize)}
+			batch = nil
 		}
 	}
 	if err := rs.Err(); err != nil {
 		return err
 	}
-	batch.Warnings = warningsToStrings(rs.Warnings())
-	if len(batch.Results) == 0 && len(batch.Warnings) == 0 {
+	warnings := warningsToStrings(rs.Warnings())
+	if batch == nil && len(warnings) == 0 {
 		return nil
 	}
+	if batch == nil {
+		batch = &storepb.SearchResultBatch{}
+	}
+	batch.Warnings = warnings
 	return send(batch)
+}
+
+// joinWithMergerErr surfaces the merger's accumulated error alongside a
+// send-side failure so that ops traces preserve the upstream cause when
+// the client disconnects mid-stream.
+func joinWithMergerErr(sendErr, mergerErr error) error {
+	if mergerErr != nil {
+		return stderrors.Join(sendErr, mergerErr)
+	}
+	return sendErr
 }
 
 // buildSearchResponseHints builds the per-RPC SearchResponseHints. Always
