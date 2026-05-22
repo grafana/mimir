@@ -5,13 +5,13 @@ package querier
 import (
 	"context"
 	"io"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
