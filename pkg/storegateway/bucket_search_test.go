@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/grpcutil"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
@@ -228,8 +229,10 @@ func TestBucketStoreSearchLabelNamesHonoursCtxCancellation(t *testing.T) {
 
 // TestStreamBucketSearchResultsBatching exercises streamBucketSearchResults
 // in isolation against a synthetic iterator of >searchBatchSize results, and
-// verifies the boundary splits into the expected batches with any iterator
-// warnings riding on the trailer.
+// verifies the boundary splits into the expected batches with the header
+// batch sent first (carrying response_hints.queried_blocks) and warnings
+// riding on the trailer. The trailer must NOT carry response_hints — the
+// querier reads them only from the header.
 func TestStreamBucketSearchResultsBatching(t *testing.T) {
 	const total = searchBatchSize + 1
 	results := make([]storage.SearchResult, total)
@@ -244,17 +247,70 @@ func TestStreamBucketSearchResultsBatching(t *testing.T) {
 	send := func(b *storepb.SearchResultBatch) error {
 		copyResults := make([]storepb.SearchResultBatch_Result, len(b.Results))
 		copy(copyResults, b.Results)
-		sent = append(sent, &storepb.SearchResultBatch{Results: copyResults, Warnings: b.Warnings})
+		sent = append(sent, &storepb.SearchResultBatch{Results: copyResults, Warnings: b.Warnings, ResponseHints: b.ResponseHints})
 		return nil
 	}
-	require.NoError(t, streamBucketSearchResults(context.Background(), rs, send))
+	queried := []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(2, nil)}
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, queried, send))
 
-	require.Len(t, sent, 2, "257 results must split into 2 batches at the searchBatchSize=256 boundary")
-	assert.Len(t, sent[0].Results, searchBatchSize)
-	assert.Empty(t, sent[0].Warnings, "warnings must ride only on the trailer batch")
-	assert.Len(t, sent[1].Results, 1)
-	require.Len(t, sent[1].Warnings, 1)
-	assert.Equal(t, "partial-block: index header missing", sent[1].Warnings[0])
+	require.Len(t, sent, 3, "header + 257 results split at the searchBatchSize=256 boundary = 3 messages")
+	// Header batch: empty Results, empty Warnings, ResponseHints populated.
+	assert.Empty(t, sent[0].Results, "header batch must carry no results")
+	assert.Empty(t, sent[0].Warnings, "header batch must carry no warnings")
+	require.NotNil(t, sent[0].ResponseHints, "header batch must carry response_hints")
+	require.Len(t, sent[0].ResponseHints.QueriedBlocks, 2)
+	assert.Equal(t, queried[0].String(), sent[0].ResponseHints.QueriedBlocks[0].Id)
+	assert.Equal(t, queried[1].String(), sent[0].ResponseHints.QueriedBlocks[1].Id)
+	// First full data batch.
+	assert.Len(t, sent[1].Results, searchBatchSize)
+	assert.Empty(t, sent[1].Warnings, "warnings must ride only on the trailer batch")
+	assert.Nil(t, sent[1].ResponseHints, "response_hints must ride only on the header batch")
+	// Trailer batch: residual results + warnings, no response_hints.
+	assert.Len(t, sent[2].Results, 1)
+	require.Len(t, sent[2].Warnings, 1)
+	assert.Equal(t, "partial-block: index header missing", sent[2].Warnings[0])
+	assert.Nil(t, sent[2].ResponseHints, "response_hints must NOT ride on the trailer batch")
+}
+
+// TestStreamBucketSearchResultsHeaderOnlyWhenNoResults asserts the SG still
+// emits the header batch when the iterator produces zero results — the
+// querier's consistency check needs the header even from SGs that found
+// nothing for the requested blocks (so those blocks are correctly classified
+// as queried-but-empty rather than still-missing).
+func TestStreamBucketSearchResultsHeaderOnlyWhenNoResults(t *testing.T) {
+	rs := storage.NewSearchResultSetFromSlice(nil, nil)
+	var sent []*storepb.SearchResultBatch
+	send := func(b *storepb.SearchResultBatch) error {
+		sent = append(sent, b)
+		return nil
+	}
+	queried := []ulid.ULID{ulid.MustNew(1, nil)}
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, queried, send))
+
+	require.Len(t, sent, 1, "no results and no warnings should yield header-only stream")
+	require.NotNil(t, sent[0].ResponseHints)
+	require.Len(t, sent[0].ResponseHints.QueriedBlocks, 1)
+	assert.Equal(t, queried[0].String(), sent[0].ResponseHints.QueriedBlocks[0].Id)
+	assert.Empty(t, sent[0].Results)
+	assert.Empty(t, sent[0].Warnings)
+}
+
+// TestStreamBucketSearchResultsHeaderWhenNoQueriedBlocks asserts the SG
+// always sends the header batch even when no blocks were queried — the
+// querier-side header read would otherwise block waiting for a message that
+// never arrives.
+func TestStreamBucketSearchResultsHeaderWhenNoQueriedBlocks(t *testing.T) {
+	rs := storage.NewSearchResultSetFromSlice(nil, nil)
+	var sent []*storepb.SearchResultBatch
+	send := func(b *storepb.SearchResultBatch) error {
+		sent = append(sent, b)
+		return nil
+	}
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, nil, send))
+
+	require.Len(t, sent, 1, "empty queried-blocks set still requires a header batch")
+	require.NotNil(t, sent[0].ResponseHints, "header must carry a (possibly empty) response_hints struct")
+	assert.Empty(t, sent[0].ResponseHints.QueriedBlocks)
 }
 
 // TestStreamBucketSearchResultsHonoursCtxCancellation cancels ctx before
@@ -268,7 +324,7 @@ func TestStreamBucketSearchResultsHonoursCtxCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	send := func(_ *storepb.SearchResultBatch) error { return nil }
-	err := streamBucketSearchResults(ctx, rs, send)
+	err := streamBucketSearchResults(ctx, rs, nil, send)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled), "expected context.Canceled, got %v", err)
 }
