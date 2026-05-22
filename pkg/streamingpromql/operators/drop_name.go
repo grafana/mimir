@@ -7,6 +7,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -52,12 +53,12 @@ func (n *DropNameInstant) AfterPrepare(ctx context.Context) error {
 	return n.Inner.AfterPrepare(ctx)
 }
 
-func (n *DropNameInstant) Finalize(ctx context.Context) error {
-	return n.Inner.Finalize(ctx)
+func (n *DropNameInstant) FinishedReading(ctx context.Context) error {
+	return n.Inner.FinishedReading(ctx)
 }
 
-func (n *DropNameInstant) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return n.Inner.Stats(ctx)
+func (n *DropNameInstant) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return n.Inner.Finalize(ctx)
 }
 
 func (n *DropNameInstant) Close() {
@@ -108,12 +109,12 @@ func (n *DropNameRange) AfterPrepare(ctx context.Context) error {
 	return n.Inner.AfterPrepare(ctx)
 }
 
-func (n *DropNameRange) Finalize(ctx context.Context) error {
-	return n.Inner.Finalize(ctx)
+func (n *DropNameRange) FinishedReading(ctx context.Context) error {
+	return n.Inner.FinishedReading(ctx)
 }
 
-func (n *DropNameRange) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return n.Inner.Stats(ctx)
+func (n *DropNameRange) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return n.Inner.Finalize(ctx)
 }
 
 func (n *DropNameRange) Close() {

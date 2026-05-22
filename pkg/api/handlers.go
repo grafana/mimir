@@ -253,6 +253,8 @@ func NewQuerierHandler(
 		nil,   // Only needed for admin APIs.
 		"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
 		false, // Disable admin APIs.
+		false, // Disable search APIs.
+		0,     // No search result limit.
 		util_log.SlogFromGoKit(logger),
 		func(context.Context) v1.RulesRetriever { return &querier.DummyRulesRetriever{} },
 		0, 0, 0, // Remote read samples and concurrency limit.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -18,8 +19,11 @@ type TestOperator struct {
 	Series                   []labels.Labels
 	DropName                 []bool
 	Data                     []types.InstantVectorSeriesData
+	EvaluationStats          *types.OperatorEvaluationStats
+	Annotations              annotations.Annotations
 	Prepared                 bool
-	Finalized                bool
+	AfterPrepareCalled       bool
+	FinishedReadingCalled    bool
 	Closed                   bool
 	Position                 posrange.PositionRange
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
@@ -115,16 +119,17 @@ func (t *TestOperator) Prepare(_ context.Context, _ *types.PrepareParams) error 
 }
 
 func (t *TestOperator) AfterPrepare(_ context.Context) error {
+	t.AfterPrepareCalled = true
 	return nil
 }
 
-func (t *TestOperator) Finalize(_ context.Context) error {
-	t.Finalized = true
+func (t *TestOperator) FinishedReading(_ context.Context) error {
+	t.FinishedReadingCalled = true
 	return nil
 }
 
-func (t *TestOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
-	panic("not implemented")
+func (t *TestOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return t.EvaluationStats, t.Annotations, nil
 }
 
 func (t *TestOperator) Close() {
@@ -144,9 +149,9 @@ type TestRangeOperator struct {
 	Histograms                 *types.HPointRingBuffer
 	HistogramsView             *types.HPointRingBufferView
 
-	Finalized        bool
-	Closed           bool
-	MatchersProvided types.Matchers
+	FinishedReadingCalled bool
+	Closed                bool
+	MatchersProvided      types.Matchers
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
@@ -228,6 +233,11 @@ func (t *TestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVect
 			return nil, err
 		}
 	}
+
+	// We use `0` for RangeStart of the only step we emit for each series which is
+	// exclusive, so we need to drop anything at or before that timestamp. This logic
+	// matches the logic used by the RangeVectorSelector.
+	t.Floats.DiscardPointsAtOrBefore(0)
 	t.FloatsView = t.Floats.ViewUntilSearchingBackwards(endT, t.FloatsView)
 
 	t.Histograms.Reset()
@@ -236,6 +246,8 @@ func (t *TestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVect
 			return nil, err
 		}
 	}
+
+	t.Histograms.DiscardPointsAtOrBefore(0)
 	t.HistogramsView = t.Histograms.ViewUntilSearchingBackwards(endT, t.HistogramsView)
 
 	return &types.RangeVectorStepData{
@@ -260,8 +272,8 @@ func (t *TestRangeOperator) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (t *TestRangeOperator) Finalize(_ context.Context) error {
-	t.Finalized = true
+func (t *TestRangeOperator) FinishedReading(_ context.Context) error {
+	t.FinishedReadingCalled = true
 
 	if t.Floats != nil {
 		t.Floats.Close()
@@ -279,7 +291,7 @@ func (t *TestRangeOperator) Finalize(_ context.Context) error {
 	return nil
 }
 
-func (t *TestRangeOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+func (t *TestRangeOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not implemented")
 }
 

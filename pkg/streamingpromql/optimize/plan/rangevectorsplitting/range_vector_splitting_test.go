@@ -1234,7 +1234,7 @@ func TestQuerySplitting_NoMetadataConsumption_DoesNotCache(t *testing.T) {
 	baseT := timestamp.Time(0)
 
 	// nonexistent_metric returns no series, so the binary op short-circuits.
-	// This means Finalize() is called on the sum_over_time split operator without SeriesMetadata() being called first.
+	// This means FinishedReading() is called on the sum_over_time split operator without SeriesMetadata() being called first.
 	expr := "nonexistent_metric + sum_over_time(test_metric[24h])"
 	ts := baseT.Add(25 * time.Hour)
 
@@ -1262,7 +1262,7 @@ func TestQuerySplitting_PartialConsumption_DoesNotCache(t *testing.T) {
 
 	// `and on(env)` matches only env=1. The split operator (left) returns 2 series from
 	// SeriesMetadata, but `and` only consumes the first (env=1) via NextSeries before
-	// finalizing the left side. The second series (env=2) is never consumed.
+	// finishing reading from the left side. The second series (env=2) is never consumed.
 	expr := `sum_over_time(some_metric[5h]) and on(env) filter_metric`
 
 	result, stats := runInstantQuery(t, mimirEngine, promStorage, expr, ts)

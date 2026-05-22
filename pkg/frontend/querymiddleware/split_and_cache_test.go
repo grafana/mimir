@@ -2569,6 +2569,189 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 	}
 }
 
+// TestSplitAndCacheMiddleware_ClosesSubResponsesOnPartialFailure exercises the
+// case where a range query is split into multiple sub-queries, some succeed and
+// at least one fails. The middleware must Close() every sub-response it
+// received before returning the error, otherwise resources held by those
+// responses accumulate and leak memory within the query-frontend.
+func TestSplitAndCacheMiddleware_ClosesSubResponsesOnPartialFailure(t *testing.T) {
+	const numSplits = 4
+
+	var (
+		startTime = parseTimeRFC3339(t, "2021-10-14T00:00:00Z")
+		// 4 day range, splitInterval=24h → 4 sub-requests.
+		endTime  = parseTimeRFC3339(t, "2021-10-17T23:59:59Z")
+		failStop = startTime.Add(3*24*time.Hour).Unix() * 1000
+	)
+
+	matrixResponse := func() Response {
+		return &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: matrix,
+				Result: []SampleStream{{
+					Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
+					Samples: []mimirpb.Sample{{Value: 1, TimestampMs: startTime.Unix() * 1000}},
+				}},
+			},
+		}
+	}
+
+	var (
+		producedMu sync.Mutex
+		produced   []*closeCountingResponse
+
+		// successWg lets the failing handler wait until every non-failing
+		// goroutine has registered its response, so the test is deterministic and
+		// always exercises the partial-failure path (rather than the all-failed path
+		// triggered by errgroup ctx-cancel racing the success goroutines).
+		successWg sync.WaitGroup
+	)
+	successWg.Add(numSplits - 1)
+
+	downstream := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+		// The final sub-request fails after the others have completed.
+		if req.GetStart() == failStop {
+			successWg.Wait()
+			return nil, context.DeadlineExceeded
+		}
+
+		resp := &closeCountingResponse{Response: matrixResponse()}
+		producedMu.Lock()
+		produced = append(produced, resp)
+		producedMu.Unlock()
+		successWg.Done()
+		return resp, nil
+	})
+
+	mw := newSplitAndCacheMiddleware(
+		true,  // splitEnabled
+		false, // cacheEnabled
+		24*time.Hour,
+		mockLimits{},
+		newMockQueryLimitsProvider(&mockLimits{}),
+		newTestCodec(),
+		nil, // cache
+		nil, // splitter
+		nil, // extractor
+		nil, // shouldCacheReq
+		log.NewNopLogger(),
+		nil,
+		limiter.NewUnlimintedInflightMemoryConsumptionTracker(nil),
+	)
+
+	rc := mw.Wrap(downstream)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     startTime.Unix() * 1000,
+		end:       endTime.Unix() * 1000,
+		step:      120 * 1000,
+		queryExpr: parseQuery(t, `test_metric`),
+	})
+
+	_, err := rc.Do(ctx, req)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	producedMu.Lock()
+	defer producedMu.Unlock()
+	require.Equal(t, numSplits-1, len(produced),
+		"every non-failing sub-request should have produced a response")
+	for i, r := range produced {
+		require.True(t, r.Closed(),
+			"sub-response %d must be closed when the parent split fails", i)
+	}
+}
+
+// brokenExtractor implements Extractor but ResponseWithoutHeaders returns nil,
+// which makes toExtent's MarshalAny call fail and so triggers the post-doRequests
+// error path in splitAndCacheMiddleware.Do (between doRequests-success and the
+// final MergeResponse call).
+type brokenExtractor struct{}
+
+func (brokenExtractor) Extract(_, _ int64, from Response) Response { return from }
+func (brokenExtractor) ResponseWithoutHeaders(_ Response) Response { return nil }
+
+// TestSplitAndCacheMiddleware_ClosesSubResponsesOnPostDoRequestsFailure covers
+// the leak window that opens between doRequests returning successfully and the
+// final MergeResponse call: storeDownstreamResponses consistency-check errors,
+// toExtent marshalling errors, mergeCacheExtentsForRequest errors, etc. All of
+// those discard execResps without closing them. This test triggers the toExtent
+// branch with a broken Extractor and asserts every downstream sub-response is
+// still Close()'d exactly once.
+func TestSplitAndCacheMiddleware_ClosesSubResponsesOnPostDoRequestsFailure(t *testing.T) {
+	var (
+		startTime = parseTimeRFC3339(t, "2021-10-14T00:00:00Z")
+		endTime   = parseTimeRFC3339(t, "2021-10-15T23:59:59Z")
+	)
+
+	matrixResponse := func() Response {
+		return &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: matrix,
+				Result: []SampleStream{{
+					Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
+					Samples: []mimirpb.Sample{{Value: 1, TimestampMs: startTime.Unix() * 1000}},
+				}},
+			},
+		}
+	}
+
+	var (
+		producedMu sync.Mutex
+		produced   []*closeCountingResponse
+	)
+
+	downstream := HandlerFunc(func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
+		resp := &closeCountingResponse{Response: matrixResponse()}
+		producedMu.Lock()
+		produced = append(produced, resp)
+		producedMu.Unlock()
+		return resp, nil
+	})
+
+	mw := newSplitAndCacheMiddleware(
+		true, // splitEnabled
+		true, // cacheEnabled — required to reach the cache-store loop where toExtent runs
+		24*time.Hour,
+		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+		newMockQueryLimitsProvider(&mockLimits{}),
+		newTestCodec(),
+		cache.NewInstrumentedMockCache(),
+		DefaultCacheKeyGenerator{interval: day},
+		brokenExtractor{},
+		resultsCacheAlwaysEnabled,
+		log.NewNopLogger(),
+		nil,
+		limiter.NewUnlimintedInflightMemoryConsumptionTracker(nil),
+	)
+
+	rc := mw.Wrap(downstream)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     startTime.Unix() * 1000,
+		end:       endTime.Unix() * 1000,
+		step:      120 * 1000,
+		queryExpr: parseQuery(t, `test_metric`),
+	})
+
+	_, err := rc.Do(ctx, req)
+	require.Error(t, err)
+
+	producedMu.Lock()
+	defer producedMu.Unlock()
+	require.NotEmpty(t, produced, "downstream should have been invoked at least once")
+	for i, r := range produced {
+		require.True(t, r.Closed(),
+			"sub-response %d must be closed when the post-doRequests path errors", i)
+	}
+}
+
 func assertInflightTrackerMetrics(t *testing.T, reg *prometheus.Registry, maxBytes, currentBytes, peakBytes float64, sampled int) {
 	t.Helper()
 	expected := fmt.Sprintf(`

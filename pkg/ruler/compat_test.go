@@ -24,11 +24,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/spf13/afero"
@@ -40,8 +42,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -1317,4 +1321,124 @@ func TestPrometheusErrorStringsForDuplicateLabelsets(t *testing.T) {
 				"Prometheus sentinel error changed! Update the inline check in IsOperatorControllable() in compat.go")
 		})
 	}
+}
+
+// TestEngineQueryFunc_ClosesQueryAndPreservesResult ensures the Mimir-specific
+// EngineQueryFunc Close()s the underlying *promql.Query (so the streaming
+// engine's InflightMemoryConsumptionTracker map doesn't leak one entry per
+// successful rule evaluation), while still returning a Vector whose data is
+// independent of the engine's internal pools.
+func TestEngineQueryFunc_ClosesQueryAndPreservesResult(t *testing.T) {
+	opts := streamingpromql.NewTestEngineOpts()
+	reg, ok := opts.CommonOpts.Reg.(*prometheus.Registry)
+	require.True(t, ok, "NewTestEngineOpts should provide a *prometheus.Registry")
+
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(reg), planner)
+	require.NoError(t, err)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			up{instance="a"} 1 1 1
+			up{instance="b"} 0 1 0
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	qf := EngineQueryFunc(engine, storage)
+
+	vec, err := qf(context.Background(), "up", time.Unix(120, 0))
+	require.NoError(t, err)
+
+	expected := promql.Vector{
+		{T: 120000, F: 1, Metric: labels.FromStrings(model.MetricNameLabel, "up", "instance", "a")},
+		{T: 120000, F: 0, Metric: labels.FromStrings(model.MetricNameLabel, "up", "instance", "b")},
+	}
+	require.ElementsMatch(t, expected, vec)
+
+	// And the underlying tracker must be out of the inflight map — the whole
+	// point of this wrapper.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
+		# TYPE cortex_querier_inflight_query_sampled_count gauge
+		cortex_querier_inflight_query_sampled_count 0
+	`), "cortex_querier_inflight_query_sampled_count"))
+}
+
+// TestEngineQueryFunc_VendoredEngineQueryFuncLeaks is a control test that
+// documents the bug we are fixing: rules.EngineQueryFunc (the vendored
+// Prometheus helper) does not Close the Query, so the Mimir streaming engine's
+// InflightMemoryConsumptionTracker leaks an entry per successful evaluation.
+// If this test ever stops failing the leak source is gone upstream and
+// EngineQueryFunc in this package can be retired.
+func TestEngineQueryFunc_VendoredEngineQueryFuncLeaks(t *testing.T) {
+	opts := streamingpromql.NewTestEngineOpts()
+	// Pedantic mode panics on Close if memory accounting is non-zero. We never
+	// call Close here, so disable it to keep the test focused on the leak count.
+	opts.Pedantic = false
+
+	reg, ok := opts.CommonOpts.Reg.(*prometheus.Registry)
+	require.True(t, ok)
+
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(reg), planner)
+	require.NoError(t, err)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			up{instance="a"} 1 1 1
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	qf := rules.EngineQueryFunc(engine, storage)
+
+	_, err = qf(context.Background(), "up", time.Unix(120, 0))
+	require.NoError(t, err)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
+		# TYPE cortex_querier_inflight_query_sampled_count gauge
+		cortex_querier_inflight_query_sampled_count 1
+	`), "cortex_querier_inflight_query_sampled_count"),
+		"if this assertion fails, vendored rules.EngineQueryFunc now closes its Query — ruler.EngineQueryFunc may be redundant")
+}
+
+// TestCopyVector_DeepCopiesFloatHistogram ensures the wrapper deep copies
+// *FloatHistogram values. The Prometheus engine returns matrix HPoint slices
+// (which hold the *FloatHistogram pointers) to a global pool that is reused
+// in place by later queries, so retaining the pointer past qry.Close() would
+// let a concurrent query mutate values consumed by AppendHistogram.
+func TestCopyVector_DeepCopiesFloatHistogram(t *testing.T) {
+	original := &histogram.FloatHistogram{
+		Schema:          1,
+		Count:           10,
+		Sum:             42,
+		ZeroThreshold:   0.001,
+		ZeroCount:       2,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{5},
+	}
+
+	in := promql.Vector{{
+		T:      1000,
+		H:      original,
+		Metric: labels.FromStrings("__name__", "hist"),
+	}}
+
+	out := copyVector(in)
+	require.Len(t, out, 1)
+	require.NotNil(t, out[0].H)
+	require.Equal(t, original, out[0].H, "FloatHistogram values must match the original")
+	require.NotSame(t, original, out[0].H, "FloatHistogram pointer must be a fresh allocation")
+
+	// Mutating the original (as the engine's pool would when reusing the HPoint
+	// after qry.Close()) must not affect the copy held by the rules manager.
+	original.Sum = 9999
+	original.Count = 9999
+	original.PositiveBuckets[0] = 9999
+
+	require.Equal(t, float64(42), out[0].H.Sum)
+	require.Equal(t, float64(10), out[0].H.Count)
+	require.Equal(t, float64(5), out[0].H.PositiveBuckets[0])
 }

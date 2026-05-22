@@ -270,7 +270,6 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		matchers,
 		int(node.SubsetIndex),
 		params.MemoryConsumptionTracker,
-		params.Annotations,
 		timeRange,
 		node.Aggregation.ExpressionPosition.ToPrometheusType(),
 	)

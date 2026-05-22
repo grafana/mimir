@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -46,7 +47,8 @@ type RangeVectorDuplicationBuffer struct {
 	prepareCalled      bool
 	afterPrepareCalled bool
 
-	stats *types.OperatorEvaluationStats
+	stats       *types.OperatorEvaluationStats
+	annotations annotations.Annotations
 }
 
 func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange, logger log.Logger) *RangeVectorDuplicationBuffer {
@@ -125,8 +127,8 @@ func (b *RangeVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, match
 }
 
 func (b *RangeVectorDuplicationBuffer) NextSeries(consumer *RangeVectorDuplicationConsumer) error {
-	if consumer.finalized {
-		return fmt.Errorf("consumer %p is already finalized, can't advance to next series", consumer)
+	if consumer.finishedReadingCalled {
+		return fmt.Errorf("consumer %p has already had FinishedReading called, can't advance to next series", consumer)
 	}
 
 	thisSeriesIndex := consumer.nextUnfilteredSeriesIndex
@@ -320,15 +322,15 @@ func (b *RangeVectorDuplicationBuffer) CloseConsumer(consumer *RangeVectorDuplic
 }
 
 func (b *RangeVectorDuplicationBuffer) releaseBufferedData(consumer *RangeVectorDuplicationConsumer) {
-	if consumer.finalized {
+	if consumer.finishedReadingCalled {
 		return
 	}
 
-	consumer.finalized = true
+	consumer.finishedReadingCalled = true
 
 	defer consumer.subset.close(b.MemoryConsumptionTracker)
 
-	if b.allConsumersFinalized() {
+	if b.allConsumersFinishedReading() {
 		b.releaseAllBufferedData()
 		return
 	}
@@ -392,7 +394,7 @@ func (b *RangeVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 	idx := math.MaxInt
 
 	for _, consumer := range b.consumers {
-		if consumer.finalized {
+		if consumer.finishedReadingCalled {
 			continue
 		}
 
@@ -410,7 +412,7 @@ func (b *RangeVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
 
 func (b *RangeVectorDuplicationBuffer) allOpenConsumersHaveNoFilters() bool {
 	for _, consumer := range b.consumers {
-		if consumer.finalized {
+		if consumer.finishedReadingCalled {
 			continue
 		}
 
@@ -450,23 +452,23 @@ func (b *RangeVectorDuplicationBuffer) AfterPrepare(ctx context.Context) error {
 	return b.Inner.AfterPrepare(ctx)
 }
 
-func (b *RangeVectorDuplicationBuffer) Finalize(ctx context.Context, consumer *RangeVectorDuplicationConsumer) error {
-	if consumer.finalized {
+func (b *RangeVectorDuplicationBuffer) FinishedReading(ctx context.Context, consumer *RangeVectorDuplicationConsumer) error {
+	if consumer.finishedReadingCalled {
 		return nil
 	}
 
 	b.releaseBufferedData(consumer)
 
-	if !b.allConsumersFinalized() {
+	if !b.allConsumersFinishedReading() {
 		return nil
 	}
 
-	return b.Inner.Finalize(ctx)
+	return b.Inner.FinishedReading(ctx)
 }
 
-func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
+func (b *RangeVectorDuplicationBuffer) allConsumersFinishedReading() bool {
 	for _, consumer := range b.consumers {
-		if !consumer.finalized {
+		if !consumer.finishedReadingCalled {
 			return false
 		}
 	}
@@ -474,35 +476,39 @@ func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
 	return true
 }
 
-func (b *RangeVectorDuplicationBuffer) Stats(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.OperatorEvaluationStats, error) {
-	if !b.allConsumersFinalized() {
-		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats when one or more consumers are not finalized")
+func (b *RangeVectorDuplicationBuffer) Finalize(ctx context.Context, consumer *RangeVectorDuplicationConsumer) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	if !b.allConsumersFinishedReading() {
+		return nil, nil, errors.New("RangeVectorDuplicationBuffer: cannot finalize when one or more consumers have not had FinishedReading called")
 	}
 
-	if consumer.hasReadStats {
-		return nil, errors.New("RangeVectorDuplicationBuffer: cannot get stats twice for the same consumer")
+	if consumer.finalized {
+		return nil, nil, errors.New("RangeVectorDuplicationBuffer: cannot finalize the same consumer twice")
 	}
 
 	if b.stats == nil {
 		var err error
-		b.stats, err = b.Inner.Stats(ctx)
+		b.stats, b.annotations, err = b.Inner.Finalize(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	consumer.hasReadStats = true
+	consumer.finalized = true
 	stats := b.stats
+	annos := b.annotations
 
-	if b.allConsumersHaveReadStats() {
-		// Last consumer, return stats without cloning, and clear reference to existing stats.
+	if b.allConsumersFinalized() {
+		// Last consumer, return stats without cloning, and clear references to existing stats and annotations.
 		b.stats = nil
+		b.annotations = nil
 	} else {
 		var err error
 		stats, err = stats.Clone() // FIXME: this is wasteful, we could just clone the subset needed
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+
+		annos = types.CloneAnnotations(b.annotations)
 	}
 
 	if consumer.subset.applicable() {
@@ -515,7 +521,8 @@ func (b *RangeVectorDuplicationBuffer) Stats(ctx context.Context, consumer *Rang
 			stats.Close()
 
 			level.Warn(b.logger).Log("msg", "RangeVectorDuplicationBuffer expected subset statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
-			return types.NewOperatorEvaluationStats(ctx, b.timeRange, b.MemoryConsumptionTracker, 0)
+			emptyStats, err := types.NewOperatorEvaluationStats(ctx, b.timeRange, b.MemoryConsumptionTracker, 0)
+			return emptyStats, annos, err
 		}
 
 		stats.UseSubset(consumer.subset.subsetIndex)
@@ -523,12 +530,12 @@ func (b *RangeVectorDuplicationBuffer) Stats(ctx context.Context, consumer *Rang
 		stats.RemoveAllSubsets()
 	}
 
-	return stats, nil
+	return stats, annos, nil
 }
 
-func (b *RangeVectorDuplicationBuffer) allConsumersHaveReadStats() bool {
+func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
 	for _, consumer := range b.consumers {
-		if !consumer.hasReadStats {
+		if !consumer.finalized {
 			return false
 		}
 	}
@@ -586,9 +593,9 @@ type RangeVectorDuplicationConsumer struct {
 	currentUnfilteredSeriesIndex int // -1 means the consumer hasn't advanced to the first series yet.
 	nextUnfilteredSeriesIndex    int
 	currentSeriesStepIndex       int // -1 means the consumer hasn't called NextStepSamples for the current series yet.
-	finalized                    bool
+	finishedReadingCalled        bool
 	closed                       bool
-	hasReadStats                 bool
+	finalized                    bool
 }
 
 var _ types.RangeVectorOperator = &RangeVectorDuplicationConsumer{}
@@ -605,7 +612,7 @@ func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, mat
 }
 
 func (d *RangeVectorDuplicationConsumer) shouldReturnUnfilteredSeries(unfilteredSeriesIndex int) bool {
-	if d.finalized {
+	if d.finishedReadingCalled {
 		return false
 	}
 
@@ -625,7 +632,7 @@ func (d *RangeVectorDuplicationConsumer) advanceToNextUnfilteredSeries() {
 }
 
 func (d *RangeVectorDuplicationConsumer) hasReadAllStepsForCurrentSeries() bool {
-	return d.finalized || d.currentSeriesStepIndex >= d.Buffer.timeRange.StepCount-1
+	return d.finishedReadingCalled || d.currentSeriesStepIndex >= d.Buffer.timeRange.StepCount-1
 }
 
 func (d *RangeVectorDuplicationConsumer) NextSeries(_ context.Context) error {
@@ -648,12 +655,12 @@ func (d *RangeVectorDuplicationConsumer) AfterPrepare(ctx context.Context) error
 	return d.Buffer.AfterPrepare(ctx)
 }
 
-func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) error {
-	return d.Buffer.Finalize(ctx, d)
+func (d *RangeVectorDuplicationConsumer) FinishedReading(ctx context.Context) error {
+	return d.Buffer.FinishedReading(ctx, d)
 }
 
-func (d *RangeVectorDuplicationConsumer) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return d.Buffer.Stats(ctx, d)
+func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return d.Buffer.Finalize(ctx, d)
 }
 
 func (d *RangeVectorDuplicationConsumer) Close() {

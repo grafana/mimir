@@ -10,7 +10,8 @@
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
 * [FEATURE] Cost attribution: Support multiple named cost attribution trackers per tenant via new `additional_cost_attribution_trackers` config field. #15302
 * [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
-* [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
+* [ENHANCEMENT] Store-gateway, Ingester: Add read support for XOR2 chunk encoding. XOR2 is a new Prometheus TSDB encoding that provides better compression than XOR, particularly for stale markers. #15371
+* [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15191 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
 * [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245
 * [ENHANCEMENT] Ingest storage: Reject the whole batch of records of a Kafka write call when the configured `-ingest-storage.kafka.producer-max-buffered-bytes` limit is reached, instead of rejecting individual records. #15227
@@ -23,12 +24,15 @@
 * [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147 #15270 #14878
 * [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
 * [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
+* [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
 
 ### Mixin
 
 * [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
 * [ENHANCEMENT] Alerts: Widen the `MimirBlockBuilderPersistentJobFailure` lookback window to 20m to prevent the alert from flapping. #15332
+* [ENHANCEMENT] Alerts: Add a native histogram variant of the `MimirRequestLatency` alert, distinguished by the `histogram` label (`classic` or `native`). #15413
+* [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 
 ### Jsonnet
 

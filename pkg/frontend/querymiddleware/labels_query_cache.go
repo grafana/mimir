@@ -41,7 +41,7 @@ func newLabelsQueryCacheRoundTripper(
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, newResultsCacheMetrics(queryTypeLabels, reg))
+	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, NewResultsCacheMetrics(queryTypeLabels, reg))
 }
 
 type labelsQueryTTL struct {

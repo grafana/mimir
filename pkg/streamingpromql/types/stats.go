@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/util/annotations"
 	promstats "github.com/prometheus/prometheus/util/stats"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -212,6 +213,42 @@ func (s *OperatorEvaluationStats) AddSingleStep(other *OperatorEvaluationStats) 
 	return nil
 }
 
+// AddSubRange adds the statistics from other to this instance.
+//
+// This instance is modified in-place.
+//
+// The other instance's steps must align with a sub-range of this instance's steps.
+//
+// Both instances must not have subsets.
+func (s *OperatorEvaluationStats) AddSubRange(other *OperatorEvaluationStats) error {
+	if len(s.subsets) > 0 {
+		return errors.New("cannot add a sub-range to an OperatorEvaluationStats instance that has subsets")
+	}
+
+	if len(other.subsets) > 0 {
+		return errors.New("cannot add a sub-range from an OperatorEvaluationStats instance that has subsets")
+	}
+
+	if s.timeRange.StepCount > 1 && other.timeRange.StepCount > 1 && other.timeRange.IntervalMilliseconds != s.timeRange.IntervalMilliseconds {
+		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with multiple steps and interval %v ms to another instance with multiple steps and interval %v ms", other.timeRange.IntervalMilliseconds, s.timeRange.IntervalMilliseconds)
+	}
+
+	if other.timeRange.StartT < s.timeRange.StartT || other.timeRange.EndT > s.timeRange.EndT {
+		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with time range [%v, %v] to another instance with time range [%v, %v]", other.timeRange.StartT, other.timeRange.EndT, s.timeRange.StartT, s.timeRange.EndT)
+	}
+
+	firstIndexInThisInstance := s.timeRange.PointIndex(other.timeRange.StartT)
+	if s.timeRange.IndexTime(firstIndexInThisInstance) != other.timeRange.StartT {
+		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with time range [%v, %v] and interval %v ms to another instance with time range [%v, %v] and interval %v ms", other.timeRange.StartT, other.timeRange.EndT, other.timeRange.IntervalMilliseconds, s.timeRange.StartT, s.timeRange.EndT, s.timeRange.IntervalMilliseconds)
+	}
+
+	for otherIndex := range other.timeRange.StepCount {
+		s.allSeries.Add(firstIndexInThisInstance+int64(otherIndex), other.allSeries.samplesProcessedPerStep[otherIndex], other.allSeries.samplesReadIfSubsequentStep[otherIndex], other.allSeries.samplesReadIfFirstStep[otherIndex])
+	}
+
+	return nil
+}
+
 func (s *OperatorEvaluationStats) newEmptyInstanceWithSameSubsets(timeRange QueryTimeRange) (*OperatorEvaluationStats, error) {
 	return NewOperatorEvaluationStatsWithQueryStats(timeRange, s.memoryConsumptionTracker, s.queryStats, len(s.subsets))
 }
@@ -378,6 +415,18 @@ func (s *OperatorEvaluationStats) GetSubsetCount() int {
 
 func (s *OperatorEvaluationStats) GetTotalSamplesProcessed() int64 {
 	return sum(s.allSeries.samplesProcessedPerStep)
+}
+
+// HalveCounts divides all sample counters in this instance by 2, rounding down.
+//
+// This is used to correct for double-counting when both the sum and count legs
+// of a sharded avg() expression process the same underlying data.
+func (s *OperatorEvaluationStats) HalveCounts() {
+	s.allSeries.HalveCounts()
+
+	for _, subset := range s.subsets {
+		subset.HalveCounts()
+	}
 }
 
 // FinalizeAndComputePrometheusStats computes an equivalent QuerySamples instance as expected
@@ -561,6 +610,20 @@ func (s *subsetStats) CopySingleStepFrom(source *subsetStats, stepIdx int64) {
 	s.samplesReadIfFirstStep[0] = source.samplesReadIfFirstStep[stepIdx]
 }
 
+func (s *subsetStats) HalveCounts() {
+	for i := range s.samplesProcessedPerStep {
+		s.samplesProcessedPerStep[i] /= 2
+	}
+
+	for i := range s.samplesReadIfSubsequentStep {
+		s.samplesReadIfSubsequentStep[i] /= 2
+	}
+
+	for i := range s.samplesReadIfFirstStep {
+		s.samplesReadIfFirstStep[i] /= 2
+	}
+}
+
 func (s *subsetStats) Encode() EncodedSubsetStats {
 	return EncodedSubsetStats{
 		SamplesProcessedPerStep:     s.samplesProcessedPerStep,
@@ -600,31 +663,38 @@ func (s *subsetStats) Close() {
 	Int64SlicePool.Put(&s.samplesReadIfFirstStep, s.memoryConsumptionTracker)
 }
 
-// CombineStats retrieves and combines query stats from multiple operators.
+// FinalizeAndCombine retrieves and combines query stats and annotations from multiple operators.
 // The caller is responsible for calling Close() on the returned stats.
-func CombineStats[T StatsProvider](ctx context.Context, operators ...T) (*OperatorEvaluationStats, error) {
-	var combined *OperatorEvaluationStats
+// The returned annotations may be nil if none of the operators reported any annotations.
+func FinalizeAndCombine[T Finalizer](ctx context.Context, operators ...T) (*OperatorEvaluationStats, annotations.Annotations, error) {
+	var combinedStats *OperatorEvaluationStats
+	var combinedAnnos annotations.Annotations
 
 	for _, op := range operators {
-		stats, err := op.Stats(ctx)
+		stats, annos, err := op.Finalize(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		if combined == nil {
-			combined = stats
-			continue
+		if combinedStats == nil {
+			combinedStats = stats
+		} else {
+			if err := combinedStats.Add(stats); err != nil {
+				return nil, nil, err
+			}
+			stats.Close()
 		}
 
-		if err := combined.Add(stats); err != nil {
-			return nil, err
+		if combinedAnnos == nil {
+			combinedAnnos = annos
+		} else {
+			combinedAnnos.Merge(annos)
 		}
-		stats.Close()
 	}
 
-	return combined, nil
+	return combinedStats, combinedAnnos, nil
 }
 
-type StatsProvider interface {
-	Stats(context.Context) (*OperatorEvaluationStats, error)
+type Finalizer interface {
+	Finalize(context.Context) (*OperatorEvaluationStats, annotations.Annotations, error)
 }

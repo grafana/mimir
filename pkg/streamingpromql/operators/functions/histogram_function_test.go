@@ -170,7 +170,7 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 	require.Equal(t, expectedBGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
 		"remainingGroups memory should be tracked")
 
-	err = hOp.Finalize(ctx)
+	err = hOp.FinishedReading(ctx)
 	require.NoError(t, err)
 	hOp.Close()
 

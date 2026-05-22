@@ -41,6 +41,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	grpc_metadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -1693,4 +1697,143 @@ func newTestBucketIndexMetadataReader(t testing.TB, bkt objstore.Bucket, userID 
 func (t testBucketIndexMetadataReader) Metadata() *bucketindex.Metadata {
 	idx := createBucketIndex(t.t, t.bkt, t.userID)
 	return idx.Metadata()
+}
+
+// recordingActivityTracker captures every Insert/Delete call so a test can
+// assert the StoreGateway wrappers exercise the activity tracker contract.
+// Implements the activityTracker interface declared in gateway.go.
+type recordingActivityTracker struct {
+	mu      sync.Mutex
+	inserts []string
+	deletes []int
+	nextIdx int
+}
+
+func (r *recordingActivityTracker) Insert(gen func() string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	idx := r.nextIdx
+	r.nextIdx++
+	r.inserts = append(r.inserts, gen())
+	return idx
+}
+
+func (r *recordingActivityTracker) Delete(ix int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deletes = append(r.deletes, ix)
+}
+
+// TestStoreGatewaySearchTracksActivity locks in the contract that
+// SearchLabelNames and SearchLabelValues each call activity-tracker
+// Insert exactly once with a generator that emits the RPC name, and pair
+// each Insert with a Delete on the same index. If the wrappers in
+// gateway.go drop the tracker calls, this test fails.
+//
+// The test sidesteps the full ring/services/sync setup by constructing a
+// minimal *StoreGateway directly: an empty *BucketStores produces a nil
+// per-tenant store, so the inner search path short-circuits cleanly via
+// `if store == nil { return nil }` in bucket_stores.go. See
+// BucketStores.getStore at bucket_stores.go:470-474 — if that ever stops
+// being a bare map lookup, this test must be updated.
+func TestStoreGatewaySearchTracksActivity(t *testing.T) {
+	tests := []struct {
+		name     string
+		invoke   func(g *StoreGateway, ctx context.Context) error
+		wantHint string
+	}{
+		{
+			name: "SearchLabelNames",
+			invoke: func(g *StoreGateway, ctx context.Context) error {
+				return g.SearchLabelNames(&storepb.SearchLabelNamesRequest{}, &mockSearchLabelNamesServer{ctx: ctx})
+			},
+			wantHint: "StoreGateway/SearchLabelNames",
+		},
+		{
+			name: "SearchLabelValues",
+			invoke: func(g *StoreGateway, ctx context.Context) error {
+				return g.SearchLabelValues(&storepb.SearchLabelValuesRequest{}, &mockSearchLabelValuesServer{ctx: ctx})
+			},
+			wantHint: "StoreGateway/SearchLabelValues",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tracker := &recordingActivityTracker{}
+			g := &StoreGateway{
+				logger:  log.NewNopLogger(),
+				tracker: tracker,
+				stores: &BucketStores{
+					logger: log.NewNopLogger(),
+					stores: map[string]*BucketStore{},
+				},
+			}
+
+			ctx := grpc_metadata.NewIncomingContext(context.Background(), grpc_metadata.MD{
+				GrpcContextMetadataTenantID: []string{"test-tenant"},
+			})
+
+			require.NoError(t, tc.invoke(g, ctx))
+
+			require.Len(t, tracker.inserts, 1, "Insert must be called exactly once")
+			assert.Contains(t, tracker.inserts[0], tc.wantHint, "activity string must mention the RPC name")
+			assert.Equal(t, []int{0}, tracker.deletes, "Delete must be passed the index returned by Insert")
+		})
+	}
+}
+
+// TestBucketStoresSearchEmitsSpan locks in that the BucketStores search
+// wrappers open a span via spanlogger so distributed traces include
+// "BucketStores.SearchLabel{Names,Values}" entries. If the spanlogger.New
+// calls in bucket_stores.go are removed or renamed, this test fails.
+//
+// The package-level tracer at gateway.go:51 is a delegating tracer obtained
+// via otel.Tracer(...); calls on it dispatch to the current global
+// TracerProvider, so swapping the provider for the duration of this test
+// is sufficient to capture spans. The swap is restored via t.Cleanup so
+// sibling tests are unaffected.
+func TestBucketStoresSearchEmitsSpan(t *testing.T) {
+	spanExporter := tracetest.NewInMemoryExporter()
+	tp := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spanExporter)))
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	stores := &BucketStores{
+		logger: log.NewNopLogger(),
+		stores: map[string]*BucketStore{},
+	}
+	ctx := grpc_metadata.NewIncomingContext(context.Background(), grpc_metadata.MD{
+		GrpcContextMetadataTenantID: []string{"test-tenant"},
+	})
+
+	tests := []struct {
+		name     string
+		wantSpan string
+		invoke   func() error
+	}{
+		{
+			name:     "SearchLabelNames",
+			wantSpan: "BucketStores.SearchLabelNames",
+			invoke: func() error {
+				return stores.SearchLabelNames(&storepb.SearchLabelNamesRequest{}, &mockSearchLabelNamesServer{ctx: ctx})
+			},
+		},
+		{
+			name:     "SearchLabelValues",
+			wantSpan: "BucketStores.SearchLabelValues",
+			invoke: func() error {
+				return stores.SearchLabelValues(&storepb.SearchLabelValuesRequest{}, &mockSearchLabelValuesServer{ctx: ctx})
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spanExporter.Reset()
+			require.NoError(t, tc.invoke())
+			spans := spanExporter.GetSpans()
+			require.Len(t, spans, 1, "expected exactly one span emitted by the BucketStores wrapper")
+			assert.Equal(t, tc.wantSpan, spans[0].Name)
+		})
+	}
 }

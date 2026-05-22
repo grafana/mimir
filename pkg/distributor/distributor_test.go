@@ -6153,6 +6153,13 @@ type prepConfig struct {
 	numDistributors           int
 	disableDistributorService bool
 
+	// searchLabelNamesHook returns the batches each mock ingester will stream for
+	// SearchLabelNames calls. ingesterIdx is the per-zone mockIngester.id; tests
+	// without zones can use it as a global index.
+	searchLabelNamesHook func(ingesterIdx int, req *client.SearchLabelNamesRequest) []*client.SearchResultBatch
+	// searchLabelValuesHook is the analogous hook for SearchLabelValues.
+	searchLabelValuesHook func(ingesterIdx int, req *client.SearchLabelValuesRequest) []*client.SearchResultBatch
+
 	replicationFactor                  int
 	enableTracker                      bool
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
@@ -6311,6 +6318,20 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
+		}
+		if cfg.searchLabelNamesHook != nil {
+			ingesterIdx := i
+			hook := cfg.searchLabelNamesHook
+			ingester.searchLabelNamesHook = func(req *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
+				return hook(ingesterIdx, req)
+			}
+		}
+		if cfg.searchLabelValuesHook != nil {
+			ingesterIdx := i
+			hook := cfg.searchLabelValuesHook
+			ingester.searchLabelValuesHook = func(req *client.SearchLabelValuesRequest) []*client.SearchResultBatch {
+				return hook(ingesterIdx, req)
+			}
 		}
 
 		// Init the partition reader if the ingester should consume from Kafka.
@@ -6938,6 +6959,12 @@ type mockIngester struct {
 	// Hooks.
 	hooksMx        sync.Mutex
 	beforePushHook func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool)
+
+	// searchLabelNamesHook, when non-nil, drives the SearchLabelNames stream
+	// response for this ingester. The returned batches are emitted in order.
+	searchLabelNamesHook func(req *client.SearchLabelNamesRequest) []*client.SearchResultBatch
+	// searchLabelValuesHook is the analogous hook for SearchLabelValues.
+	searchLabelValuesHook func(req *client.SearchLabelValuesRequest) []*client.SearchResultBatch
 }
 
 func (i *mockIngester) registerBeforePushHook(fn func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool)) {
@@ -7606,6 +7633,70 @@ func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityRes
 	result := s.results[s.i]
 	s.i++
 	return result, nil
+}
+
+func (i *mockIngester) SearchLabelNames(ctx context.Context, req *client.SearchLabelNamesRequest, _ ...grpc.CallOption) (client.Ingester_SearchLabelNamesClient, error) {
+	i.trackCall("SearchLabelNames", ctx, req)
+
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	var batches []*client.SearchResultBatch
+	if i.searchLabelNamesHook != nil {
+		batches = i.searchLabelNamesHook(req)
+	}
+	return &mockSearchStream{batches: batches}, nil
+}
+
+func (i *mockIngester) SearchLabelValues(ctx context.Context, req *client.SearchLabelValuesRequest, _ ...grpc.CallOption) (client.Ingester_SearchLabelValuesClient, error) {
+	i.trackCall("SearchLabelValues", ctx, req)
+
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	var batches []*client.SearchResultBatch
+	if i.searchLabelValuesHook != nil {
+		batches = i.searchLabelValuesHook(req)
+	}
+	return &mockSearchStream{batches: batches}, nil
+}
+
+// mockSearchStream satisfies both Ingester_SearchLabelNamesClient and
+// Ingester_SearchLabelValuesClient — both share the same Recv signature
+// and embed grpc.ClientStream.
+type mockSearchStream struct {
+	grpc.ClientStream
+	batches []*client.SearchResultBatch
+	i       int
+}
+
+func (*mockSearchStream) CloseSend() error {
+	return nil
+}
+
+func (s *mockSearchStream) Recv() (*client.SearchResultBatch, error) {
+	if s.i >= len(s.batches) {
+		return nil, io.EOF
+	}
+	batch := s.batches[s.i]
+	s.i++
+	return batch, nil
 }
 
 func (i *mockIngester) ActiveSeries(ctx context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {

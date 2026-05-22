@@ -143,6 +143,24 @@ func (i *ActivityTrackerWrapper) ActiveSeries(request *client.ActiveSeriesReques
 	return i.ing.ActiveSeries(request, server)
 }
 
+func (i *ActivityTrackerWrapper) SearchLabelNames(request *client.SearchLabelNamesRequest, server client.Ingester_SearchLabelNamesServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/SearchLabelNames", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.SearchLabelNames(request, server)
+}
+
+func (i *ActivityTrackerWrapper) SearchLabelValues(request *client.SearchLabelValuesRequest, server client.Ingester_SearchLabelValuesServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/SearchLabelValues", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.SearchLabelValues(request, server)
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)
