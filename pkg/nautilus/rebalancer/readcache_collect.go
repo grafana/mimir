@@ -25,7 +25,7 @@ func (r *Rebalancer) reconstructRound(ctx context.Context, activePartitions []in
 // collectRoundStats queries all healthy readcache pods for per-range
 // stats and per-partition totals.
 func (r *Rebalancer) collectRoundStats(ctx context.Context, _ *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
-	return r.collectRatesFromReadcache(ctx)
+	return r.collectRatesFromReadcaches(ctx)
 }
 
 // pushRanges calls SetHashRanges on each readcache that owns at least
@@ -207,7 +207,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 	return a
 }
 
-// collectRatesFromReadcache queries all healthy readcache pods for
+// collectRatesFromReadcaches queries all healthy readcache pods for
 // per-range ingestion rates and per-partition totals.
 //
 // Source-of-truth contract:
@@ -228,7 +228,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 // On any per-pod failure the round continues with whatever the
 // other pods returned; a single misbehaving readcache cannot block
 // the rebalance round behind TCP timeouts (see Config.IngesterRPCTimeout).
-func (r *Rebalancer) collectRatesFromReadcache(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
+func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
 	instances, err := r.readcachePool.healthyInstances()
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
