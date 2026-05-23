@@ -297,15 +297,19 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // reportSlowQuery reports slow queries.
 func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
-	logMessage := append([]any{
+	logMessage := []any{
 		"msg", "slow query detected",
 		"method", r.Method,
 		"host", r.Host,
 		"path", r.URL.Path,
 		"time_taken", queryResponseTime.String(),
-	}, formatQueryString(details, queryString)...)
+	}
 
 	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
+
+	// Append query string params last so that, if the log line is truncated downstream,
+	// the long param_query value is what gets cut rather than other fields.
+	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
@@ -352,7 +356,7 @@ func (f *Handler) reportQueryStats(
 	}
 
 	// Log stats.
-	logMessage := append([]any{
+	logMessage := []any{
 		"msg", "query stats",
 		"component", "query-frontend",
 		"method", r.Method,
@@ -378,7 +382,7 @@ func (f *Handler) reportQueryStats(
 		"samples_processed", samplesProcessed,
 		"equivalent_samples_read", equivalentSamplesRead,
 		"physical_samples_read", physicalSamplesRead,
-	}, formatQueryString(details, queryString)...)
+	}
 
 	if details != nil {
 		// Start and End may be zero when the request wasn't a query (e.g. /metadata)
@@ -430,6 +434,10 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage,
 			"status", "success")
 	}
+
+	// Append query string params last so that, if the log line is truncated downstream,
+	// the long param_query value is what gets cut rather than other fields.
+	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
