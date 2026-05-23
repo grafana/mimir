@@ -8,6 +8,7 @@ package plan
 import (
 	"context"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -24,7 +25,7 @@ func (s *SkipHistogramDecodingOptimizationPass) Name() string {
 	return "Skip decoding histogram buckets"
 }
 
-func (s *SkipHistogramDecodingOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+func (s *SkipHistogramDecodingOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion, _ requestoptions.Options) (*planning.QueryPlan, error) {
 	s.applyToNode(plan.Root, false)
 
 	return plan, nil

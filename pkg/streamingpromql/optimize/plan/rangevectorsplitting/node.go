@@ -181,9 +181,6 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	ranges := make([]Range, len(s.SplitRanges))
 	for i, sr := range s.SplitRanges {
 		ranges[i] = Range(sr)
-		if params.CacheDisabled {
-			ranges[i].Cacheable = false
-		}
 	}
 
 	if s.Inner.ChildCount() != 1 {

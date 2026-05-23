@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -61,13 +62,13 @@ func (o *OptimizationPass) Name() string {
 	return "Range vector splitting"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion, opts requestoptions.Options) (*planning.QueryPlan, error) {
 	if maximumSupportedQueryPlanVersion < planning.QueryPlanV13 {
 		return plan, nil
 	}
 
 	var err error
-	plan.Root, err = o.wrapSplitRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange)
+	plan.Root, err = o.wrapSplitRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange, opts.CacheDisabled)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +76,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
+func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange, cacheDisabled bool) (planning.Node, error) {
 	logger := spanlogger.FromContext(ctx, o.logger)
 
 	// Skip processing children of subqueries - range vectors inside subqueries
@@ -86,7 +87,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		o.functionNodesInspected.Inc()
-		wrappedNode, notAppliedReason, err := o.trySplitFunction(ctx, functionCall, timeRange)
+		wrappedNode, notAppliedReason, err := o.trySplitFunction(ctx, functionCall, timeRange, cacheDisabled)
 		if err != nil {
 			o.functionNodesUnsplit.WithLabelValues("error").Inc()
 			return nil, err
@@ -103,7 +104,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 	for i := range n.ChildCount() {
 		child := n.Child(i)
-		newChild, err := o.wrapSplitRangeVectorFunctions(ctx, child, timeRange)
+		newChild, err := o.wrapSplitRangeVectorFunctions(ctx, child, timeRange, cacheDisabled)
 		if err != nil {
 			return nil, err
 		}
@@ -129,7 +130,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 //     inner nodes for the subquery, so the split ranges might not align with the stored blocks after the adjustments.
 //   - For functions that require timestamps (e.g. ts_of_min_over_time), we will need to shift the result timestamps to
 //     accommodate for the adjustment done for modifiers.
-func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, string, error) {
+func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *core.FunctionCall, timeRange types.QueryTimeRange, cacheDisabled bool) (planning.Node, string, error) {
 	// For now, only support instant queries (range queries are more complex)
 	if !timeRange.IsInstant {
 		return nil, "range_query", nil
@@ -185,15 +186,23 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 
 	splitRanges := computeSplitRanges(startTs, endTs, o.splitInterval, oooThreshold)
 
-	hasCacheable := false
-	for _, r := range splitRanges {
-		if r.Cacheable {
-			hasCacheable = true
-			break
+	if cacheDisabled {
+		// Caller opted out of caching: keep splitting (preserves the future parallel-execution benefit) but
+		// don't write or read any split results to/from the cache.
+		for i := range splitRanges {
+			splitRanges[i].Cacheable = false
 		}
-	}
-	if !hasCacheable {
-		return nil, "no_cacheable_blocks_after_ooo_filter", nil
+	} else {
+		hasCacheable := false
+		for _, r := range splitRanges {
+			if r.Cacheable {
+				hasCacheable = true
+				break
+			}
+		}
+		if !hasCacheable {
+			return nil, "no_cacheable_blocks_after_ooo_filter", nil
+		}
 	}
 
 	n := &SplitFunctionCall{

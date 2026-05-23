@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -48,7 +49,7 @@ func (n *NarrowSelectorsOptimizationPass) Name() string {
 	return "narrow selectors"
 }
 
-func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion, _ requestoptions.Options) (*planning.QueryPlan, error) {
 	// If this query plan doesn't contain any selectors for us to apply hints for, if the
 	// query has been rewritten to be sharded or spun off, don't attempt to generate any
 	// query hints since there are no selectors that we understand and can add matchers to.

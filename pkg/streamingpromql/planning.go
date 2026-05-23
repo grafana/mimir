@@ -292,7 +292,9 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 	spanLogger.DebugLog("msg", "starting planning", "expression", qs, "maximum_supported_query_plan_version", maximumSupportedQueryPlanVersion)
 
-	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, qs, timeRange, requestoptions.FromContext(ctx), observer)
+	opts := requestoptions.FromContext(ctx)
+
+	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, qs, timeRange, opts, observer)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +335,9 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "original plan completed", "plan", plan)
 
 	for _, o := range p.planOptimizationPasses {
-		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan, maximumSupportedQueryPlanVersion) })
+		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) {
+			return o.Apply(ctx, plan, maximumSupportedQueryPlanVersion, opts)
+		})
 
 		if err != nil {
 			return nil, err

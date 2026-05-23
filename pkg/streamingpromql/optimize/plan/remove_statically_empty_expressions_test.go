@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
@@ -583,7 +584,7 @@ func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
 			},
 		}
 
-		optimizedPlan, err := optimizationPass.Apply(context.Background(), queryPlan, planning.MaximumSupportedQueryPlanVersion)
+		optimizedPlan, err := optimizationPass.Apply(context.Background(), queryPlan, planning.MaximumSupportedQueryPlanVersion, requestoptions.Options{})
 		require.NoError(t, err)
 
 		require.Equal(t, "- NoOp", optimizedPlan.String())

@@ -25,7 +25,6 @@ import (
 	"go.opentelemetry.io/otel"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
@@ -305,7 +304,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		QueryStats:         types.NewQueryStats(),
 		EagerLoadSelectors: e.eagerLoadSelectors,
 		QueryParameters:    params,
-		CacheDisabled:      requestoptions.FromContext(ctx).CacheDisabled,
 		Logger:             e.logger,
 	}
 

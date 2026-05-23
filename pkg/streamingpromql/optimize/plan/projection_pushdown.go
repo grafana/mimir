@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -87,7 +88,7 @@ func (p *ProjectionPushdownOptimizationPass) Name() string {
 	return "Push down label projections"
 }
 
-func (p *ProjectionPushdownOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, v planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+func (p *ProjectionPushdownOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, v planning.QueryPlanVersion, _ requestoptions.Options) (*planning.QueryPlan, error) {
 	spanlog := spanlogger.FromContext(ctx, p.logger)
 	var (
 		selectors = 0

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -27,7 +28,7 @@ func (o *OptimizationPass) Name() string {
 	return "Remote execution"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion, _ requestoptions.Options) (*planning.QueryPlan, error) {
 	inspectResult := optimize.InspectSelectors(plan.Root)
 	if !inspectResult.HasSelectors || inspectResult.IsRewrittenByMiddleware {
 		return plan, nil
