@@ -334,6 +334,75 @@ func TestHeapMerger_EmittedRecordsCountedPerVC(t *testing.T) {
 	`), "cortex_ingest_storage_heap_merger_emitted_records_total"))
 }
 
+// Asserts the MaxBatchWait timer flushes the heap even when MaxBatchRecords isn't reached.
+func TestHeapMerger_TimerDrivenFlush(t *testing.T) {
+	rc := &recordingConsumer{}
+	m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 20 * time.Millisecond})
+	sc := m.NewSubmittingConsumer(0)
+	require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: time.Unix(1, 0), Offset: 1}})))
+	assert.Len(t, rc.snapshot(), 1)
+}
+
+// Asserts the MaxBatchWait timer re-arms after a flush so subsequent batches also flush on time.
+func TestHeapMerger_TimerReArmsAfterFlush(t *testing.T) {
+	rc := &recordingConsumer{}
+	m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 20 * time.Millisecond})
+	sc := m.NewSubmittingConsumer(0)
+	base := time.Unix(0, 0)
+	require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: base, Offset: 1}})))
+	require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: base.Add(time.Second), Offset: 2}})))
+	assert.Len(t, rc.snapshot(), 2)
+}
+
+// Asserts that records sharing a producer timestamp emit in (vcID, offset) order through the merger.
+// This is the per-batch invariant the design relies on: all records in one MultiWriteSync share a
+// timestamp and must emit in offset order.
+func TestHeapMerger_TiedTimestampsEmitInOffsetOrder(t *testing.T) {
+	rc := &recordingConsumer{}
+	m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 50 * time.Millisecond})
+
+	sc := m.NewSubmittingConsumer(0)
+	ts := time.Unix(100, 0)
+	require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{
+		{Timestamp: ts, Offset: 3},
+		{Timestamp: ts, Offset: 1},
+		{Timestamp: ts, Offset: 2},
+	})))
+
+	got := rc.snapshot()
+	require.Len(t, got, 3)
+	assert.Equal(t, []int64{1, 2, 3}, []int64{got[0].Offset, got[1].Offset, got[2].Offset})
+}
+
+// Asserts a submitter unblocks promptly when its context is cancelled while records are in flight.
+func TestHeapMerger_ConsumeRespectsContextCancellation(t *testing.T) {
+	blocker := &blockingConsumer{block: make(chan struct{})}
+	defer close(blocker.block)
+
+	factory := consumerFactoryFunc(func() RecordConsumer { return blocker })
+	m := NewHeapMerger(HeapMergerConfig{MaxBatchRecords: 1, MaxBatchWait: 5 * time.Millisecond}, factory, NewHeapMergerMetrics(prometheus.NewRegistry()), log.NewNopLogger())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), m))
+	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(context.Background(), m) })
+
+	sc := m.NewSubmittingConsumer(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- sc.Consume(ctx, recordsSeq([]*kgo.Record{{Timestamp: time.Unix(1, 0), Offset: 1}}))
+	}()
+
+	// Wait long enough for the record to be in flight, then cancel.
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("Consume did not return after context cancellation")
+	}
+}
+
 // blockingConsumer is a RecordConsumer that blocks in Consume until block is closed.
 type blockingConsumer struct {
 	block chan struct{}
