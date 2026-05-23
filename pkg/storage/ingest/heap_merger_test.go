@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -98,21 +101,22 @@ func (rc *recordingConsumer) snapshot() []*kgo.Record {
 	return out
 }
 
-func newTestMerger(t *testing.T, rc *recordingConsumer, cfg HeapMergerConfig) *HeapMerger {
+func newTestMerger(t *testing.T, rc *recordingConsumer, cfg HeapMergerConfig) (*HeapMerger, *prometheus.Registry) {
 	t.Helper()
 	factory := consumerFactoryFunc(func() RecordConsumer { return rc })
-	m := NewHeapMerger(cfg, factory, log.NewNopLogger())
+	reg := prometheus.NewRegistry()
+	m := NewHeapMerger(cfg, factory, NewHeapMergerMetrics(reg), log.NewNopLogger())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), m))
 	t.Cleanup(func() {
 		_ = services.StopAndAwaitTerminated(context.Background(), m)
 	})
-	return m
+	return m, reg
 }
 
 // Asserts records from a single submitter pass through unchanged and in submission order.
 func TestHeapMerger_SingleVCInOrder(t *testing.T) {
 	rc := &recordingConsumer{}
-	m := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 3, MaxBatchWait: 10 * time.Millisecond})
+	m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 3, MaxBatchWait: 10 * time.Millisecond})
 
 	sc := m.NewSubmittingConsumer(0)
 	base := time.Unix(0, 0)
@@ -135,7 +139,7 @@ func TestHeapMerger_TwoVCsInterleaveByTimestamp(t *testing.T) {
 	rc := &recordingConsumer{}
 	// Set MaxBatchWait high enough that both submitters land their records before flush.
 	// Set MaxBatchRecords high so the flush is timer-driven, giving both VCs time to enqueue.
-	m := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 100 * time.Millisecond})
+	m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 100 * time.Millisecond})
 
 	sc0 := m.NewSubmittingConsumer(0)
 	sc1 := m.NewSubmittingConsumer(1)
@@ -176,7 +180,7 @@ func TestHeapMerger_TwoVCsInterleaveByTimestamp(t *testing.T) {
 // Asserts a downstream error reaches every submitter whose records were in the failing batch.
 func TestHeapMerger_ErrorPropagatesToAllSubmittersInBatch(t *testing.T) {
 	rc := &recordingConsumer{err: errors.New("downstream boom")}
-	m := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 30 * time.Millisecond})
+	m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 30 * time.Millisecond})
 
 	sc0 := m.NewSubmittingConsumer(0)
 	sc1 := m.NewSubmittingConsumer(1)
@@ -204,7 +208,7 @@ func TestHeapMerger_ErrorPropagatesToAllSubmittersInBatch(t *testing.T) {
 // Asserts Consume returns immediately and invokes nothing downstream when given no records.
 func TestHeapMerger_EmptyConsumeIsNoop(t *testing.T) {
 	rc := &recordingConsumer{}
-	m := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 30 * time.Millisecond})
+	m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 30 * time.Millisecond})
 	sc := m.NewSubmittingConsumer(0)
 	require.NoError(t, sc.Consume(context.Background(), recordsSeq(nil)))
 	assert.Empty(t, rc.snapshot())
@@ -216,7 +220,7 @@ func TestHeapMerger_BackpressureBlocksSubmittersWhenDownstreamSlow(t *testing.T)
 	// once the buffer + heap fills up. We confirm backpressure indirectly by checking
 	// that Consume doesn't return until the slow downstream has finished.
 	rc := &recordingConsumer{delay: 80 * time.Millisecond}
-	m := newTestMerger(t, rc, HeapMergerConfig{
+	m, _ := newTestMerger(t, rc, HeapMergerConfig{
 		MaxBatchRecords: 2,
 		MaxBatchWait:    5 * time.Millisecond,
 		InputBufferSize: 2,
@@ -246,7 +250,7 @@ func TestHeapMerger_ShutdownAcksPendingRecords(t *testing.T) {
 	// confirm that submitters see their context cancellation propagated as an ack.
 	blocker := &blockingConsumer{block: make(chan struct{})}
 	factory := consumerFactoryFunc(func() RecordConsumer { return blocker })
-	m := NewHeapMerger(HeapMergerConfig{MaxBatchRecords: 1, MaxBatchWait: 5 * time.Millisecond}, factory, log.NewNopLogger())
+	m := NewHeapMerger(HeapMergerConfig{MaxBatchRecords: 1, MaxBatchWait: 5 * time.Millisecond}, factory, NewHeapMergerMetrics(prometheus.NewRegistry()), log.NewNopLogger())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), m))
 
 	sc := m.NewSubmittingConsumer(0)
@@ -272,6 +276,62 @@ func TestHeapMerger_ShutdownAcksPendingRecords(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("submitter did not return after merger shutdown — likely a hung ack")
 	}
+}
+
+// Asserts the out-of-order emissions counter increments when a record arrives with an
+// older timestamp than one already emitted in a previous batch.
+func TestHeapMerger_CountsOutOfOrderEmissionsAcrossBatches(t *testing.T) {
+	rc := &recordingConsumer{}
+	// Small batch + short wait so the first record flushes alone, then the second record
+	// (with older timestamp) flushes in a second batch and trips the OOO counter.
+	m, reg := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 1, MaxBatchWait: 5 * time.Millisecond})
+	sc := m.NewSubmittingConsumer(0)
+
+	base := time.Unix(0, 0)
+	require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: base.Add(50 * time.Millisecond), Offset: 1}})))
+	require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: base.Add(10 * time.Millisecond), Offset: 2}})))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_heap_merger_out_of_order_emissions_total Total number of records emitted with a timestamp older than the most recently emitted record. This is the residual cross-VC OOO that the merger could not absorb.
+		# TYPE cortex_ingest_storage_heap_merger_out_of_order_emissions_total counter
+		cortex_ingest_storage_heap_merger_out_of_order_emissions_total 1
+	`), "cortex_ingest_storage_heap_merger_out_of_order_emissions_total"))
+}
+
+// Asserts emitted_records_total tracks contributions per source VC.
+func TestHeapMerger_EmittedRecordsCountedPerVC(t *testing.T) {
+	rc := &recordingConsumer{}
+	m, reg := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 30 * time.Millisecond})
+
+	sc0 := m.NewSubmittingConsumer(0)
+	sc1 := m.NewSubmittingConsumer(1)
+
+	base := time.Unix(0, 0)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		assert.NoError(t, sc0.Consume(context.Background(), recordsSeq([]*kgo.Record{
+			{Timestamp: base.Add(1 * time.Millisecond), Offset: 1},
+			{Timestamp: base.Add(3 * time.Millisecond), Offset: 2},
+		})))
+	}()
+	go func() {
+		defer wg.Done()
+		assert.NoError(t, sc1.Consume(context.Background(), recordsSeq([]*kgo.Record{
+			{Timestamp: base.Add(2 * time.Millisecond), Offset: 1},
+			{Timestamp: base.Add(4 * time.Millisecond), Offset: 2},
+			{Timestamp: base.Add(6 * time.Millisecond), Offset: 3},
+		})))
+	}()
+	wg.Wait()
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_heap_merger_emitted_records_total Total number of records the heap merger has forwarded downstream, by source write compartment.
+		# TYPE cortex_ingest_storage_heap_merger_emitted_records_total counter
+		cortex_ingest_storage_heap_merger_emitted_records_total{write_compartment="0"} 2
+		cortex_ingest_storage_heap_merger_emitted_records_total{write_compartment="1"} 3
+	`), "cortex_ingest_storage_heap_merger_emitted_records_total"))
 }
 
 // blockingConsumer is a RecordConsumer that blocks in Consume until block is closed.

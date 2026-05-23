@@ -5,16 +5,58 @@ package ingest
 import (
 	"container/heap"
 	"context"
+	"flag"
 	"iter"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
+
+// HeapMergerMetrics holds Prometheus metrics for a HeapMerger.
+type HeapMergerMetrics struct {
+	bufferedRecords   prometheus.Gauge
+	emittedRecords    *prometheus.CounterVec
+	outOfOrderEmits   prometheus.Counter
+	batchFlushLatency prometheus.Histogram
+	submitterWaitTime *prometheus.HistogramVec
+}
+
+// NewHeapMergerMetrics creates and registers a HeapMergerMetrics on the supplied registerer.
+func NewHeapMergerMetrics(reg prometheus.Registerer) *HeapMergerMetrics {
+	factory := promauto.With(reg)
+	return &HeapMergerMetrics{
+		bufferedRecords: factory.NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingest_storage_heap_merger_buffered_records",
+			Help: "Current number of records buffered in the heap merger awaiting emission.",
+		}),
+		emittedRecords: factory.NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_heap_merger_emitted_records_total",
+			Help: "Total number of records the heap merger has forwarded downstream, by source write compartment.",
+		}, []string{"write_compartment"}),
+		outOfOrderEmits: factory.NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_heap_merger_out_of_order_emissions_total",
+			Help: "Total number of records emitted with a timestamp older than the most recently emitted record. This is the residual cross-VC OOO that the merger could not absorb.",
+		}),
+		batchFlushLatency: factory.NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingest_storage_heap_merger_batch_flush_latency_seconds",
+			Help:    "Elapsed time from the first record entering a batch to the batch finishing its downstream push.",
+			Buckets: prometheus.DefBuckets,
+		}),
+		submitterWaitTime: factory.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_ingest_storage_heap_merger_submitter_wait_seconds",
+			Help:    "Time a per-VC submitting consumer spent waiting for its records to be acked by the merger.",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"write_compartment"}),
+	}
+}
 
 // heapItem is a single record awaiting emission by the HeapMerger, plus the
 // channel used to signal back to its submitter once it has been forwarded.
@@ -61,17 +103,24 @@ type HeapMergerConfig struct {
 	// MaxBatchRecords is the soft upper bound on records buffered in the heap
 	// before forcing a flush. A larger value gives the heap more cross-VC mixing
 	// at the cost of memory and per-flush latency.
-	MaxBatchRecords int
+	MaxBatchRecords int `yaml:"max_batch_records"`
 
 	// MaxBatchWait is the maximum time records sit in the heap before being
 	// flushed even if MaxBatchRecords hasn't been reached. Keeps tail latency
 	// bounded when traffic is sparse.
-	MaxBatchWait time.Duration
+	MaxBatchWait time.Duration `yaml:"max_batch_wait"`
 
 	// InputBufferSize is the buffer size of the channel into which submitting
 	// consumers push records. Capped to avoid unbounded memory if the merger
 	// stalls on a slow downstream consumer.
-	InputBufferSize int
+	InputBufferSize int `yaml:"input_buffer_size"`
+}
+
+// RegisterFlagsWithPrefix registers HeapMergerConfig flags under the given prefix.
+func (cfg *HeapMergerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.IntVar(&cfg.MaxBatchRecords, prefix+"max-batch-records", 1024, "Soft upper bound on records buffered in the heap merger before forcing a flush. Larger values give the merger more cross-VC mixing at the cost of memory and per-flush latency.")
+	f.DurationVar(&cfg.MaxBatchWait, prefix+"max-batch-wait", 50*time.Millisecond, "Maximum time records sit in the heap merger before being flushed even if max-batch-records has not been reached.")
+	f.IntVar(&cfg.InputBufferSize, prefix+"input-buffer-size", 0, "Buffer size of the channel into which per-VC submitting consumers push records. When 0, defaults to 2x max-batch-records.")
 }
 
 // HeapMerger receives records from multiple VC streams via a single channel,
@@ -85,12 +134,13 @@ type HeapMerger struct {
 	cfg             HeapMergerConfig
 	input           chan heapItem
 	consumerFactory consumerFactory
+	metrics         *HeapMergerMetrics
 	logger          log.Logger
 }
 
 // NewHeapMerger constructs a HeapMerger that forwards merged batches via
 // consumers produced by consumerFactory.
-func NewHeapMerger(cfg HeapMergerConfig, consumerFactory consumerFactory, logger log.Logger) *HeapMerger {
+func NewHeapMerger(cfg HeapMergerConfig, consumerFactory consumerFactory, metrics *HeapMergerMetrics, logger log.Logger) *HeapMerger {
 	if cfg.MaxBatchRecords <= 0 {
 		cfg.MaxBatchRecords = 1024
 	}
@@ -104,6 +154,7 @@ func NewHeapMerger(cfg HeapMergerConfig, consumerFactory consumerFactory, logger
 		cfg:             cfg,
 		input:           make(chan heapItem, cfg.InputBufferSize),
 		consumerFactory: consumerFactory,
+		metrics:         metrics,
 		logger:          logger,
 	}
 	m.Service = services.NewBasicService(nil, m.run, nil).WithName("heap-merger")
@@ -125,6 +176,8 @@ func (m *HeapMerger) run(ctx context.Context) error {
 		<-timer.C
 	}
 	timerActive := false
+	var batchStart time.Time
+	var lastEmittedTs time.Time
 
 	flush := func() {
 		if h.Len() == 0 {
@@ -153,7 +206,29 @@ func (m *HeapMerger) run(ctx context.Context) error {
 		err := m.consumerFactory.consumer().Consume(ctx, slices.Values(records))
 		if err != nil {
 			level.Warn(m.logger).Log("msg", "downstream consumer returned error from merged batch", "records", len(batch), "err", err)
+		} else if m.metrics != nil {
+			// Only count successful emissions; failures will be retried by upstream readers.
+			perVC := make(map[int]int, len(batch))
+			for _, item := range batch {
+				perVC[item.vcID]++
+				ts := item.record.Timestamp
+				if !lastEmittedTs.IsZero() && ts.Before(lastEmittedTs) {
+					m.metrics.outOfOrderEmits.Inc()
+				}
+				if ts.After(lastEmittedTs) {
+					lastEmittedTs = ts
+				}
+			}
+			for vcID, count := range perVC {
+				m.metrics.emittedRecords.WithLabelValues(strconv.Itoa(vcID)).Add(float64(count))
+			}
 		}
+
+		if m.metrics != nil {
+			m.metrics.batchFlushLatency.Observe(time.Since(batchStart).Seconds())
+			m.metrics.bufferedRecords.Set(float64(h.Len()))
+		}
+		batchStart = time.Time{}
 
 		for _, item := range batch {
 			item.ackCh <- err
@@ -167,7 +242,13 @@ func (m *HeapMerger) run(ctx context.Context) error {
 			return nil
 
 		case item := <-m.input:
+			if h.Len() == 0 {
+				batchStart = time.Now()
+			}
 			heap.Push(h, item)
+			if m.metrics != nil {
+				m.metrics.bufferedRecords.Set(float64(h.Len()))
+			}
 			if !timerActive {
 				timer.Reset(m.cfg.MaxBatchWait)
 				timerActive = true
@@ -216,6 +297,13 @@ func (sc *submittingConsumer) Consume(ctx context.Context, records iter.Seq[*kgo
 	if len(batch) == 0 {
 		return nil
 	}
+
+	start := time.Now()
+	defer func() {
+		if sc.merger.metrics != nil {
+			sc.merger.metrics.submitterWaitTime.WithLabelValues(strconv.Itoa(sc.vcID)).Observe(time.Since(start).Seconds())
+		}
+	}()
 
 	ackCh := make(chan error, len(batch))
 	for _, r := range batch {
