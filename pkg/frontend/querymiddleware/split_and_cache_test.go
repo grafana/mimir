@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -605,7 +606,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		end:       parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
 		step:      step,
 		queryExpr: parseQuery(t, `{__name__=~".+"}`),
-		options:   Options{CacheDisabled: true},
+		options:   requestoptions.Options{CacheDisabled: true},
 	})
 
 	queryDetails, ctx := ContextWithEmptyDetails(context.Background())

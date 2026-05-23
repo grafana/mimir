@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 func TestResultsCacheConfig_Validate(t *testing.T) {
@@ -303,7 +304,7 @@ func TestResponseHeadersAllowCaching(t *testing.T) {
 		response Response
 		expected bool
 	}{
-		// Tests only for cacheControlHeader
+		// Tests only for the Cache-Control header
 		{
 			name: "does not contain the cacheControl header",
 			response: Response(&PrometheusResponse{
@@ -321,8 +322,8 @@ func TestResponseHeadersAllowCaching(t *testing.T) {
 			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusHeader{
 					{
-						Name:   cacheControlHeader,
-						Values: []string{noStoreValue},
+						Name:   requestoptions.CacheControlHeader,
+						Values: []string{requestoptions.NoStoreValue},
 					},
 				},
 			}),
@@ -333,8 +334,8 @@ func TestResponseHeadersAllowCaching(t *testing.T) {
 			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusHeader{
 					{
-						Name:   cacheControlHeader,
-						Values: []string{"foo", noStoreValue},
+						Name:   requestoptions.CacheControlHeader,
+						Values: []string{"foo", requestoptions.NoStoreValue},
 					},
 				},
 			}),
@@ -355,7 +356,7 @@ func TestResponseHeadersAllowCaching(t *testing.T) {
 		{
 			name: "had cacheControl header but no values",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusHeader{{Name: cacheControlHeader}},
+				Headers: []*PrometheusHeader{{Name: requestoptions.CacheControlHeader}},
 			}),
 			expected: true,
 		},

@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -111,7 +112,7 @@ func TestExperimentalFunctionsMiddleware_ShouldNotPanicOnNilQueryExpression(t *t
 	handler := middleware.Wrap(inner)
 
 	// Create a request with a nil queryExpr to simulate a failed parse.
-	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, Options{}, nil, "")
+	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, requestoptions.Options{}, nil, "")
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 

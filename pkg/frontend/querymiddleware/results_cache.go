@@ -31,18 +31,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
 	// resultsCacheVersion should be increased every time cache should be invalidated (after a bugfix or cache format change).
 	resultsCacheVersion = 1
-
-	// cacheControlHeader is the name of the cache control header.
-	cacheControlHeader = "Cache-Control"
-
-	// noStoreValue is the value that cacheControlHeader has if the response indicates that the results should not be cached.
-	noStoreValue = "no-store"
 )
 
 var (
@@ -298,8 +293,8 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 // via an HTTP header, false otherwise.
 func responseHeadersAllowCaching(r Response) bool {
 	for _, hv := range r.GetHeaders() {
-		if hv.GetName() == cacheControlHeader {
-			return !slices.Contains(hv.GetValues(), noStoreValue)
+		if hv.GetName() == requestoptions.CacheControlHeader {
+			return !slices.Contains(hv.GetValues(), requestoptions.NoStoreValue)
 		}
 	}
 
