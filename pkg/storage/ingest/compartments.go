@@ -38,6 +38,10 @@ type CompartmentsConfig struct {
 	WriteKafkaAddressFormat      string `yaml:"write_kafka_address_format"`
 	WriteKafkaSASLUsernameFormat string `yaml:"write_kafka_sasl_username_format"`
 	WriteKafkaSASLPasswordFormat string `yaml:"write_kafka_sasl_password_format"`
+
+	// HeapMerger tunes the cross-VC record merger that orders records by Kafka timestamp
+	// before forwarding them downstream.
+	HeapMerger HeapMergerConfig `yaml:"heap_merger"`
 }
 
 // RegisterFlagsWithPrefix registers the flags for CompartmentsConfig with the given prefix.
@@ -49,6 +53,7 @@ func (cfg *CompartmentsConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Fl
 	f.StringVar(&cfg.WriteKafkaAddressFormat, prefix+"write-kafka-address-format", "", fmt.Sprintf("Kafka broker address template for write compartment VCs, with a %q placeholder replaced by the write compartment index. Used by null ingesters to read from all write VCs.", writeCompartmentIDPlaceholder))
 	f.StringVar(&cfg.WriteKafkaSASLUsernameFormat, prefix+"write-kafka-sasl-username-format", "", fmt.Sprintf("SASL username template for write compartment VCs, with a %q placeholder replaced by the write compartment index.", writeCompartmentIDPlaceholder))
 	f.StringVar(&cfg.WriteKafkaSASLPasswordFormat, prefix+"write-kafka-sasl-password-format", "", fmt.Sprintf("SASL password template for write compartment VCs, with a %q placeholder replaced by the write compartment index.", writeCompartmentIDPlaceholder))
+	cfg.HeapMerger.RegisterFlagsWithPrefix(prefix+"heap-merger.", f)
 }
 
 // Validate returns an error if the config is invalid.

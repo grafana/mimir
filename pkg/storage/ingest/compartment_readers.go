@@ -71,7 +71,7 @@ func NewCompartmentReaders(
 	mergerDownstream := consumerFactoryFunc(func() RecordConsumer {
 		return NewPusherConsumer(pusher, kafkaCfg, pusherMetrics, mergerLogger)
 	})
-	merger := NewHeapMerger(HeapMergerConfig{}, mergerDownstream, mergerLogger)
+	merger := NewHeapMerger(cfg.HeapMerger, mergerDownstream, NewHeapMergerMetrics(reg), mergerLogger)
 
 	readers := make([]*PartitionReader, cfg.NumCompartments)
 	for writeCompartmentID := 0; writeCompartmentID < cfg.NumCompartments; writeCompartmentID++ {
