@@ -227,11 +227,13 @@ type Rebalancer struct {
 	cfg    Config
 	logger log.Logger
 
-	// readcachePool dials readcache pods for HashRangeStats,
-	// SetHashRanges, and GetHashRanges. Required in production;
-	// unit tests may construct a Rebalancer without a pool and
-	// inject synthetic stats directly into runSlicer.
-	readcachePool *ReadcachePool
+	// fleet abstracts the readcache pool the rebalancer talks to.
+	// Production wires *ReadcachePool (ring discovery + gRPC
+	// connection cache); the harness used by the test suite wires
+	// an in-memory stub. Required in production; unit tests that
+	// exercise runSlicer directly may construct a Rebalancer with
+	// fleet=nil and bypass the round-driving code paths.
+	fleet readcacheFleet
 
 	store          *logStore
 	readcacheStore *readcacheLogStore
@@ -256,6 +258,13 @@ type Rebalancer struct {
 	// slicer round so scale-up/scale-down is picked up at most one
 	// round (lease_lookahead by default) after the ring event.
 	readcacheRing readcacheRingReader
+
+	// clock is the time source consulted by rebalance(), the admin
+	// handlers, and the gRPC stream handlers. Production wires
+	// wallClock{}; tests inject a controlled clock via newForTest
+	// so multi-round timelines (lease aging, cooldown expiry,
+	// scheduling) can be driven deterministically.
+	clock Clock
 }
 
 // readcacheRingReader is the subset of *ring.Ring the slicer needs to
@@ -276,12 +285,13 @@ func New(cfg Config, readcacheRing readcacheRingReader, readcachePool *Readcache
 		cfg:                cfg,
 		logger:             logger,
 		readcacheRing:      readcacheRing,
-		readcachePool:      readcachePool,
+		fleet:              readcachePool,
 		store:              newLogStore(),
 		readcacheStore:     newReadcacheLogStore(),
 		moveCooldowns:      make(map[assignment.HashRange]time.Time),
 		readcacheCooldowns: make(readcacheMoveCooldowns),
 		metrics:            newMetrics(registerer),
+		clock:              wallClock{},
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.running, nil)
@@ -360,7 +370,7 @@ func (r *Rebalancer) running(ctx context.Context) error {
 			if err := r.rebalance(ctx); err != nil {
 				level.Warn(r.logger).Log("msg", "rebalance round failed", "err", err)
 			}
-			timer.Reset(r.nextRoundDelay(time.Now()))
+			timer.Reset(r.nextRoundDelay(r.now()))
 		}
 	}
 }
@@ -413,7 +423,7 @@ func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
 // from broadcasting an empty snapshot derived from stale persisted
 // state (whose leases have all expired during the restart window).
 func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream NautilusRebalancer_WatchAssignmentsServer) error {
-	initial, updates, unsubscribe := r.store.subscribe(time.Now())
+	initial, updates, unsubscribe := r.store.subscribe(r.now())
 	defer unsubscribe()
 
 	// subscribe returns initial=nil when the store has not yet run
@@ -452,7 +462,7 @@ func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream Nautilu
 // an empty/expired view that would tell every readcache to drop all
 // partitions.
 func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
-	initial, updates, unsubscribe := r.readcacheStore.subscribe(time.Now())
+	initial, updates, unsubscribe := r.readcacheStore.subscribe(r.now())
 	defer unsubscribe()
 
 	// See WatchAssignments for why we may skip the initial Send.
@@ -507,7 +517,8 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	current := r.store.latestActiveAssignment(time.Now())
+	now := r.now()
+	current := r.store.latestActiveAssignment(now)
 	if current == nil {
 		// Cold start: try to reconstruct the assignment from whatever
 		// each owning pod (readcache when wired, ingester otherwise)
@@ -526,13 +537,13 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				"partitions", len(activePartitions),
 				"total_entries", len(current.Entries))
 		}
-		r.store.apply(time.Now(), current, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+		r.store.apply(now, current, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
 		level.Info(r.logger).Log(
 			"msg", "cold start hash assignment log seeded",
 			"entries", len(current.Entries),
 			"subscribers", r.store.numSubscribers(),
 		)
-		r.pushRanges(ctx, current, time.Now())
+		r.pushRanges(ctx, current, now)
 		// Seed the readcache slicer too: without this the readcache
 		// log stays empty until the next round, which is up to
 		// LeaseDuration - LeaseLookahead away (3.5min by default).
@@ -545,7 +556,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// spread, which is exactly what we want at cold start.
 		if r.cfg.ReadcacheSlicer.Enabled {
 			if instances := r.activeReadcacheInstances(); len(instances) > 0 {
-				if r.runReadcacheSlicer(time.Now(), activePartitions, nil, nil, instances) {
+				if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances) {
 					level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
 				}
 			}
@@ -555,12 +566,10 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 			// so the leases don't expire over the next few rounds
 			// before the operator (or a future enable) reseeds.
 			// Falls through silently when nothing is active.
-			r.refreshReadcacheLeases(time.Now())
+			r.refreshReadcacheLeases(now)
 		}
 		return nil
 	}
-
-	now := time.Now()
 	level.Info(r.logger).Log(
 		"msg", "rebalance round starting",
 		"active_partitions", len(activePartitions),

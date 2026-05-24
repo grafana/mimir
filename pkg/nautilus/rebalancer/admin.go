@@ -358,10 +358,11 @@ type adminPageData struct {
 
 func (r *Rebalancer) buildAdminPageData() adminPageData {
 	rounds, lastStats, lastPartitionL, lastPartitionRate := r.admin.snapshot()
-	current := r.store.latestActiveAssignment(time.Now())
+	now := r.now()
+	current := r.store.latestActiveAssignment(now)
 
 	data := adminPageData{
-		GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
+		GeneratedAt:     now.UTC().Format(time.RFC3339),
 		AdminPathPrefix: adminPathPrefix,
 	}
 
@@ -429,7 +430,6 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 		}
 	}
 
-	now := time.Now()
 	ownerByPartition := make(map[int32]string)
 	for _, e := range r.readcacheStore.snapshot() {
 		if e.ActiveAt(now) {
@@ -593,13 +593,13 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 }
 
 func (r *Rebalancer) readcacheConfigured() bool {
-	return r.readcachePool != nil || r.readcacheRing != nil || r.cfg.ReadcacheSlicer.Enabled || len(r.cfg.ReadcacheSlicer.Instances) > 0
+	return r.fleet != nil || r.readcacheRing != nil || r.cfg.ReadcacheSlicer.Enabled || len(r.cfg.ReadcacheSlicer.Instances) > 0
 }
 
 // buildReadcacheReplicaViews groups the live readcache assignment log
 // by instance ID and enriches with ring addresses and slicer load.
 func (r *Rebalancer) buildReadcacheReplicaViews() []readcacheReplicaView {
-	now := time.Now()
+	now := r.now()
 
 	partitionsByInstance := make(map[string][]int32)
 	// Use ActiveAt (currently-serving leases), not LiveEntries, which
@@ -759,7 +759,7 @@ func (r *Rebalancer) serveReadcacheReset(w http.ResponseWriter, req *http.Reques
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
-	result, err := r.ResetReadcacheAssignment(time.Now())
+	result, err := r.ResetReadcacheAssignment(r.now())
 	wantsJSON := strings.Contains(req.Header.Get("Accept"), "application/json")
 	if err != nil {
 		if wantsJSON {

@@ -42,6 +42,30 @@ type readcacheRingClient interface {
 	GetAllHealthy(op ring.Operation) (ring.ReplicationSet, error)
 }
 
+// readcacheRPC is the narrow subset of ingester_client.IngesterClient
+// the rebalancer actually invokes on a readcache pod. Production
+// flows the full IngesterClient through (it implicitly satisfies
+// this interface); tests inject a stub that records calls and
+// returns scripted responses, without having to mock the rest of
+// the IngesterClient surface.
+type readcacheRPC interface {
+	HashRangeStats(ctx context.Context, in *ingester_client.HashRangeStatsRequest, opts ...grpc.CallOption) (*ingester_client.HashRangeStatsResponse, error)
+	SetHashRanges(ctx context.Context, in *ingester_client.SetHashRangesRequest, opts ...grpc.CallOption) (*ingester_client.SetHashRangesResponse, error)
+	GetHashRanges(ctx context.Context, in *ingester_client.GetHashRangesRequest, opts ...grpc.CallOption) (*ingester_client.GetHashRangesResponse, error)
+}
+
+// readcacheFleet abstracts the rebalancer's view of the readcache
+// pool: a way to discover healthy instances and dial each one. The
+// production implementation is *ReadcachePool (which embeds ring
+// discovery and a gRPC connection cache); tests substitute an
+// in-memory implementation that wires fake readcache state directly
+// to fake clients, so a full rebalance round can be exercised
+// without spinning up gRPC servers or a ring.
+type readcacheFleet interface {
+	healthyInstances() ([]ring.InstanceDesc, error)
+	clientFor(ctx context.Context, inst ring.InstanceDesc) (readcacheRPC, error)
+}
+
 // ReadcachePool dials readcache pods by instance ID, resolving the
 // dial target through the readcache instance ring. Connections are
 // cached per instance and reused.
@@ -128,7 +152,14 @@ func (p *ReadcachePool) healthyInstances() ([]ring.InstanceDesc, error) {
 // ID. If the ring reports a different address than the one we cached
 // (pod restart with a new IP), the stale connection is closed and a
 // fresh one is dialed.
-func (p *ReadcachePool) clientFor(ctx context.Context, inst ring.InstanceDesc) (ingester_client.IngesterClient, error) {
+//
+// The return type is the narrow readcacheRPC interface (a subset of
+// ingester_client.IngesterClient covering the three methods the
+// rebalancer actually invokes) so *ReadcachePool satisfies the
+// readcacheFleet abstraction the rest of the package depends on,
+// and tests can substitute a stub fleet without mocking the full
+// IngesterClient surface.
+func (p *ReadcachePool) clientFor(ctx context.Context, inst ring.InstanceDesc) (readcacheRPC, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

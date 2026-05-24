@@ -51,7 +51,7 @@ func (r *Rebalancer) partitionLByPID(partitionTotals map[int32]int64, activePart
 // currently mapped to any partition (cold-start with empty log) are
 // ignored.
 func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, activePartitions []int32) *assignment.Assignment {
-	instances, err := r.readcachePool.healthyInstances()
+	instances, err := r.fleet.healthyInstances()
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "reconstructAssignmentFromReadcache: ring lookup failed", "err", err)
 		return nil
@@ -71,7 +71,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 	}
 	var ownerships []ownership
 	uniqueInstances := make(map[string]struct{})
-	now := time.Now()
+	now := r.now()
 	for _, entry := range r.readcacheStore.snapshot() {
 		if !entry.ActiveAt(now) {
 			continue
@@ -122,7 +122,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 		inst := idToInst[instanceID]
 		ownedPartitions := ownedPartitionByInstance[instanceID]
 
-		c, err := r.readcachePool.clientFor(jobCtx, inst)
+		c, err := r.fleet.clientFor(jobCtx, inst)
 		if err != nil {
 			failed.Add(1)
 			level.Warn(r.logger).Log("msg", "reconstructAssignmentFromReadcache: client error", "readcache", inst.Addr, "err", err)
@@ -230,7 +230,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 // other pods returned; a single misbehaving readcache cannot block
 // the rebalance round behind TCP timeouts (see Config.IngesterRPCTimeout).
 func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
-	instances, err := r.readcachePool.healthyInstances()
+	instances, err := r.fleet.healthyInstances()
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -250,7 +250,7 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 	_ = concurrency.ForEachJob(ctx, len(instances), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
 		inst := instances[idx]
 
-		c, err := r.readcachePool.clientFor(jobCtx, inst)
+		c, err := r.fleet.clientFor(jobCtx, inst)
 		if err != nil {
 			failed.Add(1)
 			level.Warn(r.logger).Log("msg", "failed to get client for readcache", "readcache", inst.Addr, "err", err)
@@ -392,7 +392,7 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 	)
 
 	// Resolve instance IDs to ring entries (need Addr for dialling).
-	instances, err := r.readcachePool.healthyInstances()
+	instances, err := r.fleet.healthyInstances()
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to get healthy readcaches for push", "err", err)
 		return
@@ -425,7 +425,7 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 	_ = concurrency.ForEachJob(ctx, len(jobs), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
 		j := jobs[idx]
 
-		c, err := r.readcachePool.clientFor(jobCtx, j.inst)
+		c, err := r.fleet.clientFor(jobCtx, j.inst)
 		if err != nil {
 			failed.Add(1)
 			level.Warn(r.logger).Log("msg", "SetHashRanges: failed to get client", "readcache", j.inst.Addr, "err", err)
