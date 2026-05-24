@@ -166,7 +166,17 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 	// ranges activated alongside their replacements, creating
 	// overlapping leases for the same partition once wall-clock
 	// reached the successor's From.
+	//
+	// futureEntriesByKey records the indices of in-wanted future
+	// entries (From > at, To > at). The second pass uses it to
+	// preempt those entries when it has to seed a fresh lease at
+	// `at` — see the !isActive branch below for the full bug
+	// description. Building the index here keeps Apply at O(N+M);
+	// the alternative (re-scanning l.entries from the second pass)
+	// would re-introduce the O(N*M) bottleneck the latestToIndex
+	// change fixed.
 	matched := make(map[key]struct{}, len(next.Entries))
+	futureEntriesByKey := make(map[key][]int, len(next.Entries))
 	for i := range l.entries {
 		e := &l.entries[i]
 		if !e.To.After(at) {
@@ -180,6 +190,8 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 			// observe its To via latestTo when extending the chain.
 			if !e.From.After(at) {
 				matched[k] = struct{}{}
+			} else {
+				futureEntriesByKey[k] = append(futureEntriesByKey[k], i)
 			}
 			continue
 		}
@@ -203,29 +215,54 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 	deadline := at.Add(lookahead)
 	for _, ne := range next.Entries {
 		k := key{r: ne.Range, pid: ne.PartitionID}
-		latestTo, found := latestToIndex[k]
+		latestTo := latestToIndex[k]
 		_, isActive := matched[k]
 		switch {
 		case !isActive:
 			// No active lease for this pair (cold case, just
-			// preempted, or fully expired). Start a fresh lease at
-			// `at`. If there's a stale prior entry for the exact
-			// same (Range, PID) whose To is in the past, we don't
-			// reuse it — the gap (if any) is intentional and signals
-			// to consumers the lease was reset.
-			from := at
-			if found && latestTo.After(at) {
-				// Edge case: a previously-pre-issued future lease
-				// exists but isn't active yet (its From > at). Start
-				// the new lease where the old one ends instead of
-				// at, so the chain stays continuous.
-				from = latestTo
+			// preempted, or fully expired). Seed a fresh lease
+			// starting at `at`.
+			//
+			// Critical: always start at `at`, never at latestTo,
+			// even when there's a still-alive pre-issued future
+			// entry for this same (Range, PID). The "edge case"
+			// branch this replaces (from = latestTo) was the cause
+			// of the dev-15 "slicer received invalid input
+			// assignment" pattern: when a chain was dropped at
+			// round R and re-added at round R+1 within
+			// leaseDuration of the previous round's pre-issued
+			// successor, latestTo pointed at that surviving
+			// successor's To (its From > at), so the fresh lease
+			// got [latestTo, latestTo+leaseDuration]. That left
+			// the window [at, future.From) uncovered for this
+			// (Range, PID), and because the slicer's `next` tiles
+			// the keyspace via exactly one (Range, PID) per hash,
+			// no other chain covered the gap either. The next
+			// round's LatestActiveAssignment then failed Validate
+			// and runSlicer bailed, leases stopped being extended,
+			// and distributors returned "key_not_covered" until
+			// wall-clock crossed future.From minutes later.
+			//
+			// Starting at `at` always closes the [at, future.From)
+			// gap. But it would *overlap* any still-alive future
+			// entries for this key once wall-clock crosses their
+			// From, recreating the same overlapping-leases bug
+			// that the first pass's future-preemption was added to
+			// fix. So preempt those futures here too: futureEntriesByKey[k]
+			// was populated in the first pass with exactly the
+			// entries we need to clamp.
+			for _, idx := range futureEntriesByKey[k] {
+				e := &l.entries[idx]
+				if !e.To.Equal(e.From) {
+					e.To = e.From
+					changed = true
+				}
 			}
 			l.entries = append(l.entries, LogEntry{
 				Range:       k.r,
 				PartitionID: k.pid,
-				From:        from,
-				To:          from.Add(leaseDuration),
+				From:        at,
+				To:          at.Add(leaseDuration),
 			})
 			changed = true
 		case latestTo.After(deadline):

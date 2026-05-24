@@ -108,7 +108,17 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 		}
 	}
 
+	// futureEntriesByKey records the indices of in-wanted future
+	// entries (From > at, To > at). The second pass uses it to
+	// preempt those entries when it has to seed a fresh lease at
+	// `at` — see pkg/nautilus/assignment/log.go Apply for the
+	// full description of the drop-then-readd-within-leaseDuration
+	// bug this prevents. Same mechanism applies here: the tier-2
+	// (PartitionID, InstanceID) chains are managed identically to
+	// tier-1's (Range, PartitionID) chains and have the same
+	// failure mode.
 	matched := make(map[key]struct{}, len(next.Entries))
+	futureEntriesByKey := make(map[key][]int, len(next.Entries))
 	for i := range l.entries {
 		e := &l.entries[i]
 		if !e.To.After(at) {
@@ -118,6 +128,8 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 		if _, ok := wanted[k]; ok {
 			if !e.From.After(at) {
 				matched[k] = struct{}{}
+			} else {
+				futureEntriesByKey[k] = append(futureEntriesByKey[k], i)
 			}
 			continue
 		}
@@ -137,19 +149,26 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 	deadline := at.Add(lookahead)
 	for _, ne := range next.Entries {
 		k := key{pid: ne.PartitionID, instance: ne.InstanceID}
-		latestTo, found := latestToIndex[k]
+		latestTo := latestToIndex[k]
 		_, isActive := matched[k]
 		switch {
 		case !isActive:
-			from := at
-			if found && latestTo.After(at) {
-				from = latestTo
+			// Always seed at `at`, preempting any alive in-wanted
+			// future entries for this key. See
+			// pkg/nautilus/assignment/log.go Apply !isActive case
+			// for the bug this defends against.
+			for _, idx := range futureEntriesByKey[k] {
+				e := &l.entries[idx]
+				if !e.To.Equal(e.From) {
+					e.To = e.From
+					changed = true
+				}
 			}
 			l.entries = append(l.entries, LogEntry{
 				PartitionID: k.pid,
 				InstanceID:  k.instance,
-				From:        from,
-				To:          from.Add(leaseDuration),
+				From:        at,
+				To:          at.Add(leaseDuration),
 			})
 			changed = true
 		case latestTo.After(deadline):

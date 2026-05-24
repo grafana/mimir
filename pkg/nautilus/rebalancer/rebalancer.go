@@ -579,6 +579,40 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		"readcache_log_subscribers", r.readcacheStore.numSubscribers(),
 	)
 
+	// Self-heal a gappy `current` before the slicer sees it. Without
+	// this guard, runSlicer would detect the gap mid-phase, revert
+	// every phase, produce an invalid newAssignment, and the round
+	// would bail at newAssignment.Validate() without extending any
+	// leases — exactly the symptom that drives "key_not_covered"
+	// rejections in the distributor. healAssignmentGaps splices
+	// missing ranges with synthetic fillers (round-robin across
+	// active partitions) and trims overlaps; the resulting
+	// assignment is a strict tiling that the slicer can process
+	// normally. The fillers' load reverts to whatever the readcache
+	// actually has for those ranges within one EWMA half-life, at
+	// which point the slicer can move/merge/split them like any
+	// other tile under its standard budgets.
+	if err := current.Validate(); err != nil {
+		healed, rep := healAssignmentGaps(current, activePartitions)
+		if err2 := healed.Validate(); err2 != nil {
+			level.Error(r.logger).Log(
+				"msg", "self-heal of current assignment failed validation, skipping round",
+				"original_err", err,
+				"healed_err", err2,
+				"heal_report", rep.String(),
+			)
+			return nil
+		}
+		level.Warn(r.logger).Log(
+			"msg", "healed gappy current assignment before slicer",
+			"original_err", err,
+			"heal_report", rep.String(),
+			"input_entries", len(current.Entries),
+			"healed_entries", len(healed.Entries),
+		)
+		current = healed
+	}
+
 	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx, current)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)

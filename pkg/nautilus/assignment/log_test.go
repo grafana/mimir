@@ -601,6 +601,184 @@ func TestLog_ApplyMergeAfterSuccessorPreIssued(t *testing.T) {
 	}
 }
 
+// TestLog_ApplyReaddPreemptsAliveFuture is a white-box test on
+// Fix B's preemption side: when a chain is re-added while a
+// previously-pre-issued future entry for the same (Range, PID)
+// is still alive (not preempted), Apply must preempt the future
+// so that wall-clock crossing its From doesn't surface two
+// active entries for the same range.
+//
+// Construct the state by reaching into the Log: a normal Apply
+// sequence can produce a dead future (To = From) but never a
+// live future + no active. We seed that combination directly so
+// the test pins the exact branch.
+func TestLog_ApplyReaddPreemptsAliveFuture(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rng := HashRange{Lo: 0, Hi: math.MaxUint32}
+
+	// Seed: a live future entry [t1+1min, t1+6min] for (rng, P=1),
+	// no active entry. This represents the corner case Fix B
+	// guarantees (correctly handles even if a buggy prior version
+	// of Apply left the log in this state).
+	live := NewLogFromEntries([]LogEntry{
+		{Range: rng, PartitionID: 1, From: t1.Add(time.Minute), To: t1.Add(6 * time.Minute)},
+	})
+
+	// Apply at t1 with (rng, P=1) in `next`. Pre-Fix-B: the
+	// edge-case branch sets from = latestTo = t1+6min, creating
+	// a new entry [t1+6min, t1+11min]. Then wall-clock crossing
+	// t1+1min would surface the seeded live future (which the
+	// first pass left alone because it's in wanted), creating
+	// two active entries for the same range from t1+1min to
+	// t1+6min. With Fix B: the seeded future gets preempted
+	// (To := From) and a fresh entry [t1, t1+5min] is created.
+	require.True(t, live.Apply(t1, &Assignment{Entries: []Entry{
+		{Range: rng, PartitionID: 1},
+	}}, testLease, testLookahead))
+
+	// Sample across the danger zone. With Fix B, every sample
+	// returns exactly one active entry for the range, no overlap.
+	for _, sample := range []time.Time{
+		t1,
+		t1.Add(30 * time.Second),
+		t1.Add(time.Minute),         // the seeded future's old From
+		t1.Add(2 * time.Minute),
+		t1.Add(testLease - time.Second),
+	} {
+		assn := live.LatestActiveAssignment(sample)
+		require.NotNilf(t, assn, "no active at %s", sample)
+		require.NoErrorf(t, assn.Validate(),
+			"active assignment must be a clean tiling at %s, got %d entries: %+v",
+			sample, len(assn.Entries), assn.Entries)
+		require.Lenf(t, assn.Entries, 1,
+			"exactly one active tile expected at %s, got %d: %+v",
+			sample, len(assn.Entries), assn.Entries)
+	}
+}
+
+// TestLog_ApplyReaddDeadFutureIsIdempotent confirms that the
+// future-preemption loop in Fix B's !isActive branch is a no-op
+// when the future is already dead (To = From). Guards against a
+// regression where re-preempting flips `changed` true on a
+// no-actual-change Apply.
+func TestLog_ApplyReaddDeadFutureIsIdempotent(t *testing.T) {
+	l := NewLog()
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rng := HashRange{Lo: 0, Hi: math.MaxUint32}
+
+	require.True(t, l.Apply(t1, &Assignment{Entries: []Entry{{Range: rng, PartitionID: 1}}}, testLease, testLookahead))
+	t2 := t1.Add(testLease - testLookahead)
+	require.True(t, l.Apply(t2, &Assignment{Entries: []Entry{{Range: rng, PartitionID: 1}}}, testLease, testLookahead))
+
+	// Drop the chain. After this, the pre-issued future for P=1
+	// is dead (To = From = t1+lease).
+	t3 := t2.Add(time.Second)
+	require.True(t, l.Apply(t3, &Assignment{Entries: []Entry{{Range: rng, PartitionID: 2}}}, testLease, testLookahead))
+
+	// Snapshot the entries so we can detect any mutation by
+	// the next Apply other than the expected new fresh lease.
+	before := l.Entries()
+
+	t4 := t3.Add(time.Second)
+	require.True(t, l.Apply(t4, &Assignment{Entries: []Entry{{Range: rng, PartitionID: 1}}}, testLease, testLookahead))
+
+	after := l.Entries()
+	// The Apply at t4 should have appended exactly one fresh
+	// lease [t4, t4+lease] for (rng, P=1) and preempted the now-
+	// stale P=2 active. The dead P=1 future from step 2 should
+	// be untouched (To already == From, no-op preemption).
+	require.Equal(t, len(before)+1, len(after))
+	deadFutureFound := false
+	for _, e := range after {
+		if e.PartitionID == 1 && e.From.Equal(t1.Add(testLease)) {
+			deadFutureFound = true
+			assert.Equal(t, e.From, e.To, "dead future must still be zero-duration")
+		}
+	}
+	assert.True(t, deadFutureFound, "dead future entry should still be present in the log")
+}
+
+// TestLog_ApplyDropThenReaddWithinLeaseDoesNotLeaveGap is the
+// regression test for the dev-15 "slicer received invalid input
+// assignment" pattern observed on 2026-05-24.
+//
+// Scenario: a (Range, PID) chain has its active lease + a
+// pre-issued successor. The slicer drops the chain (e.g., moves
+// the range to a different partition) at round R. At round R+1
+// — still within leaseDuration of the pre-issued successor's From —
+// the slicer puts the same (Range, PID) chain back. The original
+// edge-case branch (from = latestTo) seeded the new lease at the
+// dead successor's From, leaving the window [at, future.From)
+// uncovered for (Range, PID). Because the slicer's `next` is a
+// strict tiling, no other entry covers that hash range either,
+// and LatestActiveAssignment(at) developed a gap.
+//
+// Fix B (always start fresh leases at `at`, preempt in-wanted
+// futures) closes the gap.
+func TestLog_ApplyDropThenReaddWithinLeaseDoesNotLeaveGap(t *testing.T) {
+	l := NewLog()
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rng := HashRange{Lo: 0, Hi: math.MaxUint32}
+
+	a1 := &Assignment{Entries: []Entry{{Range: rng, PartitionID: 1}}}
+	require.True(t, l.Apply(t1, a1, testLease, testLookahead))
+
+	// Step 2: pre-issue the successor so the chain has [active,
+	// future] entries for (rng, P=1). Both end of life is past
+	// the round in step 4 below.
+	t2 := t1.Add(testLease - testLookahead)
+	require.True(t, l.Apply(t2, a1, testLease, testLookahead))
+
+	// Step 3: drop (rng, P=1) in favor of (rng, P=2). The first
+	// pass preempts the active (To=at) and the still-future
+	// successor (To=From=t1+lease, zero-duration).
+	t3 := t2.Add(time.Second)
+	a3 := &Assignment{Entries: []Entry{{Range: rng, PartitionID: 2}}}
+	require.True(t, l.Apply(t3, a3, testLease, testLookahead))
+
+	// Step 4: re-add (rng, P=1) before the dead successor's From
+	// is reached (still within testLease of t1). This is the
+	// critical step: with the pre-Fix-B code, Apply's !isActive
+	// branch sees latestTo == old successor's From > at and seeds
+	// the new lease at latestTo, leaving [t4, t1+lease) uncovered
+	// for (rng, P=1). With Fix B, the new lease starts at t4.
+	t4 := t3.Add(time.Second)
+	require.True(t, l.Apply(t4, a1, testLease, testLookahead))
+
+	// The active assignment at every point from t4 onward (up to
+	// well past the original successor's From) must validate as
+	// a strict tiling. Without Fix B, the window
+	// [t4, t1+lease) is uncovered and Validate fails. We sample
+	// densely across the danger zone to catch any sub-window
+	// regression.
+	dangerZone := []time.Time{
+		t4,                          // moment of re-add
+		t4.Add(time.Second),         // immediately after
+		t4.Add(time.Minute),         // mid-window
+		t1.Add(testLease - time.Second), // just before old successor.From
+		t1.Add(testLease),           // at old successor.From
+		t1.Add(testLease).Add(time.Second), // just past
+		t1.Add(testLease).Add(time.Minute), // well past
+	}
+	for _, sample := range dangerZone {
+		assn := l.LatestActiveAssignment(sample)
+		require.NotNilf(t, assn, "no active assignment at %s — full coverage required", sample)
+		require.NoErrorf(t, assn.Validate(),
+			"active assignment must tile [0, MaxUint32] at %s, got %d entries: %+v",
+			sample, len(assn.Entries), assn.Entries)
+	}
+
+	// And the active partition for any sample in [t4, ...] must
+	// be P=1 (the re-added owner), not P=2 (the previous round's
+	// owner whose lease was preempted at t4).
+	for _, sample := range []time.Time{t4, t4.Add(time.Minute), t1.Add(testLease).Add(time.Minute)} {
+		pid, ok := l.Lookup(sample, 12345)
+		require.Truef(t, ok, "lookup must succeed at %s", sample)
+		assert.Equalf(t, int32(1), pid,
+			"re-added partition must own the range at %s", sample)
+	}
+}
+
 // TestLog_ApplyReassignAfterSuccessorPreIssued covers the third
 // shape: the same range stays but moves to a different partition
 // after a successor has been pre-issued. The old partition's
