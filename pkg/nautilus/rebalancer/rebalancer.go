@@ -549,6 +549,13 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 					level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
 				}
 			}
+		} else {
+			// Slicer disabled: extend whatever (partition ->
+			// readcache) ownership the persisted log loaded with
+			// so the leases don't expire over the next few rounds
+			// before the operator (or a future enable) reseeds.
+			// Falls through silently when nothing is active.
+			r.refreshReadcacheLeases(time.Now())
 		}
 		return nil
 	}
@@ -571,6 +578,26 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 
 	r.metrics.updateRound(partitionQuerySamples, unnamedPerInstance)
 	r.pruneExpiredCooldowns(now)
+
+	// Drop residue from previous owners before aggregating load.
+	// After a range moves P_old -> P_new the readcache that hosted
+	// P_old still reports a sample rate for (P_old, range) for one
+	// EWMA half-life (~5 min). Summing that into the slicer's per-
+	// partition load signal makes P_old look perpetually hot and
+	// causes runPhase3 to shuffle unrelated ranges off P_old to
+	// balance phantom load. Filtering against the current assignment
+	// collapses P_old's apparent load the instant the assignment
+	// changes. See filterRatesByCurrentOwnership for the rationale.
+	ratesBefore := len(rates)
+	rates, ratesDropped := filterRatesByCurrentOwnership(rates, currentOwnershipSet(current))
+	if ratesDropped > 0 {
+		level.Info(r.logger).Log(
+			"msg", "filtered residue rates from previous owners",
+			"rates_received", ratesBefore,
+			"rates_kept", len(rates),
+			"rates_dropped", ratesDropped,
+		)
+	}
 
 	// Compute per-partition L (head-series). With the readcache pool
 	// wired, L comes from per-partition HashRangeStats; otherwise fall
@@ -623,13 +650,21 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// Second slicer round: balance partition -> readcache instance
 	// using the per-partition load signal we just collected. Only
 	// runs when explicitly enabled and an instance set is available
-	// (from the ring when wired, otherwise from the static config);
-	// either gate disabled leaves the readcache log untouched, which
-	// is the production default during the Phase 2A bring-up.
+	// (from the ring when wired, otherwise from the static config).
+	//
+	// When the slicer is disabled — the Phase 2A bring-up default —
+	// we still extend the existing (partition -> readcache) leases
+	// every round. Without this, leases seeded from disk at startup
+	// (or installed by a one-off admin reset) age out at most one
+	// LeaseDuration later and pushRangesToReadcache permanently
+	// finds zero owners; see refreshReadcacheLeases for the full
+	// failure mode.
 	if r.cfg.ReadcacheSlicer.Enabled {
 		if instances := r.activeReadcacheInstances(); len(instances) > 0 {
 			readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances)
 		}
+	} else {
+		readcacheLogChanged = r.refreshReadcacheLeases(now)
 	}
 
 	// Compute round summary stats using L (memory series) so the admin
@@ -1454,6 +1489,61 @@ func computePartitionLoads(entries []rangeLoad) map[int32]float64 {
 type partitionRangeKey struct {
 	partitionID int32
 	hr          assignment.HashRange
+}
+
+// currentOwnershipSet returns the set of (partitionID, range) pairs
+// that are authoritatively owned according to the supplied assignment.
+// Used to filter raw load reports so we only count rates that come
+// from a (partition, range) pair the rebalancer actually considers
+// current — anything else is residue on a previous owner that has not
+// yet stopped reporting.
+//
+// Returns nil when current is nil or has no entries, in which case
+// filterRatesByCurrentOwnership treats the input as "no filter" and
+// passes everything through. That preserves cold-start behavior
+// where the slicer has nothing to compare against anyway.
+func currentOwnershipSet(current *assignment.Assignment) map[partitionRangeKey]struct{} {
+	if current == nil || len(current.Entries) == 0 {
+		return nil
+	}
+	owned := make(map[partitionRangeKey]struct{}, len(current.Entries))
+	for _, e := range current.Entries {
+		owned[partitionRangeKey{partitionID: e.PartitionID, hr: e.Range}] = struct{}{}
+	}
+	return owned
+}
+
+// filterRatesByCurrentOwnership drops any rangeRate whose
+// (partition, range) is not in owned. This is the single point where
+// we suppress residue: when a range moves from P_old to P_new, the
+// readcache that used to own P_old still has the data in its TSDB
+// head and its EWMA still reports a non-zero sample rate for
+// (P_old, range) for one EWMA half-life (~5 minutes). If that residue
+// is summed into partitionLoadFromRates, the slicer sees P_old as
+// hot, declares it a move source, and shuffles unrelated ranges off
+// P_old to balance phantom load. By filtering to current ownership
+// we collapse P_old's apparent load the instant the assignment
+// changes, even though the underlying samples take ~5 minutes to age
+// out.
+//
+// When owned is nil (e.g. cold start) the input is returned
+// unchanged; the second return is the number of rates dropped.
+//
+// Returns a freshly allocated slice; callers that need to retain the
+// original rates can do so.
+func filterRatesByCurrentOwnership(rates []rangeRate, owned map[partitionRangeKey]struct{}) (kept []rangeRate, dropped int) {
+	if owned == nil {
+		return rates, 0
+	}
+	kept = make([]rangeRate, 0, len(rates))
+	for _, rr := range rates {
+		if _, ok := owned[partitionRangeKey{partitionID: rr.partitionID, hr: rr.hr}]; !ok {
+			dropped++
+			continue
+		}
+		kept = append(kept, rr)
+	}
+	return kept, dropped
 }
 
 // partitionLoadFromRates returns the per-partition sum of

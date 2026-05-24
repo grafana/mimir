@@ -1255,6 +1255,207 @@ func TestPartitionLoadFromRates(t *testing.T) {
 	assert.True(t, ok0 && ok1)
 }
 
+// TestCurrentOwnershipSet verifies that we build a (partition, range)
+// set from the live assignment that filterRatesByCurrentOwnership
+// can probe in O(1) per rate report. Empty/nil assignments collapse
+// to a nil set so callers fall through to "no filter" semantics
+// during cold start.
+func TestCurrentOwnershipSet(t *testing.T) {
+	t.Run("nil assignment yields nil set", func(t *testing.T) {
+		assert.Nil(t, currentOwnershipSet(nil))
+	})
+
+	t.Run("empty assignment yields nil set", func(t *testing.T) {
+		assert.Nil(t, currentOwnershipSet(&assignment.Assignment{}))
+	})
+
+	t.Run("populated assignment yields one key per entry", func(t *testing.T) {
+		a := &assignment.Assignment{Entries: []assignment.Entry{
+			{PartitionID: 0, Range: assignment.HashRange{Lo: 0, Hi: 99}},
+			{PartitionID: 1, Range: assignment.HashRange{Lo: 100, Hi: 199}},
+			{PartitionID: 0, Range: assignment.HashRange{Lo: 200, Hi: 299}},
+		}}
+		owned := currentOwnershipSet(a)
+		require.NotNil(t, owned)
+		require.Len(t, owned, 3)
+
+		_, ok := owned[partitionRangeKey{partitionID: 0, hr: assignment.HashRange{Lo: 0, Hi: 99}}]
+		assert.True(t, ok)
+		_, ok = owned[partitionRangeKey{partitionID: 1, hr: assignment.HashRange{Lo: 100, Hi: 199}}]
+		assert.True(t, ok)
+
+		// Same range under a different partition is a distinct key:
+		// that's exactly the residue case we're trying to detect.
+		_, ok = owned[partitionRangeKey{partitionID: 9, hr: assignment.HashRange{Lo: 0, Hi: 99}}]
+		assert.False(t, ok)
+	})
+}
+
+// TestFilterRatesByCurrentOwnership covers the residue-suppression
+// helper. The key behaviour: a rate is kept iff its (partitionID,
+// range) tuple matches an entry in the current assignment. Reports
+// from previous owners (residue) drop out. Reports from current
+// owners survive even when the range has zero sampleRate (newly
+// seeded EWMAs).
+func TestFilterRatesByCurrentOwnership(t *testing.T) {
+	hrA := assignment.HashRange{Lo: 0, Hi: 99}
+	hrB := assignment.HashRange{Lo: 100, Hi: 199}
+
+	t.Run("nil owned set is a passthrough", func(t *testing.T) {
+		rates := []rangeRate{
+			{hr: hrA, sampleRate: 1, partitionID: 0},
+			{hr: hrB, sampleRate: 2, partitionID: 1},
+		}
+		kept, dropped := filterRatesByCurrentOwnership(rates, nil)
+		assert.Equal(t, 0, dropped)
+		assert.Len(t, kept, 2)
+	})
+
+	t.Run("drops residue from previous owner", func(t *testing.T) {
+		owned := currentOwnershipSet(&assignment.Assignment{Entries: []assignment.Entry{
+			{PartitionID: 7, Range: hrA},
+		}})
+		rates := []rangeRate{
+			// Current owner reports growth on (7, hrA): keep.
+			{hr: hrA, sampleRate: 100, partitionID: 7},
+			// Previous owner still EWMA-decaying on (3, hrA): drop.
+			{hr: hrA, sampleRate: 250, partitionID: 3},
+		}
+		kept, dropped := filterRatesByCurrentOwnership(rates, owned)
+		require.Equal(t, 1, dropped)
+		require.Len(t, kept, 1)
+		assert.Equal(t, int32(7), kept[0].partitionID)
+		assert.Equal(t, 100.0, kept[0].sampleRate)
+	})
+
+	t.Run("drops rates whose range does not exactly match a current entry", func(t *testing.T) {
+		// A split moved (0, [0,199]) into (0, [0,99]) and (0, [100,199]).
+		// The readcache may still report the parent range one tick.
+		owned := currentOwnershipSet(&assignment.Assignment{Entries: []assignment.Entry{
+			{PartitionID: 0, Range: hrA},
+			{PartitionID: 0, Range: hrB},
+		}})
+		rates := []rangeRate{
+			{hr: assignment.HashRange{Lo: 0, Hi: 199}, sampleRate: 9999, partitionID: 0}, // pre-split: drop
+			{hr: hrA, sampleRate: 50, partitionID: 0},                                    // post-split child: keep
+			{hr: hrB, sampleRate: 50, partitionID: 0},                                    // post-split child: keep
+		}
+		kept, dropped := filterRatesByCurrentOwnership(rates, owned)
+		assert.Equal(t, 1, dropped)
+		assert.Len(t, kept, 2)
+	})
+
+	t.Run("returns empty slice not nil when everything is residue", func(t *testing.T) {
+		owned := currentOwnershipSet(&assignment.Assignment{Entries: []assignment.Entry{
+			{PartitionID: 0, Range: hrA},
+		}})
+		rates := []rangeRate{
+			{hr: hrA, sampleRate: 1, partitionID: 99},
+			{hr: hrB, sampleRate: 1, partitionID: 0},
+		}
+		kept, dropped := filterRatesByCurrentOwnership(rates, owned)
+		assert.Equal(t, 2, dropped)
+		assert.NotNil(t, kept) // empty slice, not nil
+		assert.Len(t, kept, 0)
+	})
+}
+
+// TestPartitionLoadFromRates_AfterResidueFilter verifies the
+// downstream effect of the filter on the per-partition load signal
+// runPhase3 consumes: with residue suppressed, the "phantom" load
+// that used to keep a former owner looking hot collapses to zero.
+// This is the headline change for the residue-aware aggregation.
+func TestPartitionLoadFromRates_AfterResidueFilter(t *testing.T) {
+	hrA := assignment.HashRange{Lo: 0, Hi: 99}
+
+	// Current state: range hrA owned by partition 7. Partition 3 is
+	// still around but no longer owns hrA. Without the filter,
+	// partition 3 would look hot because its readcache still
+	// reports a non-zero EWMA for (3, hrA).
+	current := &assignment.Assignment{Entries: []assignment.Entry{
+		{PartitionID: 7, Range: hrA},
+	}}
+	rates := []rangeRate{
+		{hr: hrA, sampleRate: 100, partitionID: 7}, // current owner's signal
+		{hr: hrA, sampleRate: 5000, partitionID: 3}, // residue we want to suppress
+	}
+
+	// Without filter: residue inflates partition 3's apparent load.
+	unfiltered := partitionLoadFromRates(rates, []int32{3, 7})
+	assert.Equal(t, 5000.0, unfiltered[3], "without filter, residue makes ex-owner look hot")
+	assert.Equal(t, 100.0, unfiltered[7])
+
+	// With filter: residue removed.
+	filtered, dropped := filterRatesByCurrentOwnership(rates, currentOwnershipSet(current))
+	require.Equal(t, 1, dropped)
+	out := partitionLoadFromRates(filtered, []int32{3, 7})
+	assert.Equal(t, 0.0, out[3], "after residue filter, ex-owner contributes zero load")
+	assert.Equal(t, 100.0, out[7])
+}
+
+// TestRunSlicer_ResidueDoesNotDriveMoves is the integration check
+// for the residue filter. We start from a balanced assignment with
+// uniform real load and add a large phantom load on a partition that
+// no longer owns that range. Pre-filter, the slicer treats the
+// ex-owner as the hottest partition and shuffles unrelated ranges
+// off it. Post-filter (production code path: rebalance() filters
+// rates against the current assignment before passing them into
+// runSlicer), residue contributes nothing and the slicer is quiet.
+func TestRunSlicer_ResidueDoesNotDriveMoves(t *testing.T) {
+	partitions := []int32{0, 1, 2, 3}
+	initial := assignment.FineEvenSplit(partitions, 8)
+	require.NoError(t, initial.Validate())
+
+	// Real signal: identical sample rate per range so the cluster is
+	// balanced and the slicer has nothing to do.
+	var rates []rangeRate
+	for _, e := range initial.Entries {
+		rates = append(rates, rangeRate{
+			hr:          e.Range,
+			sampleRate:  100,
+			partitionID: e.PartitionID,
+		})
+	}
+
+	// Residue: a previous-owner phantom report for ranges that
+	// partition 0 used to own but now lives on partitions 1..3.
+	// Use a huge sample rate so it would dominate per-partition L
+	// if it leaked into the aggregation.
+	for _, e := range initial.Entries {
+		if e.PartitionID == 0 {
+			continue
+		}
+		rates = append(rates, rangeRate{
+			hr:          e.Range,
+			sampleRate:  100000,
+			partitionID: 0, // claims to be from the (now-gone) previous owner
+		})
+	}
+
+	r := &Rebalancer{
+		cfg:           seriesCfg(0.5),
+		moveCooldowns: make(map[assignment.HashRange]time.Time),
+	}
+
+	// The production code path: filter residue against the current
+	// assignment, then pass the filtered slice into runSlicer.
+	filtered, dropped := filterRatesByCurrentOwnership(rates, currentOwnershipSet(initial))
+	require.Positive(t, dropped, "test setup: residue rates should have been filtered")
+	partitionRateByPID := partitionLoadFromRates(filtered, partitions)
+
+	_, actions := r.runSlicer(initial, filtered, partitionRateByPID, partitions, time.Time{})
+
+	var moves int
+	for _, a := range actions {
+		if a.Kind == ActionMove {
+			moves++
+		}
+	}
+	assert.Equalf(t, 0, moves,
+		"residue from a non-owner must not drive Phase 3 moves on an otherwise balanced cluster (got %d moves)",
+		moves)
+}
+
 // TestRunSlicer_MovesBySampleRate verifies that, with sampleRate set
 // and series counts deliberately UNINFORMATIVE (all equal), the
 // slicer still detects skew and moves load from the hot partition

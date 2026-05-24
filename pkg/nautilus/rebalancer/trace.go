@@ -234,10 +234,15 @@ func ReplayTrace(t Trace) (*assignment.Assignment, []Action) {
 	start := &assignment.Assignment{
 		Entries: append([]assignment.Entry(nil), t.Start...),
 	}
+	// Mirror the production filter step (see filterRatesByCurrentOwnership
+	// in rebalancer.go). The slicer is sensitive to residue from
+	// previous owners, so replay must apply the same filter against
+	// the start assignment or it won't be a faithful reproduction.
+	rates, _ := filterRatesByCurrentOwnership(ratesFromWire(t.Rates), currentOwnershipSet(start))
 	// Reconstruct the per-partition rate map from rates so the
 	// slicer doesn't have to recompute it (and so the determinism
 	// contract doesn't depend on partitionLoadFromRates being
 	// called in exactly the same place as in production).
-	partitionRateByPID := partitionLoadFromRates(ratesFromWire(t.Rates), t.ActivePartitions)
-	return r.runSlicer(start, ratesFromWire(t.Rates), partitionRateByPID, t.ActivePartitions, t.Now)
+	partitionRateByPID := partitionLoadFromRates(rates, t.ActivePartitions)
+	return r.runSlicer(start, rates, partitionRateByPID, t.ActivePartitions, t.Now)
 }
