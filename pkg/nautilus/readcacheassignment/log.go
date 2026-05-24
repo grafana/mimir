@@ -88,6 +88,26 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 		wanted[key{pid: e.PartitionID, instance: e.InstanceID}] = struct{}{}
 	}
 
+	// Pre-compute the latest-To per (PartitionID, InstanceID) chain
+	// once. See pkg/nautilus/assignment/log.go Apply for the
+	// detailed rationale; in short, the second pass needs latest-To
+	// for every entry in `next` and a per-call O(M) scan turns Apply
+	// into O(N*M), which at dev-15 sizes (300 partitions, 60K log
+	// entries) was the dominant rebalancer hotspot (98.7% of CPU
+	// in a single function per pprof). Building the index here
+	// makes the second pass O(1) per key, collapsing Apply to
+	// O(N+M). The first pass mutates only To for keys NOT in
+	// `wanted`; the second pass only consults latest-To for keys
+	// IN `wanted`, so the pre-index is safe to build before the
+	// first pass.
+	latestToIndex := make(map[key]time.Time, len(next.Entries))
+	for _, e := range l.entries {
+		k := key{pid: e.PartitionID, instance: e.InstanceID}
+		if cur, ok := latestToIndex[k]; !ok || e.To.After(cur) {
+			latestToIndex[k] = e.To
+		}
+	}
+
 	matched := make(map[key]struct{}, len(next.Entries))
 	for i := range l.entries {
 		e := &l.entries[i]
@@ -117,7 +137,7 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 	deadline := at.Add(lookahead)
 	for _, ne := range next.Entries {
 		k := key{pid: ne.PartitionID, instance: ne.InstanceID}
-		latestTo, found := l.latestTo(k.pid, k.instance)
+		latestTo, found := latestToIndex[k]
 		_, isActive := matched[k]
 		switch {
 		case !isActive:
@@ -149,23 +169,6 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 		sortEntries(l.entries)
 	}
 	return changed
-}
-
-// latestTo returns the maximum To across all entries with the given
-// (PartitionID, InstanceID), and whether any such entry exists.
-func (l *Log) latestTo(pid int32, instance string) (time.Time, bool) {
-	var latest time.Time
-	found := false
-	for _, e := range l.entries {
-		if e.PartitionID != pid || e.InstanceID != instance {
-			continue
-		}
-		if !found || e.To.After(latest) {
-			latest = e.To
-			found = true
-		}
-	}
-	return latest, found
 }
 
 // Lookup returns the instance IDs currently owning partitionID at

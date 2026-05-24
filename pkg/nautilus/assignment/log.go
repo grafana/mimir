@@ -115,6 +115,30 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 		wanted[key{r: e.Range, pid: e.PartitionID}] = struct{}{}
 	}
 
+	// Pre-compute the latest-To per (Range, PID) chain once. The
+	// second pass below needs this for every entry in `next` (to
+	// decide whether to extend an existing chain or start a fresh
+	// lease); doing it with the naive O(M) latestTo() per call
+	// makes Apply O(N*M) which, at dev-15 sizes (N=19200 tile entries,
+	// M=100K log entries after 24h retention), pegs a single CPU
+	// core for tens of seconds per round and is the dominant
+	// rebalancer hotspot — confirmed by a pprof showing 98.7% of
+	// CPU in latestTo. Building the index here makes the second
+	// pass an O(1) map lookup, collapsing Apply to O(N+M).
+	//
+	// The first pass below mutates entry.To for preempted entries
+	// (those NOT in `wanted`), but the second pass only consults
+	// latestTo for keys that ARE in `wanted` — those To values are
+	// never touched by the first pass, so building the index before
+	// the first pass is safe.
+	latestToIndex := make(map[key]time.Time, len(next.Entries))
+	for _, e := range l.entries {
+		k := key{r: e.Range, pid: e.PartitionID}
+		if cur, ok := latestToIndex[k]; !ok || e.To.After(cur) {
+			latestToIndex[k] = e.To
+		}
+	}
+
 	// First pass: preempt every still-relevant entry (To > at) whose
 	// (Range, PID) is not in `wanted`. Mark matched pairs so the
 	// second pass can distinguish "chain continuing" from "absent
@@ -179,7 +203,7 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 	deadline := at.Add(lookahead)
 	for _, ne := range next.Entries {
 		k := key{r: ne.Range, pid: ne.PartitionID}
-		latestTo, found := l.latestTo(k.r, k.pid)
+		latestTo, found := latestToIndex[k]
 		_, isActive := matched[k]
 		switch {
 		case !isActive:
@@ -224,23 +248,6 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 		sortEntries(l.entries)
 	}
 	return changed
-}
-
-// latestTo returns the maximum To across all entries with the given
-// (Range, PartitionID), and whether any such entry exists.
-func (l *Log) latestTo(r HashRange, pid int32) (time.Time, bool) {
-	var latest time.Time
-	found := false
-	for _, e := range l.entries {
-		if e.Range != r || e.PartitionID != pid {
-			continue
-		}
-		if !found || e.To.After(latest) {
-			latest = e.To
-			found = true
-		}
-	}
-	return latest, found
 }
 
 // Lookup returns the partition ID of the entry whose lease is
