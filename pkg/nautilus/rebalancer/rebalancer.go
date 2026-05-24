@@ -1374,6 +1374,17 @@ func (r *Rebalancer) runPhase3(
 	// previously-exhausted P0 — once excluded, stays excluded.
 	excludedHot := make(map[int32]bool)
 
+	// Cooldown lookups are O(K)-per-call against the cooldown map.
+	// Phase 3 can issue up to O(N²) of them in a single round (outer
+	// hot-pick iter × inner candidate scan), which dominated CPU on
+	// dev-15 (80% in isInMoveCooldown / runtime.mapIterNext). Build a
+	// sorted, merged-interval snapshot once so every per-candidate
+	// check is an O(log K) binary search instead. See cooldownIndex.
+	var cdIdx cooldownIndex
+	if r.cfg.MoveCooldown > 0 {
+		cdIdx = newCooldownIndex(now, r.moveCooldowns)
+	}
+
 	var actions []Action
 
 	for iter := 0; iter < len(entries); iter++ {
@@ -1414,7 +1425,7 @@ func (r *Rebalancer) runPhase3(
 			if rl.entry.PartitionID != hotPID {
 				continue
 			}
-			if r.isInMoveCooldown(now, rl.entry.Range) {
+			if cdIdx.overlaps(rl.entry.Range) {
 				continue
 			}
 			moveCost := float64(rl.entry.Range.Size())
