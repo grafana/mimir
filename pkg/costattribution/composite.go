@@ -92,7 +92,10 @@ func (c *ActiveSeriesTracker) each(do func(tracker *activeSeriesTracker)) {
 }
 
 func newActiveSeriesTrackerComposite(trackers []*activeSeriesTracker, configHash uint64) *ActiveSeriesTracker {
-	return &ActiveSeriesTracker{trackers: trackers, configHash: configHash}
+	return &ActiveSeriesTracker{
+		trackers:   trackers,
+		configHash: configHash,
+	}
 }
 
 func (c *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nativeHistogramBucketNum int) {
@@ -103,12 +106,11 @@ func (c *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucke
 	c.each(func(t *activeSeriesTracker) { t.Decrement(lbls, nativeHistogramBucketNum) })
 }
 
-// Equals returns true if both composites contain the same tracker pointers in the same order.
+// Equals returns true if both composites are the same instance.
+// If an ActiveSeriesTracker was re-created with same config after a purge,
+// it still should be considered different as we need to re-track the series we missed while racing with the purge.
 func (c *ActiveSeriesTracker) Equals(other *ActiveSeriesTracker) bool {
-	if c == nil || other == nil {
-		return c == other
-	}
-	return c.configHash == other.configHash
+	return c == other
 }
 
 // NewActiveSeriesTrackerForTests creates an ActiveSeriesTracker with a single tracker.

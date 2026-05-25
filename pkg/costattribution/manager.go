@@ -323,9 +323,15 @@ func (mt *managerTrackers[CT, IT]) purge(now, deadline time.Time, limits *valida
 		}
 
 		cardinality := composite.purge(now, deadline)
-		// This user doesn't have data anymore, remove it.
 		if cardinality == 0 {
 			mt.Lock()
+			// If CT==SampleTracker, then it's safe to just remove the tracker here:
+			// in the worst case we'll lose track of an inflight caller who retrieved a SampleTracker but didn't track any samples yet.
+			// It's not worth to implement a more complex logic for that corner case
+			// (note that this inflight call should happen 20 minutes after the receival of the last sapmle)
+			//
+			// If CT==ActiveSeriesTracker, then next active series tracking will see that ActiveSeriesTracker
+			// was re-created and will re-track all series.
 			delete(mt.composite, userID)
 			delete(mt.individual, userID)
 			mt.Unlock()
