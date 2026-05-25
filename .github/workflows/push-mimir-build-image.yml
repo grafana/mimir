@@ -118,7 +118,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and Push Docker Image
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.check_build.outputs.build == 'true'
+        if: steps.check_build.outputs.build == 'true'
         id: build_and_push
         uses: grafana/shared-workflows/actions/docker-build-push-image@34f27887c37cafe70d34af57dfc86b468a31b8c4 # docker-build-push-image/v0.3.3
         with:
@@ -137,7 +137,7 @@ jobs:
       # `changed=false` and no commit will be made.
       - name: Check whether Makefile needs updating, and update it
         id: update_makefile
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_build.outputs.build == 'true'
         run: |
           set -euo pipefail
           echo "Current Build Image Version is $MAIN_TAG"
