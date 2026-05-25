@@ -86,7 +86,8 @@ func captureTrace(
 	startEntries := append([]assignment.Entry(nil), current.Entries...)
 	cooldownsSnapshot := cooldownsToWire(r.moveCooldowns)
 	partitionRateByPID := partitionLoadFromRates(rates, activePartitions)
-	end, actions := r.runSlicer(current, rates, partitionRateByPID, activePartitions, now)
+	excludedFromSlicer := computeRateZeroExclusions(partitionRateByPID, partitionLByPID, activePartitions)
+	end, actions := r.runSlicer(current, rates, partitionRateByPID, activePartitions, excludedFromSlicer, now)
 	require.NoError(t, end.Validate())
 	return Trace{
 		SlicerVersion: SlicerVersion,

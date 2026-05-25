@@ -179,7 +179,7 @@ func (s *simulation) rebalance() {
 	now := time.Now()
 	s.rebalancer.pruneExpiredCooldowns(now)
 	var actions []Action
-	s.assignment, actions = s.rebalancer.runSlicer(s.assignment, rates, nil, s.partitions, now)
+	s.assignment, actions = s.rebalancer.runSlicer(s.assignment, rates, nil, s.partitions, nil, now)
 	s.rebalancer.recordMoveCooldowns(now, actions)
 	s.pushRangesToIngesters()
 }

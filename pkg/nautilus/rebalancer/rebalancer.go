@@ -273,6 +273,29 @@ type Rebalancer struct {
 	// world rather than the stale pre-move one. See predictions.go
 	// for the full design.
 	predictions predictionStore
+
+	// lastTier2RoundAt is the wall-clock time at which the tier-2
+	// (partition->readcache) slicer last successfully fired.
+	// Consulted together with cfg.ReadcacheSlicer.RoundInterval to
+	// decide whether the tier-2 round should run on this rebalance
+	// tick. Zero (the default) means "never fired", which is
+	// indistinguishable from "fired long ago" for gating purposes
+	// and causes the first eligible tick to fire tier-2.
+	//
+	// Mutated only by rebalance(), which runs single-threaded.
+	lastTier2RoundAt time.Time
+
+	// lastTier2Instances is the sorted active readcache instance
+	// set as of the most recent tier-2 fire. When the current
+	// instance set differs (scale-up, scale-down, pod restart with
+	// new ID) we fire tier-2 immediately regardless of the round
+	// interval, because waiting would leave partitions orphaned on
+	// the departed instances or under-utilized on the new ones.
+	//
+	// Stored as a sorted slice for cheap equality checking against
+	// activeReadcacheInstances() output (which is already sorted).
+	// Mutated only by rebalance(), which runs single-threaded.
+	lastTier2Instances []string
 }
 
 // readcacheRingReader is the subset of *ring.Ring the slicer needs to
@@ -567,6 +590,13 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances) {
 					level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
 				}
+				// Initialize tier-2 gating state so RoundInterval
+				// starts counting from the cold-start fire rather
+				// than from "never" — otherwise the next regular
+				// round would re-fire tier-2 immediately with
+				// reason=first_round, defeating the interval.
+				r.lastTier2RoundAt = now
+				r.lastTier2Instances = append([]string(nil), instances...)
 			}
 		} else {
 			// Slicer disabled: extend whatever (partition ->
@@ -682,6 +712,35 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 
 	r.admin.setLastStats(lm, partitionLByPID, partitionRateByPID, activePartitions)
 
+	// Compute the per-round rate-unknown exclusion set: partitions
+	// whose reported rate is 0 despite holding L > 0 series. See
+	// computeRateZeroExclusions and the rationale in runPhase3.
+	// Computed AFTER predictions.applyTo, because a partition that
+	// still has a non-trivial prediction residual will already have
+	// effL > 0 in the slicer's view — those should not be excluded
+	// (predictions are the slicer's own bookkeeping of "we expect
+	// load to be here"). We exclude on the pre-prediction reported
+	// rate so a partition whose readcache went silent right after a
+	// tier-2 move is filtered regardless of what predictions say.
+	excludedFromSlicer := computeRateZeroExclusions(
+		partitionLoadFromRates(rates, activePartitions),
+		partitionLByPID,
+		activePartitions,
+	)
+	r.metrics.setRateZeroExclusions(len(excludedFromSlicer))
+	if len(excludedFromSlicer) > 0 {
+		excludedIDs := make([]int32, 0, len(excludedFromSlicer))
+		for pid := range excludedFromSlicer {
+			excludedIDs = append(excludedIDs, pid)
+		}
+		level.Info(r.logger).Log(
+			"msg", "excluded rate-unknown partitions from slicer pool",
+			"count", len(excludedFromSlicer),
+			"reason", "rate=0 but L>0; likely tier-2 reassignment or readcache restart",
+			"partitions", formatInt32IDs(excludedIDs, 16),
+		)
+	}
+
 	// Snapshot pre-slicer state for the trace. Done BEFORE runSlicer
 	// mutates anything: it returns a fresh assignment but inspects the
 	// cooldown map and rates slice as-of `now`, and we want the snapshot
@@ -689,7 +748,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	startEntries := append([]assignment.Entry(nil), current.Entries...)
 	cooldownsSnapshot := cooldownsToWire(r.moveCooldowns)
 
-	newAssignment, actions := r.runSlicer(current, rates, partitionRateByPID, activePartitions, now)
+	newAssignment, actions := r.runSlicer(current, rates, partitionRateByPID, activePartitions, excludedFromSlicer, now)
 	if err := newAssignment.Validate(); err != nil {
 		level.Error(r.logger).Log("msg", "generated invalid assignment", "err", err)
 		return nil
@@ -731,6 +790,15 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// runs when explicitly enabled and an instance set is available
 	// (from the ring when wired, otherwise from the static config).
 	//
+	// Gated by ReadcacheSlicer.RoundInterval: with a positive
+	// interval, tier-2 fires only on ticks where (a) we've never
+	// fired before, (b) the instance set changed since the last
+	// fire (failover, scale event), or (c) the interval has
+	// elapsed since the last fire. On ticks where tier-2 is
+	// skipped, refreshReadcacheLeases keeps the existing leases
+	// alive so distributors/readcaches don't lose ownership over
+	// the gap. See shouldFireTier2 for the full decision matrix.
+	//
 	// When the slicer is disabled — the Phase 2A bring-up default —
 	// we still extend the existing (partition -> readcache) leases
 	// every round. Without this, leases seeded from disk at startup
@@ -739,8 +807,32 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// finds zero owners; see refreshReadcacheLeases for the full
 	// failure mode.
 	if r.cfg.ReadcacheSlicer.Enabled {
-		if instances := r.activeReadcacheInstances(); len(instances) > 0 {
-			readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances)
+		instances := r.activeReadcacheInstances()
+		if len(instances) > 0 {
+			decision := shouldFireTier2(r.cfg.ReadcacheSlicer.RoundInterval, now, r.lastTier2RoundAt, instances, r.lastTier2Instances)
+			if decision.fire {
+				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances)
+				// Update the gating state regardless of whether the
+				// slicer produced changes: even a no-op tier-2 round
+				// observed the current instance set and load, so the
+				// next interval starts now.
+				r.lastTier2RoundAt = now
+				r.lastTier2Instances = append([]string(nil), instances...)
+				r.metrics.recordTier2FireDecision(decision.reason)
+			} else {
+				r.metrics.recordTier2SkipDecision(decision.reason)
+				level.Debug(r.logger).Log(
+					"msg", "skipping tier-2 round, gated by round interval",
+					"reason", decision.reason,
+					"interval", r.cfg.ReadcacheSlicer.RoundInterval,
+					"since_last_fire", now.Sub(r.lastTier2RoundAt),
+				)
+				// Even when tier-2 is skipped we must extend the
+				// existing (partition -> readcache) leases so they
+				// don't age out before the next fire. Same rationale
+				// as the disabled-slicer branch below.
+				readcacheLogChanged = r.refreshReadcacheLeases(now)
+			}
 		}
 	} else {
 		readcacheLogChanged = r.refreshReadcacheLeases(now)
@@ -1038,11 +1130,20 @@ type rangeLoad struct {
 // EWMA — the slicer's primary balancing signal. When nil/empty
 // (legacy callers / unit tests) Phase 3 falls back to summing
 // per-range sampleRate from rates so the phase still exercises.
+//
+// excludedFromSlicer is the set of partitions whose reported rate
+// is untrustworthy this round (see computeRateZeroExclusions and the
+// long comment in runPhase3). The slicer skips them in Phase 3's
+// hot/cold selection and excludes them from the mean calculation;
+// they remain in activePartitions for Phases 1/2/4 so split/merge
+// keeps working on their ranges. Nil means "no exclusions" — the
+// pre-decoupling behavior used by legacy callers and unit tests.
 func (r *Rebalancer) runSlicer(
 	current *assignment.Assignment,
 	rates []rangeRate,
 	partitionRateByPID map[int32]float64,
 	activePartitions []int32,
+	excludedFromSlicer map[int32]bool,
 	now time.Time,
 ) (*assignment.Assignment, []Action) {
 	lm := buildLoadMap(rates)
@@ -1128,7 +1229,7 @@ func (r *Rebalancer) runSlicer(
 	if partitionLoadByPID == nil {
 		partitionLoadByPID = partitionLoadFromRates(rates, activePartitions)
 	}
-	phase3Actions := r.runPhase3(entries, partitionLoadByPID, activePartitions, now)
+	phase3Actions := r.runPhase3(entries, partitionLoadByPID, activePartitions, excludedFromSlicer, now)
 	actions = append(actions, phase3Actions...)
 	if err := validateSlicerPhaseEntries(entries); err != nil {
 		logSlicerPhaseError(r.logger, entries, "phase3-move", err)
@@ -1376,10 +1477,36 @@ func formatSlicerWindow(snapshot []assignment.Entry, first, last int) string {
 // selection and movable-budget computation. Empty / zero entries
 // behave the same as "no load": the partition is never selected as
 // hot (movable is zero) and is always the coldest candidate.
+//
+// excludedFromSlicer is the set of partitions whose reported rate
+// signal is untrustworthy this round (e.g. because the readcache
+// hosting the partition was just reassigned by tier-2 and its
+// per-partition EWMA has not yet ramped up). Excluded partitions
+// are removed from both the hot-pick and cold-pick pools — the
+// slicer cannot reliably reason about a partition whose true load
+// it does not know — and they are excluded from the mean
+// calculation so the remaining (known) partitions are balanced
+// against each other. Their ranges are still subject to Phase 2
+// (merge) and Phase 4 (split). Pass nil to disable the filter (the
+// pre-decoupling behavior).
+//
+// The failure mode this guards against: when tier-2 moves a
+// partition from readcache A to readcache B, B's per-partition rate
+// EWMA starts from zero and takes ~5 min (one half-life) to reflect
+// half of the steady-state. If Phase 3 reads "rate=0" for such a
+// partition it concludes the partition is cold and floods it with
+// hash ranges from the hottest sources, overshooting the true
+// per-partition rate by roughly the predictions store's residual.
+// The next round, B's EWMA catches up, the partition appears
+// massively hot, and Phase 3 sheds the load it just installed.
+// Repeat every round. Excluding rate=0/L>0 partitions for one
+// round (until B's EWMA reports ANY positive rate) breaks that
+// loop.
 func (r *Rebalancer) runPhase3(
 	entries []rangeLoad,
 	partitionLoadByPID map[int32]float64,
 	activePartitions []int32,
+	excludedFromSlicer map[int32]bool,
 	now time.Time,
 ) []Action {
 	numPartitions := len(activePartitions)
@@ -1402,13 +1529,21 @@ func (r *Rebalancer) runPhase3(
 		}
 	}
 
+	// totalL / meanL exclude rate-unknown partitions: including them
+	// (with effL=0) would drag the mean down and make the remaining
+	// partitions look hotter than they really are, defeating the
+	// point of the exclusion.
 	var totalL float64
+	knownPartitions := numPartitions - len(excludedFromSlicer)
 	for _, pid := range activePartitions {
+		if excludedFromSlicer[pid] {
+			continue
+		}
 		totalL += effL[pid]
 	}
 	var meanL float64
-	if numPartitions > 0 {
-		meanL = totalL / float64(numPartitions)
+	if knownPartitions > 0 {
+		meanL = totalL / float64(knownPartitions)
 	}
 
 	// plannedAdded accumulates within-round additions per destination,
@@ -1466,6 +1601,9 @@ func (r *Rebalancer) runPhase3(
 		hotFound := false
 		coldFound := false
 		for _, pid := range activePartitions {
+			if excludedFromSlicer[pid] {
+				continue
+			}
 			if !excludedHot[pid] && movable(pid) > 0 {
 				s := effectiveSource(pid)
 				if s > hotL {
@@ -1476,6 +1614,9 @@ func (r *Rebalancer) runPhase3(
 			}
 		}
 		for _, pid := range activePartitions {
+			if excludedFromSlicer[pid] {
+				continue
+			}
 			d := effectiveDest(pid)
 			if d < coldL {
 				coldL = d

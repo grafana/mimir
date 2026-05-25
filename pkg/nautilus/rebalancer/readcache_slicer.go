@@ -50,6 +50,27 @@ type ReadcacheSlicerConfig struct {
 	// MoveCooldown is the minimum time between consecutive moves of
 	// the same partition. Per-partition anti-flap guard.
 	MoveCooldown time.Duration `yaml:"move_cooldown"`
+
+	// RoundInterval is the minimum wall-clock interval between
+	// consecutive runs of the readcache slicer round (the
+	// partition->instance tier). When > 0, the rebalancer's main
+	// loop still ticks at the tier-1 cadence (every
+	// MinRebalanceInterval) but the tier-2 round only fires if at
+	// least RoundInterval has elapsed since the last successful
+	// fire, OR the active instance set changed since the last fire
+	// (which would orphan partitions if we waited). When 0 (the
+	// default), the tier-2 round runs every rebalance tick — the
+	// pre-decoupling behavior.
+	//
+	// Rationale: every tier-2 move forces the destination
+	// readcache's per-partition EWMA to start from zero, so the
+	// next tier-1 round sees the partition's reported sample rate
+	// drop to zero even though writes are still flowing. Spacing
+	// tier-2 rounds out lets the destination EWMA settle (≈ 2-3
+	// EWMA half-lives) before tier-1 next consults its rate.
+	// Recommended in production: at least 2 × the EWMA half-life
+	// (currently 5 min), so 10–30 min is a reasonable range.
+	RoundInterval time.Duration `yaml:"round_interval"`
 }
 
 // RegisterFlagsWithPrefix registers the slicer's flags on f under
@@ -61,6 +82,7 @@ func (cfg *ReadcacheSlicerConfig) RegisterFlagsWithPrefix(prefix string, f *flag
 	f.Float64Var(&cfg.Beta, prefix+"beta", 0.0, "Weight applied to per-partition query samples EWMA (read rate) in the load function. Zero (the default) makes the slicer balance write pressure only; set to a non-zero value once query-load telemetry is reliable.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.10, "Maximum fraction of total load that may be moved between instances in a single round.")
 	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 5*time.Minute, "Minimum time between consecutive moves of the same partition.")
+	f.DurationVar(&cfg.RoundInterval, prefix+"round-interval", 0, "Minimum wall-clock interval between consecutive readcache slicer rounds. When >0, the tier-1 (hash-range) slicer still runs every rebalance tick, but the tier-2 (partition->readcache) slicer only fires after this interval has elapsed since the last successful fire (or if the active readcache instance set changed, to avoid orphaning partitions on scale-down/restart). Decouples tier-2 churn from tier-1 cadence so destination readcaches can fully build their per-partition EWMAs before tier-1 next consults them. 0 (the default) preserves the legacy behavior of running both tiers on every tick.")
 }
 
 // readcachePlanInput is the input the rebalancer collects each round

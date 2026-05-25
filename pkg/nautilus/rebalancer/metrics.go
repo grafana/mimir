@@ -42,6 +42,23 @@ type metrics struct {
 
 	lastReadcacheInstanceKeys  map[string]struct{}
 	lastReadcachePartitionKeys map[string]struct{}
+
+	// rateZeroExclusions tracks the per-round count of partitions
+	// runPhase3 skipped because their reported sample rate was 0
+	// despite holding L>0 series in some readcache TSDB head. A
+	// persistently non-zero value points at tier-2 churn outpacing
+	// the per-partition EWMA settle time; alert thresholds should
+	// pair this with cortex_nautilus_rebalancer_tier2_skipped_rounds_total
+	// so operators can distinguish "tier-2 is too aggressive" from
+	// "readcache pods are restarting".
+	rateZeroExclusions prometheus.Gauge
+
+	// tier2RoundDecisions counts tier-2 gate decisions by reason
+	// ("first_round", "interval_zero", "interval_elapsed",
+	// "instances_changed" for fires; "interval_pending" for
+	// skips). Lets dashboards show the breakdown of "why did tier-2
+	// fire / not fire" without re-reading logs.
+	tier2RoundDecisions *prometheus.CounterVec
 }
 
 func newMetrics(r prometheus.Registerer) *metrics {
@@ -66,9 +83,17 @@ func newMetrics(r prometheus.Registerer) *metrics {
 		}, []string{"partition", "instance"}),
 		lastReadcacheInstanceKeys:  map[string]struct{}{},
 		lastReadcachePartitionKeys: map[string]struct{}{},
+		rateZeroExclusions: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_nautilus_rebalancer_phase3_excluded_partitions",
+			Help: "Number of partitions runPhase3 skipped on the most recent round because their reported sample rate was 0 despite holding in-memory series (typically a partition whose readcache was just reassigned by tier-2 and whose EWMA has not yet ramped up).",
+		}),
+		tier2RoundDecisions: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_nautilus_rebalancer_tier2_round_decisions_total",
+			Help: "Count of tier-2 (readcache slicer) gate decisions partitioned by outcome (fire vs skip) and reason. Lets dashboards show why tier-2 chose to fire or wait, without re-reading logs.",
+		}, []string{"outcome", "reason"}),
 	}
 	if r != nil {
-		r.MustRegister(m.partitionQuerySamples, m.unnamedQuerySamples, m.readcacheInstanceLoad, m.readcachePartitionOwner)
+		r.MustRegister(m.partitionQuerySamples, m.unnamedQuerySamples, m.readcacheInstanceLoad, m.readcachePartitionOwner, m.rateZeroExclusions, m.tier2RoundDecisions)
 	}
 	return m
 }
@@ -149,6 +174,35 @@ func (m *metrics) updateReadcacheRound(plan readcachePlan) {
 		}
 	}
 	m.lastReadcachePartitionKeys = nextPartitionKeys
+}
+
+// setRateZeroExclusions records how many partitions runPhase3
+// excluded on the most recent round. Safe to call with nil
+// receiver to keep unit-test wiring trivial.
+func (m *metrics) setRateZeroExclusions(n int) {
+	if m == nil {
+		return
+	}
+	m.rateZeroExclusions.Set(float64(n))
+}
+
+// recordTier2FireDecision bumps the fire counter for the given
+// reason ("first_round", "interval_zero", "interval_elapsed",
+// "instances_changed").
+func (m *metrics) recordTier2FireDecision(reason string) {
+	if m == nil {
+		return
+	}
+	m.tier2RoundDecisions.WithLabelValues("fire", reason).Inc()
+}
+
+// recordTier2SkipDecision bumps the skip counter for the given
+// reason (typically "interval_pending").
+func (m *metrics) recordTier2SkipDecision(reason string) {
+	if m == nil {
+		return
+	}
+	m.tier2RoundDecisions.WithLabelValues("skip", reason).Inc()
 }
 
 // splitMetricKey splits "partition|instance" back into its

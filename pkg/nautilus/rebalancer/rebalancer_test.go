@@ -76,7 +76,7 @@ func TestRunSlicer_ConvergesOnSkewedLoad(t *testing.T) {
 
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// After rebalancing, partition 0 should own less hash space than
@@ -119,7 +119,7 @@ func TestRunSlicer_EvenLoadNoChange(t *testing.T) {
 
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// Sum series per partition on the output assignment and check
@@ -162,7 +162,7 @@ func TestRunSlicer_InactivePartitionsReassigned(t *testing.T) {
 
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
-	result, _ := r.runSlicer(initial, rates, nil, activePartitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, activePartitions, nil, time.Time{})
 	require.NoError(t, result.Validate())
 
 	for _, e := range result.Entries {
@@ -189,7 +189,7 @@ func TestRunSlicer_SliceCountCapped(t *testing.T) {
 
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 	require.NoError(t, result.Validate())
 
 	assert.LessOrEqual(t, len(result.Entries), maxSlicesPerPartition*len(partitions)+len(partitions),
@@ -326,7 +326,7 @@ func TestRunSlicer_Phase1_DistributesAcrossPartitions(t *testing.T) {
 
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
-	result, _ := r.runSlicer(initial, rates, nil, activePartitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, activePartitions, nil, time.Time{})
 	require.NoError(t, result.Validate())
 
 	counts := make(map[int32]int)
@@ -363,7 +363,7 @@ func TestRunSlicer_Phase3_ExhaustsBudget(t *testing.T) {
 
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// Sum per-range series per partition on the result.
@@ -551,7 +551,7 @@ func TestRunSlicer_Phase4_SplitsAnyHotSlice(t *testing.T) {
 
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
-	result, _ := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, _ := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 	require.NoError(t, result.Validate())
 
 	// The hot slice on the overloaded partition should have been split.
@@ -1194,7 +1194,7 @@ func TestRunSlicer_SeriesOnlyReporterProducesNoMoves(t *testing.T) {
 		cfg:           seriesCfg(0.5),
 		moveCooldowns: make(map[assignment.HashRange]time.Time),
 	}
-	_, actions := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	_, actions := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 
 	var moves int
 	for _, a := range actions {
@@ -1376,7 +1376,7 @@ func TestPartitionLoadFromRates_AfterResidueFilter(t *testing.T) {
 		{PartitionID: 7, Range: hrA},
 	}}
 	rates := []rangeRate{
-		{hr: hrA, sampleRate: 100, partitionID: 7}, // current owner's signal
+		{hr: hrA, sampleRate: 100, partitionID: 7},  // current owner's signal
 		{hr: hrA, sampleRate: 5000, partitionID: 3}, // residue we want to suppress
 	}
 
@@ -1443,7 +1443,7 @@ func TestRunSlicer_ResidueDoesNotDriveMoves(t *testing.T) {
 	require.Positive(t, dropped, "test setup: residue rates should have been filtered")
 	partitionRateByPID := partitionLoadFromRates(filtered, partitions)
 
-	_, actions := r.runSlicer(initial, filtered, partitionRateByPID, partitions, time.Time{})
+	_, actions := r.runSlicer(initial, filtered, partitionRateByPID, partitions, nil, time.Time{})
 
 	var moves int
 	for _, a := range actions {
@@ -1485,7 +1485,7 @@ func TestRunSlicer_MovesBySampleRate(t *testing.T) {
 	partL := partitionLFromRates(initial, rates) // unused by Phase 3 now
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
-	result, actions := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	result, actions := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 	require.NoError(t, result.Validate())
 
 	var movesOffHot int
@@ -1527,7 +1527,7 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 
 	// First round: produces some moves and arms cooldowns.
 	rates = withSampleRateFromSeries(rates)
-	result1, actions1 := r.runSlicer(initial, rates, nil, partitions, t0)
+	result1, actions1 := r.runSlicer(initial, rates, nil, partitions, nil, t0)
 	require.NoError(t, result1.Validate())
 	r.recordMoveCooldowns(t0, actions1)
 
@@ -1544,7 +1544,7 @@ func TestRunSlicer_MoveCooldown_BlocksRepeatMoves(t *testing.T) {
 	// pretend no stats have updated yet, which is the worst case).
 	t1 := t0.Add(30 * time.Second)
 	r.pruneExpiredCooldowns(t1)
-	_, actions2 := r.runSlicer(result1, rates, nil, partitions, t1)
+	_, actions2 := r.runSlicer(result1, rates, nil, partitions, nil, t1)
 	for _, a := range actions2 {
 		if a.Kind != ActionMove {
 			continue
@@ -1649,7 +1649,7 @@ func TestRunSlicer_ExhaustedBudgetDoesNotStallOthers(t *testing.T) {
 
 	rates = withSampleRateFromSeries(rates)
 	_ = partL
-	_, actions := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	_, actions := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 
 	movesFromP1 := 0
 	for _, a := range actions {
@@ -1701,7 +1701,7 @@ func TestRunSlicer_PlannedAdditionsPreventDestinationStuffing(t *testing.T) {
 	// longer passed to the slicer — Phase 3 reads sampleRate via
 	// rates. We still validate it as a sanity check.
 	_ = partL
-	_, actions := r.runSlicer(initial, rates, nil, partitions, time.Time{})
+	_, actions := r.runSlicer(initial, rates, nil, partitions, nil, time.Time{})
 
 	destCounts := make(map[int32]int)
 	for _, a := range actions {
@@ -1743,7 +1743,7 @@ func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
 	}
 
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	result1, _ := r.runSlicer(initial, rates, nil, partitions, now)
+	result1, _ := r.runSlicer(initial, rates, nil, partitions, nil, now)
 
 	// Round 2: pretend distributors haven't re-aimed at P1 yet — the
 	// rates fixture is unchanged so P0 is still hotter. The slicer
@@ -1752,7 +1752,7 @@ func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
 	// the new design (and never was anything that survived the round
 	// once recentMoves was removed).
 	now2 := now.Add(time.Minute)
-	_, actions2 := r.runSlicer(result1, rates, nil, partitions, now2)
+	_, actions2 := r.runSlicer(result1, rates, nil, partitions, nil, now2)
 
 	// If any move happens in round 2, its destination must be P1
 	// (no prohibition from round 1's plannedAdded).

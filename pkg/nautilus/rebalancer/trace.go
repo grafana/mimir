@@ -49,7 +49,18 @@ import (
 // only if their RecentMoves slice was already empty; otherwise the
 // v5 binary refuses them (the slicer's Phase 3 would now ignore
 // those records and produce different actions).
-const SlicerVersion = "5"
+//
+// Version "6" teaches Phase 3 to skip partitions whose reported
+// sample rate is 0 but whose head-series count L is positive (the
+// rate-unknown filter introduced to break the tier-1/tier-2
+// over-correction loop, see computeRateZeroExclusions). The trace's
+// existing PartitionL field is sufficient for the v6 binary to
+// reconstruct the exclusion set during replay, so v5 traces
+// continue to be byte-replayable against v6 as long as the
+// (rate, L) pairs in the trace yield no exclusions. A v5 trace
+// whose rates would now be excluded would produce different
+// actions; refuse such traces by version-checking before replay.
+const SlicerVersion = "6"
 
 // RangeRate is the JSON-serializable view of a per-(partition, range)
 // rate signal. Mirrors the unexported rangeRate but with JSON tags
@@ -244,5 +255,10 @@ func ReplayTrace(t Trace) (*assignment.Assignment, []Action) {
 	// contract doesn't depend on partitionLoadFromRates being
 	// called in exactly the same place as in production).
 	partitionRateByPID := partitionLoadFromRates(rates, t.ActivePartitions)
-	return r.runSlicer(start, rates, partitionRateByPID, t.ActivePartitions, t.Now)
+	// Reconstruct the rate-unknown exclusion set. Computed BEFORE
+	// any prediction folding (the production path computes it from
+	// pre-prediction rates too); a trace carries no prediction
+	// state, so this matches the production behavior exactly.
+	excludedFromSlicer := computeRateZeroExclusions(partitionRateByPID, t.PartitionL, t.ActivePartitions)
+	return r.runSlicer(start, rates, partitionRateByPID, t.ActivePartitions, excludedFromSlicer, t.Now)
 }
