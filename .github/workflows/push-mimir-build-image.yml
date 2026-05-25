@@ -62,7 +62,7 @@ jobs:
         run: |
           echo "path=mimir-build-image/Dockerfile" >> $GITHUB_OUTPUT
           main_build_image=$(make print-build-image)
-          main_image_tag=$(echo $main_build_image | cut -d ':' -f 2)
+          main_image_tag=$(echo $main_build_image | cut -d ':' -f 2-) # Get everything after the first : (ie. the image tag and digest, if present)
           image_name=$(echo $main_build_image | cut -d ':' -f 1)
           echo "image=$image_name" >> $GITHUB_OUTPUT
           echo "main_image_tag=$main_image_tag" >> $GITHUB_OUTPUT
@@ -119,6 +119,7 @@ jobs:
 
       - name: Build and Push Docker Image
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.check_build.outputs.build == 'true'
+        id: build_and_push
         uses: grafana/shared-workflows/actions/docker-build-push-image@34f27887c37cafe70d34af57dfc86b468a31b8c4 # docker-build-push-image/v0.3.3
         with:
           context: mimir-build-image
@@ -149,14 +150,14 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
         env:
-          TAG: ${{ steps.compute_hash.outputs.tag }}
+          TAG: ${{ steps.compute_hash.outputs.tag }}@${{ steps.build_and_push.outputs.digest }}
           MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}
 
       # Generate the App Token here (rather than earlier in the job) so we only mint one
       # when we actually need to commit. Also: building the image can take a long time,
       # and minting fresh just before use ensures the token hasn't expired (1h TTL).
       - name: Generate GitHub App Token
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.update_makefile.outputs.changed == 'true'
+        if: steps.update_makefile.outputs.changed == 'true'
         id: app-token-for-commit
         uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
         with:
@@ -168,7 +169,7 @@ jobs:
       # by the latter don't spawn GitHub Actions runs.
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
       - name: Commit Makefile update to PR branch
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.update_makefile.outputs.changed == 'true'
+        if: steps.update_makefile.outputs.changed == 'true'
         uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde # v0.2.20
         with:
           commit_message: "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
