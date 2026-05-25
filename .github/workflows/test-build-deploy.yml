@@ -386,7 +386,10 @@ jobs:
             echo "No failed-packages artifacts produced; nothing to comment."
             exit 0
           fi
-          ALL_FAILED=$(cat failed-packages/*.txt 2>/dev/null | tr ' ' '\n' | grep -v '^$' | sort -u)
+          # `grep -v` exits 1 when nothing matches; under `pipefail` that would kill the
+          # script before the streamingpromql check below. Wrap it so the pipeline stays
+          # at exit 0 even if every input line happens to be empty.
+          ALL_FAILED=$(cat failed-packages/*.txt 2>/dev/null | tr ' ' '\n' | { grep -v '^$' || true; } | sort -u)
           if ! echo "$ALL_FAILED" | grep -q '^github.com/grafana/mimir/pkg/streamingpromql'; then
             echo "No streamingpromql failures detected."
             exit 0
