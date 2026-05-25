@@ -162,9 +162,11 @@ jobs:
           existing_labels=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
 
           labels_added=""
+          backport_labels=""
           while IFS= read -r branch; do
             [ -z "$branch" ] && continue
             label="backport $branch"
+            backport_labels="${backport_labels}- \`${label}\`\n"
 
             # Create the label if it doesn't exist yet (ignore errors if it already exists).
             gh label create "$label" --color "0E8A16" --description "Backport to $branch" 2>/dev/null || true
@@ -179,9 +181,13 @@ jobs:
             labels_added="${labels_added}- \`${label}\`\n"
           done <<< "$(echo "$RELEASE_BRANCHES" | tr ' ' '\n')"
 
-          if [ -z "$labels_added" ]; then
-            echo "All backport labels were already present — skipping comment."
+          if [ -z "$backport_labels" ]; then
+            echo "No backport labels to add — skipping comment."
             exit 0
+          fi
+
+          if [ -z "$labels_added" ]; then
+            echo "All backport labels were already present — posting missing comment."
           fi
 
           # Build the list of matched files for the comment.
@@ -193,12 +199,12 @@ jobs:
 
           comment_body=$(cat <<COMMENT_EOF
           <!-- auto-backport-build-changes -->
-          ### 🔄 Automatic backport labels added
+          ### 🔄 Automatic backport labels
 
           This PR modifies **build, CI, or release-related files** that should typically be backported to active release branches.
 
-          **Labels added:**
-          $(echo -e "$labels_added")
+          **Backport labels:**
+          $(echo -e "$backport_labels")
 
           <details>
           <summary>Changed build/CI files in this PR</summary>
@@ -210,7 +216,7 @@ jobs:
 
           @${PR_AUTHOR} Once this PR is merged, backport PRs will be created automatically for the branches above. **Please review and merge the resulting backport PRs** to ensure these changes reach the release branches.
 
-          > This label was added automatically. If this change should **not** be backported, please remove the \`backport …\` labels before merging.
+          > These labels were added automatically. If this change should **not** be backported, please remove the \`backport …\` labels before merging.
           COMMENT_EOF
           )
 
