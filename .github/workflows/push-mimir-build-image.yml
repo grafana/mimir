@@ -19,12 +19,6 @@ jobs:
       # Required by docker-build-push-image for Workload Identity Federation authentication to Google Artifact Registry.
       id-token: write
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.head.ref }} # Check out the PR branch itself, not the temporary merge commit
-
       # We only want for this workflow to do anything when mimir-build-image/Dockerfile is modified.
       # However, we want for it to be able to run for all PRs, just so it can be made a required check
       # (i.e. so PRs can't be merged until it's done).
@@ -50,6 +44,13 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout Repository
+        if: steps.check_dockerfile.outputs.modified == 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.ref }} # Check out the PR branch itself, not the temporary merge commit
 
       - name: Prepare Variables
         if: steps.check_dockerfile.outputs.modified == 'true'
