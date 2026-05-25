@@ -205,25 +205,29 @@ jobs:
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
       - name: Add commit to PR in order to update Build Image version
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.compare_tag.outputs.isDifferent == 'true'
-        run: |
-          echo "Get current Build Image Version"
-          echo "Current Build Image Version is $MAIN_TAG"
-          echo "Built Image Version is $TAG"
-          if [ "$MAIN_TAG" = "$TAG" ]; then
-            echo "Build Image Version is already up to date"
-          else
-            echo "Build Image Version is not up to date"
-            sed -i "s/$MAIN_TAG/${{ steps.compute_hash.outputs.tag }}/g" Makefile
-            git config --global user.email "${GITHUB_EMAIL}"
-            git config --global user.name "${GITHUB_LOGIN}"
-            git config --global url.https://x-access-token:${GITHUB_TOKEN}@github.com/.insteadOf https://github.com/
-            git add Makefile
-            git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
-            git push origin HEAD
-          fi
         env:
           GITHUB_TOKEN: ${{ steps.app-token-for-commit.outputs.token }}
           GITHUB_LOGIN: mimir-github-bot[bot]
           GITHUB_EMAIL: 199097951+mimir-github-bot[bot]@users.noreply.github.com
           TAG: ${{ steps.compute_hash.outputs.tag }}
           MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}
+        run: |
+          set -euo pipefail
+          echo "Get current Build Image Version"
+          echo "Current Build Image Version is $MAIN_TAG"
+          echo "Built Image Version is $TAG"
+          if [ "$MAIN_TAG" = "$TAG" ]; then
+            echo "Build Image Version is already up to date"
+            exit 0
+          fi
+          echo "Build Image Version is not up to date"
+          sed -i "s/${MAIN_TAG}/${TAG}/g" Makefile
+          git config --global user.email "${GITHUB_EMAIL}"
+          git config --global user.name "${GITHUB_LOGIN}"
+          git add Makefile
+          git commit -m "Update build image version to ${TAG}"
+          # Send the App token only on this push via an Authorization header, rather than
+          # persisting `x-access-token:$TOKEN` into the global git config. Avoids leaving the
+          # token recoverable from ~/.gitconfig by any later step in the runner.
+          AUTH_HEADER=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
+          git -c "http.https://github.com/.extraheader=Authorization: Basic ${AUTH_HEADER}" push origin HEAD
