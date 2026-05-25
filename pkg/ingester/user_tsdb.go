@@ -130,6 +130,7 @@ type userTSDB struct {
 	// for statistics
 	ingestedAPISamples  *util_math.EwmaRate
 	ingestedRuleSamples *util_math.EwmaRate
+	dummyOption         bool
 
 	// Block min retention
 	blockMinRetention time.Duration
