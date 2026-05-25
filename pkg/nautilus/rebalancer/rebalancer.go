@@ -265,6 +265,14 @@ type Rebalancer struct {
 	// so multi-round timelines (lease aging, cooldown expiry,
 	// scheduling) can be driven deterministically.
 	clock Clock
+
+	// predictions records moves the slicer made in recent rounds
+	// whose load impact the destination readcache's EWMA has not
+	// yet fully observed. Folded into partitionRateByPID before
+	// runSlicer so the slicer's decisions reflect the post-move
+	// world rather than the stale pre-move one. See predictions.go
+	// for the full design.
+	predictions predictionStore
 }
 
 // readcacheRingReader is the subset of *ring.Ring the slicer needs to
@@ -650,6 +658,28 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 
 	lm := buildLoadMap(rates)
 	partitionRateByPID := partitionLoadFromRates(rates, activePartitions)
+
+	// Fold predictions from recent rounds into the partition rates.
+	// The readcache EWMA at the destination of a move takes ~5 min
+	// (one half-life) to reflect half of the moved load and ~20 min
+	// to reflect nearly all of it. Without this correction the
+	// slicer sees the destination as much cooler than it really is
+	// for the next ~10 rounds (at 30s cadence), keeps moving more
+	// ranges into it, and over-shoots. predictions.applyTo adds
+	// back the still-unobserved residual from every recent move,
+	// so partitionRateByPID matches what the EWMA WILL say once it
+	// settles. Source-side is already handled by
+	// filterRatesByCurrentOwnership; only destinations need a
+	// prediction.
+	predKept, predDropped := r.predictions.applyTo(now, partitionRateByPID)
+	if predKept > 0 || predDropped > 0 {
+		level.Debug(r.logger).Log(
+			"msg", "applied rate predictions to slicer input",
+			"kept", predKept,
+			"dropped", predDropped,
+		)
+	}
+
 	r.admin.setLastStats(lm, partitionLByPID, partitionRateByPID, activePartitions)
 
 	// Snapshot pre-slicer state for the trace. Done BEFORE runSlicer
@@ -686,6 +716,12 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 			"lease_horizon", r.store.leaseHorizon(now).Format(time.RFC3339),
 			"subscribers", r.store.numSubscribers(),
 		)
+		// Record predictions ONLY when the log actually changed.
+		// If apply was a no-op (steady state or rejected), the
+		// distributor doesn't get a new snapshot and writes don't
+		// reroute, so there's nothing for the destination EWMA to
+		// catch up to.
+		r.predictions.record(now, actions, lm)
 	}
 	r.pushRanges(ctx, newAssignment, now)
 
