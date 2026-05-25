@@ -37,10 +37,10 @@ jobs:
             --jq '.[].filename')
           if echo "$files" | grep -qxE '(mimir-build-image/Dockerfile|.github/workflows/push-mimir-build-image.yml)'; then
             echo "modified=true" >> "$GITHUB_OUTPUT"
-            echo "Dockerfile was modified"
+            echo "Dockerfile or build workflow was modified"
           else
             echo "modified=false" >> "$GITHUB_OUTPUT"
-            echo "Dockerfile was not modified"
+            echo "Dockerfile or build workflow were not modified"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
