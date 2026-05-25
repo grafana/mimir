@@ -596,6 +596,8 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 
 	l.canonicalizeQueries()
+	l.CostAttributionBaseTrackers.Canonicalize()
+	l.AdditionalCostAttributionTrackers.Canonicalize()
 	l.ComputeCostAttributionConfigHash()
 	return nil
 }

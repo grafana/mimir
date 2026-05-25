@@ -148,13 +148,6 @@ func (m *Manager) iteration(_ context.Context) error {
 	return nil
 }
 
-func sortLabels(labels costattributionmodel.Labels) costattributionmodel.Labels {
-	slices.SortFunc(labels, func(a, b costattributionmodel.Label) int {
-		return strings.Compare(a.Input, b.Input)
-	})
-	return labels
-}
-
 func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	if m == nil {
 		return nil
@@ -234,14 +227,13 @@ func (mt *managerTrackers[CT, IT]) rebuild(userID string, limits *validation.Ove
 
 	// Add the missing ones.
 	for name, tcfg := range cfg.Trackers {
-		cfgLabels := sortLabels(tcfg.Labels)
 		if existing, ok := individualUserTrackers[name]; ok {
 			lbls, maxCardinality, cooldown := existing.config()
-			if maxCardinality == cfg.MaxCardinality && cooldown == cfg.Cooldown && slices.Equal(lbls, cfgLabels) {
+			if maxCardinality == cfg.MaxCardinality && cooldown == cfg.Cooldown && slices.Equal(lbls, tcfg.Labels) {
 				continue
 			}
 		}
-		tracker, err := mt.newIndividual(userID, name, cfgLabels, cfg.MaxCardinality, cfg.Cooldown, logger)
+		tracker, err := mt.newIndividual(userID, name, tcfg.Labels, cfg.MaxCardinality, cfg.Cooldown, logger)
 		if err != nil {
 			mt.creationErrors.With(prometheus.Labels{"user": userID, "tracker_name": name}).Inc()
 			level.Warn(logger).Log("msg", "error creating cost attribution tracker, skipping it", "user", userID, "tracker_name", name, "error", err)

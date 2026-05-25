@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/prometheus/common/model"
@@ -22,6 +23,14 @@ type TrackerConfigs map[string]TrackerConfig
 // DefaultTrackerName is the name used for the default cost attribution tracker
 // configured via cost_attribution_labels.
 const DefaultTrackerName = "cost-attribution"
+
+func (tc TrackerConfigs) Canonicalize() {
+	for _, cfg := range tc {
+		slices.SortFunc(cfg.Labels, func(a, b Label) int {
+			return strings.Compare(a.Input, b.Input)
+		})
+	}
+}
 
 func (tc TrackerConfigs) Validate() error {
 	for name, cfg := range tc {
@@ -63,6 +72,7 @@ func (tc *TrackerConfigs) Set(s string) error {
 	if err := parsed.Validate(); err != nil {
 		return err
 	}
+	parsed.Canonicalize()
 	*tc = parsed
 	return nil
 }

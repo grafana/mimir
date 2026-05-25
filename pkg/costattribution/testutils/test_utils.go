@@ -95,6 +95,8 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 	}
 
 	for _, l := range overrides {
+		l.CostAttributionBaseTrackers.Canonicalize()
+		l.AdditionalCostAttributionTrackers.Canonicalize()
 		l.ComputeCostAttributionConfigHash()
 	}
 	return validation.NewOverrides(limits, validation.NewMockTenantLimits(overrides))

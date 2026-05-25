@@ -1928,6 +1928,47 @@ func TestLimits_Validate(t *testing.T) {
 	}
 }
 
+func TestCostAttributionTrackerLabelsAreSortedAfterUnmarshal(t *testing.T) {
+	yamlInput := `
+cost_attribution_trackers:
+  by-team:
+    labels:
+      - input: z_label
+      - input: a_label
+additional_cost_attribution_trackers:
+  by-svc:
+    labels:
+      - input: service
+      - input: env
+`
+	cfg := Limits{}
+	flagext.DefaultValues(&cfg)
+	require.NoError(t, yaml.Unmarshal([]byte(yamlInput), &cfg))
+
+	baseLabels := cfg.CostAttributionBaseTrackers["by-team"].Labels
+	require.Equal(t, costattributionmodel.Labels{
+		{Input: "a_label"},
+		{Input: "z_label"},
+	}, baseLabels, "base tracker labels should be sorted after unmarshal")
+
+	additionalLabels := cfg.AdditionalCostAttributionTrackers["by-svc"].Labels
+	require.Equal(t, costattributionmodel.Labels{
+		{Input: "env"},
+		{Input: "service"},
+	}, additionalLabels, "additional tracker labels should be sorted after unmarshal")
+}
+
+func TestCostAttributionTrackerLabelsAreSortedAfterFlagParsing(t *testing.T) {
+	var tc costattributionmodel.TrackerConfigs
+	require.NoError(t, tc.Set(`{"by-team":{"labels":[{"input":"z_label"},{"input":"a_label"}]}}`))
+
+	labels := tc["by-team"].Labels
+	require.Equal(t, costattributionmodel.Labels{
+		{Input: "a_label"},
+		{Input: "z_label"},
+	}, labels, "tracker labels should be sorted after flag parsing")
+}
+
 func TestLimits_ValidateMaxActiveSeriesAdditionalCustomTrackers(t *testing.T) {
 	t.Parallel()
 
