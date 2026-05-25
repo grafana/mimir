@@ -8,11 +8,22 @@ FROM alpine/helm:4.1.4@sha256:4b0bdd2cf18ff6bca12aba0b2c5671384dab5035c19c57f0c5
 FROM golang:1.26.3-trixie@sha256:d08bf3ed2bd263088ca8e23fefaf10f1b71769f6932f0a4017ba28d2a5baf001
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
-ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
 # Override toolchain directive in go.mod, to ensure the image's Go version is used.
 # Be aware that the official Go Dockerfiles already do this, but let's be explicit.
 # https://github.com/docker-library/golang/issues/472
 ENV GOTOOLCHAIN=local
+
+ENV NODE_MAJOR_VERSION=20
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+RUN <<EOF cat > /etc/apt/sources.list.d/nodesource.sources
+Types: deb
+URIs: https://deb.nodesource.com/node_${NODE_MAJOR_VERSION}.x/
+Suites: nodistro
+Components: main
+Signed-By: /etc/apt/keyrings/nodesource.gpg
+EOF
+
+ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
 RUN apt-get update && \
     apt-get install -y \
       curl \
@@ -26,11 +37,10 @@ RUN apt-get update && \
       libprotobuf-dev \
       shellcheck \
       libpcap-dev \
+      nodejs \
       $SKOPEO_DEPS \
     && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-RUN curl -sL https://deb.nodesource.com/setup_20.x | bash -
-RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN npm install -g prettier@2.3.2
 
