@@ -147,6 +147,14 @@
       ],
       rebaseWhen: 'behind-base-branch',
       gitIgnoredAuthors: ['199097951+mimir-github-bot[bot]@users.noreply.github.com'],
+    },
+    {
+      description: 'Keep grafana/writers-toolkit deploy-preview workflow on @main: the OIDC service account only trusts the main ref, so pinning to a SHA breaks the docs deploy preview.',
+      matchManagers: ['github-actions'],
+      matchPackageNames: [
+        'grafana/writers-toolkit',
+      ],
+      enabled: false,
     }
   ],
   branchPrefix: 'deps-update/',
