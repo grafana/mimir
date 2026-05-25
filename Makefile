@@ -31,7 +31,9 @@ BINARY_SUFFIX ?= ""
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
 IMAGE_PREFIX ?= grafana/
-BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
+# The build image is published to Google Artifact Registry and is anonymously pullable.
+# See .github/workflows/push-mimir-build-image.yml for the publishing flow.
+BUILD_IMAGE ?= us-docker.pkg.dev/grafanalabs-dev/docker-mimir-build-image/mimir-build-image
 CONTAINER_MOUNT_OPTIONS ?= delegated,z
 
 # For a tag push, $GITHUB_REF will look like refs/tags/<tag_name>.
@@ -159,16 +161,25 @@ fetch-build-image: ## Fetch latest the docker build image if it isn't already pr
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
+# Build args passed to docker when building mimir-build-image. Defined as a space-separated
+# list of KEY=VALUE so it can be reused by `push-multiarch-build-image` (via `addprefix`)
+# and emitted one-per-line by `print-build-image-build-args` for consumption from CI.
+BUILD_IMAGE_BUILD_ARGS = revision=$(GIT_REVISION) goproxyValue=$(GOPROXY_VALUE)
+
 # push-multiarch-build-image requires the ability to build images for multiple platforms:
 # https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images
 push-multiarch-build-image: ## Push the docker build image.
 	@echo
 	# Build and push mimir build image for linux/amd64 and linux/arm64
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
+	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --progress=plain $(addprefix --build-arg=,$(BUILD_IMAGE_BUILD_ARGS)) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
 
 .PHONY: print-build-image
 print-build-image:
 	@echo $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
+
+.PHONY: print-build-image-build-args
+print-build-image-build-args:
+	@printf '%s\n' $(BUILD_IMAGE_BUILD_ARGS)
 
 # Supported operating systems and architectures for dist builds.
 DIST_OSES ?= linux darwin windows freebsd
