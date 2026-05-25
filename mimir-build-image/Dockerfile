@@ -13,7 +13,21 @@ ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-co
 # Be aware that the official Go Dockerfiles already do this, but let's be explicit.
 # https://github.com/docker-library/golang/issues/472
 ENV GOTOOLCHAIN=local
-RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev $SKOPEO_DEPS && \
+RUN apt-get update && \
+    apt-get install -y \
+      curl \
+      python3-requests \
+      python3-yaml \
+      file \
+      jq \
+      zip \
+      unzip \
+      protobuf-compiler \
+      libprotobuf-dev \
+      shellcheck \
+      libpcap-dev \
+      $SKOPEO_DEPS \
+    && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN curl -sL https://deb.nodesource.com/setup_20.x | bash -
 RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
