@@ -25,6 +25,20 @@
       datasourceTemplate: 'docker',
     },
     {
+      // grafana/docs-base is referenced inside `docker run` shell commands in
+      // workflow files, which Renovate's github-actions manager does not scan.
+      // This custom manager tracks the digest against the :latest tag so it
+      // can be auto-bumped via a PR rather than baked in at commit time.
+      customType: 'regex',
+      description: 'Update grafana/docs-base digest in workflow files',
+      managerFilePatterns: ['.github/workflows/**'],
+      matchStrings: [
+        '(?<depName>grafana/docs-base)@(?<currentDigest>sha256:[a-f0-9]+)',
+      ],
+      currentValueTemplate: 'latest',
+      datasourceTemplate: 'docker',
+    },
+    {
       customType: 'regex',
       description: 'Update "go install" commands in development Dockerfiles',
       managerFilePatterns: [
