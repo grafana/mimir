@@ -25,6 +25,20 @@
       datasourceTemplate: 'docker',
     },
     {
+      // grafana/docs-base is referenced inside `docker run` shell commands in
+      // workflow files, which Renovate's github-actions manager does not scan.
+      // This custom manager tracks the digest against the :latest tag so it
+      // can be auto-bumped via a PR rather than baked in at commit time.
+      customType: 'regex',
+      description: 'Update grafana/docs-base digest in workflow files',
+      managerFilePatterns: ['.github/workflows/**'],
+      matchStrings: [
+        '(?<depName>grafana/docs-base)@(?<currentDigest>sha256:[a-f0-9]+)',
+      ],
+      currentValueTemplate: 'latest',
+      datasourceTemplate: 'docker',
+    },
+    {
       customType: 'regex',
       description: 'Update "go install" commands in development Dockerfiles',
       managerFilePatterns: [
@@ -155,6 +169,21 @@
         'grafana/writers-toolkit',
       ],
       enabled: false,
+    },
+    {
+      // grafana/shared-workflows is a monorepo whose actions are tagged as
+      // `<action-name>/v<semver>` (e.g. `create-github-app-token/v0.2.2`).
+      // Renovate cannot compare those tags with its default versioning, so
+      // references to those actions are never auto-bumped without this rule.
+      // Canonical config from https://github.com/grafana/shared-workflows#custom-renovate-config
+      description: 'Auto-bump grafana/shared-workflows actions (per-action semver tags)',
+      matchPackageNames: ['grafana/shared-workflows'],
+      versioning: 'regex:^(?<compatibility>.*)[-/]v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)?$',
+      additionalBranchPrefix: '{{ lookup (split newVersion "/") 0 }}-',
+      commitMessagePrefix: 'chore(deps):',
+      commitMessageAction: 'update',
+      commitMessageTopic: '{{depName}}/{{ lookup (split newVersion "/") 0 }} action',
+      commitMessageExtra: 'to {{ lookup (split newVersion "/") 1 }}',
     }
   ],
   branchPrefix: 'deps-update/',

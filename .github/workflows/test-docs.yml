@@ -20,7 +20,7 @@ jobs:
           -v "${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/latest" \
           -e HUGO_REFLINKSERRORLEVEL=ERROR \
           --rm \
-          grafana/docs-base:latest \
+          grafana/docs-base@sha256:b4d886449a18b7b7532214b58ed08332cc76b9469924cb08bc0c71fe161dc950 \
           /bin/bash -c 'make hugo'
     - name: Determine Mimir version targeted by Helm chart documentation
       id: mimir_version
@@ -55,5 +55,5 @@ jobs:
           -v "${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest" \
           -e HUGO_REFLINKSERRORLEVEL=ERROR \
           --rm \
-          grafana/docs-base:latest \
+          grafana/docs-base@sha256:b4d886449a18b7b7532214b58ed08332cc76b9469924cb08bc0c71fe161dc950 \
           /bin/bash -c 'make hugo'
