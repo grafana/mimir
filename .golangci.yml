@@ -67,6 +67,8 @@ linters:
         - G114
         - G302
         - G401
+        - G402
+        - G501
       excludes:
         # Relies on system umask to restrict directory permissions, preserving operator flexibility
         - G301
