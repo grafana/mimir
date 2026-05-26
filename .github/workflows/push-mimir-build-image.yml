@@ -16,7 +16,7 @@ jobs:
       contents: write
       # Allow PR modification for collaborators, forks should remain read-only
       pull-requests: write
-      # Necessary to authenticate with Vault which happens in dockerhub-login
+      # Required by docker-build-push-image for Workload Identity Federation authentication to Google Artifact Registry.
       id-token: write
     steps:
       - name: Checkout Repository
@@ -108,18 +108,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
-      - name: Setup QEMU
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
-
-      - name: Set up Docker Buildx
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Login to Docker Hub
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
-
       - name: Prepare Variables
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         id: prepare
@@ -159,7 +147,7 @@ jobs:
         id: notification
         run: |
           if [ ${{ steps.check_build.outputs.build }} == 'true' ]; then
-           gh pr comment $PR_NUMBER --body "**Building new version of mimir-build-image**. After image is built and pushed to Docker Hub, \
+           gh pr comment $PR_NUMBER --body "**Building new version of mimir-build-image**. After image is built and pushed to the registry, \
            a new commit will automatically be added to this PR with new image version \`$IMAGE:$TAG\`. This can take up to 1 hour."
           else
             echo "This PR will not trigger a build of mimir-build-image"
@@ -171,63 +159,73 @@ jobs:
           TAG: ${{ steps.compute_hash.outputs.tag }}
           IMAGE: ${{ steps.prepare.outputs.image }}
 
+      - name: Compute build args
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.check_build.outputs.build == 'true'
+        id: build_args
+        run: |
+          {
+            echo "build_args<<EOF"
+            make print-build-image-build-args
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and Push Docker Image
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.check_build.outputs.build == 'true'
-        run: |
-          echo "Building and Pushing Docker Image"
-          make push-multiarch-build-image IMAGE_TAG=${{ steps.compute_hash.outputs.tag }}
+        uses: grafana/shared-workflows/actions/docker-build-push-image@34f27887c37cafe70d34af57dfc86b468a31b8c4 # docker-build-push-image/v0.3.3
+        with:
+          context: mimir-build-image
+          platforms: linux/amd64,linux/arm64
+          push: "true"
+          registries: gar
+          gar-environment: dev
+          gar-repository: docker-mimir-build-image
+          gar-image: mimir-build-image
+          tags: ${{ steps.compute_hash.outputs.tag }}
+          build-args: ${{ steps.build_args.outputs.build_args }}
 
-      - name: Compare built tag with Makefile
+      # Compare the just-built tag against the one currently referenced in the Makefile.
+      # If they differ, update the Makefile and signal the next step to commit; otherwise
+      # `changed=false` and no commit will be made.
+      - name: Check whether Makefile needs updating, and update it
+        id: update_makefile
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        id: compare_tag
         run: |
-          echo "Comparing built tag with Makefile"
-          if [ ${{ steps.compute_hash.outputs.tag }} == "$(make print-build-image)" ]; then
-            echo "Built tag is the same as the one in Makefile"
-            echo "isDifferent=false" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          echo "Current Build Image Version is $MAIN_TAG"
+          echo "Built Image Version is $TAG"
+          if [ "$MAIN_TAG" = "$TAG" ]; then
+            echo "Build Image Version is already up to date"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Built tag is different from the one in Makefile"
-            echo "isDifferent=true" >> $GITHUB_OUTPUT
+            sed -i "s/$MAIN_TAG/$TAG/g" Makefile
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+        env:
+          TAG: ${{ steps.compute_hash.outputs.tag }}
+          MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}
 
-      # Tokens expire after 1h. Since building the image can take a long time, we create a fresh App Token for the last
-      # step of the build.
+      # Generate the App Token here (rather than earlier in the job) so we only mint one
+      # when we actually need to commit. Also: building the image can take a long time,
+      # and minting fresh just before use ensures the token hasn't expired (1h TTL).
       - name: Generate GitHub App Token
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.update_makefile.outputs.changed == 'true'
         id: app-token-for-commit
         uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
         with:
           github_app: mimir-github-bot
 
-      # This step uses "Mimir bot" token (generated at the start of the workflow) instead of
-      # "github-actions bot" (secrets.GITHUB_TOKEN) because any events triggered by the latter
-      # don't spawn GitHub actions.
+      # Commit via the GraphQL createCommitOnBranch mutation so that the resulting commit
+      # is signed by GitHub's web-flow key (shows as Verified in the PR). We use the
+      # "Mimir bot" App token rather than secrets.GITHUB_TOKEN because events triggered
+      # by the latter don't spawn GitHub Actions runs.
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
-      - name: Add commit to PR in order to update Build Image version
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.compare_tag.outputs.isDifferent == 'true'
+      - name: Commit Makefile update to PR branch
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.update_makefile.outputs.changed == 'true'
+        uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde # v0.2.20
+        with:
+          commit_message: "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
+          repo: ${{ github.event.pull_request.head.repo.full_name }}
+          branch: ${{ github.head_ref }}
+          file_pattern: Makefile
         env:
           GITHUB_TOKEN: ${{ steps.app-token-for-commit.outputs.token }}
-          GITHUB_LOGIN: mimir-github-bot[bot]
-          GITHUB_EMAIL: 199097951+mimir-github-bot[bot]@users.noreply.github.com
-          TAG: ${{ steps.compute_hash.outputs.tag }}
-          MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}
-        run: |
-          set -euo pipefail
-          echo "Get current Build Image Version"
-          echo "Current Build Image Version is $MAIN_TAG"
-          echo "Built Image Version is $TAG"
-          if [ "$MAIN_TAG" = "$TAG" ]; then
-            echo "Build Image Version is already up to date"
-            exit 0
-          fi
-          echo "Build Image Version is not up to date"
-          sed -i "s/${MAIN_TAG}/${TAG}/g" Makefile
-          git config --global user.email "${GITHUB_EMAIL}"
-          git config --global user.name "${GITHUB_LOGIN}"
-          git add Makefile
-          git commit -m "Update build image version to ${TAG}"
-          # Send the App token only on this push via an Authorization header, rather than
-          # persisting `x-access-token:$TOKEN` into the global git config. Avoids leaving the
-          # token recoverable from ~/.gitconfig by any later step in the runner.
-          AUTH_HEADER=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
-          git -c "http.https://github.com/.extraheader=Authorization: Basic ${AUTH_HEADER}" push origin HEAD
