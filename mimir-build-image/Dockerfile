@@ -60,7 +60,8 @@ RUN GOARCH=$(go env GOARCH) && \
 
 # renovate: depName=github.com/golangci/golangci-lint
 ENV GOLANGCI_LINT_VERSION=2.12.2
-RUN GOARCH=$(go env GOARCH) && \
+RUN set -o pipefail && \
+    GOARCH=$(go env GOARCH) && \
     VERSION_SLUG=golangci-lint-${GOLANGCI_LINT_VERSION}-linux-$(go env GOARCH) && \
     TARBALL=$VERSION_SLUG.tar.gz && \
     cd /tmp && \
