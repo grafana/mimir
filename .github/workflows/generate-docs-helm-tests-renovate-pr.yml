@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.event.pull_request.user.login == 'renovate-sh-app[bot]' || github.event.pull_request.user.login == 'pracucci'  # TEMP: end-to-end test of symlink-preserving artifact flow — revert before merging.
+    if: github.event.pull_request.user.login == 'renovate-sh-app[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
