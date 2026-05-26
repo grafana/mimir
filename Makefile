@@ -1,5 +1,4 @@
 SHELL = /usr/bin/env bash
-# [test] Trigger automatic backport
 
 # Adapted from https://www.thapaliya.com/en/writings/well-documented-makefiles/
 .PHONY: help
