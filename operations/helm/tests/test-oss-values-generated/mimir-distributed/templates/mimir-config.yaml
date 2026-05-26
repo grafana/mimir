@@ -1,5 +1,4 @@
 ---
-# TEMP: trigger CI regeneration to test signed bot commits.
 # Source: mimir-distributed/templates/mimir-config.yaml
 apiVersion: v1
 kind: ConfigMap
