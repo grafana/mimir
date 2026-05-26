@@ -1100,6 +1100,39 @@ func TestQueryStatsLogFieldsDocumentedInRunbook(t *testing.T) {
 	}
 }
 
+func TestHandler_QueryStringLoggedLast(t *testing.T) {
+	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		time.Sleep(50 * time.Nanosecond)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+	})
+
+	logs := &concurrency.SyncBuffer{}
+	cfg := HandlerConfig{
+		QueryStatsEnabled:    true,
+		LogQueriesLongerThan: time.Nanosecond,
+	}
+	handler := NewHandler(cfg, roundTripper, log.NewLogfmtLogger(logs), prometheus.NewPedanticRegistry())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=some_metric", nil)
+	req = req.WithContext(user.InjectOrgID(context.Background(), "12345"))
+
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	var sawSlowQuery, sawQueryStats bool
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		switch {
+		case strings.Contains(line, `msg="slow query detected"`):
+			sawSlowQuery = true
+			assert.True(t, strings.HasSuffix(line, "param_query=some_metric"))
+		case strings.Contains(line, `msg="query stats"`):
+			sawQueryStats = true
+			assert.True(t, strings.HasSuffix(line, "param_query=some_metric"))
+		}
+	}
+	require.True(t, sawSlowQuery)
+	require.True(t, sawQueryStats)
+}
+
 func TestFormatRequestHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Add("X-Header-To-Log", "i should be logged!")
