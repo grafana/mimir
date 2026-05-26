@@ -41,7 +41,7 @@ func NewEnvVarsWithPrefix(prefix string) EnvVarNames {
 		mimirHTTPPrefix         = "HTTP_PREFIX"
 		sigV4Region             = "SIGV4_REGION"
 		sigV4AccessKey          = "SIGV4_ACCESS_KEY"
-		sigV4SecretKey          = "SIGV4_SECRET_KEY"
+		sigV4SecretKey          = "SIGV4_SECRET_KEY" //nolint:gosec // these are environment variable names, not credential values.
 		sigV4Profile            = "SIGV4_PROFILE"
 		sigV4AssumeRoleARN      = "SIGV4_ASSUME_ROLE_ARN"
 		sigV4ExternalID         = "SIGV4_EXTERNAL_ID"
