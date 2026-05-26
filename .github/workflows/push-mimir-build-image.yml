@@ -35,22 +35,18 @@ jobs:
       - name: Check if mimir-build-image/Dockerfile was modified
         id: check_dockerfile
         run: |
-          # TEMPORARY: force modified=true so CI always builds the image while we test the
-          # GAR publishing path. Restore the real detection (commented out below) before merging.
-          echo "modified=true" >> "$GITHUB_OUTPUT"
-          echo "Dockerfile was modified (forced for testing)"
-          # set -euo pipefail
-          # files=$(gh api --paginate \
-          #   -H "Accept: application/vnd.github+json" \
-          #   "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-          #   --jq '.[].filename')
-          # if echo "$files" | grep -qx 'mimir-build-image/Dockerfile'; then
-          #   echo "modified=true" >> "$GITHUB_OUTPUT"
-          #   echo "Dockerfile was modified"
-          # else
-          #   echo "modified=false" >> "$GITHUB_OUTPUT"
-          #   echo "Dockerfile was not modified"
-          # fi
+          set -euo pipefail
+          files=$(gh api --paginate \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --jq '.[].filename')
+          if echo "$files" | grep -qx 'mimir-build-image/Dockerfile'; then
+            echo "modified=true" >> "$GITHUB_OUTPUT"
+            echo "Dockerfile was modified"
+          else
+            echo "modified=false" >> "$GITHUB_OUTPUT"
+            echo "Dockerfile was not modified"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
