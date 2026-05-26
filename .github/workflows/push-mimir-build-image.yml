@@ -19,15 +19,17 @@ jobs:
       # Required by docker-build-push-image for Workload Identity Federation authentication to Google Artifact Registry.
       id-token: write
     steps:
-      # We only want for this workflow to do anything when mimir-build-image/Dockerfile is modified.
-      # However, we want for it to be able to run for all PRs, just so it can be made a required check
+      # We only want for this workflow to do anything when anything inside mimir-build-image/ is modified,
+      # as well as when this workflow is modified.
+      #
+      # However, we want for the workflow to be able to run for all PRs, just so it can be made a required check
       # (i.e. so PRs can't be merged until it's done).
       #
       # We list changed files via the paginated PR Files API rather than `gh pr diff --name-only`
       # because the latter caps at 300 files and returns HTTP 406 on larger PRs, in which case the
       # script would silently fall into the "not modified" branch even when the Dockerfile was
       # actually modified.
-      - name: Check if mimir-build-image/Dockerfile was modified
+      - name: Check if build image needs to be built
         id: check_dockerfile
         run: |
           set -euo pipefail
@@ -35,7 +37,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
             --jq '.[].filename')
-          if echo "$files" | grep -qxE '(mimir-build-image/Dockerfile|.github/workflows/push-mimir-build-image.yml)'; then
+          if echo "$files" | grep -qxE '(mimir-build-image/.*|.github/workflows/push-mimir-build-image.yml)'; then
             echo "modified=true" >> "$GITHUB_OUTPUT"
             echo "Dockerfile or build workflow was modified"
           else
@@ -56,7 +58,6 @@ jobs:
         if: steps.check_dockerfile.outputs.modified == 'true'
         id: prepare
         run: |
-          echo "path=mimir-build-image/Dockerfile" >> $GITHUB_OUTPUT
           main_build_image=$(make print-build-image)
           main_image_tag=$(echo $main_build_image | cut -d ':' -f 2-) # Get everything after the first : (ie. the image tag and digest, if present)
           image_name=$(echo $main_build_image | cut -d ':' -f 1)
@@ -67,8 +68,9 @@ jobs:
         if: steps.check_dockerfile.outputs.modified == 'true'
         id: compute_hash
         run: |
-          current_hash=$(md5sum ${{ steps.prepare.outputs.path }} | awk '{print substr($1, 0, 10)}')
-          echo "the file path is ${{ steps.prepare.outputs.path }}"
+          # Compute a hash of the entire build image directory, so that any changes to the Dockerfile or other files trigger a new build.
+          # We use tar so that this also captures changes to permissions.
+          current_hash=$(tar -c -f - --exclude .uptodate --exclude metadata.json mimir-build-image | md5sum | awk '{print substr($1, 0, 10)}')
           echo "build tag is $current_hash"
           tag="pr${{ github.event.pull_request.number }}-$current_hash"
           echo "tag=$tag" >> $GITHUB_OUTPUT
