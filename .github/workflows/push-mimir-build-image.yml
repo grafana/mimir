@@ -106,7 +106,7 @@ jobs:
           IMAGE: ${{ steps.prepare.outputs.image }}
 
       - name: Compute build args
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.check_build.outputs.build == 'true'
+        if: steps.check_build.outputs.build == 'true'
         id: build_args
         run: |
           {
