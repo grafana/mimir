@@ -176,7 +176,7 @@
       // Renovate cannot compare those tags with its default versioning, so
       // references to those actions are never auto-bumped without this rule.
       // Canonical config from https://github.com/grafana/shared-workflows#custom-renovate-config
-      description: 'Auto-bump grafana/shared-workflows actions (per-action semver tags).',
+      description: 'Auto-bump grafana/shared-workflows actions (per-action semver tags)',
       matchPackageNames: ['grafana/shared-workflows'],
       versioning: 'regex:^(?<compatibility>.*)[-/]v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)?$',
       additionalBranchPrefix: '{{ lookup (split newVersion "/") 0 }}-',
