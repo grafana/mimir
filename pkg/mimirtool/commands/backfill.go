@@ -13,13 +13,18 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
+	"github.com/grafana/mimir/pkg/mimirtool/backfill/verify"
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
 type BackfillCommand struct {
-	clientConfig client.Config
-	blocks       blockList
-	sleepTime    time.Duration
+	clientConfig          client.Config
+	blocks                blockList
+	sleepTime             time.Duration
+	dryRun                bool
+	skipChunkVerification bool
+	fullReport            bool
+	verifyConcurrency     int
 }
 
 type blockList []string
@@ -51,9 +56,9 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 	})
 	cmd.Arg("block-dir", "block to upload").Required().SetValue(&c.blocks)
 
-	cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").
+	cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+". Required unless --dry-run is set.").
 		Envar(envVars.Address).
-		Required().
+		Default("").
 		StringVar(&c.clientConfig.Address)
 
 	cmd.Flag("user",
@@ -62,9 +67,9 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Envar(envVars.APIUser).
 		StringVar(&c.clientConfig.User)
 
-	cmd.Flag("id", "Grafana Mimir tenant ID. Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided. Alternatively, set "+envVars.TenantID+".").
+	cmd.Flag("id", "Grafana Mimir tenant ID. Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided. Alternatively, set "+envVars.TenantID+". Required unless --dry-run is set.").
 		Envar(envVars.TenantID).
-		Required().
+		Default("").
 		StringVar(&c.clientConfig.ID)
 
 	cmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
@@ -102,6 +107,41 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 	cmd.Flag("sleep-time", "How long to sleep between checking state of block upload after uploading all files for the block.").
 		Default("20s").
 		DurationVar(&c.sleepTime)
+
+	cmd.Flag("dry-run", "Run verification without uploading any blocks. Exits 0 if all blocks pass verification, non-zero otherwise.").
+		Default("false").
+		BoolVar(&c.dryRun)
+
+	cmd.Flag("skip-chunk-verification", "Reduce verification depth: skip the per-chunk CRC32 walk. Use only when you trust your block producer.").
+		Default("false").
+		BoolVar(&c.skipChunkVerification)
+
+	cmd.Flag("full-report", "Aggregate verification failures across all blocks instead of stopping at the first failure.").
+		Default("false").
+		BoolVar(&c.fullReport)
+
+	cmd.Flag("verify-concurrency", "Number of blocks to verify in parallel. 0 selects min(GOMAXPROCS, 4); 1 forces serial execution.").
+		Default("0").
+		IntVar(&c.verifyConcurrency)
+
+	cmd.Validate(func(_ *kingpin.CmdClause) error {
+		if c.skipChunkVerification && c.fullReport {
+			return fmt.Errorf("--full-report requires deep analysis and cannot be combined with --skip-chunk-verification")
+		}
+		if !c.dryRun {
+			var missing []string
+			if c.clientConfig.Address == "" {
+				missing = append(missing, "--address")
+			}
+			if c.clientConfig.ID == "" {
+				missing = append(missing, "--id")
+			}
+			if len(missing) > 0 {
+				return fmt.Errorf("%s required unless --dry-run is set", strings.Join(missing, " and "))
+			}
+		}
+		return nil
+	})
 }
 
 func (c *BackfillCommand) backfill(logger log.Logger) error {
@@ -112,5 +152,19 @@ func (c *BackfillCommand) backfill(logger log.Logger) error {
 		return err
 	}
 
-	return cli.Backfill(context.Background(), c.blocks, c.sleepTime)
+	mode := verify.Deep
+	if c.skipChunkVerification {
+		mode = verify.Medium
+	}
+
+	verifier := verify.NewVerifier(logger,
+		verify.WithMode(mode),
+		verify.WithFailFast(!c.fullReport),
+		verify.WithConcurrency(c.verifyConcurrency),
+		verify.WithBlockCheck(verify.NewWellFormedVerifier(logger, mode)),
+		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(logger)),
+		verify.WithBatchCheck(verify.NewDuplicateDayVerifier(logger)),
+	)
+
+	return cli.BackfillWithOptions(context.Background(), c.blocks, c.sleepTime, verifier, c.dryRun)
 }
