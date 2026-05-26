@@ -61,16 +61,20 @@ jobs:
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # The regenerated helm tests and docs are uploaded so that the next job, running on the host
-      # runner, can commit them via the GitHub API. This step is needed because planetscale/ghcommit-action
-      # is a Docker action and cannot run inside a container job.
+      # The regenerated helm tests and docs are tarred (to preserve symlinks, which actions/upload-artifact
+      # otherwise dereferences) and uploaded so that the next job, running on the host runner, can commit
+      # them via the GitHub API. The split is needed because planetscale/ghcommit-action is a Docker action
+      # and cannot run inside a container job.
+      - name: Archive regenerated helm tests and docs
+        if: steps.check_updates.outputs.has_changes == 'true'
+        run: tar -cf regenerated-helm.tar operations/helm
+
       - name: Upload regenerated helm tests and docs
         if: steps.check_updates.outputs.has_changes == 'true'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
           name: regenerated-helm
-          path: operations/helm/
-          include-hidden-files: true
+          path: regenerated-helm.tar
           retention-days: 1
 
   commit_changes:
@@ -89,16 +93,19 @@ jobs:
           ref: ${{ github.head_ref }}
           persist-credentials: false
 
-      # Replace operations/helm with the freshly regenerated content so that ghcommit-action commits
-      # exactly the diff that the previous job produced (including any deletions).
-      - name: Replace operations/helm with regenerated content
-        run: rm -rf operations/helm
-
       - name: Download regenerated helm tests and docs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: regenerated-helm
-          path: operations/helm/
+
+      # Replace operations/helm with the freshly regenerated content so that ghcommit-action commits
+      # exactly the diff that the previous job produced (including any deletions). The tarball preserves
+      # symlinks that point outside operations/helm (e.g. mixins/dashboards), which a plain artifact upload
+      # would otherwise dereference into materialized files.
+      - name: Replace operations/helm with regenerated content
+        run: |
+          rm -rf operations/helm
+          tar -xf regenerated-helm.tar
 
       - name: Generate GitHub App Token
         id: app-token
