@@ -27,6 +27,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
@@ -43,7 +44,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 	validReqWithShardHeader := func(shardCount int) func() *http.Request {
 		return func() *http.Request {
 			r := validReq()
-			r.Header.Add(totalShardsControlHeader, strconv.Itoa(shardCount))
+			r.Header.Add(requestoptions.TotalShardsControlHeader, strconv.Itoa(shardCount))
 			return r
 		}
 	}
@@ -389,7 +390,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 			request: func() *http.Request {
 				r := validReq()
 				r.Header.Add("Accept-Encoding", "snappy")
-				r.Header.Add(totalShardsControlHeader, "2")
+				r.Header.Add(requestoptions.TotalShardsControlHeader, "2")
 				return r
 			},
 			validResponses: []cardinality.ActiveNativeHistogramMetricsResponse{
@@ -457,7 +458,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 				q.Set("selector", "{__name__=~\".+\"}")
 				req, _ := http.NewRequest(http.MethodGet, "/active_native_histogram_metrics", nil)
 				req.URL.RawQuery = q.Encode()
-				req.Header.Add(totalShardsControlHeader, "2")
+				req.Header.Add(requestoptions.TotalShardsControlHeader, "2")
 				return req
 			},
 			validResponses: []cardinality.ActiveNativeHistogramMetricsResponse{

@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -69,8 +70,6 @@ const (
 	statusSuccess = "success"
 	// statusSuccess Prometheus error result.
 	statusError = "error"
-
-	totalShardsControlHeader = "Sharding-Control"
 
 	operationEncode = "encode"
 	operationDecode = "decode"
@@ -117,7 +116,7 @@ type MetricsQueryRequest interface {
 	// as determined from the end timestamp and any offset in the query.
 	GetMaxT() int64
 	// GetOptions returns the options for the given request.
-	GetOptions() Options
+	GetOptions() requestoptions.Options
 	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	GetHints() *Hints
@@ -388,8 +387,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	var options Options
-	DecodeOptions(r, &options)
+	options := requestoptions.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 
@@ -421,8 +419,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	var options Options
-	DecodeOptions(r, &options)
+	options := requestoptions.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 
@@ -706,31 +703,6 @@ func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookba
 	return minTime, maxTime
 }
 
-func DecodeOptions(r *http.Request, opts *Options) {
-	opts.CacheDisabled = decodeCacheDisabledOption(r)
-
-	for _, value := range r.Header.Values(totalShardsControlHeader) {
-		shards, err := strconv.ParseInt(value, 10, 32)
-		if err != nil {
-			continue
-		}
-		opts.TotalShards = int32(shards)
-		if opts.TotalShards < 1 {
-			opts.ShardingDisabled = true
-		}
-	}
-}
-
-func decodeCacheDisabledOption(r *http.Request) bool {
-	for _, value := range r.Header.Values(cacheControlHeader) {
-		if strings.Contains(value, noStoreValue) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
 func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
 	var u *url.URL
@@ -784,7 +756,7 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		Header:     http.Header{},
 	}
 
-	encodeOptions(req, r.GetOptions())
+	requestoptions.EncodeOptions(req, r.GetOptions())
 
 	switch c.preferredQueryResultResponseFormat {
 	case formatJSON:
@@ -931,18 +903,6 @@ func (c Codec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req LabelsSer
 	}
 
 	return r.WithContext(ctx), nil
-}
-
-func encodeOptions(req *http.Request, o Options) {
-	if o.CacheDisabled {
-		req.Header.Set(cacheControlHeader, noStoreValue)
-	}
-	if o.ShardingDisabled {
-		req.Header.Set(totalShardsControlHeader, "0")
-	}
-	if o.TotalShards > 0 {
-		req.Header.Set(totalShardsControlHeader, strconv.Itoa(int(o.TotalShards)))
-	}
 }
 
 // DecodeMetricsQueryResponse decodes a Response from an http response.

@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -40,7 +41,6 @@ const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
 	StatusClientClosedRequest    = 499
 	ServiceTimingHeaderName      = "Server-Timing"
-	cacheControlHeader           = "Cache-Control"
 	cacheControlLogField         = "header_cache_control"
 	responseQueryStatsHeaderName = "X-Mimir-Response-Query-Stats"
 	encodeTimeSeconds            = "encode_time_seconds"
@@ -477,7 +477,7 @@ func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName stri
 
 func filterHeadersToLog(headersToLog []string) (filtered []string) {
 	for _, h := range headersToLog {
-		if strings.EqualFold(h, cacheControlHeader) {
+		if strings.EqualFold(h, requestoptions.CacheControlHeader) {
 			continue
 		}
 		filtered = append(filtered, h)
@@ -486,7 +486,7 @@ func filterHeadersToLog(headersToLog []string) (filtered []string) {
 }
 
 func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
-	fields = append(fields, cacheControlLogField, h.Get(cacheControlHeader))
+	fields = append(fields, cacheControlLogField, h.Get(requestoptions.CacheControlHeader))
 	for _, s := range headersToLog {
 		if v := h.Get(s); v != "" {
 			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
