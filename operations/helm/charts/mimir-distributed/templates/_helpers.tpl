@@ -250,6 +250,9 @@ name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for ro
 rollout-group: {{ .component }}
 zone: {{ .rolloutZoneName }}
 {{- end }}
+{{- if .ctx.Values.global.extraLabels }}
+{{ toYaml .ctx.Values.global.extraLabels | indent 0 }}
+{{- end }}
 {{- end -}}
 
 {{/*
