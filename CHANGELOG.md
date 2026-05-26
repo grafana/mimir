@@ -9,6 +9,7 @@
 * [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
 * [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
+* [FEATURE] MQE: Add experimental support for splitting and caching `present_over_time` over range vectors in instant queries. #15386
 * [ENHANCEMENT] Store-gateway, Ingester: Add read support for XOR2 chunk encoding. XOR2 is a new Prometheus TSDB encoding that provides better compression than XOR, particularly for stale markers. #15371
 * [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15191 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246

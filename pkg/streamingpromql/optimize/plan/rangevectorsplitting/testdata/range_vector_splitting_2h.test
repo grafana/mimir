@@ -599,6 +599,7 @@ clear
 
 # Splitting disables skipping buckets.
 # Test queries that would usually skip histogram buckets (e.g. histogram_count()).
+
 load 1h
   hist_no_tail{env="prod"} _ _ {{schema:0 sum:3600 count:3600 buckets:[3600]}} {{schema:0 sum:7200 count:7200 buckets:[7200]}} {{schema:0 sum:10800 count:10800 buckets:[10800]}} {{schema:0 sum:14400 count:14400 buckets:[14400]}}
 
@@ -613,6 +614,97 @@ eval instant at 6h histogram_count(rate(hist_no_tail[5h])) + histogram_fraction(
 
 eval instant at 6h histogram_count(rate(hist_no_tail[5h])) + histogram_fraction(0, 10, rate(hist_no_tail[5h]))
   {env="prod"} 2
+
+clear
+
+# ===== present_over_time =====
+
+# floats
+load 1h
+  pot_metric{env="prod"} 1 2 3 4 5 6 7 8
+
+eval instant at 6h present_over_time(pot_metric[5h])
+  {env="prod"} 1
+
+eval instant at 6h present_over_time(pot_metric[5h])
+  {env="prod"} 1
+
+eval instant at 13h present_over_time(pot_metric[5h])
+
+eval instant at 13h present_over_time(pot_metric[5h])
+
+clear
+
+# histograms
+load 1h
+  hist_pot_metric{env="prod"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}}
+
+eval instant at 6h present_over_time(hist_pot_metric[5h])
+  {env="prod"} 1
+
+eval instant at 6h present_over_time(hist_pot_metric[5h])
+  {env="prod"} 1
+
+eval instant at 13h present_over_time(hist_pot_metric[5h])
+
+eval instant at 13h present_over_time(hist_pot_metric[5h])
+
+clear
+
+# test with empty splits
+load 1h
+  pot_metric2{env="prod", job="early"} _ 2 _ _ _ _ _ _
+  pot_metric2{env="prod", job="late" } _ _ _ _ 5 _ _ _
+
+eval instant at 2h present_over_time(pot_metric2[2h])
+  {env="prod", job="early"} 1
+
+eval instant at 2h present_over_time(pot_metric2[2h])
+  {env="prod", job="early"} 1
+
+eval instant at 5h present_over_time(pot_metric2[2h])
+  {env="prod", job="late"} 1
+
+eval instant at 5h present_over_time(pot_metric2[2h])
+  {env="prod", job="late"} 1
+
+eval instant at 3h present_over_time(pot_metric2[2h])
+
+eval instant at 3h present_over_time(pot_metric2[2h])
+
+eval instant at 6h present_over_time(pot_metric2[6h])
+  {env="prod", job="early"} 1
+  {env="prod", job="late"} 1
+
+eval instant at 6h present_over_time(pot_metric2[6h])
+  {env="prod", job="early"} 1
+  {env="prod", job="late"} 1
+
+clear
+
+# mixed histograms and floats, present_over_time doesn't emit warnings
+load 1h
+  pot_mixed{env="prod"} 1 2 3 {{schema:0 sum:100 count:10 buckets:[10]}} {{schema:0 sum:100 count:10 buckets:[10]}}
+
+eval instant at 5h present_over_time(pot_mixed[5h])
+  {env="prod"} 1
+   expect no_warn
+   expect no_info
+
+eval instant at 5h present_over_time(pot_mixed[5h])
+  {env="prod"} 1
+   expect no_warn
+   expect no_info
+
+clear
+
+# metric with stale data
+load 1h
+  pot_stale_metric{env="prod"} stale stale stale stale stale stale stale stale stale stale stale stale
+
+eval instant at 6h present_over_time(pot_stale_metric[5h])
+
+eval instant at 6h present_over_time(pot_stale_metric[5h])
 
 clear
 
