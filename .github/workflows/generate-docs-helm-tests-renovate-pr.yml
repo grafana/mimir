@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.event.pull_request.user.login == 'renovate-sh-app[bot]' || github.event.pull_request.user.login == 'pracucci'  # TEMP: allow pracucci for end-to-end test of signed bot commits — revert before merging.
+    if: github.event.pull_request.user.login == 'renovate-sh-app[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -49,7 +49,7 @@ jobs:
       - name: Mark workspace as safe
         run: git config --global --add safe.directory '*'
 
-      - name: Run make targets
+      - name: Regenerate docs and helm tests
         run: make BUILD_IN_CONTAINER=false doc build-helm-tests
 
       - name: Check whether helm tests and docs changed
