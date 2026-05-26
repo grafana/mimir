@@ -1,5 +1,4 @@
 ---
-# TEMP: trigger CI to test symlink preservation in regen flow.
 # Source: mimir-distributed/templates/mimir-config.yaml
 apiVersion: v1
 kind: ConfigMap
