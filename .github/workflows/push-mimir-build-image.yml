@@ -16,7 +16,7 @@ jobs:
       contents: write
       # Allow PR modification for collaborators, forks should remain read-only
       pull-requests: write
-      # Required for Workload Identity Federation authentication to Google Artifact Registry.
+      # Required by docker-build-push-image for Workload Identity Federation authentication to Google Artifact Registry.
       id-token: write
     steps:
       - name: Checkout Repository
@@ -108,14 +108,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
-      # The build image is published to a Google Artifact Registry repository
-      # that allows writes from pull_request events. The registry is configured
-      # to allow anonymous pulls so external contributors can still fetch the
-      # build image without authentication.
-      - name: Login to GAR
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        uses: grafana/shared-workflows/actions/login-to-gar@12c87e5aa323694c820c1ff3d8e47e8237e05136 # login-to-gar/v1.0.2
-
       - name: Prepare Variables
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         id: prepare
@@ -191,31 +183,12 @@ jobs:
           tags: ${{ steps.compute_hash.outputs.tag }}
           build-args: ${{ steps.build_args.outputs.build_args }}
 
-      - name: Compare built tag with Makefile
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        id: compare_tag
-        run: |
-          echo "Comparing built tag with Makefile"
-          if [ ${{ steps.compute_hash.outputs.tag }} == "$(make print-build-image)" ]; then
-            echo "Built tag is the same as the one in Makefile"
-            echo "isDifferent=false" >> $GITHUB_OUTPUT
-          else
-            echo "Built tag is different from the one in Makefile"
-            echo "isDifferent=true" >> $GITHUB_OUTPUT
-          fi
-
-      # Tokens expire after 1h. Since building the image can take a long time, we create a fresh App Token for the last
-      # step of the build.
-      - name: Generate GitHub App Token
-        if: steps.check_dockerfile.outputs.modified == 'true'
-        id: app-token-for-commit
-        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
-        with:
-          github_app: mimir-github-bot
-
-      - name: Update Makefile with new Build Image version
+      # Compare the just-built tag against the one currently referenced in the Makefile.
+      # If they differ, update the Makefile and signal the next step to commit; otherwise
+      # `changed=false` and no commit will be made.
+      - name: Check whether Makefile needs updating, and update it
         id: update_makefile
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.compare_tag.outputs.isDifferent == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         run: |
           echo "Current Build Image Version is $MAIN_TAG"
           echo "Built Image Version is $TAG"
@@ -230,13 +203,23 @@ jobs:
           TAG: ${{ steps.compute_hash.outputs.tag }}
           MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}
 
+      # Generate the App Token here (rather than earlier in the job) so we only mint one
+      # when we actually need to commit. Also: building the image can take a long time,
+      # and minting fresh just before use ensures the token hasn't expired (1h TTL).
+      - name: Generate GitHub App Token
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.update_makefile.outputs.changed == 'true'
+        id: app-token-for-commit
+        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
+        with:
+          github_app: mimir-github-bot
+
       # Commit via the GraphQL createCommitOnBranch mutation so that the resulting commit
       # is signed by GitHub's web-flow key (shows as Verified in the PR). We use the
       # "Mimir bot" App token rather than secrets.GITHUB_TOKEN because events triggered
       # by the latter don't spawn GitHub Actions runs.
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
       - name: Commit Makefile update to PR branch
-        if: steps.update_makefile.outputs.changed == 'true' && steps.authorize.outputs.authorized == 'true' && steps.compare_tag.outputs.isDifferent == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.update_makefile.outputs.changed == 'true'
         uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde # v0.2.20
         with:
           commit_message: "Update build image version to ${{ steps.compute_hash.outputs.tag }}"

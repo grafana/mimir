@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
 .DEFAULT_GOAL := all
 
 # Version number
@@ -106,7 +106,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG)
 	@echo
-	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
 	@echo Please use '"make push-multiarch-mimir"' to build and push Mimir image.
 	@echo
 	@touch $@
@@ -134,8 +133,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 PUSH_MULTIARCH_TARGET ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
-# We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
-# these Dockerfiles are not doing much, and are unlikely to fail.
 push-multiarch-%/$(UPTODATE):
 	$(eval DIR := $(patsubst push-multiarch-%/$(UPTODATE),%,$@))
 
@@ -161,25 +158,13 @@ fetch-build-image: ## Fetch latest the docker build image if it isn't already pr
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
-# Build args passed to docker when building mimir-build-image. Defined as a space-separated
-# list of KEY=VALUE so it can be reused by `push-multiarch-build-image` (via `addprefix`)
-# and emitted one-per-line by `print-build-image-build-args` for consumption from CI.
-BUILD_IMAGE_BUILD_ARGS = revision=$(GIT_REVISION) goproxyValue=$(GOPROXY_VALUE)
-
-# push-multiarch-build-image requires the ability to build images for multiple platforms:
-# https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images
-push-multiarch-build-image: ## Push the docker build image.
-	@echo
-	# Build and push mimir build image for linux/amd64 and linux/arm64
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --progress=plain $(addprefix --build-arg=,$(BUILD_IMAGE_BUILD_ARGS)) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
-
 .PHONY: print-build-image
 print-build-image:
 	@echo $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 
 .PHONY: print-build-image-build-args
 print-build-image-build-args:
-	@printf '%s\n' $(BUILD_IMAGE_BUILD_ARGS)
+	@printf '%s\n' revision=$(GIT_REVISION) goproxyValue=$(GOPROXY_VALUE)
 
 # Supported operating systems and architectures for dist builds.
 DIST_OSES ?= linux darwin windows freebsd
