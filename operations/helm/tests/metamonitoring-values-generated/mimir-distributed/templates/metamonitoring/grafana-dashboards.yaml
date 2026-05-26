@@ -12710,6 +12710,10 @@ data:
                                "fillOpacity": 1,
                                "lineWidth": 1,
                                "pointSize": 5,
+                               "scaleDistribution": {
+                                  "log": 2,
+                                  "type": "log"
+                               },
                                "showPoints": "never",
                                "spanNulls": false,
                                "stacking": {
@@ -12739,6 +12743,12 @@ data:
                       },
                       "span": 6,
                       "targets": [
+                         {
+                            "expr": "histogram_quantile(1.00, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "100th Percentile",
+                            "legendLink": null
+                         },
                          {
                             "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
                             "format": "time_series",

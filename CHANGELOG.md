@@ -31,6 +31,7 @@
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
 * [ENHANCEMENT] Alerts: Widen the `MimirBlockBuilderPersistentJobFailure` lookback window to 20m to prevent the alert from flapping. #15332
 * [ENHANCEMENT] Alerts: Add a native histogram variant of the `MimirRequestLatency` alert, distinguished by the `histogram` label (`classic` or `native`). #15413
+* [ENHANCEMENT] Dashboards: Add 100th percentile to query expression percentiles graph. #15421
 * [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 
 ### Jsonnet
