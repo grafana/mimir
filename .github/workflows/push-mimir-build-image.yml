@@ -190,6 +190,7 @@ jobs:
         id: update_makefile
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         run: |
+          set -euo pipefail
           echo "Current Build Image Version is $MAIN_TAG"
           echo "Built Image Version is $TAG"
           if [ "$MAIN_TAG" = "$TAG" ]; then
