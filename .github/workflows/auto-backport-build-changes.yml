@@ -52,6 +52,7 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
       - name: Check if build/CI files changed
@@ -144,6 +145,7 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
       - name: Generate GitHub App Token
@@ -217,6 +219,7 @@ jobs:
           gh pr comment "$PR_NUMBER" --body "$comment_body"
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           RELEASE_BRANCHES: ${{ steps.release_branches.outputs.branches }}
