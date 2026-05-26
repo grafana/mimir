@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.event.pull_request.user.login == 'renovate-sh-app[bot]'
+    if: github.event.pull_request.user.login == 'renovate-sh-app[bot]' || github.event.pull_request.user.login == 'pracucci'  # TEMP: allow pracucci for end-to-end test of signed bot commits — revert before merging.
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
