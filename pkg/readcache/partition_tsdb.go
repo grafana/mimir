@@ -65,11 +65,28 @@ type partitionTSDB struct {
 // fields that affect ingest and query semantics (OOO window, exemplars,
 // postings caches, isolation), using per-tenant limits from Overrides
 // the same way the ingester does.
+//
+// localBlockRetention is the readcache-scoped time-retention applied
+// to persisted blocks. It is plumbed into tsdb.Options.RetentionDuration,
+// so Prometheus's standard time-retention (BeyondTimeRetention) deletes
+// blocks whose MaxTime is more than localBlockRetention older than the
+// newest block's MaxTime. Deletion only runs on reloadBlocks(), which
+// is triggered by CompactHead — so the *effective* retention upper bound
+// is roughly localBlockRetention + one HeadCompactionInterval. Pass 0
+// to disable time-retention entirely (the pre-wired behavior, useful
+// for tests where data should never age out).
+//
+// We deliberately do not pass cfg.Retention here: readcache and the
+// ingester serve different lifetimes (blockbuilder is the canonical
+// long-term home), and shoehorning them through the same -blocks-
+// storage.tsdb.retention-period flag conflates two distinct retention
+// budgets. The readcache-local knob makes the override explicit.
 func openPartitionTSDB(
 	tenantID string,
 	partitionID int32,
 	rootDir string,
 	cfg mimir_tsdb.TSDBConfig,
+	localBlockRetention time.Duration,
 	limits *validation.Overrides,
 	seriesHashCache *hashcache.SeriesHashCache,
 	headPostingsForMatchersCacheFactory, blockPostingsForMatchersCacheFactory tsdb.PostingsForMatchersCacheFactory,
@@ -100,7 +117,10 @@ func openPartitionTSDB(
 	}
 
 	opts := &tsdb.Options{
-		RetentionDuration:                    cfg.Retention.Milliseconds(),
+		// RetentionDuration uses the readcache-local retention rather
+		// than cfg.Retention (the shared ingester knob). See the
+		// doc comment on openPartitionTSDB for rationale.
+		RetentionDuration:                    localBlockRetention.Milliseconds(),
 		MinBlockDuration:                     blockRanges[0],
 		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
 		NoLockfile:                           true,

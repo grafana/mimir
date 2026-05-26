@@ -612,6 +612,7 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 		partitionID,
 		r.cfg.DataDir,
 		r.cfg.BlocksStorage.TSDB,
+		r.cfg.LocalBlockRetention,
 		r.limits,
 		r.seriesHashCache,
 		r.headPostingsForMatchersCacheFactory,
