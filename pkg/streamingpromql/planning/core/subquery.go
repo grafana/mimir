@@ -87,7 +87,12 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 		alignedStart += stepMilliseconds
 	}
 
+	// Note that this timestamp may not be aligned to the subquery's step grid, but this isn't an issue:
+	// the subquery will be evaluated up to the last step within the range, just like the behaviour for top-level queries.
+	// For example, if the start of the range is 09:00 and the subquery step is 1h, it doesn't matter if
+	// the end is 11:00, 11:01 or 11:59, the last evaluated step will be 11:00, as expected.
 	end = end - s.Offset.Milliseconds()
+
 	return types.NewRangeQueryTimeRange(timestamp.Time(alignedStart), timestamp.Time(end), s.Step)
 }
 
