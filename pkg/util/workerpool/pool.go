@@ -64,13 +64,6 @@ type Pool struct {
 	workersWg sync.WaitGroup
 }
 
-// poolItem is the opaque value enqueued into the underlying queue. The pool's
-// worker goroutines type-assert dequeued items to *poolItem and invoke fn.
-type poolItem struct {
-	fn   func()
-	done chan struct{}
-}
-
 const (
 	// poolWorkerID is the synthetic querierID used to register all of the pool's
 	// workers with the underlying queue. The queue's tenant-fair dispatch does
@@ -189,66 +182,22 @@ func (p *Pool) workerLoop() {
 		if err != nil {
 			return
 		}
-		pi, ok := item.(*poolItem)
-		if !ok || pi == nil {
+		fn, ok := item.(func())
+		if !ok {
 			continue
 		}
-		pi.fn()
-		close(pi.done)
+		fn()
 	}
 }
 
-// Submit enqueues fn for execution by a worker on behalf of tenantID. It
-// returns a channel that is closed when fn completes. Returns ErrPoolStopped
-// if the pool is shutting down.
-func (p *Pool) Submit(tenantID string, fn func()) (<-chan struct{}, error) {
-	item := &poolItem{fn: fn, done: make(chan struct{})}
-	if err := p.queue.SubmitRequestToEnqueue(tenantID, item, "", 0, nil); err != nil {
+// Submit enqueues fn for execution by a worker on behalf of tenantID. Returns
+// ErrPoolStopped if the pool is shutting down.
+func (p *Pool) Submit(tenantID string, fn func()) error {
+	if err := p.queue.SubmitRequestToEnqueue(tenantID, fn, "", 0, nil); err != nil {
 		if errors.Is(err, queue.ErrStopped) {
-			return nil, ErrPoolStopped
+			return ErrPoolStopped
 		}
-		return nil, err
+		return err
 	}
-	return item.done, nil
-}
-
-// SubmitAndWait submits all fns for tenantID and blocks until every submitted
-// fn completes or ctx is cancelled.
-//
-// If a submission fails it returns the error immediately, but still waits for
-// any already-submitted fns to finish before returning, so callers can rely
-// on no submitted fn outliving the call.
-//
-// If ctx is cancelled while waiting, SubmitAndWait returns ctx.Err() without
-// interrupting in-flight fns - the caller's fn must observe its own context.
-func (p *Pool) SubmitAndWait(ctx context.Context, tenantID string, fns []func()) error {
-	if len(fns) == 0 {
-		return nil
-	}
-
-	dones := make([]<-chan struct{}, 0, len(fns))
-	var submitErr error
-	for _, fn := range fns {
-		done, err := p.Submit(tenantID, fn)
-		if err != nil {
-			submitErr = err
-			break
-		}
-		dones = append(dones, done)
-	}
-
-	for _, d := range dones {
-		select {
-		case <-d:
-		case <-ctx.Done():
-			// Don't return immediately - drain remaining done channels to keep
-			// the call's invariant (fns either ran to completion or are still
-			// running but no longer block this caller).
-			//
-			// Actually, the caller may want to abandon waiting. Return ctx.Err()
-			// but the fns still run; callers should propagate ctx into their fns.
-			return ctx.Err()
-		}
-	}
-	return submitErr
+	return nil
 }

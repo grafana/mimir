@@ -4,7 +4,6 @@ package workerpool
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -49,11 +48,14 @@ func TestPool_RunsTasksConcurrently(t *testing.T) {
 		}
 	}
 
-	done := make(chan struct{})
-	go func() {
-		_ = p.SubmitAndWait(context.Background(), "tenant-1", fns)
-		close(done)
-	}()
+	var wg sync.WaitGroup
+	wg.Add(len(fns))
+	for _, fn := range fns {
+		require.NoError(t, p.Submit("tenant-1", func() {
+			defer wg.Done()
+			fn()
+		}))
+	}
 
 	// Wait until all workers have picked up their task.
 	require.Eventually(t, func() bool {
@@ -62,7 +64,7 @@ func TestPool_RunsTasksConcurrently(t *testing.T) {
 	require.Equal(t, int64(workers), maxInflight.Load())
 
 	close(release)
-	<-done
+	wg.Wait()
 }
 
 func TestPool_TenantFairness(t *testing.T) {
@@ -81,7 +83,7 @@ func TestPool_TenantFairness(t *testing.T) {
 
 	// Submit 8 tasks for the hog tenant - all queued behind the running one.
 	for i := 0; i < 8; i++ {
-		_, err := p.Submit("hog", hogFn)
+		err := p.Submit("hog", hogFn)
 		require.NoError(t, err)
 	}
 
@@ -92,7 +94,7 @@ func TestPool_TenantFairness(t *testing.T) {
 	// remaining hog tasks complete.
 	lightStarted := make(chan struct{})
 	lightFn := func() { close(lightStarted) }
-	_, err := p.Submit("light", lightFn)
+	err := p.Submit("light", lightFn)
 	require.NoError(t, err)
 
 	// Release one hog task so the worker becomes free.
@@ -105,43 +107,6 @@ func TestPool_TenantFairness(t *testing.T) {
 	}
 }
 
-func TestPool_SubmitAndWaitContextCancel(t *testing.T) {
-	p := startPool(t, Config{Size: 1})
-
-	// One slow task blocks the worker; subsequent tasks observe ctx in their fn.
-	block := make(chan struct{})
-	defer close(block)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	fns := []func(){
-		func() { <-block },
-		func() {
-			select {
-			case <-block:
-			case <-ctx.Done():
-			}
-		},
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- p.SubmitAndWait(ctx, "tenant", fns)
-	}()
-
-	// Cancel before any task finishes; SubmitAndWait should return promptly.
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-
-	select {
-	case err := <-done:
-		assert.True(t, errors.Is(err, context.Canceled), "expected context.Canceled, got %v", err)
-	case <-time.After(time.Second):
-		t.Fatal("SubmitAndWait did not return after context cancel")
-	}
-}
-
 func TestPool_StopDrainsInflightWork(t *testing.T) {
 	p, err := New(Config{Size: 2}, "drain", nil, log.NewNopLogger())
 	require.NoError(t, err)
@@ -151,7 +116,7 @@ func TestPool_StopDrainsInflightWork(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(4)
 	for i := 0; i < 4; i++ {
-		_, err := p.Submit("tenant", func() {
+		err := p.Submit("tenant", func() {
 			defer wg.Done()
 			time.Sleep(50 * time.Millisecond)
 			ran.Add(1)

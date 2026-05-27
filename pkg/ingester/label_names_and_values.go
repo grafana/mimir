@@ -268,13 +268,10 @@ func computeLabelValuesSeriesCount(
 			close(countCh)
 		}()
 		for start := 0; start < len(lblValues); start += chunkSize {
-			end := start + chunkSize
-			if end > len(lblValues) {
-				end = len(lblValues)
-			}
+			end := min(start+chunkSize, len(lblValues))
 			s, e := start, end
 			wg.Add(1)
-			_, err := pool.Submit(tenantID, func() {
+			err := pool.Submit(tenantID, func() {
 				defer wg.Done()
 				processChunk(s, e)
 			})
