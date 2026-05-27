@@ -129,6 +129,7 @@ jobs:
       gar-environment: dev
       gar-repository: docker-mimir-build-image
       gar-image: mimir-build-image
+      generate-summary: true
 
   commit:
     name: Push commit with new build image tag
@@ -173,7 +174,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
         env:
-          NEW_IMAGE_TAG: ${{ needs.prepare.outputs.new_image_tag }}@${{ needs.build-push-multiarch.outputs.digest }}
+          NEW_IMAGE_TAG: ${{ needs.build-push-multiarch.outputs.image-digests }}
           MAIN_IMAGE_TAG: ${{ needs.prepare.outputs.main_image_tag }}
 
       # Generate the app token here (rather than earlier in the job) so we only mint one
