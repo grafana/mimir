@@ -19,6 +19,9 @@ jobs:
   prepare:
     name: Prepare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # So we can post comments on the PR.
     steps:
       # We only want for this workflow to do anything when anything inside mimir-build-image/ is modified,
       # as well as when this workflow is modified.
