@@ -47,11 +47,13 @@ func (cfg *Config) Validate() error {
 }
 
 // Pool is a tenant-fair worker pool. Use New to construct one.
+//
+// A panicking task is not recovered: the worker goroutine unwinds and the
+// panic crashes the process, matching the behaviour callers had before this
+// pool existed. Callers that need to convert panics into errors must wrap
+// their submitted function themselves.
 type Pool struct {
 	services.Service
-
-	name   string
-	logger log.Logger
 
 	queue   *queue.RequestQueue
 	workers int
@@ -117,8 +119,6 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 	}
 
 	p := &Pool{
-		name:    name,
-		logger:  logger,
 		queue:   rq,
 		workers: size,
 	}
@@ -178,6 +178,18 @@ func (p *Pool) workerLoop() {
 
 // Submit enqueues fn for execution by a worker on behalf of tenantID. Returns
 // ErrPoolStopped if the pool is shutting down.
+//
+// The underlying queue call passes:
+//   - queueDimension="": treated by the broker as "unknown"; the pool has no
+//     per-component dimension, so all tasks share a single first-layer queue.
+//   - maxQueriers=0: treated by tenantQuerierShards as "no shuffle sharding"
+//     (the sentinel for "every querier-worker is eligible"). The pool only
+//     registers a single querierID, so sharding is meaningless here.
+//   - successFn=nil: guarded by the queue (it only invokes successFn when
+//     non-nil); the pool has no work to do between enqueue and dispatch.
+//
+// Future changes to RequestQueue.SubmitRequestToEnqueue must preserve these
+// behaviors, or the pool must be updated to supply real values.
 func (p *Pool) Submit(tenantID string, fn func()) error {
 	if err := p.queue.SubmitRequestToEnqueue(tenantID, fn, "", 0, nil); err != nil {
 		if errors.Is(err, queue.ErrStopped) {
