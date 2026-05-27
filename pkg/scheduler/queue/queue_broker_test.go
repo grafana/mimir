@@ -26,20 +26,8 @@ func (qb *queueBroker) enqueueObjectsForTests(tenantID string, numObjects int) e
 			tenantID: tenantID,
 			req:      fmt.Sprintf("%v: object-%v", tenantID, i),
 		}
-		var path tree.QueuePath
-		var err error
-		if _, ok := qb.tree.(*tree.MultiAlgorithmTreeQueue); ok {
-			path = tree.QueuePath{unknownQueueDimension, tenantID}
-
-		} else {
-			path, err = qb.makeQueuePath(req)
-			if err != nil {
-				return err
-			}
-		}
-
-		err = qb.tree.EnqueueBackByPath(path, req)
-		if err != nil {
+		path := qb.queuePath(req)
+		if err := qb.tree.EnqueueBackByPath(path, req); err != nil {
 			return err
 		}
 	}
@@ -237,7 +225,11 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	for i := 0; i < len(additionalQueueDimensions); i++ {
 		for j := 0; j < maxTenantQueueSize/len(additionalQueueDimensions); j++ {
 			req.AdditionalQueueDimensions = additionalQueueDimensions[i]
-			tenantReq := &tenantRequest{tenantID: "tenant-1", req: req}
+			tenantReq := &tenantRequest{
+				tenantID:       "tenant-1",
+				queueDimension: req.ExpectedQueryComponentName(),
+				req:            req,
+			}
 			err := qb.enqueueRequestBack(tenantReq, 0)
 			assert.NoError(t, err)
 		}
@@ -274,7 +266,11 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 		// error should be received no matter if the enqueue attempt
 		// is for the tenant queue or any of its subqueues
 		req.AdditionalQueueDimensions = additionalQueueDimension
-		tenantReq := &tenantRequest{tenantID: "tenant-1", req: req}
+		tenantReq := &tenantRequest{
+			tenantID:       "tenant-1",
+			queueDimension: req.ExpectedQueryComponentName(),
+			req:            req,
+		}
 		err := qb.enqueueRequestBack(tenantReq, 0)
 		assert.ErrorIs(t, err, ErrTooManyRequests)
 	}

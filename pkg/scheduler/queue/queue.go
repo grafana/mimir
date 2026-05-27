@@ -121,8 +121,6 @@ type RequestQueue struct {
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
 	requestsToEnqueue                     chan requestToEnqueue
-	requestsSent                          chan *SchedulerRequest
-	requestsCompleted                     chan *SchedulerRequest
 	querierWorkerOperations               chan *querierWorkerOperation
 	waitingDequeueRequests                chan *QuerierWorkerDequeueRequest
 	waitingDequeueRequestsToDispatch      *list.List
@@ -205,11 +203,12 @@ func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() error {
 }
 
 type requestToEnqueue struct {
-	tenantID    string
-	req         QueryRequest
-	maxQueriers int
-	successFn   func()
-	errChan     chan error
+	tenantID       string
+	queueDimension string
+	req            QueryRequest
+	maxQueriers    int
+	successFn      func()
+	errChan        chan error
 }
 
 func NewRequestQueue(
@@ -243,8 +242,6 @@ func NewRequestQueue(
 		stopCompleted: make(chan struct{}),
 
 		requestsToEnqueue:                     make(chan requestToEnqueue),
-		requestsSent:                          make(chan *SchedulerRequest),
-		requestsCompleted:                     make(chan *SchedulerRequest),
 		querierWorkerOperations:               make(chan *querierWorkerOperation),
 		waitingDequeueRequests:                make(chan *QuerierWorkerDequeueRequest),
 		waitingDequeueRequestsToDispatch:      list.New(),
@@ -389,8 +386,9 @@ func (q *RequestQueue) dispatcherLoop() {
 // If request is enqueued successFn is called before the request can be dispatched to a querier.
 func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 	tr := tenantRequest{
-		tenantID: r.tenantID,
-		req:      r.req,
+		tenantID:       r.tenantID,
+		queueDimension: r.queueDimension,
+		req:            r.req,
 	}
 	err := q.queueBroker.enqueueRequestBack(&tr, r.maxQueriers)
 	if err != nil {
@@ -459,20 +457,24 @@ func (q *RequestQueue) trySendNextRequestForQuerier(dequeueReq *QuerierWorkerDeq
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
 // Returns error if any occurred during enqueuing, or if the RequestQueue service stopped before enqueuing the request.
 //
+// queueDimension is the first-layer queue dimension to file the request under (e.g. a query component name).
+// An empty string is treated as the "unknown" dimension.
+//
 // maxQueriers is tenant-specific value to compute which queriers should handle requests for this tenant.
 // It is passed to SubmitRequestToEnqueue because the value can change between calls.
-func (q *RequestQueue) SubmitRequestToEnqueue(tenantID string, req QueryRequest, maxQueriers int, successFn func()) error {
+func (q *RequestQueue) SubmitRequestToEnqueue(tenantID string, req QueryRequest, queueDimension string, maxQueriers int, successFn func()) error {
 	start := time.Now()
 	defer func() {
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
 	}()
 
 	r := requestToEnqueue{
-		tenantID:    tenantID,
-		req:         req,
-		maxQueriers: maxQueriers,
-		successFn:   successFn,
-		errChan:     make(chan error),
+		tenantID:       tenantID,
+		queueDimension: queueDimension,
+		req:            req,
+		maxQueriers:    maxQueriers,
+		successFn:      successFn,
+		errChan:        make(chan error),
 	}
 
 	select {

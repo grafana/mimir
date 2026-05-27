@@ -407,7 +407,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limits.MaxQueriersPerUser)
 
 	s.activeUsers.UpdateUserTimestamp(userID, now)
-	return s.requestQueue.SubmitRequestToEnqueue(userID, req, maxQueriers, func() {
+	return s.requestQueue.SubmitRequestToEnqueue(userID, req, req.ExpectedQueryComponentName(), maxQueriers, func() {
 		shouldCancel = false
 		s.addRequestToPending(req)
 	})

@@ -19,9 +19,14 @@ const storeGatewayQueueDimension = "store-gateway"
 const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
 const unknownQueueDimension = "unknown" // utilized when AdditionalQueueDimensions is not assigned by the frontend
 
+// tenantRequest is the queue's internal wrapper for an enqueued QueryRequest.
+// queueDimension is the first-layer queue dimension to enqueue under (e.g. a
+// query component name); the tenantID is appended internally to form the full
+// queue path.
 type tenantRequest struct {
-	tenantID string
-	req      QueryRequest
+	tenantID       string
+	queueDimension string
+	req            QueryRequest
 }
 
 // queueBroker encapsulates access to the Tree queue for pending requests, and brokers logic dependencies between
@@ -81,18 +86,12 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	queuePath, err := qb.makeQueuePath(request)
-	if err != nil {
-		return err
-	}
-
 	tenantQueueSize := qb.tenantQuerierAssignments.queuingAlgorithm.TotalQueueSizeForTenant(request.tenantID)
 	if tenantQueueSize+1 > qb.maxTenantQueueSize {
 		return ErrTooManyRequests
 	}
 
-	err = qb.tree.EnqueueBackByPath(queuePath, request)
-	return err
+	return qb.tree.EnqueueBackByPath(qb.queuePath(request), request)
 }
 
 // enqueueRequestFront should only be used for re-enqueueing previously dequeued requests
@@ -105,22 +104,18 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 	if err != nil {
 		return err
 	}
-
-	queuePath, err := qb.makeQueuePath(request)
-	if err != nil {
-		return err
-	}
-	return qb.tree.EnqueueFrontByPath(queuePath, request)
+	return qb.tree.EnqueueFrontByPath(qb.queuePath(request), request)
 }
 
-func (qb *queueBroker) makeQueuePath(request *tenantRequest) (tree.QueuePath, error) {
-	// some requests may not be type asserted to a schedulerRequest; in this case,
-	// they should also be queued as "unknown" query components
-	queryComponent := unknownQueueDimension
-	if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
-		queryComponent = schedulerRequest.ExpectedQueryComponentName()
+// queuePath returns the two-level queue path for an enqueued tenantRequest:
+// the first-layer queue dimension (typically a query component name)
+// supplied by the caller, followed by the tenantID.
+func (qb *queueBroker) queuePath(request *tenantRequest) tree.QueuePath {
+	dim := request.queueDimension
+	if dim == "" {
+		dim = unknownQueueDimension
 	}
-	return []string{queryComponent, request.tenantID}, nil
+	return tree.QueuePath{dim, request.tenantID}
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(
