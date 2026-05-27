@@ -43,8 +43,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN npm install -g \
-    # Avoid arbitrary code execution in build hook scripts. Prettier 2.3.2 doesn't
-    # happen to have any, but future packages could.
+    # Avoid arbitrary code execution in build hook scripts. (Prettier 2.3.2 doesn't happen to have any.)
     --ignore-scripts \
     prettier@2.3.2
 
