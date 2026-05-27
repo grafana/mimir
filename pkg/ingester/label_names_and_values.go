@@ -248,10 +248,6 @@ func computeLabelValuesSeriesCount(
 
 	processChunk := func(start, end int) {
 		for i := start; i < end; i++ {
-			if ctx.Err() != nil {
-				countCh <- labelValueCountResult{val: lblValues[i], err: ctx.Err()}
-				return
-			}
 			seriesCount, err := countLabelValueSeries(ctx, lblName, lblValues[i], matchers, idxReader, postingsForMatchersFn)
 			countCh <- labelValueCountResult{
 				val:   lblValues[i],
