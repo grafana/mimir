@@ -44,7 +44,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
             --jq '.[].filename')
-          if echo "$files" | grep -qxE '(mimir-build-image/.*|.github/workflows/push-mimir-build-image.yml)'; then
+          if echo "$files" | grep -qxE '(mimir-build-image/.*|\.github/workflows/push-mimir-build-image\.yml)'; then
             echo "modified=true" >> "$GITHUB_OUTPUT"
             echo "Dockerfile or build workflow was modified"
           else
