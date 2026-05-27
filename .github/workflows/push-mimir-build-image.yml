@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build_and_push:
-    runs-on: ubuntu-x64-large
+    runs-on: ubuntu-latest
     permissions:
       # Allow pushing to the GitHub repo for collaborators, forks should remain read-only
       contents: write
