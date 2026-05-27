@@ -13,11 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
+	"github.com/grafana/mimir/pkg/queue/tree"
 )
 
 func (qb *queueBroker) enqueueObjectsForTests(tenantID string, numObjects int) error {
@@ -214,11 +213,8 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 		2: {storeGatewayQueueDimension},
 		3: {ingesterAndStoreGatewayQueueDimension},
 	}
-	req := &SchedulerRequest{
-		Ctx:          context.Background(),
-		FrontendAddr: "http://query-frontend:8007",
-		UserID:       "tenant-1",
-		HttpRequest:  &httpgrpc.HTTPRequest{},
+	req := &testQueryRequest{
+		UserID: "tenant-1",
 	}
 
 	// build queue evenly with either no additional queue dimension or one of 3 additional dimensions

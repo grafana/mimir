@@ -4,11 +4,6 @@
 // units of work submitted as func() values. Work is dispatched across workers
 // using a per-tenant fair queue, so a tenant submitting many large tasks
 // cannot starve another tenant's small task.
-//
-// Note: this package currently depends on pkg/scheduler/queue for its
-// underlying queue implementation. A follow-up will extract the generic
-// tenant-fair queue into pkg/util so this package no longer imports
-// pkg/scheduler.
 package workerpool
 
 import (
@@ -26,7 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/queue"
 )
 
 // ErrPoolStopped is returned when the pool is stopped while a submission was waiting.
@@ -105,14 +100,6 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		Help:        "Time spent enqueueing work items into the worker pool.",
 		ConstLabels: constLabels,
 	})
-	// inflightRequests is required by the underlying queue but is observed in
-	// terms of query components, which do not apply here. The pool registers
-	// a no-op summary that the queue will populate with zeroed observations.
-	inflightRequests := promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
-		Name:        "cortex_workerpool_inflight_requests",
-		Help:        "Inflight work items in the worker pool. Always zero for pool usage; retained for queue compatibility.",
-		ConstLabels: constLabels,
-	}, []string{"query_component"})
 
 	// The underlying queue requires a per-tenant cap; passing math.MaxInt32
 	// effectively disables it. MaxInt32 (not MaxInt64) avoids any overflow
@@ -124,7 +111,6 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		queueLength,
 		discarded,
 		enqueueDuration,
-		inflightRequests,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating worker pool queue: %w", err)

@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
+	"github.com/grafana/mimir/pkg/queue/tree"
 )
 
 const querierForgetDelay = 0
@@ -60,14 +60,14 @@ func makeWeightedRandAdditionalQueueDimensionFunc(
 const slowConsumerQueueDimension = storeGatewayQueueDimension
 
 func makeQueueConsumeFuncWithSlowQueryComponent(
-	queue *RequestQueue,
+	_ *RequestQueue,
 	slowConsumerLatency time.Duration,
 	normalConsumerLatency time.Duration,
 	report *testScenarioQueueDurationObservations,
 ) consumeRequest {
 	return func(request QueryRequest) error {
-		schedulerRequest := request.(*SchedulerRequest)
-		queryComponent := schedulerRequest.ExpectedQueryComponentName()
+		req := request.(*testQueryRequest)
+		queryComponent := req.ExpectedQueryComponentName()
 		if queryComponent == ingesterAndStoreGatewayQueueDimension {
 			// we expect the latency of a query hitting both a normal and a slowed-down query component
 			// will be constrained by the latency of the slowest query component;
@@ -75,16 +75,13 @@ func makeQueueConsumeFuncWithSlowQueryComponent(
 			// but we re-assign query component here for simplicity in logic & reporting
 			queryComponent = storeGatewayQueueDimension
 		}
-		report.Observe(schedulerRequest.UserID, queryComponent, time.Since(schedulerRequest.EnqueueTime).Seconds())
+		report.Observe(req.UserID, queryComponent, time.Since(req.EnqueueTime).Seconds())
 
-		queue.QueryComponentUtilization.MarkRequestSent(schedulerRequest)
 		if queryComponent == slowConsumerQueueDimension {
 			time.Sleep(slowConsumerLatency)
 		} else {
 			time.Sleep(normalConsumerLatency)
 		}
-
-		queue.QueryComponentUtilization.MarkRequestCompleted(schedulerRequest)
 		return nil
 	}
 }
@@ -424,7 +421,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-					promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 				)
 				require.NoError(t, err)
 

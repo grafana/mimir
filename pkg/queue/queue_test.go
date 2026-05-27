@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -23,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
+	"github.com/grafana/mimir/pkg/queue/tree"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -52,28 +51,34 @@ func randAdditionalQueueDimension(_ string) []string {
 	return secondQueueDimensionOptions[idx : idx+1]
 }
 
-// makeSchedulerRequest is intended to create a query request with a nontrivial size.
-//
-// When running benchmarks for memory usage, we want a relatively representative request size.
-// The size of the requests in a queue of nontrivial depth should significantly outweigh the memory
-// used by the queue mechanics, in order get a more meaningful % delta between competing queue implementations.
-func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
-	return &SchedulerRequest{
-		Ctx:          context.Background(),
-		FrontendAddr: "http://query-frontend:8007",
-		UserID:       tenantID,
-		HttpRequest: &httpgrpc.HTTPRequest{
-			Method: "GET",
-			Headers: []*httpgrpc.Header{
-				{Key: "QueryId", Values: []string{"12345678901234567890"}},
-				{Key: "Accept", Values: []string{"application/vnd.mimir.queryresponse+protobuf", "application/json"}},
-				{Key: "X-Scope-OrgId", Values: []string{tenantID}},
-				{Key: "uber-trace-id", Values: []string{"48475050943e8e05:70e8b02d28e4337b:077cd9b649b6ac02:1"}},
-			},
-			Url: "/prometheus/api/v1/query_range?end=1701720000&query=rate%28go_goroutines%7Bcluster%3D%22docker-compose-local%22%2Cjob%3D%22mimir-microservices-mode%2Fquery-scheduler%22%2Cnamespace%3D%22mimir-microservices-mode%22%7D%5B10m15s%5D%29&start=1701648000&step=60",
-		},
-		AdditionalQueueDimensions: additionalQueueDimensions,
+// testQueryRequest is a generic stand-in for the scheduler's SchedulerRequest
+// type. The queue treats values as opaque QueryRequest; tests use this type so
+// they don't depend on the scheduler package.
+type testQueryRequest struct {
+	UserID                    string
+	EnqueueTime               time.Time
+	AdditionalQueueDimensions []string
+	// payload pads the request to a representative size so that
+	// memory-pressure benchmarks remain meaningful.
+	payload [600]byte
+}
+
+// ExpectedQueryComponentName mirrors SchedulerRequest.ExpectedQueryComponentName.
+func (r *testQueryRequest) ExpectedQueryComponentName() string {
+	if len(r.AdditionalQueueDimensions) > 0 {
+		return r.AdditionalQueueDimensions[0]
+	}
+	return unknownQueueDimension
+}
+
+// makeTestQueryRequest creates a request with a nontrivial size so that
+// benchmarks for memory usage have a representative payload-to-mechanics
+// ratio.
+func makeTestQueryRequest(tenantID string, additionalQueueDimensions []string) *testQueryRequest {
+	return &testQueryRequest{
+		UserID:                    tenantID,
 		EnqueueTime:               time.Now(),
+		AdditionalQueueDimensions: additionalQueueDimensions,
 	}
 }
 
@@ -100,7 +105,6 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-								promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 							)
 							require.NoError(b, err)
 
@@ -221,7 +225,7 @@ func queueProduce(
 	if additionalQueueDimensionFunc != nil {
 		additionalQueueDimensions = additionalQueueDimensionFunc(tenantID)
 	}
-	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
+	req := makeTestQueryRequest(tenantID, additionalQueueDimensions)
 	for {
 		err := queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), maxQueriersPerTenant, func() {})
 		if err == nil {
@@ -370,7 +374,6 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -416,15 +419,11 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	// These requests will sit in the queue -
 	// querier-2 is the only querier sharded to user-1, but querier-2 has not requested to dequeue yet.
 	// >1 queue dimensions must exist in the queue to reproduce a potential panic condition (dims % unregisteredWorkerID).
-	reqNotShardedToQuerier1 := &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	reqNotShardedToQuerier1 := &testQueryRequest{
 		AdditionalQueueDimensions: []string{"ingester"},
 	}
 	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
-	reqNotShardedToQuerier1 = &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	reqNotShardedToQuerier1 = &testQueryRequest{
 		AdditionalQueueDimensions: []string{"store-gateway"},
 	}
 	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
@@ -487,7 +486,6 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -573,7 +571,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -611,9 +608,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	// Enqueue a request from an user which would be assigned to querier-1.
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers
-	req := &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	req := &testQueryRequest{
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
 	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 1, nil))
@@ -646,7 +641,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -700,9 +694,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	// Enqueue a request from a tenant which would be assigned to querier-1.
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers
-	req := &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	req := &testQueryRequest{
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
 	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 2, nil))
@@ -735,7 +727,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -791,7 +782,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -822,7 +812,6 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -833,9 +822,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 	tenantMaxQueriers := 0 // no sharding
 	queueDim := randAdditionalQueueDimension("")
-	req := &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	req := &testQueryRequest{
 		AdditionalQueueDimensions: queueDim,
 	}
 	tr := tenantRequest{
@@ -888,7 +875,6 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
@@ -898,7 +884,7 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing
 	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(conn))
 
 	// And push a request to the queue
-	req := makeSchedulerRequest(tenantID, []string{})
+	req := makeTestQueryRequest(tenantID, []string{})
 	require.NotNil(t, req)
 	err = queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), 1, func() {})
 	require.NoError(t, err)

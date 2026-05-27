@@ -14,13 +14,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
 
 const (
@@ -36,54 +32,10 @@ var (
 	ErrQuerierWorkerDisconnected = errors.New("querier worker has disconnected")
 )
 
-type RequestKey struct {
-	frontendAddr string
-	queryID      uint64
-}
-
-func NewSchedulerRequestKey(frontendAddr string, queryID uint64) RequestKey {
-	return RequestKey{
-		frontendAddr: frontendAddr,
-		queryID:      queryID,
-	}
-}
-
-type SchedulerRequest struct {
-	FrontendAddr              string
-	UserID                    string
-	QueryID                   uint64
-	HttpRequest               *httpgrpc.HTTPRequest
-	ProtobufRequest           *schedulerpb.ProtobufRequest
-	StatsEnabled              bool
-	AdditionalQueueDimensions []string
-
-	EnqueueTime time.Time
-
-	Ctx        context.Context
-	CancelFunc context.CancelCauseFunc
-	QueueSpan  trace.Span
-
-	ParentSpanContext trace.SpanContext
-}
-
-func (sr *SchedulerRequest) Key() RequestKey {
-	return RequestKey{
-		frontendAddr: sr.FrontendAddr,
-		queryID:      sr.QueryID,
-	}
-}
-
-// ExpectedQueryComponentName parses the expected query component from annotations by the frontend.
-func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
-	if len(sr.AdditionalQueueDimensions) > 0 {
-		return sr.AdditionalQueueDimensions[0]
-	}
-	return unknownQueueDimension
-}
-
-// QueryRequest represents the items stored in the queue
-// which may be a SchedulerRequest when running with the standalone scheduler process,
-// or a frontend/v1 request when running with the RequestQueue embedded in the v1 frontend.
+// QueryRequest represents the items stored in the queue. The queue treats it
+// as opaque; callers cast to the concrete type they enqueued. Common
+// implementations include the query-scheduler's SchedulerRequest and arbitrary
+// func() work items for the worker pool.
 type QueryRequest interface{}
 
 // RequestQueue holds incoming requests in queues, split by multiple dimensions based on properties of the request.
@@ -125,11 +77,6 @@ type RequestQueue struct {
 	waitingDequeueRequests                chan *QuerierWorkerDequeueRequest
 	waitingDequeueRequestsToDispatch      *list.List
 	waitingDequeueRequestsToDispatchCount *atomic.Int64
-
-	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
-	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
-	// Unlike schedulerInflightRequests, tracking begins only when the request is sent to a querier.
-	QueryComponentUtilization *QueryComponentUtilization
 
 	queueBroker *queueBroker
 }
@@ -218,13 +165,7 @@ func NewRequestQueue(
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
-	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*RequestQueue, error) {
-	queryComponentCapacity, err := NewQueryComponentUtilization(querierInflightRequestsMetric)
-	if err != nil {
-		return nil, err
-	}
-
 	q := &RequestQueue{
 		// settings
 		log:                     log,
@@ -247,8 +188,7 @@ func NewRequestQueue(
 		waitingDequeueRequestsToDispatch:      list.New(),
 		waitingDequeueRequestsToDispatchCount: atomic.NewInt64(0),
 
-		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, forgetDelay),
+		queueBroker: newQueueBroker(maxOutstandingPerTenant, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
@@ -268,18 +208,10 @@ func (q *RequestQueue) running(ctx context.Context) error {
 	forgetDisconnectedQueriersTicker := time.NewTicker(forgetCheckPeriod)
 	defer forgetDisconnectedQueriersTicker.Stop()
 
-	// periodically submit a message to dispatcherLoop to observe inflight requests;
-	// same as scheduler, we observe inflight requests frequently and at regular intervals
-	// to have a good approximation of max inflight requests over percentiles of time.
-	inflightRequestsTicker := time.NewTicker(250 * time.Millisecond)
-	defer inflightRequestsTicker.Stop()
-
 	for {
 		select {
 		case <-forgetDisconnectedQueriersTicker.C:
 			q.submitForgetDisconnectedQueriers(ctx)
-		case <-inflightRequestsTicker.C:
-			q.QueryComponentUtilization.ObserveInflightRequests()
 		case <-ctx.Done():
 			// context done case serves as a default case to bail out
 			// if the waiting querier-worker connection's context times out or is canceled,
