@@ -1,0 +1,13 @@
+name: "Mimir CodeQL config"
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - vendor
+  - jsonnet-tests/vendor
+  - operations/mimir-mixin/vendor
+  - "**/testdata/**"
+  - "**/*.min.js"
+  - "**/*.min.css"
+  - pkg/api/static
