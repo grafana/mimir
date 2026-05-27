@@ -1,7 +1,7 @@
 name: "Mimir CodeQL config"
 
 queries:
-  - uses: security-and-quality
+  - uses: security-extended
 
 paths-ignore:
   - vendor
