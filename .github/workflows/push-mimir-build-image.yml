@@ -87,7 +87,7 @@ jobs:
         id: check_build
         run: |
           echo "Checking if image should be built"
-          if skopeo inspect --raw "docker://${{ steps.prepare.outputs.image }}:${{ steps.compute_hash.outputs.tag }}" >/dev/null 2>&1; then
+          if skopeo inspect --raw "docker://${{ steps.prepare.outputs.image }}:${{ steps.compute_hash.outputs.tag }}"; then
             echo "build=false" >> $GITHUB_OUTPUT
             echo "Tag ${{ steps.compute_hash.outputs.tag }} exists"
           else
