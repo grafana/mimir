@@ -1,6 +1,13 @@
 name: Build and Push mimir-build-image
 
-# configure trigger by pull request
+# A note on permissions:
+# We don't explicitly check that the PR author is authorized to trigger a build:
+# fork PRs receive a read-only GITHUB_TOKEN with no secrets, so the image push and
+# Makefile commit steps fail naturally with permission denied, while PRs from
+# internal branches already require repo write access. Relying on GitHub's
+# permission model also lets us drop the org-members read scope the
+# mimir-github-bot App previously needed.
+
 on:
   pull_request:
 
