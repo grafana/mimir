@@ -113,13 +113,15 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		Help:        "Total number of work items that panicked while executing in the worker pool.",
 		ConstLabels: constLabels,
 	})
-	// inflightRequests is required by the underlying queue but is observed in
-	// terms of query components, which do not apply here. The pool registers
-	// a no-op summary that the queue will populate with zeroed observations.
-	inflightRequests := promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
-		Name:        "cortex_workerpool_inflight_requests",
-		Help:        "Inflight work items in the worker pool. Always zero for pool usage; retained for queue compatibility.",
-		ConstLabels: constLabels,
+	// inflightRequests is required by the underlying queue, which observes it
+	// every 250ms in terms of "ingester"/"store-gateway" query components.
+	// Pool work has no meaningful query component, so we register the summary
+	// against a private registry — the queue still observes its (always-zero)
+	// values, but they never reach the caller-supplied registerer.
+	internalReg := prometheus.NewRegistry()
+	inflightRequests := promauto.With(internalReg).NewSummaryVec(prometheus.SummaryOpts{
+		Name: "workerpool_inflight_requests",
+		Help: "Internal placeholder for the underlying queue. Not exported.",
 	}, []string{"query_component"})
 
 	// The underlying queue requires a per-tenant cap; passing math.MaxInt32

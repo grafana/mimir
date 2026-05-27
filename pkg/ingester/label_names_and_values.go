@@ -38,10 +38,10 @@ func (cfg *LabelValuesCountConfig) RegisterFlags(f *flag.FlagSet) {
 // Validate returns an error if the config is invalid.
 func (cfg *LabelValuesCountConfig) Validate() error {
 	if cfg.Workers < 0 {
-		return errors.New("ingester.label-values-count-workers must be >= 0")
+		return errors.New("-ingester.label-values-count-workers must be >= 0")
 	}
 	if cfg.ChunkSize < 1 {
-		return errors.New("ingester.label-values-count-chunk-size must be >= 1")
+		return errors.New("-ingester.label-values-count-chunk-size must be >= 1")
 	}
 	return nil
 }
@@ -241,9 +241,6 @@ func computeLabelValuesSeriesCount(
 	if len(lblValues) == 0 {
 		close(countCh)
 		return countCh
-	}
-	if chunkSize < 1 {
-		chunkSize = 1
 	}
 
 	processChunk := func(start, end int) {
