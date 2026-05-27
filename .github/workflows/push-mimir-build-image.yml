@@ -155,6 +155,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.ref }} # Check out the PR branch itself, not the temporary merge commit
 
       # Compare the just-built tag against the one currently referenced in the Makefile.
       # If they differ, update the Makefile and signal the next step to commit; otherwise
