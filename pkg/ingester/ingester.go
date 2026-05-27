@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/workerpool"
 )
 
 var tracer = otel.Tracer("pkg/ingester")
@@ -186,7 +187,7 @@ type Config struct {
 	PushReactiveLimiter  reactivelimiter.Config            `yaml:"push_reactive_limiter"`
 	ReadReactiveLimiter  reactivelimiter.Config            `yaml:"read_reactive_limiter"`
 
-	LabelValuesCountRequestMaxConcurrency int `yaml:"label_values_count_request_max_concurrency" category:"experimental"`
+	LabelValuesCount LabelValuesCountConfig `yaml:"label_values_count"`
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
@@ -219,7 +220,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
-	f.IntVar(&cfg.LabelValuesCountRequestMaxConcurrency, "ingester.label-values-count-max-concurrency", 16, "Maximum concurrency used to compute a single label values count request.")
+	cfg.LabelValuesCount.RegisterFlags(f)
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
 	// Hardcoded config (can only be overridden in tests).
@@ -236,8 +237,8 @@ func (cfg *Config) Validate(log.Logger) error {
 		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
 	}
 
-	if cfg.LabelValuesCountRequestMaxConcurrency < 1 {
-		return errors.New("label values count request max concurrency must be greater than 0")
+	if err := cfg.LabelValuesCount.Validate(); err != nil {
+		return err
 	}
 
 	if err := cfg.PushReactiveLimiter.Validate(); err != nil {
@@ -292,6 +293,7 @@ type Ingester struct {
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
 	statisticsService     services.Service
+	labelValuesCountPool  *workerpool.Pool
 
 	// Index lookup planning
 	lookupPlanMetrics lookupplan.Metrics
@@ -615,6 +617,12 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}
 	}
 
+	i.labelValuesCountPool, err = workerpool.New(cfg.LabelValuesCount.workerpoolConfig(), "ingester-label-values-count", registerer, logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating label values count worker pool")
+	}
+	i.subservicesWatcher.WatchService(i.labelValuesCountPool)
+
 	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping).WithName("ingester")
 	return i, nil
 }
@@ -721,6 +729,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// Finally we start all services that should run after the ingester ring lifecycler.
 	var servs []services.Service
+
+	servs = append(servs, i.labelValuesCountPool)
 
 	if i.shippingService != nil {
 		servs = append(servs, i.shippingService)

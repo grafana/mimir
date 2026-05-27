@@ -1700,10 +1700,16 @@ read_reactive_limiter:
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
 
-# (experimental) Maximum concurrency used to compute a single label values count
-# request.
-# CLI flag: -ingester.label-values-count-max-concurrency
-[label_values_count_request_max_concurrency: <int> | default = 16]
+label_values_count:
+  # (experimental) Number of worker goroutines used to compute
+  # label-values-count requests across all tenants. 0 uses GOMAXPROCS.
+  # CLI flag: -ingester.label-values-count-workers
+  [workers: <int> | default = 0]
+
+  # (experimental) Number of label values processed per work unit submitted to
+  # the worker pool.
+  # CLI flag: -ingester.label-values-count-chunk-size
+  [chunk_size: <int> | default = 32]
 ```
 
 ### querier
