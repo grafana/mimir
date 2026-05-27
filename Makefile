@@ -237,7 +237,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr15429-bf224fe1d5
+LATEST_BUILD_IMAGE_TAG ?= pr15425-fc217a751d
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -513,9 +513,8 @@ lint: check-makefiles check-merge-conflicts
 	# Ensure gRPC buffers aren't released too early
 	$(LINT_GO_ENV) go run ./tools/lint-buffer-holder
 
-format: ## Run gofmt and goimports.
-	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
-	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
+format: ## Run formatters.
+	$(LINT_GO_ENV) golangci-lint fmt
 
 test: ## Run all unit tests.
 	go test -timeout 30m $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")

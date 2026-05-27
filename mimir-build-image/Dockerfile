@@ -8,16 +8,39 @@ FROM alpine/helm:4.1.4@sha256:4b0bdd2cf18ff6bca12aba0b2c5671384dab5035c19c57f0c5
 FROM golang:1.26.3-trixie@sha256:d08bf3ed2bd263088ca8e23fefaf10f1b71769f6932f0a4017ba28d2a5baf001
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
-ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
 # Override toolchain directive in go.mod, to ensure the image's Go version is used.
 # Be aware that the official Go Dockerfiles already do this, but let's be explicit.
 # https://github.com/docker-library/golang/issues/472
 ENV GOTOOLCHAIN=local
-RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev $SKOPEO_DEPS && \
+
+ENV NODE_MAJOR_VERSION=26
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+RUN <<EOF cat > /etc/apt/sources.list.d/nodesource.sources
+Types: deb
+URIs: https://deb.nodesource.com/node_${NODE_MAJOR_VERSION}.x/
+Suites: nodistro
+Components: main
+Signed-By: /etc/apt/keyrings/nodesource.gpg
+EOF
+
+RUN apt-get update && \
+    apt-get install -y \
+      curl \
+      python3-requests \
+      python3-yaml \
+      file \
+      jq \
+      zip \
+      unzip \
+      protobuf-compiler \
+      libprotobuf-dev \
+      shellcheck \
+      libpcap-dev \
+      nodejs \
+      # Dependencies required to build Skopeo below.
+      libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config \
+    && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
-RUN curl -sL https://deb.nodesource.com/setup_20.x | bash -
-RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN npm install -g prettier@2.3.2
 
@@ -37,7 +60,14 @@ RUN GOARCH=$(go env GOARCH) && \
 
 # renovate: depName=github.com/golangci/golangci-lint
 ENV GOLANGCI_LINT_VERSION=2.12.2
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/v"${GOLANGCI_LINT_VERSION}"/install.sh| sh -s -- -b /usr/bin v"${GOLANGCI_LINT_VERSION}"
+RUN set -o pipefail && \
+    VERSION_SLUG=golangci-lint-${GOLANGCI_LINT_VERSION}-linux-$(go env GOARCH) && \
+    TARBALL=$VERSION_SLUG.tar.gz && \
+    cd /tmp && \
+    curl -sfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/$TARBALL" -o "/tmp/$TARBALL" && \
+    curl -sfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-checksums.txt" | grep -E "\s+$TARBALL$" | sha256sum --check - && \
+    tar -xzvf "/tmp/$TARBALL" -C /usr/bin --strip-components=1 "$VERSION_SLUG/golangci-lint" && \
+    rm /tmp/$TARBALL
 
 # renovate: depName=github.com/containers/skopeo
 ENV SKOPEO_VERSION=v1.22.2
