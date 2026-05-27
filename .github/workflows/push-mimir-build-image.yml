@@ -77,7 +77,7 @@ jobs:
         run: |
           # Compute a hash of the entire build image directory, so that any changes to the Dockerfile or other files trigger a new build.
           # We use tar so that this also captures changes to permissions.
-          current_hash=$(tar -c -f - --exclude .uptodate mimir-build-image | md5sum | awk '{print substr($1, 0, 10)}')
+          current_hash=$(tar -c -f - --exclude .uptodate --mtime='1900-01-01 00:00Z' --sort=name mimir-build-image | md5sum | awk '{print substr($1, 0, 10)}')
           echo "build tag is $current_hash"
           tag="pr${{ github.event.pull_request.number }}-$current_hash"
           echo "tag=$tag" >> $GITHUB_OUTPUT
