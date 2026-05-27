@@ -133,6 +133,8 @@ jobs:
       gar-repository: docker-mimir-build-image
       gar-image: mimir-build-image
       generate-summary: true
+      runner-type-x64: ubuntu-x64
+      runner-type-arm64: ubuntu-arm64
 
   commit:
     name: Push commit with new build image tag
