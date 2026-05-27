@@ -6,10 +6,11 @@
 package ingester
 
 import (
+	"hash/fnv"
 	"sync"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
-	"github.com/segmentio/fasthash/fnv1a"
 )
 
 const numMetricCounterShards = 128
@@ -53,7 +54,7 @@ func (m *metricCounter) decreaseSeriesForMetric(metricName string) {
 }
 
 func (m *metricCounter) getShard(metricName string) *metricCounterShard {
-	shard := &m.shards[hashFP(model.Fingerprint(fnv1a.HashString64(metricName)))%numMetricCounterShards]
+	shard := &m.shards[hashFP(model.Fingerprint(hashMetricName(metricName)))%numMetricCounterShards]
 	return shard
 }
 
@@ -74,6 +75,13 @@ func (m *metricCounter) increaseSeriesForMetric(metric string) {
 	shard.mtx.Lock()
 	shard.m[metric]++
 	shard.mtx.Unlock()
+}
+
+// hashMetricName returns the FNV-1a 64-bit hash of a metric name.
+func hashMetricName(metricName string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write(unsafe.Slice(unsafe.StringData(metricName), len(metricName))) // nolint:gosec
+	return h.Sum64()
 }
 
 // hashFP simply moves entropy from the most significant 48 bits of the
