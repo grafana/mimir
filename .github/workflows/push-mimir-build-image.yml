@@ -64,9 +64,9 @@ jobs:
           echo "image_name=$image_name" >> $GITHUB_OUTPUT
           echo "main_image_tag=$main_image_tag" >> $GITHUB_OUTPUT
 
-          # Compute a hash of the entire build image directory, so that any changes to the Dockerfile or other files trigger a new build.
+          # Compute a hash of the entire build image directory and this workflow, so that any changes to the Dockerfile or other files trigger a new build.
           # We use tar so that this also captures changes to permissions.
-          new_image_hash=$(tar -c -f - --exclude .uptodate --mtime='1900-01-01 00:00Z' --sort=name mimir-build-image | md5sum | awk '{print substr($1, 0, 10)}')
+          new_image_hash=$(tar -c -f - --exclude .uptodate --mtime='1900-01-01 00:00Z' --sort=name mimir-build-image .github/workflows/push-mimir-build-image.yml | md5sum | awk '{print substr($1, 0, 10)}')
           echo "New image hash is $new_image_hash"
           new_image_tag="pr${{ github.event.pull_request.number }}-$new_image_hash"
           echo "new_image_tag=$new_image_tag" >> $GITHUB_OUTPUT
