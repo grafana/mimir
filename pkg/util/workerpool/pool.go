@@ -18,12 +18,10 @@ import (
 	"fmt"
 	"math"
 	"runtime"
-	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -54,15 +52,16 @@ func (cfg *Config) Validate() error {
 }
 
 // Pool is a tenant-fair worker pool. Use New to construct one.
+//
+// A panicking task is not recovered: the worker goroutine unwinds and the
+// panic crashes the process, matching the behaviour callers had before this
+// pool existed. Callers that need to convert panics into errors must wrap
+// their submitted function themselves.
 type Pool struct {
 	services.Service
 
-	name   string
-	logger log.Logger
-
 	queue   *queue.RequestQueue
 	workers int
-	panics  prometheus.Counter
 
 	workersWg sync.WaitGroup
 }
@@ -108,11 +107,6 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		Help:        "Time spent enqueueing work items into the worker pool.",
 		ConstLabels: constLabels,
 	})
-	panics := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name:        "cortex_workerpool_task_panics_total",
-		Help:        "Total number of work items that panicked while executing in the worker pool.",
-		ConstLabels: constLabels,
-	})
 	// inflightRequests is required by the underlying queue, which observes it
 	// every 250ms in terms of "ingester"/"store-gateway" query components.
 	// Pool work has no meaningful query component, so we register the summary
@@ -141,11 +135,8 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 	}
 
 	p := &Pool{
-		name:    name,
-		logger:  logger,
 		queue:   rq,
 		workers: size,
-		panics:  panics,
 	}
 	p.Service = services.NewBasicService(p.starting, p.running, p.stopping)
 	return p, nil
@@ -197,29 +188,8 @@ func (p *Pool) workerLoop() {
 		if !ok {
 			continue
 		}
-		p.runTask(fn)
+		fn()
 	}
-}
-
-// runTask invokes fn with panic recovery so that a panicking task does not
-// take the worker goroutine down with it (which would silently shrink the
-// pool until it can no longer make progress). The panic is logged and
-// counted; the worker then returns to the dequeue loop.
-func (p *Pool) runTask(fn func()) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			return
-		}
-		p.panics.Inc()
-		level.Error(p.logger).Log(
-			"msg", "recovered from panic in worker pool task",
-			"pool", p.name,
-			"panic", fmt.Sprintf("%v", r),
-			"stack", string(debug.Stack()),
-		)
-	}()
-	fn()
 }
 
 // Submit enqueues fn for execution by a worker on behalf of tenantID. Returns
