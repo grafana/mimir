@@ -23,7 +23,6 @@ Components: main
 Signed-By: /etc/apt/keyrings/nodesource.gpg
 EOF
 
-ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
 RUN apt-get update && \
     apt-get install -y \
       curl \
@@ -38,7 +37,8 @@ RUN apt-get update && \
       shellcheck \
       libpcap-dev \
       nodejs \
-      $SKOPEO_DEPS \
+      # Dependencies required to build Skopeo below.
+      libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config \
     && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
