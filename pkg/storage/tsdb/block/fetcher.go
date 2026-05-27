@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/golang/groupcache/singleflight"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
@@ -26,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
@@ -487,7 +487,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	f.metrics.ResetTx()
 
 	// Run this in thread safe run group.
-	v, err := f.g.Do("", func() (i interface{}, err error) {
+	v, err, _ := f.g.Do("", func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
 		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
 	})
