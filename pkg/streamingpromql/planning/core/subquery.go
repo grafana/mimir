@@ -70,6 +70,14 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 	if s.Timestamp != nil {
 		start = timestamp.FromTime(*s.Timestamp)
 		end = start
+	} else if !timeRange.IsInstant {
+		// Align the parent end timestamp down to the parent's step grid before applying the
+		// subquery offset.
+		// This ensures the subquery does not evaluate past the parent's last actual step if the
+		// parent's end time isn't aligned to its step.
+		// For example, if the step is 1h, and the parent time range is 09:00 to 11:30, then the last
+		// parent step is 11:00, and the subquery should not evaluate past that.
+		end = start + ((end-start)/timeRange.IntervalMilliseconds)*timeRange.IntervalMilliseconds
 	}
 
 	// Find the first timestamp inside the subquery range that is aligned to the step.
