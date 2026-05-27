@@ -18,10 +18,12 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -60,6 +62,7 @@ type Pool struct {
 
 	queue   *queue.RequestQueue
 	workers int
+	panics  prometheus.Counter
 
 	workersWg sync.WaitGroup
 }
@@ -105,6 +108,11 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		Help:        "Time spent enqueueing work items into the worker pool.",
 		ConstLabels: constLabels,
 	})
+	panics := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name:        "cortex_workerpool_task_panics_total",
+		Help:        "Total number of work items that panicked while executing in the worker pool.",
+		ConstLabels: constLabels,
+	})
 	// inflightRequests is required by the underlying queue but is observed in
 	// terms of query components, which do not apply here. The pool registers
 	// a no-op summary that the queue will populate with zeroed observations.
@@ -135,6 +143,7 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		logger:  logger,
 		queue:   rq,
 		workers: size,
+		panics:  panics,
 	}
 	p.Service = services.NewBasicService(p.starting, p.running, p.stopping)
 	return p, nil
@@ -186,12 +195,45 @@ func (p *Pool) workerLoop() {
 		if !ok {
 			continue
 		}
-		fn()
+		p.runTask(fn)
 	}
+}
+
+// runTask invokes fn with panic recovery so that a panicking task does not
+// take the worker goroutine down with it (which would silently shrink the
+// pool until it can no longer make progress). The panic is logged and
+// counted; the worker then returns to the dequeue loop.
+func (p *Pool) runTask(fn func()) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		p.panics.Inc()
+		level.Error(p.logger).Log(
+			"msg", "recovered from panic in worker pool task",
+			"pool", p.name,
+			"panic", fmt.Sprintf("%v", r),
+			"stack", string(debug.Stack()),
+		)
+	}()
+	fn()
 }
 
 // Submit enqueues fn for execution by a worker on behalf of tenantID. Returns
 // ErrPoolStopped if the pool is shutting down.
+//
+// The underlying queue call passes:
+//   - queueDimension="": treated by the broker as "unknown"; the pool has no
+//     per-component dimension, so all tasks share a single first-layer queue.
+//   - maxQueriers=0: treated by tenantQuerierShards as "no shuffle sharding"
+//     (the sentinel for "every querier-worker is eligible"). The pool only
+//     registers a single querierID, so sharding is meaningless here.
+//   - successFn=nil: guarded by the queue (it only invokes successFn when
+//     non-nil); the pool has no work to do between enqueue and dispatch.
+//
+// Future changes to RequestQueue.SubmitRequestToEnqueue must preserve these
+// behaviors, or the pool must be updated to supply real values.
 func (p *Pool) Submit(tenantID string, fn func()) error {
 	if err := p.queue.SubmitRequestToEnqueue(tenantID, fn, "", 0, nil); err != nil {
 		if errors.Is(err, queue.ErrStopped) {

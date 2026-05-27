@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -128,6 +130,43 @@ func TestPool_StopDrainsInflightWork(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), p))
 	wg.Wait()
 	assert.Equal(t, int64(4), ran.Load())
+}
+
+func TestPool_PanicInTaskDoesNotKillWorker(t *testing.T) {
+	// A panicking task must not take its worker down with it. With a single
+	// worker, after a panic the pool must still execute subsequent tasks.
+	reg := prometheus.NewPedanticRegistry()
+	p, err := New(Config{Size: 1}, "panic", reg, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), p))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), p))
+	})
+
+	panicDone := make(chan struct{})
+	require.NoError(t, p.Submit("tenant", func() {
+		defer close(panicDone)
+		panic("boom")
+	}))
+
+	select {
+	case <-panicDone:
+	case <-time.After(time.Second):
+		t.Fatal("panicking task never ran")
+	}
+
+	ranDone := make(chan struct{})
+	require.NoError(t, p.Submit("tenant", func() {
+		close(ranDone)
+	}))
+
+	select {
+	case <-ranDone:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not recover from panic; subsequent task never ran")
+	}
+
+	require.Equal(t, 1.0, testutil.ToFloat64(p.panics))
 }
 
 func TestConfig_Validate(t *testing.T) {
