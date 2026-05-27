@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"slices"
 	"sort"
@@ -17,11 +18,11 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
-	"github.com/grafana-tools/sdk"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 	"github.com/grafana/mimir/pkg/mimirtool/util"
 )
@@ -53,7 +54,7 @@ func (f folderTitles) IsCumulative() bool {
 }
 
 func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	c, err := sdk.NewClient(cmd.address, cmd.apiKey, sdk.DefaultHTTPClient)
+	c, err := minisdk.NewClient(cmd.address, cmd.apiKey, http.DefaultClient, client.UserAgent())
 	if err != nil {
 		return err
 	}
@@ -71,7 +72,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeGrafana analyze grafana's dashboards and return the list metrics used in them.
-func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTimeout time.Duration, promqlParser parser.Parser, logger log.Logger) (*analyze.MetricsInGrafana, error) {
+func AnalyzeGrafana(ctx context.Context, c *minisdk.Client, folders []string, readTimeout time.Duration, promqlParser parser.Parser, logger log.Logger) (*analyze.MetricsInGrafana, error) {
 
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
@@ -105,11 +106,11 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTi
 }
 
 // processDashboard fetches and processes a single Grafana dashboard.
-func processDashboard(ctx context.Context, c *sdk.Client, link sdk.FoundBoard, output *analyze.MetricsInGrafana, readTimeout time.Duration, promqlParser parser.Parser, logger log.Logger) error {
+func processDashboard(ctx context.Context, c *minisdk.Client, link minisdk.FoundBoard, output *analyze.MetricsInGrafana, readTimeout time.Duration, promqlParser parser.Parser, logger log.Logger) error {
 	fetchCtx, cancel := context.WithTimeout(ctx, readTimeout)
 	defer cancel()
 
-	data, _, err := c.GetRawDashboardByUID(fetchCtx, link.UID)
+	data, err := c.GetRawDashboardByUID(fetchCtx, link.UID)
 	if err != nil {
 		return err
 	}
@@ -123,11 +124,11 @@ func processDashboard(ctx context.Context, c *sdk.Client, link sdk.FoundBoard, o
 	return nil
 }
 
-func getAllDashboards(ctx context.Context, c *sdk.Client) ([]sdk.FoundBoard, error) {
+func getAllDashboards(ctx context.Context, c *minisdk.Client) ([]minisdk.FoundBoard, error) {
 	var currentPage uint = 1
-	var results []sdk.FoundBoard
+	var results []minisdk.FoundBoard
 	for {
-		nextPageResults, err := c.Search(ctx, sdk.SearchType(sdk.SearchTypeDashboard), sdk.SearchPage(currentPage))
+		nextPageResults, err := c.Search(ctx, minisdk.SearchType(minisdk.SearchTypeDashboard), minisdk.SearchPage(currentPage))
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +142,7 @@ func getAllDashboards(ctx context.Context, c *sdk.Client) ([]sdk.FoundBoard, err
 	}
 }
 
-func unmarshalDashboard(data []byte, link sdk.FoundBoard) (minisdk.Board, error) {
+func unmarshalDashboard(data []byte, link minisdk.FoundBoard) (minisdk.Board, error) {
 	var board minisdk.Board
 	if err := json.Unmarshal(data, &board); err != nil {
 		return minisdk.Board{}, fmt.Errorf("can't unmarshal dashboard %s (%s): %w", link.UID, link.Title, err)
