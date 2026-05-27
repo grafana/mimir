@@ -145,7 +145,7 @@ jobs:
       # We always run this job even if the image build is skipped, so that we can make this job a required check.
       # So if the image build failed, then we want this job to fail too.
       - name: Fail if image build failed
-        if: needs.prepare.outputs.need_to_build == 'true' && needs.build-push-multiarch.result != 'success'
+        if: needs.prepare.outputs.need_to_build == 'true' && (needs.prepare.result != 'success' || needs.build-push-multiarch.result != 'success')
         run: |
           echo "Image build failed, stopping."
           exit 1
