@@ -25,6 +25,7 @@
 * [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
 * [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
 * [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
+* [BUGFIX] MQE: Fix issue where subqueries unnecessarily compute and then discard an additional step if the parent query is not aligned to the step. #15438
 
 ### Mixin
 
