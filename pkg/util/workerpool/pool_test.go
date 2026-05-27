@@ -5,7 +5,6 @@ package workerpool
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 func startPool(t *testing.T, cfg Config) *Pool {
