@@ -9,15 +9,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
+	"github.com/grafana/mimir/pkg/queue/tree"
 )
 
-// cannot import constants from frontend/v2 due to import cycle
-// these are attached to the request's AdditionalQueueDimensions by the frontend.
-const ingesterQueueDimension = "ingester"
-const storeGatewayQueueDimension = "store-gateway"
-const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
-const unknownQueueDimension = "unknown" // utilized when AdditionalQueueDimensions is not assigned by the frontend
+// unknownQueueDimension is used internally when a caller submits a request with
+// an empty queueDimension string. Callers (e.g. the scheduler) define their own
+// dimension vocabularies; the queue treats them as opaque routing labels.
+const unknownQueueDimension = "unknown"
 
 // tenantRequest is the queue's internal wrapper for an enqueued QueryRequest.
 // queueDimension is the first-layer queue dimension to enqueue under (e.g. a

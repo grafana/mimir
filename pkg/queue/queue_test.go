@@ -23,13 +23,22 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
+	"github.com/grafana/mimir/pkg/queue/tree"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
 }
+
+// Dimension labels mirror those the scheduler attaches to its requests. The
+// queue treats them as opaque routing labels; tests redeclare them here so
+// the queue test suite has no dependency on the scheduler package.
+const (
+	ingesterQueueDimension                = "ingester"
+	storeGatewayQueueDimension            = "store-gateway"
+	ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
+)
 
 var secondQueueDimensionOptions = []string{
 	ingesterQueueDimension,
@@ -39,7 +48,7 @@ var secondQueueDimensionOptions = []string{
 }
 
 // randAdditionalQueueDimension is the basic implementation of additionalQueueDimensionFunc,
-// used to assign the expected query component queue dimensions to SchedulerRequests
+// used to assign the expected query component queue dimensions to test requests
 // before they are enqueued by the queue producer groups utilized in benchmark tests.
 // This version ignores the tenant ID, giving all tenants the same distribution of query components.
 func randAdditionalQueueDimension(_ string) []string {
@@ -52,14 +61,37 @@ func randAdditionalQueueDimension(_ string) []string {
 	return secondQueueDimensionOptions[idx : idx+1]
 }
 
-// makeSchedulerRequest is intended to create a query request with a nontrivial size.
+// testQueryRequest is a generic stand-in for the scheduler's SchedulerRequest.
+// The queue treats values as opaque QueryRequest; tests use this type so
+// the queue's own test suite has no dependency on the scheduler package.
 //
-// When running benchmarks for memory usage, we want a relatively representative request size.
-// The size of the requests in a queue of nontrivial depth should significantly outweigh the memory
-// used by the queue mechanics, in order get a more meaningful % delta between competing queue implementations.
-func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
-	return &SchedulerRequest{
-		Ctx:          context.Background(),
+// The field shape mirrors the scheduler's SchedulerRequest so that
+// memory-usage benchmarks produce realistic allocation profiles: the
+// HttpRequest field holds a heap-allocated struct with its own strings and
+// header pointers, rather than a single inline byte filler that would have
+// misleadingly cheap copy semantics.
+type testQueryRequest struct {
+	FrontendAddr              string
+	UserID                    string
+	HttpRequest               *httpgrpc.HTTPRequest
+	EnqueueTime               time.Time
+	AdditionalQueueDimensions []string
+}
+
+// ExpectedQueryComponentName mirrors SchedulerRequest.ExpectedQueryComponentName.
+func (r *testQueryRequest) ExpectedQueryComponentName() string {
+	if len(r.AdditionalQueueDimensions) > 0 {
+		return r.AdditionalQueueDimensions[0]
+	}
+	return unknownQueueDimension
+}
+
+// makeTestQueryRequest creates a request whose in-memory size and shape
+// approximate a real query request (a representative URL, headers, and
+// frontend address). The point is for benchmarks of a non-trivial queue
+// depth to be dominated by request payload rather than queue mechanics.
+func makeTestQueryRequest(tenantID string, additionalQueueDimensions []string) *testQueryRequest {
+	return &testQueryRequest{
 		FrontendAddr: "http://query-frontend:8007",
 		UserID:       tenantID,
 		HttpRequest: &httpgrpc.HTTPRequest{
@@ -72,8 +104,8 @@ func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *
 			},
 			Url: "/prometheus/api/v1/query_range?end=1701720000&query=rate%28go_goroutines%7Bcluster%3D%22docker-compose-local%22%2Cjob%3D%22mimir-microservices-mode%2Fquery-scheduler%22%2Cnamespace%3D%22mimir-microservices-mode%22%7D%5B10m15s%5D%29&start=1701648000&step=60",
 		},
-		AdditionalQueueDimensions: additionalQueueDimensions,
 		EnqueueTime:               time.Now(),
+		AdditionalQueueDimensions: additionalQueueDimensions,
 	}
 }
 
@@ -220,7 +252,7 @@ func queueProduce(
 	if additionalQueueDimensionFunc != nil {
 		additionalQueueDimensions = additionalQueueDimensionFunc(tenantID)
 	}
-	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
+	req := makeTestQueryRequest(tenantID, additionalQueueDimensions)
 	for {
 		err := queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), maxQueriersPerTenant, func() {})
 		if err == nil {
@@ -414,15 +446,11 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	// These requests will sit in the queue -
 	// querier-2 is the only querier sharded to user-1, but querier-2 has not requested to dequeue yet.
 	// >1 queue dimensions must exist in the queue to reproduce a potential panic condition (dims % unregisteredWorkerID).
-	reqNotShardedToQuerier1 := &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	reqNotShardedToQuerier1 := &testQueryRequest{
 		AdditionalQueueDimensions: []string{"ingester"},
 	}
 	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
-	reqNotShardedToQuerier1 = &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	reqNotShardedToQuerier1 = &testQueryRequest{
 		AdditionalQueueDimensions: []string{"store-gateway"},
 	}
 	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
@@ -607,9 +635,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	// Enqueue a request from an user which would be assigned to querier-1.
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers
-	req := &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	req := &testQueryRequest{
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
 	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 1, nil))
@@ -695,9 +721,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	// Enqueue a request from a tenant which would be assigned to querier-1.
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers
-	req := &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	req := &testQueryRequest{
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
 	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 2, nil))
@@ -825,9 +849,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 	tenantMaxQueriers := 0 // no sharding
 	queueDim := randAdditionalQueueDimension("")
-	req := &SchedulerRequest{
-		Ctx:                       context.Background(),
-		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	req := &testQueryRequest{
 		AdditionalQueueDimensions: queueDim,
 	}
 	tr := tenantRequest{
@@ -889,7 +911,7 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing
 	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(conn))
 
 	// And push a request to the queue
-	req := makeSchedulerRequest(tenantID, []string{})
+	req := makeTestQueryRequest(tenantID, []string{})
 	require.NotNil(t, req)
 	err = queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), 1, func() {})
 	require.NoError(t, err)

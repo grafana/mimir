@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package queue
+package scheduler
 
 import (
 	"sync"
@@ -13,6 +13,17 @@ type QueryComponent string
 const (
 	StoreGateway QueryComponent = "store-gateway"
 	Ingester     QueryComponent = "ingester"
+)
+
+// Queue-dimension labels the scheduler attaches to enqueued requests. The
+// underlying queue treats these as opaque strings; they're defined here so
+// SchedulerRequest.ExpectedQueryComponentName and queryComponentFlags can
+// agree on the same vocabulary.
+const (
+	ingesterQueueDimension                = "ingester"
+	storeGatewayQueueDimension            = "store-gateway"
+	ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
+	unknownQueueDimension                 = "unknown"
 )
 
 // queryComponentFlags interprets annotations by the frontend for the expected query component,
