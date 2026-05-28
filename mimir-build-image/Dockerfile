@@ -79,7 +79,7 @@ RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers
 COPY go.mod go.sum /tools/
 RUN \
   cd /tools && \
-	go install $(go mod edit -json | jq -r '.Tool.[].Path') && \
+	go install tool && \
 	rm -rf /go/pkg /go/src /root/.cache /tools/go.mod /tools/go.sum
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
