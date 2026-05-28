@@ -199,6 +199,9 @@ The following features are currently experimental:
   - Per-tenant max number of active series additional custom trackers is configurable via `-validation.max-active-series-additional-custom-trackers`.
   - File based Kafka consumer group offset tracking enforcement
     - `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`
+  - Tenant-fair shared worker pool for the label-values-cardinality endpoint
+    - `-ingester.label-values-count-workers`
+    - `-ingester.label-values-count-chunk-size`
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
@@ -297,6 +300,7 @@ The following features or configuration parameters are currently deprecated and 
   - `evaluation_delay` field: use `query_offset` instead
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
 - The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 3.0.
+- The `-ingester.label-values-count-max-concurrency` parameter no longer has any effect and will be removed in a future release. Use `-ingester.label-values-count-workers` and `-ingester.label-values-count-chunk-size` instead.
 - Postings for matchers cache size (number of entries) configuration:
   - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
   - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`

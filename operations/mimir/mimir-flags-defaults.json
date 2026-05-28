@@ -365,6 +365,8 @@
   "ingester.read-reactive-limiter.correlation-window": 50,
   "ingester.read-reactive-limiter.initial-rejection-factor": 2,
   "ingester.read-reactive-limiter.max-rejection-factor": 3,
+  "ingester.label-values-count-workers": 0,
+  "ingester.label-values-count-chunk-size": 32,
   "ingester.label-values-count-max-concurrency": 16,
   "distributor.request-rate-limit": 0,
   "distributor.request-burst-size": 0,
