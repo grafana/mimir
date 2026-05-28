@@ -179,7 +179,7 @@ metadata to enrich with. See `pkg/ingester/AGENT.md` for details.
 
 ## Performance characteristics (post-optimisation)
 
-The PR landed with several allocation-reducing optimisations:
+The PR landed with several allocation-reducing optimizations:
 
 - HTTP handler: per-request `searchBatchEnvelope` + slice are pooled
   (`searchBatchPool` / `searchBatchPoolScored`); score-bearing and
