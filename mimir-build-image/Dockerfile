@@ -54,9 +54,13 @@ RUN GOARCH=$(go env GOARCH) && \
 	mv shfmt /usr/bin
 
 # renovate: datasource=github-release-attachments depName=grafana/tanka
-ENV TANKA_VERSION=0.37.0
+ENV TANKA_VERSION=v0.37.0
+# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.0
+ENV TANKA_AMD64_DIGEST=c75d4b8736724d9adab1cd5e5373eaa70249e5fafbe1f1b1caef617cbd4411a9
+# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.0
+ENV TANKA_ARM64_DIGEST=3f7af2b241c5a18a0fcef58f49d70314302841f862797b505d5d5a9eac4032f7
 RUN GOARCH=$(go env GOARCH) && \
-    curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
+    curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
 # renovate: datasource=github-release-attachments depName=golangci/golangci-lint

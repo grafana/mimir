@@ -69,8 +69,8 @@
         'mimir-build-image/Dockerfile',
       ],
       matchStrings: [
-        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\s+ENV [A-Z_]+=(\\s|\"|)(?<currentValue>[^\"\\s]*)(\"|)",
-        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+) digestVersion=(?<currentValue>.*)\\s+ENV [A-Z_]+=(\\s|\"|)(?<currentDigest>[^\"\\s]*)(\"|)"
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\s+ENV [A-Z0-9_]+=(\\s|\"|)(?<currentValue>[^\"\\s]*)(\"|)",
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+) digestVersion=(?<currentValue>.*)\\s+ENV [A-Z0-9_]+=(\\s|\"|)(?<currentDigest>[^\"\\s]*)(\"|)"
       ],
     },
     {
