@@ -5,11 +5,11 @@ description:
   Use Mimirtool to perform common tasks in Grafana Mimir or Grafana Cloud
   Metrics.
 menuTitle: Mimirtool
-title: Grafana Mimirtool
+title: Mimirtool
 weight: 40
 ---
 
-# Grafana Mimirtool
+# Mimirtool
 
 Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics.
 

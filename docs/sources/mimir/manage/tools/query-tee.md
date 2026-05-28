@@ -3,19 +3,19 @@ aliases:
   - ../../operators-guide/tools/query-tee/
 description: Use query-tee to compare query results and performance between two Grafana Mimir clusters.
 menuTitle: Query-tee
-title: Grafana Mimir query-tee
+title: Query-tee
 weight: 30
 ---
 
-# Grafana Mimir query-tee
+# Query-tee
 
-The query-tee is a standalone tool that you can use for testing purposes when comparing the query results and performance of two Grafana Mimir clusters.
-The two Mimir clusters compared by the query-tee must ingest the same series and samples.
+Query-tee is a standalone tool that you can use for testing purposes when comparing the query results and performance of two Grafana Mimir clusters.
+The two Mimir clusters compared by query-tee must ingest the same series and samples.
 
-The query-tee exposes Prometheus-compatible read API endpoints and acts as a proxy.
-When the query-tee receives a request, it performs the same request against the two backend Grafana Mimir clusters and tracks the response time of each backend, and compares the query results.
+Query-tee exposes Prometheus-compatible read API endpoints and acts as a proxy.
+When query-tee receives a request, it performs the same request against the two backend Grafana Mimir clusters and tracks the response time of each backend, and compares the query results.
 
-## Download the query-tee
+## Download query-tee
 
 - Using Docker:
 
@@ -34,20 +34,20 @@ curl -Lo query-tee https://github.com/grafana/mimir/releases/latest/download/que
 chmod +x query-tee
 ```
 
-## Configure the query-tee
+## Configure query-tee
 
-The query-tee requires the endpoints of the backend Grafana Mimir clusters.
+Query-tee requires the endpoints of the backend Grafana Mimir clusters.
 You can configure the backend endpoints by setting the `-backend.endpoints` flag to a comma-separated list of HTTP or HTTPS URLs.
 
-For each incoming request, the query-tee clones the request and sends it to each configured backend.
+For each incoming request, query-tee clones the request and sends it to each configured backend.
 
 {{< admonition type="note" >}}
-You can configure the query-tee proxy listening ports via the `-server.http-service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
+You can configure query-tee proxy listening ports via the `-server.http-service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
 {{< /admonition >}}
 
-## How the query-tee works
+## How query-tee works
 
-This section describes how the query-tee tool works.
+This section describes how query-tee tool works.
 
 ### API endpoints
 
@@ -72,16 +72,16 @@ You can configure the `<prefix>` by setting the `-server.path-prefix` flag, whic
 
 ### Pass-through requests
 
-The query-tee can optionally act as a transparent proxy for requests to routes not matching any of the supported API endpoints.
+Query-tee can optionally act as a transparent proxy for requests to routes not matching any of the supported API endpoints.
 You can enable the pass-through support setting `-proxy.passthrough-non-registered-routes=true` and configuring a preferred backend using the `-backend.preferred` flag.
 When pass-through is enabled, a request for an unsupported API endpoint is transparently proxied to the configured preferred backend.
 
 ### Authentication
 
-The query-tee supports [HTTP basic authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication).
-The query-tee can merge the HTTP basic authentication in the received request with the username and configured in a backend URL.
+Query-tee supports [HTTP basic authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication).
+Query-tee can merge the HTTP basic authentication in the received request with the username and configured in a backend URL.
 
-A request sent from the query-tee to a backend includes HTTP basic authentication when one of the following conditions is met:
+A request sent from query-tee to a backend includes HTTP basic authentication when one of the following conditions is met:
 
 - If the backend endpoint URL is configured with both a username and password, then query-tee uses it.
 - If the backend endpoint URL is configured only with a username, then query-tee keeps the configured username and injects the password received in the incoming request.
@@ -150,7 +150,7 @@ prometheus-cold:
 
 ### Select backends
 
-You can use the query-tee to either send requests to all backends, or to send a proportion of requests to all backends and the remaining requests to only the preferred backend.
+You can use query-tee to either send requests to all backends, or to send a proportion of requests to all backends and the remaining requests to only the preferred backend.
 
 #### Configure request proportion
 
@@ -191,31 +191,31 @@ The `min_data_queried_age` field supports Go duration format. Valid time units a
 
 ### Backend response selection
 
-The query-tee enables you to configure a preferred backend that selects the response to send back to the client.
-The query-tee returns the `Content-Type` header, HTTP status code, and body of the response from the preferred backend.
+Query-tee enables you to configure a preferred backend that selects the response to send back to the client.
+Query-tee returns the `Content-Type` header, HTTP status code, and body of the response from the preferred backend.
 The preferred backend can be configured via `-backend.preferred=<hostname>`.
 The value of the preferred backend configuration option must be the hostname of one of the configured backends.
 
-When a preferred backend is configured, the query-tee always returns the response from the preferred backend.
+When a preferred backend is configured, query-tee always returns the response from the preferred backend.
 
-When a preferred backend is not configured, the query-tee uses the following algorithm to select the backend response to send back to the client:
+When a preferred backend is not configured, query-tee uses the following algorithm to select the backend response to send back to the client:
 
-1. If at least one backend response status code is 2xx or 4xx, the query-tee selects the first received response whose status code is 2xx or 4xx.
-1. If no backend response status code is 2xx or 4xx, the query-tee selects the first received response regardless of the status code.
+1. If at least one backend response status code is 2xx or 4xx, query-tee selects the first received response whose status code is 2xx or 4xx.
+1. If no backend response status code is 2xx or 4xx, query-tee selects the first received response regardless of the status code.
 
 {{< admonition type="note" >}}
-The query-tee considers a 4xx response as a valid response to select because a 4xx status code is generally an invalid request and not a server-side issue.
+Query-tee considers a 4xx response as a valid response to select because a 4xx status code is generally an invalid request and not a server-side issue.
 {{< /admonition >}}
 
 ### Backend results comparison
 
-You can use the query-tee to compare query results received from multiple backends.
+You can use query-tee to compare query results received from multiple backends.
 The query results comparison can be enabled setting the flag `-proxy.compare-responses=true` and requires that:
 
 1. You've configured at least two backends by setting `-backend.endpoints`.
 1. You've configured a preferred backend by setting `-backend.preferred`.
 
-When you enable the query results comparison, the query-tee compares the response received from the preferred backend against each secondary backend individually and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`, with separate metrics for each secondary backend.
+When you enable the query results comparison, query-tee compares the response received from the preferred backend against each secondary backend individually and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`, with separate metrics for each secondary backend.
 
 By default, query-tee considers equivalent error messages as matching, even if they are not exactly the same.
 This ensures that comparison does not fail for known situations where error messages are non-deterministic.
@@ -245,7 +245,7 @@ To disable slow query logging, set `-proxy.log-slow-query-response-threshold` to
 
 ### Exported metrics
 
-The query-tee exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port configured via the flag `-server.metrics-port`:
+Query-tee exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port configured via the flag `-server.metrics-port`:
 
 ```bash
 # HELP cortex_querytee_backend_request_duration_seconds Time (in seconds) spent serving requests.
@@ -270,7 +270,7 @@ Additionally, if backend results comparison is configured, two native histograms
 
 ### Ruler remote operational mode test
 
-When the ruler is configured with the [remote evaluation mode](../../../references/architecture/components/ruler/) you can use the query-tee to compare rule evaluations too.
+When the ruler is configured with the [remote evaluation mode](../../../references/architecture/components/ruler/) you can use query-tee to compare rule evaluations too.
 To test ruler evaluations with query-tee, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler with query-tee's gRPC address:
 
 ```
