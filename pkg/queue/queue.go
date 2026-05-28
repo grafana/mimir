@@ -14,13 +14,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
 
 const (
@@ -36,54 +32,8 @@ var (
 	ErrQuerierWorkerDisconnected = errors.New("querier worker has disconnected")
 )
 
-type RequestKey struct {
-	frontendAddr string
-	queryID      uint64
-}
-
-func NewSchedulerRequestKey(frontendAddr string, queryID uint64) RequestKey {
-	return RequestKey{
-		frontendAddr: frontendAddr,
-		queryID:      queryID,
-	}
-}
-
-type SchedulerRequest struct {
-	FrontendAddr              string
-	UserID                    string
-	QueryID                   uint64
-	HttpRequest               *httpgrpc.HTTPRequest
-	ProtobufRequest           *schedulerpb.ProtobufRequest
-	StatsEnabled              bool
-	AdditionalQueueDimensions []string
-
-	EnqueueTime time.Time
-
-	Ctx        context.Context
-	CancelFunc context.CancelCauseFunc
-	QueueSpan  trace.Span
-
-	ParentSpanContext trace.SpanContext
-}
-
-func (sr *SchedulerRequest) Key() RequestKey {
-	return RequestKey{
-		frontendAddr: sr.FrontendAddr,
-		queryID:      sr.QueryID,
-	}
-}
-
-// ExpectedQueryComponentName parses the expected query component from annotations by the frontend.
-func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
-	if len(sr.AdditionalQueueDimensions) > 0 {
-		return sr.AdditionalQueueDimensions[0]
-	}
-	return unknownQueueDimension
-}
-
-// QueryRequest represents the items stored in the queue
-// which may be a SchedulerRequest when running with the standalone scheduler process,
-// or a frontend/v1 request when running with the RequestQueue embedded in the v1 frontend.
+// QueryRequest is the opaque type the queue dispatches between producers and
+// consumers. Callers cast to the concrete type they enqueued.
 type QueryRequest interface{}
 
 // RequestQueue holds incoming requests in queues, split by multiple dimensions based on properties of the request.

@@ -12,8 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/scheduler/queue"
 )
 
 // BenchmarkScheduler_ObserveInflightMaxAge measures the cost of a single call to
@@ -98,7 +96,7 @@ func BenchmarkScheduler_InflightChurn(b *testing.B) {
 func newBenchScheduler(_ *testing.B, observerEnabled bool) *Scheduler {
 	s := &Scheduler{
 		cfg:                           Config{InflightMaxAgeMetricEnabled: observerEnabled},
-		schedulerInflightRequests:     map[queue.RequestKey]*queue.SchedulerRequest{},
+		schedulerInflightRequests:     map[RequestKey]*SchedulerRequest{},
 		schedulerInflightRequestCount: atomic.NewInt64(0),
 	}
 	if observerEnabled {
@@ -108,9 +106,9 @@ func newBenchScheduler(_ *testing.B, observerEnabled bool) *Scheduler {
 	return s
 }
 
-func newBenchRequest(frontendAddr string, queryID uint64) *queue.SchedulerRequest {
+func newBenchRequest(frontendAddr string, queryID uint64) *SchedulerRequest {
 	ctx, cancel := context.WithCancelCause(context.Background())
-	return &queue.SchedulerRequest{
+	return &SchedulerRequest{
 		FrontendAddr: frontendAddr,
 		QueryID:      queryID,
 		EnqueueTime:  time.Now(),

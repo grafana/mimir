@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
+	"github.com/grafana/mimir/pkg/queue/tree"
 )
 
 const querierForgetDelay = 0
@@ -60,14 +60,13 @@ func makeWeightedRandAdditionalQueueDimensionFunc(
 const slowConsumerQueueDimension = storeGatewayQueueDimension
 
 func makeQueueConsumeFuncWithSlowQueryComponent(
-	qcu *QueryComponentUtilization,
 	slowConsumerLatency time.Duration,
 	normalConsumerLatency time.Duration,
 	report *testScenarioQueueDurationObservations,
 ) consumeRequest {
 	return func(request QueryRequest) error {
-		schedulerRequest := request.(*SchedulerRequest)
-		queryComponent := schedulerRequest.ExpectedQueryComponentName()
+		req := request.(*testQueryRequest)
+		queryComponent := req.ExpectedQueryComponentName()
 		if queryComponent == ingesterAndStoreGatewayQueueDimension {
 			// we expect the latency of a query hitting both a normal and a slowed-down query component
 			// will be constrained by the latency of the slowest query component;
@@ -75,16 +74,14 @@ func makeQueueConsumeFuncWithSlowQueryComponent(
 			// but we re-assign query component here for simplicity in logic & reporting
 			queryComponent = storeGatewayQueueDimension
 		}
-		report.Observe(schedulerRequest.UserID, queryComponent, time.Since(schedulerRequest.EnqueueTime).Seconds())
+		report.Observe(req.UserID, queryComponent, time.Since(req.EnqueueTime).Seconds())
 
-		qcu.MarkRequestSent(schedulerRequest)
 		if queryComponent == slowConsumerQueueDimension {
 			time.Sleep(slowConsumerLatency)
 		} else {
 			time.Sleep(normalConsumerLatency)
 		}
 
-		qcu.MarkRequestCompleted(schedulerRequest)
 		return nil
 	}
 }
@@ -427,11 +424,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				)
 				require.NoError(t, err)
 
-				qcu, err := NewQueryComponentUtilization(
-					promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
-				)
-				require.NoError(t, err)
-
 				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierShards
 				// so we have to override here to use the same structures as the test case
 				queue.queueBroker.tenantQuerierAssignments = &tenantQuerierShards{
@@ -463,7 +455,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				// configure queue consumers with respective latencies for processing requests
 				// which were assigned the "normal" or "slow" query component
 				consumeFunc := makeQueueConsumeFuncWithSlowQueryComponent(
-					qcu, slowConsumerLatency, normalConsumerLatency, testCaseObservations,
+					slowConsumerLatency, normalConsumerLatency, testCaseObservations,
 				)
 				queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
 					context.Background(), queue, totalRequests, numConsumers, numWorkersPerConsumer, consumeFunc,

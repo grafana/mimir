@@ -43,7 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb" //lint:ignore faillint we can't avoid using this given that's where the Protobuf definition lives
-	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
@@ -875,8 +875,8 @@ func verifyQueryComponentUtilizationLeft(t *testing.T, scheduler *Scheduler) {
 	test.Poll(t, 2*time.Second, services.Terminated, func() interface{} {
 		return scheduler.State()
 	})
-	require.Zero(t, scheduler.queue.queryComponentUtilization.GetForComponent(queue.Ingester))
-	require.Zero(t, scheduler.queue.queryComponentUtilization.GetForComponent(queue.StoreGateway))
+	require.Zero(t, scheduler.queue.queryComponentUtilization.GetForComponent(Ingester))
+	require.Zero(t, scheduler.queue.queryComponentUtilization.GetForComponent(StoreGateway))
 }
 
 type limits struct {
