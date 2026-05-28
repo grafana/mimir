@@ -1707,7 +1707,10 @@ label_values_count:
   [workers: <int> | default = 0]
 
   # (experimental) Number of label values processed per work unit submitted to
-  # the worker pool.
+  # the worker pool. Lower values increase per-request parallelism at the cost
+  # of more dispatcher work; higher values reduce dispatcher work but give a
+  # single request fewer concurrent workers, which improves cross-tenant
+  # fairness when many tenants compute cardinality at once.
   # CLI flag: -ingester.label-values-count-chunk-size
   [chunk_size: <int> | default = 32]
 ```

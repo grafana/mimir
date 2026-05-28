@@ -32,7 +32,7 @@ type LabelValuesCountConfig struct {
 // RegisterFlags registers config flags.
 func (cfg *LabelValuesCountConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.Workers, "ingester.label-values-count-workers", 0, "Number of worker goroutines used to compute label-values-count requests across all tenants. 0 uses GOMAXPROCS.")
-	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the worker pool.")
+	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the worker pool. Lower values increase per-request parallelism at the cost of more dispatcher work; higher values reduce dispatcher work but give a single request fewer concurrent workers, which improves cross-tenant fairness when many tenants compute cardinality at once.")
 }
 
 // Validate returns an error if the config is invalid.
@@ -261,6 +261,10 @@ func computeLabelValuesSeriesCount(
 			close(countCh)
 		}()
 		for start := 0; start < len(lblValues); start += chunkSize {
+			if err := ctx.Err(); err != nil {
+				countCh <- labelValueCountResult{err: err}
+				return
+			}
 			end := min(start+chunkSize, len(lblValues))
 			s, e := start, end
 			wg.Add(1)

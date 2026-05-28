@@ -5355,7 +5355,7 @@
               "kind": "field",
               "name": "chunk_size",
               "required": false,
-              "desc": "Number of label values processed per work unit submitted to the worker pool.",
+              "desc": "Number of label values processed per work unit submitted to the worker pool. Lower values increase per-request parallelism at the cost of more dispatcher work; higher values reduce dispatcher work but give a single request fewer concurrent workers, which improves cross-tenant fairness when many tenants compute cardinality at once.",
               "fieldValue": null,
               "fieldDefaultValue": 32,
               "fieldFlag": "ingester.label-values-count-chunk-size",
