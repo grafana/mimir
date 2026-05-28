@@ -1915,6 +1915,13 @@ store_gateway_client:
 # CLI flag: -querier.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
 
+# (experimental) If set to true, enables the experimental streaming label/value
+# search HTTP endpoints
+# (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's
+# experimental.search-api feature gate.
+# CLI flag: -querier.experimental-search-api-enabled
+[experimental_search_api_enabled: <boolean> | default = false]
+
 # (deprecated) If set to true, the header 'X-Filter-Queryables' can be used to
 # filter down the list of queryables that shall be used. This is useful to test
 # and monitor single queryables in isolation. Deprecated: has no effect.
