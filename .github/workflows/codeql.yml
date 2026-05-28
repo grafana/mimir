@@ -8,6 +8,7 @@ on:
   schedule:
     # Weekly run on Mondays at 07:00 UTC to pick up newly-published queries.
     - cron: '0 7 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
