@@ -45,7 +45,7 @@ RUN apt-get update && \
 # Set --ignore-scripts to avoid arbitrary code execution in build hook scripts. (Prettier 2.3.2 doesn't happen to have any.)
 RUN npm install -g --ignore-scripts prettier@2.3.2
 
-# renovate: depName=github.com/mvdan/sh
+# renovate: datasource=github-release-attachments depName=mvdan/sh
 ENV SHFMT_VERSION=3.13.1
 RUN GOARCH=$(go env GOARCH) && \
     URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
@@ -53,13 +53,13 @@ RUN GOARCH=$(go env GOARCH) && \
 	chmod +x shfmt && \
 	mv shfmt /usr/bin
 
-# renovate: depName=github.com/grafana/tanka
+# renovate: datasource=github-release-attachments depName=grafana/tanka
 ENV TANKA_VERSION=0.37.0
 RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
-# renovate: depName=github.com/golangci/golangci-lint
+# renovate: datasource=github-release-attachments depName=golangci/golangci-lint
 ENV GOLANGCI_LINT_VERSION=2.12.2
 RUN set -o pipefail && \
     VERSION_SLUG=golangci-lint-${GOLANGCI_LINT_VERSION}-linux-$(go env GOARCH) && \
@@ -70,7 +70,7 @@ RUN set -o pipefail && \
     tar -xzvf "/tmp/$TARBALL" -C /usr/bin --strip-components=1 "$VERSION_SLUG/golangci-lint" && \
     rm /tmp/$TARBALL
 
-# renovate: depName=github.com/containers/skopeo
+# renovate: datasource=github-release-attachments depName=containers/skopeo
 ENV SKOPEO_VERSION=v1.22.2
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \

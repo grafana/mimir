@@ -69,9 +69,9 @@
         'mimir-build-image/Dockerfile',
       ],
       matchStrings: [
-        '# renovate: depName=github.com/(?<depName>[^\\s]+)\\s+ENV [A-Z_]+=(?<currentValue>[^\\s]+)\\s+',
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\s+ENV [A-Z_]+=(\\s|\"|)(?<currentValue>[^\"\\s]*)(\"|)",
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+) digestVersion=(?<currentValue>.*)\\s+ENV [A-Z_]+=(\\s|\"|)(?<currentDigest>[^\"\\s]*)(\"|)"
       ],
-      datasourceTemplate: 'github-tags',
     },
     {
       customType: 'regex',
