@@ -6942,7 +6942,25 @@ func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, i
 		return nil, nil, err
 	}
 
+	scheduleIngesterSubservicesCleanup(t, ingester)
 	return ingester, ingestersRing, nil
+}
+
+// scheduleIngesterSubservicesCleanup stops the subservices that ingester.New()
+// registers with i.subservicesWatcher before they're started. Each
+// WatchService call spawns a listener goroutine that only exits once the
+// watched service reaches a terminal state. Tests that don't run the full
+// ingester lifecycle (negative paths, validation, manual-component tests)
+// would otherwise leak those goroutines and trip the package-level goleak
+// check. StopAsync is idempotent, so calling it on services that the test
+// already shut down via the normal lifecycle is a safe no-op.
+func scheduleIngesterSubservicesCleanup(t testing.TB, ingester *Ingester) {
+	t.Cleanup(func() {
+		ingester.compactionService.StopAsync()
+		ingester.metricsUpdaterService.StopAsync()
+		ingester.metadataPurgerService.StopAsync()
+		ingester.labelValuesCountPool.StopAsync()
+	})
 }
 
 func startAndWaitHealthy(t testing.TB, i *Ingester, r ring.ReadRing) {
