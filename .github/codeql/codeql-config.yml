@@ -4,9 +4,7 @@ queries:
   - uses: security-extended
 
 paths-ignore:
-  #- vendor
-  - jsonnet-tests/vendor
-  - operations/mimir-mixin/vendor
+  - "**/vendor/**"
   - "**/testdata/**"
   - "**/*.min.js"
   - "**/*.min.css"
