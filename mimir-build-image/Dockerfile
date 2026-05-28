@@ -79,22 +79,7 @@ RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers
 COPY go.mod go.sum /tools/
 RUN \
   cd /tools && \
-	go install github.com/client9/misspell/cmd/misspell && \
-	go install google.golang.org/protobuf/cmd/protoc-gen-go && \
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc && \
-	go install github.com/gogo/protobuf/protoc-gen-gogoslick && \
-	go install github.com/weaveworks/tools/cover && \
-	go install github.com/fatih/faillint && \
-	go install github.com/campoy/embedmd/v2 && \
-	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb && \
-	go install github.com/monitoring-mixins/mixtool/cmd/mixtool && \
-	go install github.com/mikefarah/yq/v4 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnet && \
-	go install github.com/google/go-jsonnet/cmd/jsonnetfmt && \
-	go install github.com/norwoodj/helm-docs/cmd/helm-docs && \
-	go install github.com/open-policy-agent/conftest && \
-	go install github.com/uber-go/gopatch && \
-	go install github.com/bufbuild/buf/cmd/buf && \
+	go install $(go mod edit -json | jq -r '.Tool.[].Path') && \
 	rm -rf /go/pkg /go/src /root/.cache /tools/go.mod /tools/go.sum
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
