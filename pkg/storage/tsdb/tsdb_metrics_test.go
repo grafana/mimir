@@ -232,6 +232,15 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user2"} 100
 			cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="user3"} 100
 
+			# HELP cortex_ingester_tsdb_head_samples_appended_total Total number of appended samples.
+			# TYPE cortex_ingester_tsdb_head_samples_appended_total counter
+			cortex_ingester_tsdb_head_samples_appended_total{type="float", user="user1"} 123450
+			cortex_ingester_tsdb_head_samples_appended_total{type="float", user="user2"} 857870
+			cortex_ingester_tsdb_head_samples_appended_total{type="float", user="user3"} 9990
+			cortex_ingester_tsdb_head_samples_appended_total{type="histogram", user="user1"} 24690
+			cortex_ingester_tsdb_head_samples_appended_total{type="histogram", user="user2"} 171574
+			cortex_ingester_tsdb_head_samples_appended_total{type="histogram", user="user3"} 1998
+
 			# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user1"} 3
@@ -469,6 +478,13 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
 			cortex_ingester_tsdb_exemplar_exemplars_in_storage 20
+
+			# HELP cortex_ingester_tsdb_head_samples_appended_total Total number of appended samples.
+			# TYPE cortex_ingester_tsdb_head_samples_appended_total counter
+			cortex_ingester_tsdb_head_samples_appended_total{type="float", user="user1"} 123450
+			cortex_ingester_tsdb_head_samples_appended_total{type="float", user="user2"} 857870
+			cortex_ingester_tsdb_head_samples_appended_total{type="histogram", user="user1"} 24690
+			cortex_ingester_tsdb_head_samples_appended_total{type="histogram", user="user2"} 171574
 
 			# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
@@ -737,6 +753,13 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of appended out-of-order samples.",
 	})
 	outOfOrderSamplesAppendedTotal.Add(3)
+
+	samplesAppendedTotal := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_samples_appended_total",
+		Help: "Total number of appended samples.",
+	}, []string{"type"})
+	samplesAppendedTotal.WithLabelValues("float").Add(float64(base * 10))
+	samplesAppendedTotal.WithLabelValues("histogram").Add(float64(base * 2))
 
 	chunksMmappedTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_mmap_chunks_total",

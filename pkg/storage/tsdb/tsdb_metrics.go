@@ -54,6 +54,7 @@ type TSDBMetrics struct {
 	tsdbBlocksBytes        *prometheus.Desc
 
 	tsdbOOOAppendedSamples *prometheus.Desc
+	tsdbAppendedSamples    *prometheus.Desc
 
 	checkpointDeleteFail    *prometheus.Desc
 	checkpointDeleteTotal   *prometheus.Desc
@@ -234,6 +235,10 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 			"tsdb_out_of_order_samples_appended_total",
 			"Total number of out-of-order samples appended.",
 			[]string{"user"}, nil),
+		tsdbAppendedSamples: prometheus.NewDesc(
+			"tsdb_head_samples_appended_total",
+			"Total number of appended samples.",
+			[]string{"user", "type"}, nil),
 
 		memSeries: prometheus.NewDesc(
 			"memory_series",
@@ -316,6 +321,7 @@ func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbExemplarsOutOfOrder
 
 	out <- sm.tsdbOOOAppendedSamples
+	out <- sm.tsdbAppendedSamples
 
 	out <- sm.memSeries
 	out <- sm.memSeriesCreatedTotal
@@ -369,6 +375,7 @@ func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfGaugesPerTenant(out, sm.tsdbExemplarLastTs, "prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds")
 	data.SendSumOfCounters(out, sm.tsdbExemplarsOutOfOrder, "prometheus_tsdb_exemplar_out_of_order_exemplars_total")
 	data.SendSumOfCountersPerTenant(out, sm.tsdbOOOAppendedSamples, "prometheus_tsdb_head_out_of_order_samples_appended_total")
+	data.SendSumOfCountersPerTenant(out, sm.tsdbAppendedSamples, "prometheus_tsdb_head_samples_appended_total", dskit_metrics.WithLabels("type"))
 	data.SendSumOfGauges(out, sm.memSeries, "prometheus_tsdb_head_series")
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
