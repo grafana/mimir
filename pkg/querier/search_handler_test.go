@@ -459,6 +459,163 @@ func TestSearchLabelNamesHandler_UnrelatedLimitErrorDoesNotFlipHasMore(t *testin
 		"non-search MaxLimitError must not be treated as a search-result truncation signal")
 }
 
+// TestSearchHandlers_ResultJSONKey verifies that the wire-format JSON response conforms to spec.
+// The label_names and metric_names return a result with `name` as the key. Where-as label_values
+// returns a result with `value` as the key. This test confirms that the expected result shape is returned
+// for each API.
+func TestSearchHandlers_ResultJSONKey(t *testing.T) {
+	resultSet := func() storage.SearchResultSet {
+		return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("prod", 0.9)}, nil)
+	}
+	tests := []struct {
+		name       string
+		newHandler func(storage.Queryable) http.Handler
+		url        string
+		wantKey    string // key that must be present
+		absentKey  string // key that must not be present
+	}{
+		{
+			name: "label_names emits name",
+			newHandler: func(q storage.Queryable) http.Handler {
+				return SearchLabelNamesHandler(q, enabledSearchConfig(), nil)
+			},
+			url:       "/api/v1/search/label_names?include_score=true",
+			wantKey:   "name",
+			absentKey: "value",
+		},
+		{
+			name: "label_values emits value",
+			newHandler: func(q storage.Queryable) http.Handler {
+				return SearchLabelValuesHandler(q, enabledSearchConfig(), nil)
+			},
+			url:       "/api/v1/search/label_values?label=env&include_score=true",
+			wantKey:   "value",
+			absentKey: "name",
+		},
+		{
+			name: "metric_names emits name",
+			newHandler: func(q storage.Queryable) http.Handler {
+				return SearchMetricNamesHandler(q, enabledSearchConfig(), nil)
+			},
+			url:       "/api/v1/search/metric_names?include_score=true",
+			wantKey:   "name",
+			absentKey: "value",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mq := &searchMockQuerier{
+				namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+					return resultSet()
+				},
+				valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+					return resultSet()
+				},
+			}
+			h := tc.newHandler(newSearchMockQueryable(mq))
+
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, newSearchHandlerRequest(t, tc.url))
+			require.Equal(t, http.StatusOK, w.Code)
+
+			lines := drainNDJSON(t, w.Body.String())
+			require.Len(t, lines, 2, "one batch + one trailer")
+			rec := lines[0]["results"].([]any)[0].(map[string]any)
+			require.Contains(t, rec, tc.wantKey, "endpoint must emit %q as the JSON key per upstream contract", tc.wantKey)
+			assert.Equal(t, "prod", rec[tc.wantKey])
+			_, hasAbsent := rec[tc.absentKey]
+			assert.False(t, hasAbsent, "endpoint must not emit %q; that is a different endpoint's contract", tc.absentKey)
+			assert.InDelta(t, 0.9, rec["score"], 1e-9)
+		})
+	}
+}
+
+// TestSearchLabelValuesHandler_HasMoreVsClampWarning exercises the full
+// decision matrix for `has_more` against the per-tenant clamp warning.
+func TestSearchLabelValuesHandler_HasMoreVsClampWarning(t *testing.T) {
+	const resultCount = 5
+
+	tests := []struct {
+		name        string
+		urlLimit    string
+		emitWarning bool
+		tenantCap   int // only meaningful when emitWarning is true
+		wantHasMore bool
+		wantWarning bool
+		why         string
+	}{
+		{
+			name:        "limit=0 result count below tenant cap",
+			urlLimit:    "0",
+			emitWarning: true,
+			tenantCap:   10_000,
+			wantHasMore: false,
+			wantWarning: true,
+			why:         "requested unlimited but although tenant cap exists the result count is below the cap",
+		},
+		{
+			name:        "requested limit under tenant cap",
+			urlLimit:    "100",
+			emitWarning: false,
+			wantHasMore: false,
+			wantWarning: false,
+			why:         "requested limit is below the tenant cap",
+		},
+		{
+			name:        "requested limit over tenant cap",
+			urlLimit:    "200",
+			emitWarning: true,
+			tenantCap:   resultCount,
+			wantHasMore: true,
+			wantWarning: true,
+			//   clampEnforcedMin >= 0 && emitted >= clampEnforcedMin - hasMore=true
+			why: "requested 200 which is above the tenant cap of 5 and there were 5 results.",
+		},
+		{
+			name:        "limit=0 with no tenant cap configured",
+			urlLimit:    "0",
+			emitWarning: false,
+			wantHasMore: false,
+			wantWarning: false,
+			why:         "requested unlimited but there is no tenant cap configured",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			results := make([]storage.SearchResult, 0, resultCount)
+			for i := 0; i < resultCount; i++ {
+				results = append(results, sr(fmt.Sprintf("v%d", i), 1))
+			}
+			var warns annotations.Annotations
+			if tc.emitWarning {
+				warns.Add(NewMaxLimitError(0, tc.tenantCap, validation.MaxLabelValuesLimitFlag))
+			}
+			mq := &searchMockQuerier{
+				valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+					return storage.NewSearchResultSetFromSlice(results, warns)
+				},
+			}
+			h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=instance&limit="+tc.urlLimit))
+
+			lines := drainNDJSON(t, w.Body.String())
+			trailer := lines[len(lines)-1]
+			assert.Equal(t, "success", trailer["status"])
+			assert.Equal(t, tc.wantHasMore, trailer["has_more"], tc.why)
+
+			warnsField, _ := trailer["warnings"].([]any)
+			if tc.wantWarning {
+				require.Len(t, warnsField, 1, "the clamp warning must always be relayed so clients know a cap was applied")
+				assert.Contains(t, warnsField[0], validation.MaxLabelValuesLimitFlag)
+			} else {
+				assert.Empty(t, warnsField, "no clamp adjustment occurred; trailer must carry no warning")
+			}
+		})
+	}
+}
+
 // errSearchResultSet emits one result then surfaces an error from Err().
 type errSearchResultSet struct {
 	results []storage.SearchResult

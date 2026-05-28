@@ -46,10 +46,25 @@ const (
 	maxSearchTermsPerRequest = 32
 )
 
-// searchResultRecord is the JSON shape of a single result emitted on the
-// wire. Score is optional (controlled by include_score); Type/Help/Unit
-// are optional (controlled by include_metadata).
-type searchResultRecord struct {
+// Per-endpoint result records. The label-values endpoint uses "value" as
+// its JSON key; label-names and metric-names use "name". Matches the
+// upstream Prometheus result shapes (searchLabelNameResult,
+// searchLabelValueResult, searchMetricNameResult).
+
+type searchLabelNameRecord struct {
+	Name  string   `json:"name"`
+	Score *float64 `json:"score,omitempty"`
+}
+
+type searchLabelValueRecord struct {
+	Value string   `json:"value"`
+	Score *float64 `json:"score,omitempty"`
+}
+
+// searchMetricNameRecord carries optional Type/Help/Unit fields for the
+// metric-names endpoint. They are not yet populated by Mimir but the wire
+// shape is kept compatible with upstream.
+type searchMetricNameRecord struct {
 	Name  string   `json:"name"`
 	Score *float64 `json:"score,omitempty"`
 	Type  string   `json:"type,omitempty"`
@@ -59,8 +74,8 @@ type searchResultRecord struct {
 
 // searchBatchEnvelope is the per-line JSON object for streaming result
 // batches. Warnings (when any) ride on the trailer, not on the batches.
-type searchBatchEnvelope struct {
-	Results []searchResultRecord `json:"results"`
+type searchBatchEnvelope[T any] struct {
+	Results []T `json:"results"`
 }
 
 // searchTrailerEnvelope is the final NDJSON line on a successful stream.
@@ -361,7 +376,14 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 			return searcher.SearchLabelNames(r.Context(), req.params, req.hints, m...)
 		})
 		defer rs.Close()
-		streamSearchNDJSON(w, rs, req)
+		streamSearchNDJSON(w, rs, req, func(r storage.SearchResult) searchLabelNameRecord {
+			rec := searchLabelNameRecord{Name: r.Value}
+			if req.includeScore {
+				s := r.Score
+				rec.Score = &s
+			}
+			return rec
+		})
 	})
 }
 
@@ -387,7 +409,14 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return searcher.SearchLabelValues(r.Context(), req.labelName, req.params, req.hints, m...)
 		})
 		defer rs.Close()
-		streamSearchNDJSON(w, rs, req)
+		streamSearchNDJSON(w, rs, req, func(r storage.SearchResult) searchLabelValueRecord {
+			rec := searchLabelValueRecord{Value: r.Value}
+			if req.includeScore {
+				s := r.Score
+				rec.Score = &s
+			}
+			return rec
+		})
 	})
 }
 
@@ -413,7 +442,14 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return searcher.SearchLabelValues(r.Context(), model.MetricNameLabel, req.params, req.hints, m...)
 		})
 		defer rs.Close()
-		streamSearchNDJSON(w, rs, req)
+		streamSearchNDJSON(w, rs, req, func(r storage.SearchResult) searchMetricNameRecord {
+			rec := searchMetricNameRecord{Name: r.Value}
+			if req.includeScore {
+				s := r.Score
+				rec.Score = &s
+			}
+			return rec
+		})
 	})
 }
 
@@ -472,7 +508,12 @@ func writeSearcherForRequestError(w http.ResponseWriter, err error) {
 // vs writeStreamSearchError). Once any batch has been flushed, headers are
 // on the wire and a later iterator error rides on a status="error" NDJSON
 // trailer instead of an HTTP error code.
-func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *searchRequest) {
+//
+// build maps each storage.SearchResult to the endpoint-specific record
+// shape (label-names, label-values, metric-names). Score handling lives
+// in the per-endpoint builder so the wire-shape contract is enforced at
+// the call site.
+func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet, req *searchRequest, build func(storage.SearchResult) T) {
 	flusher, _ := w.(http.Flusher)
 	enc := json.NewEncoder(w)
 	// Don't HTML-escape — search values may legitimately contain <, >, & and
@@ -481,7 +522,7 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 
 	flushedAny := false
 	emitted := 0
-	batch := make([]searchResultRecord, 0, req.batchSize)
+	batch := make([]T, 0, req.batchSize)
 	flushBatch := func() error {
 		if len(batch) == 0 {
 			return nil
@@ -490,7 +531,7 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 			w.Header().Set("Content-Type", searchAPIContentType)
 			w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 		}
-		env := searchBatchEnvelope{Results: batch}
+		env := searchBatchEnvelope[T]{Results: batch}
 		if err := enc.Encode(env); err != nil {
 			return err
 		}
@@ -512,13 +553,7 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 		if req.limit > 0 && emitted > req.limit {
 			break
 		}
-		r := rs.At()
-		rec := searchResultRecord{Name: r.Value}
-		if req.includeScore {
-			s := r.Score
-			rec.Score = &s
-		}
-		batch = append(batch, rec)
+		batch = append(batch, build(rs.At()))
 		if len(batch) >= req.batchSize {
 			if err := flushBatch(); err != nil {
 				return
@@ -558,9 +593,13 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 	//      positive that "emitted >= limit" would have when the data
 	//      exactly fills req.limit.
 	//   2. A per-source clamp warning (*MaxLimitError on the search
-	//      label-{names,values} flags). The tenant ceiling can cut the
-	//      effective limit below req.limit before the probe even reaches
-	//      the data, so the probe alone is not enough.
+	//      label-{names,values} flags) AND the iterator actually
+	//      saturated the post-clamp cap. The clamp warning fires when the
+	//      effective limit was cut (e.g. limit=0 raised to the tenant
+	//      ceiling), but iteration may still finish below the cap with
+	//      no truncation. Requiring emitted >= enforced avoids the false
+	//      positive that "clamp fired" alone would have for limit=0
+	//      requests against tenants with a positive ceiling.
 	trailer := searchTrailerEnvelope{Status: "success"}
 	// If no batches were flushed (e.g. the result set is empty), ensure the
 	// NDJSON content type and the internal streaming header are still set
@@ -569,14 +608,21 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 		w.Header().Set("Content-Type", searchAPIContentType)
 		w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 	}
-	clampFired := false
+	// clampEnforcedMin tracks the smallest post-clamp cap observed across
+	// per-source warnings. -1 means "no clamp fired".
+	clampEnforcedMin := -1
 	for _, warn := range rs.Warnings() {
 		trailer.Warnings = append(trailer.Warnings, warn.Error())
-		if isSearchLimitWarning(warn) {
-			clampFired = true
+		if enforced, ok := searchClampEnforced(warn); ok {
+			if clampEnforcedMin < 0 || enforced < clampEnforcedMin {
+				clampEnforcedMin = enforced
+			}
 		}
 	}
-	if clampFired || (req.limit > 0 && emitted > req.limit) {
+	switch {
+	case req.limit > 0 && emitted > req.limit:
+		trailer.HasMore = true
+	case clampEnforcedMin >= 0 && emitted >= clampEnforcedMin:
 		trailer.HasMore = true
 	}
 	_ = enc.Encode(trailer)
@@ -585,16 +631,20 @@ func streamSearchNDJSON(w http.ResponseWriter, rs storage.SearchResultSet, req *
 	}
 }
 
-// isSearchLimitWarning reports whether warn signals that a per-source
-// label-names / label-values limit clamped the request. Any other
-// LimitError (e.g. series-query length) is ignored here — only clamps
-// that truncate the search result count should flip has_more.
-func isSearchLimitWarning(warn error) bool {
+// searchClampEnforced reports whether warn is a per-source label-names /
+// label-values clamp warning and, if so, returns the post-clamp cap
+// (MaxLimitError.Enforced). Any other LimitError (e.g. series-query
+// length) is ignored here — only clamps on the search result count
+// participate in has_more.
+func searchClampEnforced(warn error) (int, bool) {
 	var mle *MaxLimitError
 	if !errors.As(warn, &mle) {
-		return false
+		return 0, false
 	}
-	return mle.Flag == validation.MaxLabelNamesLimitFlag || mle.Flag == validation.MaxLabelValuesLimitFlag
+	if mle.Flag != validation.MaxLabelNamesLimitFlag && mle.Flag != validation.MaxLabelValuesLimitFlag {
+		return 0, false
+	}
+	return mle.Enforced, true
 }
 
 // statusClientClosedConnection mirrors Prometheus' 499 used for
