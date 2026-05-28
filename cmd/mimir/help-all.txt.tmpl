@@ -1693,8 +1693,12 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.label-values-count-chunk-size int
+    	[experimental] Number of label values processed per work unit submitted to the worker pool. (default 32)
   -ingester.label-values-count-max-concurrency int
-    	[experimental] Maximum concurrency used to compute a single label values count request. (default 16)
+    	[deprecated] No longer has any effect. Use -ingester.label-values-count-workers and -ingester.label-values-count-chunk-size instead. (default 16)
+  -ingester.label-values-count-workers int
+    	[experimental] Number of worker goroutines used to compute label-values-count requests across all tenants. 0 uses GOMAXPROCS.
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int

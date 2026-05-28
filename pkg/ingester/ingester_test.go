@@ -6942,6 +6942,18 @@ func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, i
 		return nil, nil, err
 	}
 
+	// ingester.New() watches several subservices via subservicesWatcher; each
+	// WatchService spawns a listener goroutine that only exits when the
+	// service reaches a terminal state. Tests that don't run the full
+	// ingester lifecycle would leak those listeners and trip the
+	// package-level goleak check. StopAsync is idempotent.
+	t.Cleanup(func() {
+		ingester.compactionService.StopAsync()
+		ingester.metricsUpdaterService.StopAsync()
+		ingester.metadataPurgerService.StopAsync()
+		ingester.labelValuesCountPool.StopAsync()
+	})
+
 	return ingester, ingestersRing, nil
 }
 

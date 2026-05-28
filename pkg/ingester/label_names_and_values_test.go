@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/workerpool"
 )
 
 // Scenario: each label name or label value is 8 bytes value. Except `label-c` label, its label name is 7 bytes in length.
@@ -331,6 +334,49 @@ func TestCountLabelValueSeries_ContextCancellation(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// TestComputeLabelValuesSeriesCount_AbortsOnCancelledContext asserts that the
+// producer goroutine stops dispatching new chunks once the caller's context is
+// cancelled, rather than iterating through every chunk before noticing.
+func TestComputeLabelValuesSeriesCount_AbortsOnCancelledContext(t *testing.T) {
+	pool, err := workerpool.New(workerpool.Config{Size: 1}, "test", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), pool))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), pool))
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	lblValues := make([]string, 1000)
+	for i := range lblValues {
+		lblValues[i] = strconv.Itoa(i)
+	}
+
+	resCh := computeLabelValuesSeriesCount(
+		ctx,
+		pool,
+		"tenant-1",
+		1, // chunkSize=1 so the loop would otherwise iterate len(lblValues) times.
+		"lblName",
+		lblValues,
+		nil,
+		nil,
+		func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error) {
+			return infinitePostings{}, nil
+		},
+	)
+
+	// With ctx already cancelled, the producer must bail on the first
+	// iteration with a single context.Canceled error result — not 1000 of them.
+	got := make([]labelValueCountResult, 0, len(lblValues))
+	for r := range resCh {
+		got = append(got, r)
+	}
+	require.Len(t, got, 1, "producer should abort after the first ctx check, not iterate all chunks")
+	require.ErrorIs(t, got[0].err, context.Canceled)
 }
 
 func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
