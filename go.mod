@@ -39,7 +39,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.51.0
-	golang.org/x/net v0.54.0
+	golang.org/x/net v0.55.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.81.0
@@ -332,7 +332,7 @@ require (
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/tools v0.45.0
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
@@ -343,7 +343,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260526092253-9bfb229f720a
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260528024839-fde2ae6d4999
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
