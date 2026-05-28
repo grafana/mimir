@@ -16,11 +16,11 @@ Three experimental HTTP endpoints, gated by
 clients perform substring / fuzzy filtering over label names and label
 values without materialising the full result set:
 
-| HTTP method  | Path                                  | Returns                                |
-|--------------|---------------------------------------|----------------------------------------|
-| `GET`/`POST` | `/api/v1/search/metric_names`         | Filtered, ordered list of metric names |
-| `GET`/`POST` | `/api/v1/search/label_names`          | Filtered, ordered list of label names  |
-| `GET`/`POST` | `/api/v1/search/label_values`         | Filtered, ordered list of label values |
+| HTTP method  | Path                          | Returns                                |
+| ------------ | ----------------------------- | -------------------------------------- |
+| `GET`/`POST` | `/api/v1/search/metric_names` | Filtered, ordered list of metric names |
+| `GET`/`POST` | `/api/v1/search/label_names`  | Filtered, ordered list of label names  |
+| `GET`/`POST` | `/api/v1/search/label_values` | Filtered, ordered list of label values |
 
 The wire contract mirrors Prometheus PR #18573. Responses are
 **NDJSON** (`application/x-ndjson`): one JSON object per line, flushed
@@ -104,16 +104,16 @@ There are **two distinct layers** where these operations are applied:
    at the multi-searcher (over distributor+blocks-store sources), and at
    the tenant-federation layer (over per-tenant sources).
 
-| Layer                          | Filter? | Order?     | Limit?            | K-way merge?                 |
-|--------------------------------|---------|------------|-------------------|------------------------------|
-| Ingester (`ingester_search.go`) | ✓       | ✓          | ✓                 | n/a (one source)             |
-| Store-gateway per-block        | ✓       | ✓          | ✓ (per-block cap) | n/a (one block)              |
-| Store-gateway (across blocks)  |         |            | enforced by merge | `MergeSearchResultSets`      |
-| Distributor (over ingesters)   |         |            | enforced by merge | `MergeSearchResultSets`      |
-| Blocks-store querier (over SGs)|         |            | enforced by merge | `MergeSearchResultSets`      |
-| Multi-searcher (querier fan)   |         |            | enforced by merge | `MergeSearchResultSets`      |
-| Tenant federation              |         |            | enforced by merge | `MergeSearchResultSets`      |
-| HTTP handler                   |         |            | enforced by `limit+1` probe | n/a                |
+| Layer                           | Filter? | Order? | Limit?                      | K-way merge?            |
+| ------------------------------- | ------- | ------ | --------------------------- | ----------------------- |
+| Ingester (`ingester_search.go`) | ✓       | ✓      | ✓                           | n/a (one source)        |
+| Store-gateway per-block         | ✓       | ✓      | ✓ (per-block cap)           | n/a (one block)         |
+| Store-gateway (across blocks)   |         |        | enforced by merge           | `MergeSearchResultSets` |
+| Distributor (over ingesters)    |         |        | enforced by merge           | `MergeSearchResultSets` |
+| Blocks-store querier (over SGs) |         |        | enforced by merge           | `MergeSearchResultSets` |
+| Multi-searcher (querier fan)    |         |        | enforced by merge           | `MergeSearchResultSets` |
+| Tenant federation               |         |        | enforced by merge           | `MergeSearchResultSets` |
+| HTTP handler                    |         |        | enforced by `limit+1` probe | n/a                     |
 
 The filter / ordering parameters (`Params` from this package and
 `*storage.SearchHints` from Prometheus) propagate through every layer
@@ -123,6 +123,7 @@ to honour them across sources.
 `storage.MergeSearchResultSets` is **vendored Prometheus** code
 (`vendor/github.com/prometheus/prometheus/storage/...`). It is a pairwise
 binary-tree k-way merge that:
+
 - respects `hints.OrderBy` (alpha asc, alpha desc, score desc),
 - enforces `hints.Limit` without materialising the full union,
 - deduplicates identical `Value` across sources (last-write-wins on score),
@@ -130,13 +131,13 @@ binary-tree k-way merge that:
 
 ## Wire protocols and batch sizes
 
-| Boundary                          | Protocol      | Batch size                                                  |
-|-----------------------------------|---------------|-------------------------------------------------------------|
-| Client ↔ querier (HTTP handler)   | **NDJSON over HTTP** (chunked, flushed per batch line) | `batch_size` URL param, **default 100**, max 10000 (`searchDefaultBatchSize` / `maxSearchBatchSize` in `pkg/querier/search_handler.go`) |
-| Querier ↔ distributor             | in-process (Go function call) | n/a                                                |
-| Distributor ↔ ingester            | **gRPC server-streaming** (`rpc SearchLabel{Names,Values} returns (stream SearchResultBatch)`) | **256 results per `*client.SearchResultBatch`** (`searchBatchSize` in `pkg/ingester/ingester_search.go`) |
-| Distributor's prefetch buffer     | Go channel    | **256 elements** (`ingesterSearchPrefetchBuffer` in `pkg/distributor/distributor_search.go`) — one wire batch in flight per ingester |
-| Querier ↔ store-gateway           | **gRPC server-streaming** | **256 results per `*storepb.SearchResultBatch`** (`searchBatchSize` in `pkg/storegateway/bucket_search.go`) |
+| Boundary                        | Protocol                                                                                       | Batch size                                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Client ↔ querier (HTTP handler) | **NDJSON over HTTP** (chunked, flushed per batch line)                                         | `batch_size` URL param, **default 100**, max 10000 (`searchDefaultBatchSize` / `maxSearchBatchSize` in `pkg/querier/search_handler.go`) |
+| Querier ↔ distributor           | in-process (Go function call)                                                                  | n/a                                                                                                                                     |
+| Distributor ↔ ingester          | **gRPC server-streaming** (`rpc SearchLabel{Names,Values} returns (stream SearchResultBatch)`) | **256 results per `*client.SearchResultBatch`** (`searchBatchSize` in `pkg/ingester/ingester_search.go`)                                |
+| Distributor's prefetch buffer   | Go channel                                                                                     | **256 elements** (`ingesterSearchPrefetchBuffer` in `pkg/distributor/distributor_search.go`) — one wire batch in flight per ingester    |
+| Querier ↔ store-gateway         | **gRPC server-streaming**                                                                      | **256 results per `*storepb.SearchResultBatch`** (`searchBatchSize` in `pkg/storegateway/bucket_search.go`)                             |
 
 The HTTP handler batches **`batch_size` records per NDJSON line** (default 100,
 caller-configurable up to 10000). Each batch line is written to the response

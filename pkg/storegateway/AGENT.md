@@ -91,10 +91,10 @@ per-block search has already honoured the hints in full.
 
 There are **two** distinct application points inside the store-gateway:
 
-| Layer | Filter | Order | Limit |
-|---|---|---|---|
-| **Per-block** (`applyPerBlockSearchHints`) | ✓ | ✓ | ✓ (per-block cap) |
-| **Cross-block** (`MergeSearchResultSets`) | (pass-through, leaves already filtered) | ✓ (re-applied across blocks) | ✓ (global cap) |
+| Layer                                      | Filter                                  | Order                        | Limit             |
+| ------------------------------------------ | --------------------------------------- | ---------------------------- | ----------------- |
+| **Per-block** (`applyPerBlockSearchHints`) | ✓                                       | ✓                            | ✓ (per-block cap) |
+| **Cross-block** (`MergeSearchResultSets`)  | (pass-through, leaves already filtered) | ✓ (re-applied across blocks) | ✓ (global cap)    |
 
 ### Cross-block: `MergeSearchResultSets`
 
@@ -174,6 +174,7 @@ concurrency — the store-gateway relies on the bucket store's own
 queue/limiter (configured at construction) to bound the goroutine count.
 
 Per-block goroutines:
+
 - pin their block by holding an `indexReader` (`b.indexReader(...)`)
   for the duration of the goroutine, defer-closed on exit (see
   `pendingReaders` ref-counting in `bucketBlock`),

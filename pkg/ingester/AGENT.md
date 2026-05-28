@@ -20,7 +20,7 @@ embeds the querier, e.g. ruler). The querier's `distributorQuerier`
 (`pkg/querier/distributor_queryable_search.go`) holds a `*Distributor`
 reference and calls into `Distributor.SearchLabel{Names,Values}` in
 `pkg/distributor/distributor_search.go`, which is what opens the gRPC
-stream to this ingester. The distributor *service* (write path) is not
+stream to this ingester. The distributor _service_ (write path) is not
 on the read-path call chain at all — the `Distributor` type is shared
 code, not a network hop.
 
@@ -112,11 +112,11 @@ loop at the next `rs.Next()` boundary.
 All three are applied **inside the underlying `storage.Searcher`**
 implementation on the TSDB head, not inside `streamSearchResults`:
 
-| Concern | Constructed where | Applied where |
-|---|---|---|
-| Filter (`*streaminglabelvalues.Filter`) | `buildSearchHints` → `streaminglabelvalues.BuildFilter(params)` | Inside `searcher.SearchLabel{Names,Values}` — per-candidate-value `Filter.Accept(value)` |
-| Ordering (`storage.Ordering`) | `protoToOrdering(wireOrdering)` | Inside the searcher (selects the source iteration order or wraps in a sorting iterator) |
-| Limit (`hints.Limit`) | Clamped to `MaxInt` in `buildSearchHints`; `0` means no limit (Prometheus convention) | Inside the searcher (early-stop when emit count reaches limit) |
+| Concern                                 | Constructed where                                                                     | Applied where                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Filter (`*streaminglabelvalues.Filter`) | `buildSearchHints` → `streaminglabelvalues.BuildFilter(params)`                       | Inside `searcher.SearchLabel{Names,Values}` — per-candidate-value `Filter.Accept(value)` |
+| Ordering (`storage.Ordering`)           | `protoToOrdering(wireOrdering)`                                                       | Inside the searcher (selects the source iteration order or wraps in a sorting iterator)  |
+| Limit (`hints.Limit`)                   | Clamped to `MaxInt` in `buildSearchHints`; `0` means no limit (Prometheus convention) | Inside the searcher (early-stop when emit count reaches limit)                           |
 
 Because the ingester is a **single-source** leaf, the limit applied here is
 the **per-source limit**. The merge layer at the distributor will re-apply
@@ -160,6 +160,7 @@ The decorator runs only when there is at least one result in the batch
 
 Store-gateway does NOT enrich metadata; the proto field comment
 (`SearchResultBatch.Result.Metadata`) is explicit about this:
+
 > Ignored by sources without metric metadata (e.g. store-gateway).
 
 ## Error handling
