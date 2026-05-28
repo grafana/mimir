@@ -162,6 +162,9 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		if err != nil {
 			return nil, fmt.Errorf("invalid fuzz_threshold: %w", err)
 		}
+		if parsed < 0 || parsed > 100 {
+			return nil, fmt.Errorf("invalid fuzz_threshold: got %v but must be between 0 and 100", parsed)
+		}
 		threshold = parsed
 	}
 
