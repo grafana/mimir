@@ -58,7 +58,7 @@
         'development/**/dev.dockerfile',
       ],
       matchStrings: [
-        'npm install.*\\s+(?<depName>[^@]+)@(?<currentValue>[^\\s]+)',
+        'npm install\\s+(?:-[^\\s]+\\s+)*(?<depName>[^@\\s]+)@(?<currentValue>[^\\s]+)',
       ],
       datasourceTemplate: 'npm',
     },
