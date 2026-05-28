@@ -168,7 +168,7 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		threshold = parsed
 	}
 
-	// Ordering: sort_by + sort_dir. sort_dir is rejected with sort_by=score.
+	// Ordering: sort_by + sort_dir
 	sortBy := q.Get("sort_by")
 	if sortBy == "" {
 		sortBy = "alpha"
