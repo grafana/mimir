@@ -545,7 +545,7 @@ func sanitizeHeaderValue(headerName, value string) string {
 }
 
 func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
-	fields = append(fields, cacheControlLogField, sanitizeHeaderValue(requestoptions.CacheControlHeader, h.Get(requestoptions.CacheControlHeader)))
+	fields = append(fields, cacheControlLogField, h.Get(requestoptions.CacheControlHeader))
 	for _, s := range headersToLog {
 		if v := sanitizeHeaderValue(s, h.Get(s)); v != "" {
 			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
