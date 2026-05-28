@@ -1,22 +1,23 @@
 ---
 aliases:
   - ../../operators-guide/tools/mimir-continuous-test/
-description: Use mimir-continuous-test to continuously run smoke tests on live Grafana Mimir clusters.
-menuTitle: Mimir-continuous-test
-title: Grafana mimir-continuous-test
+  - ./mimir-continuous-test
+description: Use continuous-test to continuously run smoke tests on live Grafana Mimir clusters.
+menuTitle: Continuous-test
+title: continuous-test
 weight: 30
 ---
 
-# Grafana mimir-continuous-test
+# Continuous-test
 
-As a developer, you can use the mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters.
+As a developer, you can use the continuous-test tool to run smoke tests on live Grafana Mimir clusters.
 This tool identifies a class of bugs that could be difficult to spot during development.
 Two operating modes are supported:
 
-- As a continuously running deployment in your environment, mimir-continuous-test can be used to detect issues on a live Grafana Mimir cluster over time.
-- As an ad-hoc smoke test tool, mimir-continuous-test can be used to validate basic functionality after configuration changes are made to a Grafana Mimir cluster.
+- As a continuously running deployment in your environment, continuous-test can be used to detect issues on a live Grafana Mimir cluster over time.
+- As an ad-hoc smoke test tool, continuous-test can be used to validate basic functionality after configuration changes are made to a Grafana Mimir cluster.
 
-## Download and run mimir-continuous-test
+## Download and run continuous-test
 
 - Using Docker:
 
@@ -38,14 +39,14 @@ mimir -target=continuous-test
 ```
 
 {{< admonition type="note" >}}
-In [Grafana Mimir 2.13](../../../release-notes/v2.13/) the mimir-continuous-test became a part of Mimir as its own target.
+In [Grafana Mimir 2.13](../../../release-notes/v2.13/) the continuous-test became a part of Mimir as its own target.
 
 The standalone `grafana/mimir-continuous-test` Docker image and mimir-continuous-test binary were deprecated in 2.13 and removed in 3.0.
 {{< /admonition >}}
 
-## Configure mimir-continuous-test
+## Configure continuous-test
 
-Mimir-continuous-test requires the endpoints of the backend Grafana Mimir clusters and the authentication for writing and querying testing metrics:
+Continuous-test requires the endpoints of the backend Grafana Mimir clusters and the authentication for writing and querying testing metrics:
 
 - Set `-tests.write-endpoint` to the base endpoint on the write path. Remove any trailing slash from the URL. The tool appends the specific API path to the URL, for example `/api/v1/push` for the remote-write API.
 - Set `-tests.read-endpoint` to the base endpoint on the read path. Remove any trailing slash from the URL. The tool appends the specific API path to the URL, for example `/api/v1/query_range` for the range-query API.
@@ -56,17 +57,17 @@ Mimir-continuous-test requires the endpoints of the backend Grafana Mimir cluste
 - Set `-tests.smoke-test` to run the test once and immediately exit. In this mode, the process exit code is non-zero when the test fails.
 
 {{< admonition type="note" >}}
-You can run `mimir -help` to list all available configuration options. All configuration options for mimir-continuous-test begin with `tests`.
+You can run `mimir -help` to list all available configuration options. All configuration options for continuous-test begin with `tests`.
 {{< /admonition >}}
 
 ## How it works
 
-Mimir-continuous-test periodically runs a suite of tests, writes data to Mimir, queries that data back, and checks if the query results match what is expected.
+Continuous-test periodically runs a suite of tests, writes data to Mimir, queries that data back, and checks if the query results match what is expected.
 The tool exposes metrics that you can use to alert on test failures. The tool logs the details about the failed tests.
 
 ### Exported metrics
 
-Mimir-continuous-test exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port that you configured via the flag `-server.metrics-port`:
+Continuous-test exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port that you configured via the flag `-server.metrics-port`:
 
 ```bash
 # HELP mimir_continuous_test_writes_total Total number of attempted write requests.
@@ -111,5 +112,5 @@ are exposed as [native histograms](../../../send/native-histograms/) and don’t
 
 ### Alerts
 
-[Grafana Mimir alerts](../../monitor-grafana-mimir/installing-dashboards-and-alerts/) include checks on failures that mimir-continuous-test tracks.
-When running mimir-continuous-test, use the provided alerts.
+[Grafana Mimir alerts](../../monitor-grafana-mimir/installing-dashboards-and-alerts/) include checks on failures that continuous-test tracks.
+When running continuous-test, use the provided alerts.
