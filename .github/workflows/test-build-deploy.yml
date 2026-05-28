@@ -686,11 +686,15 @@ jobs:
           for f in built-images/**/images.tar; do
             tar xvf $f -C /tmp/images
           done
-      - name: Login to DockerHub
-        uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Log into GAR
+        uses: grafana/shared-workflows/actions/login-to-gar@c7ad5f57693ac858c698d95783685a9cbfd91223 # login-to-gar/v1.0.1
+        with:
+          registry: us-docker.pkg.dev
       - name: Push Docker Images
         run: |
-          ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
+          ./.github/workflows/scripts/push-images.sh /tmp/images us-docker.pkg.dev/grafanalabs-global/dockerhub-mimir-prod-mirror/ $(make image-tag)
 
   send-slack-notification-on-automated-vendoring:
     needs:
