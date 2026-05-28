@@ -52,6 +52,18 @@
     },
     {
       customType: 'regex',
+      description: 'Update "npm install" commands in development Dockerfiles',
+      managerFilePatterns: [
+        'mimir-build-image/Dockerfile',
+        'development/**/dev.dockerfile',
+      ],
+      matchStrings: [
+        'npm install.*\\s+(?<depName>[^@]+)@(?<currentValue>[^\\s]+)',
+      ],
+      datasourceTemplate: 'npm',
+    },
+    {
+      customType: 'regex',
       description: 'Update tools in build image installed from Git tags',
       managerFilePatterns: [
         'mimir-build-image/Dockerfile',
