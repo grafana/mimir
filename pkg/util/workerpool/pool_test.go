@@ -130,6 +130,16 @@ func TestPool_StopDrainsInflightWork(t *testing.T) {
 	assert.Equal(t, int64(4), ran.Load())
 }
 
+func TestPool_StartingBlocksUntilWorkersAreRegistered(t *testing.T) {
+	const workers = 4
+	p := startPool(t, Config{Size: workers})
+
+	// By the time StartAndAwaitRunning returns (inside startPool), every
+	// worker must already be registered with the queue — otherwise a Submit
+	// here could land in the queue before any worker is connected.
+	require.Equal(t, float64(workers), p.queue.GetConnectedQuerierWorkersMetric())
+}
+
 func TestConfig_Validate(t *testing.T) {
 	require.NoError(t, (&Config{Size: 0}).Validate())
 	require.NoError(t, (&Config{Size: 4}).Validate())

@@ -146,9 +146,22 @@ func (p *Pool) starting(ctx context.Context) error {
 	if err := services.StartAndAwaitRunning(ctx, p.queue); err != nil {
 		return fmt.Errorf("starting worker pool queue: %w", err)
 	}
+	// Wait for each worker to finish registering with the queue before
+	// reporting the pool as running. Otherwise a Submit immediately after
+	// StartAndAwaitRunning could be enqueued before any worker is connected
+	// to the queue dispatcher, leaving the chunk idle until registration races
+	// through.
+	ready := make(chan struct{}, p.workers)
 	for i := 0; i < p.workers; i++ {
 		p.workersWg.Add(1)
-		go p.workerLoop()
+		go p.workerLoop(ready)
+	}
+	for i := 0; i < p.workers; i++ {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	return nil
 }
@@ -167,11 +180,15 @@ func (p *Pool) stopping(_ error) error {
 	return err
 }
 
-func (p *Pool) workerLoop() {
+func (p *Pool) workerLoop(ready chan<- struct{}) {
 	defer p.workersWg.Done()
 
 	conn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), poolWorkerID)
-	if err := p.queue.AwaitRegisterQuerierWorkerConn(conn); err != nil {
+	err := p.queue.AwaitRegisterQuerierWorkerConn(conn)
+	// Signal readiness even on registration failure so starting() does not
+	// deadlock waiting for a worker that has already exited.
+	ready <- struct{}{}
+	if err != nil {
 		return
 	}
 	defer p.queue.SubmitUnregisterQuerierWorkerConn(conn)
