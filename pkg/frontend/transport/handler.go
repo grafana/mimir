@@ -42,6 +42,7 @@ const (
 	StatusClientClosedRequest    = 499
 	ServiceTimingHeaderName      = "Server-Timing"
 	cacheControlLogField         = "header_cache_control"
+	redactedHeaderValue          = "**redacted**"
 	responseQueryStatsHeaderName = "X-Mimir-Response-Query-Stats"
 	encodeTimeSeconds            = "encode_time_seconds"
 	estimatedSeriesCount         = "estimated_series_count"
@@ -81,6 +82,20 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
 	f.DurationVar(&cfg.ActiveSeriesWriteTimeout, "query-frontend.active-series-write-timeout", 5*time.Minute, "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.")
+}
+
+// Validate the HandlerConfig.
+func (cfg *HandlerConfig) Validate() error {
+	var rejected []string
+	for _, h := range cfg.LogQueryRequestHeaders {
+		if isSensitiveHeaderName(h) {
+			rejected = append(rejected, h)
+		}
+	}
+	if len(rejected) > 0 {
+		return fmt.Errorf("-query-frontend.log-query-request-headers must not contain headers that carry credentials or session material: %s", strings.Join(rejected, ", "))
+	}
+	return nil
 }
 
 // Handler accepts queries and forwards them to RoundTripper. It can wait on in-flight requests and log slow queries,
@@ -493,10 +508,46 @@ func filterHeadersToLog(headersToLog []string) (filtered []string) {
 	return filtered
 }
 
+// isSensitiveHeaderName reports whether the named header carries credentials
+// or session material whose value must never be logged, regardless of operator
+// allow-list configuration.
+func isSensitiveHeaderName(name string) bool {
+	switch strings.ToLower(name) {
+	case "authorization",
+		"proxy-authorization",
+		"cookie",
+		"set-cookie",
+		"x-api-key",
+		"x-auth-token",
+		"x-amz-security-token",
+		"authentication-info",
+		"www-authenticate",
+		"proxy-authenticate",
+		"x-csrf-token",
+		"x-xsrf-token",
+		"x-access-token",
+		"x-session-token":
+		return true
+	}
+	return false
+}
+
+func sanitizeHeaderValue(headerName, value string) string {
+	if value == "" {
+		return value
+	}
+
+	if isSensitiveHeaderName(headerName) {
+		return redactedHeaderValue
+	}
+
+	return value
+}
+
 func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
-	fields = append(fields, cacheControlLogField, h.Get(requestoptions.CacheControlHeader))
+	fields = append(fields, cacheControlLogField, sanitizeHeaderValue(requestoptions.CacheControlHeader, h.Get(requestoptions.CacheControlHeader)))
 	for _, s := range headersToLog {
-		if v := h.Get(s); v != "" {
+		if v := sanitizeHeaderValue(s, h.Get(s)); v != "" {
 			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
 		}
 	}

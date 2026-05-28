@@ -26,6 +26,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/test"
@@ -1137,15 +1138,108 @@ func TestFormatRequestHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Add("X-Header-To-Log", "i should be logged!")
 	h.Add("X-Header-To-Not-Log", "i shouldn't be logged!")
+	h.Add("Authorization", "Bearer super-secret-token")
+	h.Add("X-Api-Key", "secret-api-key")
 
-	fields := formatRequestHeaders(&h, []string{"X-Header-To-Log", "X-Header-Not-Present"})
+	fields := formatRequestHeaders(&h, []string{"X-Header-To-Log", "X-Header-Not-Present", "Authorization", "X-Api-Key"})
 
 	expected := []interface{}{
 		"header_cache_control",
 		"",
 		"header_x_header_to_log",
 		"i should be logged!",
+		"header_authorization",
+		redactedHeaderValue,
+		"header_x_api_key",
+		redactedHeaderValue,
 	}
 
 	assert.Equal(t, expected, fields)
+}
+
+func TestSanitizeHeaderValue(t *testing.T) {
+	testCases := map[string]struct {
+		headerName string
+		value      string
+		expected   string
+	}{
+		"non-sensitive header passes through": {
+			headerName: "X-Custom-Header",
+			value:      "some-value",
+			expected:   "some-value",
+		},
+		"empty value returns empty": {
+			headerName: "Authorization",
+			value:      "",
+			expected:   "",
+		},
+		"Authorization is redacted":        {headerName: "Authorization", value: "Bearer abc", expected: redactedHeaderValue},
+		"authorization lowercase":          {headerName: "authorization", value: "Bearer abc", expected: redactedHeaderValue},
+		"Proxy-Authorization is redacted":  {headerName: "Proxy-Authorization", value: "Basic xyz", expected: redactedHeaderValue},
+		"Cookie is redacted":               {headerName: "Cookie", value: "session=1", expected: redactedHeaderValue},
+		"Set-Cookie is redacted":           {headerName: "Set-Cookie", value: "session=1", expected: redactedHeaderValue},
+		"X-Api-Key is redacted":            {headerName: "X-Api-Key", value: "abc", expected: redactedHeaderValue},
+		"X-Auth-Token is redacted":         {headerName: "X-Auth-Token", value: "abc", expected: redactedHeaderValue},
+		"X-Amz-Security-Token is redacted": {headerName: "X-Amz-Security-Token", value: "abc", expected: redactedHeaderValue},
+		"Authentication-Info is redacted":  {headerName: "Authentication-Info", value: "nextnonce=abc", expected: redactedHeaderValue},
+		"WWW-Authenticate is redacted":     {headerName: "WWW-Authenticate", value: "Basic realm=x", expected: redactedHeaderValue},
+		"Proxy-Authenticate is redacted":   {headerName: "Proxy-Authenticate", value: "Basic realm=x", expected: redactedHeaderValue},
+		"X-CSRF-Token is redacted":         {headerName: "X-CSRF-Token", value: "abc", expected: redactedHeaderValue},
+		"X-XSRF-Token is redacted":         {headerName: "X-XSRF-Token", value: "abc", expected: redactedHeaderValue},
+		"X-Access-Token is redacted":       {headerName: "X-Access-Token", value: "abc", expected: redactedHeaderValue},
+		"X-Session-Token is redacted":      {headerName: "X-Session-Token", value: "abc", expected: redactedHeaderValue},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, sanitizeHeaderValue(tc.headerName, tc.value))
+		})
+	}
+}
+
+func TestHandlerConfig_Validate(t *testing.T) {
+	testCases := map[string]struct {
+		headers       []string
+		expectErr     bool
+		expectErrSubs []string
+	}{
+		"empty allow-list is valid": {
+			headers:   nil,
+			expectErr: false,
+		},
+		"benign headers are valid": {
+			headers:   []string{"User-Agent", "X-Trace-Id", "X-Custom-Tenant"},
+			expectErr: false,
+		},
+		"single sensitive header is rejected": {
+			headers:       []string{"Authorization"},
+			expectErr:     true,
+			expectErrSubs: []string{"Authorization"},
+		},
+		"multiple sensitive headers are reported together": {
+			headers:       []string{"User-Agent", "Authorization", "X-Api-Key", "X-Trace-Id"},
+			expectErr:     true,
+			expectErrSubs: []string{"Authorization", "X-Api-Key"},
+		},
+		"matching is case-insensitive": {
+			headers:       []string{"AUTHORIZATION"},
+			expectErr:     true,
+			expectErrSubs: []string{"AUTHORIZATION"},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cfg := HandlerConfig{LogQueryRequestHeaders: flagext.StringSliceCSV(tc.headers)}
+			err := cfg.Validate()
+			if !tc.expectErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			for _, sub := range tc.expectErrSubs {
+				assert.Contains(t, err.Error(), sub)
+			}
+		})
+	}
 }
