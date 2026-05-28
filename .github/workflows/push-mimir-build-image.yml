@@ -170,8 +170,9 @@ jobs:
         if: needs.prepare.outputs.need_to_build == 'true'
         run: |
           set -euo pipefail
+          NEW_IMAGE_TAG=$(echo $NEW_IMAGE | cut -d ':' -f 2-)
           echo "Current build image tag is $MAIN_IMAGE_TAG"
-          echo "Built image tag is $NEW_IMAGE_TAG"
+          echo "Built image is $NEW_IMAGE, new tag is $NEW_IMAGE_TAG"
           if [ "$MAIN_IMAGE_TAG" = "$NEW_IMAGE_TAG" ]; then
             echo "Build image tag is already up to date."
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -180,7 +181,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
         env:
-          NEW_IMAGE_TAG: ${{ needs.build-push-multiarch.outputs.image-digests }}
+          NEW_IMAGE: ${{ needs.build-push-multiarch.outputs.image-digests }}
           MAIN_IMAGE_TAG: ${{ needs.prepare.outputs.main_image_tag }}
 
       # Generate the app token here (rather than earlier in the job) so we only mint one
