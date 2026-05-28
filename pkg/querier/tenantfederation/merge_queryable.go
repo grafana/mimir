@@ -337,10 +337,13 @@ func (m *mergeQuerier) SearchLabelNames(ctx context.Context, params *streamingla
 		return m.upstream.SearchLabelNames(ctx, ids[0], params, hints, matchers...)
 	}
 
-	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
-	jobs := make([]string, 0, len(matchedIDs))
-	for id := range matchedIDs {
-		jobs = append(jobs, id)
+	jobs, filteredMatchers := tenantJobsForSearch(m.idLabelName, ids, matchers)
+	// Single-job fast path: no fan-out, no merge wrapper. The upstream
+	// call already honours hints (ordering, limit, filter) for its single
+	// source; MergeSearchResultSets with a one-element input would just
+	// pass them through with extra allocations.
+	if len(jobs) == 1 {
+		return m.upstream.SearchLabelNames(ctx, jobs[0], params, hints, filteredMatchers...)
 	}
 	sets := make([]storage.SearchResultSet, len(jobs))
 	// We don't use the context passed to the per-job closure: the opened
@@ -384,9 +387,12 @@ func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, param
 		return m.upstream.SearchLabelValues(ctx, ids[0], name, params, hints, matchers...)
 	}
 
-	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
-
+	// The id-label and retain-prefix special cases need the set form of
+	// matchedIDs; the fast path used elsewhere returns nil for matchedIDs
+	// when no id-label matcher was supplied, so detect those names first
+	// and fall back to the full filter when they apply.
 	if name == m.idLabelName {
+		matchedIDs, _ := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 		return searchSyntheticIDs(ids, matchedIDs, params, hints)
 	}
 
@@ -396,9 +402,10 @@ func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, param
 		name = m.idLabelName
 	}
 
-	jobs := make([]string, 0, len(matchedIDs))
-	for id := range matchedIDs {
-		jobs = append(jobs, id)
+	jobs, filteredMatchers := tenantJobsForSearch(m.idLabelName, ids, matchers)
+	// Single-job fast path: same rationale as SearchLabelNames above.
+	if len(jobs) == 1 {
+		return m.upstream.SearchLabelValues(ctx, jobs[0], name, params, hints, filteredMatchers...)
 	}
 	sets := make([]storage.SearchResultSet, len(jobs))
 	run := func(_ context.Context, idx int) error {
@@ -660,4 +667,39 @@ func (a *addLabelsSeries) Labels() labels.Labels {
 // Iterator returns a new, independent iterator of the data of the series.
 func (a *addLabelsSeries) Iterator(i chunkenc.Iterator) chunkenc.Iterator {
 	return a.upstream.Iterator(i)
+}
+
+// tenantJobsForSearch returns the per-tenant job list and the matchers that
+// must propagate to each per-tenant call.
+//
+// Fast path: when no matcher targets idLabelName (or its retain-prefix
+// alias), every tenant ID is in scope; the function returns the ids slice
+// verbatim as the job list and the matchers slice verbatim as the filtered
+// matchers. This avoids the map allocation FilterValuesByMatchers performs
+// to track the survivor set and the follow-on map-to-slice copy in the
+// caller — the dominant per-tenant allocation cost observed in the
+// federation fan-out benchmark.
+//
+// Slow path: when at least one matcher targets idLabelName, fall back to
+// FilterValuesByMatchers which prunes the survivor set per matcher and
+// returns the unrelated matchers under the original label name.
+func tenantJobsForSearch(idLabelName string, ids []string, matchers []*labels.Matcher) (jobs []string, filteredMatchers []*labels.Matcher) {
+	retainedName := retainExistingPrefix + idLabelName
+	hasIDMatcher := false
+	for _, m := range matchers {
+		if m.Name == idLabelName || m.Name == retainedName {
+			hasIDMatcher = true
+			break
+		}
+	}
+	if !hasIDMatcher {
+		return ids, matchers
+	}
+
+	matchedIDs, fm := FilterValuesByMatchers(idLabelName, ids, matchers...)
+	jobs = make([]string, 0, len(matchedIDs))
+	for id := range matchedIDs {
+		jobs = append(jobs, id)
+	}
+	return jobs, fm
 }

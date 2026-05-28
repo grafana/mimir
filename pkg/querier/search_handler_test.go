@@ -4,10 +4,12 @@ package querier
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -1157,4 +1159,177 @@ func TestSearchMetricNamesHandler_InvalidMetadataParamReturns400(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=maybe"))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// TestDefaultSuccessTrailer_MatchesEncoderOutput pins the byte-for-byte
+// equivalence between the hand-rolled defaultSuccessTrailer constant and
+// what json.Encoder produces for a zero-warning success trailer. If
+// searchTrailerEnvelope's JSON tags, field order, or default-value
+// rendering ever change, this test forces a deliberate update to
+// defaultSuccessTrailer rather than letting the two paths drift silently.
+func TestDefaultSuccessTrailer_MatchesEncoderOutput(t *testing.T) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	require.NoError(t, enc.Encode(searchTrailerEnvelope{Status: "success"}))
+	assert.Equal(t, buf.String(), string(defaultSuccessTrailer),
+		"defaultSuccessTrailer must match json.Encoder output for the zero-warning success trailer")
+}
+
+// newBenchmarkSearchResults builds n SearchResults with uniform-length names
+// and a non-zero score. When withMetadata is true each result also carries
+// the same Type/Help/Unit fixture so the metadata-encoding cost shows up
+// across all batches.
+func newBenchmarkSearchResults(n int, withMetadata bool) []storage.SearchResult {
+	out := make([]storage.SearchResult, n)
+	for i := 0; i < n; i++ {
+		if withMetadata {
+			out[i] = srMD(fmt.Sprintf("v%07d", i), 0.5, model.MetricTypeCounter, "help text", "seconds")
+		} else {
+			out[i] = sr(fmt.Sprintf("v%07d", i), 0.5)
+		}
+	}
+	return out
+}
+
+// benchmarkSearchHandlerRequest builds an authenticated GET request for the
+// given handler path; the benchmark counterpart of newSearchHandlerRequest.
+func benchmarkSearchHandlerRequest(target string) *http.Request {
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	return r.WithContext(user.InjectOrgID(r.Context(), "test"))
+}
+
+// BenchmarkSearchLabelNamesHandler_Encoding isolates the NDJSON encoding +
+// batching cost of the streaming handler using an in-process mock searcher.
+// Results are pre-built once per sub-case and recycled per request via a
+// fresh NewSearchResultSetFromSlice iterator, so the timed loop reflects the
+// per-record encoder + per-batch flush path, not data generation.
+func BenchmarkSearchLabelNamesHandler_Encoding(b *testing.B) {
+	type benchCase struct {
+		results      int
+		batchSize    int
+		includeScore bool
+	}
+	cases := []benchCase{
+		{10, 100, false},
+		{100, 100, false},
+		{1000, 100, false},
+		{10_000, 100, false},
+		{1000, 1, false},    // smallest batch_size: per-batch flush dominates
+		{1000, 1000, false}, // single big batch
+		{1000, 100, true},   // include_score adds a JSON field per record
+	}
+
+	for _, c := range cases {
+		c := c
+		fixture := newBenchmarkSearchResults(c.results, false)
+		mq := &searchMockQuerier{
+			namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+				return storage.NewSearchResultSetFromSlice(fixture, nil)
+			},
+		}
+		h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+		// limit must be >= len(fixture) so the iterator emits every result.
+		target := fmt.Sprintf("/api/v1/search/label_names?batch_size=%d&limit=%d", c.batchSize, c.results)
+		if c.includeScore {
+			target += "&include_score=true"
+		}
+		name := fmt.Sprintf("results=%d/batch=%d/include_score=%t", c.results, c.batchSize, c.includeScore)
+
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, benchmarkSearchHandlerRequest(target))
+				if w.Code != http.StatusOK {
+					b.Fatalf("unexpected status %d", w.Code)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkSearchMetricNamesHandler_MetadataEncoding pins the marginal cost
+// of the optional include_metadata=true path on /search/metric_names. The
+// underlying mock returns results carrying inline metadata; the handler
+// must serialise Type/Help/Unit when include_metadata=true and elide them
+// when it is false.
+func BenchmarkSearchMetricNamesHandler_MetadataEncoding(b *testing.B) {
+	for _, results := range []int{100, 1000} {
+		for _, withMetadata := range []bool{false, true} {
+			results, withMetadata := results, withMetadata
+			fixture := newBenchmarkSearchResults(results, withMetadata)
+			mq := &searchMockQuerier{
+				valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+					return storage.NewSearchResultSetFromSlice(fixture, nil)
+				},
+			}
+			h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+			target := fmt.Sprintf("/api/v1/search/metric_names?limit=%d&include_metadata=%t", results, withMetadata)
+			name := fmt.Sprintf("results=%d/include_metadata=%t", results, withMetadata)
+
+			b.Run(name, func(b *testing.B) {
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					w := httptest.NewRecorder()
+					h.ServeHTTP(w, benchmarkSearchHandlerRequest(target))
+					if w.Code != http.StatusOK {
+						b.Fatalf("unexpected status %d", w.Code)
+					}
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkSearchLabelNamesHandler_OverHTTP runs a single sub-case through
+// a real httptest.NewServer + http.Client so chunked-encoding cost shows up
+// honestly. Gated by testing.Short(): the in-memory Encoding benchmark above
+// covers the encoding cost without paying the network round-trip tax.
+func BenchmarkSearchLabelNamesHandler_OverHTTP(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping HTTP-server benchmark in -short mode")
+	}
+	const results = 1000
+	fixture := newBenchmarkSearchResults(results, false)
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(fixture, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	// Inject the tenant org ID server-side so the client request only needs
+	// to issue a plain HTTP GET, matching what production auth middleware
+	// would do upstream of the handler.
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(user.InjectOrgID(r.Context(), "test")))
+	})
+	srv := httptest.NewServer(wrapped)
+	defer srv.Close()
+
+	url := srv.URL + fmt.Sprintf("/api/v1/search/label_names?limit=%d", results)
+	client := srv.Client()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resp, err := client.Get(url)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			b.Fatalf("unexpected status %d", resp.StatusCode)
+		}
+		// Drain to EOF so the server-side chunked write finishes before the
+		// next request; otherwise the keep-alive connection stalls.
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			b.Fatal(err)
+		}
+		resp.Body.Close()
+	}
 }

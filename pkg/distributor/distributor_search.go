@@ -139,10 +139,10 @@ func (d *Distributor) openIngesterSearchStreams(
 			dscCancel(err)
 			return nil, err
 		}
-		inner := newIngesterSearchResultSet(stream, func() {
-			streamCancel(nil)
-			dscCancel(nil)
-		})
+		// Embed the two cancel funcs directly on the result-set struct so
+		// the per-ingester closure that used to capture them no longer
+		// allocates.
+		inner := newIngesterSearchResultSet(stream, streamCancel, dscCancel)
 		return mimirstorage.NewConcurrentSearchResultSet(ctx, inner, ingesterSearchPrefetchBuffer), nil
 	}
 
@@ -202,8 +202,9 @@ func collectOrCleanupSearchSets(
 // stream, including warning-only trailer batches. Not safe for concurrent
 // use; cancel runs on Close to tear down the RPC.
 type ingesterSearchResultSet struct {
-	stream searchStream
-	cancel func()
+	stream       searchStream
+	streamCancel context.CancelCauseFunc
+	dscCancel    context.CancelCauseFunc
 
 	batch *ingester_client.SearchResultBatch
 	idx   int
@@ -214,8 +215,17 @@ type ingesterSearchResultSet struct {
 	done     bool
 }
 
-func newIngesterSearchResultSet(stream searchStream, cancel func()) *ingesterSearchResultSet {
-	return &ingesterSearchResultSet{stream: stream, cancel: cancel}
+// newIngesterSearchResultSet stores the two cancel funcs as struct
+// fields so the constructor does not need to allocate a closure to
+// bundle them — Close calls both directly.
+//
+// Precondition: streamCancel and dscCancel must either both be non-nil
+// (the production path: see openIngesterSearchStreams above) or both be
+// nil (the in-process test path, where there's no gRPC stream or ring
+// resource to release). Close() uses streamCancel as the guard for both,
+// so a mismatched pair would NPE on Close.
+func newIngesterSearchResultSet(stream searchStream, streamCancel, dscCancel context.CancelCauseFunc) *ingesterSearchResultSet {
+	return &ingesterSearchResultSet{stream: stream, streamCancel: streamCancel, dscCancel: dscCancel}
 }
 
 // Next advances and caches the result in s.cur so At is idempotent (the
@@ -271,9 +281,11 @@ func (s *ingesterSearchResultSet) At() storage.SearchResult { return s.cur }
 func (s *ingesterSearchResultSet) Warnings() annotations.Annotations { return s.warnings }
 func (s *ingesterSearchResultSet) Err() error                        { return s.err }
 func (s *ingesterSearchResultSet) Close() error {
-	if s.cancel != nil {
-		s.cancel()
-		s.cancel = nil
+	if s.streamCancel != nil {
+		s.streamCancel(nil)
+		s.dscCancel(nil)
+		s.streamCancel = nil
+		s.dscCancel = nil
 	}
 	return nil
 }

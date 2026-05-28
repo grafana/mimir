@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
@@ -327,4 +328,220 @@ func TestStreamBucketSearchResultsHonoursCtxCancellation(t *testing.T) {
 	err := streamBucketSearchResults(ctx, rs, nil, send)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled), "expected context.Canceled, got %v", err)
+}
+
+// prepareBenchmarkSearchStore builds a BucketStore backed by the same series
+// fixture used by BenchmarkBucketStoreLabelValues so the search benchmarks
+// here and the legacy LabelValues benchmark there can be compared
+// apples-to-apples. Cache is the noopCache provided by defaultPrepareStoreConfig,
+// which models the worst-case "cold index cache" production scenario.
+// minTimeMs / maxTimeMs come straight from the suite's bookkeeping fields
+// and are already in milliseconds (i.e. ready for *Request{Start,End}).
+func prepareBenchmarkSearchStore(b *testing.B) (store *BucketStore, minTimeMs, maxTimeMs int64) {
+	b.Helper()
+	dir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = bkt.Close() })
+
+	series := generateSeries([]int{1, 10, 100, 1000})
+	series = append(series, prefixLabels("high_cardinality_", generateSeries([]int{1, 1_000_000}))...)
+	b.Logf("Total %d series generated", len(series))
+
+	cfg := defaultPrepareStoreConfig(b)
+	cfg.tempDir = dir
+	cfg.series = series
+	cfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
+
+	s := prepareStoreWithTestBlocks(b, bkt, cfg)
+	return s.store, s.minTime, s.maxTime
+}
+
+// BenchmarkBucketStoreSearchLabelValues exercises BucketStore.SearchLabelValues
+// across cardinality buckets matching BenchmarkBucketStoreLabelValues so the
+// numbers line up. Filter and ordering variations cover the per-block search
+// path's fast and slow lanes.
+func BenchmarkBucketStoreSearchLabelValues(b *testing.B) {
+	store, minTimeMs, maxTimeMs := prepareBenchmarkSearchStore(b)
+	ctx := context.Background()
+
+	runOnce := func(b *testing.B, req *storepb.SearchLabelValuesRequest) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			s := &mockSearchLabelValuesServer{ctx: ctx}
+			if err := store.SearchLabelValues(req, s); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	startMs, endMs := minTimeMs, maxTimeMs
+
+	b.Run("label=label_1/filter=none/order=alpha_asc/limit=10000", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "label_1",
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("label=label_3/filter=none/order=alpha_asc/limit=10000", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "label_3",
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("label=high_cardinality_label_1/filter=none/order=alpha_asc/limit=10000", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "high_cardinality_label_1",
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("label=high_cardinality_label_1/filter=substring/order=alpha_asc/limit=10000", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "high_cardinality_label_1",
+			Filter:   &storepb.SearchFilter{Terms: []string{"1"}},
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("label=high_cardinality_label_1/filter=substring/order=score_desc/limit=100", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "high_cardinality_label_1",
+			Filter:   &storepb.SearchFilter{Terms: []string{"1"}},
+			Ordering: storepb.ORDER_BY_SCORE_DESC,
+			Limit:    100,
+		})
+	})
+}
+
+// BenchmarkBucketStoreSearchLabelNames exercises BucketStore.SearchLabelNames.
+// The number of label names visible at the block index is small (one per
+// label_n plus high_cardinality_* prefixed variants), so result-set size is
+// dominated by name-count, not by per-value scan.
+func BenchmarkBucketStoreSearchLabelNames(b *testing.B) {
+	store, minTimeMs, maxTimeMs := prepareBenchmarkSearchStore(b)
+	ctx := context.Background()
+
+	run := func(b *testing.B, req *storepb.SearchLabelNamesRequest) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			s := &mockSearchLabelNamesServer{ctx: ctx}
+			if err := store.SearchLabelNames(req, s); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	startMs, endMs := minTimeMs, maxTimeMs
+
+	b.Run("filter=none", func(b *testing.B) {
+		run(b, &storepb.SearchLabelNamesRequest{
+			Start: startMs, End: endMs,
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("filter=substring_label", func(b *testing.B) {
+		run(b, &storepb.SearchLabelNamesRequest{
+			Start: startMs, End: endMs,
+			Filter:   &storepb.SearchFilter{Terms: []string{"label"}},
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("filter=substring_high_cardinality", func(b *testing.B) {
+		run(b, &storepb.SearchLabelNamesRequest{
+			Start: startMs, End: endMs,
+			Filter:   &storepb.SearchFilter{Terms: []string{"high_cardinality"}},
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+}
+
+// BenchmarkBucketStoreSearchLabelValuesVsLabelValues compares the new
+// streaming SearchLabelValues RPC to the legacy unary LabelValues on the
+// same store with the same matchers, no filter, alpha-asc ordering, and a
+// non-binding limit. Sub-case names are keyed on /impl=legacy and /impl=new
+// so benchstat -col '/impl' renders the comparison directly.
+func BenchmarkBucketStoreSearchLabelValuesVsLabelValues(b *testing.B) {
+	store, minTimeMs, maxTimeMs := prepareBenchmarkSearchStore(b)
+	ctx := context.Background()
+
+	cases := []struct {
+		name     string
+		label    string
+		matchers []*labels.Matcher
+	}{
+		{
+			name:  "10_values",
+			label: "label_1",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
+				labels.MustNewMatcher(labels.MatchEqual, "label_3", "0"),
+			},
+		},
+		{
+			name:  "1000_values",
+			label: "label_3",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "label_1", "0"),
+				labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
+			},
+		},
+	}
+
+	startMs, endMs := minTimeMs, maxTimeMs
+
+	for _, c := range cases {
+		legacyMatchers, err := storepb.PromMatchersToMatchers(c.matchers...)
+		require.NoError(b, err)
+		searchMatchers, err := storepb.PromMatchersToMatchers(c.matchers...)
+		require.NoError(b, err)
+
+		legacyReq := &storepb.LabelValuesRequest{
+			Label:    c.label,
+			Start:    startMs,
+			End:      endMs,
+			Matchers: legacyMatchers,
+			Limit:    10_000,
+		}
+		searchReq := &storepb.SearchLabelValuesRequest{
+			Label:    c.label,
+			Start:    startMs,
+			End:      endMs,
+			Matchers: searchMatchers,
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		}
+
+		b.Run(fmt.Sprintf("card=%s/impl=legacy", c.name), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := store.LabelValues(ctx, legacyReq); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("card=%s/impl=new", c.name), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				s := &mockSearchLabelValuesServer{ctx: ctx}
+				if err := store.SearchLabelValues(searchReq, s); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }

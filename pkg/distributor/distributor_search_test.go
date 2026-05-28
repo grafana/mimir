@@ -113,7 +113,7 @@ func TestIngesterSearchResultSet_AtIsIdempotent(t *testing.T) {
 			{Value: "b", Score: 0.9},
 		}},
 	}}
-	rs := newIngesterSearchResultSet(stream, func() {})
+	rs := newIngesterSearchResultSet(stream, nil, nil)
 	require.True(t, rs.Next())
 	first := rs.At()
 	second := rs.At()
@@ -135,7 +135,7 @@ func TestIngesterSearchResultSet_PropagatesMetadataOnResult(t *testing.T) {
 			{Value: "metric_b", Score: 0.9}, // un-enriched
 		}},
 	}}
-	rs := newIngesterSearchResultSet(stream, func() {})
+	rs := newIngesterSearchResultSet(stream, nil, nil)
 
 	require.True(t, rs.Next())
 	a := rs.At()
@@ -552,4 +552,220 @@ func TestCollectOrCleanupSearchSets_AllJobsErrorBeforeOpening(t *testing.T) {
 	})
 	require.ErrorIs(t, err, wantErr)
 	require.Nil(t, got)
+}
+
+// generateBenchmarkSearchValues returns numIngesters slices of valuesPerStream
+// sorted strings. dedup controls cross-stream overlap:
+//
+//   - "disjoint": stream k holds values [k*N, (k+1)*N) — zero overlap; the
+//     k-way merge emits k*N unique results.
+//   - "half_overlap": each stream shares half its values with its neighbour;
+//     overlap region rotates around the streams.
+//   - "fully_overlapping": every stream holds the same values 0..N-1; the
+//     merge emits N unique results with k-1 duplicates dropped per value.
+//
+// Values are pre-formatted as zero-padded decimals so alphabetic order
+// equals numeric order — no surprises in alpha_asc result ordering.
+func generateBenchmarkSearchValues(numIngesters, valuesPerStream int, dedup string) [][]string {
+	streams := make([][]string, numIngesters)
+	switch dedup {
+	case "disjoint":
+		for k := 0; k < numIngesters; k++ {
+			s := make([]string, valuesPerStream)
+			base := k * valuesPerStream
+			for i := 0; i < valuesPerStream; i++ {
+				s[i] = fmt.Sprintf("v%09d", base+i)
+			}
+			streams[k] = s
+		}
+	case "half_overlap":
+		// Stream k holds [k*N/2, k*N/2 + N): adjacent streams share their
+		// second/first half respectively.
+		half := valuesPerStream / 2
+		for k := 0; k < numIngesters; k++ {
+			s := make([]string, valuesPerStream)
+			base := k * half
+			for i := 0; i < valuesPerStream; i++ {
+				s[i] = fmt.Sprintf("v%09d", base+i)
+			}
+			streams[k] = s
+		}
+	case "fully_overlapping":
+		shared := make([]string, valuesPerStream)
+		for i := 0; i < valuesPerStream; i++ {
+			shared[i] = fmt.Sprintf("v%09d", i)
+		}
+		for k := 0; k < numIngesters; k++ {
+			// Hand each ingester its own slice header so an accidental
+			// in-place mutation by one consumer can't poison the others.
+			s := make([]string, valuesPerStream)
+			copy(s, shared)
+			streams[k] = s
+		}
+	default:
+		panic("generateBenchmarkSearchValues: unknown dedup " + dedup)
+	}
+	return streams
+}
+
+// runDistributorSearchBenchmark drives ds[0].SearchLabelValues b.N times,
+// draining every result set fully. The hook closure reads from prebuilt so
+// per-iteration cost stays inside the timed loop.
+func runDistributorSearchBenchmark(b *testing.B, ds *Distributor, hints *storage.SearchHints, name string) {
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rs := ds.SearchLabelValues(ctx, 0, model.Latest, name, nil, hints, nil)
+		for rs.Next() {
+			_ = rs.At()
+		}
+		if err := rs.Err(); err != nil {
+			b.Fatal(err)
+		}
+		rs.Close()
+	}
+}
+
+// BenchmarkDistributor_SearchLabelValues exercises the distributor's
+// fan-out + cross-replica MergeSearchResultSets merge against mock
+// ingesters returning prebuilt SearchResultBatches. The mock-ingester
+// hooks are populated outside the timed loop so per-iteration cost
+// reflects the merge + adapter cost, not the data generation.
+func BenchmarkDistributor_SearchLabelValues(b *testing.B) {
+	type benchCase struct {
+		numIngesters    int
+		valuesPerStream int
+		dedup           string
+		ordering        storage.Ordering
+	}
+
+	cases := []benchCase{
+		{3, 1000, "disjoint", storage.OrderByValueAsc},
+		{3, 1000, "half_overlap", storage.OrderByValueAsc},
+		{3, 1000, "fully_overlapping", storage.OrderByValueAsc},
+		{3, 10_000, "disjoint", storage.OrderByValueAsc},
+		{3, 10_000, "half_overlap", storage.OrderByValueAsc},
+		{3, 10_000, "fully_overlapping", storage.OrderByValueAsc},
+		{5, 10_000, "disjoint", storage.OrderByValueAsc},
+		{5, 10_000, "half_overlap", storage.OrderByValueAsc},
+		{5, 10_000, "fully_overlapping", storage.OrderByValueAsc},
+		// Score-desc swaps the heap comparator; same data, different cost.
+		{3, 10_000, "half_overlap", storage.OrderByScoreDesc},
+	}
+
+	// Group by numIngesters so prepare() only runs once per ring topology.
+	for _, numIngesters := range []int{3, 5} {
+		var (
+			batchesByIngester [][]*client.SearchResultBatch
+			lastIngesterCount int
+		)
+		ds, _, _, _ := prepare(b, prepConfig{
+			numDistributors:   1,
+			numIngesters:      numIngesters,
+			happyIngesters:    numIngesters,
+			replicationFactor: 1,
+			searchLabelValuesHook: func(ingesterIdx int, _ *client.SearchLabelValuesRequest) []*client.SearchResultBatch {
+				if ingesterIdx >= lastIngesterCount {
+					return nil
+				}
+				return batchesByIngester[ingesterIdx]
+			},
+		})
+
+		for _, c := range cases {
+			if c.numIngesters != numIngesters {
+				continue
+			}
+			c := c
+			streams := generateBenchmarkSearchValues(c.numIngesters, c.valuesPerStream, c.dedup)
+			batchesByIngester = make([][]*client.SearchResultBatch, c.numIngesters)
+			for k, vals := range streams {
+				batchesByIngester[k] = makeSearchBatches(vals)
+			}
+			lastIngesterCount = c.numIngesters
+
+			name := fmt.Sprintf("ingesters=%d/values=%d/dedup=%s/order=%s",
+				c.numIngesters, c.valuesPerStream, c.dedup, orderingShortName(c.ordering))
+			b.Run(name, func(b *testing.B) {
+				hints := &storage.SearchHints{OrderBy: c.ordering, Limit: c.numIngesters * c.valuesPerStream}
+				runDistributorSearchBenchmark(b, ds[0], hints, "env")
+			})
+		}
+	}
+}
+
+// BenchmarkDistributor_SearchLabelNames mirrors the SearchLabelValues
+// benchmark with the label-names RPC. Label-name cardinality is small in
+// practice so valuesPerStream stays modest; the merge cost characteristic
+// is the same shape.
+func BenchmarkDistributor_SearchLabelNames(b *testing.B) {
+	type benchCase struct {
+		numIngesters    int
+		valuesPerStream int
+		dedup           string
+	}
+	cases := []benchCase{
+		{3, 100, "disjoint"},
+		{3, 100, "half_overlap"},
+		{3, 100, "fully_overlapping"},
+		{3, 1000, "disjoint"},
+		{3, 1000, "fully_overlapping"},
+	}
+
+	var (
+		batchesByIngester [][]*client.SearchResultBatch
+	)
+	ds, _, _, _ := prepare(b, prepConfig{
+		numDistributors:   1,
+		numIngesters:      3,
+		happyIngesters:    3,
+		replicationFactor: 1,
+		searchLabelNamesHook: func(ingesterIdx int, _ *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
+			if ingesterIdx >= len(batchesByIngester) {
+				return nil
+			}
+			return batchesByIngester[ingesterIdx]
+		},
+	})
+
+	for _, c := range cases {
+		c := c
+		streams := generateBenchmarkSearchValues(c.numIngesters, c.valuesPerStream, c.dedup)
+		batchesByIngester = make([][]*client.SearchResultBatch, c.numIngesters)
+		for k, vals := range streams {
+			batchesByIngester[k] = makeSearchBatches(vals)
+		}
+
+		name := fmt.Sprintf("ingesters=%d/values=%d/dedup=%s", c.numIngesters, c.valuesPerStream, c.dedup)
+		b.Run(name, func(b *testing.B) {
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+			hints := &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: c.numIngesters * c.valuesPerStream}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				rs := ds[0].SearchLabelNames(ctx, 0, model.Latest, nil, hints, nil)
+				for rs.Next() {
+					_ = rs.At()
+				}
+				if err := rs.Err(); err != nil {
+					b.Fatal(err)
+				}
+				rs.Close()
+			}
+		})
+	}
+}
+
+func orderingShortName(o storage.Ordering) string {
+	switch o {
+	case storage.OrderByValueAsc:
+		return "alpha_asc"
+	case storage.OrderByValueDesc:
+		return "alpha_desc"
+	case storage.OrderByScoreDesc:
+		return "score_desc"
+	default:
+		return "unknown"
+	}
 }
