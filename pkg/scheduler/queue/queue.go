@@ -126,11 +126,6 @@ type RequestQueue struct {
 	waitingDequeueRequestsToDispatch      *list.List
 	waitingDequeueRequestsToDispatchCount *atomic.Int64
 
-	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
-	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
-	// Unlike schedulerInflightRequests, tracking begins only when the request is sent to a querier.
-	QueryComponentUtilization *QueryComponentUtilization
-
 	queueBroker *queueBroker
 }
 
@@ -218,13 +213,7 @@ func NewRequestQueue(
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
-	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*RequestQueue, error) {
-	queryComponentCapacity, err := NewQueryComponentUtilization(querierInflightRequestsMetric)
-	if err != nil {
-		return nil, err
-	}
-
 	q := &RequestQueue{
 		// settings
 		log:                     log,
@@ -247,8 +236,7 @@ func NewRequestQueue(
 		waitingDequeueRequestsToDispatch:      list.New(),
 		waitingDequeueRequestsToDispatchCount: atomic.NewInt64(0),
 
-		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, forgetDelay),
+		queueBroker: newQueueBroker(maxOutstandingPerTenant, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
@@ -268,18 +256,10 @@ func (q *RequestQueue) running(ctx context.Context) error {
 	forgetDisconnectedQueriersTicker := time.NewTicker(forgetCheckPeriod)
 	defer forgetDisconnectedQueriersTicker.Stop()
 
-	// periodically submit a message to dispatcherLoop to observe inflight requests;
-	// same as scheduler, we observe inflight requests frequently and at regular intervals
-	// to have a good approximation of max inflight requests over percentiles of time.
-	inflightRequestsTicker := time.NewTicker(250 * time.Millisecond)
-	defer inflightRequestsTicker.Stop()
-
 	for {
 		select {
 		case <-forgetDisconnectedQueriersTicker.C:
 			q.submitForgetDisconnectedQueriers(ctx)
-		case <-inflightRequestsTicker.C:
-			q.QueryComponentUtilization.ObserveInflightRequests()
 		case <-ctx.Done():
 			// context done case serves as a default case to bail out
 			// if the waiting querier-worker connection's context times out or is canceled,
