@@ -137,8 +137,10 @@ jobs:
       runner-type-x64: ubuntu-x64
       runner-type-arm64: ubuntu-arm64
 
-  commit:
-    name: Push commit with new build image tag
+  # This name is completely misleading, but a previous version of this workflow used this name and it's used as a required PR check in GitHub.
+  # Renaming it would mean backporting a large number of changes to old release branches, so we're keeping it as-is for now.
+  # Once all active release branches use this workflow, it'll be much easier to rename it and backport just that rename.
+  build_and_push:
     runs-on: ubuntu-latest
     needs:
       - prepare
