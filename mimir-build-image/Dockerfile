@@ -76,24 +76,11 @@ RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
     rm -rf /go/pkg /go/src /root/.cache
 
-RUN GO111MODULE=on \
-	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 && \
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2 && \
-	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2 && \
-	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
-	go install github.com/fatih/faillint@v1.15.0 && \
-	go install github.com/campoy/embedmd/v2@v2.0.0 && \
-	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.6.0 && \
-	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
-	go install github.com/mikefarah/yq/v4@v4.53.2 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.22.0 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.22.0 && \
-	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2 && \
-	go install github.com/open-policy-agent/conftest@v0.68.2 && \
-	go install github.com/uber-go/gopatch@v0.4.0 && \
-	go install github.com/bufbuild/buf/cmd/buf@v1.69.0 && \
-	rm -rf /go/pkg /go/src /root/.cache
+COPY go.mod go.sum /tools/
+RUN \
+  cd /tools && \
+	go install tool && \
+	rm -rf /go/pkg /go/src /root/.cache /tools/go.mod /tools/go.sum
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
 COPY --from=kustomize /app/kustomize /usr/bin/kustomize
