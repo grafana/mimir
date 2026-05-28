@@ -8,4 +8,4 @@ paths-ignore:
   - "**/testdata/**"
   - "**/*.min.js"
   - "**/*.min.css"
-  - pkg/api/static
+  - pkg/api/static/**

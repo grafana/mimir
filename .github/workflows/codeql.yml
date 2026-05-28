@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
+      contents: read
       # Required to upload SARIF results to the Security tab.
       security-events: write
     strategy:
