@@ -41,6 +41,16 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
+      # `git cherry-pick` inside the backport action requires a committer identity to create the
+      # local cherry-pick commit, even though that commit's committer is later overwritten by
+      # GitHub's web-flow key when the commit is published via the createCommitOnBranch API.
+      # The mimir-github-bot identity is what eventually owns the published commit (the App token
+      # above runs the publish), so we set the local cherry-pick committer to match.
+      - name: Configure git user
+        run: |
+          git config --local user.name "mimir-github-bot[bot]"
+          git config --local user.email "199097951+mimir-github-bot[bot]@users.noreply.github.com"
+
       - name: Run backport
         uses: grafana/grafana-github-actions-go/backport@407e4b86a206583e2a27912e364a32959e11760a
         with:
