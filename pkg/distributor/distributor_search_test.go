@@ -19,6 +19,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
@@ -120,6 +121,34 @@ func TestIngesterSearchResultSet_AtIsIdempotent(t *testing.T) {
 	assert.Equal(t, "a", first.Value)
 	require.True(t, rs.Next())
 	assert.Equal(t, "b", rs.At().Value)
+}
+
+// TestIngesterSearchResultSet_PropagatesMetadataOnResult locks in the
+// wire-decode boundary: an inline cortexpb.MetricMetadata on the wire is
+// converted into *metadata.Metadata on storage.SearchResult, with the
+// MetricType enum lifted to the Prometheus model.MetricType. Results that
+// arrived without inline metadata stay un-decorated.
+func TestIngesterSearchResultSet_PropagatesMetadataOnResult(t *testing.T) {
+	stream := &mockSearchStream{batches: []*client.SearchResultBatch{
+		{Results: []client.SearchResultBatch_Result{
+			{Value: "metric_a", Score: 1.0, Metadata: &mimirpb.MetricMetadata{Type: mimirpb.COUNTER, Help: "help-for-a", Unit: "seconds"}},
+			{Value: "metric_b", Score: 0.9}, // un-enriched
+		}},
+	}}
+	rs := newIngesterSearchResultSet(stream, func() {})
+
+	require.True(t, rs.Next())
+	a := rs.At()
+	require.Equal(t, "metric_a", a.Value)
+	require.NotNil(t, a.Metadata, "wire-side Metadata must survive into the in-process SearchResult")
+	assert.Equal(t, model.MetricTypeCounter, a.Metadata.Type)
+	assert.Equal(t, "help-for-a", a.Metadata.Help)
+	assert.Equal(t, "seconds", a.Metadata.Unit)
+
+	require.True(t, rs.Next())
+	b := rs.At()
+	require.Equal(t, "metric_b", b.Value)
+	assert.Nil(t, b.Metadata, "results without inline metadata must stay un-decorated")
 }
 
 // scoredValue is a {value, score} test-fixture pair.

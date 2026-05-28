@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -136,13 +137,9 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	}
 
 	// Case sensitivity defaults to true per Prometheus URL polarity.
-	caseSensitive := true
-	if v := q.Get("case_sensitive"); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid case_sensitive: %w", err)
-		}
-		caseSensitive = parsed
+	caseSensitive, err := parseBoolParam(q, "case_sensitive", true)
+	if err != nil {
+		return nil, err
 	}
 
 	// Fuzz algorithm (default subsequence).
@@ -215,13 +212,14 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		}
 	}
 
-	includeScore := false
-	if v := q.Get("include_score"); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid include_score: %w", err)
-		}
-		includeScore = parsed
+	includeScore, err := parseBoolParam(q, "include_score", false)
+	if err != nil {
+		return nil, err
+	}
+
+	includeMetadata, err := parseBoolParam(q, "include_metadata", false)
+	if err != nil {
+		return nil, err
 	}
 
 	// Time range. Defaults match Prometheus PR #18573: start defaults to one
@@ -265,6 +263,11 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, errors.New(`missing required parameter "label"`)
 	}
 
+	// This is poked in after the params validation. Noting that this will be
+	// ignored for non-metric name searches. It is also only actioned on
+	// search requests sent to ingesters.
+	params.IncludeMetadata = includeMetadata
+
 	// hintsLimit asks downstream for one extra result so the handler can
 	// determine if there is more data available past the given limit.
 	// 0 = no limit.
@@ -284,6 +287,21 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		includeScore: includeScore,
 		labelName:    labelName,
 	}, nil
+}
+
+// parseBoolParam reads key from q and parses it with strconv.ParseBool. If
+// the value is absent, def is returned. Parse errors are wrapped so the
+// caller can surface them as HTTP 400.
+func parseBoolParam(q url.Values, key string, def bool) (bool, error) {
+	v := q.Get(key)
+	if v == "" {
+		return def, nil
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s: %w", key, err)
+	}
+	return parsed, nil
 }
 
 func parseSortOrder(sortBy, sortDir string, sortDirExplicit bool) (storage.Ordering, error) {
@@ -424,14 +442,16 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			writeSearchBadRequest(w, err)
 			return
 		}
-		searcher, querier, err := searcherForRequest(r.Context(), queryable, req.startMs, req.endMs)
+		ctx := r.Context()
+		searcher, querier, err := searcherForRequest(ctx, queryable, req.startMs, req.endMs)
 		if err != nil {
 			writeSearcherForRequestError(w, err)
 			return
 		}
 		defer querier.Close()
+
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
-			return searcher.SearchLabelValues(r.Context(), model.MetricNameLabel, req.params, req.hints, m...)
+			return searcher.SearchLabelValues(ctx, model.MetricNameLabel, req.params, req.hints, m...)
 		})
 		defer rs.Close()
 		streamSearchNDJSON(w, rs, req, func(r storage.SearchResult) searchMetricNameRecord {
@@ -439,6 +459,11 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			if req.includeScore {
 				s := r.Score
 				rec.Score = &s
+			}
+			if md := r.Metadata; md != nil {
+				rec.Type = string(md.Type)
+				rec.Help = md.Help
+				rec.Unit = md.Unit
 			}
 			return rec
 		})
@@ -502,9 +527,10 @@ func writeSearcherForRequestError(w http.ResponseWriter, err error) {
 // trailer instead of an HTTP error code.
 //
 // build maps each storage.SearchResult to the endpoint-specific record
-// shape (label-names, label-values, metric-names). Score handling lives
-// in the per-endpoint builder so the wire-shape contract is enforced at
-// the call site.
+// shape (label-names, label-values, metric-names). Score handling and
+// any per-record enrichment (e.g. metadata Type/Help/Unit for
+// metric-names) live in the per-endpoint builder so the wire-shape
+// contract is enforced at the call site.
 func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet, req *searchRequest, build func(storage.SearchResult) T) {
 	flusher, _ := w.(http.Flusher)
 	enc := json.NewEncoder(w)
