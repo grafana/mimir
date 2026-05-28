@@ -22,6 +22,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -227,13 +228,19 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	// hour before now, end defaults to now. Keeps the default window narrow
 	// enough that searches over an unspecified range stay cheap.
 	now := model.Now()
-	startMs, err := parseSearchTime(q.Get("start"), now.Add(-time.Hour))
-	if err != nil {
-		return nil, fmt.Errorf("invalid start: %w", err)
+	startMs := int64(now.Add(-time.Hour))
+	if v := q.Get("start"); v != "" {
+		startMs, err = util.ParseTime(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid start: %w", err)
+		}
 	}
-	endMs, err := parseSearchTime(q.Get("end"), now)
-	if err != nil {
-		return nil, fmt.Errorf("invalid end: %w", err)
+	endMs := int64(now)
+	if v := q.Get("end"); v != "" {
+		endMs, err = util.ParseTime(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid end: %w", err)
+		}
 	}
 	// end == start is permitted (zero-duration snapshot); only strictly
 	// inverted ranges are rejected, mirroring Prometheus PR #18573.
@@ -298,24 +305,6 @@ func parseSortOrder(sortBy, sortDir string, sortDirExplicit bool) (storage.Order
 	default:
 		return 0, fmt.Errorf("invalid sort_by %q (allowed: alpha, score)", sortBy)
 	}
-}
-
-// parseSearchTime accepts either a unix timestamp (seconds, possibly with
-// fractional part) or an RFC3339 time. Empty string returns defaultT.
-func parseSearchTime(s string, defaultT model.Time) (int64, error) {
-	if s == "" {
-		return int64(defaultT), nil
-	}
-	// Try as float seconds (Prometheus convention).
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		return int64(f * 1000), nil
-	}
-	// Try RFC3339.
-	t, err := time.Parse(time.RFC3339Nano, s)
-	if err != nil {
-		return 0, fmt.Errorf("unparseable time %q", s)
-	}
-	return t.UnixMilli(), nil
 }
 
 // parseSearchMatchers parses each entry of match[] as a PromQL series
