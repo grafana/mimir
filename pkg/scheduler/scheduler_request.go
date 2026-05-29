@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
 
@@ -57,5 +58,5 @@ func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
 	if len(sr.AdditionalQueueDimensions) > 0 {
 		return sr.AdditionalQueueDimensions[0]
 	}
-	return unknownQueueDimension
+	return queue.UnknownDimension
 }

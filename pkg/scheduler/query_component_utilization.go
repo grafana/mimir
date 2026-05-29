@@ -18,12 +18,13 @@ const (
 // Queue-dimension labels the scheduler attaches to enqueued requests. The
 // underlying queue treats these as opaque strings; they're defined here so
 // SchedulerRequest.ExpectedQueryComponentName and queryComponentFlags can
-// agree on the same vocabulary.
+// agree on the same vocabulary. The "unknown" bucket is owned by the queue
+// (it routes empty dimensions there), so we reference queue.UnknownDimension
+// directly rather than redeclaring the literal.
 const (
 	ingesterQueueDimension                = "ingester"
 	storeGatewayQueueDimension            = "store-gateway"
 	ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
-	unknownQueueDimension                 = "unknown"
 )
 
 // queryComponentFlags interprets annotations by the frontend for the expected query component,
