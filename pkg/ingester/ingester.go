@@ -64,6 +64,12 @@ const (
 	perUserMetadataLimit   = "per_user_metadata_limit"
 	perMetricMetadataLimit = "per_metric_metadata_limit"
 
+	// deprecatedLabelValuesCountMaxConcurrencyDefault is the historical default
+	// of -ingester.label-values-count-max-concurrency. It is referenced in two
+	// places — flag registration and the deprecation-warning comparison — so it
+	// lives here to keep them in sync.
+	deprecatedLabelValuesCountMaxConcurrencyDefault = 16
+
 	// Period at which to attempt purging metadata from memory.
 	metadataPurgePeriod = 5 * time.Minute
 
@@ -232,7 +238,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// Kept registered so existing deployments do not fail to start; the value
 	// is ignored. A deprecation warning is logged at startup if set to a
 	// non-default value.
-	f.IntVar(&cfg.LabelValuesCountRequestMaxConcurrency, "ingester.label-values-count-max-concurrency", 16, "No longer has any effect. Use -ingester.label-values-count-workers and -ingester.label-values-count-chunk-size instead.")
+	f.IntVar(&cfg.LabelValuesCountRequestMaxConcurrency, "ingester.label-values-count-max-concurrency", deprecatedLabelValuesCountMaxConcurrencyDefault, "No longer has any effect. Use -ingester.label-values-count-workers and -ingester.label-values-count-chunk-size instead.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
 	// Hardcoded config (can only be overridden in tests).
@@ -630,9 +636,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	}
 
 	// Warn about the deprecated -ingester.label-values-count-max-concurrency
-	// flag. We compare against the historical default (16) rather than 0 so
-	// users who explicitly set the default in config don't see noise.
-	if cfg.LabelValuesCountRequestMaxConcurrency != 16 {
+	// flag. We compare against the historical default rather than 0 so users
+	// who explicitly set the default in config don't see noise.
+	if cfg.LabelValuesCountRequestMaxConcurrency != deprecatedLabelValuesCountMaxConcurrencyDefault {
 		level.Warn(logger).Log("msg", "the -ingester.label-values-count-max-concurrency flag is deprecated and has no effect; use -ingester.label-values-count-workers and -ingester.label-values-count-chunk-size instead")
 	}
 
