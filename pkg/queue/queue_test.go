@@ -71,6 +71,7 @@ func randAdditionalQueueDimension(_ string) []string {
 // header pointers, rather than a single inline byte filler that would have
 // misleadingly cheap copy semantics.
 type testQueryRequest struct {
+	Ctx                       context.Context
 	FrontendAddr              string
 	UserID                    string
 	HttpRequest               *httpgrpc.HTTPRequest
@@ -92,6 +93,7 @@ func (r *testQueryRequest) ExpectedQueryComponentName() string {
 // depth to be dominated by request payload rather than queue mechanics.
 func makeTestQueryRequest(tenantID string, additionalQueueDimensions []string) *testQueryRequest {
 	return &testQueryRequest{
+		Ctx:          context.Background(),
 		FrontendAddr: "http://query-frontend:8007",
 		UserID:       tenantID,
 		HttpRequest: &httpgrpc.HTTPRequest{
@@ -447,10 +449,14 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	// querier-2 is the only querier sharded to user-1, but querier-2 has not requested to dequeue yet.
 	// >1 queue dimensions must exist in the queue to reproduce a potential panic condition (dims % unregisteredWorkerID).
 	reqNotShardedToQuerier1 := &testQueryRequest{
+		Ctx:                       context.Background(),
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"ingester"},
 	}
 	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
 	reqNotShardedToQuerier1 = &testQueryRequest{
+		Ctx:                       context.Background(),
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"store-gateway"},
 	}
 	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
@@ -636,6 +642,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers
 	req := &testQueryRequest{
+		Ctx:                       context.Background(),
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
 	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 1, nil))
@@ -722,6 +730,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers
 	req := &testQueryRequest{
+		Ctx:                       context.Background(),
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
 	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 2, nil))
@@ -850,6 +860,8 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	tenantMaxQueriers := 0 // no sharding
 	queueDim := randAdditionalQueueDimension("")
 	req := &testQueryRequest{
+		Ctx:                       context.Background(),
+		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: queueDim,
 	}
 	tr := tenantRequest{
