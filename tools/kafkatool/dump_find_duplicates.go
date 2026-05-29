@@ -32,14 +32,23 @@ type lastSample struct {
 // ingester at commit time (no discard metric), yet they inflate the
 // distributor/ingester "received samples" counters and therefore billed DPM.
 func (c *DumpCommand) doFindDuplicates(*kingpin.ParseContext) error {
-	last := make(map[uint64]lastSample)
+	// Keyed by tenant ID, then by series hash. Duplicate detection is per-tenant:
+	// each tenant has its own TSDB, so the same series across tenants is unrelated.
+	last := make(map[string]map[uint64]lastSample)
 	hashBuf := make([]byte, 0, 1024)
 	var dupCount int
 
 	err := c.parseWriteRequestsFromDumpFile(
 		func(_ int, record *kgo.Record, req *mimirpb.WriteRequest) {
-			if c.dupTenant != "" && string(record.Key) != c.dupTenant {
+			tenantID := string(record.Key)
+			if c.dupTenant != "" && tenantID != c.dupTenant {
 				return
+			}
+
+			tenantLast, ok := last[tenantID]
+			if !ok {
+				tenantLast = make(map[uint64]lastSample)
+				last[tenantID] = tenantLast
 			}
 
 			for _, ts := range req.Timeseries {
@@ -49,7 +58,7 @@ func (c *DumpCommand) doFindDuplicates(*kingpin.ParseContext) error {
 				for _, s := range ts.Samples {
 					cur := lastSample{ts: s.TimestampMs, valBits: math.Float64bits(s.Value), recTime: record.Timestamp, offset: record.Offset}
 
-					if prev, ok := last[h]; ok && prev.ts == cur.ts && prev.valBits == cur.valBits {
+					if prev, ok := tenantLast[h]; ok && prev.ts == cur.ts && prev.valBits == cur.valBits {
 						dupCount++
 						c.printer.PrintLine(fmt.Sprintf(
 							"labels: %s, received (ts=%d, val=%s) at %s (offset %d) and then at %s (offset %d)",
@@ -64,7 +73,7 @@ func (c *DumpCommand) doFindDuplicates(*kingpin.ParseContext) error {
 					}
 
 					// Always update to the latest sample for this series.
-					last[h] = cur
+					tenantLast[h] = cur
 				}
 			}
 		},

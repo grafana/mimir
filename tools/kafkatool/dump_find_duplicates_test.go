@@ -88,6 +88,42 @@ func TestDumpCommand_FindDuplicates(t *testing.T) {
 	assert.Contains(t, output, "total duplicate occurrences: 1")
 }
 
+func TestDumpCommand_FindDuplicates_PerTenant(t *testing.T) {
+	mkSeries := func(ts int64, val float64) mimirpb.PreallocTimeseries {
+		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+			Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_a"}, {Name: "job", Value: "test"}},
+			Samples: []mimirpb.Sample{{TimestampMs: ts, Value: val}},
+		}}
+	}
+	t1 := time.Date(2026, 5, 29, 11, 0, 1, 0, time.UTC)
+	t2 := time.Date(2026, 5, 29, 11, 0, 31, 0, time.UTC)
+
+	// Both tenants send the identical series with the identical sample. Each is a
+	// real within-tenant duplicate (2 total). A non-tenant-isolated map would also
+	// flag tenant-2's first sample against tenant-1's, yielding a false 3rd.
+	records := []dumpRecord{
+		{tenantID: "tenant-1", at: t1, req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mkSeries(100, 1)}}},
+		{tenantID: "tenant-2", at: t1, req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mkSeries(100, 1)}}},
+		{tenantID: "tenant-1", at: t2, req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mkSeries(100, 1)}}},
+		{tenantID: "tenant-2", at: t2, req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mkSeries(100, 1)}}},
+	}
+
+	dumpFile := createTestDumpFileWithTimestamps(t, records)
+
+	app := newTestApp()
+	cmd := &DumpCommand{}
+	printer := &BufferedPrinter{}
+	cmd.Register(app, func() *kgo.Client { return nil }, printer)
+
+	// No --tenant: scan all tenants, but keep detection per-tenant.
+	_, err := app.Parse([]string{"dump", "find-duplicates", "--file", dumpFile})
+	require.NoError(t, err)
+
+	output := strings.Join(printer.GetLines(), "\n")
+	assert.Equal(t, 2, strings.Count(output, "labels:"), "expected exactly one duplicate per tenant, no cross-tenant false positive")
+	assert.Contains(t, output, "total duplicate occurrences: 2")
+}
+
 type dumpRecord struct {
 	tenantID string
 	at       time.Time
