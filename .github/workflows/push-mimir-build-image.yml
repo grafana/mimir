@@ -192,7 +192,7 @@ jobs:
       - name: Generate GitHub App Token
         if: steps.update_makefile.outputs.changed == 'true'
         id: app-token-for-commit
-        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
+        uses: grafana/shared-workflows/actions/create-github-app-token@259ba21cb3ff07724f331e26d926d655d24b317b # create-github-app-token/v0.2.3
         with:
           github_app: mimir-github-bot
 
