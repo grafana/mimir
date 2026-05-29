@@ -80,7 +80,7 @@ func TestDumpCommand_FindDuplicates(t *testing.T) {
 	output := strings.Join(printer.GetLines(), "\n")
 
 	// Exactly one duplicate (series A, tenant-1), referencing both arrival times.
-	assert.Contains(t, output, `labels: {__name__="metric_a", job="test"}, received (ts=100, val=1) at 2026-05-29T11:00:01Z and then at 2026-05-29T11:00:31Z`)
+	assert.Contains(t, output, `labels: {__name__="metric_a", job="test"}, received (ts=100, val=1) at 2026-05-29T11:00:01Z (offset 0) and then at 2026-05-29T11:00:31Z (offset 1)`)
 	// series B differed in value -> not reported.
 	assert.NotContains(t, output, "metric_b")
 	// tenant-2 filtered out.

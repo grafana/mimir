@@ -23,6 +23,7 @@ type lastSample struct {
 	ts      int64
 	valBits uint64
 	recTime time.Time
+	offset  int64
 }
 
 // doFindDuplicates streams over the dump and prints every occurrence where a
@@ -46,17 +47,19 @@ func (c *DumpCommand) doFindDuplicates(*kingpin.ParseContext) error {
 				hashBuf, h = ingest.LabelAdaptersHash(hashBuf, ts.Labels)
 
 				for _, s := range ts.Samples {
-					cur := lastSample{ts: s.TimestampMs, valBits: math.Float64bits(s.Value), recTime: record.Timestamp}
+					cur := lastSample{ts: s.TimestampMs, valBits: math.Float64bits(s.Value), recTime: record.Timestamp, offset: record.Offset}
 
 					if prev, ok := last[h]; ok && prev.ts == cur.ts && prev.valBits == cur.valBits {
 						dupCount++
 						c.printer.PrintLine(fmt.Sprintf(
-							"labels: %s, received (ts=%d, val=%s) at %s and then at %s",
+							"labels: %s, received (ts=%d, val=%s) at %s (offset %d) and then at %s (offset %d)",
 							mimirpb.FromLabelAdaptersToLabels(ts.Labels).String(),
 							s.TimestampMs,
 							strconv.FormatFloat(s.Value, 'g', -1, 64),
 							prev.recTime.UTC().Format(time.RFC3339Nano),
+							prev.offset,
 							record.Timestamp.UTC().Format(time.RFC3339Nano),
+							record.Offset,
 						))
 					}
 
