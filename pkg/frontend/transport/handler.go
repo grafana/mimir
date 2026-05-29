@@ -41,7 +41,7 @@ const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
 	StatusClientClosedRequest    = 499
 	ServiceTimingHeaderName      = "Server-Timing"
-	cacheControlLogField         = "header_cache_control"
+	cacheControlSafeHeader       = safeHeader(requestoptions.CacheControlHeader)
 	responseQueryStatsHeaderName = "X-Mimir-Response-Query-Stats"
 	encodeTimeSeconds            = "encode_time_seconds"
 	estimatedSeriesCount         = "estimated_series_count"
@@ -64,6 +64,28 @@ var (
 	errCanceled              = httpgrpc.Error(StatusClientClosedRequest, context.Canceled.Error())
 	errDeadlineExceeded      = httpgrpc.Error(http.StatusGatewayTimeout, context.DeadlineExceeded.Error())
 	errRequestEntityTooLarge = httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "http: request body too large")
+
+	// sensitiveHeaderNames is the deny list of HTTP header names whose values
+	// carry credentials or session material and must never appear in logs.
+	sensitiveHeaderNames = []string{
+		"authorization",
+		"proxy-authorization",
+		"cookie",
+		"set-cookie",
+		"x-api-key",
+		"x-auth-token",
+		"x-amz-security-token",
+		"authentication-info",
+		"www-authenticate",
+		"proxy-authenticate",
+		"x-csrf-token",
+		"x-xsrf-token",
+		"x-access-token",
+		"x-session-token",
+		"x-forwarded-authorization",
+		"x-auth-request-access-token",
+		"x-id-token",
+	}
 )
 
 // HandlerConfig is a config for the handler.
@@ -83,13 +105,27 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ActiveSeriesWriteTimeout, "query-frontend.active-series-write-timeout", 5*time.Minute, "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.")
 }
 
+// Validate the HandlerConfig.
+func (cfg *HandlerConfig) Validate() error {
+	var rejected []string
+	for _, h := range cfg.LogQueryRequestHeaders {
+		if isSensitiveHeaderName(h) {
+			rejected = append(rejected, h)
+		}
+	}
+	if len(rejected) > 0 {
+		return fmt.Errorf("-query-frontend.log-query-request-headers must not contain headers that carry credentials or session material: %s", strings.Join(rejected, ", "))
+	}
+	return nil
+}
+
 // Handler accepts queries and forwards them to RoundTripper. It can wait on in-flight requests and log slow queries,
 // all other logic is inside the RoundTripper.
 type Handler struct {
-	cfg          HandlerConfig
-	headersToLog []string
-	log          log.Logger
-	roundTripper http.RoundTripper
+	cfg              HandlerConfig
+	safeHeadersToLog []safeHeader
+	log              log.Logger
+	roundTripper     http.RoundTripper
 
 	// Metrics.
 	querySeconds               *prometheus.CounterVec
@@ -111,10 +147,10 @@ type Handler struct {
 // NewHandler creates a new frontend handler.
 func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer) *Handler {
 	h := &Handler{
-		cfg:          cfg,
-		headersToLog: filterHeadersToLog(cfg.LogQueryRequestHeaders),
-		log:          log,
-		roundTripper: roundTripper,
+		cfg:              cfg,
+		safeHeadersToLog: safeHeadersToLog(cfg.LogQueryRequestHeaders),
+		log:              log,
+		roundTripper:     roundTripper,
 	}
 	h.cond = sync.NewCond(&h.mtx)
 
@@ -305,7 +341,7 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"time_taken", queryResponseTime.String(),
 	}
 
-	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
+	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
 
 	// Append query string params last so that, if the log line is truncated downstream,
 	// the long param_query value is what gets cut rather than other fields.
@@ -412,7 +448,7 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage, "read_consistency_max_delay", delay)
 	}
 
-	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
+	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
 
 	if queryErr == nil && queryResponseStatusCode/100 != 2 {
 		// If downstream replied with non-2xx, log this as a failure.
@@ -483,21 +519,75 @@ func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName stri
 	return ""
 }
 
-func filterHeadersToLog(headersToLog []string) (filtered []string) {
+// safeHeader is the name of an HTTP request header that has been validated as
+// safe to log: it is not in the sensitive-header deny list. Values must be
+// constructed via newSafeHeader so the deny-list check cannot be bypassed by
+// callers outside the package.
+type safeHeader string
+
+// newSafeHeader returns a safeHeader wrapping name and true, or the zero value
+// and false if name is in the sensitive-header deny list.
+func newSafeHeader(name string) (safeHeader, bool) {
+	if isSensitiveHeaderName(name) {
+		return "", false
+	}
+	return safeHeader(name), true
+}
+
+func (s safeHeader) String() string {
+	return string(s)
+}
+
+func (s safeHeader) log() string {
+	return fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(string(s)), "-", "_"))
+}
+
+// isSensitiveHeaderName reports whether the named header carries credentials
+// or session material whose value must never be logged, regardless of operator
+// allow-list configuration.
+func isSensitiveHeaderName(name string) bool {
+	lower := strings.ToLower(name)
+	for _, h := range sensitiveHeaderNames {
+		if h == lower {
+			return true
+		}
+	}
+	return false
+}
+
+func safeHeadersToLog(headersToLog []string) (safeHeaders []safeHeader) {
 	for _, h := range headersToLog {
 		if strings.EqualFold(h, requestoptions.CacheControlHeader) {
 			continue
 		}
-		filtered = append(filtered, h)
+		if s, ok := newSafeHeader(h); ok {
+			safeHeaders = append(safeHeaders, s)
+		}
 	}
-	return filtered
+	return safeHeaders
 }
 
-func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
-	fields = append(fields, cacheControlLogField, h.Get(requestoptions.CacheControlHeader))
-	for _, s := range headersToLog {
-		if v := h.Get(s); v != "" {
-			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
+// sanitizeHeaderValue reads headerName from header and returns its sanitized
+// value. The ok flag is true when the sanitized value is non-empty or
+// acceptEmpty is set.
+func sanitizeHeaderValue(header *http.Header, headerName safeHeader, acceptEmpty bool) (string, bool) {
+	value := header.Get(headerName.String())
+	value = strings.TrimSpace(value)
+
+	return value, acceptEmpty || value != ""
+}
+
+// formatRequestHeaders returns the log fields for the Cache-Control header and
+// for every operator-allow-listed header present in the request. All such
+// headers are of type safeHeader.
+func (f *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
+	if v, ok := sanitizeHeaderValue(header, cacheControlSafeHeader, true); ok {
+		fields = append(fields, cacheControlSafeHeader.log(), v)
+	}
+
+	for _, s := range f.safeHeadersToLog {
+		if v, ok := sanitizeHeaderValue(header, s, false); ok {
+			fields = append(fields, s.log(), v)
 		}
 	}
 	return fields

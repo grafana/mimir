@@ -26,6 +26,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/test"
@@ -1133,13 +1134,25 @@ func TestHandler_QueryStringLoggedLast(t *testing.T) {
 	require.True(t, sawQueryStats)
 }
 
-func TestFormatRequestHeaders(t *testing.T) {
+func TestHandler_FormatRequestHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Add("X-Header-To-Log", "i should be logged!")
 	h.Add("X-Header-To-Not-Log", "i shouldn't be logged!")
+	h.Add("Authorization", "Bearer super-secret-token")
+	h.Add("X-Api-Key", "secret-api-key")
 
-	fields := formatRequestHeaders(&h, []string{"X-Header-To-Log", "X-Header-Not-Present"})
+	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
 
+	reg := prometheus.NewPedanticRegistry()
+	cfg := HandlerConfig{LogQueryRequestHeaders: []string{"X-Header-To-Log", "X-Header-Not-Present", "Authorization", "X-Api-Key"}}
+	logger := &testLogger{}
+	handler := NewHandler(cfg, roundTripper, logger, reg)
+
+	fields := handler.formatRequestHeaders(&h)
+
+	// We don't expect to see "Authorization" nor "X-Api-Key".
 	expected := []interface{}{
 		"header_cache_control",
 		"",
@@ -1148,4 +1161,134 @@ func TestFormatRequestHeaders(t *testing.T) {
 	}
 
 	assert.Equal(t, expected, fields)
+}
+
+func TestSafeHeadersToLog(t *testing.T) {
+	t.Run("remove Cache-Control if it is present", func(t *testing.T) {
+		got := safeHeadersToLog([]string{
+			"X-Header-To-Log",
+			"Cache-Control",
+			"Authorization",
+			"X-Api-Key",
+			"X-Trace-Id",
+		})
+		assert.Equal(t, []safeHeader{"X-Header-To-Log", "X-Trace-Id"}, got)
+	})
+
+	t.Run("don't add Cache-Control if it is not present", func(t *testing.T) {
+		got := safeHeadersToLog([]string{
+			"X-Header-To-Log",
+			"Authorization",
+			"X-Api-Key",
+			"X-Trace-Id",
+		})
+		assert.Equal(t, []safeHeader{"X-Header-To-Log", "X-Trace-Id"}, got)
+	})
+}
+
+func TestNewSafeHeader(t *testing.T) {
+	t.Run("for non-sensitive headers should return a new safeHeader", func(t *testing.T) {
+		sH, ok := newSafeHeader("X-Custom-Header")
+		assert.True(t, ok)
+		assert.Equal(t, "X-Custom-Header", sH.String())
+		assert.Equal(t, "header_x_custom_header", sH.log())
+	})
+
+	t.Run("for sensitive headers should not return a new safeHeader", func(t *testing.T) {
+		for _, name := range sensitiveHeaderNames {
+			_, ok := newSafeHeader(name)
+			assert.False(t, ok)
+		}
+	})
+}
+
+func TestSanitizeHeaderValue(t *testing.T) {
+	type testCase struct {
+		headerName     string
+		value          string
+		acceptEmpty    bool
+		expectedValue  string
+		expectedStatus bool
+	}
+
+	testCases := map[string]testCase{
+		"non-sensitive header passes through": {
+			headerName:     "X-Custom-Header",
+			value:          "some-value",
+			expectedValue:  "some-value",
+			expectedStatus: true,
+		},
+		"empty value returns empty if accepted": {
+			headerName:     "X-Custom-Header",
+			value:          "",
+			acceptEmpty:    true,
+			expectedValue:  "",
+			expectedStatus: true,
+		},
+		"empty value rejected if not accepted": {
+			headerName:     "X-Custom-Header",
+			value:          "",
+			acceptEmpty:    false,
+			expectedValue:  "",
+			expectedStatus: false,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			header := &http.Header{tc.headerName: {tc.value}}
+			sH, ok := newSafeHeader(tc.headerName)
+			assert.True(t, ok)
+			val, ok := sanitizeHeaderValue(header, sH, tc.acceptEmpty)
+			assert.Equal(t, tc.expectedStatus, ok)
+			assert.Equal(t, tc.expectedValue, val)
+		})
+	}
+}
+
+func TestHandlerConfig_Validate(t *testing.T) {
+	testCases := map[string]struct {
+		headers       []string
+		expectErr     bool
+		expectErrSubs []string
+	}{
+		"empty allow-list is valid": {
+			headers:   nil,
+			expectErr: false,
+		},
+		"benign headers are valid": {
+			headers:   []string{"User-Agent", "X-Trace-Id", "X-Custom-Tenant"},
+			expectErr: false,
+		},
+		"single sensitive header is rejected": {
+			headers:       []string{"Authorization"},
+			expectErr:     true,
+			expectErrSubs: []string{"Authorization"},
+		},
+		"multiple sensitive headers are reported together": {
+			headers:       []string{"User-Agent", "Authorization", "X-Api-Key", "X-Trace-Id"},
+			expectErr:     true,
+			expectErrSubs: []string{"Authorization", "X-Api-Key"},
+		},
+		"matching is case-insensitive": {
+			headers:       []string{"AUTHORIZATION"},
+			expectErr:     true,
+			expectErrSubs: []string{"AUTHORIZATION"},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cfg := HandlerConfig{LogQueryRequestHeaders: flagext.StringSliceCSV(tc.headers)}
+			err := cfg.Validate()
+			if !tc.expectErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			for _, sub := range tc.expectErrSubs {
+				assert.Contains(t, err.Error(), sub)
+			}
+		})
+	}
 }
