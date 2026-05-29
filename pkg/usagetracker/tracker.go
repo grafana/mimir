@@ -994,7 +994,7 @@ func parseInstanceID(instanceID string) (int32, error) {
 		return 0, fmt.Errorf("no sequence number in instance ID %s", instanceID)
 	}
 
-	return int32(seq), nil //nolint:gosec
+	return int32(seq), nil
 }
 
 func snapshotFilename(ts time.Time, instanceID string, partitionID int32) string {
