@@ -600,6 +600,27 @@ func sanitizeHeaderValue(header *http.Header, headerName safeHeader, acceptEmpty
 	return value, acceptEmpty || value != ""
 }
 
+// formatRequestHeaders returns the log fields for the Cache-Control header and
+// for every operator-allow-listed header present in the request.
+//
+// CodeQL's go/clear-text-logging query may flag the appends below because the
+// values flow from http.Header.Get to a logger. The flow is intentional and
+// the safety model has three layers:
+//
+//  1. Startup validation: HandlerConfig.Validate rejects any
+//     -query-frontend.log-query-request-headers entry that matches
+//     sensitiveHeaderNames, so credential-bearing headers can never reach
+//     h.safeHeadersToLog.
+//  2. Type system: h.safeHeadersToLog is []safeHeader; safeHeader values are
+//     constructed only via newSafeHeader, which re-runs the deny-list check.
+//     Cache-Control is the single non-operator-controlled entry and is a
+//     safeHeader constant.
+//  3. Inline sanitization: sanitizeHeaderValue strips control characters and
+//     trims whitespace before the value reaches the log slice, preventing
+//     log-injection regardless of upstream discipline.
+//
+// CodeQL does not model the upstream validation, so the residual alert is a
+// documentation question, not a security bug. See PR #15487 for context.
 func (h *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
 	if v, ok := sanitizeHeaderValue(header, cacheControlSafeHeader, true); ok {
 		fields = append(fields, cacheControlSafeHeader.log(), v)
