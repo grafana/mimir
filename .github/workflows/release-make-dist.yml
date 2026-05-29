@@ -55,7 +55,10 @@ jobs:
           echo "dist_matrix=$matrix" >> "$GITHUB_OUTPUT"
       - name: Get release tag
         id: release_tag_step
-        run: echo "release_tag=${{ inputs.ref || github.ref_name }}" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: echo "release_tag=${INPUT_REF:-$REF_NAME}" >> "$GITHUB_OUTPUT"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
       dist_matrix: ${{ steps.dist_matrix_step.outputs.dist_matrix }}
