@@ -63,9 +63,9 @@ func makeQueueConsumeFuncWithSlowQueryComponent(
 	slowConsumerLatency time.Duration,
 	normalConsumerLatency time.Duration,
 	report *testScenarioQueueDurationObservations,
-) consumeRequest {
-	return func(request QueryRequest) error {
-		req := request.(*testQueryRequest)
+) consumeItem {
+	return func(request Item) error {
+		req := request.(*testItem)
 		queryComponent := req.ExpectedQueryComponentName()
 		if queryComponent == ingesterAndStoreGatewayQueueDimension {
 			// we expect the latency of a query hitting both a normal and a slowed-down query component
@@ -414,7 +414,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			}
 
 			t.Run(testCaseName, func(t *testing.T) {
-				queue, err := NewRequestQueue(
+				queue, err := New(
 					log.NewNopLogger(),
 					maxOutStandingPerTenant,
 					querierForgetDelay,
@@ -424,7 +424,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				)
 				require.NoError(t, err)
 
-				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierShards
+				// New constructor does not allow passing in a tree or tenantQuerierShards
 				// so we have to override here to use the same structures as the test case
 				queue.queueBroker.tenantQuerierAssignments = &tenantQuerierShards{
 					querierIDsSorted: make([]tree.QuerierID, 0),

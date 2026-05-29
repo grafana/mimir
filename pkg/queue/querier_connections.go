@@ -10,7 +10,7 @@ import (
 const unregisteredWorkerID = -1
 
 // querierConnections manages information about queriers connected to the request queue. The queueBroker
-// receives information about querier connections via RequestQueue's querierWorkerOperations channel.
+// receives information about querier connections via Queue's querierWorkerOperations channel.
 type querierConnections struct {
 	queriersByID map[string]*querierState
 
