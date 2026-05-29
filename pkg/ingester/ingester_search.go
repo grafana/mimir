@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Architecture: see docs/internal/streaming-label-value-search/.
+// Architecture: see docs/internal/streaming-label-value-search/README.md.
 
 package ingester
 
