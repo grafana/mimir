@@ -181,6 +181,12 @@ func labelValuesCardinality(
 
 		for countRes := range resultCh {
 			if countRes.err != nil {
+				// Drain to wait for in-flight chunks to release idxReader before
+				// the caller's defer idx.Close() fires. The producer goroutine
+				// closes resultCh after wg.Wait, so this returns once every
+				// chunk is done.
+				for range resultCh { //nolint:revive
+				}
 				return countRes.err
 			}
 			if countRes.count == 0 {

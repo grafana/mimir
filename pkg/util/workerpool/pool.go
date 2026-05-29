@@ -9,7 +9,6 @@ package workerpool
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"math"
 	"runtime"
@@ -27,15 +26,12 @@ import (
 // ErrPoolStopped is returned when the pool is stopped while a submission was waiting.
 var ErrPoolStopped = errors.New("worker pool is stopped")
 
-// Config configures a worker Pool. Use RegisterFlagsWithPrefix to wire it to CLI flags.
+// Config configures a worker Pool. Each caller wires its own user-facing flags
+// and translates them into a Config; the pool intentionally does not register
+// flags itself so that flag names live in the caller's namespace.
 type Config struct {
 	// Size is the number of worker goroutines. 0 selects runtime.GOMAXPROCS(0).
 	Size int `yaml:"size" category:"experimental"`
-}
-
-// RegisterFlagsWithPrefix registers the config flags under the given prefix.
-func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.IntVar(&cfg.Size, prefix+"size", 0, "Number of worker goroutines in the pool. 0 uses GOMAXPROCS.")
 }
 
 // Validate returns an error if the config is invalid.
@@ -57,22 +53,15 @@ type Pool struct {
 
 	queue   *queue.Queue
 	workers int
+	name    string
 
 	workersWg sync.WaitGroup
 }
 
-const (
-	// poolWorkerID is the synthetic querierID used to register all of the pool's
-	// workers with the underlying queue. The queue's tenant-fair dispatch does
-	// not distinguish between workers belonging to the same querierID, which is
-	// what we want.
-	poolWorkerID = "worker-pool"
-
-	// queueForgetDelay is passed to the underlying Queue. Pool workers
-	// never disconnect during normal operation; the value only affects how
-	// long disconnected workers are remembered before being forgotten.
-	queueForgetDelay = 0 * time.Second
-)
+// queueForgetDelay is passed to the underlying Queue. Pool workers
+// never disconnect during normal operation; the value only affects how long
+// disconnected workers are remembered before being forgotten.
+const queueForgetDelay = 0 * time.Second
 
 // New constructs a Pool. The name is used as a const label on the pool's
 // metrics so multiple pools can share a registerer.
@@ -121,6 +110,7 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 	p := &Pool{
 		queue:   rq,
 		workers: size,
+		name:    name,
 	}
 	p.Service = services.NewBasicService(p.starting, p.running, p.stopping)
 	return p, nil
@@ -134,15 +124,20 @@ func (p *Pool) starting(ctx context.Context) error {
 	// reporting the pool as running. Otherwise a Submit immediately after
 	// StartAndAwaitRunning could be enqueued before any worker is connected
 	// to the queue dispatcher, leaving the chunk idle until registration races
-	// through.
-	ready := make(chan struct{}, p.workers)
+	// through. A registration failure fails pool startup: a partially-staffed
+	// pool would silently process less work than configured, with no visible
+	// signal beyond a growing queue.
+	ready := make(chan error, p.workers)
 	for i := 0; i < p.workers; i++ {
 		p.workersWg.Add(1)
-		go p.workerLoop(ready)
+		go p.workerLoop(fmt.Sprintf("%s-worker-%d", p.name, i), ready)
 	}
 	for i := 0; i < p.workers; i++ {
 		select {
-		case <-ready:
+		case err := <-ready:
+			if err != nil {
+				return fmt.Errorf("registering worker pool worker: %w", err)
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -164,14 +159,15 @@ func (p *Pool) stopping(_ error) error {
 	return err
 }
 
-func (p *Pool) workerLoop(ready chan<- struct{}) {
+func (p *Pool) workerLoop(workerID string, ready chan<- error) {
 	defer p.workersWg.Done()
 
-	conn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), poolWorkerID)
+	conn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), workerID)
 	err := p.queue.AwaitRegisterQuerierWorkerConn(conn)
-	// Signal readiness even on registration failure so starting() does not
-	// deadlock waiting for a worker that has already exited.
-	ready <- struct{}{}
+	// Always signal so starting() does not deadlock waiting for a worker that
+	// has already exited. Pass the registration error through so a failure
+	// fails pool startup.
+	ready <- err
 	if err != nil {
 		return
 	}
@@ -185,10 +181,10 @@ func (p *Pool) workerLoop(ready chan<- struct{}) {
 		if err != nil {
 			return
 		}
-		fn, ok := item.(func())
-		if !ok {
-			continue
-		}
+		// Submit's signature guarantees func(), so the assertion is total. A
+		// failure here means an internal invariant has been broken; panic so
+		// it surfaces immediately rather than silently dropping work.
+		fn := item.(func())
 		fn()
 	}
 }
