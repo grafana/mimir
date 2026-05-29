@@ -303,8 +303,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	hs := w.Header()
-	for h, vs := range resp.Header {
-		hs[h] = vs
+	for name, vs := range resp.Header {
+		hs[name] = vs
 	}
 
 	var parts []string
@@ -347,7 +347,7 @@ func (h *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	// the long param_query value is what gets cut rather than other fields.
 	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
-	level.Info(util_log.WithContext(r.Context(), h.log)).Log(logMessage...)
+	level.Info(util_log.WithContext(r.Context(), h.log)).Log(sanitizeLogMessages(logMessage)...)
 }
 
 func (h *Handler) reportQueryStats(
@@ -475,7 +475,7 @@ func (h *Handler) reportQueryStats(
 	// the long param_query value is what gets cut rather than other fields.
 	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
-	level.Info(util_log.WithContext(r.Context(), h.log)).Log(logMessage...)
+	level.Info(util_log.WithContext(r.Context(), h.log)).Log(sanitizeLogMessages(logMessage)...)
 }
 
 // formatQueryString prefers printing start, end, and step from details if they are not nil.
@@ -565,6 +565,24 @@ func safeHeadersToLog(headersToLog []string) (safeHeaders []safeHeader) {
 		}
 	}
 	return safeHeaders
+}
+
+func sanitizeLogMessages(logMessages []any) []any {
+	for i, v := range logMessages {
+		switch v := v.(type) {
+		case string:
+			logMessages[i] = sanitizeLogString(v)
+		case error:
+			logMessages[i] = sanitizeLogString(v.Error())
+		}
+	}
+	return logMessages
+}
+
+func sanitizeLogString(v string) string {
+	v = strings.ReplaceAll(v, "\n", "")
+	v = strings.ReplaceAll(v, "\r", "")
+	return v
 }
 
 // sanitizeHeaderValue returns value (and true) when headerName is a safeHeader
