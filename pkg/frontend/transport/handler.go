@@ -298,7 +298,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if resp.Body != nil {
 			err = resp.Body.Close()
 			if err != nil {
-				level.Warn(h.log).Log("msg", "failed to close response body", "err", err)
+				level.Warn(h.log).Log("msg", "failed to close response body", "err", sanitizeLogString(err.Error()))
 			}
 		}
 	}()

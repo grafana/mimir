@@ -1,0 +1,7 @@
+name: mimir/codeql-customizations
+version: 0.0.0
+library: true
+extensionTargets:
+  codeql/go-all: '*'
+dataExtensions:
+  - extensions/*.model.yml

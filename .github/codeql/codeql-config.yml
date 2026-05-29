@@ -3,6 +3,9 @@ name: "Mimir CodeQL config"
 queries:
   - uses: security-extended
 
+packs:
+  - ./customizations
+
 paths-ignore:
   - "**/vendor/**"
   - "**/testdata/**"
