@@ -59,7 +59,9 @@ jobs:
           echo "dist_matrix=$matrix" >> "$GITHUB_OUTPUT"
       - name: Get release tag
         id: release_tag_step
-        run: echo "release_tag=${{ inputs.ref || github.ref_name }}" >> "$GITHUB_OUTPUT"
+        env:
+          REF: ${{ inputs.ref || github.ref_name }}
+        run: echo "release_tag=$REF" >> "$GITHUB_OUTPUT"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
       dist_matrix: ${{ steps.dist_matrix_step.outputs.dist_matrix }}
@@ -162,6 +164,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
-          gh release upload "${{ needs.prepare.outputs.release_tag }}" dist/* --clobber --repo "${{ github.repository }}"
-          gh release upload "${{ needs.prepare.outputs.release_tag }}" packages/* --clobber --repo "${{ github.repository }}"
+          gh release upload "$RELEASE_TAG" dist/* --clobber --repo "${{ github.repository }}"
+          gh release upload "$RELEASE_TAG" packages/* --clobber --repo "${{ github.repository }}"
