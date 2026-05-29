@@ -58,7 +58,7 @@
         'development/**/dev.dockerfile',
       ],
       matchStrings: [
-        'npm install.*\\s+(?<depName>[^@]+)@(?<currentValue>[^\\s]+)',
+        'npm install\\s+(?:-[^\\s]+\\s+)*(?<depName>[^@\\s]+)@(?<currentValue>[^\\s]+)',
       ],
       datasourceTemplate: 'npm',
     },
@@ -69,9 +69,9 @@
         'mimir-build-image/Dockerfile',
       ],
       matchStrings: [
-        '# renovate: depName=github.com/(?<depName>[^\\s]+)\\s+ENV [A-Z_]+=(?<currentValue>[^\\s]+)\\s+',
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\s+ENV [A-Z0-9_]+=(\\s|\"|)(?<currentValue>[^\"\\s]*)(\"|)",
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+) digestVersion=(?<currentValue>.*)\\s+ENV [A-Z0-9_]+=(\\s|\"|)(?<currentDigest>[^\"\\s]*)(\"|)"
       ],
-      datasourceTemplate: 'github-tags',
     },
     {
       customType: 'regex',
