@@ -1191,7 +1191,7 @@ func TestNewSafeHeader(t *testing.T) {
 		sH, ok := newSafeHeader("X-Custom-Header")
 		assert.True(t, ok)
 		assert.Equal(t, "X-Custom-Header", sH.String())
-		assert.Contains(t, "header_x_custom_header", sH.log())
+		assert.Equal(t, "header_x_custom_header", sH.log())
 	})
 
 	t.Run("for sensitive headers should not return a new safeHeader", func(t *testing.T) {
