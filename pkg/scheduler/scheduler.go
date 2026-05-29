@@ -397,9 +397,9 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	req.EnqueueTime = now
 	req.CancelFunc = cancel
 
-	s.activeUsers.UpdateUserTimestamp(userID, now)
 	return s.queue.Enqueue(req, func() {
 		shouldCancel = false
+		s.activeUsers.UpdateUserTimestamp(userID, now)
 		s.addRequestToPending(req)
 	})
 }
