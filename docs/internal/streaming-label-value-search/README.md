@@ -173,8 +173,7 @@ gateway sees multiple blocks for a tenant and fans out internally.
 
 ### Ingester (single TSDB head, leaf)
 
-The ingester exposes two gRPC server-streaming RPCs (`stream
-SearchResultBatch`) over its existing gRPC server. Each RPC reads from the
+The ingester exposes two gRPC server-streaming RPCs (`stream SearchResultBatch`) over its existing gRPC server. Each RPC reads from the
 per-tenant TSDB head — a **single in-memory source** — and streams batches
 of results back to the gRPC client.
 
@@ -248,7 +247,8 @@ the hints in full.
 **Files**: `pkg/storegateway/bucket_search.go` (RPC handlers, per-block
 fan-out, per-block hints applier, streaming-response writer, queried-
 blocks header builder); `pkg/storegateway/storepb/rpc.proto` (RPC + batch
-+ response-hints wire definitions).
+
+- response-hints wire definitions).
 
 **Per-call flow:**
 
@@ -279,10 +279,10 @@ blocks header builder); `pkg/storegateway/storepb/rpc.proto` (RPC + batch
 **Where filter / order / limit are applied** — two distinct points inside
 the store-gateway:
 
-| Layer            | Filter                                  | Order                        | Limit             |
-| ---------------- | --------------------------------------- | ---------------------------- | ----------------- |
-| **Per-block**    | ✓                                       | ✓                            | ✓ (per-block cap) |
-| **Cross-block**  | (pass-through, leaves already filtered) | ✓ (re-applied across blocks) | ✓ (global cap)    |
+| Layer           | Filter                                  | Order                        | Limit             |
+| --------------- | --------------------------------------- | ---------------------------- | ----------------- |
+| **Per-block**   | ✓                                       | ✓                            | ✓ (per-block cap) |
+| **Cross-block** | (pass-through, leaves already filtered) | ✓ (re-applied across blocks) | ✓ (global cap)    |
 
 The cross-block merge calls the vendored Prometheus pairwise k-way merge
 with the per-block sets and the request's ordering and limit; it re-applies
