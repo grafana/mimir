@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -298,7 +297,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if resp.Body != nil {
 			err = resp.Body.Close()
 			if err != nil {
-				level.Warn(f.log).Log("msg", "failed to close response body", "err", sanitizeLogString(err.Error()))
+				level.Warn(f.log).Log("msg", "failed to close response body", "err", err)
 			}
 		}
 	}()
@@ -348,7 +347,7 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	// the long param_query value is what gets cut rather than other fields.
 	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
-	level.Info(util_log.WithContext(r.Context(), f.log)).Log(sanitizeLogMessages(logMessage)...)
+	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
 func (f *Handler) reportQueryStats(
@@ -476,7 +475,7 @@ func (f *Handler) reportQueryStats(
 	// the long param_query value is what gets cut rather than other fields.
 	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
-	level.Info(util_log.WithContext(r.Context(), f.log)).Log(sanitizeLogMessages(logMessage)...)
+	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
 // formatQueryString prefers printing start, end, and step from details if they are not nil.
@@ -568,59 +567,19 @@ func safeHeadersToLog(headersToLog []string) (safeHeaders []safeHeader) {
 	return safeHeaders
 }
 
-func sanitizeLogMessages(logMessages []any) []any {
-	for i, v := range logMessages {
-		switch v := v.(type) {
-		case string:
-			logMessages[i] = sanitizeLogString(v)
-		case error:
-			logMessages[i] = sanitizeLogString(v.Error())
-		}
-	}
-	return logMessages
-}
-
-func sanitizeLogString(v string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, v)
-}
-
 // sanitizeHeaderValue reads headerName from header and returns its sanitized
 // value. The ok flag is true when the sanitized value is non-empty or
 // acceptEmpty is set.
 func sanitizeHeaderValue(header *http.Header, headerName safeHeader, acceptEmpty bool) (string, bool) {
 	value := header.Get(headerName.String())
-	value = sanitizeLogString(value)
 	value = strings.TrimSpace(value)
 
 	return value, acceptEmpty || value != ""
 }
 
 // formatRequestHeaders returns the log fields for the Cache-Control header and
-// for every operator-allow-listed header present in the request.
-//
-// CodeQL's go/clear-text-logging query may flag the appends below because the
-// values flow from http.Header.Get to a logger. The flow is intentional and
-// the safety model has three layers:
-//
-//  1. Startup validation: HandlerConfig.Validate rejects any
-//     -query-frontend.log-query-request-headers entry that matches
-//     sensitiveHeaderNames, so credential-bearing headers can never reach
-//     h.safeHeadersToLog.
-//  2. Type system: h.safeHeadersToLog is []safeHeader; safeHeader values are
-//     constructed only via newSafeHeader, which re-runs the deny-list check.
-//     Cache-Control is the single non-operator-controlled entry and is a
-//     safeHeader constant.
-//  3. Inline sanitization: sanitizeHeaderValue strips control characters and
-//     trims whitespace before the value reaches the log slice, preventing
-//     log-injection regardless of upstream discipline.
-//
-// CodeQL does not model the upstream validation, so the residual alert is a
-// documentation question, not a security bug. See PR #15487 for context.
+// for every operator-allow-listed header present in the request. All such
+// headers are of type safeHeader.
 func (f *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
 	if v, ok := sanitizeHeaderValue(header, cacheControlSafeHeader, true); ok {
 		fields = append(fields, cacheControlSafeHeader.log(), v)
