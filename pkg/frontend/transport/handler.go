@@ -215,33 +215,33 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 }
 
 // Stop makes f enter stopped mode and wait on in-flight requests.
-func (h *Handler) Stop() {
-	h.mtx.Lock()
-	h.stopped = true
+func (f *Handler) Stop() {
+	f.mtx.Lock()
+	f.stopped = true
 
-	level.Info(h.log).Log("msg", "waiting on in-flight requests", "requests", h.inflightRequests)
-	for h.inflightRequests > 0 {
-		h.cond.Wait()
+	level.Info(f.log).Log("msg", "waiting on in-flight requests", "requests", f.inflightRequests)
+	for f.inflightRequests > 0 {
+		f.cond.Wait()
 	}
-	h.mtx.Unlock()
-	level.Info(h.log).Log("msg", "done waiting on in-flight requests")
+	f.mtx.Unlock()
+	level.Info(f.log).Log("msg", "done waiting on in-flight requests")
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mtx.Lock()
-	if h.stopped {
-		h.mtx.Unlock()
+func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mtx.Lock()
+	if f.stopped {
+		f.mtx.Unlock()
 		http.Error(w, "frontend stopped", http.StatusServiceUnavailable)
 		return
 	}
-	h.inflightRequests++
-	h.mtx.Unlock()
+	f.inflightRequests++
+	f.mtx.Unlock()
 
 	defer func() {
-		h.mtx.Lock()
-		h.inflightRequests--
-		h.cond.Broadcast()
-		h.mtx.Unlock()
+		f.mtx.Lock()
+		f.inflightRequests--
+		f.cond.Broadcast()
+		f.mtx.Unlock()
 	}()
 
 	var queryDetails *querymiddleware.QueryDetails
@@ -249,7 +249,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
 	queryStatsHeaderNameOk, _ := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
-	if h.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
+	if f.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
 		var ctx context.Context
 		queryDetails, ctx = querymiddleware.ContextWithEmptyDetails(r.Context())
 		r = r.WithContext(ctx)
@@ -269,8 +269,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isActiveSeriesEndpoint(r) && h.cfg.ActiveSeriesWriteTimeout > 0 {
-		deadline := time.Now().Add(h.cfg.ActiveSeriesWriteTimeout)
+	if isActiveSeriesEndpoint(r) && f.cfg.ActiveSeriesWriteTimeout > 0 {
+		deadline := time.Now().Add(f.cfg.ActiveSeriesWriteTimeout)
 		err = http.NewResponseController(w).SetWriteDeadline(deadline)
 		if err != nil {
 			err := fmt.Errorf("failed to set write deadline for response writer: %w", err)
@@ -278,18 +278,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ctx, cancel := context.WithDeadlineCause(r.Context(), deadline,
-			cancellation.NewErrorf("write deadline exceeded (timeout: %v)", h.cfg.ActiveSeriesWriteTimeout))
+			cancellation.NewErrorf("write deadline exceeded (timeout: %v)", f.cfg.ActiveSeriesWriteTimeout))
 		defer cancel()
 		r = r.WithContext(ctx)
 	}
 
 	startTime := time.Now()
-	resp, err := h.roundTripper.RoundTrip(r)
+	resp, err := f.roundTripper.RoundTrip(r)
 	queryResponseTime := time.Since(startTime)
 
 	if err != nil {
 		statusCode := writeError(w, err)
-		h.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, statusCode, err)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, statusCode, err)
 		return
 	}
 
@@ -298,18 +298,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if resp.Body != nil {
 			err = resp.Body.Close()
 			if err != nil {
-				level.Warn(h.log).Log("msg", "failed to close response body", "err", sanitizeLogString(err.Error()))
+				level.Warn(f.log).Log("msg", "failed to close response body", "err", sanitizeLogString(err.Error()))
 			}
 		}
 	}()
 
 	hs := w.Header()
-	for name, vs := range resp.Header {
-		hs[name] = vs
+	for h, vs := range resp.Header {
+		hs[h] = vs
 	}
 
 	var parts []string
-	if h.cfg.QueryStatsEnabled {
+	if f.cfg.QueryStatsEnabled {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk {
@@ -324,16 +324,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// we don't check for copy error as there is no much we can do at this point
 	queryResponseSize, _ := io.Copy(w, resp.Body)
 
-	if h.cfg.LogQueriesLongerThan > 0 && queryResponseTime > h.cfg.LogQueriesLongerThan {
-		h.reportSlowQuery(r, params, queryResponseTime, queryDetails)
+	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
+		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
-	if h.cfg.QueryStatsEnabled {
-		h.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
+	if f.cfg.QueryStatsEnabled {
+		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
 	}
 }
 
 // reportSlowQuery reports slow queries.
-func (h *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
+func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
 	logMessage := []any{
 		"msg", "slow query detected",
 		"method", r.Method,
@@ -342,16 +342,16 @@ func (h *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"time_taken", queryResponseTime.String(),
 	}
 
-	logMessage = append(logMessage, h.formatRequestHeaders(&r.Header)...)
+	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
 
 	// Append query string params last so that, if the log line is truncated downstream,
 	// the long param_query value is what gets cut rather than other fields.
 	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
-	level.Info(util_log.WithContext(r.Context(), h.log)).Log(sanitizeLogMessages(logMessage)...)
+	level.Info(util_log.WithContext(r.Context(), f.log)).Log(sanitizeLogMessages(logMessage)...)
 }
 
-func (h *Handler) reportQueryStats(
+func (f *Handler) reportQueryStats(
 	r *http.Request,
 	queryString url.Values,
 	queryStartTime time.Time,
@@ -381,15 +381,15 @@ func (h *Handler) reportQueryStats(
 	physicalSamplesRead := stats.LoadPhysicalSamplesRead()
 	if stats != nil {
 		// Track stats.
-		h.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
-		h.querySeries.WithLabelValues(userID).Add(float64(numSeries))
-		h.queryChunkBytes.WithLabelValues(userID).Add(float64(numBytes))
-		h.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
-		h.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
-		h.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
-		h.queryPhysicalSamplesRead.WithLabelValues(userID).Add(float64(physicalSamplesRead))
-		h.queryEquivalentSamplesRead.WithLabelValues(userID).Add(float64(equivalentSamplesRead))
-		h.activeUsers.UpdateUserTimestamp(userID, time.Now())
+		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
+		f.querySeries.WithLabelValues(userID).Add(float64(numSeries))
+		f.queryChunkBytes.WithLabelValues(userID).Add(float64(numBytes))
+		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
+		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
+		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
+		f.queryPhysicalSamplesRead.WithLabelValues(userID).Add(float64(physicalSamplesRead))
+		f.queryEquivalentSamplesRead.WithLabelValues(userID).Add(float64(equivalentSamplesRead))
+		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
 	}
 
 	// Log stats.
@@ -449,7 +449,7 @@ func (h *Handler) reportQueryStats(
 		logMessage = append(logMessage, "read_consistency_max_delay", delay)
 	}
 
-	logMessage = append(logMessage, h.formatRequestHeaders(&r.Header)...)
+	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
 
 	if queryErr == nil && queryResponseStatusCode/100 != 2 {
 		// If downstream replied with non-2xx, log this as a failure.
@@ -476,7 +476,7 @@ func (h *Handler) reportQueryStats(
 	// the long param_query value is what gets cut rather than other fields.
 	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
-	level.Info(util_log.WithContext(r.Context(), h.log)).Log(sanitizeLogMessages(logMessage)...)
+	level.Info(util_log.WithContext(r.Context(), f.log)).Log(sanitizeLogMessages(logMessage)...)
 }
 
 // formatQueryString prefers printing start, end, and step from details if they are not nil.
@@ -621,12 +621,12 @@ func sanitizeHeaderValue(header *http.Header, headerName safeHeader, acceptEmpty
 //
 // CodeQL does not model the upstream validation, so the residual alert is a
 // documentation question, not a security bug. See PR #15487 for context.
-func (h *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
+func (f *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
 	if v, ok := sanitizeHeaderValue(header, cacheControlSafeHeader, true); ok {
 		fields = append(fields, cacheControlSafeHeader.log(), v)
 	}
 
-	for _, s := range h.safeHeadersToLog {
+	for _, s := range f.safeHeadersToLog {
 		if v, ok := sanitizeHeaderValue(header, s, false); ok {
 			fields = append(fields, s.log(), v)
 		}
