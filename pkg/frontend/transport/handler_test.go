@@ -1186,9 +1186,25 @@ func TestSafeHeadersToLog(t *testing.T) {
 	})
 }
 
+func TestNewSafeHeader(t *testing.T) {
+	t.Run("for non-sensitive headers should return a new safeHeader", func(t *testing.T) {
+		sH, ok := newSafeHeader("X-Custom-Header")
+		assert.True(t, ok)
+		assert.Equal(t, "X-Custom-Header", sH.String())
+		assert.Contains(t, "header_x_custom_header", sH.log())
+	})
+
+	t.Run("for sensitive headers should not return a new safeHeader", func(t *testing.T) {
+		for _, name := range sensitiveHeaderNames {
+			_, ok := newSafeHeader(name)
+			assert.False(t, ok)
+		}
+	})
+}
+
 func TestSanitizeHeaderValue(t *testing.T) {
 	type testCase struct {
-		headerName     any
+		headerName     string
 		value          string
 		acceptEmpty    bool
 		expectedValue  string
@@ -1197,20 +1213,20 @@ func TestSanitizeHeaderValue(t *testing.T) {
 
 	testCases := map[string]testCase{
 		"non-sensitive header passes through": {
-			headerName:     safeHeader("X-Custom-Header"),
+			headerName:     "X-Custom-Header",
 			value:          "some-value",
 			expectedValue:  "some-value",
 			expectedStatus: true,
 		},
 		"empty value returns empty if accepted": {
-			headerName:     safeHeader("X-Custom-Header"),
+			headerName:     "X-Custom-Header",
 			value:          "",
 			acceptEmpty:    true,
 			expectedValue:  "",
 			expectedStatus: true,
 		},
 		"empty value rejected if not accepted": {
-			headerName:     safeHeader("X-Custom-Header"),
+			headerName:     "X-Custom-Header",
 			value:          "",
 			acceptEmpty:    false,
 			expectedValue:  "",
@@ -1218,18 +1234,12 @@ func TestSanitizeHeaderValue(t *testing.T) {
 		},
 	}
 
-	for _, h := range sensitiveHeaderNames {
-		testCases[h] = testCase{
-			headerName:     h,
-			value:          "some-value",
-			expectedValue:  "",
-			expectedStatus: false,
-		}
-	}
-
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			val, ok := sanitizeHeaderValue(tc.headerName, tc.value, tc.acceptEmpty)
+			header := &http.Header{tc.headerName: {tc.value}}
+			sH, ok := newSafeHeader(tc.headerName)
+			assert.True(t, ok)
+			val, ok := sanitizeHeaderValue(header, sH, tc.acceptEmpty)
 			assert.Equal(t, tc.expectedStatus, ok)
 			assert.Equal(t, tc.expectedValue, val)
 		})

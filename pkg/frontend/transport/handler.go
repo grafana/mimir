@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -580,30 +581,32 @@ func sanitizeLogMessages(logMessages []any) []any {
 }
 
 func sanitizeLogString(v string) string {
-	v = strings.ReplaceAll(v, "\n", "")
-	v = strings.ReplaceAll(v, "\r", "")
-	return v
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, v)
 }
 
-// sanitizeHeaderValue returns value (and true) when headerName is a safeHeader
-// and value is non-empty or acceptEmpty is true. The parameter is typed any
-// rather than safeHeader so the runtime type assertion forms an explicit
-// sanitizer barrier — both as defense in depth against in-package casts and
-// as a node CodeQL can recognize between http.Header.Get and the logger.
-func sanitizeHeaderValue(headerName any, value string, acceptEmpty bool) (string, bool) {
-	if _, ok := headerName.(safeHeader); !ok {
-		return "", false
-	}
+// sanitizeHeaderValue reads headerName from header and returns its sanitized
+// value. The ok flag is true when the sanitized value is non-empty or
+// acceptEmpty is set.
+func sanitizeHeaderValue(header *http.Header, headerName safeHeader, acceptEmpty bool) (string, bool) {
+	value := header.Get(headerName.String())
+	value = sanitizeLogString(value)
+	value = strings.TrimSpace(value)
+
 	return value, acceptEmpty || value != ""
 }
 
 func (h *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
-	if v, ok := sanitizeHeaderValue(cacheControlSafeHeader, header.Get(cacheControlSafeHeader.String()), true); ok {
+	if v, ok := sanitizeHeaderValue(header, cacheControlSafeHeader, true); ok {
 		fields = append(fields, cacheControlSafeHeader.log(), v)
 	}
 
 	for _, s := range h.safeHeadersToLog {
-		if v, ok := sanitizeHeaderValue(s, header.Get(s.String()), false); ok {
+		if v, ok := sanitizeHeaderValue(header, s, false); ok {
 			fields = append(fields, s.log(), v)
 		}
 	}
