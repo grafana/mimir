@@ -158,7 +158,7 @@ jobs:
             done
           done
       - name: Upload artifacts to draft release
-        if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false
+        if: github.event_name != 'workflow_dispatch' || format('{0}', inputs.dry_run) != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
