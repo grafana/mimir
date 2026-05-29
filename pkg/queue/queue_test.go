@@ -61,8 +61,8 @@ func randAdditionalQueueDimension(_ string) []string {
 	return secondQueueDimensionOptions[idx : idx+1]
 }
 
-// testQueryRequest is a generic stand-in for the scheduler's SchedulerRequest.
-// The queue treats values as opaque QueryRequest; tests use this type so
+// testItem is a generic stand-in for the scheduler's SchedulerRequest.
+// The queue treats values as an opaque Item; tests use this type so
 // the queue's own test suite has no dependency on the scheduler package.
 //
 // The field shape mirrors the scheduler's SchedulerRequest so that
@@ -70,7 +70,7 @@ func randAdditionalQueueDimension(_ string) []string {
 // HttpRequest field holds a heap-allocated struct with its own strings and
 // header pointers, rather than a single inline byte filler that would have
 // misleadingly cheap copy semantics.
-type testQueryRequest struct {
+type testItem struct {
 	Ctx                       context.Context
 	FrontendAddr              string
 	UserID                    string
@@ -80,19 +80,19 @@ type testQueryRequest struct {
 }
 
 // ExpectedQueryComponentName mirrors SchedulerRequest.ExpectedQueryComponentName.
-func (r *testQueryRequest) ExpectedQueryComponentName() string {
+func (r *testItem) ExpectedQueryComponentName() string {
 	if len(r.AdditionalQueueDimensions) > 0 {
 		return r.AdditionalQueueDimensions[0]
 	}
 	return UnknownDimension
 }
 
-// makeTestQueryRequest creates a request whose in-memory size and shape
+// makeTestItem creates a request whose in-memory size and shape
 // approximate a real query request (a representative URL, headers, and
 // frontend address). The point is for benchmarks of a non-trivial queue
 // depth to be dominated by request payload rather than queue mechanics.
-func makeTestQueryRequest(tenantID string, additionalQueueDimensions []string) *testQueryRequest {
-	return &testQueryRequest{
+func makeTestItem(tenantID string, additionalQueueDimensions []string) *testItem {
+	return &testItem{
 		Ctx:          context.Background(),
 		FrontendAddr: "http://query-frontend:8007",
 		UserID:       tenantID,
@@ -127,7 +127,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 					// Queriers run with parallelism of 16 when query sharding is enabled.
 					for _, numConsumers := range []int{16, 160, 1600} {
 						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
-							queue, err := NewRequestQueue(
+							queue, err := New(
 								log.NewNopLogger(),
 								maxOutstandingRequestsPerTenant,
 								forgetQuerierDelay,
@@ -188,7 +188,7 @@ func queueActorIterationCount(totalIters int, numActors int, actorIdx int) int {
 }
 
 func makeQueueProducerGroup(
-	queue *RequestQueue,
+	queue *Queue,
 	maxQueriersPerTenant int,
 	totalRequests int,
 	numProducers int,
@@ -217,7 +217,7 @@ func makeQueueProducerGroup(
 }
 
 func runQueueProducerIters(
-	queue *RequestQueue,
+	queue *Queue,
 	maxQueriersPerTenant int,
 	totalIters int,
 	numProducers int,
@@ -245,7 +245,7 @@ func runQueueProducerIters(
 }
 
 func queueProduce(
-	queue *RequestQueue,
+	queue *Queue,
 	maxQueriersPerTenant int,
 	tenantID string,
 	additionalQueueDimensionFunc func(tenantID string) []string,
@@ -254,9 +254,9 @@ func queueProduce(
 	if additionalQueueDimensionFunc != nil {
 		additionalQueueDimensions = additionalQueueDimensionFunc(tenantID)
 	}
-	req := makeTestQueryRequest(tenantID, additionalQueueDimensions)
+	req := makeTestItem(tenantID, additionalQueueDimensions)
 	for {
-		err := queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), maxQueriersPerTenant, func() {})
+		err := queue.SubmitItemToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), maxQueriersPerTenant, func() {})
 		if err == nil {
 			break
 		}
@@ -270,11 +270,11 @@ func queueProduce(
 
 func makeQueueConsumerGroup(
 	ctx context.Context,
-	queue *RequestQueue,
+	queue *Queue,
 	totalRequests int,
 	numConsumers int,
 	numWorkersPerConsumer int,
-	consumeFunc consumeRequest,
+	consumeFunc consumeItem,
 ) (*errgroup.Group, chan struct{}) {
 	queueConsumerErrGroup, ctx := errgroup.WithContext(ctx)
 	consumedRequestsCounter := make(chan struct{}, totalRequests)
@@ -296,8 +296,8 @@ func makeQueueConsumerGroup(
 func runQueueConsumerUntilEmpty(
 	ctx context.Context,
 	totalRequests int,
-	requestQueue *RequestQueue,
-	consumeFunc consumeRequest,
+	requestQueue *Queue,
+	consumeFunc consumeItem,
 	consumedRequestsCounter chan struct{},
 	start chan struct{},
 	stop chan struct{},
@@ -344,13 +344,13 @@ func runQueueConsumerUntilEmpty(
 	}
 }
 
-type consumeRequest func(request QueryRequest) error
+type consumeItem func(request Item) error
 
 func queueConsume(
-	queue *RequestQueue, querierWorkerConn *QuerierWorkerConn, lastTenantIdx TenantIndex, consumeFunc consumeRequest,
+	queue *Queue, querierWorkerConn *QuerierWorkerConn, lastTenantIdx TenantIndex, consumeFunc consumeItem,
 ) (TenantIndex, error) {
 	dequeueReq := NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
-	request, idx, err := queue.AwaitRequestForQuerier(dequeueReq)
+	request, idx, err := queue.AwaitItemForQuerier(dequeueReq)
 	if err != nil {
 		return lastTenantIdx, err
 	}
@@ -362,7 +362,7 @@ func queueConsume(
 	return lastTenantIdx, err
 }
 
-func (q *RequestQueue) EmptyQueue(t *testing.T) {
+func (q *Queue) EmptyQueue(t *testing.T) {
 	lastTenantIndex := FirstTenant()
 	querierID := "emptying-consumer"
 
@@ -370,7 +370,7 @@ func (q *RequestQueue) EmptyQueue(t *testing.T) {
 	require.NoError(t, q.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
 	defer q.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
-	consumer := func(request QueryRequest) error {
+	consumer := func(request Item) error {
 		return nil
 	}
 
@@ -396,7 +396,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	const forgetDelay = 2 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		2,
 		forgetDelay,
@@ -448,18 +448,18 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	// These requests will sit in the queue -
 	// querier-2 is the only querier sharded to user-1, but querier-2 has not requested to dequeue yet.
 	// >1 queue dimensions must exist in the queue to reproduce a potential panic condition (dims % unregisteredWorkerID).
-	reqNotShardedToQuerier1 := &testQueryRequest{
+	reqNotShardedToQuerier1 := &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"ingester"},
 	}
-	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
-	reqNotShardedToQuerier1 = &testQueryRequest{
+	assert.NoError(t, queue.SubmitItemToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
+	reqNotShardedToQuerier1 = &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"store-gateway"},
 	}
-	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
+	assert.NoError(t, queue.SubmitItemToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
 
 	// Querier-1 submits a request to dequeue;
 	// it will not receive anything as the only requests in the queue are not sharded to querier-1.
@@ -468,7 +468,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	querier1DequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
 	go func() {
 		defer querier1SubmitDequeueReqWG.Done()
-		_, _, err := queue.AwaitRequestForQuerier(querier1DequeueReq)
+		_, _, err := queue.AwaitItemForQuerier(querier1DequeueReq)
 		// This blocks until it receives one of the control flow errors;
 		// it will not receive a request as those in the queue are only sharded to querier-2.
 		assertControlFlowError(t, err)
@@ -497,7 +497,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	assert.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier3Conn))
 
 	// The dequeue request should have been dropped from the waiting list
-	// when the queue received an error from the queue broker's dequeueRequestForQuerier.
+	// when the queue received an error from the queue broker's dequeueItemForQuerier.
 	assert.Eventually(
 		t,
 		func() bool { return queue.waitingDequeueRequestsToDispatchCount.Load() == 0 },
@@ -509,10 +509,10 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	querier1SubmitDequeueReqWG.Wait()
 }
 
-func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T) {
+func TestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -593,11 +593,11 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 	require.Equal(t, 7, int(queue.connectedQuerierWorkers.Load()))
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBecauseQuerierHasBeenForgotten(t *testing.T) {
+func TestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBecauseQuerierHasBeenForgotten(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -631,7 +631,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	go func() {
 		defer querier2wg.Done()
 		dequeueReq := NewQuerierWorkerDequeueRequest(querier2Conn, FirstTenant())
-		_, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+		_, _, err := queue.AwaitItemForQuerier(dequeueReq)
 		require.NoError(t, err)
 	}()
 
@@ -641,12 +641,12 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	// Enqueue a request from an user which would be assigned to querier-1.
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers
-	req := &testQueryRequest{
+	req := &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 1, nil))
+	require.NoError(t, queue.SubmitItemToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 1, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
@@ -665,11 +665,11 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	}
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultipleQuerierForget(t *testing.T) {
+func TestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultipleQuerierForget(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -718,7 +718,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	go func() {
 		defer querier2wg.Done()
 		dequeueReq := NewQuerierWorkerDequeueRequest(querier2Conn, FirstTenant())
-		_, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+		_, _, err := queue.AwaitItemForQuerier(dequeueReq)
 		require.NoError(t, err)
 	}()
 
@@ -729,12 +729,12 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	// Enqueue a request from a tenant which would be assigned to querier-1.
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers
-	req := &testQueryRequest{
+	req := &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 2, nil))
+	require.NoError(t, queue.SubmitItemToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 2, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
@@ -753,11 +753,11 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	}
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled(t *testing.T) {
+func TestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -775,29 +775,29 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	querier1Conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
 	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn))
 
-	// Calling AwaitRequestForQuerier with a context that is already cancelled should fail immediately.
+	// Calling AwaitItemForQuerier with a context that is already cancelled should fail immediately.
 	deadCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 	querier1Conn.ctx = deadCtx
 
 	dequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
-	r, tenant, err := queue.AwaitRequestForQuerier(dequeueReq)
+	r, tenant, err := queue.AwaitItemForQuerier(dequeueReq)
 	assert.Nil(t, r)
 	assert.Equal(t, FirstTenant(), tenant)
 	assert.ErrorIs(t, err, context.Canceled)
 
-	// Further, a context canceled after AwaitRequestForQuerier publishes a request should also fail.
+	// Further, a context canceled after AwaitItemForQuerier publishes a request should also fail.
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
 	querier1Conn.ctx = ctx
 
 	go func() {
 		dequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
-		_, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+		_, _, err := queue.AwaitItemForQuerier(dequeueReq)
 		errChan <- err
 	}()
 
-	time.Sleep(20 * time.Millisecond) // Wait for AwaitRequestForQuerier to be waiting for a query.
+	time.Sleep(20 * time.Millisecond) // Wait for AwaitItemForQuerier to be waiting for a query.
 	cancel()
 
 	select {
@@ -808,11 +808,11 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	}
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierIsAlreadyShuttingDown(t *testing.T) {
+func TestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierIsAlreadyShuttingDown(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -834,15 +834,15 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	queue.SubmitNotifyQuerierShutdown(ctx, querierID)
 
 	dequeueReq := NewQuerierWorkerDequeueRequest(querierConn, FirstTenant())
-	_, _, err = queue.AwaitRequestForQuerier(dequeueReq)
+	_, _, err = queue.AwaitItemForQuerier(dequeueReq)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
 
-func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSendToQuerier(t *testing.T) {
+func TestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSendToQuerier(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -859,15 +859,15 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 	tenantMaxQueriers := 0 // no sharding
 	queueDim := randAdditionalQueueDimension("")
-	req := &testQueryRequest{
+	req := &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: queueDim,
 	}
-	tr := tenantRequest{
+	tr := tenantItem{
 		tenantID:       "tenant-1",
 		queueDimension: req.ExpectedQueryComponentName(),
-		req:            req,
+		item:           req,
 	}
 
 	var multiAlgorithmTreeQueuePath tree.QueuePath
@@ -877,7 +877,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	multiAlgorithmTreeQueuePath = append(append(multiAlgorithmTreeQueuePath, queueDim...), "tenant-1")
 
 	require.Nil(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath))
-	require.NoError(t, qb.enqueueRequestBack(&tr, tenantMaxQueriers))
+	require.NoError(t, qb.enqueueItemBack(&tr, tenantMaxQueriers))
 	require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -894,20 +894,20 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 	// send to querier will fail but method returns true,
 	// indicating not to re-submit a request for QuerierWorkerDequeueRequest for the querier
-	require.True(t, queue.trySendNextRequestForQuerier(call))
+	require.True(t, queue.trySendNextItemForQuerier(call))
 	// assert request was re-enqueued for tenant after failed send
 	require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 }
 
 // This test ensures that even if the queue has no pending requests, we still wait until any inflight requests
 // have been returned before existing
-func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
+func TestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
 	ctx := context.Background()
 	tenantID := "testTenant"
 	querierID := "querier1"
 
 	// So we create a queue
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		0,
@@ -923,9 +923,9 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing
 	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(conn))
 
 	// And push a request to the queue
-	req := makeTestQueryRequest(tenantID, []string{})
+	req := makeTestItem(tenantID, []string{})
 	require.NotNil(t, req)
-	err = queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), 1, func() {})
+	err = queue.SubmitItemToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), 1, func() {})
 	require.NoError(t, err)
 
 	// And make sure it got to the queue
@@ -936,7 +936,7 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing
 
 	// Consume the existing request from the queue and ensure it matches the one we queued
 	dequeueReq := NewQuerierWorkerDequeueRequest(conn, FirstTenant())
-	r, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+	r, _, err := queue.AwaitItemForQuerier(dequeueReq)
 	require.NoError(t, err)
 	require.NotNil(t, r)
 	require.Equal(t, r, req)
