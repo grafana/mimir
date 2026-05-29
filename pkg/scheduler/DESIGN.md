@@ -1,7 +1,12 @@
 # Query Request Queue Design: Queue Splitting and Prioritization
 
-The `RequestQueue` subservice embedded into the scheduler process is responsible for
-all decisions regarding enqueuing and dequeuing of query requests.
+The scheduler's query request queue is provided by the generic `RequestQueue` (in
+`pkg/scheduler/queue`), wrapped by a thin scheduler-specific `schedulerQueue`. The wrapper
+adds scheduler-flavored ergonomics — dimension extraction, per-tenant max-queriers lookup,
+and the `QueryComponentUtilization` tracking sidecar — so scheduler call sites don't have to
+thread those values through; the `RequestQueue` underneath is responsible for all decisions
+regarding enqueuing and dequeuing of query requests.
+
 While the `RequestQueue`'s responsibilities are relatively broad, including management of
 querier-worker connection lifecycles and graceful startup/shutdown,
 the queuing logic is isolated into a "tree queue" structure and its associated queue algorithms.
