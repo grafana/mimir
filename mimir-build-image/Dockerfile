@@ -5,6 +5,7 @@
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
 FROM alpine/helm:4.1.4@sha256:4b0bdd2cf18ff6bca12aba0b2c5671384dab5035c19c57f0c58b854a0baf65be AS helm
+FROM quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810 AS skopeo
 FROM golang:1.26.3-trixie@sha256:d08bf3ed2bd263088ca8e23fefaf10f1b71769f6932f0a4017ba28d2a5baf001
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
@@ -37,8 +38,8 @@ RUN apt-get update && \
       shellcheck \
       libpcap-dev \
       nodejs \
-      # Dependencies required to build Skopeo below.
-      libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config \
+      # Dependencies required to run Skopeo.
+      libgpgme11t64 libbtrfs0t64 libassuan9 libsubid5 \
     && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -88,12 +89,6 @@ RUN set -o pipefail && \
     tar -xzvf "/tmp/$TARBALL" -C /usr/bin --strip-components=1 "$VERSION_SLUG/golangci-lint" && \
     rm /tmp/$TARBALL
 
-# renovate: datasource=github-release-attachments depName=containers/skopeo
-ENV SKOPEO_VERSION=v1.22.2
-RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
-    DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
-    rm -rf /go/pkg /go/src /root/.cache
-
 COPY go.mod go.sum /tools/
 RUN \
   cd /tools && \
@@ -102,6 +97,12 @@ RUN \
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
 COPY --from=kustomize /app/kustomize /usr/bin/kustomize
+
+COPY --from=skopeo /etc/containers /etc/containers
+COPY --from=skopeo /usr/bin/skopeo /usr/bin/skopeo
+COPY --from=skopeo /usr/share/containers /usr/share/containers
+COPY --from=skopeo /var/lib/containers /var/lib/containers
+
 ENV NODE_PATH=/usr/lib/node_modules
 COPY build.sh /
 ENV GOCACHE=/go/cache
