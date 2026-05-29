@@ -1,7 +1,0 @@
-extensions:
-  - addsTo:
-      pack: codeql/go-all
-      extensible: barrierModel
-    data:
-      # package, type, subtypes, name, signature, ext, output, kind, provenance
-      - ["github.com/grafana/mimir/pkg/frontend/transport", "", false, "sanitizeHeaderValue", "", "", "ReturnValue[0]", "clear-text-logging", "manual"]
