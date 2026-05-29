@@ -59,11 +59,11 @@ RUN set -o pipefail && \
     chmod a+x /usr/bin/shfmt
 
 # renovate: datasource=github-release-attachments depName=grafana/tanka
-ENV TANKA_VERSION=v0.37.0
-# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.0
-ENV TANKA_AMD64_DIGEST=c75d4b8736724d9adab1cd5e5373eaa70249e5fafbe1f1b1caef617cbd4411a9
-# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.0
-ENV TANKA_ARM64_DIGEST=3f7af2b241c5a18a0fcef58f49d70314302841f862797b505d5d5a9eac4032f7
+ENV TANKA_VERSION=v0.37.2
+# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.2
+ENV TANKA_AMD64_DIGEST=cd79b6ec20092466184e8e8263a322384c1a2d484ae0bc53ef022495ac1fb926
+# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.2
+ENV TANKA_ARM64_DIGEST=6be39c524f8f405e023c58d4ba2f210dea25de0f74e9cdffe1a3a9f79cc26c74
 RUN set -o pipefail && \
     GOARCH=$(go env GOARCH) && \
     DIGEST=$(case "$GOARCH" in amd64) echo $TANKA_AMD64_DIGEST;; arm64) echo $TANKA_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
