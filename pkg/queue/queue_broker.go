@@ -12,10 +12,13 @@ import (
 	"github.com/grafana/mimir/pkg/queue/tree"
 )
 
-// unknownQueueDimension is used internally when a caller submits a request with
-// an empty queueDimension string. Callers (e.g. the scheduler) define their own
-// dimension vocabularies; the queue treats them as opaque routing labels.
-const unknownQueueDimension = "unknown"
+// UnknownDimension is used internally when a caller submits a request with an
+// empty queueDimension string. Callers (e.g. the scheduler) define their own
+// dimension vocabularies; the queue treats them as opaque routing labels. It is
+// exported so callers that need the same "no dimension" bucket the queue uses
+// (notably the scheduler's QueryComponentUtilization) can reference it directly
+// rather than redeclaring the literal.
+const UnknownDimension = "unknown"
 
 // tenantRequest is the queue's internal wrapper for an enqueued QueryRequest.
 // queueDimension is the first-layer queue dimension to enqueue under (e.g. a
@@ -111,7 +114,7 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 func (qb *queueBroker) queuePath(request *tenantRequest) tree.QueuePath {
 	dim := request.queueDimension
 	if dim == "" {
-		dim = unknownQueueDimension
+		dim = UnknownDimension
 	}
 	return tree.QueuePath{dim, request.tenantID}
 }

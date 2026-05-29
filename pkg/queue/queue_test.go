@@ -44,7 +44,7 @@ var secondQueueDimensionOptions = []string{
 	ingesterQueueDimension,
 	storeGatewayQueueDimension,
 	ingesterAndStoreGatewayQueueDimension,
-	unknownQueueDimension,
+	UnknownDimension,
 }
 
 // randAdditionalQueueDimension is the basic implementation of additionalQueueDimensionFunc,
@@ -83,7 +83,7 @@ func (r *testQueryRequest) ExpectedQueryComponentName() string {
 	if len(r.AdditionalQueueDimensions) > 0 {
 		return r.AdditionalQueueDimensions[0]
 	}
-	return unknownQueueDimension
+	return UnknownDimension
 }
 
 // makeTestQueryRequest creates a request whose in-memory size and shape
@@ -860,7 +860,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 	var multiAlgorithmTreeQueuePath tree.QueuePath
 	if queueDim == nil {
-		queueDim = []string{unknownQueueDimension}
+		queueDim = []string{UnknownDimension}
 	}
 	multiAlgorithmTreeQueuePath = append(append(multiAlgorithmTreeQueuePath, queueDim...), "tenant-1")
 

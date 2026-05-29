@@ -208,7 +208,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	maxTenantQueueSize := 100
 	qb := newQueueBroker(maxTenantQueueSize, 0)
 	additionalQueueDimensions := map[int][]string{
-		0: {unknownQueueDimension},
+		0: {UnknownDimension},
 		1: {ingesterQueueDimension},
 		2: {storeGatewayQueueDimension},
 		3: {ingesterAndStoreGatewayQueueDimension},
@@ -248,7 +248,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	for _, v := range additionalQueueDimensions {
 		var checkPath tree.QueuePath
 		if v == nil {
-			v = []string{unknownQueueDimension}
+			v = []string{UnknownDimension}
 		}
 		checkPath = append(append(checkPath, v...), "tenant-1")
 
@@ -740,7 +740,7 @@ func (qb *queueBroker) removeTenantQueue(tenantID string) bool {
 }
 
 func (qb *queueBroker) makeQueuePathForTests(tenantID string) tree.QueuePath {
-	return tree.QueuePath{unknownQueueDimension, tenantID}
+	return tree.QueuePath{UnknownDimension, tenantID}
 }
 
 func isConsistent(qb *queueBroker) error {
