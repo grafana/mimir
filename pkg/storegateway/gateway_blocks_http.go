@@ -82,8 +82,8 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		if splitCount < 0 {
 			splitCount = 0
 		}
-		if splitCount > math.MaxUint32 {
-			splitCount = math.MaxUint32
+		if splitCount > math.MaxInt32 {
+			splitCount = math.MaxInt32
 		}
 	}
 
