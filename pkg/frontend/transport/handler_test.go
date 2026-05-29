@@ -1134,65 +1134,95 @@ func TestHandler_QueryStringLoggedLast(t *testing.T) {
 	require.True(t, sawQueryStats)
 }
 
-func TestFormatRequestHeaders(t *testing.T) {
+func TestHandler_FormatRequestHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Add("X-Header-To-Log", "i should be logged!")
 	h.Add("X-Header-To-Not-Log", "i shouldn't be logged!")
 	h.Add("Authorization", "Bearer super-secret-token")
 	h.Add("X-Api-Key", "secret-api-key")
 
-	fields := formatRequestHeaders(&h, []string{"X-Header-To-Log", "X-Header-Not-Present", "Authorization", "X-Api-Key"})
+	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
 
+	reg := prometheus.NewPedanticRegistry()
+	cfg := HandlerConfig{LogQueryRequestHeaders: []string{"X-Header-To-Log", "X-Header-Not-Present", "Authorization", "X-Api-Key"}}
+	logger := &testLogger{}
+	handler := NewHandler(cfg, roundTripper, logger, reg)
+
+	fields := handler.formatRequestHeaders(&h)
+
+	// We don't expect to see "Authorization" nor "X-Api-Key".
 	expected := []interface{}{
 		"header_cache_control",
 		"",
 		"header_x_header_to_log",
 		"i should be logged!",
-		"header_authorization",
-		redactedHeaderValue,
-		"header_x_api_key",
-		redactedHeaderValue,
 	}
 
 	assert.Equal(t, expected, fields)
 }
 
+func TestSafeHeadersToLog(t *testing.T) {
+	t.Run("accept Cache-Control if it is present", func(t *testing.T) {
+		got := safeHeadersToLog([]string{
+			"X-Header-To-Log",
+			"Cache-Control",
+			"Authorization",
+			"X-Api-Key",
+			"X-Trace-Id",
+		})
+		assert.Equal(t, []safeHeader{"Cache-Control", "X-Header-To-Log", "X-Trace-Id"}, got)
+	})
+
+	t.Run("add Cache-Control if it is not present", func(t *testing.T) {
+		got := safeHeadersToLog([]string{
+			"X-Header-To-Log",
+			"Authorization",
+			"X-Api-Key",
+			"X-Trace-Id",
+		})
+		assert.Equal(t, []safeHeader{"Cache-Control", "X-Header-To-Log", "X-Trace-Id"}, got)
+	})
+}
+
 func TestSanitizeHeaderValue(t *testing.T) {
-	testCases := map[string]struct {
-		headerName string
-		value      string
-		expected   string
-	}{
+	type testCase struct {
+		headerName     any
+		value          string
+		expectedValue  string
+		expectedStatus bool
+	}
+
+	testCases := map[string]testCase{
 		"non-sensitive header passes through": {
-			headerName: "X-Custom-Header",
-			value:      "some-value",
-			expected:   "some-value",
+			headerName:     safeHeader("X-Custom-Header"),
+			value:          "some-value",
+			expectedValue:  "some-value",
+			expectedStatus: true,
 		},
 		"empty value returns empty": {
-			headerName: "Authorization",
-			value:      "",
-			expected:   "",
+			headerName:     safeHeader("X-Custom-Header"),
+			value:          "",
+			expectedValue:  "",
+			expectedStatus: false,
 		},
-		"Authorization is redacted":        {headerName: "Authorization", value: "Bearer abc", expected: redactedHeaderValue},
-		"authorization lowercase":          {headerName: "authorization", value: "Bearer abc", expected: redactedHeaderValue},
-		"Proxy-Authorization is redacted":  {headerName: "Proxy-Authorization", value: "Basic xyz", expected: redactedHeaderValue},
-		"Cookie is redacted":               {headerName: "Cookie", value: "session=1", expected: redactedHeaderValue},
-		"Set-Cookie is redacted":           {headerName: "Set-Cookie", value: "session=1", expected: redactedHeaderValue},
-		"X-Api-Key is redacted":            {headerName: "X-Api-Key", value: "abc", expected: redactedHeaderValue},
-		"X-Auth-Token is redacted":         {headerName: "X-Auth-Token", value: "abc", expected: redactedHeaderValue},
-		"X-Amz-Security-Token is redacted": {headerName: "X-Amz-Security-Token", value: "abc", expected: redactedHeaderValue},
-		"Authentication-Info is redacted":  {headerName: "Authentication-Info", value: "nextnonce=abc", expected: redactedHeaderValue},
-		"WWW-Authenticate is redacted":     {headerName: "WWW-Authenticate", value: "Basic realm=x", expected: redactedHeaderValue},
-		"Proxy-Authenticate is redacted":   {headerName: "Proxy-Authenticate", value: "Basic realm=x", expected: redactedHeaderValue},
-		"X-CSRF-Token is redacted":         {headerName: "X-CSRF-Token", value: "abc", expected: redactedHeaderValue},
-		"X-XSRF-Token is redacted":         {headerName: "X-XSRF-Token", value: "abc", expected: redactedHeaderValue},
-		"X-Access-Token is redacted":       {headerName: "X-Access-Token", value: "abc", expected: redactedHeaderValue},
-		"X-Session-Token is redacted":      {headerName: "X-Session-Token", value: "abc", expected: redactedHeaderValue},
+	}
+
+	for _, h := range sensitiveHeaderNames {
+		testCases[h] = testCase{
+			headerName:     h,
+			value:          "some-value",
+			expectedValue:  "",
+			expectedStatus: false,
+		}
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, sanitizeHeaderValue(tc.headerName, tc.value))
+			val, ok := sanitizeHeaderValue(tc.headerName, tc.value)
+			assert.Equal(t, tc.expectedStatus, ok)
+			assert.Equal(t, tc.expectedValue, val)
 		})
 	}
 }
