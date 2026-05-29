@@ -41,6 +41,7 @@ const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
 	StatusClientClosedRequest    = 499
 	ServiceTimingHeaderName      = "Server-Timing"
+	cacheControlSafeHeader       = safeHeader(requestoptions.CacheControlHeader)
 	responseQueryStatsHeaderName = "X-Mimir-Response-Query-Stats"
 	encodeTimeSeconds            = "encode_time_seconds"
 	estimatedSeriesCount         = "estimated_series_count"
@@ -64,6 +65,8 @@ var (
 	errDeadlineExceeded      = httpgrpc.Error(http.StatusGatewayTimeout, context.DeadlineExceeded.Error())
 	errRequestEntityTooLarge = httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "http: request body too large")
 
+	// sensitiveHeaderNames is the deny list of HTTP header names whose values
+	// carry credentials or session material and must never appear in logs.
 	sensitiveHeaderNames = []string{
 		"authorization",
 		"proxy-authorization",
@@ -531,6 +534,14 @@ func newSafeHeader(name string) (safeHeader, bool) {
 	return safeHeader(name), true
 }
 
+func (s safeHeader) String() string {
+	return string(s)
+}
+
+func (s safeHeader) log() string {
+	return fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(string(s)), "-", "_"))
+}
+
 // isSensitiveHeaderName reports whether the named header carries credentials
 // or session material whose value must never be logged, regardless of operator
 // allow-list configuration.
@@ -544,9 +555,7 @@ func isSensitiveHeaderName(name string) bool {
 	return false
 }
 
-func safeHeadersToLog(headersToLog []string) []safeHeader {
-	safeHeaders := make([]safeHeader, 0, len(headersToLog)+1)
-	safeHeaders = append(safeHeaders, safeHeader(requestoptions.CacheControlHeader))
+func safeHeadersToLog(headersToLog []string) (safeHeaders []safeHeader) {
 	for _, h := range headersToLog {
 		if strings.EqualFold(h, requestoptions.CacheControlHeader) {
 			continue
@@ -558,18 +567,26 @@ func safeHeadersToLog(headersToLog []string) []safeHeader {
 	return safeHeaders
 }
 
-func sanitizeHeaderValue(headerName any, value string) (string, bool) {
+// sanitizeHeaderValue returns value (and true) when headerName is a safeHeader
+// and value is non-empty or acceptEmpty is true. The parameter is typed any
+// rather than safeHeader so the runtime type assertion forms an explicit
+// sanitizer barrier — both as defense in depth against in-package casts and
+// as a node CodeQL can recognize between http.Header.Get and the logger.
+func sanitizeHeaderValue(headerName any, value string, acceptEmpty bool) (string, bool) {
 	if _, ok := headerName.(safeHeader); !ok {
 		return "", false
 	}
-	return value, value != ""
+	return value, acceptEmpty || value != ""
 }
 
 func (h *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
+	if v, ok := sanitizeHeaderValue(cacheControlSafeHeader, header.Get(cacheControlSafeHeader.String()), true); ok {
+		fields = append(fields, cacheControlSafeHeader.log(), v)
+	}
+
 	for _, s := range h.safeHeadersToLog {
-		name := string(s)
-		if v, ok := sanitizeHeaderValue(s, header.Get(name)); ok {
-			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(name), "-", "_")), v)
+		if v, ok := sanitizeHeaderValue(s, header.Get(s.String()), false); ok {
+			fields = append(fields, s.log(), v)
 		}
 	}
 	return fields

@@ -1164,7 +1164,7 @@ func TestHandler_FormatRequestHeaders(t *testing.T) {
 }
 
 func TestSafeHeadersToLog(t *testing.T) {
-	t.Run("accept Cache-Control if it is present", func(t *testing.T) {
+	t.Run("remove Cache-Control if it is present", func(t *testing.T) {
 		got := safeHeadersToLog([]string{
 			"X-Header-To-Log",
 			"Cache-Control",
@@ -1172,17 +1172,17 @@ func TestSafeHeadersToLog(t *testing.T) {
 			"X-Api-Key",
 			"X-Trace-Id",
 		})
-		assert.Equal(t, []safeHeader{"Cache-Control", "X-Header-To-Log", "X-Trace-Id"}, got)
+		assert.Equal(t, []safeHeader{"X-Header-To-Log", "X-Trace-Id"}, got)
 	})
 
-	t.Run("add Cache-Control if it is not present", func(t *testing.T) {
+	t.Run("don't add Cache-Control if it is not present", func(t *testing.T) {
 		got := safeHeadersToLog([]string{
 			"X-Header-To-Log",
 			"Authorization",
 			"X-Api-Key",
 			"X-Trace-Id",
 		})
-		assert.Equal(t, []safeHeader{"Cache-Control", "X-Header-To-Log", "X-Trace-Id"}, got)
+		assert.Equal(t, []safeHeader{"X-Header-To-Log", "X-Trace-Id"}, got)
 	})
 }
 
@@ -1190,6 +1190,7 @@ func TestSanitizeHeaderValue(t *testing.T) {
 	type testCase struct {
 		headerName     any
 		value          string
+		acceptEmpty    bool
 		expectedValue  string
 		expectedStatus bool
 	}
@@ -1201,9 +1202,17 @@ func TestSanitizeHeaderValue(t *testing.T) {
 			expectedValue:  "some-value",
 			expectedStatus: true,
 		},
-		"empty value returns empty": {
+		"empty value returns empty if accepted": {
 			headerName:     safeHeader("X-Custom-Header"),
 			value:          "",
+			acceptEmpty:    true,
+			expectedValue:  "",
+			expectedStatus: true,
+		},
+		"empty value rejected if not accepted": {
+			headerName:     safeHeader("X-Custom-Header"),
+			value:          "",
+			acceptEmpty:    false,
 			expectedValue:  "",
 			expectedStatus: false,
 		},
@@ -1220,7 +1229,7 @@ func TestSanitizeHeaderValue(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			val, ok := sanitizeHeaderValue(tc.headerName, tc.value)
+			val, ok := sanitizeHeaderValue(tc.headerName, tc.value, tc.acceptEmpty)
 			assert.Equal(t, tc.expectedStatus, ok)
 			assert.Equal(t, tc.expectedValue, val)
 		})
