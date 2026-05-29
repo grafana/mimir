@@ -1,0 +1,2 @@
+provide:
+  - ".github/codeql/extensions/**/qlpack.yml"
