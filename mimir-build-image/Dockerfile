@@ -46,12 +46,17 @@ RUN apt-get update && \
 RUN npm install -g --ignore-scripts prettier@2.3.2
 
 # renovate: datasource=github-release-attachments depName=mvdan/sh
-ENV SHFMT_VERSION=3.13.1
-RUN GOARCH=$(go env GOARCH) && \
-    URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
-    curl -fsSLo shfmt "${URL}" && \
-	chmod +x shfmt && \
-	mv shfmt /usr/bin
+ENV SHFMT_VERSION=v3.13.1
+# renovate: datasource=github-release-attachments depName=mvdan/sh digestVersion=v3.13.1
+ENV SHFMT_AMD64_DIGEST=fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1
+# renovate: datasource=github-release-attachments depName=mvdan/sh digestVersion=v3.13.1
+ENV SHFMT_ARM64_DIGEST=32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7
+RUN set -o pipefail && \
+    GOARCH=$(go env GOARCH) && \
+    DIGEST=$(case "$GOARCH" in amd64) echo $SHFMT_AMD64_DIGEST;; arm64) echo $SHFMT_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
+    curl -fsSLo /usr/bin/shfmt "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_${GOARCH}" && \
+    echo "$DIGEST  /usr/bin/shfmt" | sha256sum --check && \
+    chmod a+x /usr/bin/shfmt
 
 # renovate: datasource=github-release-attachments depName=grafana/tanka
 ENV TANKA_VERSION=v0.37.0
@@ -59,18 +64,27 @@ ENV TANKA_VERSION=v0.37.0
 ENV TANKA_AMD64_DIGEST=c75d4b8736724d9adab1cd5e5373eaa70249e5fafbe1f1b1caef617cbd4411a9
 # renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.0
 ENV TANKA_ARM64_DIGEST=3f7af2b241c5a18a0fcef58f49d70314302841f862797b505d5d5a9eac4032f7
-RUN GOARCH=$(go env GOARCH) && \
-    curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/${TANKA_VERSION}/tk-linux-${GOARCH}" && \
+RUN set -o pipefail && \
+    GOARCH=$(go env GOARCH) && \
+    DIGEST=$(case "$GOARCH" in amd64) echo $TANKA_AMD64_DIGEST;; arm64) echo $TANKA_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
+    curl -fsSLo /usr/bin/tk "https://github.com/grafana/tanka/releases/download/${TANKA_VERSION}/tk-linux-${GOARCH}" && \
+    echo "$DIGEST  /usr/bin/tk" | sha256sum --check && \
     chmod a+x /usr/bin/tk
 
 # renovate: datasource=github-release-attachments depName=golangci/golangci-lint
-ENV GOLANGCI_LINT_VERSION=2.12.2
+ENV GOLANGCI_LINT_VERSION=v2.12.2
+# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.12.2
+ENV GOLANGCI_LINT_AMD64_DIGEST=8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553
+# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.12.2
+ENV GOLANGCI_LINT_ARM64_DIGEST=44cd40a8c76c86755375adfeea52cfd3533cb43d7bd647771e0ae065e166df3a
 RUN set -o pipefail && \
-    VERSION_SLUG=golangci-lint-${GOLANGCI_LINT_VERSION}-linux-$(go env GOARCH) && \
+    GOARCH=$(go env GOARCH) && \
+    DIGEST=$(case "$GOARCH" in amd64) echo $GOLANGCI_LINT_AMD64_DIGEST;; arm64) echo $GOLANGCI_LINT_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
+    VERSION_SLUG=golangci-lint-${GOLANGCI_LINT_VERSION#v}-linux-${GOARCH} && \
     TARBALL=$VERSION_SLUG.tar.gz && \
     cd /tmp && \
-    curl -sfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/$TARBALL" -o "/tmp/$TARBALL" && \
-    curl -sfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-checksums.txt" | grep -E "\s+$TARBALL$" | sha256sum --check - && \
+    curl -fsSLo "/tmp/$TARBALL" "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/$TARBALL" && \
+    echo "$DIGEST  /tmp/$TARBALL" | sha256sum --check && \
     tar -xzvf "/tmp/$TARBALL" -C /usr/bin --strip-components=1 "$VERSION_SLUG/golangci-lint" && \
     rm /tmp/$TARBALL
 
