@@ -6,6 +6,7 @@ import (
 	_ "embed" // Used to embed html template
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -80,6 +81,9 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		splitCount, _ = strconv.Atoi(sc)
 		if splitCount < 0 {
 			splitCount = 0
+		}
+		if splitCount > math.MaxUint32 {
+			splitCount = math.MaxUint32
 		}
 	}
 

@@ -989,7 +989,7 @@ func parseInstanceID(instanceID string) (int32, error) {
 	}
 
 	// Parse the instance sequence number.
-	seq, err := strconv.Atoi(match[1])
+	seq, err := strconv.ParseInt(match[1], 10, 32)
 	if err != nil {
 		return 0, fmt.Errorf("no sequence number in instance ID %s", instanceID)
 	}
