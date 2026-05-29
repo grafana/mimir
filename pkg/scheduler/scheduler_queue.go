@@ -63,7 +63,14 @@ func newSchedulerQueue(
 }
 
 func (sq *schedulerQueue) starting(ctx context.Context) error {
-	return services.StartAndAwaitRunning(ctx, sq.queue)
+	if err := services.StartAndAwaitRunning(ctx, sq.queue); err != nil {
+		// BasicService will not call our stopping() when starting() returns an error,
+		// so we must clean up the inner queue ourselves if it managed to reach Running
+		// before ctx was cancelled.
+		_ = services.StopAndAwaitTerminated(context.Background(), sq.queue)
+		return err
+	}
+	return nil
 }
 
 func (sq *schedulerQueue) running(ctx context.Context) error {
