@@ -80,7 +80,7 @@ func TestDumpCommand_FindDuplicates(t *testing.T) {
 	output := strings.Join(printer.GetLines(), "\n")
 
 	// Exactly one duplicate (series A, tenant-1), referencing both arrival times.
-	assert.Contains(t, output, `labels: {__name__="metric_a", job="test"}, received (ts=100, val=1) at 2026-05-29T11:00:01Z (offset 0) and then at 2026-05-29T11:00:31Z (offset 1)`)
+	assert.Contains(t, output, `labels: {__name__="metric_a", job="test"}, timestamp: 2026-05-29T11:00:01Z -> 2026-05-29T11:00:31Z (30s delta), offset: 0 -> 1 (1 delta)`)
 	// series B differed in value -> not reported.
 	assert.NotContains(t, output, "metric_b")
 	// tenant-2 filtered out.
@@ -122,6 +122,40 @@ func TestDumpCommand_FindDuplicates_PerTenant(t *testing.T) {
 	output := strings.Join(printer.GetLines(), "\n")
 	assert.Equal(t, 2, strings.Count(output, "labels:"), "expected exactly one duplicate per tenant, no cross-tenant false positive")
 	assert.Contains(t, output, "total duplicate occurrences: 2")
+}
+
+func TestDumpCommand_FindDuplicates_SameRequest(t *testing.T) {
+	// The same series appears as two separate TimeSeries blocks in ONE request
+	// (e.g. a relabel collision). The distributor only dedups within a single
+	// block, so both reach Kafka in the same record -> reported with 0 deltas.
+	series := func() mimirpb.PreallocTimeseries {
+		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+			Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_a"}, {Name: "job", Value: "test"}},
+			Samples: []mimirpb.Sample{{TimestampMs: 100, Value: 1}},
+		}}
+	}
+	at := time.Date(2026, 5, 29, 10, 59, 38, 502*int(time.Millisecond), time.UTC)
+
+	records := []dumpRecord{
+		{tenantID: "tenant-1", at: at, req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			series(),
+			series(),
+		}}},
+	}
+
+	dumpFile := createTestDumpFileWithTimestamps(t, records)
+
+	app := newTestApp()
+	cmd := &DumpCommand{}
+	printer := &BufferedPrinter{}
+	cmd.Register(app, func() *kgo.Client { return nil }, printer)
+
+	_, err := app.Parse([]string{"dump", "find-duplicates", "--file", dumpFile, "--tenant", "tenant-1"})
+	require.NoError(t, err)
+
+	output := strings.Join(printer.GetLines(), "\n")
+	assert.Contains(t, output, `labels: {__name__="metric_a", job="test"}, timestamp: 2026-05-29T10:59:38.502Z -> 2026-05-29T10:59:38.502Z (0s delta), offset: 0 -> 0 (0 delta)`)
+	assert.Contains(t, output, "total duplicate occurrences: 1")
 }
 
 type dumpRecord struct {

@@ -5,7 +5,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -61,14 +60,14 @@ func (c *DumpCommand) doFindDuplicates(*kingpin.ParseContext) error {
 					if prev, ok := tenantLast[h]; ok && prev.ts == cur.ts && prev.valBits == cur.valBits {
 						dupCount++
 						c.printer.PrintLine(fmt.Sprintf(
-							"labels: %s, received (ts=%d, val=%s) at %s (offset %d) and then at %s (offset %d)",
+							"labels: %s, timestamp: %s -> %s (%s delta), offset: %d -> %d (%d delta)",
 							mimirpb.FromLabelAdaptersToLabels(ts.Labels).String(),
-							s.TimestampMs,
-							strconv.FormatFloat(s.Value, 'g', -1, 64),
 							prev.recTime.UTC().Format(time.RFC3339Nano),
-							prev.offset,
 							record.Timestamp.UTC().Format(time.RFC3339Nano),
+							record.Timestamp.Sub(prev.recTime).String(),
+							prev.offset,
 							record.Offset,
+							record.Offset-prev.offset,
 						))
 					}
 
