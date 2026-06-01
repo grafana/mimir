@@ -96,7 +96,7 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, block *bucketBlock)
 			filter = not(filter)
 		}
 
-		// Try cache for postings offset
+		// Try cache for postings offset first.
 		offsets, ok := block.indexCache.FetchPostingsOffsetsForMatcher(
 			ctx, block.userID, block.meta.ULID, g.labelName, g.matcher, g.isSubtract,
 		)
@@ -144,10 +144,8 @@ func (g rawPostingGroup) filterNonExistingKeys(ctx context.Context, block *bucke
 	)
 
 	for _, l := range g.keys {
-		// Try cache for postings offset
-		offset, ok := block.indexCache.FetchPostingsOffset(
-			ctx, block.userID, block.meta.ULID, l,
-		)
+		// Try cache for postings offset first.
+		offset, ok := block.indexCache.FetchPostingsOffset(ctx, block.userID, block.meta.ULID, l)
 		if !ok {
 			var err error
 			offset, err = block.indexHeaderReader.PostingsOffset(ctx, l.Name, l.Value)
