@@ -36,3 +36,4 @@ spec:
           replacement: "metamonitoring-values"
           targetLabel: cluster
       scheme: http
+

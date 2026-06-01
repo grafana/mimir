@@ -29,3 +29,4 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: querier
+

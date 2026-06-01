@@ -125,3 +125,4 @@ data:
         zone_awareness_enabled: true
     usage_stats:
       installation_mode: helm
+

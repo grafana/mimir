@@ -17,3 +17,4 @@ spec:
       app.kubernetes.io/instance: openshift-values
       app.kubernetes.io/component: store-gateway
   maxUnavailable: 1
+
