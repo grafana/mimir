@@ -40,6 +40,7 @@
 ### Jsonnet
 
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
+* [FEATURE] Ruler: automatically generate ConfigMap for ruler rule files when `ruler_storage_backend` is `local` and `ruler_local_rules` is set. #15208
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.37.0. #15328
 
 ### Documentation
