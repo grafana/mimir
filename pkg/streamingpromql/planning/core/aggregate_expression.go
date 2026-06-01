@@ -19,10 +19,11 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type AggregateExpression struct {
 	*AggregateExpressionDetails
-	Inner planning.Node
-	Param planning.Node
+	Inner planning.Node `node:"child"`
+	Param planning.Node `node:"child,nilable"`
 }
 
 func (a *AggregateExpression) Describe() string {
@@ -63,28 +64,6 @@ func (a *AggregateExpression) Details() proto.Message {
 
 func (a *AggregateExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_AGGREGATE_EXPRESSION
-}
-
-func (a *AggregateExpression) Child(idx int) planning.Node {
-	switch idx {
-	case 0:
-		return a.Inner
-	case 1:
-		if a.Param == nil {
-			panic("cannot get AggregateExpression child at index 1 if there is no parameter")
-		}
-		return a.Param
-	default:
-		panic(fmt.Sprintf("node of type AggregateExpression supports at most 2 children, but attempted to get child at index %d", idx))
-	}
-}
-
-func (a *AggregateExpression) ChildCount() int {
-	if a.Param == nil {
-		return 1
-	}
-
-	return 2
 }
 
 func (a *AggregateExpression) SetChildren(children []planning.Node) error {

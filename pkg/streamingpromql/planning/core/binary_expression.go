@@ -21,10 +21,11 @@ import (
 
 var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different hints")
 
+//node:generate
 type BinaryExpression struct {
 	*BinaryExpressionDetails
-	LHS planning.Node
-	RHS planning.Node
+	LHS planning.Node `node:"child"`
+	RHS planning.Node `node:"child"`
 }
 
 func (b *BinaryExpression) Describe() string {
@@ -114,21 +115,6 @@ func (b *BinaryExpression) Details() proto.Message {
 
 func (b *BinaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_BINARY_EXPRESSION
-}
-
-func (b *BinaryExpression) Child(idx int) planning.Node {
-	switch idx {
-	case 0:
-		return b.LHS
-	case 1:
-		return b.RHS
-	default:
-		panic(fmt.Sprintf("node of type BinaryExpression supports 2 children, but attempted to get child at index %d", idx))
-	}
-}
-
-func (b *BinaryExpression) ChildCount() int {
-	return 2
 }
 
 func (b *BinaryExpression) SetChildren(children []planning.Node) error {

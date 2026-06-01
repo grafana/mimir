@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type VectorSelector struct {
 	*VectorSelectorDetails
 }
@@ -45,14 +46,6 @@ func (v *VectorSelector) Details() proto.Message {
 
 func (v *VectorSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_VECTOR_SELECTOR
-}
-
-func (v *VectorSelector) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
-}
-
-func (v *VectorSelector) ChildCount() int {
-	return 0
 }
 
 func (v *VectorSelector) SetChildren(children []planning.Node) error {

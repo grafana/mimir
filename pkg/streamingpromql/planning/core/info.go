@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type DataLabelSelector struct {
 	*DataLabelSelectorDetails
 }
@@ -28,14 +29,6 @@ func (t *DataLabelSelector) Details() proto.Message {
 
 func (t *DataLabelSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DATA_LABEL_SELECTOR
-}
-
-func (t *DataLabelSelector) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type DataLabelSelector has no children, but attempted to get child at index %d", idx))
-}
-
-func (t *DataLabelSelector) ChildCount() int {
-	return 0
 }
 
 func (t *DataLabelSelector) SetChildren(children []planning.Node) error {

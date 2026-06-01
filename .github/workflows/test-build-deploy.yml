@@ -101,6 +101,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false mod-check
       - name: Check Protos
         run: make BUILD_IN_CONTAINER=false check-protos
+      - name: Check Generated Node Methods
+        run: make BUILD_IN_CONTAINER=false check-node-methods
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
       - name: Check Reference Help Documentation
