@@ -182,7 +182,6 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 		allRecords       []*kgo.Record
 		requestSizeBytes int
 	)
-	serializeStart := time.Now()
 	for _, pr := range partitionRequests {
 		// Nothing to do if the input data is empty.
 		if pr.WriteRequest.IsEmpty() {
@@ -202,7 +201,7 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 		allRecords = append(allRecords, records...)
 		requestSizeBytes += reqSizeBytes
 	}
-	w.serializeDuration.Observe(time.Since(serializeStart).Seconds())
+	w.serializeDuration.Observe(time.Since(startTime).Seconds())
 
 	// Nothing to do if all requests were empty.
 	if len(allRecords) == 0 {
