@@ -121,3 +121,4 @@ data:
         wait_stability_min_duration: 1m
     usage_stats:
       installation_mode: helm
+

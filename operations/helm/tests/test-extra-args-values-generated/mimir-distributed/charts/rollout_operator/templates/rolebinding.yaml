@@ -18,3 +18,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: test-extra-args-values-rollout-operator
+

@@ -17,3 +17,4 @@ spec:
       app.kubernetes.io/instance: keda-autoscaling-global-values
       app.kubernetes.io/component: querier
   maxUnavailable: 1
+
