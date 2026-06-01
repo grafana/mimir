@@ -1683,11 +1683,11 @@ func (h *RangeHead) String() string {
 // Used only for compactions.
 type StaleHead struct {
 	RangeHead
-	staleSeriesRefs []storage.SeriesRef
+	staleSeriesRefs staleSeriesRefs
 }
 
 // NewStaleHead returns a *StaleHead.
-func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs []storage.SeriesRef) *StaleHead {
+func NewStaleHead(head *Head, mint, maxt int64, staleSeriesRefs staleSeriesRefs) *StaleHead {
 	return &StaleHead{
 		RangeHead: RangeHead{
 			head: head,
