@@ -295,7 +295,15 @@ type Distributor struct {
 	// nautilusPartitionSamplesWritten counts samples successfully
 	// written to the nautilus ingest topic, per partition and tenant.
 	nautilusPartitionSamplesWritten *prometheus.CounterVec
-	clusterValidationLabel          string
+
+	// spotlights is the distributor's local cache of the
+	// rebalancer's "spotlighted hash range" set plus an accumulator
+	// of per-(spotlight, partition) sample counts. Populated by a
+	// background poller (runSpotlightLoop) and read on the write
+	// path. Always non-nil after NewDistributor.
+	spotlights *distributorSpotlightTracker
+
+	clusterValidationLabel string
 
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
@@ -794,6 +802,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "Total number of float and native histogram samples successfully written to the nautilus ingest Kafka topic (-distributor.nautilus-ingest-topic), per partition and tenant. Only incremented for tenants with nautilus_ingest_routing=nautilus-only.",
 		}, []string{"partition", "user"}),
 
+		spotlights: newDistributorSpotlightTracker(),
+
 		PushMetrics: newPushMetrics(reg),
 		now:         defaultNow,
 		sleep:       defaultSleep,
@@ -1081,6 +1091,7 @@ func (d *Distributor) running(ctx context.Context) error {
 	if d.nautilusRebalancerConn != nil {
 		go d.watchNautilusAssignments(ctx)
 		go d.watchReadcacheAssignments(ctx)
+		go d.runSpotlightLoop(ctx)
 	}
 
 	for {
@@ -2670,8 +2681,10 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	// Capture `now` once so all keys in this write request consult
 	// the same point-in-time view of the assignment log.
 	now := d.now()
+	usedNautilusRouting := false
 	if table := d.nautilusActiveTableFor(now); table != nil {
 		partitionKeys, err = d.getKeysByAssignment(ctx, tenantID, table, keys)
+		usedNautilusRouting = err == nil
 	} else if d.cfg.NautilusRequired {
 		level.Warn(d.log).Log(
 			"msg", "nautilus routing rejected: assignment table unavailable",
@@ -2737,6 +2750,15 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, topic, tenantID, partitionRequests)
 	if err == nil {
 		d.observeNautilusPartitionWrites(tenantID, topic, partitionRequests)
+		// Spotlight observation only makes sense for writes that
+		// actually consulted the assignment table: with partition-
+		// ring fallback the (key -> partition) mapping doesn't
+		// reflect what the rebalancer thinks, so counting hash hits
+		// against spotlights would attribute samples to whichever
+		// partition the ring's hash-mod happened to land on.
+		if usedNautilusRouting && d.spotlights != nil {
+			d.spotlights.observeWrite(keys, partitionKeys, req, initialMetadataIndex)
+		}
 	}
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)

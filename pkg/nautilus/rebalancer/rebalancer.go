@@ -175,8 +175,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.EntryRetention, prefix+"entry-retention", 24*time.Hour, "How long expired assignment-log entries are retained after their lease ended. Active and pre-issued leases are never pruned. Must exceed querier QueryIngestersWithin plus a drain buffer once queriers consume the log; today the value chiefly caps the rebalancer's snapshot size sent to distributor stream subscribers.")
 	f.StringVar(&cfg.DataDir, prefix+"data-dir", "", "Directory where the rebalancer persists its assignment logs. Empty disables persistence; on restart the log is seeded from FineEvenSplit / ingester reports as before. Set this to a persistent volume in production so rebalancer restarts don't shuffle routing.")
 	f.StringVar(&cfg.KafkaTopic, prefix+"kafka-topic", "nautilus_ingest", "Name of the Kafka topic the nautilus pipeline runs on. The rebalancer auto-creates this topic on startup (gated by -ingest-storage.kafka.auto-create-topic-enabled); distributors forward nautilus-only tenant writes here; readcache pods consume from it.")
-	f.Var(asInt32Var{&cfg.PartitionCount}, prefix+"partition-count", "Number of partitions on -nautilus.rebalancer.kafka-topic. Used both for auto-creation and to size the slicer's initial partition set when seeding the in-memory log. Must be > 0 when persistence is empty; otherwise the seeded value from disk wins.")
-	f.Var(asInt32Var{&cfg.ActivePartitionCount}, prefix+"active-partition-count", "Cap on the rebalancer's logical active-partition set: when > 0 the rebalancer slices over partition IDs [0, K); when 0 it uses -nautilus-rebalancer.partition-count. Must be <= -nautilus-rebalancer.partition-count when both are set.")
+	f.Var(&asInt32Var{&cfg.PartitionCount}, prefix+"partition-count", "Number of partitions on -nautilus.rebalancer.kafka-topic. Used both for auto-creation and to size the slicer's initial partition set when seeding the in-memory log. Must be > 0 when persistence is empty; otherwise the seeded value from disk wins.")
+	f.Var(&asInt32Var{&cfg.ActivePartitionCount}, prefix+"active-partition-count", "Cap on the rebalancer's logical active-partition set: when > 0 the rebalancer slices over partition IDs [0, K); when 0 it uses -nautilus-rebalancer.partition-count. Must be <= -nautilus-rebalancer.partition-count when both are set.")
 	cfg.ReadcacheSlicer.RegisterFlagsWithPrefix(prefix+"readcache-slicer.", f)
 	cfg.ReadcacheClient.RegisterFlagsWithPrefix(prefix+"readcache-client.", f)
 }
@@ -296,6 +296,14 @@ type Rebalancer struct {
 	// activeReadcacheInstances() output (which is already sorted).
 	// Mutated only by rebalance(), which runs single-threaded.
 	lastTier2Instances []string
+
+	// spotlights holds the active set of "spotlighted" hash ranges:
+	// ranges the rebalancer recently committed a move for that are
+	// flagged for fine-grained diagnostic logging by downstream
+	// consumers. See spotlight.go for the design. The store is
+	// mutated by rebalance() (sampling at move-commit time, prune at
+	// round start) and read by the GetSpotlightedRanges gRPC server.
+	spotlights *spotlightStore
 }
 
 // readcacheRingReader is the subset of *ring.Ring the slicer needs to
@@ -323,6 +331,7 @@ func New(cfg Config, readcacheRing readcacheRingReader, readcachePool *Readcache
 		readcacheCooldowns: make(readcacheMoveCooldowns),
 		metrics:            newMetrics(registerer),
 		clock:              wallClock{},
+		spotlights:         newSpotlightStore(time.Now().UnixNano(), defaultSpotlightSampleRate, defaultSpotlightDuration),
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.running, nil)
@@ -518,6 +527,32 @@ func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsReque
 	}
 }
 
+// GetSpotlightedRanges returns the rebalancer's currently-active
+// spotlight set. Polled by distributors and readcache pods so they
+// know which hash ranges to emit fine-grained diagnostic logs about.
+// The returned slice is order-unstable; consumers should treat it as
+// a wholesale replacement of their previous cached set.
+func (r *Rebalancer) GetSpotlightedRanges(_ context.Context, _ *GetSpotlightedRangesRequest) (*GetSpotlightedRangesResponse, error) {
+	if r.spotlights == nil {
+		return &GetSpotlightedRangesResponse{}, nil
+	}
+	snap := r.spotlights.snapshot()
+	out := &GetSpotlightedRangesResponse{Ranges: make([]SpotlightedRange, len(snap))}
+	for i, s := range snap {
+		out.Ranges[i] = SpotlightedRange{
+			TraceId:         s.TraceID,
+			Lo:              s.Range.Lo,
+			Hi:              s.Range.Hi,
+			StartedAtUnixMs: s.StartedAt.UnixMilli(),
+			ExpiresAtUnixMs: s.ExpiresAt.UnixMilli(),
+			FromPartitionId: s.FromPartition,
+			ToPartitionId:   s.ToPartition,
+			Reason:          s.Reason,
+		}
+	}
+	return out, nil
+}
+
 // activePartitionsForRound returns the partition ID set the
 // rebalancer slices over for this round: [0, K) where K is
 // ActivePartitionCount when set, otherwise PartitionCount.
@@ -659,6 +694,9 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 
 	r.metrics.updateRound(partitionQuerySamples, unnamedPerInstance)
 	r.pruneExpiredCooldowns(now)
+	if r.spotlights != nil {
+		r.spotlights.prune(now)
+	}
 
 	// Drop residue from previous owners before aggregating load.
 	// After a range moves P_old -> P_new the readcache that hosted
@@ -1696,6 +1734,34 @@ func (r *Rebalancer) runPhase3(
 			Series:   seriesMoved,
 			Detail:   fmt.Sprintf("L=%.2f meanL=%.2f, P%d→P%d, load=%.2f series=%d, movable=%.2f", hotL, meanL, fromPID, coldPID, loadMoved, seriesMoved, mov),
 		})
+
+		// Spotlight sampling. A fraction of phase-3 moves are flagged
+		// for fine-grained diagnostic logging by distributors and
+		// readcache pods. The decision-time log we emit here is the
+		// "anchor" line consumers later correlate observations to via
+		// trace_id.
+		if r.spotlights != nil {
+			if sp, ok := r.spotlights.maybeSpotlight(now, entries[bestIdx].entry.Range, fromPID, coldPID, "phase3-move"); ok {
+				level.Info(r.logger).Log(
+					"msg", "nautilus spotlight: move decision",
+					"spotlight_id", sp.TraceID,
+					"reason", sp.Reason,
+					"range_lo", sp.Range.Lo,
+					"range_hi", sp.Range.Hi,
+					"range_size", sp.Range.Size(),
+					"from_partition", fromPID,
+					"to_partition", coldPID,
+					"hot_load", hotL,
+					"cold_load", coldL,
+					"mean_load", meanL,
+					"range_load", loadMoved,
+					"range_series", seriesMoved,
+					"movable_budget_remaining", mov,
+					"score", bestScore,
+					"expires_at", sp.ExpiresAt.Format(time.RFC3339),
+				)
+			}
+		}
 	}
 
 	return actions

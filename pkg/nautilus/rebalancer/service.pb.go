@@ -6,17 +6,16 @@ package rebalancer
 import (
 	context "context"
 	fmt "fmt"
-	io "io"
-	math "math"
-	math_bits "math/bits"
-	reflect "reflect"
-	strings "strings"
-
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	io "io"
+	math "math"
+	math_bits "math/bits"
+	reflect "reflect"
+	strings "strings"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -359,6 +358,202 @@ func (m *ReadcacheLogEntry) GetToUnixMs() int64 {
 	return 0
 }
 
+type GetSpotlightedRangesRequest struct {
+}
+
+func (m *GetSpotlightedRangesRequest) Reset()      { *m = GetSpotlightedRangesRequest{} }
+func (*GetSpotlightedRangesRequest) ProtoMessage() {}
+func (*GetSpotlightedRangesRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a0b84a42fa06f626, []int{6}
+}
+func (m *GetSpotlightedRangesRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetSpotlightedRangesRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetSpotlightedRangesRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetSpotlightedRangesRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetSpotlightedRangesRequest.Merge(m, src)
+}
+func (m *GetSpotlightedRangesRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetSpotlightedRangesRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetSpotlightedRangesRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetSpotlightedRangesRequest proto.InternalMessageInfo
+
+// GetSpotlightedRangesResponse carries the currently-active spotlight
+// set. A spotlight is added by the rebalancer when it commits a
+// move involving the range and lives for a fixed duration; consumers
+// re-poll and replace their local cache wholesale on each response.
+type GetSpotlightedRangesResponse struct {
+	Ranges []SpotlightedRange `protobuf:"bytes,1,rep,name=ranges,proto3" json:"ranges"`
+}
+
+func (m *GetSpotlightedRangesResponse) Reset()      { *m = GetSpotlightedRangesResponse{} }
+func (*GetSpotlightedRangesResponse) ProtoMessage() {}
+func (*GetSpotlightedRangesResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a0b84a42fa06f626, []int{7}
+}
+func (m *GetSpotlightedRangesResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetSpotlightedRangesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetSpotlightedRangesResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetSpotlightedRangesResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetSpotlightedRangesResponse.Merge(m, src)
+}
+func (m *GetSpotlightedRangesResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetSpotlightedRangesResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetSpotlightedRangesResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetSpotlightedRangesResponse proto.InternalMessageInfo
+
+func (m *GetSpotlightedRangesResponse) GetRanges() []SpotlightedRange {
+	if m != nil {
+		return m.Ranges
+	}
+	return nil
+}
+
+// SpotlightedRange describes a single hash range that the rebalancer
+// has flagged for fine-grained diagnostic logging in distributors
+// and readcache pods. trace_id is opaque to consumers; they include
+// it verbatim in any spotlight-related log lines so a single move's
+// downstream effects can be grepped out by ID.
+type SpotlightedRange struct {
+	TraceId string `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	Lo      uint32 `protobuf:"varint,2,opt,name=lo,proto3" json:"lo,omitempty"`
+	Hi      uint32 `protobuf:"varint,3,opt,name=hi,proto3" json:"hi,omitempty"`
+	// started_at_unix_ms and expires_at_unix_ms are wall-clock times
+	// in unix milliseconds. The spotlight is active during
+	// [started_at_unix_ms, expires_at_unix_ms); both are always set.
+	StartedAtUnixMs int64 `protobuf:"varint,4,opt,name=started_at_unix_ms,json=startedAtUnixMs,proto3" json:"started_at_unix_ms,omitempty"`
+	ExpiresAtUnixMs int64 `protobuf:"varint,5,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	// from_partition_id and to_partition_id are the partitions the
+	// rebalancer moved this range *between*. -1 means "unset"
+	// (e.g. the spotlight was created from a non-move event).
+	FromPartitionId int32 `protobuf:"varint,6,opt,name=from_partition_id,json=fromPartitionId,proto3" json:"from_partition_id,omitempty"`
+	ToPartitionId   int32 `protobuf:"varint,7,opt,name=to_partition_id,json=toPartitionId,proto3" json:"to_partition_id,omitempty"`
+	// reason is a short, free-form tag (e.g. "phase3-move") that
+	// describes why the rebalancer flagged this range. Useful to
+	// segment spotlights when correlating decision-time logs with
+	// post-decision observations.
+	Reason string `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+}
+
+func (m *SpotlightedRange) Reset()      { *m = SpotlightedRange{} }
+func (*SpotlightedRange) ProtoMessage() {}
+func (*SpotlightedRange) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a0b84a42fa06f626, []int{8}
+}
+func (m *SpotlightedRange) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SpotlightedRange) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SpotlightedRange.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SpotlightedRange) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SpotlightedRange.Merge(m, src)
+}
+func (m *SpotlightedRange) XXX_Size() int {
+	return m.Size()
+}
+func (m *SpotlightedRange) XXX_DiscardUnknown() {
+	xxx_messageInfo_SpotlightedRange.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SpotlightedRange proto.InternalMessageInfo
+
+func (m *SpotlightedRange) GetTraceId() string {
+	if m != nil {
+		return m.TraceId
+	}
+	return ""
+}
+
+func (m *SpotlightedRange) GetLo() uint32 {
+	if m != nil {
+		return m.Lo
+	}
+	return 0
+}
+
+func (m *SpotlightedRange) GetHi() uint32 {
+	if m != nil {
+		return m.Hi
+	}
+	return 0
+}
+
+func (m *SpotlightedRange) GetStartedAtUnixMs() int64 {
+	if m != nil {
+		return m.StartedAtUnixMs
+	}
+	return 0
+}
+
+func (m *SpotlightedRange) GetExpiresAtUnixMs() int64 {
+	if m != nil {
+		return m.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+func (m *SpotlightedRange) GetFromPartitionId() int32 {
+	if m != nil {
+		return m.FromPartitionId
+	}
+	return 0
+}
+
+func (m *SpotlightedRange) GetToPartitionId() int32 {
+	if m != nil {
+		return m.ToPartitionId
+	}
+	return 0
+}
+
+func (m *SpotlightedRange) GetReason() string {
+	if m != nil {
+		return m.Reason
+	}
+	return ""
+}
+
 func init() {
 	proto.RegisterType((*WatchAssignmentsRequest)(nil), "nautilus.rebalancer.WatchAssignmentsRequest")
 	proto.RegisterType((*WatchAssignmentsResponse)(nil), "nautilus.rebalancer.WatchAssignmentsResponse")
@@ -366,41 +561,54 @@ func init() {
 	proto.RegisterType((*WatchReadcacheAssignmentsRequest)(nil), "nautilus.rebalancer.WatchReadcacheAssignmentsRequest")
 	proto.RegisterType((*WatchReadcacheAssignmentsResponse)(nil), "nautilus.rebalancer.WatchReadcacheAssignmentsResponse")
 	proto.RegisterType((*ReadcacheLogEntry)(nil), "nautilus.rebalancer.ReadcacheLogEntry")
+	proto.RegisterType((*GetSpotlightedRangesRequest)(nil), "nautilus.rebalancer.GetSpotlightedRangesRequest")
+	proto.RegisterType((*GetSpotlightedRangesResponse)(nil), "nautilus.rebalancer.GetSpotlightedRangesResponse")
+	proto.RegisterType((*SpotlightedRange)(nil), "nautilus.rebalancer.SpotlightedRange")
 }
 
 func init() { proto.RegisterFile("service.proto", fileDescriptor_a0b84a42fa06f626) }
 
 var fileDescriptor_a0b84a42fa06f626 = []byte{
-	// 452 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x93, 0x41, 0x6f, 0xd3, 0x30,
-	0x14, 0xc7, 0xf3, 0xda, 0x0e, 0xc6, 0xeb, 0x86, 0xc0, 0x20, 0x91, 0x55, 0xe0, 0x65, 0x39, 0xa0,
-	0x1e, 0xa0, 0xa0, 0x21, 0xb8, 0x21, 0xc1, 0x24, 0x90, 0x90, 0x80, 0x83, 0x25, 0x84, 0xe0, 0x52,
-	0x65, 0xa9, 0x69, 0x2d, 0x52, 0xbb, 0xb3, 0x1d, 0x34, 0x6e, 0x7c, 0x00, 0x90, 0x38, 0xc1, 0x57,
-	0xe0, 0xa3, 0xec, 0xd8, 0xe3, 0x4e, 0x88, 0xa6, 0x17, 0x8e, 0xfb, 0x08, 0x28, 0xc9, 0x12, 0xc4,
-	0x92, 0x0c, 0xb8, 0xc5, 0xef, 0xff, 0xb7, 0x5f, 0xfe, 0x3f, 0x3f, 0xe3, 0xba, 0xe1, 0xfa, 0x9d,
-	0x08, 0xf9, 0x60, 0xa6, 0x95, 0x55, 0xe4, 0x92, 0x0c, 0x62, 0x2b, 0xa2, 0xd8, 0x0c, 0x34, 0xdf,
-	0x0d, 0xa2, 0x40, 0x86, 0x5c, 0xf7, 0x2e, 0x8f, 0xd5, 0x58, 0x65, 0xfa, 0xad, 0xf4, 0x2b, 0xb7,
-	0xfa, 0x1b, 0x78, 0xe5, 0x65, 0x60, 0xc3, 0xc9, 0x43, 0x63, 0xc4, 0x58, 0x4e, 0xb9, 0xb4, 0x86,
-	0xf1, 0xbd, 0x98, 0x1b, 0xeb, 0xbf, 0x42, 0xb7, 0x2a, 0x99, 0x99, 0x92, 0x86, 0x93, 0xfb, 0x78,
-	0x96, 0x4b, 0xab, 0x05, 0x37, 0x2e, 0x78, 0xed, 0x7e, 0x77, 0xfb, 0xda, 0xa0, 0xa6, 0xe7, 0xe0,
-	0xa9, 0x1a, 0x3f, 0x92, 0x56, 0xbf, 0xdf, 0xe9, 0x1c, 0x7c, 0xdf, 0x74, 0x58, 0xb1, 0xc7, 0xff,
-	0x04, 0xb8, 0x5a, 0x68, 0xe4, 0x3c, 0xb6, 0x22, 0xe5, 0x82, 0x07, 0xfd, 0x75, 0xd6, 0x8a, 0x54,
-	0xba, 0x9e, 0x08, 0xb7, 0x95, 0xaf, 0x27, 0x82, 0x6c, 0xe1, 0xda, 0x2c, 0xd0, 0x56, 0x58, 0xa1,
-	0xe4, 0x50, 0x8c, 0xdc, 0xb6, 0x07, 0xfd, 0x15, 0xd6, 0x2d, 0x6b, 0x4f, 0x46, 0xc4, 0xc3, 0xb5,
-	0x37, 0x5a, 0x4d, 0x87, 0xb1, 0x14, 0xfb, 0xc3, 0xa9, 0x71, 0x3b, 0x1e, 0xf4, 0xdb, 0x0c, 0xd3,
-	0xda, 0x0b, 0x29, 0xf6, 0x9f, 0x19, 0x72, 0x15, 0xd1, 0xaa, 0x52, 0x5f, 0xc9, 0xf4, 0x55, 0xab,
-	0x72, 0xd5, 0xf7, 0xd1, 0xcb, 0xa2, 0x32, 0x1e, 0x8c, 0xc2, 0x20, 0x9c, 0xf0, 0x1a, 0x1c, 0x6f,
-	0x71, 0xeb, 0x14, 0xcf, 0x31, 0x97, 0xc7, 0x27, 0xb9, 0x5c, 0xaf, 0xe5, 0x52, 0x9e, 0xd1, 0x04,
-	0xe8, 0x2b, 0xe0, 0xc5, 0x8a, 0xa9, 0x42, 0x02, 0xaa, 0x24, 0x36, 0xb1, 0x2b, 0xa4, 0xb1, 0x69,
-	0x9b, 0xd4, 0x91, 0x52, 0x3c, 0xc7, 0xb0, 0x28, 0xd5, 0xa0, 0x6a, 0xff, 0x05, 0x55, 0xe7, 0x4f,
-	0x54, 0xdb, 0x5f, 0x5a, 0x48, 0x9e, 0x1f, 0x47, 0x62, 0x65, 0x22, 0xb2, 0x87, 0x17, 0x4e, 0x0e,
-	0x0b, 0xb9, 0x51, 0x9b, 0xbd, 0x61, 0xdc, 0x7a, 0x37, 0xff, 0xd1, 0x9d, 0x93, 0xbe, 0x0d, 0xe4,
-	0x23, 0xe0, 0x46, 0xe3, 0x8d, 0x90, 0xbb, 0xcd, 0xc7, 0x9d, 0x72, 0xcb, 0xbd, 0x7b, 0xff, 0xbb,
-	0xad, 0xf8, 0x9d, 0x9d, 0x07, 0xf3, 0x05, 0x75, 0x0e, 0x17, 0xd4, 0x39, 0x5a, 0x50, 0xf8, 0x90,
-	0x50, 0xf8, 0x96, 0x50, 0x38, 0x48, 0x28, 0xcc, 0x13, 0x0a, 0x3f, 0x12, 0x0a, 0x3f, 0x13, 0xea,
-	0x1c, 0x25, 0x14, 0x3e, 0x2f, 0xa9, 0x33, 0x5f, 0x52, 0xe7, 0x70, 0x49, 0x9d, 0xd7, 0xf8, 0xbb,
-	0xcb, 0xee, 0x99, 0xec, 0x49, 0xde, 0xf9, 0x15, 0x00, 0x00, 0xff, 0xff, 0xa8, 0x6f, 0xa0, 0xa7,
-	0xce, 0x03, 0x00, 0x00,
+	// 619 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x94, 0xcf, 0x4f, 0x13, 0x41,
+	0x14, 0xc7, 0x77, 0x5a, 0x28, 0xf5, 0x01, 0x16, 0x46, 0xa2, 0x4b, 0x85, 0xa1, 0x34, 0x91, 0x34,
+	0xa2, 0x15, 0x31, 0x7a, 0x33, 0x11, 0x8c, 0x1a, 0x12, 0x35, 0x66, 0x8d, 0x31, 0x7a, 0x69, 0x86,
+	0xdd, 0x71, 0x3b, 0xb1, 0xcc, 0x94, 0x99, 0xa9, 0xc1, 0x78, 0xf1, 0x0f, 0xd0, 0xc4, 0x84, 0x83,
+	0xff, 0x82, 0x7f, 0x0a, 0x47, 0x8e, 0x9c, 0x8c, 0x2c, 0x17, 0x8f, 0xfc, 0x09, 0x66, 0x7f, 0xb0,
+	0xc2, 0x76, 0x5b, 0xe5, 0xd6, 0x79, 0xdf, 0xef, 0x7b, 0xd3, 0xf7, 0x79, 0x6f, 0x16, 0x26, 0x35,
+	0x53, 0x1f, 0xb8, 0xcb, 0x9a, 0x5d, 0x25, 0x8d, 0xc4, 0x97, 0x04, 0xed, 0x19, 0xde, 0xe9, 0xe9,
+	0xa6, 0x62, 0x9b, 0xb4, 0x43, 0x85, 0xcb, 0x54, 0x75, 0xc6, 0x97, 0xbe, 0x8c, 0xf4, 0x5b, 0xe1,
+	0xaf, 0xd8, 0x5a, 0x9f, 0x85, 0x2b, 0xaf, 0xa9, 0x71, 0xdb, 0x6b, 0x5a, 0x73, 0x5f, 0x6c, 0x31,
+	0x61, 0xb4, 0xc3, 0xb6, 0x7b, 0x4c, 0x9b, 0xfa, 0x1b, 0xb0, 0xfb, 0x25, 0xdd, 0x95, 0x42, 0x33,
+	0x7c, 0x1f, 0xc6, 0x98, 0x30, 0x8a, 0x33, 0x6d, 0xa3, 0x5a, 0xb1, 0x31, 0xbe, 0x3a, 0xdf, 0xcc,
+	0xb9, 0xb3, 0xf9, 0x54, 0xfa, 0x8f, 0x84, 0x51, 0x1f, 0xd7, 0x47, 0xf6, 0x7e, 0x2e, 0x58, 0xce,
+	0x49, 0x4e, 0xfd, 0x2b, 0x82, 0xf2, 0x89, 0x86, 0x2f, 0x42, 0xa1, 0x23, 0x6d, 0x54, 0x43, 0x8d,
+	0x49, 0xa7, 0xd0, 0x91, 0xe1, 0xb9, 0xcd, 0xed, 0x42, 0x7c, 0x6e, 0x73, 0xbc, 0x08, 0x13, 0x5d,
+	0xaa, 0x0c, 0x37, 0x5c, 0x8a, 0x16, 0xf7, 0xec, 0x62, 0x0d, 0x35, 0x46, 0x9d, 0xf1, 0x34, 0xb6,
+	0xe1, 0xe1, 0x1a, 0x4c, 0xbc, 0x53, 0x72, 0xab, 0xd5, 0x13, 0x7c, 0xa7, 0xb5, 0xa5, 0xed, 0x91,
+	0x1a, 0x6a, 0x14, 0x1d, 0x08, 0x63, 0xaf, 0x04, 0xdf, 0x79, 0xa6, 0xf1, 0x1c, 0x80, 0x91, 0xa9,
+	0x3e, 0x1a, 0xe9, 0x65, 0x23, 0x63, 0xb5, 0x5e, 0x87, 0x5a, 0xd4, 0xaa, 0xc3, 0xa8, 0xe7, 0x52,
+	0xb7, 0xcd, 0x72, 0x70, 0xbc, 0x87, 0xc5, 0x21, 0x9e, 0x84, 0xcb, 0xe3, 0x2c, 0x97, 0xa5, 0x5c,
+	0x2e, 0x69, 0x8d, 0x41, 0x80, 0xbe, 0x23, 0x98, 0xee, 0x33, 0xf5, 0x91, 0x40, 0xfd, 0x24, 0x16,
+	0x60, 0x9c, 0x0b, 0x6d, 0xc2, 0x6b, 0x42, 0x47, 0x48, 0xf1, 0x82, 0x03, 0x27, 0xa1, 0x1c, 0x54,
+	0xc5, 0x7f, 0xa0, 0x1a, 0xc9, 0xa0, 0x9a, 0x87, 0xab, 0x4f, 0x98, 0x79, 0xd9, 0x95, 0xa6, 0xc3,
+	0xfd, 0xb6, 0x61, 0x9e, 0x43, 0x85, 0xcf, 0x52, 0x4a, 0x2e, 0xcc, 0xe5, 0xcb, 0x09, 0xa0, 0x87,
+	0x50, 0x52, 0x51, 0x24, 0xe1, 0x73, 0x2d, 0x97, 0x4f, 0x36, 0x3f, 0xc1, 0x93, 0xa4, 0xd6, 0x77,
+	0x0b, 0x30, 0x95, 0xb5, 0xe0, 0x59, 0x28, 0x1b, 0x45, 0xe3, 0xb6, 0x51, 0xd4, 0xf6, 0x58, 0x74,
+	0xde, 0xf0, 0x92, 0x0d, 0x2b, 0x64, 0x36, 0xac, 0x98, 0x6e, 0xd8, 0x32, 0x60, 0x6d, 0xa8, 0x32,
+	0xcc, 0x6b, 0x51, 0x93, 0xe9, 0xbc, 0x92, 0x28, 0x6b, 0x26, 0xc1, 0xb3, 0x0c, 0x98, 0xed, 0x74,
+	0xb9, 0x62, 0xfa, 0xb4, 0x39, 0xde, 0xa8, 0x4a, 0xa2, 0xa4, 0xe6, 0xeb, 0x30, 0x1d, 0xd1, 0x3e,
+	0x33, 0xb6, 0x52, 0x34, 0xb6, 0x4a, 0x28, 0xbc, 0x38, 0x35, 0xba, 0x25, 0xa8, 0x18, 0x79, 0xd6,
+	0x39, 0x16, 0x39, 0x27, 0x8d, 0x3c, 0xed, 0xbb, 0x0c, 0x25, 0xc5, 0xa8, 0x96, 0xc2, 0x2e, 0x47,
+	0x6d, 0x26, 0xa7, 0xd5, 0xdd, 0x22, 0xe0, 0xe7, 0x09, 0x4c, 0x27, 0x65, 0x89, 0xb7, 0x61, 0x2a,
+	0xfb, 0x8c, 0xf1, 0x8d, 0x5c, 0xea, 0x03, 0x3e, 0x04, 0xd5, 0x9b, 0xff, 0xe9, 0x8e, 0x47, 0xbc,
+	0x82, 0xf0, 0x17, 0x04, 0xb3, 0x03, 0xdf, 0x0a, 0xbe, 0x3b, 0xb8, 0xdc, 0x90, 0xf7, 0x57, 0xbd,
+	0x77, 0xde, 0xb4, 0xf4, 0xef, 0x7c, 0x82, 0x99, 0xbc, 0x9d, 0xc4, 0x2b, 0xb9, 0x15, 0x87, 0x6c,
+	0x77, 0xf5, 0xf6, 0x39, 0x32, 0xe2, 0xeb, 0xd7, 0x1f, 0xec, 0x1f, 0x12, 0xeb, 0xe0, 0x90, 0x58,
+	0xc7, 0x87, 0x04, 0x7d, 0x0e, 0x08, 0xfa, 0x11, 0x10, 0xb4, 0x17, 0x10, 0xb4, 0x1f, 0x10, 0xf4,
+	0x2b, 0x20, 0xe8, 0x77, 0x40, 0xac, 0xe3, 0x80, 0xa0, 0x6f, 0x47, 0xc4, 0xda, 0x3f, 0x22, 0xd6,
+	0xc1, 0x11, 0xb1, 0xde, 0xc2, 0xdf, 0xf2, 0x9b, 0xa5, 0xe8, 0x4b, 0x7d, 0xe7, 0x4f, 0x00, 0x00,
+	0x00, 0xff, 0xff, 0x7d, 0xf7, 0x01, 0xa7, 0xe5, 0x05, 0x00, 0x00,
 }
 
 func (this *WatchAssignmentsRequest) Equal(that interface{}) bool {
@@ -572,6 +780,101 @@ func (this *ReadcacheLogEntry) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *GetSpotlightedRangesRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GetSpotlightedRangesRequest)
+	if !ok {
+		that2, ok := that.(GetSpotlightedRangesRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	return true
+}
+func (this *GetSpotlightedRangesResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GetSpotlightedRangesResponse)
+	if !ok {
+		that2, ok := that.(GetSpotlightedRangesResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Ranges) != len(that1.Ranges) {
+		return false
+	}
+	for i := range this.Ranges {
+		if !this.Ranges[i].Equal(&that1.Ranges[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *SpotlightedRange) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SpotlightedRange)
+	if !ok {
+		that2, ok := that.(SpotlightedRange)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.TraceId != that1.TraceId {
+		return false
+	}
+	if this.Lo != that1.Lo {
+		return false
+	}
+	if this.Hi != that1.Hi {
+		return false
+	}
+	if this.StartedAtUnixMs != that1.StartedAtUnixMs {
+		return false
+	}
+	if this.ExpiresAtUnixMs != that1.ExpiresAtUnixMs {
+		return false
+	}
+	if this.FromPartitionId != that1.FromPartitionId {
+		return false
+	}
+	if this.ToPartitionId != that1.ToPartitionId {
+		return false
+	}
+	if this.Reason != that1.Reason {
+		return false
+	}
+	return true
+}
 func (this *WatchAssignmentsRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -649,6 +952,48 @@ func (this *ReadcacheLogEntry) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *GetSpotlightedRangesRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&rebalancer.GetSpotlightedRangesRequest{")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *GetSpotlightedRangesResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&rebalancer.GetSpotlightedRangesResponse{")
+	if this.Ranges != nil {
+		vs := make([]SpotlightedRange, len(this.Ranges))
+		for i := range vs {
+			vs[i] = this.Ranges[i]
+		}
+		s = append(s, "Ranges: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SpotlightedRange) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 12)
+	s = append(s, "&rebalancer.SpotlightedRange{")
+	s = append(s, "TraceId: "+fmt.Sprintf("%#v", this.TraceId)+",\n")
+	s = append(s, "Lo: "+fmt.Sprintf("%#v", this.Lo)+",\n")
+	s = append(s, "Hi: "+fmt.Sprintf("%#v", this.Hi)+",\n")
+	s = append(s, "StartedAtUnixMs: "+fmt.Sprintf("%#v", this.StartedAtUnixMs)+",\n")
+	s = append(s, "ExpiresAtUnixMs: "+fmt.Sprintf("%#v", this.ExpiresAtUnixMs)+",\n")
+	s = append(s, "FromPartitionId: "+fmt.Sprintf("%#v", this.FromPartitionId)+",\n")
+	s = append(s, "ToPartitionId: "+fmt.Sprintf("%#v", this.ToPartitionId)+",\n")
+	s = append(s, "Reason: "+fmt.Sprintf("%#v", this.Reason)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringService(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -684,6 +1029,15 @@ type NautilusRebalancerClient interface {
 	// own. The stream contract (snapshot on connect, conflated
 	// updates) matches WatchAssignments.
 	WatchReadcacheAssignments(ctx context.Context, in *WatchReadcacheAssignmentsRequest, opts ...grpc.CallOption) (NautilusRebalancer_WatchReadcacheAssignmentsClient, error)
+	// GetSpotlightedRanges returns the rebalancer's current set of
+	// "spotlighted" hash ranges: ranges flagged for fine-grained
+	// diagnostic logging because the rebalancer recently made a move
+	// decision involving them. Distributors and readcache pods poll
+	// this RPC periodically (typically every 10s) and emit extra
+	// structured log lines about the spotlighted ranges they see
+	// traffic for. Polled (not streamed) because the set churns slowly
+	// and the consumer cadence is independent of the rebalancer round.
+	GetSpotlightedRanges(ctx context.Context, in *GetSpotlightedRangesRequest, opts ...grpc.CallOption) (*GetSpotlightedRangesResponse, error)
 }
 
 type nautilusRebalancerClient struct {
@@ -758,6 +1112,15 @@ func (x *nautilusRebalancerWatchReadcacheAssignmentsClient) Recv() (*WatchReadca
 	return m, nil
 }
 
+func (c *nautilusRebalancerClient) GetSpotlightedRanges(ctx context.Context, in *GetSpotlightedRangesRequest, opts ...grpc.CallOption) (*GetSpotlightedRangesResponse, error) {
+	out := new(GetSpotlightedRangesResponse)
+	err := c.cc.Invoke(ctx, "/nautilus.rebalancer.NautilusRebalancer/GetSpotlightedRanges", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NautilusRebalancerServer is the server API for NautilusRebalancer service.
 type NautilusRebalancerServer interface {
 	// WatchAssignments subscribes to the rebalancer's assignment log.
@@ -774,6 +1137,15 @@ type NautilusRebalancerServer interface {
 	// own. The stream contract (snapshot on connect, conflated
 	// updates) matches WatchAssignments.
 	WatchReadcacheAssignments(*WatchReadcacheAssignmentsRequest, NautilusRebalancer_WatchReadcacheAssignmentsServer) error
+	// GetSpotlightedRanges returns the rebalancer's current set of
+	// "spotlighted" hash ranges: ranges flagged for fine-grained
+	// diagnostic logging because the rebalancer recently made a move
+	// decision involving them. Distributors and readcache pods poll
+	// this RPC periodically (typically every 10s) and emit extra
+	// structured log lines about the spotlighted ranges they see
+	// traffic for. Polled (not streamed) because the set churns slowly
+	// and the consumer cadence is independent of the rebalancer round.
+	GetSpotlightedRanges(context.Context, *GetSpotlightedRangesRequest) (*GetSpotlightedRangesResponse, error)
 }
 
 // UnimplementedNautilusRebalancerServer can be embedded to have forward compatible implementations.
@@ -785,6 +1157,9 @@ func (*UnimplementedNautilusRebalancerServer) WatchAssignments(req *WatchAssignm
 }
 func (*UnimplementedNautilusRebalancerServer) WatchReadcacheAssignments(req *WatchReadcacheAssignmentsRequest, srv NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
 	return status.Errorf(codes.Unimplemented, "method WatchReadcacheAssignments not implemented")
+}
+func (*UnimplementedNautilusRebalancerServer) GetSpotlightedRanges(ctx context.Context, req *GetSpotlightedRangesRequest) (*GetSpotlightedRangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSpotlightedRanges not implemented")
 }
 
 func RegisterNautilusRebalancerServer(s *grpc.Server, srv NautilusRebalancerServer) {
@@ -833,10 +1208,33 @@ func (x *nautilusRebalancerWatchReadcacheAssignmentsServer) Send(m *WatchReadcac
 	return x.ServerStream.SendMsg(m)
 }
 
+func _NautilusRebalancer_GetSpotlightedRanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSpotlightedRangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NautilusRebalancerServer).GetSpotlightedRanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/nautilus.rebalancer.NautilusRebalancer/GetSpotlightedRanges",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NautilusRebalancerServer).GetSpotlightedRanges(ctx, req.(*GetSpotlightedRangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _NautilusRebalancer_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "nautilus.rebalancer.NautilusRebalancer",
 	HandlerType: (*NautilusRebalancerServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetSpotlightedRanges",
+			Handler:    _NautilusRebalancer_GetSpotlightedRanges_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "WatchAssignments",
@@ -1065,6 +1463,133 @@ func (m *ReadcacheLogEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *GetSpotlightedRangesRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetSpotlightedRangesRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetSpotlightedRangesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *GetSpotlightedRangesResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetSpotlightedRangesResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetSpotlightedRangesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Ranges) > 0 {
+		for iNdEx := len(m.Ranges) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Ranges[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintService(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SpotlightedRange) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SpotlightedRange) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SpotlightedRange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Reason) > 0 {
+		i -= len(m.Reason)
+		copy(dAtA[i:], m.Reason)
+		i = encodeVarintService(dAtA, i, uint64(len(m.Reason)))
+		i--
+		dAtA[i] = 0x42
+	}
+	if m.ToPartitionId != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.ToPartitionId))
+		i--
+		dAtA[i] = 0x38
+	}
+	if m.FromPartitionId != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.FromPartitionId))
+		i--
+		dAtA[i] = 0x30
+	}
+	if m.ExpiresAtUnixMs != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.ExpiresAtUnixMs))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.StartedAtUnixMs != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.StartedAtUnixMs))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.Hi != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.Hi))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Lo != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.Lo))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.TraceId) > 0 {
+		i -= len(m.TraceId)
+		copy(dAtA[i:], m.TraceId)
+		i = encodeVarintService(dAtA, i, uint64(len(m.TraceId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintService(dAtA []byte, offset int, v uint64) int {
 	offset -= sovService(v)
 	base := offset
@@ -1170,6 +1695,65 @@ func (m *ReadcacheLogEntry) Size() (n int) {
 	return n
 }
 
+func (m *GetSpotlightedRangesRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *GetSpotlightedRangesResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Ranges) > 0 {
+		for _, e := range m.Ranges {
+			l = e.Size()
+			n += 1 + l + sovService(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *SpotlightedRange) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.TraceId)
+	if l > 0 {
+		n += 1 + l + sovService(uint64(l))
+	}
+	if m.Lo != 0 {
+		n += 1 + sovService(uint64(m.Lo))
+	}
+	if m.Hi != 0 {
+		n += 1 + sovService(uint64(m.Hi))
+	}
+	if m.StartedAtUnixMs != 0 {
+		n += 1 + sovService(uint64(m.StartedAtUnixMs))
+	}
+	if m.ExpiresAtUnixMs != 0 {
+		n += 1 + sovService(uint64(m.ExpiresAtUnixMs))
+	}
+	if m.FromPartitionId != 0 {
+		n += 1 + sovService(uint64(m.FromPartitionId))
+	}
+	if m.ToPartitionId != 0 {
+		n += 1 + sovService(uint64(m.ToPartitionId))
+	}
+	l = len(m.Reason)
+	if l > 0 {
+		n += 1 + l + sovService(uint64(l))
+	}
+	return n
+}
+
 func sovService(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -1247,6 +1831,47 @@ func (this *ReadcacheLogEntry) String() string {
 		`InstanceId:` + fmt.Sprintf("%v", this.InstanceId) + `,`,
 		`FromUnixMs:` + fmt.Sprintf("%v", this.FromUnixMs) + `,`,
 		`ToUnixMs:` + fmt.Sprintf("%v", this.ToUnixMs) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetSpotlightedRangesRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GetSpotlightedRangesRequest{`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetSpotlightedRangesResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForRanges := "[]SpotlightedRange{"
+	for _, f := range this.Ranges {
+		repeatedStringForRanges += strings.Replace(strings.Replace(f.String(), "SpotlightedRange", "SpotlightedRange", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForRanges += "}"
+	s := strings.Join([]string{`&GetSpotlightedRangesResponse{`,
+		`Ranges:` + repeatedStringForRanges + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SpotlightedRange) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SpotlightedRange{`,
+		`TraceId:` + fmt.Sprintf("%v", this.TraceId) + `,`,
+		`Lo:` + fmt.Sprintf("%v", this.Lo) + `,`,
+		`Hi:` + fmt.Sprintf("%v", this.Hi) + `,`,
+		`StartedAtUnixMs:` + fmt.Sprintf("%v", this.StartedAtUnixMs) + `,`,
+		`ExpiresAtUnixMs:` + fmt.Sprintf("%v", this.ExpiresAtUnixMs) + `,`,
+		`FromPartitionId:` + fmt.Sprintf("%v", this.FromPartitionId) + `,`,
+		`ToPartitionId:` + fmt.Sprintf("%v", this.ToPartitionId) + `,`,
+		`Reason:` + fmt.Sprintf("%v", this.Reason) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1790,6 +2415,368 @@ func (m *ReadcacheLogEntry) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipService(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthService
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetSpotlightedRangesRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowService
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetSpotlightedRangesRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetSpotlightedRangesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipService(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthService
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetSpotlightedRangesResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowService
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetSpotlightedRangesResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetSpotlightedRangesResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Ranges", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Ranges = append(m.Ranges, SpotlightedRange{})
+			if err := m.Ranges[len(m.Ranges)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipService(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthService
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SpotlightedRange) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowService
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SpotlightedRange: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SpotlightedRange: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TraceId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TraceId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Lo", wireType)
+			}
+			m.Lo = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Lo |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Hi", wireType)
+			}
+			m.Hi = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Hi |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StartedAtUnixMs", wireType)
+			}
+			m.StartedAtUnixMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.StartedAtUnixMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ExpiresAtUnixMs", wireType)
+			}
+			m.ExpiresAtUnixMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ExpiresAtUnixMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FromPartitionId", wireType)
+			}
+			m.FromPartitionId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.FromPartitionId |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ToPartitionId", wireType)
+			}
+			m.ToPartitionId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ToPartitionId |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Reason", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Reason = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipService(dAtA[iNdEx:])

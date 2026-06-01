@@ -71,6 +71,12 @@ type Readcache struct {
 	// RebalancerAddress is empty.
 	rebalancerConn *grpc.ClientConn
 
+	// spotlights is the readcache's local cache of the rebalancer's
+	// spotlighted hash ranges. Populated by a background poller
+	// (runSpotlightLoop) and read on the spotlight emission tick.
+	// Always non-nil after New.
+	spotlights *readcacheSpotlightTracker
+
 	// instanceLifecycler registers this readcache pod in the
 	// service-discovery ring (KV key "readcache"). Nil when the
 	// caller of New didn't pass one (e.g. unit tests that don't
@@ -200,6 +206,7 @@ func New(
 		instanceLifecycler: instanceLifecycler,
 		queryLoad:          loadstats.NewTracker("cortex_readcache"),
 		partitionSeries:    loadstats.NewPartitionSeries(),
+		spotlights:         newReadcacheSpotlightTracker(),
 	}
 
 	r.seriesHashCache = hashcache.NewSeriesHashCache(tsdbCfg.SeriesHashCacheMaxBytes)
@@ -352,6 +359,7 @@ func (r *Readcache) running(ctx context.Context) error {
 	// when ctx is cancelled.
 	if r.rebalancerConn != nil {
 		go r.watchReadcacheAssignments(ctx)
+		go r.runSpotlightLoop(ctx)
 	}
 
 	// Prime partition/hash-range snapshots so the first HashRangeStats

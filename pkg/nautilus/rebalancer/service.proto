@@ -29,6 +29,16 @@ service NautilusRebalancer {
   // own. The stream contract (snapshot on connect, conflated
   // updates) matches WatchAssignments.
   rpc WatchReadcacheAssignments(WatchReadcacheAssignmentsRequest) returns (stream WatchReadcacheAssignmentsResponse);
+
+  // GetSpotlightedRanges returns the rebalancer's current set of
+  // "spotlighted" hash ranges: ranges flagged for fine-grained
+  // diagnostic logging because the rebalancer recently made a move
+  // decision involving them. Distributors and readcache pods poll
+  // this RPC periodically (typically every 10s) and emit extra
+  // structured log lines about the spotlighted ranges they see
+  // traffic for. Polled (not streamed) because the set churns slowly
+  // and the consumer cadence is independent of the rebalancer round.
+  rpc GetSpotlightedRanges(GetSpotlightedRangesRequest) returns (GetSpotlightedRangesResponse);
 }
 
 message WatchAssignmentsRequest {}
@@ -87,4 +97,40 @@ message ReadcacheLogEntry {
   string instance_id = 2;
   int64 from_unix_ms = 3;
   int64 to_unix_ms = 4;
+}
+
+message GetSpotlightedRangesRequest {}
+
+// GetSpotlightedRangesResponse carries the currently-active spotlight
+// set. A spotlight is added by the rebalancer when it commits a
+// move involving the range and lives for a fixed duration; consumers
+// re-poll and replace their local cache wholesale on each response.
+message GetSpotlightedRangesResponse {
+  repeated SpotlightedRange ranges = 1 [(gogoproto.nullable) = false];
+}
+
+// SpotlightedRange describes a single hash range that the rebalancer
+// has flagged for fine-grained diagnostic logging in distributors
+// and readcache pods. trace_id is opaque to consumers; they include
+// it verbatim in any spotlight-related log lines so a single move's
+// downstream effects can be grepped out by ID.
+message SpotlightedRange {
+  string trace_id = 1;
+  uint32 lo = 2;
+  uint32 hi = 3;
+  // started_at_unix_ms and expires_at_unix_ms are wall-clock times
+  // in unix milliseconds. The spotlight is active during
+  // [started_at_unix_ms, expires_at_unix_ms); both are always set.
+  int64 started_at_unix_ms = 4;
+  int64 expires_at_unix_ms = 5;
+  // from_partition_id and to_partition_id are the partitions the
+  // rebalancer moved this range *between*. -1 means "unset"
+  // (e.g. the spotlight was created from a non-move event).
+  int32 from_partition_id = 6;
+  int32 to_partition_id = 7;
+  // reason is a short, free-form tag (e.g. "phase3-move") that
+  // describes why the rebalancer flagged this range. Useful to
+  // segment spotlights when correlating decision-time logs with
+  // post-decision observations.
+  string reason = 8;
 }
