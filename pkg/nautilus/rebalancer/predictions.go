@@ -76,10 +76,10 @@ type predictionStore struct {
 }
 
 // predictionFloor is the decay fraction below which we discard a
-// prediction. At alpha=0.034 and tick=15s, decay = 0.05 happens at
-// ~22 minutes after commit (just over 4 half-lives), which is plenty
-// of time for the destination EWMA to have settled to within ~5% of
-// the true rate.
+// prediction. At alpha=0.1591 and tick=15s, decay = 0.05 happens at
+// ~4.3 minutes after commit (just over 4 half-lives), which is
+// plenty of time for the destination EWMA to have settled to within
+// ~5% of the true rate.
 const predictionFloor = 0.05
 
 // record adds a prediction for each "move" or "reassign" action,

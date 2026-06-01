@@ -550,10 +550,10 @@ func TestPartitionRanges_SampleRates(t *testing.T) {
 		initialRate := current[0].SampleRate
 		require.Greater(t, initialRate, 0.0, "first tick should establish a non-zero rate")
 
-		// 200 ticks with no new events. Alpha=0.034, so each tick
-		// the rate moves toward 0 by ~3.4% of its current value;
-		// after 200 ticks rate ≈ initialRate * (1-0.034)^200 ≈
-		// initialRate * 0.001. Bound the assert generously.
+		// 200 ticks with no new events. Alpha≈0.1591, so each tick
+		// the rate moves toward 0 by ~16% of its current value;
+		// after 200 ticks rate ≈ initialRate * (1-0.1591)^200 ≈
+		// initialRate * 1e-15. Bound the assert generously.
 		for i := 0; i < 200; i++ {
 			pr.tickSampleRates()
 		}

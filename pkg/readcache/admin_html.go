@@ -234,7 +234,7 @@ all partitions have been moved off to other instances.</p>
 <div class="footer">
 	Page is server-rendered and does not auto-refresh; reload manually for fresh stats.
 	Per-range series counts come from the latest walker tick; head series counts (L_pid) are computed live on this request.
-	Ingest rates are per-(partition, range) samples-per-second EWMAs (~5min half-life, advanced every 15s).
+	Ingest rates are per-(partition, range) samples-per-second EWMAs (~1min half-life, advanced every 15s).
 </div>
 
 </body>

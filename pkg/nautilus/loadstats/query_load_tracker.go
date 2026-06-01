@@ -24,10 +24,13 @@ const TickInterval = 15 * time.Second
 //
 //	half_life = -tick_interval / log2(1 - alpha)
 //
-// At tick=15s, alpha=0.034 yields a half-life of ~5 minutes — long
-// enough to smooth out individual hot queries, short enough that the
-// rebalancer (running at ~LeaseDuration cadence) sees recent skew.
-const Alpha = 0.034
+// At tick=15s, alpha=0.1591 yields a half-life of ~1 minute:
+// 1 - 2^(-15s/60s) = 1 - 2^-0.25 ≈ 0.15910. A 1-minute half-life
+// keeps the rebalancer responsive to traffic shifts — partitions
+// that briefly land on a freshly-restarted readcache reflect their
+// true rate within a few rebalance rounds rather than the ~25 min
+// it took with the previous 5-minute half-life.
+const Alpha = 0.1591
 
 // Tracker accumulates samples-scanned per partition_id and for full-
 // fanout/unnamed queries, smoothing each into a per-second EWMA. The

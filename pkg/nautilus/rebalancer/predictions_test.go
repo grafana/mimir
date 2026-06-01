@@ -48,12 +48,12 @@ func TestPredictionStore_FreshPredictionAddsFullRate(t *testing.T) {
 
 // TestPredictionStore_HalfLifeMatchesEWMA verifies the decay curve
 // against the readcache's actual EWMA. After one half-life
-// (alpha=0.034, tick=15s → 300s), the EWMA at the destination has
+// (alpha=0.1591, tick=15s → 60s), the EWMA at the destination has
 // absorbed 50% of the moved load, so the prediction should still
 // contribute the remaining 50%.
 func TestPredictionStore_HalfLifeMatchesEWMA(t *testing.T) {
 	commit := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	// Half-life: ln(2) / (-ln(1-alpha)/tick) = ln(2)/0.002303 ≈ 300s.
+	// Half-life: ln(2) / (-ln(1-alpha)/tick) ≈ 60s at alpha=0.1591.
 	halfLife := time.Duration(math.Round(math.Ln2/(-math.Log(1-loadstats.Alpha)/loadstats.TickInterval.Seconds()))) * time.Second
 	s := predictionStore{
 		preds: []ratePrediction{
