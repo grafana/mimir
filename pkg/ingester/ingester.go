@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -640,6 +641,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	// who explicitly set the default in config don't see noise.
 	if cfg.LabelValuesCountRequestMaxConcurrency != deprecatedLabelValuesCountMaxConcurrencyDefault {
 		level.Warn(logger).Log("msg", "the -ingester.label-values-count-max-concurrency flag is deprecated and has no effect; use -ingester.label-values-count-workers and -ingester.label-values-count-chunk-size instead")
+		// Surface usage in the standard deprecated_flags_inuse_total metric so
+		// fleet-wide deprecated-flag dashboards and alerts pick it up. We can't
+		// use flagext.DeprecatedFlag for registration because the value is also
+		// settable via YAML config, which that helper doesn't observe.
+		flagext.DeprecatedFlagsUsed.Inc()
 	}
 
 	i.labelValuesCountPool, err = workerpool.New(cfg.LabelValuesCount.workerpoolConfig(), "ingester-label-values-count", registerer, logger)
