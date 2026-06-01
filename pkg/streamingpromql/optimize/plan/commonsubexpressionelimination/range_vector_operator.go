@@ -145,10 +145,7 @@ func (b *RangeVectorDuplicationBuffer) NextSeries(consumer *RangeVectorDuplicati
 }
 
 func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Context, desiredSeriesIndex int, desiredStepIndex int) (bufferedRangeVectorStepData, error) {
-	var (
-		lastStepData bufferedRangeVectorStepData
-		tainted      viewTaint
-	)
+	var lastStepData bufferedRangeVectorStepData
 
 	for b.lastNextSeriesCallIndex < desiredSeriesIndex || (b.lastNextSeriesCallIndex == desiredSeriesIndex && b.lastNextStepSamplesCallIndex < desiredStepIndex) {
 		if b.lastNextStepSamplesCallIndex == b.timeRange.StepCount-1 || b.lastNextSeriesCallIndex == -1 {
@@ -156,12 +153,6 @@ func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Contex
 			if err := b.Inner.NextSeries(ctx); err != nil {
 				return bufferedRangeVectorStepData{}, err
 			}
-
-			// After advancing to next series we need to recreate the views of all the previous series
-			// steps if we updated the underlying buffers used by float points or histogram points and
-			// caused them to be resized.
-			b.updateViewsForSeries(b.lastNextSeriesCallIndex, tainted)
-			tainted = viewTaint{}
 
 			b.lastNextStepSamplesCallIndex = -1
 			b.lastNextSeriesCallIndex++
@@ -177,51 +168,22 @@ func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Contex
 			return bufferedRangeVectorStepData{}, err
 		}
 
-		combinedStepData, combinedTaint, err := b.combineStepData(stepData, b.lastNextSeriesCallIndex)
+		combinedStepData, err := b.combineStepData(stepData, b.lastNextSeriesCallIndex)
 		if err != nil {
 			return bufferedRangeVectorStepData{}, err
 		}
-
-		tainted = tainted.merge(combinedTaint)
 
 		b.lastNextStepSamplesCallIndex++
 		b.buffer.Append(combinedStepData, b.lastNextSeriesCallIndex, b.lastNextStepSamplesCallIndex)
 		lastStepData = combinedStepData
 	}
 
-	// Update the views for the current series one last time if we've added anything to the
-	// underlying float point or histogram point buffers and had to resize since reading step data.
-	b.updateViewsForSeries(b.lastNextSeriesCallIndex, tainted)
-
 	return lastStepData, nil
 }
 
-func (b *RangeVectorDuplicationBuffer) updateViewsForSeries(seriesIndex int, taint viewTaint) {
-	if !taint.needsUpdate() {
-		return
-	}
-
-	floats := b.buffer.GetOrCreateFloatBuffer(seriesIndex)
-	histograms := b.buffer.GetOrCreateHistogramBuffer(seriesIndex)
-
-	for stepIdx := range b.timeRange.StepCount {
-		if d, present := b.buffer.GetIfPresent(seriesIndex, stepIdx); present {
-			// Only update the views for this step if the underlying buffers have been changed
-			// and this step isn't using dedicated buffers (which we do for anchored/smoothed).
-			if taint.floats && d.floatData == nil {
-				d.stepData.Floats = floats.ViewBetweenSearchingBackwards(d.stepData.RangeStart, d.stepData.RangeEnd, d.stepData.Floats)
-			}
-			if taint.histograms && d.histogramData == nil {
-				d.stepData.Histograms = histograms.ViewBetweenSearchingBackwards(d.stepData.RangeStart, d.stepData.RangeEnd, d.stepData.Histograms)
-			}
-		}
-	}
-}
-
 // combineStepData copies stepData into buffers owned by this struct (either shared per series or unique
-// to each step) and returns a "taint" to indicate if the shared buffers were modified, requiring existing
-// views of them to be updated.
-func (b *RangeVectorDuplicationBuffer) combineStepData(stepData *types.RangeVectorStepData, seriesIndex int) (bufferedRangeVectorStepData, viewTaint, error) {
+// to each step).
+func (b *RangeVectorDuplicationBuffer) combineStepData(stepData *types.RangeVectorStepData, seriesIndex int) (bufferedRangeVectorStepData, error) {
 	// anchored/smoothed modifiers cause extra data to be included in the view for a particular
 	// step beyond the range start/end and may include synthetic points. For simplicity in this
 	// case, we don't bother trying to use a shared buffer for all steps and instead fall back
@@ -229,10 +191,10 @@ func (b *RangeVectorDuplicationBuffer) combineStepData(stepData *types.RangeVect
 	if stepData.Anchored || stepData.Smoothed {
 		cloned, err := cloneStepData(stepData)
 		if err != nil {
-			return bufferedRangeVectorStepData{}, viewTaint{}, err
+			return bufferedRangeVectorStepData{}, err
 		}
 
-		return cloned, viewTaint{}, nil
+		return cloned, nil
 	}
 
 	// When not using anchored/smoothed modifiers, we can use a single buffer for all points in a
@@ -630,9 +592,9 @@ func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStep
 
 // mergeStepData adds all unique points from stepData to the shared floats and histograms buffers.
 // The dedicated buffers bufferedRangeVectorStepData will be nil since the shared buffers are used.
-func mergeStepData(stepData *types.RangeVectorStepData, floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer) (bufferedRangeVectorStepData, viewTaint, error) {
+func mergeStepData(stepData *types.RangeVectorStepData, floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer) (bufferedRangeVectorStepData, error) {
 	if stepData.Anchored || stepData.Smoothed {
-		return bufferedRangeVectorStepData{}, viewTaint{}, fmt.Errorf("cannot use shared FPoint and HPoint buffers with anchored/smoothed modifiers (this is a bug)")
+		return bufferedRangeVectorStepData{}, fmt.Errorf("cannot use shared FPoint and HPoint buffers with anchored/smoothed modifiers (this is a bug)")
 	}
 
 	var lastF promql.FPoint
@@ -645,18 +607,14 @@ func mergeStepData(stepData *types.RangeVectorStepData, floats *types.FPointRing
 		lastH = histograms.Last()
 	}
 
-	var taint viewTaint
-
 	headF, tailF := stepData.Floats.UnsafePoints()
 	for _, section := range [][]promql.FPoint{headF, tailF} {
 		for _, p := range section {
 			if floats.Count() == 0 || p.T > lastF.T {
-				resized, err := floats.Append(promql.FPoint{T: p.T, F: p.F})
+				_, err := floats.Append(promql.FPoint{T: p.T, F: p.F})
 				if err != nil {
-					return bufferedRangeVectorStepData{}, taint, err
+					return bufferedRangeVectorStepData{}, err
 				}
-
-				taint.floats = taint.floats || resized
 			}
 		}
 	}
@@ -665,12 +623,10 @@ func mergeStepData(stepData *types.RangeVectorStepData, floats *types.FPointRing
 	for _, section := range [][]promql.HPoint{headH, tailH} {
 		for _, p := range section {
 			if histograms.Count() == 0 || p.T > lastH.T {
-				resized, err := histograms.Append(promql.HPoint{T: p.T, H: p.H.Copy()})
+				_, err := histograms.Append(promql.HPoint{T: p.T, H: p.H.Copy()})
 				if err != nil {
-					return bufferedRangeVectorStepData{}, taint, err
+					return bufferedRangeVectorStepData{}, err
 				}
-
-				taint.histograms = taint.histograms || resized
 			}
 		}
 	}
@@ -685,7 +641,7 @@ func mergeStepData(stepData *types.RangeVectorStepData, floats *types.FPointRing
 	merged.Floats = floats.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
 	merged.Histograms = histograms.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
 
-	return bufferedRangeVectorStepData{stepData: &merged}, taint, nil
+	return bufferedRangeVectorStepData{stepData: &merged}, nil
 }
 
 type bufferedRangeVectorStepData struct {
@@ -887,22 +843,4 @@ func (b *rangeVectorSeriesDataRingBuffer) Clear() {
 		d := b.seriesHistogramData.RemoveFirst()
 		d.Close()
 	}
-}
-
-// viewTaint keeps track of if float or histogram point views for a particular
-// series need to be updated because the underlying buffer has been changed in a
-// way that invalidates the view.
-type viewTaint struct {
-	floats     bool
-	histograms bool
-}
-
-func (v viewTaint) needsUpdate() bool {
-	return v.floats || v.histograms
-}
-
-func (v viewTaint) merge(other viewTaint) viewTaint {
-	v.floats = v.floats || other.floats
-	v.histograms = v.histograms || other.histograms
-	return v
 }
