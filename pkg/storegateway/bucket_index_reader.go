@@ -466,16 +466,20 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			)
 		}
 
-		// Cache miss; save pointer for actual posting in index stored in object store.
-		ptr, err := r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
-		if errors.Is(err, indexheader.NotFoundRangeErr) {
-			// This block does not have any posting for given key.
-			output[ix] = index.EmptyPostings()
-			continue
-		}
-
-		if err != nil {
-			return nil, errors.Wrap(err, "index header PostingsOffset")
+		// Cache miss for postings; get range from postings offsets table.
+		// Try cache for postings offset first.
+		ptr, ok := r.block.indexCache.FetchPostingsOffset(ctx, r.block.userID, r.block.meta.ULID, key)
+		if !ok {
+			var err error
+			ptr, err = r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
+			if errors.Is(err, indexheader.NotFoundRangeErr) {
+				// This block does not have any posting for given key.
+				output[ix] = index.EmptyPostings()
+				continue
+			}
+			if err != nil {
+				return nil, errors.Wrap(err, "index header PostingsOffset")
+			}
 		}
 
 		stats.update(func(stats *queryStats) {
