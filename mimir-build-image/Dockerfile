@@ -90,10 +90,13 @@ RUN set -o pipefail && \
     rm /tmp/$TARBALL
 
 COPY go.mod go.sum /tools/
+# loki-stub is a local module that ../go.mod replaces github.com/grafana/loki/v3
+# with, to keep Loki out of the build image. It must be present for "go install".
+COPY loki-stub /tools/loki-stub
 RUN \
   cd /tools && \
 	go install tool && \
-	rm -rf /go/pkg /go/src /root/.cache /tools/go.mod /tools/go.sum
+	rm -rf /go/pkg /go/src /root/.cache /tools/go.mod /tools/go.sum /tools/loki-stub
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
 COPY --from=kustomize /app/kustomize /usr/bin/kustomize
