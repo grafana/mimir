@@ -1602,20 +1602,43 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 		return values, nil
 	}
 
-	// TODO: if matchers contains labelName, we could use it to filter out label values here.
-	allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, "", nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "index header label values")
-	}
-
+	// There are no matchers, we have to fetch offsets for all label values
 	if len(matchers) == 0 {
+		allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, "", nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "index header label values")
+		}
+
 		values = extractLabelValues(allValuesPostingOffsets)
 		storeCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, values, logger)
 		return values, nil
 	}
+
+	// There are some matchers, check to see if any apply to this label name as a prefix or exact match to minimize our postings strategy surface area.
+	matchStr, isExactMatch := exactMatchOrPrefixForLabelName(labelName, matchers)
+
+	var allApplicableValuesPostingsOffsets []streamindex.PostingListOffset
+	var err error
+
+	if isExactMatch {
+		// Our matchStr is an exact match for a label value, just fetch that one.
+		postingsOffset, err := b.indexHeaderReader.PostingsOffset(ctx, labelName, matchStr)
+		if err != nil {
+			return nil, errors.Wrap(err, "index header postings offset")
+		}
+		allApplicableValuesPostingsOffsets = []streamindex.PostingListOffset{{matchStr, postingsOffset}}
+	} else {
+		// At this point, we may or may not have an applicable prefix to check. If we do, matchStr will not be empty. If we don't,
+		// we'll fetch all label values offsets. We don't bother trying to determine a filter func, because it wouldn't really save us work here.
+		allApplicableValuesPostingsOffsets, err = b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, matchStr, nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "index header label values")
+		}
+	}
+
 	strategy := &labelValuesPostingsStrategy{
 		matchersStrategy: postingsStrategy,
-		allLabelValues:   allValuesPostingOffsets,
+		allLabelValues:   allApplicableValuesPostingsOffsets,
 	}
 	postingsAndSeriesReader := b.indexReader(strategy)
 	defer runutil.CloseWithLogOnErr(b.logger, postingsAndSeriesReader, "close block index reader")
@@ -1624,10 +1647,11 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded postings")
 	}
+
 	if len(pendingMatchers) > 0 || strategy.preferSeriesToPostings(matchersPostings) {
 		values, err = labelValuesFromSeries(ctx, labelName, maxSeriesPerBatch, pendingMatchers, postingsAndSeriesReader, b, matchersPostings, stats)
 	} else {
-		values, err = labelValuesFromPostings(ctx, labelName, postingsAndSeriesReader, allValuesPostingOffsets, matchersPostings, stats)
+		values, err = labelValuesFromPostings(ctx, labelName, postingsAndSeriesReader, allApplicableValuesPostingsOffsets, matchersPostings, stats)
 	}
 	if err != nil {
 		return nil, err
@@ -1635,6 +1659,24 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 
 	storeCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, values, logger)
 	return values, nil
+}
+
+func exactMatchOrPrefixForLabelName(labelName string, matchers []*labels.Matcher) (matchString string, isExactMatch bool) {
+	for _, m := range matchers {
+		if m.Name == labelName {
+			switch m.Type {
+			case labels.MatchEqual:
+				return m.Value, true
+			case labels.MatchRegexp:
+				if len(m.Prefix()) > len(matchString) {
+					matchString = m.Prefix()
+				}
+			default:
+				continue
+			}
+		}
+	}
+	return
 }
 
 func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch int, pendingMatchers []*labels.Matcher, indexr *bucketIndexReader, b *bucketBlock, matchersPostings []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
