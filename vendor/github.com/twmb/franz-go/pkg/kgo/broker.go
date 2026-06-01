@@ -222,6 +222,16 @@ func unknownSeedID(seedNum int) int32 {
 }
 
 func (cl *Client) newBroker(nodeID int32, host string, port int32, rack *string) *broker {
+	// Clone the Rack *string so cl.brokers owns its own pointer
+	// independent of the broker response it came from. Readers
+	// (brokerRacks deref, RequestCachedMetadata pass-through) and
+	// writers (a future broker update, or a user mutating their
+	// cl.Request(MetadataRequest) response through the shared
+	// pointer) would otherwise race on the underlying string.
+	if rack != nil {
+		r := *rack
+		rack = &r
+	}
 	return &broker{
 		cl: cl,
 

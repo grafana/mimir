@@ -1019,7 +1019,7 @@ github.com/pb33f/ordered-map/v2
 # github.com/philhofer/fwd v1.2.0
 ## explicit; go 1.20
 github.com/philhofer/fwd
-# github.com/pierrec/lz4/v4 v4.1.26
+# github.com/pierrec/lz4/v4 v4.1.27
 ## explicit; go 1.17
 github.com/pierrec/lz4/v4
 github.com/pierrec/lz4/v4/internal/lz4block
@@ -1293,7 +1293,7 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.11.0
 ## explicit; go 1.24.0
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.21.2
+# github.com/twmb/franz-go v1.21.3-0.20260529212035-11b03a277c72
 ## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
@@ -1306,7 +1306,7 @@ github.com/twmb/franz-go/pkg/sasl/aws
 github.com/twmb/franz-go/pkg/sasl/oauth
 github.com/twmb/franz-go/pkg/sasl/plain
 github.com/twmb/franz-go/pkg/sasl/scram
-# github.com/twmb/franz-go/pkg/kadm v1.18.0
+# github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
 ## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kadm
 # github.com/twmb/franz-go/pkg/kfake v0.0.0-20260121195810-e0832fcbdccb

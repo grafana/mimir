@@ -100,7 +100,6 @@ type Client struct {
 		topics map[string]cachedMetaTopic
 		byID   map[[16]byte]string // TopicID => topic name
 		allAt  time.Time           // when last all-topics fetch completed
-		anyAt  time.Time           // when any cached metadata was last stored
 	}
 }
 
@@ -1106,7 +1105,15 @@ func (cl *Client) updateMetadataBrokers(resp *kmsg.MetadataResponse) {
 	if resp.ControllerID >= 0 {
 		cl.controllerID = resp.ControllerID
 	}
-	cl.clusterID = resp.ClusterID
+	// Clone ClusterID so cl.clusterID owns its own *string, independent
+	// of the broker response. Readers (dups in RequestCachedMetadata)
+	// would otherwise race a user mutating *resp.ClusterID on a
+	// previously-returned cl.Request(MetadataRequest) response.
+	cl.clusterID = nil
+	if resp.ClusterID != nil {
+		s := *resp.ClusterID
+		cl.clusterID = &s
+	}
 	cl.controllerIDMu.Unlock()
 	cl.updateBrokers(resp.Brokers)
 }
@@ -1511,7 +1518,7 @@ func (cl *Client) RequestCachedMetadata(ctx context.Context, req *kmsg.MetadataR
 			NodeID: b.meta.NodeID,
 			Host:   b.meta.Host,
 			Port:   b.meta.Port,
-			Rack:   b.meta.Rack,
+			Rack:   dups(b.meta.Rack),
 		})
 	}
 	cl.brokersMu.RUnlock()
@@ -3016,7 +3023,6 @@ func (cl *Client) storeCachedMeta(meta *kmsg.MetadataResponse, all bool, results
 		cl.metaCache.byID = make(map[[16]byte]string)
 	}
 	when := time.Now()
-	cl.metaCache.anyAt = when
 	var zeroID [16]byte
 	var stored int
 	for _, topic := range meta.Topics {
@@ -3026,22 +3032,43 @@ func (cl *Client) storeCachedMeta(meta *kmsg.MetadataResponse, all bool, results
 			continue
 		}
 		stored++
+		// Deep-clone the topic name, Partitions, and each partition's
+		// inner slices so the cache owns fully independent state. The
+		// broker response is shared with whoever consumed it:
+		// fetchTopicMetadata sort.Slice's the outer Partitions slice
+		// in place to validate ordering (issue #1328), and
+		// cl.Request(MetadataRequest) hands the response back to user
+		// code that may mutate the inner slices or write through the
+		// Topic *string. Without these clones, readers via
+		// RequestCachedMetadata or sharded request paths (which read
+		// ps[part].Replicas) would race those writers. dupt on the
+		// GET side also clones, which is defense in depth: the cache
+		// cannot be corrupted by a caller mutating a returned response.
+		topicName := *topic.Topic
+		topic.Topic = &topicName
+		topic.Partitions = slices.Clone(topic.Partitions)
+		for i := range topic.Partitions {
+			p := &topic.Partitions[i]
+			p.Replicas = slices.Clone(p.Replicas)
+			p.ISR = slices.Clone(p.ISR)
+			p.OfflineReplicas = slices.Clone(p.OfflineReplicas)
+		}
 		t := cachedMetaTopic{
 			id:   topic.TopicID,
 			t:    topic,
 			ps:   make(map[int32]kmsg.MetadataResponseTopicPartition),
 			when: when,
 		}
-		cl.metaCache.topics[*topic.Topic] = t
+		cl.metaCache.topics[topicName] = t
 		for _, partition := range topic.Partitions {
 			t.ps[partition.Partition] = partition
 		}
 		if topic.TopicID != zeroID {
-			cl.metaCache.byID[topic.TopicID] = *topic.Topic
+			cl.metaCache.byID[topic.TopicID] = topicName
 		}
 
 		if results != nil {
-			results[*t.t.Topic] = t
+			results[topicName] = t
 		}
 	}
 
