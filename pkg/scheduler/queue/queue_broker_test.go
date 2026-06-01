@@ -284,7 +284,11 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, dequeuedTenantReq)
 
-	tenantReq := &tenantRequest{tenantID: "tenant-1", req: req}
+	tenantReq := &tenantRequest{
+		tenantID:       "tenant-1",
+		queueDimension: req.ExpectedQueryComponentName(),
+		req:            req,
+	}
 	// assert not hitting an error when enqueueing after dequeuing to below the limit
 	err = qb.enqueueRequestBack(tenantReq, 0)
 	assert.NoError(t, err)
