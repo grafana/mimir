@@ -304,25 +304,26 @@ func TestInMemoryIndexCache_PostingsOffsetsDisabled(t *testing.T) {
 			MaxItemSizeBytes:  1024,
 			MaxCacheSizeBytes: 1024,
 		},
+		// Caching Postings Offsets disabled by default.
 	}
 	cache, err := NewInMemoryIndexCacheWithConfig(cfg, prometheus.NewRegistry(), log.NewNopLogger())
 	assert.NoError(t, err)
 
 	ctx := context.Background()
 
-	// Stores must no-op: nothing should land in the underlying LRU.
+	// Stores must no-op: nothing should land in the underlying cache.
 	cache.StorePostingsOffset(tenant, block, lbl, index.Range{Start: 4, End: 16}, time.Hour)
 	cache.StorePostingsOffsetsForMatcher(tenant, block, lbl.Name, matcher, false, offsets, time.Hour)
 	assert.Equal(t, 0, cache.lru.Len())
 
-	// Fetches must return zero values without consulting the LRU.
+	// Fetches must return zero values.
 	rng, ok := cache.FetchPostingsOffset(ctx, tenant, block, lbl)
 	assert.False(t, ok)
 	assert.Equal(t, index.Range{}, rng)
 
-	gotOffsets, ok := cache.FetchPostingsOffsetsForMatcher(ctx, tenant, block, lbl.Name, matcher, false)
+	cacheOffsets, ok := cache.FetchPostingsOffsetsForMatcher(ctx, tenant, block, lbl.Name, matcher, false)
 	assert.False(t, ok)
-	assert.Nil(t, gotOffsets)
+	assert.Nil(t, cacheOffsets)
 }
 
 // This should not happen as we hardcode math.MaxInt, but we still add test to check this out.

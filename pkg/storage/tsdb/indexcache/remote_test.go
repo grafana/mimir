@@ -34,22 +34,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
-type mockedPostingsOffset struct {
-	tenantID string
-	blockID  ulid.ULID
-	lbl      labels.Label
-	rng      index.Range
-}
-
-type mockedPostingsOffsetsForMatcher struct {
-	tenantID   string
-	blockID    ulid.ULID
-	labelName  string
-	m          *labels.Matcher
-	isSubtract bool
-	//rngs       []index.Range
-}
-
 func TestRemotePostingsOffsetTableCache_FetchPostingsOffset(t *testing.T) {
 	t.Parallel()
 
@@ -290,24 +274,27 @@ func TestRemoteIndexCache_PostingsOffsetsDisabled(t *testing.T) {
 	}
 
 	client := newMockedRemoteCacheClient(nil)
-	c, err := NewRemoteIndexCache(IndexCacheConfig{}, log.NewNopLogger(), client, nil)
+	cfg := IndexCacheConfig{
+		// Caching Postings Offsets disabled by default.
+	}
+	c, err := NewRemoteIndexCache(cfg, log.NewNopLogger(), client, nil)
 	require.NoError(t, err)
 
 	ctx := context.Background()
 
-	// Stores must no-op: nothing should land in the underlying client.
+	// Stores must no-op: nothing should land in the underlying cache.
 	c.StorePostingsOffset(tenant, block, lbl, index.Range{Start: 4, End: 16}, time.Hour)
 	c.StorePostingsOffsetsForMatcher(tenant, block, lbl.Name, matcher, false, offsets, time.Hour)
 	assert.Empty(t, client.cache)
 
-	// Fetches must return zero values without consulting the client.
+	// Fetches must return zero values.
 	rng, ok := c.FetchPostingsOffset(ctx, tenant, block, lbl)
 	assert.False(t, ok)
 	assert.Equal(t, index.Range{}, rng)
 
-	gotOffsets, ok := c.FetchPostingsOffsetsForMatcher(ctx, tenant, block, lbl.Name, matcher, false)
+	cacheOffsets, ok := c.FetchPostingsOffsetsForMatcher(ctx, tenant, block, lbl.Name, matcher, false)
 	assert.False(t, ok)
-	assert.Nil(t, gotOffsets)
+	assert.Nil(t, cacheOffsets)
 }
 
 func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
@@ -1138,6 +1125,21 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+type mockedPostingsOffset struct {
+	tenantID string
+	blockID  ulid.ULID
+	lbl      labels.Label
+	rng      index.Range
+}
+
+type mockedPostingsOffsetsForMatcher struct {
+	tenantID   string
+	blockID    ulid.ULID
+	labelName  string
+	m          *labels.Matcher
+	isSubtract bool
 }
 
 type mockedPostings struct {
