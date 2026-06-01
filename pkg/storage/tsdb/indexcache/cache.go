@@ -30,7 +30,7 @@ import (
 
 const (
 	cacheTypePostingsOffset            = "PostingsOffset"
-	cacheTypePostingsOffsetsForMatcher = "PostingsOffSetsForMatcher"
+	cacheTypePostingsOffsetsForMatcher = "PostingsOffsetsForMatcher"
 	cacheTypePostings                  = "Postings"
 	cacheTypeSeriesForRef              = "SeriesForRef"
 	cacheTypeExpandedPostings          = "ExpandedPostings"

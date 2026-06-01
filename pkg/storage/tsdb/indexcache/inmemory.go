@@ -269,11 +269,7 @@ func copyLabel(l labels.Label) labels.Label {
 }
 
 func (c *InMemoryIndexCache) StorePostingsOffset(
-	tenantID string,
-	blockID ulid.ULID,
-	lbl labels.Label,
-	rng index.Range,
-	_ time.Duration,
+	tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, _ time.Duration,
 ) {
 	if !c.cachePostingsOffsets {
 		return
@@ -284,10 +280,7 @@ func (c *InMemoryIndexCache) StorePostingsOffset(
 }
 
 func (c *InMemoryIndexCache) FetchPostingsOffset(
-	_ context.Context,
-	tenantID string,
-	blockID ulid.ULID,
-	lbl labels.Label,
+	_ context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label,
 ) (index.Range, bool) {
 	if !c.cachePostingsOffsets {
 		return index.Range{}, false
@@ -309,11 +302,7 @@ func (c *InMemoryIndexCache) StorePostingsOffsetsForMatcher(
 		return
 	}
 	key := PostingsOffsetsForMatcherCacheKey{
-		tenantID:   tenantID,
-		blockID:    blockID,
-		labelName:  labelName,
-		matcherStr: matcherStr(m),
-		isSubtract: isSubtract,
+		tenantID, blockID, labelName, matcherStr(m), isSubtract,
 	}
 	val := encodePostingsOffsets(offsets)
 	c.set(key, val)
@@ -331,11 +320,7 @@ func (c *InMemoryIndexCache) FetchPostingsOffsetsForMatcher(
 		return nil, false
 	}
 	key := PostingsOffsetsForMatcherCacheKey{
-		tenantID:   tenantID,
-		blockID:    blockID,
-		labelName:  labelName,
-		matcherStr: matcherStr(m),
-		isSubtract: isSubtract,
+		tenantID, blockID, labelName, matcherStr(m), isSubtract,
 	}
 	return getDecodedInMemory(c, key, decodePostingsOffsets)
 }
