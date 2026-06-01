@@ -721,6 +721,7 @@ type UncachedSplit[T any] struct {
 	parent *FunctionOverRangeVectorSplit[T]
 
 	// Data to cache
+	// TODO: it's not necessary to retain results for ranges that won't be cached
 	rangeResults        [][]T
 	rangeAnnotations    []*annotations.Annotations
 	seriesMetadata      []querierpb.SeriesMetadata
