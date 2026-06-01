@@ -5,10 +5,6 @@
   local volume = $.core.v1.volume,
   local volumeMount = $.core.v1.volumeMount,
 
-  local hasLocalRules =
-    $._config.ruler_storage_backend == 'local' &&
-    std.length($._config.ruler_local_rules) > 0,
-
   // Generate a list of rule file objects (key, tenant, filename).
   // Each key is generated as "rule-N" where N is object` index to avoid restrictions on tenant ID characters in Kubernetes volume mounts.
   local rulesPairs = std.mapWithIndex(
@@ -19,6 +15,10 @@
       for filename in std.sort(std.objectFields($._config.ruler_local_rules[tenant]))
     ]
   ),
+
+  local hasLocalRules =
+    $._config.ruler_storage_backend == 'local' &&
+    std.length(rulesPairs) > 0,
 
   local localRulesConfigMapData = {
     [p.key]: $._config.ruler_local_rules[p.tenant][p.filename]
