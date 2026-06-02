@@ -27,9 +27,10 @@ func init() {
 	})
 }
 
+//node:generate
 type SplitFunctionCall struct {
 	*SplitFunctionCallDetails
-	Inner *core.FunctionCall
+	Inner *core.FunctionCall `node:"child"`
 }
 
 func (s *SplitFunctionCall) Details() proto.Message {
@@ -51,17 +52,6 @@ func (s *SplitFunctionCall) SetChildren(children []planning.Node) error {
 	}
 	s.Inner = inner
 	return nil
-}
-
-func (s *SplitFunctionCall) Child(idx int) planning.Node {
-	if idx > 0 {
-		panic(fmt.Sprintf("SplitFunctionCall node has 1 child, but attempted to get child at index %d", idx))
-	}
-	return s.Inner
-}
-
-func (s *SplitFunctionCall) ChildCount() int {
-	return 1
 }
 
 func (s *SplitFunctionCall) ReplaceChild(idx int, child planning.Node) error {

@@ -28,9 +28,10 @@ func init() {
 	})
 }
 
+//node:generate
 type Duplicate struct {
 	*DuplicateDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (d *Duplicate) Details() proto.Message {
@@ -39,18 +40,6 @@ func (d *Duplicate) Details() proto.Message {
 
 func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
-}
-
-func (d *Duplicate) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Duplicate supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return d.Inner
-}
-
-func (d *Duplicate) ChildCount() int {
-	return 1
 }
 
 func (d *Duplicate) SetChildren(children []planning.Node) error {
@@ -175,9 +164,10 @@ func (d *RangeVectorDuplicationConsumerOperatorFactory) Produce() (types.Operato
 	return d.Buffer.AddConsumer(), nil
 }
 
+//node:generate
 type DuplicateFilter struct {
 	*DuplicateFilterDetails
-	Inner *Duplicate
+	Inner *Duplicate `node:"child"`
 }
 
 func (f *DuplicateFilter) Details() proto.Message {
@@ -186,18 +176,6 @@ func (f *DuplicateFilter) Details() proto.Message {
 
 func (f *DuplicateFilter) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE_FILTER
-}
-
-func (f *DuplicateFilter) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type DuplicateFilter supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return f.Inner
-}
-
-func (f *DuplicateFilter) ChildCount() int {
-	return 1
 }
 
 func (f *DuplicateFilter) SetChildren(children []planning.Node) error {
