@@ -1764,6 +1764,70 @@ func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
 	}
 }
 
+// TestRunPhase3_AntiOvershootCap verifies the "move at most half the
+// hot/cold gap" rule: a candidate range that would leave the recipient
+// hotter than the donor (newCold > newHot) must be rejected, even when
+// it fits the source's movable budget and would reduce total imbalance.
+//
+// Layout chosen so the overshoot range slips past the *source* budget
+// (so the cap is the only thing that can block it): one hot partition
+// holds two ranges (loads 12 and 8) while four other partitions are
+// empty. mean = 20/5 = 4, so the hot partition's surplus is 16 — large
+// enough that moving the load-12 range alone (12 < 16) clears the
+// source check. But moving it onto an empty partition would make that
+// recipient (0+12=12) hotter than the donor would be left (20-12=8):
+// the classic overshoot. The load-8 range, by contrast, fits under
+// half the gap (8 ≤ (20-0)/2) and is the move the slicer should pick.
+func TestRunPhase3_AntiOvershootCap(t *testing.T) {
+	rangeA := assignment.HashRange{Lo: 0, Hi: 99}    // load 12: would overshoot
+	rangeB := assignment.HashRange{Lo: 100, Hi: 199} // load 8: fits half the gap
+
+	entries := []rangeLoad{
+		{entry: assignment.Entry{Range: rangeA, PartitionID: 0}, load: 12, series: 120},
+		{entry: assignment.Entry{Range: rangeB, PartitionID: 0}, load: 8, series: 80},
+	}
+	partitionLoadByPID := map[int32]float64{0: 20, 1: 0, 2: 0, 3: 0, 4: 0}
+	activePartitions := []int32{0, 1, 2, 3, 4}
+
+	r := &Rebalancer{
+		cfg:           seriesCfg(0.5),
+		moveCooldowns: make(map[assignment.HashRange]time.Time),
+	}
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	actions := r.runPhase3(entries, partitionLoadByPID, activePartitions, nil, now)
+
+	var moves []Action
+	for _, a := range actions {
+		if a.Kind == ActionMove {
+			moves = append(moves, a)
+		}
+	}
+
+	// The overshoot range (A) must never move; only the fitting range
+	// (B) should, and onto the coldest partition.
+	require.Len(t, moves, 1, "exactly one move: the load-8 range that fits half the gap")
+	assert.Equal(t, rangeB, moves[0].Range, "the moved range must be the one that fits under half the gap")
+	assert.Equal(t, int32(0), moves[0].FromPart)
+
+	for _, m := range moves {
+		assert.NotEqual(t, rangeA, m.Range,
+			"the load-12 range overshoots the recipient (newCold>newHot) and must be left in place")
+	}
+
+	// Post-state: A still on P0, B reassigned off P0.
+	var aPID, bPID int32 = -1, -1
+	for _, e := range entries {
+		switch e.entry.Range {
+		case rangeA:
+			aPID = e.entry.PartitionID
+		case rangeB:
+			bPID = e.entry.PartitionID
+		}
+	}
+	assert.Equal(t, int32(0), aPID, "overshoot range A stays on the hot partition")
+	assert.NotEqual(t, int32(0), bPID, "fitting range B is moved off the hot partition")
+}
+
 func TestFineEvenSplit(t *testing.T) {
 	partitions := []int32{0, 1, 2}
 	a := assignment.FineEvenSplit(partitions, 4)

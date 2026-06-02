@@ -1255,6 +1255,7 @@ func (r *Rebalancer) runSlicer(
 		entries = pre2Entries
 		actions = actions[:pre2ActionsLen]
 	}
+	r.spotlightMergeActions(now, actions[pre2ActionsLen:])
 
 	// --- Phase 3: weighted-move using per-partition sample rate ---------
 	pre3Entries := snapshotRangeLoads(entries)
@@ -1344,8 +1345,10 @@ func (r *Rebalancer) runSlicer(
 					Kind:   ActionSplit,
 					Range:  rl.entry.Range,
 					ToPart: rl.entry.PartitionID,
+					Series: rl.series,
 					Detail: fmt.Sprintf("series=%d > threshold=%.0f, split on P%d", rl.series, splitThreshold, rl.entry.PartitionID),
 				})
+				r.emitSplitSpotlight(now, rl, left, right, leftLoad, rightLoad, splitThreshold)
 			} else {
 				newEntries = append(newEntries, rl)
 			}
@@ -1691,6 +1694,48 @@ func (r *Rebalancer) runPhase3(
 			// from meanL on both sides.
 			newHot := hotL - rl.load
 			newCold := coldL + rl.load
+			// Anti-overshoot ("move at most half the gap") cap: reject
+			// a move that would leave the recipient hotter than the
+			// donor (newCold > newHot, i.e. rl.load > (hotL-coldL)/2).
+			//
+			// Without this, a large range shed off the hottest
+			// partition lands whole on the coldest one and overshoots:
+			// the recipient leapfrogs past the donor to become the new
+			// hottest partition, and the next round has to move load
+			// back off it — a damped oscillation observed on dev-15 as
+			// a partition's ingest rate swinging well past the mean
+			// before settling (e.g. p76→p242 sending p242 from ~1.5k to
+			// ~4k/s, then a corrective round shedding it back down).
+			//
+			// Capping each transfer at half the hot/cold gap is the
+			// standard non-overshooting damping rule: moving exactly
+			// half equalizes the pair (newHot==newCold); moving less
+			// preserves their order; moving more inverts it. The gap
+			// shrinks each iteration, so the round still converges, it
+			// just approaches balance monotonically instead of ringing.
+			// A range too large to fit half the gap is left in place
+			// this round; Phase 4 splits it (when splittable) so a later
+			// round can place the halves, and the cluster tolerates a
+			// single oversized indivisible range staying put rather than
+			// oscillating.
+			//
+			// This is a deliberate, conservative deviation from the
+			// Slicer paper (Adya et al., OSDI '16, §4.4.1). The paper's
+			// weighted-move greedily maximizes the reduction in max/mean
+			// imbalance, which optimizes toward this same half-the-gap
+			// point but would still accept a one-off overshoot as a last
+			// resort, provided the recipient stays below the OLD maximum
+			// (newCold < hotL) so the global max still drops. We forbid
+			// crossing the midpoint at all because overshoot is far more
+			// expensive in Nautilus than in Slicer: a move triggers a
+			// Kafka partition reassignment and TSDB-head warmup on the
+			// recipient readcache (the cold-start OOM/oscillation seen on
+			// dev-15), whereas Slicer's recipients are request-routing
+			// tasks where an overshoot is merely transient CPU. Deferring
+			// the oversized range to a split is the cheaper trade here.
+			if newCold > newHot {
+				continue
+			}
 			imbalanceBefore := math.Abs(hotL-meanL) + math.Abs(coldL-meanL)
 			imbalanceAfter := math.Abs(newHot-meanL) + math.Abs(newCold-meanL)
 			improvement := imbalanceBefore - imbalanceAfter
@@ -1765,6 +1810,95 @@ func (r *Rebalancer) runPhase3(
 	}
 
 	return actions
+}
+
+// spotlightMergeActions samples merge actions for fine-grained
+// diagnostic logging. Called from runSlicer immediately after
+// Phase 2 validation so we never spotlight an action that was
+// reverted by the validator.
+//
+// Merges are sampled at the same rate as moves (5% by default).
+// Same-partition merges leave FromPart=0; cross-partition merges
+// set FromPart to the donor and ToPart to the receiver. The
+// downstream observation logic doesn't care — it just overlaps
+// the spotlight's [Lo, Hi] against each partition's per-range
+// state — so the same readcache/distributor code that follows
+// move spotlights catches merge spotlights too. The merge_type
+// label in the decision log is what lets operators distinguish
+// the two cases when grepping.
+func (r *Rebalancer) spotlightMergeActions(now time.Time, mergeActions []Action) {
+	if r.spotlights == nil {
+		return
+	}
+	for _, a := range mergeActions {
+		if a.Kind != ActionMerge {
+			continue
+		}
+		sp, ok := r.spotlights.maybeSpotlight(now, a.Range, a.FromPart, a.ToPart, "phase2-merge")
+		if !ok {
+			continue
+		}
+		mergeType := "same-partition"
+		if a.FromPart != 0 && a.FromPart != a.ToPart {
+			mergeType = "cross-partition"
+		}
+		level.Info(r.logger).Log(
+			"msg", "nautilus spotlight: merge decision",
+			"spotlight_id", sp.TraceID,
+			"reason", sp.Reason,
+			"range_lo", sp.Range.Lo,
+			"range_hi", sp.Range.Hi,
+			"range_size", sp.Range.Size(),
+			"merge_type", mergeType,
+			"from_partition", a.FromPart,
+			"to_partition", a.ToPart,
+			"merged_series", a.Series,
+			"detail", a.Detail,
+			"expires_at", sp.ExpiresAt.Format(time.RFC3339),
+		)
+	}
+}
+
+// emitSplitSpotlight samples one Phase 4 split for fine-grained
+// diagnostic logging. Called inline from the split loop in
+// runSlicer (parallel to Phase 3's inline spotlight) so the
+// decision log can carry per-half load estimates that aren't
+// preserved on the Action.
+//
+// The spotlight covers the parent range; downstream readcache
+// observations naturally project this onto whichever child ranges
+// are now visible in the partition's per-range state, letting an
+// operator see whether the split actually distributed load as the
+// rebalancer assumed (proportional to range size, when no per-
+// half observation existed yet) or whether the load was lopsided.
+func (r *Rebalancer) emitSplitSpotlight(now time.Time, parent rangeLoad, left, right assignment.HashRange, leftLoad, rightLoad, splitThreshold float64) {
+	if r.spotlights == nil {
+		return
+	}
+	pid := parent.entry.PartitionID
+	sp, ok := r.spotlights.maybeSpotlight(now, parent.entry.Range, 0, pid, "phase4-split")
+	if !ok {
+		return
+	}
+	level.Info(r.logger).Log(
+		"msg", "nautilus spotlight: split decision",
+		"spotlight_id", sp.TraceID,
+		"reason", sp.Reason,
+		"range_lo", sp.Range.Lo,
+		"range_hi", sp.Range.Hi,
+		"range_size", sp.Range.Size(),
+		"to_partition", pid,
+		"parent_load", parent.load,
+		"parent_series", parent.series,
+		"split_threshold", splitThreshold,
+		"left_lo", left.Lo,
+		"left_hi", left.Hi,
+		"left_load", leftLoad,
+		"right_lo", right.Lo,
+		"right_hi", right.Hi,
+		"right_load", rightLoad,
+		"expires_at", sp.ExpiresAt.Format(time.RFC3339),
+	)
 }
 
 // computePartitionLoads sums the per-range combined load for each
@@ -2049,6 +2183,7 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 						Kind:   ActionMerge,
 						Range:  merged,
 						ToPart: prev.entry.PartitionID,
+						Series: prev.series + curr.series,
 						Detail: fmt.Sprintf("same-partition merge on P%d, combined load=%.4f", prev.entry.PartitionID, mergedLoad),
 					})
 					prev.entry.Range = merged
@@ -2098,6 +2233,7 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 					Range:    merged,
 					FromPart: donorPID,
 					ToPart:   receiverPID,
+					Series:   prev.series + curr.series,
 					Detail:   fmt.Sprintf("cross-partition merge P%d+P%d→P%d, combined load=%.4f", donorPID, receiverPID, receiverPID, mergedLoad),
 				})
 				prev.entry.Range = merged

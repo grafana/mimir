@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -167,4 +168,111 @@ func TestRebalancer_GetSpotlightedRanges_NilStore(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.Empty(t, resp.Ranges)
+}
+
+// TestSpotlightMergeActions samples both same-partition and
+// cross-partition merge actions. The downstream observers
+// (readcache/distributor) consume the resulting Spotlight entries
+// generically: they only care about (range, partitions, reason),
+// so the test focuses on what the rebalancer must populate.
+func TestSpotlightMergeActions(t *testing.T) {
+	r := &Rebalancer{
+		spotlights: newSpotlightStore(1, 1.0, 5*time.Minute),
+		logger:     log.NewNopLogger(),
+	}
+	now := time.Unix(1700000000, 0)
+
+	mergeActions := []Action{
+		{
+			Kind:   ActionMerge,
+			Range:  assignment.HashRange{Lo: 100, Hi: 199},
+			ToPart: 7,
+			Series: 42,
+			Detail: "same-partition merge on P7, combined load=0.5",
+		},
+		{
+			Kind:     ActionMerge,
+			Range:    assignment.HashRange{Lo: 200, Hi: 299},
+			FromPart: 3,
+			ToPart:   8,
+			Series:   17,
+			Detail:   "cross-partition merge P3+P8→P8, combined load=0.4",
+		},
+		// Non-merge actions interleaved in the slice are ignored —
+		// the helper filters by Kind so we never spotlight a move
+		// or split with reason=phase2-merge.
+		{Kind: ActionMove, Range: assignment.HashRange{Lo: 500, Hi: 599}, FromPart: 1, ToPart: 2},
+	}
+
+	r.spotlightMergeActions(now, mergeActions)
+
+	snap := r.spotlights.snapshot()
+	require.Len(t, snap, 2, "exactly the two merge actions must be spotlighted")
+
+	byRange := map[uint32]Spotlight{}
+	for _, sp := range snap {
+		byRange[sp.Range.Lo] = sp
+	}
+
+	same := byRange[100]
+	assert.Equal(t, "phase2-merge", same.Reason)
+	assert.Equal(t, int32(0), same.FromPartition, "same-partition merge keeps FromPartition=0")
+	assert.Equal(t, int32(7), same.ToPartition)
+
+	cross := byRange[200]
+	assert.Equal(t, "phase2-merge", cross.Reason)
+	assert.Equal(t, int32(3), cross.FromPartition, "cross-partition merge must carry donor PID")
+	assert.Equal(t, int32(8), cross.ToPartition)
+}
+
+// TestSpotlightMergeActions_NilStore confirms the defensive nil
+// branch lets harness tests that build a Rebalancer struct literal
+// (without a spotlight store) call into runSlicer without panicking.
+func TestSpotlightMergeActions_NilStore(t *testing.T) {
+	r := &Rebalancer{}
+	require.NotPanics(t, func() {
+		r.spotlightMergeActions(time.Now(), []Action{
+			{Kind: ActionMerge, Range: assignment.HashRange{Lo: 1, Hi: 2}, ToPart: 5, Series: 1},
+		})
+	})
+}
+
+// TestEmitSplitSpotlight populates a single split spotlight with
+// rich per-half context and verifies the stored Spotlight carries
+// the parent range (so downstream observers see overlap with both
+// halves once SetHashRanges propagates).
+func TestEmitSplitSpotlight(t *testing.T) {
+	r := &Rebalancer{
+		spotlights: newSpotlightStore(1, 1.0, 5*time.Minute),
+		logger:     log.NewNopLogger(),
+	}
+	now := time.Unix(1700000000, 0)
+
+	parent := rangeLoad{
+		entry:  assignment.Entry{Range: assignment.HashRange{Lo: 1000, Hi: 1999}, PartitionID: 12},
+		load:   200.0,
+		series: 5000,
+	}
+	left := assignment.HashRange{Lo: 1000, Hi: 1499}
+	right := assignment.HashRange{Lo: 1500, Hi: 1999}
+
+	r.emitSplitSpotlight(now, parent, left, right, 120.0, 80.0, 150.0)
+
+	snap := r.spotlights.snapshot()
+	require.Len(t, snap, 1)
+	sp := snap[0]
+	assert.Equal(t, "phase4-split", sp.Reason)
+	assert.Equal(t, parent.entry.Range, sp.Range, "spotlight covers the parent range so observers see both halves")
+	assert.Equal(t, int32(0), sp.FromPartition, "split has no donor partition")
+	assert.Equal(t, int32(12), sp.ToPartition)
+}
+
+// TestEmitSplitSpotlight_NilStore is the symmetric nil-defence
+// check for the split helper.
+func TestEmitSplitSpotlight_NilStore(t *testing.T) {
+	r := &Rebalancer{}
+	parent := rangeLoad{entry: assignment.Entry{Range: assignment.HashRange{Lo: 1, Hi: 2}, PartitionID: 5}}
+	require.NotPanics(t, func() {
+		r.emitSplitSpotlight(time.Now(), parent, assignment.HashRange{Lo: 1, Hi: 1}, assignment.HashRange{Lo: 2, Hi: 2}, 1, 1, 2)
+	})
 }
