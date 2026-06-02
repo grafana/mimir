@@ -574,6 +574,9 @@ func safeHeadersToLog(headersToLog []string) (safeHeaders []safeHeader) {
 func sanitizeHeaderValue(header *http.Header, headerName safeHeader, acceptEmpty bool) (string, bool) {
 	value := header.Get(headerName.String())
 	value = strings.TrimSpace(value)
+	if value != "" {
+		value = dskitlog.DropUnsafeChars(value).String()
+	}
 
 	return value, acceptEmpty || value != ""
 }
