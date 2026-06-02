@@ -1365,6 +1365,7 @@
   "memberlist.compression-enabled": true,
   "memberlist.notify-interval": 0,
   "memberlist.received-messages-queue-size": 1024,
+  "memberlist.processed-messages-queue-size": 1024,
   "memberlist.compression-algorithm": "lzw",
   "memberlist.advertise-addr": "",
   "memberlist.advertise-port": 7946,

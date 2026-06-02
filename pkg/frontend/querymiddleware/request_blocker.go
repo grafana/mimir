@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
@@ -86,7 +87,7 @@ func (rb *requestBlocker) isBlocked(r *http.Request) error {
 				}
 			}
 
-			level.Info(rb.logger).Log("msg", "request blocked", "user", tenant, "url", r.URL.String(), "method", r.Method)
+			level.Info(rb.logger).Log("msg", "request blocked", "user", tenant, "url", dskitlog.DropUnsafeChars(r.URL.String()), "method", dskitlog.DropUnsafeChars(r.Method))
 			rb.blockedRequestsCounter.WithLabelValues(tenant).Inc()
 			return newRequestBlockedError()
 		}

@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/munnerz/goautoneg"
 	"github.com/prometheus/client_golang/prometheus"
@@ -361,7 +362,7 @@ func (c Codec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (Me
 	case IsInstantQuery(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
 	default:
-		return nil, fmt.Errorf("unknown metrics query API endpoint %s", r.URL.Path)
+		return nil, fmt.Errorf("unknown metrics query API endpoint %s", dskitlog.DropUnsafeChars(r.URL.Path))
 	}
 }
 
@@ -463,7 +464,7 @@ func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error)
 // DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
 func (Codec) DecodeLabelsSeriesQueryRequest(_ context.Context, r *http.Request) (LabelsSeriesQueryRequest, error) {
 	if !IsLabelsQuery(r.URL.Path) && !IsSeriesQuery(r.URL.Path) {
-		return nil, fmt.Errorf("unknown labels or series query API endpoint %s", r.URL.Path)
+		return nil, fmt.Errorf("unknown labels or series query API endpoint %s", dskitlog.DropUnsafeChars(r.URL.Path))
 	}
 
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
@@ -1124,7 +1125,7 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 			queryStats.AddEncodeTime(encodeDuration)
 		} else {
 			user, _ := user.ExtractOrgID(ctx)
-			level.Warn(c.logger).Log("msg", "failed to encode metrics query response", "url", req.URL.Path, "user", user, "err", encErr)
+			level.Warn(c.logger).Log("msg", "failed to encode metrics query response", "url", dskitlog.DropUnsafeChars(req.URL.Path), "user", user, "err", encErr)
 		}
 	}()
 
@@ -1234,7 +1235,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 				msg = "failed to encode series query response"
 			}
 			user, _ := user.ExtractOrgID(ctx)
-			level.Warn(c.logger).Log("msg", msg, "url", req.URL.Path, "user", user, "err", encErr)
+			level.Warn(c.logger).Log("msg", msg, "url", dskitlog.DropUnsafeChars(req.URL.Path), "user", user, "err", encErr)
 		}
 	}()
 

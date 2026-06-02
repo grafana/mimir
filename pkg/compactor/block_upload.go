@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/cancellation"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
@@ -299,7 +300,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	}
 
 	if !rePath.MatchString(pth) {
-		err := httpError{statusCode: http.StatusBadRequest, message: fmt.Sprintf("invalid path: %q", pth)}
+		err := httpError{statusCode: http.StatusBadRequest, message: fmt.Sprintf("invalid path: %q", dskitlog.DropUnsafeChars(pth))}
 		writeBlockUploadError(err, "failed because path is invalid", logger, w, requestID)
 		return
 	}

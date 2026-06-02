@@ -19177,6 +19177,17 @@
         },
         {
           "kind": "field",
+          "name": "processed_messages_queue_size",
+          "required": false,
+          "desc": "Size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1024,
+          "fieldFlag": "memberlist.processed-messages-queue-size",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "compression_algorithm",
           "required": false,
           "desc": "Compression algorithm used for outgoing messages when -memberlist.compression-enabled is true. Supported values: lzw, snappy. Ignored when -memberlist.compression-enabled is false.",

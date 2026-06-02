@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
@@ -335,9 +336,9 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
 	logMessage := []any{
 		"msg", "slow query detected",
-		"method", r.Method,
-		"host", r.Host,
-		"path", r.URL.Path,
+		"method", dskitlog.DropUnsafeChars(r.Method),
+		"host", dskitlog.DropUnsafeChars(r.Host),
+		"path", dskitlog.DropUnsafeChars(r.URL.Path),
 		"time_taken", queryResponseTime.String(),
 	}
 
@@ -395,10 +396,10 @@ func (f *Handler) reportQueryStats(
 	logMessage := []any{
 		"msg", "query stats",
 		"component", "query-frontend",
-		"method", r.Method,
-		"path", r.URL.Path,
+		"method", dskitlog.DropUnsafeChars(r.Method),
+		"path", dskitlog.DropUnsafeChars(r.URL.Path),
 		"route_name", middleware.ExtractRouteName(r.Context()),
-		"user_agent", r.UserAgent(),
+		"user_agent", dskitlog.DropUnsafeChars(r.UserAgent()),
 		"status_code", queryResponseStatusCode,
 		responseTime, queryResponseTime,
 		responseSizeBytes, queryResponseSizeBytes,
@@ -489,7 +490,7 @@ func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Va
 		if formattedValue == "" {
 			formattedValue = strings.Join(v, ",")
 		}
-		fields = append(fields, fmt.Sprintf("param_%s", k), formattedValue)
+		fields = append(fields, fmt.Sprintf("param_%s", dskitlog.DropUnsafeChars(k)), dskitlog.DropUnsafeChars(formattedValue))
 	}
 	return fields
 }
