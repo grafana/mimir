@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -489,10 +490,10 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Equal(t, "query-frontend", msg["component"])
 				require.EqualValues(t, tt.expectedStatusCode, msg["status_code"])
 				require.Equal(t, "12345", msg["user"])
-				require.Equal(t, req.Method, msg["method"])
-				require.Equal(t, req.URL.Path, msg["path"])
+				require.Equal(t, dskitlog.DropUnsafeChars(req.Method), msg["method"])
+				require.Equal(t, dskitlog.DropUnsafeChars(req.URL.Path), msg["path"])
 				require.Equal(t, testRouteName, msg["route_name"])
-				require.Equal(t, req.UserAgent(), msg["user_agent"])
+				require.Equal(t, dskitlog.DropUnsafeChars(req.UserAgent()), msg["user_agent"])
 				require.Contains(t, msg, "response_time")
 				require.Contains(t, msg, "query_wall_time_seconds")
 				require.EqualValues(t, 0, msg["fetched_series_count"])
@@ -529,7 +530,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				}
 				require.Equal(t, len(tt.expectedParams), paramsLogged)
 				for key, value := range tt.expectedParams {
-					require.Equal(t, value[0], msg["param_"+key])
+					require.Equal(t, dskitlog.DropUnsafeChars(value[0]), msg["param_"+key])
 				}
 
 				if tt.expectedReadConsistencyLevel != "" {
