@@ -136,7 +136,6 @@ You can set authentication configuration directly as configuration flags. The fl
 Mimir components that connect to Kafka must be restarted whenever reauthentication is required.
 {{< /admonition >}}
 
-
 #### With path to configuration file
 
 Set the following configuration flag to specify the path to a file that contains a JSON object configuring authentication credentials:
