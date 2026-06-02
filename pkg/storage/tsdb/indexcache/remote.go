@@ -189,7 +189,7 @@ func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string
 
 func postingsOffsetCacheKey(tenantID, blockID string, lbl labels.Label) string {
 	const (
-		prefix    = "PO"
+		prefix    = "PO" // singular Postings Offset
 		separator = ":"
 	)
 
@@ -217,7 +217,7 @@ func postingsOffsetCacheKey(tenantID, blockID string, lbl labels.Label) string {
 
 func postingsOffsetsForMatcherCacheKey(tenantID, blockID, labelName string, m *labels.Matcher, invertMatcher bool) string {
 	const (
-		prefix    = "PO"
+		prefix    = "POM" // Postings Offsets for Matcher
 		separator = ":"
 	)
 
