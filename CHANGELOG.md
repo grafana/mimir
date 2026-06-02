@@ -4,12 +4,6 @@
 
 ### Grafana Mimir
 
-* [BUGFIX] Update to Go v1.26.3 to address [CVE-2026-42501](https://www.cve.org/CVERecord?id=CVE-2026-42501), [CVE-2026-42499](https://www.cve.org/CVERecord?id=CVE-2026-42499), [CVE-2026-39836](https://www.cve.org/CVERecord?id=CVE-2026-39836), [CVE-2026-39820](https://www.cve.org/CVERecord?id=CVE-2026-39820), [CVE-2026-33814](https://www.cve.org/CVERecord?id=CVE-2026-33814), [CVE-2026-33811](https://www.cve.org/CVERecord?id=CVE-2026-33811), [CVE-2026-39826](https://www.cve.org/CVERecord?id=CVE-2026-39826), [CVE-2026-39823](https://www.cve.org/CVERecord?id=CVE-2026-39823), [CVE-2026-39817](https://www.cve.org/CVERecord?id=CVE-2026-39817), [CVE-2026-39825](https://www.cve.org/CVERecord?id=CVE-2026-39825), [CVE-2026-39819](https://www.cve.org/CVERecord?id=CVE-2026-39819). #15263
-
-## 3.1.0-rc.0
-
-### Grafana Mimir
-
 * [CHANGE] Query-frontend: Renamed `minimum_step_size` filter in `blocked_queries` configuration to `step_size_shorter_than` to follow the naming convention of `time_range_longer_than`. Users with `minimum_step_size` in their runtime configuration must rename the field. #15081
 * [CHANGE] Query-frontend: `blocked_queries` configuration is now validated at load time; a configuration error is returned if a rule has an empty `pattern`, or has `regex: true` with a `pattern` that is not a valid regular expression. #14978
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
@@ -296,6 +290,7 @@
 * [BUGFIX] MQE: Fix `info()` function only retaining one matcher when multiple data label matchers target the same label name. #14832
 * [BUGFIX] MQE: Fix `info()` function silently overwriting conflicting labels from different info metrics instead of returning an error. #14832
 * [BUGFIX] MQE: Fix `info()` function incorrectly grouping labels from replaced info series at the same evaluation timestamp due to lookback. #14832
+* [BUGFIX] Update to Go v1.26.3 to address [CVE-2026-42501](https://www.cve.org/CVERecord?id=CVE-2026-42501), [CVE-2026-42499](https://www.cve.org/CVERecord?id=CVE-2026-42499), [CVE-2026-39836](https://www.cve.org/CVERecord?id=CVE-2026-39836), [CVE-2026-39820](https://www.cve.org/CVERecord?id=CVE-2026-39820), [CVE-2026-33814](https://www.cve.org/CVERecord?id=CVE-2026-33814), [CVE-2026-33811](https://www.cve.org/CVERecord?id=CVE-2026-33811), [CVE-2026-39826](https://www.cve.org/CVERecord?id=CVE-2026-39826), [CVE-2026-39823](https://www.cve.org/CVERecord?id=CVE-2026-39823), [CVE-2026-39817](https://www.cve.org/CVERecord?id=CVE-2026-39817), [CVE-2026-39825](https://www.cve.org/CVERecord?id=CVE-2026-39825), [CVE-2026-39819](https://www.cve.org/CVERecord?id=CVE-2026-39819). #15263
 
 ### Mixin
 
