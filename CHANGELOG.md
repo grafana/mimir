@@ -20,6 +20,7 @@
 * [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
 * [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
 * [ENHANCEMENT] Ingester: Make max concurrency for label values count endpoint configurable with `-ingester.label-values-count-max-concurrency`. #15299
+* [ENHANCEMENT] Ingest storage: Add `cortex_ingest_storage_writer_serialize_duration_seconds` native histogram metric tracking the time spent serializing an incoming request to Kafka records. #15527
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
 * [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147 #15270 #14878

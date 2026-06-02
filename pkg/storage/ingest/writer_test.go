@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -132,6 +133,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+
+		assertHistogramSampleCount(t, reg, "cortex_ingest_storage_writer_serialize_duration_seconds", 1)
 	})
 
 	t.Run("should block until data has been committed to storage (WriteRequest stored in multiple records)", func(t *testing.T) {
@@ -224,6 +227,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+
+		assertHistogramSampleCount(t, reg, "cortex_ingest_storage_writer_serialize_duration_seconds", 1)
 	})
 
 	t.Run("should write to the requested partition", func(t *testing.T) {
@@ -885,6 +890,8 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+
+		assertHistogramSampleCount(t, reg, "cortex_ingest_storage_writer_serialize_duration_seconds", 1)
 	})
 
 	t.Run("should skip empty requests", func(t *testing.T) {
@@ -953,6 +960,8 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+
+		assertHistogramSampleCount(t, reg, "cortex_ingest_storage_writer_serialize_duration_seconds", 1)
 	})
 
 	t.Run("should return nil when all partition requests are empty", func(t *testing.T) {
@@ -1676,6 +1685,18 @@ func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 	cfg.concurrentFetchersFetchBackoffConfig = fastFetchBackoffConfig
 
 	return cfg
+}
+
+// assertHistogramSampleCount asserts that the histogram metric with the given name
+// has been observed the expected number of times.
+func assertHistogramSampleCount(t *testing.T, reg prometheus.Gatherer, metricName string, expected uint64) {
+	t.Helper()
+
+	mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, metricName)
+	require.NoError(t, err)
+	assert.Equal(t, expected, hist.GetSampleCount())
 }
 
 func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gatherer) {
