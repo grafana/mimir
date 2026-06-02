@@ -107,7 +107,7 @@ Set the following configuration flags to authenticate with username and password
 
 - `-ingest-storage.kafka.sasl-password`
 
-## OAUTHBEARER or AWS_MSK_IAM
+### OAUTHBEARER or AWS_MSK_IAM
 
 Set the following configuration flags to authenticate with OAuth or MSK IAM:
 
