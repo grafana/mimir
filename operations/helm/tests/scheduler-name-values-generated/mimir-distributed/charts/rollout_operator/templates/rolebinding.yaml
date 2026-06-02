@@ -18,3 +18,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: scheduler-name-values-rollout-operator
+

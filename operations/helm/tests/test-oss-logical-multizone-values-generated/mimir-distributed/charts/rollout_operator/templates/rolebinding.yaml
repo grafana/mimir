@@ -18,3 +18,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: test-oss-logical-multizone-values-rollout-operator
+

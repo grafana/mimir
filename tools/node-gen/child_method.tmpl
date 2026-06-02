@@ -1,0 +1,49 @@
+{{- /*gotype: github.com/grafana/mimir/tools/node-gen.templateStructData*/ -}}
+
+{{define "children_field" -}}
+func ({{.Receiver}} *{{.Type}}) Child(idx int) planning.Node {
+	if idx >= len({{.Receiver}}.{{.ChildrenField}}) {
+		panic(fmt.Sprintf("this {{.Type}} node has %d children, but attempted to get child at index %d", len({{.Receiver}}.{{.ChildrenField}}), idx))
+	}
+	return {{.Receiver}}.{{.ChildrenField}}[idx]
+}
+{{- end }}
+
+{{define "single_child_field" -}}
+{{$field := index .ChildFields 0 -}}
+func ({{.Receiver}} *{{.Type}}) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type {{.Type}} supports 1 child, but attempted to get child at index %d", idx))
+	}
+	{{- if $field.Nilable }}
+	if {{.Receiver}}.{{$field.Name}} == nil {
+		panic(fmt.Sprintf("cannot get {{.Type}} child at index %d if {{$field.Name}} is nil", idx))
+	}
+	{{- end }}
+	return {{.Receiver}}.{{$field.Name}}
+}
+{{- end }}
+
+{{define "multi_child_fields" -}}
+func ({{.Receiver}} *{{.Type}}) Child(idx int) planning.Node {
+	switch idx {
+	{{- range $i, $f := .ChildFields }}
+	case {{$i}}:
+		{{- if $f.Nilable }}
+		if {{$.Receiver}}.{{$f.Name}} == nil {
+			panic("cannot get {{$.Type}} child at index {{$i}} if {{$f.Name}} is nil")
+		}
+		{{- end }}
+		return {{$.Receiver}}.{{$f.Name}}
+	{{- end }}
+	default:
+		panic(fmt.Sprintf("node of type {{.Type}} supports {{len .ChildFields}} children, but attempted to get child at index %d", idx))
+	}
+}
+{{- end }}
+
+{{define "no_fields" -}}
+func ({{.Receiver}} *{{.Type}}) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type {{.Type}} has no children, but attempted to get child at index %d", idx))
+}
+{{- end }}

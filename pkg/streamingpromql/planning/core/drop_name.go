@@ -15,9 +15,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type DropName struct {
 	*DropNameDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (n *DropName) Details() proto.Message {
@@ -26,18 +27,6 @@ func (n *DropName) Details() proto.Message {
 
 func (n *DropName) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DROP_NAME
-}
-
-func (n *DropName) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type DropName supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return n.Inner
-}
-
-func (n *DropName) ChildCount() int {
-	return 1
 }
 
 func (n *DropName) SetChildren(children []planning.Node) error {

@@ -82,4 +82,5 @@ spec:
             claimName: metamonitoring-values-minio
         - name: minio-user
           secret:
-            secretName: metamonitoring-values-minio
+            secretName: metamonitoring-values-minio        
+
