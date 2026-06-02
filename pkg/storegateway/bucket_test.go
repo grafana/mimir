@@ -1077,6 +1077,7 @@ func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
 			MaxCacheSizeBytes: 250 * 1024 * 1024,
 			MaxItemSizeBytes:  125 * 1024 * 1024,
 		},
+		CachePostingsOffsets: true,
 	}
 	cache, err := indexcache.NewInMemoryIndexCacheWithConfig(cfg, nil, log.NewNopLogger())
 	require.NoError(t, err)
