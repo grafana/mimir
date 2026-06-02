@@ -2047,6 +2047,8 @@ Usage of ./cmd/mimir/mimir:
     	Timeout used when connecting to other nodes to send packet. (default 500ms)
   -memberlist.packet-write-timeout duration
     	Timeout for writing 'packet' data. (default 500ms)
+  -memberlist.processed-messages-queue-size int
+    	Size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key. (default 1024)
   -memberlist.propagation-delay-tracker.beacon-interval duration
     	[experimental] How often to publish beacons for propagation tracking. (default 1m0s)
   -memberlist.propagation-delay-tracker.beacon-lifetime duration

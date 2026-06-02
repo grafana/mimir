@@ -140,18 +140,19 @@ func (c *Client) awaitKVRunningOrStopping(ctx context.Context) error {
 // KVConfig is a config for memberlist.KV
 type KVConfig struct {
 	// Memberlist options.
-	NodeName                  string        `yaml:"node_name" category:"advanced"`
-	RandomizeNodeName         bool          `yaml:"randomize_node_name" category:"advanced"`
-	StreamTimeout             time.Duration `yaml:"stream_timeout" category:"advanced"`
-	RetransmitMult            int           `yaml:"retransmit_factor" category:"advanced"`
-	PushPullInterval          time.Duration `yaml:"pull_push_interval" category:"advanced"`
-	GossipInterval            time.Duration `yaml:"gossip_interval" category:"advanced"`
-	GossipNodes               int           `yaml:"gossip_nodes" category:"advanced"`
-	GossipToTheDeadTime       time.Duration `yaml:"gossip_to_dead_nodes_time" category:"advanced"`
-	DeadNodeReclaimTime       time.Duration `yaml:"dead_node_reclaim_time" category:"advanced"`
-	EnableCompression         bool          `yaml:"compression_enabled" category:"advanced"`
-	NotifyInterval            time.Duration `yaml:"notify_interval" category:"advanced"`
-	ReceivedMessagesQueueSize int           `yaml:"received_messages_queue_size" category:"advanced"`
+	NodeName                   string        `yaml:"node_name" category:"advanced"`
+	RandomizeNodeName          bool          `yaml:"randomize_node_name" category:"advanced"`
+	StreamTimeout              time.Duration `yaml:"stream_timeout" category:"advanced"`
+	RetransmitMult             int           `yaml:"retransmit_factor" category:"advanced"`
+	PushPullInterval           time.Duration `yaml:"pull_push_interval" category:"advanced"`
+	GossipInterval             time.Duration `yaml:"gossip_interval" category:"advanced"`
+	GossipNodes                int           `yaml:"gossip_nodes" category:"advanced"`
+	GossipToTheDeadTime        time.Duration `yaml:"gossip_to_dead_nodes_time" category:"advanced"`
+	DeadNodeReclaimTime        time.Duration `yaml:"dead_node_reclaim_time" category:"advanced"`
+	EnableCompression          bool          `yaml:"compression_enabled" category:"advanced"`
+	NotifyInterval             time.Duration `yaml:"notify_interval" category:"advanced"`
+	ReceivedMessagesQueueSize  int           `yaml:"received_messages_queue_size" category:"advanced"`
+	ProcessedMessagesQueueSize int           `yaml:"processed_messages_queue_size" category:"advanced"`
 
 	CompressionAlgorithm string `yaml:"compression_algorithm" category:"advanced"`
 
@@ -242,6 +243,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.CompressionAlgorithm, prefix+"memberlist.compression-algorithm", string(memberlist.CompressionAlgorithmLZW), fmt.Sprintf("Compression algorithm used for outgoing messages when -memberlist.compression-enabled is true. Supported values: %s. Ignored when -memberlist.compression-enabled is false.", strings.Join(supportedCompressionAlgorithms, ", ")))
 	f.DurationVar(&cfg.NotifyInterval, prefix+"memberlist.notify-interval", 0, "How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.")
 	f.IntVar(&cfg.ReceivedMessagesQueueSize, prefix+"memberlist.received-messages-queue-size", mlDefaults.HandoffQueueDepth, "Size of the internal queue for messages received from other nodes. Increasing this value may help to avoid dropping messages when the node is processing a large number of messages from other nodes.")
+	f.IntVar(&cfg.ProcessedMessagesQueueSize, prefix+"memberlist.processed-messages-queue-size", mlDefaults.HandoffQueueDepth, "Size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key.")
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"memberlist.advertise-addr", mlDefaults.AdvertiseAddr, "Gossip address to advertise to other members in the cluster. Used for NAT traversal.")
 	f.IntVar(&cfg.AdvertisePort, prefix+"memberlist.advertise-port", mlDefaults.AdvertisePort, "Gossip port to advertise to other members in the cluster. Used for NAT traversal.")
 	f.StringVar(&cfg.ClusterLabel, prefix+"memberlist.cluster-label", mlDefaults.Label, "The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.")
@@ -268,6 +270,9 @@ func (cfg *KVConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *KVConfig) Validate() error {
 	if cfg.ReceivedMessagesQueueSize <= 0 {
 		return fmt.Errorf("memberlist received messages queue size must be greater than 0")
+	}
+	if cfg.ProcessedMessagesQueueSize <= 0 {
+		return fmt.Errorf("memberlist processed messages queue size must be greater than 0")
 	}
 	if cfg.CompressionAlgorithm != "" && !slices.Contains(supportedCompressionAlgorithms, cfg.CompressionAlgorithm) {
 		return fmt.Errorf("memberlist compression algorithm %q is not supported, valid values: %s", cfg.CompressionAlgorithm, strings.Join(supportedCompressionAlgorithms, ", "))
@@ -1487,7 +1492,7 @@ func (m *KV) getKeyWorkerChannel(key string) chan<- valueUpdate {
 	ch := m.workersChannels[key]
 	if ch == nil {
 		// spawn a key associated worker goroutine to process updates in background
-		ch = make(chan valueUpdate, m.cfg.ReceivedMessagesQueueSize)
+		ch = make(chan valueUpdate, m.cfg.ProcessedMessagesQueueSize)
 		go m.processValueUpdate(ch, key)
 
 		m.workersChannels[key] = ch
