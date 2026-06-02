@@ -200,9 +200,7 @@ func (b *RangeVectorDuplicationBuffer) combineStepData(stepData *types.RangeVect
 	// When not using anchored/smoothed modifiers, we can use a single buffer for all points in a
 	// particular series. This minimizes duplicated points when the range selector for each step
 	// overlaps with the range selector of the previous step.
-	floats := b.buffer.GetOrCreateFloatBuffer(seriesIndex)
-	histograms := b.buffer.GetOrCreateHistogramBuffer(seriesIndex)
-	return mergeStepData(stepData, floats, histograms)
+	return b.mergeStepData(stepData, seriesIndex)
 }
 
 func (b *RangeVectorDuplicationBuffer) anyConsumerWillReadSeries(unfilteredSeriesIndex int, ignore *RangeVectorDuplicationConsumer) bool {
@@ -592,25 +590,36 @@ func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStep
 
 // mergeStepData adds all unique points from stepData to the shared floats and histograms buffers.
 // The dedicated buffers bufferedRangeVectorStepData will be nil since the shared buffers are used.
-func mergeStepData(stepData *types.RangeVectorStepData, floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer) (bufferedRangeVectorStepData, error) {
+func (b *RangeVectorDuplicationBuffer) mergeStepData(stepData *types.RangeVectorStepData, seriesIndex int) (bufferedRangeVectorStepData, error) {
 	if stepData.Anchored || stepData.Smoothed {
 		return bufferedRangeVectorStepData{}, fmt.Errorf("cannot use shared FPoint and HPoint buffers with anchored/smoothed modifiers (this is a bug)")
 	}
 
-	var lastF promql.FPoint
-	if floats.Count() > 0 {
-		lastF = floats.Last()
+	var (
+		lastF      promql.FPoint
+		lastH      promql.HPoint
+		floats     *types.FPointRingBuffer
+		histograms *types.HPointRingBuffer
+	)
+
+	if stepData.Floats.Any() {
+		floats = b.buffer.GetOrCreateFloatBuffer(seriesIndex)
+		if floats.Count() > 0 {
+			lastF = floats.Last()
+		}
 	}
 
-	var lastH promql.HPoint
-	if histograms.Count() > 0 {
-		lastH = histograms.Last()
+	if stepData.Histograms.Any() {
+		histograms = b.buffer.GetOrCreateHistogramBuffer(seriesIndex)
+		if histograms.Count() > 0 {
+			lastH = histograms.Last()
+		}
 	}
 
 	headF, tailF := stepData.Floats.UnsafePoints()
 	for _, section := range [][]promql.FPoint{headF, tailF} {
 		for _, p := range section {
-			if floats.Count() == 0 || p.T > lastF.T {
+			if floats != nil && (floats.Count() == 0 || p.T > lastF.T) {
 				_, err := floats.Append(promql.FPoint{T: p.T, F: p.F})
 				if err != nil {
 					return bufferedRangeVectorStepData{}, err
@@ -622,7 +631,7 @@ func mergeStepData(stepData *types.RangeVectorStepData, floats *types.FPointRing
 	headH, tailH := stepData.Histograms.UnsafePoints()
 	for _, section := range [][]promql.HPoint{headH, tailH} {
 		for _, p := range section {
-			if histograms.Count() == 0 || p.T > lastH.T {
+			if histograms != nil && (histograms.Count() == 0 || p.T > lastH.T) {
 				_, err := histograms.Append(promql.HPoint{T: p.T, H: p.H.Copy()})
 				if err != nil {
 					return bufferedRangeVectorStepData{}, err
@@ -638,8 +647,17 @@ func mergeStepData(stepData *types.RangeVectorStepData, floats *types.FPointRing
 	merged.RangeEnd = stepData.RangeEnd
 	merged.StepT = stepData.StepT
 
-	merged.Floats = floats.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
-	merged.Histograms = histograms.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
+	if floats != nil {
+		merged.Floats = floats.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
+	} else {
+		merged.Floats = &types.FPointRingBufferView{}
+	}
+
+	if histograms != nil {
+		merged.Histograms = histograms.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
+	} else {
+		merged.Histograms = &types.HPointRingBufferView{}
+	}
 
 	return bufferedRangeVectorStepData{stepData: &merged}, nil
 }
