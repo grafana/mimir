@@ -1731,11 +1731,16 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 
 func labelValuesFromPostings(ctx context.Context, labelName string, indexr *bucketIndexReader, allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
 	keys := make([]labels.Label, len(allValues))
+	offsets := make([]index.Range, len(allValues))
 	for i, value := range allValues {
 		keys[i] = labels.Label{Name: labelName, Value: value.LabelValue}
+		offsets[i] = value.Off
 	}
 
-	fetchedPostings, err := indexr.FetchPostings(ctx, keys, stats)
+	// allValues came from LabelValuesOffsets, which already resolved each value's
+	// posting-list byte range. Reuse those offsets so cache misses don't trigger a
+	// second per-value PostingsOffset read against object storage.
+	fetchedPostings, err := indexr.FetchPostingsWithOffsets(ctx, keys, offsets, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "get postings")
 	}

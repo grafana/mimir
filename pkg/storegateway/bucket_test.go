@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -671,6 +672,88 @@ func TestBlockLabelValues(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
 	})
+
+	t.Run("postings path reuses label value offsets instead of calling PostingsOffset per value", func(t *testing.T) {
+		b := newTestBucketBlock()
+		var postingsOffsetCalls []labels.Label
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onPostingsOffsetCalled: func(name, value string) error {
+				postingsOffsetCalls = append(postingsOffsetCalls, labels.Label{Name: name, Value: value})
+				return nil
+			},
+		}
+		// Use a cache that always misses postings, so that without the offset-reuse
+		// optimization each value of "j" would force its own PostingsOffset call.
+		b.indexCache = noopCache{}
+
+		// A matcher on "p" (not "j") leaves "j" without an exact match, so its values
+		// are enumerated via LabelValuesOffsets. Because "p"="foo" matches ~20k series,
+		// loading them is more expensive than the two "j" posting lists, so the cost
+		// model picks the postings path (labelValuesFromPostings) - the path that now
+		// reuses the offsets LabelValuesOffsets already returned.
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}
+		stats := newSafeQueryStats()
+		values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", matchers, log.NewNopLogger(), stats)
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
+
+		// Guard against the test silently becoming vacuous: the series path would also
+		// avoid PostingsOffset("j", ...), so confirm we actually took the postings path.
+		require.Zero(t, stats.export().seriesProcessed, "expected the postings path, but series were processed")
+
+		// The matcher expansion still resolves "p" through PostingsOffset...
+		require.Contains(t, postingsOffsetCalls, labels.Label{Name: "p", Value: "foo"})
+		// ...but no value of the queried label "j" should be resolved via PostingsOffset;
+		// those byte ranges come from the offsets LabelValuesOffsets already returned.
+		for _, call := range postingsOffsetCalls {
+			require.NotEqualf(t, "j", call.Name, "unexpected PostingsOffset call for a value of the queried label: %v", call)
+		}
+	})
+}
+
+// BenchmarkBlockLabelValuesPostingsPath benchmarks blockLabelValues on the
+// postings path (labelValuesFromPostings) for a high-cardinality label, and
+// reports the number of PostingsOffset calls per operation. With offset reuse,
+// the values of the queried label are resolved from the offsets that
+// LabelValuesOffsets already returned, so the only PostingsOffset call is the
+// one for the matcher label; without it, there is one call per label value.
+func BenchmarkBlockLabelValuesPostingsPath(b *testing.B) {
+	const series = 100_000
+
+	tb := test.NewTB(b)
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+
+	// "i" is high-cardinality (2000 values, present on every series). The matcher
+	// on "p" matches ~20k series, which makes loading them more expensive than the
+	// per-value posting lists, so the cost model takes the postings path.
+	const queriedLabel = "i"
+	const expectedValues = 2000
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}
+
+	var postingsOffsetCalls atomic.Int64
+	blk := newTestBucketBlock()
+	blk.indexHeaderReader = &interceptedIndexReader{
+		Reader: blk.indexHeaderReader,
+		onPostingsOffsetCalled: func(string, string) error {
+			postingsOffsetCalls.Add(1)
+			return nil
+		},
+	}
+	// noopCache keeps the postings cache cold, so every cache miss would otherwise
+	// resolve its offset with a PostingsOffset call.
+	blk.indexCache = noopCache{}
+
+	b.ResetTimer()
+	postingsOffsetCalls.Store(0)
+	for i := 0; i < b.N; i++ {
+		vals, err := blockLabelValues(context.Background(), blk, selectAllStrategy{}, 5000, queriedLabel, matchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(b, err)
+		require.Len(b, vals, expectedValues)
+	}
+	b.StopTimer()
+	b.ReportMetric(float64(postingsOffsetCalls.Load())/float64(b.N), "PostingsOffset-calls/op")
 }
 
 func TestCachedLabelValues_NoGobDecodeLimit(t *testing.T) {

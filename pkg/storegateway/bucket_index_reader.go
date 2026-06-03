@@ -205,7 +205,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
 	logSelectedPostingGroups(ctx, r.block.logger, r.block.meta.ULID, postingGroups, omittedPostingGroups)
 
-	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), stats)
+	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), nil, stats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "get postings")
 	}
@@ -400,7 +400,24 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 // It returns one postings for each key, in the same order.
 // If postings for given key is not fetched, entry at given index will be an ErrPostings
 func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
-	ps, err := r.fetchPostings(ctx, keys, stats)
+	return r.fetchAndPadPostings(ctx, keys, nil, stats)
+}
+
+// FetchPostingsWithOffsets is like FetchPostings, but uses the caller-provided
+// byte offsets (e.g. from IndexHeaderReader.LabelValuesOffsets) instead of
+// resolving each key's offset with a separate PostingsOffset call. Since
+// PostingsOffset now reads from object storage, reusing offsets the caller
+// already has avoids one bucket round trip per cache-missed key.
+//
+// offsets must be parallel to keys: offsets[i] is the posting-list byte range
+// for keys[i]. Every key must have a valid offset (callers that derived keys
+// from LabelValuesOffsets satisfy this, since those values exist in the block).
+func (r *bucketIndexReader) FetchPostingsWithOffsets(ctx context.Context, keys []labels.Label, offsets []index.Range, stats *safeQueryStats) ([]index.Postings, error) {
+	return r.fetchAndPadPostings(ctx, keys, offsets, stats)
+}
+
+func (r *bucketIndexReader) fetchAndPadPostings(ctx context.Context, keys []labels.Label, knownOffsets []index.Range, stats *safeQueryStats) ([]index.Postings, error) {
+	ps, err := r.fetchPostings(ctx, keys, knownOffsets, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +440,11 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 // fetchPostings is the version-unaware private implementation of FetchPostings.
 // callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
-func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
+//
+// If knownOffsets is non-nil it must be parallel to keys, and the byte range for
+// a cache-missed key is taken from knownOffsets instead of being resolved with a
+// PostingsOffset call against the index header.
+func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, knownOffsets []index.Range, stats *safeQueryStats) ([]index.Postings, error) {
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
 	defer timer.ObserveDuration()
 
@@ -467,15 +488,23 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
-		ptr, err := r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
-		if errors.Is(err, indexheader.NotFoundRangeErr) {
-			// This block does not have any posting for given key.
-			output[ix] = index.EmptyPostings()
-			continue
-		}
-
-		if err != nil {
-			return nil, errors.Wrap(err, "index header PostingsOffset")
+		var ptr index.Range
+		if knownOffsets != nil {
+			// The caller already resolved this key's byte range (e.g. from
+			// LabelValuesOffsets), so reuse it instead of issuing another
+			// PostingsOffset read against object storage.
+			ptr = knownOffsets[ix]
+		} else {
+			var err error
+			ptr, err = r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
+			if errors.Is(err, indexheader.NotFoundRangeErr) {
+				// This block does not have any posting for given key.
+				output[ix] = index.EmptyPostings()
+				continue
+			}
+			if err != nil {
+				return nil, errors.Wrap(err, "index header PostingsOffset")
+			}
 		}
 
 		stats.update(func(stats *queryStats) {
