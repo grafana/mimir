@@ -36,7 +36,6 @@ incrementally, terminated by a status trailer.
   ┌──────────────────────────────────────────────────────────────────────┐
   │ Tenant federation                                                    │
   │   per-tenant fan-out; k-way merge across tenants                     │
-  │   single-tenant fast paths skip the merge wrapper                    │
   └──────────────────────────────┬───────────────────────────────────────┘
                                  │ in-process (one per tenant)
                                  ▼

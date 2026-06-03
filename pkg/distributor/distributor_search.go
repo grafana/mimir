@@ -215,15 +215,12 @@ type ingesterSearchResultSet struct {
 	done     bool
 }
 
-// newIngesterSearchResultSet stores the two cancel funcs as struct
-// fields so the constructor does not need to allocate a closure to
-// bundle them — Close calls both directly.
-//
-// Precondition: streamCancel and dscCancel must either both be non-nil
-// (the production path: see openIngesterSearchStreams above) or both be
-// nil (the in-process test path, where there's no gRPC stream or ring
-// resource to release). Close() uses streamCancel as the guard for both,
-// so a mismatched pair would NPE on Close.
+// newIngesterSearchResultSet requires streamCancel and dscCancel to
+// either both be non-nil (the production path: see
+// openIngesterSearchStreams above) or both be nil (the in-process test
+// path, where there's no gRPC stream or ring resource to release).
+// Close uses streamCancel as the guard for both, so a mismatched pair
+// would NPE on Close.
 func newIngesterSearchResultSet(stream searchStream, streamCancel, dscCancel context.CancelCauseFunc) *ingesterSearchResultSet {
 	return &ingesterSearchResultSet{stream: stream, streamCancel: streamCancel, dscCancel: dscCancel}
 }
