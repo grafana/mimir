@@ -5390,6 +5390,17 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "field",
+          "name": "query_workers",
+          "required": false,
+          "desc": "Number of worker goroutines in the ingester's shared tenant-fair query worker pool, used to parallelize read-path work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.query-workers",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "label_values_count",
           "required": false,
@@ -5397,20 +5408,9 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "workers",
-              "required": false,
-              "desc": "Number of worker goroutines used to compute label-values-count requests across all tenants. 0 uses GOMAXPROCS.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "ingester.label-values-count-workers",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "chunk_size",
               "required": false,
-              "desc": "Number of label values processed per work unit submitted to the worker pool.",
+              "desc": "Number of label values processed per work unit submitted to the ingester query worker pool.",
               "fieldValue": null,
               "fieldDefaultValue": 32,
               "fieldFlag": "ingester.label-values-count-chunk-size",
@@ -5420,17 +5420,6 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
-        },
-        {
-          "kind": "field",
-          "name": "label_values_count_request_max_concurrency",
-          "required": false,
-          "desc": "No longer has any effect. Use -ingester.label-values-count-workers and -ingester.label-values-count-chunk-size instead.",
-          "fieldValue": null,
-          "fieldDefaultValue": 16,
-          "fieldFlag": "ingester.label-values-count-max-concurrency",
-          "fieldType": "int",
-          "fieldCategory": "deprecated"
         }
       ],
       "fieldValue": null,

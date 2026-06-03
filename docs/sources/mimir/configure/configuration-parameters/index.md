@@ -1722,22 +1722,17 @@ read_reactive_limiter:
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
 
-label_values_count:
-  # (experimental) Number of worker goroutines used to compute
-  # label-values-count requests across all tenants. 0 uses GOMAXPROCS.
-  # CLI flag: -ingester.label-values-count-workers
-  [workers: <int> | default = 0]
+# (experimental) Number of worker goroutines in the ingester's shared
+# tenant-fair query worker pool, used to parallelize read-path work (currently
+# label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.
+# CLI flag: -ingester.query-workers
+[query_workers: <int> | default = 0]
 
+label_values_count:
   # (experimental) Number of label values processed per work unit submitted to
-  # the worker pool.
+  # the ingester query worker pool.
   # CLI flag: -ingester.label-values-count-chunk-size
   [chunk_size: <int> | default = 32]
-
-# (deprecated) No longer has any effect. Use
-# -ingester.label-values-count-workers and
-# -ingester.label-values-count-chunk-size instead.
-# CLI flag: -ingester.label-values-count-max-concurrency
-[label_values_count_request_max_concurrency: <int> | default = 16]
 ```
 
 ### querier
