@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -25,6 +26,8 @@ type schedulerQueue struct {
 	queue                     *queue.RequestQueue
 	queryComponentUtilization *queue.QueryComponentUtilization
 	limits                    Limits
+
+	subservicesWatcher *services.FailureWatcher
 }
 
 func newSchedulerQueue(
@@ -57,6 +60,7 @@ func newSchedulerQueue(
 		queue:                     q,
 		queryComponentUtilization: qcu,
 		limits:                    limits,
+		subservicesWatcher:        services.NewFailureWatcher(),
 	}
 	sq.Service = services.NewBasicService(sq.starting, sq.running, sq.stopping).WithName("scheduler queue")
 	return sq, nil
@@ -70,6 +74,7 @@ func (sq *schedulerQueue) starting(ctx context.Context) error {
 		_ = services.StopAndAwaitTerminated(context.Background(), sq.queue)
 		return err
 	}
+	sq.subservicesWatcher.WatchService(sq.queue)
 	return nil
 }
 
@@ -84,6 +89,8 @@ func (sq *schedulerQueue) running(ctx context.Context) error {
 		select {
 		case <-inflightRequestsTicker.C:
 			sq.queryComponentUtilization.ObserveInflightRequests()
+		case err := <-sq.subservicesWatcher.Chan():
+			return fmt.Errorf("scheduler queue subservice failed: %w", err)
 		case <-ctx.Done():
 			return nil
 		}
