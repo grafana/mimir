@@ -12,26 +12,23 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
-// searchWarning lifts a wire warning string to an error without the per-call
-// allocation of errors.New. Used to feed annotations.Annotations.Add.
 type searchWarning string
 
 func (w searchWarning) Error() string { return string(w) }
 
 // ingesterSearchPrefetchBuffer sizes the per-replica prefetch channel to
-// match pkg/ingester.searchBatchSize: one wire batch can sit in the
-// channel while the producer is in its next Recv, hiding ~one round-trip
-// per source. Keep in lockstep with the ingester's batch size — kept as
-// a literal to avoid pulling pkg/ingester into the distributor's import
-// graph.
+// match pkg/ingester.searchBatchSize — kept as a literal to avoid pulling
+// pkg/ingester into the distributor's import graph.
 const ingesterSearchPrefetchBuffer = 256
 
 // SearchLabelNames fans the search RPC out across the quorum-many ingesters,
@@ -230,7 +227,7 @@ func (s *ingesterSearchResultSet) Next() bool {
 	}
 	if s.batch != nil && s.idx < len(s.batch.Results) {
 		r := s.batch.Results[s.idx]
-		s.cur = storage.SearchResult{Value: r.Value, Score: r.Score}
+		s.cur = convertToStorageResult(r)
 		s.idx++
 		return true
 	}
@@ -249,13 +246,24 @@ func (s *ingesterSearchResultSet) Next() bool {
 		}
 		if len(batch.Results) > 0 {
 			s.batch = batch
-			r := batch.Results[0]
-			s.cur = storage.SearchResult{Value: r.Value, Score: r.Score}
+			s.cur = convertToStorageResult(batch.Results[0])
 			s.idx = 1
 			return true
 		}
 		// Warning-only batch — keep pulling.
 	}
+}
+
+func convertToStorageResult(r ingester_client.SearchResultBatch_Result) storage.SearchResult {
+	res := storage.SearchResult{Value: r.Value, Score: r.Score}
+	if r.Metadata != nil {
+		res.Metadata = &metadata.Metadata{
+			Type: mimirpb.MetricMetadataMetricTypeToMetricType(r.Metadata.Type),
+			Help: r.Metadata.Help,
+			Unit: r.Metadata.Unit,
+		}
+	}
+	return res
 }
 
 func (s *ingesterSearchResultSet) At() storage.SearchResult { return s.cur }
@@ -300,6 +308,7 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 		Matchers:         wireMatchers,
 		Filter:           paramsToProto(params),
 		Ordering:         orderingToProto(hints),
+		IncludeMetadata:  params != nil && params.IncludeMetadata,
 	}
 	if hints != nil {
 		req.Limit = int64(hints.Limit)

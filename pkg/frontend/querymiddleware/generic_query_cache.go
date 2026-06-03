@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -63,7 +64,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	defer spanLog.Finish()
 
 	// Skip the cache if disabled for this request.
-	if decodeCacheDisabledOption(req) {
+	if requestoptions.DecodeCacheDisabledOption(req) {
 		spanLog.DebugLog("msg", "cache disabled for the request")
 		return c.next.RoundTrip(req)
 	}

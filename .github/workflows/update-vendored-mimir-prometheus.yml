@@ -56,9 +56,14 @@ jobs:
 
       - name: Determine branch names (combined)
         id: branch-names
+        env:
+          DISPATCH_MIMIR_BRANCH: ${{ steps.branch-names-dispatch.outputs.mimir_branch }}
+          MANUAL_MIMIR_BRANCH: ${{ steps.branch-names-manual.outputs.mimir_branch }}
+          DISPATCH_MIMIR_PROMETHEUS_BRANCH: ${{ steps.branch-names-dispatch.outputs.mimir_prometheus_branch }}
+          MANUAL_MIMIR_PROMETHEUS_BRANCH: ${{ steps.branch-names-manual.outputs.mimir_prometheus_branch }}
         run: |
-          echo "mimir_branch=${{ steps.branch-names-dispatch.outputs.mimir_branch || steps.branch-names-manual.outputs.mimir_branch }}" >> $GITHUB_OUTPUT
-          echo "mimir_prometheus_branch=${{ steps.branch-names-dispatch.outputs.mimir_prometheus_branch || steps.branch-names-manual.outputs.mimir_prometheus_branch }}" >> $GITHUB_OUTPUT
+          echo "mimir_branch=${DISPATCH_MIMIR_BRANCH:-$MANUAL_MIMIR_BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "mimir_prometheus_branch=${DISPATCH_MIMIR_PROMETHEUS_BRANCH:-$MANUAL_MIMIR_PROMETHEUS_BRANCH}" >> "$GITHUB_OUTPUT"
 
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -67,6 +72,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           set-safe-directory: '*'
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
@@ -79,7 +85,7 @@ jobs:
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
       - name: Generate GitHub App Token
         id: app-token
-        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
+        uses: grafana/shared-workflows/actions/create-github-app-token@259ba21cb3ff07724f331e26d926d655d24b317b # create-github-app-token/v0.2.3
         with:
           github_app: mimir-vendoring
           permission_set: ${{ github.ref == 'refs/heads/main' && 'main' || 'release' }}
@@ -138,6 +144,7 @@ jobs:
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ steps.app-token.outputs.token }}
+          sign-commits: true
           title: '[${{ steps.branch-names.outputs.mimir_branch }}] Update mimir-prometheus to ${{ steps.get-commit-info.outputs.short_hash }}'
           body: |
             ## Update mimir-prometheus dependency

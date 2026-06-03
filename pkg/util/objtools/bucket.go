@@ -10,6 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/azure"
+	"github.com/thanos-io/objstore/providers/gcs"
+	"github.com/thanos-io/objstore/providers/s3"
+
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
@@ -20,6 +26,7 @@ const (
 // Bucket is an object storage interface intended to be used by tools that require functionality that isn't in objstore
 type Bucket interface {
 	Get(ctx context.Context, objectName string, options GetOptions) (io.ReadCloser, error)
+	Exists(ctx context.Context, objectName string) (bool, error)
 	ServerSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error
 	ClientSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error
 	List(ctx context.Context, options ListOptions) (*ListResult, error)
@@ -109,7 +116,7 @@ type BucketConfig struct {
 }
 
 func (c *BucketConfig) RegisterFlags(f *flag.FlagSet) {
-	c.registerFlags("", f)
+	c.registerFlags("", f, nil)
 }
 
 func ifNotEmptySuffix(s, suffix string) string {
@@ -119,9 +126,10 @@ func ifNotEmptySuffix(s, suffix string) string {
 	return s + suffix
 }
 
-func (c *BucketConfig) registerFlags(descriptor string, f *flag.FlagSet) {
+func (c *BucketConfig) registerFlags(descriptor string, f *flag.FlagSet, externalBackends []string) {
 	descriptorFlagPrefix := ifNotEmptySuffix(descriptor, ".")
-	acceptedBackends := fmt.Sprintf("%s, %s or %s.", bucket.Azure, bucket.GCS, bucket.S3)
+	allBackends := append([]string{bucket.Azure, bucket.GCS, bucket.S3}, externalBackends...)
+	acceptedBackends := strings.Join(allBackends[:len(allBackends)-1], ", ") + " or " + allBackends[len(allBackends)-1] + "."
 	f.StringVar(&c.backend, descriptorFlagPrefix+"backend", "",
 		fmt.Sprintf("The %sobject storage backend. Accepted values are: %s", ifNotEmptySuffix(descriptor, " "), acceptedBackends))
 	c.azure.RegisterFlags(bucket.Azure+"."+descriptorFlagPrefix, f)
@@ -163,6 +171,33 @@ func (c *BucketConfig) ToBucket(ctx context.Context) (Bucket, error) {
 	}
 }
 
+// ToObjstoreBucket is an adapter to objstore
+func (c *BucketConfig) ToObjstoreBucket(ctx context.Context, logger log.Logger) (objstore.Bucket, error) {
+	switch c.backend {
+	case bucket.S3:
+		return s3.NewBucketWithConfig(logger, s3.Config{
+			Bucket:    c.s3.BucketName,
+			Endpoint:  c.s3.Endpoint,
+			AccessKey: c.s3.AccessKeyID,
+			SecretKey: c.s3.SecretAccessKey,
+			Insecure:  !c.s3.Secure,
+			PartSize:  c.s3.PartSize,
+		}, "objtools-s3", nil)
+	case bucket.GCS:
+		return gcs.NewBucketWithConfig(ctx, logger, gcs.Config{
+			Bucket: c.gcs.BucketName,
+		}, "objtools-gcs", nil)
+	case bucket.Azure:
+		azCfg := azure.DefaultConfig
+		azCfg.StorageAccountName = c.azure.AccountName
+		azCfg.StorageAccountKey = c.azure.AccountKey
+		azCfg.ContainerName = c.azure.ContainerName
+		return azure.NewBucketWithConfig(logger, azCfg, "objtools-azure", nil)
+	default:
+		return nil, fmt.Errorf("unknown backend: %v", c.backend)
+	}
+}
+
 func (c *BucketConfig) Backend() string {
 	return c.backend
 }
@@ -173,10 +208,10 @@ type CopyBucketConfig struct {
 	destination    BucketConfig
 }
 
-func (c *CopyBucketConfig) RegisterFlags(f *flag.FlagSet) {
+func (c *CopyBucketConfig) RegisterFlags(f *flag.FlagSet, extraDestBackends []string) {
 	f.BoolVar(&c.clientSideCopy, "client-side-copy", false, "Use client side copying. This option is only respected if copying between two buckets of the same backend service. Client side copying is always used when copying between different backend services.")
-	c.source.registerFlags("source", f)
-	c.destination.registerFlags("destination", f)
+	c.source.registerFlags("source", f, nil)
+	c.destination.registerFlags("destination", f, extraDestBackends)
 }
 
 func (c *CopyBucketConfig) Validate() error {
@@ -185,6 +220,21 @@ func (c *CopyBucketConfig) Validate() error {
 		return err
 	}
 	return c.destination.validate("destination")
+}
+
+// SourceBucket creates and returns only the source bucket.
+func (c *CopyBucketConfig) SourceBucket(ctx context.Context) (Bucket, error) {
+	return c.source.ToBucket(ctx)
+}
+
+// SourceObjstoreBucket creates an objstore.Bucket from the source configuration.
+func (c *CopyBucketConfig) SourceObjstoreBucket(ctx context.Context, logger log.Logger) (objstore.Bucket, error) {
+	return c.source.ToObjstoreBucket(ctx, logger)
+}
+
+// ValidateSource validates only the source bucket configuration.
+func (c *CopyBucketConfig) ValidateSource() error {
+	return c.source.validate("source")
 }
 
 func (c *CopyBucketConfig) ToBuckets(ctx context.Context) (source Bucket, destination Bucket, copyFunc CopyFunc, err error) {
@@ -201,6 +251,10 @@ func (c *CopyBucketConfig) ToBuckets(ctx context.Context) (source Bucket, destin
 
 // CopyFunc copies from the source to the destination either client-side or server-side depending on the configuration
 type CopyFunc func(context.Context, string, CopyOptions) error
+
+func (c *CopyBucketConfig) DestinationBackend() string {
+	return c.destination.backend
+}
 
 func (c *CopyBucketConfig) toCopyFunc(source Bucket, destination Bucket) CopyFunc {
 	if c.clientSideCopy || c.source.backend != c.destination.backend {

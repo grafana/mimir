@@ -70,6 +70,11 @@ type Config struct {
 	QueryEngine               string `yaml:"query_engine" category:"experimental"`
 	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
 
+	// ExperimentalSearchAPIEnabled gates the streaming label/value search HTTP
+	// endpoints (/api/v1/search/{metric_names,label_names,label_values}).
+	// Mirrors Prometheus PR #18573's experimental.search-api feature flag.
+	ExperimentalSearchAPIEnabled bool `yaml:"experimental_search_api_enabled" category:"experimental"`
+
 	// Deprecated in Mimir 3.1, remove in Mimir 3.3.
 	DeprecatedFilterQueryablesEnabled bool `yaml:"filter_queryables_enabled" category:"deprecated"`
 
@@ -116,6 +121,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.DeprecatedFilterQueryablesEnabled, "querier.filter-queryables-enabled", false, "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.")
 
 	f.IntVar(&cfg.MaxConcurrentRemoteReadQueries, "querier.max-concurrent-remote-read-queries", 2, "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.")
+
+	f.BoolVar(&cfg.ExperimentalSearchAPIEnabled, "querier.experimental-search-api-enabled", false, "If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }

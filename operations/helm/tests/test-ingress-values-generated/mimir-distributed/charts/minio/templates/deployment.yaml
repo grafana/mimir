@@ -82,4 +82,5 @@ spec:
             claimName: test-ingress-values-minio
         - name: minio-user
           secret:
-            secretName: test-ingress-values-minio
+            secretName: test-ingress-values-minio        
+

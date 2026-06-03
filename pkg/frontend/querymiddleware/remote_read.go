@@ -22,6 +22,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -278,8 +279,8 @@ func (r *remoteReadQueryRequest) GetMinT() int64 {
 	return r.GetStart()
 }
 
-func (r *remoteReadQueryRequest) GetOptions() Options {
-	return Options{}
+func (r *remoteReadQueryRequest) GetOptions() requestoptions.Options {
+	return requestoptions.Options{}
 }
 
 func (r *remoteReadQueryRequest) GetPath() string {

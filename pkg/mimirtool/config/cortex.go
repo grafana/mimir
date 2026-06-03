@@ -284,6 +284,7 @@ func alertmanagerStorageMapperFunc(source, target Parameters) error {
 // rulerStorageMapperFunc returns a MapperFunc that maps ruler.storage and ruler_storage to ruler_storage.
 // Values from ruler.storage take precedence.
 func rulerStorageMapperFunc(source, target Parameters) error {
+	//nolint:gosec // these are configuration path names, not credential values.
 	pathRenames := map[string]string{
 		"ruler.storage.azure.account_key":                      "ruler_storage.azure.account_key",
 		"ruler.storage.azure.account_name":                     "ruler_storage.azure.account_name",

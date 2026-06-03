@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -112,7 +113,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					start.Truncate(time.Millisecond).UnixMilli(),
 					5*time.Minute,
 					parseQuery(t, `sum(metric{app="test",namespace=~"short"})`),
-					Options{},
+					requestoptions.Options{},
 					nil,
 					"",
 				)},

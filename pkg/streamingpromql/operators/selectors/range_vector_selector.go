@@ -222,7 +222,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			// We might append a sample beyond the range end, but this is OK:
 			// - callers of NextStepSamples are expected to pass the same RingBuffer to subsequent calls, so the point is not lost
 			// - callers of NextStepSamples are expected to handle the case where the buffer contains points beyond the end of the range
-			if err := floats.Append(promql.FPoint{T: t, F: f}); err != nil {
+			if _, err := floats.Append(promql.FPoint{T: t, F: f}); err != nil {
 				return false, err
 			}
 
@@ -236,7 +236,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 				continue
 			}
 
-			hPoint, err := histograms.NextPoint()
+			hPoint, _, err := histograms.NextPoint()
 			if err != nil {
 				return false, err
 			}

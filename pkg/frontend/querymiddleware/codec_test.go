@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	testutil "github.com/grafana/mimir/pkg/util/test"
@@ -98,7 +99,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				(2 * time.Minute).Milliseconds(),
 				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -115,7 +116,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				(2 * time.Minute).Milliseconds(),
 				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"all",
 			),
@@ -131,7 +132,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				(2 * time.Minute).Milliseconds(),
 				3*time.Minute+2*time.Second,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -145,7 +146,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				1536716880*1e3,
 				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -158,7 +159,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				1536716880*1e3,
 				3*time.Minute+2*time.Second,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -249,7 +250,7 @@ func TestCodec_EncodeMetricsQueryRequest_Oneway(t *testing.T) {
 				1234567890000,
 				time.Duration(0),
 				parseQuery(t, "up"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -262,7 +263,7 @@ func TestCodec_EncodeMetricsQueryRequest_Oneway(t *testing.T) {
 				1234567890000,
 				time.Duration(50*time.Second),
 				parseQuery(t, "up"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -316,7 +317,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		stepDuration.Milliseconds(),
 		lookbackDuration,
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -326,7 +327,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		endTime.UnixMilli(),
 		lookbackDuration,
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -445,7 +446,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 		stepDuration.Milliseconds(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -455,7 +456,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 		endTime.UnixMilli(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -528,7 +529,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 		stepDuration.Milliseconds(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -538,7 +539,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 		endTime.UnixMilli(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -1846,62 +1847,6 @@ func TestDecodeRangeQueryTimeParams(t *testing.T) {
 	}
 }
 
-func Test_DecodeOptions(t *testing.T) {
-	for _, tt := range []struct {
-		name     string
-		input    *http.Request
-		expected *Options
-	}{
-		{
-			name: "default",
-			input: &http.Request{
-				Header: http.Header{},
-			},
-			expected: &Options{},
-		},
-		{
-			name: "disable cache",
-			input: &http.Request{
-				Header: http.Header{
-					cacheControlHeader: []string{noStoreValue},
-				},
-			},
-			expected: &Options{
-				CacheDisabled: true,
-			},
-		},
-		{
-			name: "custom sharding",
-			input: &http.Request{
-				Header: http.Header{
-					totalShardsControlHeader: []string{"64"},
-				},
-			},
-			expected: &Options{
-				TotalShards: 64,
-			},
-		},
-		{
-			name: "disable sharding",
-			input: &http.Request{
-				Header: http.Header{
-					totalShardsControlHeader: []string{"0"},
-				},
-			},
-			expected: &Options{
-				ShardingDisabled: true,
-			},
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			actual := &Options{}
-			DecodeOptions(tt.input, actual)
-			require.Equal(t, tt.expected, actual)
-		})
-	}
-}
-
 // TestCodec_DecodeEncode_Metrics tests that decoding and re-encoding a
 // metrics query request does not lose relevant information about the original request.
 func TestCodec_DecodeEncode_Metrics(t *testing.T) {
@@ -1915,15 +1860,15 @@ func TestCodec_DecodeEncode_Metrics(t *testing.T) {
 		},
 		{
 			name:    "shard count header",
-			headers: http.Header{totalShardsControlHeader: []string{"128"}},
+			headers: http.Header{requestoptions.TotalShardsControlHeader: []string{"128"}},
 		},
 		{
 			name:    "shard count disabled via header",
-			headers: http.Header{totalShardsControlHeader: []string{"0"}},
+			headers: http.Header{requestoptions.TotalShardsControlHeader: []string{"0"}},
 		},
 		{
 			name:    "cache disabled via header",
-			headers: http.Header{cacheControlHeader: []string{noStoreValue}},
+			headers: http.Header{requestoptions.CacheControlHeader: []string{requestoptions.NoStoreValue}},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

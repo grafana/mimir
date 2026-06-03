@@ -29,6 +29,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
@@ -45,7 +46,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 	validReqWithShardHeader := func(shardCount int) func() *http.Request {
 		return func() *http.Request {
 			r := validReq()
-			r.Header.Add(totalShardsControlHeader, strconv.Itoa(shardCount))
+			r.Header.Add(requestoptions.TotalShardsControlHeader, strconv.Itoa(shardCount))
 			return r
 		}
 	}
@@ -231,7 +232,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			request: func() *http.Request {
 				r := validReq()
 				r.Header.Add("Accept-Encoding", encodingTypeSnappyFramed)
-				r.Header.Add(totalShardsControlHeader, "2")
+				r.Header.Add(requestoptions.TotalShardsControlHeader, "2")
 				return r
 			},
 			validResponses: [][]labels.Labels{
@@ -254,7 +255,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 				q.Set("selector", "metric")
 				req, _ := http.NewRequest(http.MethodGet, "/active_series", nil)
 				req.URL.RawQuery = q.Encode()
-				req.Header.Add(totalShardsControlHeader, "2")
+				req.Header.Add(requestoptions.TotalShardsControlHeader, "2")
 				return req
 			},
 			validResponses: [][]labels.Labels{

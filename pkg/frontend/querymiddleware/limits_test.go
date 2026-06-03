@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -637,7 +638,7 @@ func TestLimitsMiddleware_MaxQueryLength_InstantQueryWithSubquery(t *testing.T) 
 		t.Run(testName, func(t *testing.T) {
 			queryTime := util.TimeToMillis(now)
 			req := NewPrometheusInstantQueryRequest(
-				"/query", nil, queryTime, 0, parseQuery(t, testData.query), Options{}, nil, "",
+				"/query", nil, queryTime, 0, parseQuery(t, testData.query), requestoptions.Options{}, nil, "",
 			)
 
 			limits := mockLimits{maxTotalQueryLength: testData.maxTotalQueryLength}
@@ -1218,6 +1219,14 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	}
 }
 
+func TestContextWithRequestHints(t *testing.T) {
+	hints := &Hints{TotalQueries: 3}
+	ctx := ContextWithRequestHints(context.Background(), hints)
+	require.Equal(t, hints, RequestHintsFromContext(ctx))
+
+	require.Nil(t, RequestHintsFromContext(context.Background()))
+}
+
 func TestSmallestPositiveNonZeroDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration())
 	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration(0))
@@ -1287,7 +1296,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		api.ReadConsistencyMaxDelayHeader: {time.Minute.String()},
 	}
 
-	requestOptions := Options{
+	requestOptions := requestoptions.Options{
 		TotalShards: 123,
 	}
 
@@ -1470,7 +1479,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			hints := RequestHintsFromContext(contextCapturingStorage.ctx)
 			require.Equal(t, testCase.req.GetHints(), hints)
 
-			options := RequestOptionsFromContext(contextCapturingStorage.ctx)
+			options := requestoptions.OptionsFromContext(contextCapturingStorage.ctx)
 			require.Equal(t, testCase.req.GetOptions(), options)
 		})
 	}
@@ -1509,7 +1518,7 @@ func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) 
 		},
 	}
 
-	req := NewPrometheusInstantQueryRequest("/", nil, util.TimeToMillis(end), lookbackDelta, parseQuery(t, "bar1"), Options{}, nil, "")
+	req := NewPrometheusInstantQueryRequest("/", nil, util.TimeToMillis(end), lookbackDelta, parseQuery(t, "bar1"), requestoptions.Options{}, nil, "")
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {

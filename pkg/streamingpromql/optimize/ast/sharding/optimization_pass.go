@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 type OptimizationPass struct {
@@ -38,7 +39,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.
 		return expr, nil
 	}
 
-	options := querymiddleware.RequestOptionsFromContext(ctx)
+	options := requestoptions.OptionsFromContext(ctx)
 	if options.ShardingDisabled {
 		return expr, nil
 	}

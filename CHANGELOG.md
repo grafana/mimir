@@ -4,12 +4,14 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Query-frontend: `-query-frontend.log-query-request-headers` now rejects headers that carry credentials or session material (e.g. `Authorization`, `Cookie`, `X-Api-Key`) at startup, and any such headers that reach the slow-query/query-stats log paths are redacted as defense in depth. Operators that previously allow-listed such headers must remove them from the flag. #15487
 * [CHANGE] Alertmanager: Upgraded the embedded `prometheus/alertmanager` library to v0.32.0. The per-tenant alertmanager web UI and the `/-/healthy`, `/-/ready`, `/-/reload`, `/script.js`, and `/favicon.ico` endpoints under the alertmanager prefix are no longer served because upstream removed the embeddable UI package. The v2 API endpoints and request/response shapes are unchanged, but a few error message strings from the upstream parser have been reformatted (for example, matcher-validation errors now include `in set N`). #15144
 * [CHANGE] Alertmanager: The `cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total` counter is now best-effort under concurrent alert ingest. The upstream alertmanager v0.32.0 ingests alerts via worker goroutines and the group-limit check is a racy check-then-act, so the configured limit can be exceeded under burst load. #15144
 * [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
 * [FEATURE] Cost attribution: Support multiple named cost attribution trackers per tenant via new `additional_cost_attribution_trackers` config field. #15302
 * [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
+* [FEATURE] MQE: Add experimental support for splitting and caching `present_over_time` over range vectors in instant queries. #15386
 * [ENHANCEMENT] Store-gateway, Ingester: Add read support for XOR2 chunk encoding. XOR2 is a new Prometheus TSDB encoding that provides better compression than XOR, particularly for stale markers. #15371
 * [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15191 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
@@ -25,6 +27,7 @@
 * [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
 * [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
 * [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
+* [BUGFIX] MQE: Fix issue where subqueries unnecessarily compute and then discard an additional step if the parent query is not aligned to the step. #15438
 
 ### Mixin
 
@@ -32,6 +35,7 @@
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
 * [ENHANCEMENT] Alerts: Widen the `MimirBlockBuilderPersistentJobFailure` lookback window to 20m to prevent the alert from flapping. #15332
 * [ENHANCEMENT] Alerts: Add a native histogram variant of the `MimirRequestLatency` alert, distinguished by the `histogram` label (`classic` or `native`). #15413
+* [ENHANCEMENT] Dashboards: Add 100th percentile to query expression percentiles graph. #15421
 * [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 
 ### Jsonnet
@@ -43,9 +47,16 @@
 
 ### Tools
 
+* [FEATURE] Copyblocks: add support for the block upload API as a copy destination. #15330
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 
 ### Query-tee
+
+## 3.1.0-rc.1
+
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.26.3 to address [CVE-2026-42501](https://www.cve.org/CVERecord?id=CVE-2026-42501), [CVE-2026-42499](https://www.cve.org/CVERecord?id=CVE-2026-42499), [CVE-2026-39836](https://www.cve.org/CVERecord?id=CVE-2026-39836), [CVE-2026-39820](https://www.cve.org/CVERecord?id=CVE-2026-39820), [CVE-2026-33814](https://www.cve.org/CVERecord?id=CVE-2026-33814), [CVE-2026-33811](https://www.cve.org/CVERecord?id=CVE-2026-33811), [CVE-2026-39826](https://www.cve.org/CVERecord?id=CVE-2026-39826), [CVE-2026-39823](https://www.cve.org/CVERecord?id=CVE-2026-39823), [CVE-2026-39817](https://www.cve.org/CVERecord?id=CVE-2026-39817), [CVE-2026-39825](https://www.cve.org/CVERecord?id=CVE-2026-39825), [CVE-2026-39819](https://www.cve.org/CVERecord?id=CVE-2026-39819). #15263
 
 ## 3.1.0-rc.0
 
@@ -86,6 +97,7 @@
 * [CHANGE] Alertmanager: `-alertmanager.grafana-alertmanager-idle-grace-period` renamed to `-alertmanager.strict-initialization-idle-grace-period`. #14960
 * [CHANGE] Query-frontend: The per-query memory consumption limit now spans all time-split sub-queries when MQE is enabled rather than applying per split query. #14980
 * [CHANGE] Query-frontend: Rewriting middleware now runs before user-injected middlewares. #15111
+* [FEATURE] Querier: experimental streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}`. Gated by `-querier.experimental-search-api-enabled` (default false). #15233, #15349, #15301, #15347, #15364
 * [FEATURE] Distributor: experimental per-tenant limit `-distributor.ha-tracker.per-sample-dedupe` (per-tenant `ha_tracker_per_sample_dedupe`) to evaluate HA deduplication for each timeseries within a write request rather than making a single decision based on the first series. Enables correct behavior for mixed-label requests (e.g. Prometheus federation, metrics proxies) without affecting standard setups that have uniform HA labels within a single request. Disabled by default. #15064
 * [FEATURE] Distributor: add `-validation.enforce-out-of-order-window-on-distributor` per-tenant option. When enabled and `past_grace_period` is 0, distributors reject samples older than `out_of_order_time_window`, matching ingester behavior, without relying on a small `past_grace_period`. #15090
 * [FEATURE] Runtime config: Support loading configuration from `http://` and `https://` URLs in addition to local files via `-runtime-config.file`. Added `-runtime-config.http-client-timeout` (default `30s`) to control the HTTP fetch timeout. Added `-runtime-config.http-client-cluster-validation.label` (inheritable from `-common.client-cluster-validation.label`) to send the `X-Cluster` validation header when fetching from a cluster-validated HTTP endpoint. #15052 #15244

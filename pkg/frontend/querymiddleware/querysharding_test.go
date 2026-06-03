@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -472,7 +473,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
 		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
-		options: Options{
+		options: requestoptions.Options{
 			ShardingDisabled: true,
 		},
 	}
@@ -527,7 +528,7 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
 		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
-		options: Options{
+		options: requestoptions.Options{
 			TotalShards: 128,
 		},
 	}

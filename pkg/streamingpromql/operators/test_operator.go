@@ -229,7 +229,7 @@ func (t *TestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVect
 
 	t.Floats.Reset()
 	for _, p := range d.Floats {
-		if err := t.Floats.Append(p); err != nil {
+		if _, err := t.Floats.Append(p); err != nil {
 			return nil, err
 		}
 	}
@@ -242,7 +242,7 @@ func (t *TestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVect
 
 	t.Histograms.Reset()
 	for _, p := range d.Histograms {
-		if err := t.Histograms.Append(p); err != nil {
+		if _, err := t.Histograms.Append(p); err != nil {
 			return nil, err
 		}
 	}

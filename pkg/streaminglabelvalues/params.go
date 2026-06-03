@@ -22,16 +22,11 @@ const (
 	FuzzAlgJaroWinkler
 )
 
-// Params is the wire-decoupled input to BuildFilter. Each gRPC server
-// translates its proto SearchFilter into this struct before calling
+// Params is the wire-decoupled input to the search call. Each gRPC
+// server translates its proto request into this struct before invoking
 // BuildFilter, so this package does not depend on any proto.
 //
-// Field names and defaults match Prometheus PR #18573's HTTP URL params so
-// the eventual HTTP layer is a verbatim translation.
-//
-// Use NewParams to construct a Params — it validates every field. Struct
-// literals are permitted (Go allows it) but bypass validation; callers that
-// take that path are responsible for ensuring fields are in range.
+// Use NewParams to construct a validated Params object.
 type Params struct {
 	// Terms are the search terms. An empty slice (or nil) yields a nil filter.
 	// Multiple terms are combined with OR semantics by filterOr.
@@ -47,6 +42,10 @@ type Params struct {
 	// BuildFilter divides by 100 before passing to filter constructors.
 	// Zero accepts any subseq match (Prometheus's default).
 	FuzzThreshold int
+	// IncludeMetadata asks the source (e.g. ingester) to attach metric
+	// MetricMetadata to each result on the wire. Only valid for use on
+	// metric names and for requests sent to the ingesters.
+	IncludeMetadata bool
 }
 
 // NewParams constructs and validates a Params. Returns an error if any
