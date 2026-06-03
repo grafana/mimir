@@ -1631,7 +1631,7 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 			}
 			return nil, errors.Wrap(err, "index header postings offset")
 		}
-		allApplicableValuesPostingsOffsets = []streamindex.PostingListOffset{{matchStr, postingsOffset}}
+		allApplicableValuesPostingsOffsets = []streamindex.PostingListOffset{{LabelValue: matchStr, Off: postingsOffset}}
 	} else {
 		var err error
 		// At this point, we may or may not have an applicable prefix to check. If we do, matchStr will not be empty. If we don't,
