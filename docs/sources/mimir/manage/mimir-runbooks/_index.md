@@ -1518,6 +1518,7 @@ How to **investigate**:
   - Check if it's caused by a **single tenant**:
     - We don't have a metric tracking the active TCP connections or QPS per tenant
     - As a proxy metric, you can check if the ingestion rate has significantly increased for any tenant (it's not a very accurate proxy metric for number of TCP connections so take it with a grain of salt):
+
     ```
     topk(10, sum by(user) (rate(cortex_distributor_samples_in_total{namespace="<namespace>"}[$__rate_interval])))
     ```
