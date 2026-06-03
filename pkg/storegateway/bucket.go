@@ -1586,8 +1586,11 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 // blockLabelValues returns sorted values of the label with requested name,
 // optionally restricting the search to the series that match the matchers provided.
-// - First we fetch all possible values for this label from the index.
-//   - If no matchers were provided, we just return those values.
+// - If no matchers are provided, we fetch all values for this label from the index, and return them.
+// - Otherwise, we check for exact matchers or prefix matchers for the labelName (e.g. foo="bar" or foo="b.*").
+//   - If an exact match is found, we only fetch that label value.
+//   - If a prefix matcher is found, we only fetch the values that match the longest prefix.
+//   - If neither is found, we fetch all values.
 //
 // - Next we load the postings (references to series) for supplied matchers.
 // - Then we load the postings for each label-value fetched in the first step.
@@ -1634,8 +1637,11 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 		allApplicableValuesPostingsOffsets = []streamindex.PostingListOffset{{LabelValue: matchStr, Off: postingsOffset}}
 	} else {
 		var err error
-		// At this point, we may or may not have an applicable prefix to check. If we do, matchStr will not be empty. If we don't,
-		// we'll fetch all label values offsets. We don't bother trying to determine a filter func, because it wouldn't really save us work here.
+		// At this point, we may or may not have an applicable prefix to check. If we do, matchStr will not be empty.
+		// If we don't, we'll fetch all label values offsets.
+		// We don't bother trying to determine a filter func yet, because without a prefix,
+		// we still need to read all label values and check against the filter,
+		// work that may be made redundant if we end up preferring getting label values from series.
 		allApplicableValuesPostingsOffsets, err = b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, matchStr, nil)
 		if err != nil {
 			return nil, errors.Wrap(err, "index header label values")
