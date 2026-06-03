@@ -381,12 +381,12 @@ series count.
 
 ### Store-gateway (`pkg/storegateway/bucket_search_test.go`)
 
-- `BenchmarkBucketStoreSearchLabelValues` — cardinality sweep across the
+- `BenchmarkBucketStore_SearchLabelValues` — cardinality sweep across the
   fixture's low- and high-cardinality labels, with filter (none /
   substring / fuzzy), ordering, and limit varied.
-- `BenchmarkBucketStoreSearchLabelNames` — small matrix; label-name
+- `BenchmarkBucketStore_SearchLabelNames` — small matrix; label-name
   cardinality is constant.
-- `BenchmarkBucketStoreSearchLabelValuesVsLabelValues` — parity benchmark,
+- `BenchmarkBucketStore_SearchLabelValuesVsLabelValues` — parity benchmark,
   same store, no filter, alpha asc, large limit; sub-cases keyed on
   `/impl=legacy` / `/impl=new` for `benchstat -col '/impl'`.
 

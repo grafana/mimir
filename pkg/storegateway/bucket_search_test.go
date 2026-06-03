@@ -357,11 +357,11 @@ func prepareBenchmarkSearchStore(b *testing.B) (store *BucketStore, minTimeMs, m
 	return s.store, s.minTime, s.maxTime
 }
 
-// BenchmarkBucketStoreSearchLabelValues exercises BucketStore.SearchLabelValues
+// BenchmarkBucketStore_SearchLabelValues exercises BucketStore.SearchLabelValues
 // across cardinality buckets matching BenchmarkBucketStoreLabelValues so the
 // numbers line up. Filter and ordering variations cover the per-block search
 // path's fast and slow lanes.
-func BenchmarkBucketStoreSearchLabelValues(b *testing.B) {
+func BenchmarkBucketStore_SearchLabelValues(b *testing.B) {
 	store, minTimeMs, maxTimeMs := prepareBenchmarkSearchStore(b)
 	ctx := context.Background()
 
@@ -422,11 +422,11 @@ func BenchmarkBucketStoreSearchLabelValues(b *testing.B) {
 	})
 }
 
-// BenchmarkBucketStoreSearchLabelNames exercises BucketStore.SearchLabelNames.
+// BenchmarkBucketStore_SearchLabelNames exercises BucketStore.SearchLabelNames.
 // The number of label names visible at the block index is small (one per
 // label_n plus high_cardinality_* prefixed variants), so result-set size is
 // dominated by name-count, not by per-value scan.
-func BenchmarkBucketStoreSearchLabelNames(b *testing.B) {
+func BenchmarkBucketStore_SearchLabelNames(b *testing.B) {
 	store, minTimeMs, maxTimeMs := prepareBenchmarkSearchStore(b)
 	ctx := context.Background()
 
@@ -468,12 +468,12 @@ func BenchmarkBucketStoreSearchLabelNames(b *testing.B) {
 	})
 }
 
-// BenchmarkBucketStoreSearchLabelValuesVsLabelValues compares the new
+// BenchmarkBucketStore_SearchLabelValuesVsLabelValues compares the new
 // streaming SearchLabelValues RPC to the legacy unary LabelValues on the
 // same store with the same matchers, no filter, alpha-asc ordering, and a
 // non-binding limit. Sub-case names are keyed on /impl=legacy and /impl=new
 // so benchstat -col '/impl' renders the comparison directly.
-func BenchmarkBucketStoreSearchLabelValuesVsLabelValues(b *testing.B) {
+func BenchmarkBucketStore_SearchLabelValuesVsLabelValues(b *testing.B) {
 	store, minTimeMs, maxTimeMs := prepareBenchmarkSearchStore(b)
 	ctx := context.Background()
 

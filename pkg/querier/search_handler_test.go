@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -1283,53 +1282,5 @@ func BenchmarkSearchMetricNamesHandler_MetadataEncoding(b *testing.B) {
 				}
 			})
 		}
-	}
-}
-
-// BenchmarkSearchLabelNamesHandler_OverHTTP runs a single sub-case through
-// a real httptest.NewServer + http.Client so chunked-encoding cost shows up
-// honestly. Gated by testing.Short(): the in-memory Encoding benchmark above
-// covers the encoding cost without paying the network round-trip tax.
-func BenchmarkSearchLabelNamesHandler_OverHTTP(b *testing.B) {
-	if testing.Short() {
-		b.Skip("skipping HTTP-server benchmark in -short mode")
-	}
-	const results = 1000
-	fixture := newBenchmarkSearchResults(results, false)
-	mq := &searchMockQuerier{
-		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-			return storage.NewSearchResultSetFromSlice(fixture, nil)
-		},
-	}
-	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
-	// Inject the tenant org ID server-side so the client request only needs
-	// to issue a plain HTTP GET, matching what production auth middleware
-	// would do upstream of the handler.
-	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.ServeHTTP(w, r.WithContext(user.InjectOrgID(r.Context(), "test")))
-	})
-	srv := httptest.NewServer(wrapped)
-	defer srv.Close()
-
-	url := srv.URL + fmt.Sprintf("/api/v1/search/label_names?limit=%d", results)
-	client := srv.Client()
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		resp, err := client.Get(url)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			b.Fatalf("unexpected status %d", resp.StatusCode)
-		}
-		// Drain to EOF so the server-side chunked write finishes before the
-		// next request; otherwise the keep-alive connection stalls.
-		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-			b.Fatal(err)
-		}
-		resp.Body.Close()
 	}
 }
