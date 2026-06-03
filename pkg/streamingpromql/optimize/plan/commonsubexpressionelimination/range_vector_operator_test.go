@@ -254,7 +254,7 @@ func testReadConsumerToEnd(t *testing.T, numSeries int, consumer *RangeVectorDup
 	var out []*types.RangeVectorStepData
 	for range numSeries {
 		err := consumer.NextSeries(context.Background())
-		if err == types.EOS {
+		if errors.Is(err, types.EOS) {
 			break
 		}
 
@@ -262,7 +262,7 @@ func testReadConsumerToEnd(t *testing.T, numSeries int, consumer *RangeVectorDup
 
 		for {
 			d, err := consumer.NextStepSamples(context.Background())
-			if err == types.EOS {
+			if errors.Is(err, types.EOS) {
 				break
 			}
 

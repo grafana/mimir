@@ -589,7 +589,7 @@ func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStep
 }
 
 // mergeStepData adds all unique points from stepData to the shared floats and histograms buffers.
-// The dedicated buffers bufferedRangeVectorStepData will be nil since the shared buffers are used.
+// The dedicated buffers in bufferedRangeVectorStepData will be nil since the shared buffers are used.
 func (b *RangeVectorDuplicationBuffer) mergeStepData(stepData *types.RangeVectorStepData, seriesIndex int) (bufferedRangeVectorStepData, error) {
 	if stepData.Anchored || stepData.Smoothed {
 		return bufferedRangeVectorStepData{}, fmt.Errorf("cannot use shared FPoint and HPoint buffers with anchored/smoothed modifiers (this is a bug)")
