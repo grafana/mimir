@@ -601,53 +601,45 @@ func TestBlockLabelValues(t *testing.T) {
 		require.Empty(t, values)
 	})
 
-	t.Run("happy case cached with matchers", func(t *testing.T) {
+	t.Run("happy case cached with exact matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
-		postingsOffsetCallsCount := make(map[labels.Label]int)
-		b.indexHeaderReader = &interceptedIndexReader{
-			Reader: b.indexHeaderReader,
-			onPostingsOffsetCalled: func(name, value string) error {
-				postingsOffsetCallsCount[labels.Label{Name: name, Value: value}]++
-				return nil
-			},
-		}
-
 		b.indexCache = newInMemoryIndexCache(t)
+		originalIndexHeaderReader := b.indexHeaderReader
 
 		testLabelsWithMatchers := []struct {
 			name           string
-			matchers       []*labels.Matcher
+			matcher        *labels.Matcher
 			expectedValues []string
 		}{
-			{"j", []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}, []string{"foo"}},
-			{"j", []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "q", "foo")}, []string{"bar"}},
-			{"j", []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "j", "foo")}, []string{"foo"}},
-			{"j", []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "j", "nonexistent_value")}, nil},
+			{"j", labels.MustNewMatcher(labels.MatchEqual, "p", "foo"), []string{"foo"}},
+			{"j", labels.MustNewMatcher(labels.MatchEqual, "q", "foo"), []string{"bar"}},
+			{"j", labels.MustNewMatcher(labels.MatchEqual, "j", "foo"), []string{"foo"}},
+			{"j", labels.MustNewMatcher(labels.MatchEqual, "j", "nonexistent_value"), nil},
 		}
 
 		for _, testLabel := range testLabelsWithMatchers {
-			values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, testLabel.name, testLabel.matchers, log.NewNopLogger(), newSafeQueryStats())
-			require.NoError(t, err)
-			if testLabel.expectedValues == nil {
-				require.Empty(t, values)
-			} else {
-				require.Equal(t, testLabel.expectedValues, values, fmt.Sprintf("unexpected values for label %s and matchers %+v", testLabel.name, testLabel.matchers))
-			}
+			t.Run(fmt.Sprintf("%+v", testLabel.matcher), func(t *testing.T) {
+				// Make sure we start with an unbroken index header reader on every subtest
+				b.indexHeaderReader = originalIndexHeaderReader
+				values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, testLabel.name, []*labels.Matcher{testLabel.matcher}, log.NewNopLogger(), newSafeQueryStats())
+				require.NoError(t, err)
+				if testLabel.expectedValues == nil {
+					require.Empty(t, values)
+				} else {
+					require.Equal(t, testLabel.expectedValues, values, fmt.Sprintf("unexpected values for label %s and matchers %+v", testLabel.name, testLabel.matcher))
+				}
+
+				// we break the indexHeaderReader to ensure that results come from a cache on a second call
+				b.indexHeaderReader = deadlineExceededIndexHeader()
+				values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, testLabel.name, []*labels.Matcher{testLabel.matcher}, log.NewNopLogger(), newSafeQueryStats())
+				require.NoError(t, err)
+				if testLabel.expectedValues == nil {
+					require.Empty(t, values)
+				} else {
+					require.Equal(t, testLabel.expectedValues, values, fmt.Sprintf("unexpected values for label %s and matchers %+v", testLabel.name, testLabel.matcher))
+				}
+			})
 		}
-
-		// we break the indexHeaderReader to ensure that results come from a cache
-		b.indexHeaderReader = deadlineExceededIndexHeader()
-
-		for _, testLabel := range testLabelsWithMatchers {
-			values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, testLabel.name, testLabel.matchers, log.NewNopLogger(), newSafeQueryStats())
-			require.NoError(t, err)
-			if testLabel.expectedValues == nil {
-				require.Empty(t, values)
-			} else {
-				require.Equal(t, testLabel.expectedValues, values, fmt.Sprintf("unexpected values for label %s and matchers %+v", testLabel.name, testLabel.matchers))
-			}
-		}
-
 	})
 
 	t.Run("happy case cached with weak matchers", func(t *testing.T) {
