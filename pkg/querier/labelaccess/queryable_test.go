@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -209,6 +210,133 @@ func TestLabelAccessChunkQuerier_Select(t *testing.T) {
 		ss := q.Select(ctx, false, nil)
 		require.Nil(t, ss, "the Select call should be delegated to the upstream querier")
 	})
+}
+
+func TestLabelAccessChunkSeriesSet_NextConsumesSkippedSeriesBeforeAllowed(t *testing.T) {
+	selector := promSelector{labels.MustNewMatcher(labels.MatchEqual, "access", "allowed")}
+
+	for _, tc := range []struct {
+		name    string
+		iterate func(storage.ChunkSeries, chunks.Iterator) chunks.Iterator
+	}{
+		{
+			name: "direct iterator",
+			iterate: func(s storage.ChunkSeries, it chunks.Iterator) chunks.Iterator {
+				return s.Iterator(it)
+			},
+		},
+		{
+			name: "iterator factory",
+			iterate: func(s storage.ChunkSeries, it chunks.Iterator) chunks.Iterator {
+				return s.IteratorFactory().Iterator(it)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var iterated []string
+			seriesSet := &labelAccessChunkSeriesSet{
+				selectors: []promSelector{selector},
+				upstream: &testChunkSeriesSet{
+					series: []storage.ChunkSeries{
+						testChunkSeries{name: "denied-1", lbls: labels.FromStrings("access", "denied"), iterated: &iterated},
+						testChunkSeries{name: "allowed-1", lbls: labels.FromStrings("access", "allowed"), iterated: &iterated},
+						testChunkSeries{name: "denied-2", lbls: labels.FromStrings("access", "denied"), iterated: &iterated},
+						testChunkSeries{name: "allowed-2", lbls: labels.FromStrings("access", "allowed"), iterated: &iterated},
+					},
+				},
+				logger: log.NewNopLogger(),
+			}
+
+			require.True(t, seriesSet.Next())
+			assert.Equal(t, labels.FromStrings("access", "allowed"), seriesSet.At().Labels())
+			assert.Empty(t, iterated)
+
+			var it chunks.Iterator
+			it = tc.iterate(seriesSet.At(), it)
+			require.NotNil(t, it)
+			assert.Equal(t, []string{"denied-1", "allowed-1"}, iterated)
+
+			require.True(t, seriesSet.Next())
+			assert.Equal(t, labels.FromStrings("access", "allowed"), seriesSet.At().Labels())
+			it = tc.iterate(seriesSet.At(), it)
+			require.NotNil(t, it)
+			assert.Equal(t, []string{"denied-1", "allowed-1", "denied-2", "allowed-2"}, iterated)
+
+			assert.False(t, seriesSet.Next())
+			require.NoError(t, seriesSet.Err())
+		})
+	}
+}
+
+type testChunkSeriesSet struct {
+	series []storage.ChunkSeries
+	pos    int
+}
+
+func (s *testChunkSeriesSet) Next() bool {
+	if s.pos >= len(s.series) {
+		return false
+	}
+
+	s.pos++
+	return true
+}
+
+func (s *testChunkSeriesSet) At() storage.ChunkSeries {
+	if s.pos == 0 || s.pos > len(s.series) {
+		return nil
+	}
+
+	return s.series[s.pos-1]
+}
+
+func (s *testChunkSeriesSet) Err() error {
+	return nil
+}
+
+func (s *testChunkSeriesSet) Warnings() annotations.Annotations {
+	return nil
+}
+
+type testChunkSeries struct {
+	name     string
+	lbls     labels.Labels
+	iterated *[]string
+}
+
+func (s testChunkSeries) Labels() labels.Labels {
+	return s.lbls
+}
+
+func (s testChunkSeries) Iterator(iterator chunks.Iterator) chunks.Iterator {
+	*s.iterated = append(*s.iterated, s.name)
+	if iterator != nil {
+		return iterator
+	}
+
+	return storage.NewListChunkSeriesIterator()
+}
+
+func (s testChunkSeries) IteratorFactory() storage.ChunkIterable {
+	return testChunkIterable{name: s.name, iterated: s.iterated}
+}
+
+func (s testChunkSeries) ChunkCount() (int, error) {
+	return 1, nil
+}
+
+type testChunkIterable struct {
+	name     string
+	iterated *[]string
+}
+
+func (s testChunkIterable) Iterator(iterator chunks.Iterator) chunks.Iterator {
+	*s.iterated = append(*s.iterated, s.name)
+	if iterator != nil {
+		return iterator
+	}
+
+	return storage.NewListChunkSeriesIterator()
 }
 
 func TestPromSelector_Matches(t *testing.T) {

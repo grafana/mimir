@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
@@ -456,14 +457,25 @@ type labelAccessChunkSeriesSet struct {
 // TODO: Add metrics for this feature
 // TODO: Low hanging fruit to optimize this feature to pre-process/buffer upcoming series that match a series selector
 func (l *labelAccessChunkSeriesSet) Next() bool {
+	var seriesToSkip []storage.ChunkSeries
+
 	for l.upstream.Next() {
 
 		l.curSeries = l.upstream.At()
 		for _, s := range l.selectors {
 			if s.matches(l.curSeries.Labels()) {
+				if len(seriesToSkip) > 0 {
+					l.curSeries = &skipPreviousChunkSeries{
+						seriesToSkip: seriesToSkip,
+						inner:        l.curSeries,
+					}
+				}
+
 				return true
 			}
 		}
+
+		seriesToSkip = append(seriesToSkip, l.curSeries)
 	}
 	l.curSeries = nil
 	return false
@@ -482,4 +494,50 @@ func (l *labelAccessChunkSeriesSet) Err() error {
 // Warnings returns any warning from the upstream series set
 func (l *labelAccessChunkSeriesSet) Warnings() annotations.Annotations {
 	return l.upstream.Warnings()
+}
+
+type skipPreviousChunkSeries struct {
+	seriesToSkip []storage.ChunkSeries
+	inner        storage.ChunkSeries
+}
+
+func (s *skipPreviousChunkSeries) Labels() labels.Labels {
+	return s.inner.Labels()
+}
+
+func (s *skipPreviousChunkSeries) Iterator(iterator chunks.Iterator) chunks.Iterator {
+	for _, series := range s.seriesToSkip {
+		iterator = series.Iterator(iterator)
+	}
+
+	return s.inner.Iterator(iterator)
+}
+
+func (s *skipPreviousChunkSeries) IteratorFactory() storage.ChunkIterable {
+	seriesToSkip := make([]storage.ChunkIterable, 0, len(s.seriesToSkip))
+	for _, series := range s.seriesToSkip {
+		seriesToSkip = append(seriesToSkip, series.IteratorFactory())
+	}
+
+	return &skipPreviousChunkIterable{
+		seriesToSkip: seriesToSkip,
+		inner:        s.inner.IteratorFactory(),
+	}
+}
+
+func (s *skipPreviousChunkSeries) ChunkCount() (int, error) {
+	return s.inner.ChunkCount()
+}
+
+type skipPreviousChunkIterable struct {
+	seriesToSkip []storage.ChunkIterable
+	inner        storage.ChunkIterable
+}
+
+func (s *skipPreviousChunkIterable) Iterator(iterator chunks.Iterator) chunks.Iterator {
+	for _, series := range s.seriesToSkip {
+		iterator = series.Iterator(iterator)
+	}
+
+	return s.inner.Iterator(iterator)
 }
