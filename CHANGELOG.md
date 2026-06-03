@@ -354,6 +354,7 @@
 * [BUGFIX] MQE: Fix `info()` function only retaining one matcher when multiple data label matchers target the same label name. #14832
 * [BUGFIX] MQE: Fix `info()` function silently overwriting conflicting labels from different info metrics instead of returning an error. #14832
 * [BUGFIX] MQE: Fix `info()` function incorrectly grouping labels from replaced info series at the same evaluation timestamp due to lookback. #14832
+* [BUGFIX] MQE: Fix `info()` function incorrectly handling negated name matchers. #15168
 
 ### Mixin
 
