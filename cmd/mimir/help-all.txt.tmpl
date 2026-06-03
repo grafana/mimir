@@ -1694,11 +1694,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
   -ingester.label-values-count-chunk-size int
-    	[experimental] Number of label values processed per work unit submitted to the worker pool. (default 32)
-  -ingester.label-values-count-max-concurrency int
-    	[deprecated] No longer has any effect. Use -ingester.label-values-count-workers and -ingester.label-values-count-chunk-size instead. (default 16)
-  -ingester.label-values-count-workers int
-    	[experimental] Number of worker goroutines used to compute label-values-count requests across all tenants. 0 uses GOMAXPROCS.
+    	[experimental] Number of label values processed per work unit submitted to the ingester query worker pool. (default 32)
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
@@ -1821,6 +1817,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Minimum duration of the window that is used to collect recent response time samples (default 1s)
   -ingester.push-reactive-limiter.recent-window-min-samples uint
     	[experimental] Minimum number of samples that must be recorded in the recent window before updating the limit (default 50)
+  -ingester.query-workers int
+    	[experimental] Number of worker goroutines in the ingester's shared tenant-fair query worker pool, used to parallelize read-path work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.read-circuit-breaker.cooldown-period duration

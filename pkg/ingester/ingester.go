@@ -21,7 +21,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -64,12 +63,6 @@ const (
 	// Discarded Metadata metric labels.
 	perUserMetadataLimit   = "per_user_metadata_limit"
 	perMetricMetadataLimit = "per_metric_metadata_limit"
-
-	// deprecatedLabelValuesCountMaxConcurrencyDefault is the historical default
-	// of -ingester.label-values-count-max-concurrency. It is referenced in two
-	// places — flag registration and the deprecation-warning comparison — so it
-	// lives here to keep them in sync.
-	deprecatedLabelValuesCountMaxConcurrencyDefault = 16
 
 	// Period at which to attempt purging metadata from memory.
 	metadataPurgePeriod = 5 * time.Minute
@@ -194,13 +187,14 @@ type Config struct {
 	PushReactiveLimiter  reactivelimiter.Config            `yaml:"push_reactive_limiter"`
 	ReadReactiveLimiter  reactivelimiter.Config            `yaml:"read_reactive_limiter"`
 
-	LabelValuesCount LabelValuesCountConfig `yaml:"label_values_count"`
+	// QueryWorkers sets the size of the ingester's shared tenant-fair query
+	// worker pool used to parallelize read-path work across tenants. It is
+	// intentionally not scoped to a single endpoint: label-values-cardinality
+	// is the only consumer today, but other query types are expected to submit
+	// to the same pool rather than each spawning its own GOMAXPROCS workers.
+	QueryWorkers int `yaml:"query_workers" category:"experimental"`
 
-	// LabelValuesCountRequestMaxConcurrency is deprecated and has no effect.
-	// It is kept registered so existing deployments do not fail to start with
-	// "flag provided but not defined". Use -ingester.label-values-count-workers
-	// instead. See about-versioning.md.
-	LabelValuesCountRequestMaxConcurrency int `yaml:"label_values_count_request_max_concurrency" category:"deprecated"`
+	LabelValuesCount LabelValuesCountConfig `yaml:"label_values_count"`
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
@@ -233,13 +227,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
+	f.IntVar(&cfg.QueryWorkers, "ingester.query-workers", 0, "Number of worker goroutines in the ingester's shared tenant-fair query worker pool, used to parallelize read-path work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.")
 	cfg.LabelValuesCount.RegisterFlags(f)
-	// Deprecated: superseded by -ingester.label-values-count-workers (a shared
-	// tenant-fair worker pool) and -ingester.label-values-count-chunk-size.
-	// Kept registered so existing deployments do not fail to start; the value
-	// is ignored. A deprecation warning is logged at startup if set to a
-	// non-default value.
-	f.IntVar(&cfg.LabelValuesCountRequestMaxConcurrency, "ingester.label-values-count-max-concurrency", deprecatedLabelValuesCountMaxConcurrencyDefault, "No longer has any effect. Use -ingester.label-values-count-workers and -ingester.label-values-count-chunk-size instead.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
 	// Hardcoded config (can only be overridden in tests).
@@ -254,6 +243,10 @@ func (cfg *Config) Validate(log.Logger) error {
 	// Tokenless mode requires gRPC push to be disabled.
 	if cfg.IngesterRing.NumTokens == 0 && cfg.PushGrpcMethodEnabled {
 		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
+	}
+
+	if cfg.QueryWorkers < 0 {
+		return fmt.Errorf("-ingester.query-workers must be >= 0")
 	}
 
 	if err := cfg.LabelValuesCount.Validate(); err != nil {
@@ -312,7 +305,7 @@ type Ingester struct {
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
 	statisticsService     services.Service
-	labelValuesCountPool  *workerpool.Pool
+	queryWorkerPool       *workerpool.Pool
 
 	// Index lookup planning
 	lookupPlanMetrics lookupplan.Metrics
@@ -636,23 +629,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}
 	}
 
-	// Warn about the deprecated -ingester.label-values-count-max-concurrency
-	// flag. We compare against the historical default rather than 0 so users
-	// who explicitly set the default in config don't see noise.
-	if cfg.LabelValuesCountRequestMaxConcurrency != deprecatedLabelValuesCountMaxConcurrencyDefault {
-		level.Warn(logger).Log("msg", "the -ingester.label-values-count-max-concurrency flag is deprecated and has no effect; use -ingester.label-values-count-workers and -ingester.label-values-count-chunk-size instead")
-		// Surface usage in the standard deprecated_flags_inuse_total metric so
-		// fleet-wide deprecated-flag dashboards and alerts pick it up. We can't
-		// use flagext.DeprecatedFlag for registration because the value is also
-		// settable via YAML config, which that helper doesn't observe.
-		flagext.DeprecatedFlagsUsed.Inc()
-	}
-
-	i.labelValuesCountPool, err = workerpool.New(cfg.LabelValuesCount.workerpoolConfig(), "ingester-label-values-count", registerer, logger)
+	i.queryWorkerPool, err = workerpool.New(workerpool.Config{Size: cfg.QueryWorkers}, "ingester-query", registerer, logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating label values count worker pool")
+		return nil, errors.Wrap(err, "creating ingester query worker pool")
 	}
-	i.subservicesWatcher.WatchService(i.labelValuesCountPool)
+	i.subservicesWatcher.WatchService(i.queryWorkerPool)
 
 	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping).WithName("ingester")
 	return i, nil
@@ -761,7 +742,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	// Finally we start all services that should run after the ingester ring lifecycler.
 	var servs []services.Service
 
-	servs = append(servs, i.labelValuesCountPool)
+	servs = append(servs, i.queryWorkerPool)
 
 	if i.shippingService != nil {
 		servs = append(servs, i.shippingService)

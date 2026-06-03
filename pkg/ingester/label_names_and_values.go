@@ -20,37 +20,27 @@ const (
 	checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
 )
 
-// LabelValuesCountConfig configures the shared worker pool used to compute
-// label-values-cardinality responses on the ingester. The pool fairly
-// dispatches work across tenants so that a single tenant's large request
-// cannot starve other tenants' requests.
+// LabelValuesCountConfig configures how label-values-cardinality responses are
+// computed on the ingester. The work itself is dispatched to the ingester's
+// shared tenant-fair query worker pool (see Config.QueryWorkers); this config
+// only carries the label-values-specific knobs.
 type LabelValuesCountConfig struct {
-	Workers   int `yaml:"workers" category:"experimental"`
 	ChunkSize int `yaml:"chunk_size" category:"experimental"`
 }
 
 // RegisterFlags registers config flags.
 func (cfg *LabelValuesCountConfig) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.Workers, "ingester.label-values-count-workers", 0, "Number of worker goroutines used to compute label-values-count requests across all tenants. 0 uses GOMAXPROCS.")
-	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the worker pool.")
+	// 32 is a gut-feel default (not benchmarked): big enough to amortize
+	// per-task dispatch overhead, small enough to stay fair across tenants.
+	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the ingester query worker pool.")
 }
 
 // Validate returns an error if the config is invalid.
 func (cfg *LabelValuesCountConfig) Validate() error {
-	if cfg.Workers < 0 {
-		return errors.New("-ingester.label-values-count-workers must be >= 0")
-	}
 	if cfg.ChunkSize < 1 {
 		return errors.New("-ingester.label-values-count-chunk-size must be >= 1")
 	}
 	return nil
-}
-
-// workerpoolConfig translates the user-facing config into a workerpool.Config.
-func (cfg *LabelValuesCountConfig) workerpoolConfig() workerpool.Config {
-	return workerpool.Config{
-		Size: cfg.Workers,
-	}
 }
 
 type labelValueCountResult struct {
