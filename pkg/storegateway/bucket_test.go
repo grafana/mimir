@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -60,7 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/fixtures"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
-	"github.com/grafana/mimir/pkg/storage/indexheader/index"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -527,7 +528,15 @@ func TestBlockLabelValues(t *testing.T) {
 	})
 
 	t.Run("happy case cached with no matchers", func(t *testing.T) {
-		expectedCalls := 1
+		testLabels := []struct {
+			name           string
+			expectedValues []string
+		}{
+			{"j", []string{"bar", "foo"}},
+			{"nonexistent_label", []string(nil)},
+		}
+
+		expectedCalls := len(testLabels)
 		b := newTestBucketBlock()
 		b.indexHeaderReader = &interceptedIndexReader{
 			Reader: b.indexHeaderReader,
@@ -541,14 +550,18 @@ func TestBlockLabelValues(t *testing.T) {
 		}
 		b.indexCache = newInMemoryIndexCache(t)
 
-		names, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, []string{"bar", "foo"}, names)
+		for _, label := range testLabels {
+			for i := 0; i < 2; i++ {
+				values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, label.name, nil, log.NewNopLogger(), newSafeQueryStats())
+				require.NoError(t, err)
+				if label.expectedValues == nil {
+					require.Empty(t, values)
+				} else {
+					require.Equal(t, label.expectedValues, values)
+				}
+			}
+		}
 
-		// hit the cache now
-		names, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", nil, log.NewNopLogger(), newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, []string{"bar", "foo"}, names)
 	})
 
 	t.Run("error with matchers", func(t *testing.T) {
@@ -566,29 +579,75 @@ func TestBlockLabelValues(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("happy case cached with matchers", func(t *testing.T) {
+	t.Run("empty value equal matcher is not treated as an exact match", func(t *testing.T) {
 		b := newTestBucketBlock()
+		// We should never call PostingsOffset on j=""
+		forbiddenPostingsOffsetCall := labels.Label{Name: "j", Value: ""}
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onPostingsOffsetCalled: func(name, value string) error {
+				if name == forbiddenPostingsOffsetCall.Name && value == forbiddenPostingsOffsetCall.Value {
+					return fmt.Errorf("should not execute index.Reader.PostingsOffset() call for empty string value")
+				}
+				return nil
+			},
+		}
 		b.indexCache = newInMemoryIndexCache(t)
 
-		pFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}
-		values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
+		// All series in the testBlock have j set, so none should match j="".
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "j", "")}
+		values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
-		require.Equal(t, []string{"foo"}, values)
+		require.Empty(t, values)
+	})
 
-		qFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "q", "foo")}
-		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, []string{"bar"}, values)
+	t.Run("happy case cached with matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+		postingsOffsetCallsCount := make(map[labels.Label]int)
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onPostingsOffsetCalled: func(name, value string) error {
+				postingsOffsetCallsCount[labels.Label{Name: name, Value: value}]++
+				return nil
+			},
+		}
+
+		b.indexCache = newInMemoryIndexCache(t)
+
+		testLabelsWithMatchers := []struct {
+			name           string
+			matchers       []*labels.Matcher
+			expectedValues []string
+		}{
+			{"j", []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}, []string{"foo"}},
+			{"j", []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "q", "foo")}, []string{"bar"}},
+			{"j", []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "j", "foo")}, []string{"foo"}},
+			{"j", []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "j", "nonexistent_value")}, nil},
+		}
+
+		for _, testLabel := range testLabelsWithMatchers {
+			values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, testLabel.name, testLabel.matchers, log.NewNopLogger(), newSafeQueryStats())
+			require.NoError(t, err)
+			if testLabel.expectedValues == nil {
+				require.Empty(t, values)
+			} else {
+				require.Equal(t, testLabel.expectedValues, values, fmt.Sprintf("unexpected values for label %s and matchers %+v", testLabel.name, testLabel.matchers))
+			}
+		}
 
 		// we break the indexHeaderReader to ensure that results come from a cache
 		b.indexHeaderReader = deadlineExceededIndexHeader()
 
-		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, []string{"foo"}, values)
-		values, err = blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
-		require.NoError(t, err)
-		require.Equal(t, []string{"bar"}, values)
+		for _, testLabel := range testLabelsWithMatchers {
+			values, err := blockLabelValues(context.Background(), b, selectAllStrategy{}, 5000, testLabel.name, testLabel.matchers, log.NewNopLogger(), newSafeQueryStats())
+			require.NoError(t, err)
+			if testLabel.expectedValues == nil {
+				require.Empty(t, values)
+			} else {
+				require.Equal(t, testLabel.expectedValues, values, fmt.Sprintf("unexpected values for label %s and matchers %+v", testLabel.name, testLabel.matchers))
+			}
+		}
+
 	})
 
 	t.Run("happy case cached with weak matchers", func(t *testing.T) {
@@ -598,6 +657,7 @@ func TestBlockLabelValues(t *testing.T) {
 		matchers := []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, "p", "foo"),
 			labels.MustNewMatcher(labels.MatchRegexp, "i", "1234.+"),
+			labels.MustNewMatcher(labels.MatchRegexp, "j", "f.*"),
 			labels.MustNewMatcher(labels.MatchRegexp, "j", ".+"), // this is too weak and doesn't bring much value, it should be shortcut
 		}
 		values, err := blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
@@ -1058,6 +1118,7 @@ type interceptedIndexReader struct {
 	onLabelValuesCalled        func(name string) error
 	onLabelValuesOffsetsCalled func(name string) error
 	onIndexVersionCalled       func() error
+	onPostingsOffsetCalled     func(name, value string) error
 }
 
 func (iir *interceptedIndexReader) LabelNames(ctx context.Context) ([]string, error) {
@@ -1069,7 +1130,7 @@ func (iir *interceptedIndexReader) LabelNames(ctx context.Context) ([]string, er
 	return iir.Reader.LabelNames(ctx)
 }
 
-func (iir *interceptedIndexReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
+func (iir *interceptedIndexReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
 	if iir.onLabelValuesOffsetsCalled != nil {
 		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
 			return nil, err
@@ -1085,6 +1146,15 @@ func (iir *interceptedIndexReader) IndexVersion(ctx context.Context) (int, error
 		}
 	}
 	return iir.Reader.IndexVersion(ctx)
+}
+
+func (iir *interceptedIndexReader) PostingsOffset(ctx context.Context, name string, value string) (index.Range, error) {
+	if iir.onPostingsOffsetCalled != nil {
+		if err := iir.onPostingsOffsetCalled(name, value); err != nil {
+			return index.Range{}, err
+		}
+	}
+	return iir.Reader.PostingsOffset(ctx, name, value)
 }
 
 func deadlineExceededIndexHeader() *interceptedIndexReader {

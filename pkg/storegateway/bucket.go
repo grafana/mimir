@@ -1618,16 +1618,22 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	matchStr, isExactMatch := exactMatchOrPrefixForLabelName(labelName, matchers)
 
 	var allApplicableValuesPostingsOffsets []streamindex.PostingListOffset
-	var err error
 
 	if isExactMatch {
 		// Our matchStr is an exact match for a label value, just fetch that one.
 		postingsOffset, err := b.indexHeaderReader.PostingsOffset(ctx, labelName, matchStr)
 		if err != nil {
+			if errors.Is(err, indexheader.NotFoundRangeErr) {
+				// If the label value isn't found in this block, we know the result will be empty,
+				// so we can just cache it now and return early.
+				storeCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, nil, logger)
+				return nil, nil
+			}
 			return nil, errors.Wrap(err, "index header postings offset")
 		}
 		allApplicableValuesPostingsOffsets = []streamindex.PostingListOffset{{matchStr, postingsOffset}}
 	} else {
+		var err error
 		// At this point, we may or may not have an applicable prefix to check. If we do, matchStr will not be empty. If we don't,
 		// we'll fetch all label values offsets. We don't bother trying to determine a filter func, because it wouldn't really save us work here.
 		allApplicableValuesPostingsOffsets, err = b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, matchStr, nil)
@@ -1666,7 +1672,9 @@ func exactMatchOrPrefixForLabelName(labelName string, matchers []*labels.Matcher
 		if m.Name == labelName {
 			switch m.Type {
 			case labels.MatchEqual:
-				return m.Value, true
+				if m.Value != "" {
+					return m.Value, true
+				}
 			case labels.MatchRegexp:
 				if len(m.Prefix()) > len(matchString) {
 					matchString = m.Prefix()
