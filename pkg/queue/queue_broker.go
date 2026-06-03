@@ -78,45 +78,45 @@ func (qb *queueBroker) itemCount() int {
 	return qb.tree.ItemCount()
 }
 
-// enqueueItemBack is the standard interface to enqueue requests for dispatch to queriers.
+// enqueueItemBack is the standard interface to enqueue items for dispatch to queriers.
 //
 // Tenants and tenant-querier shuffle sharding relationships are managed internally as needed.
-func (qb *queueBroker) enqueueItemBack(request *tenantItem, tenantMaxQueriers int) error {
-	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
+func (qb *queueBroker) enqueueItemBack(item *tenantItem, tenantMaxQueriers int) error {
+	err := qb.tenantQuerierAssignments.createOrUpdateTenant(item.tenantID, tenantMaxQueriers)
 	if err != nil {
 		return err
 	}
 
-	tenantQueueSize := qb.tenantQuerierAssignments.queuingAlgorithm.TotalQueueSizeForTenant(request.tenantID)
+	tenantQueueSize := qb.tenantQuerierAssignments.queuingAlgorithm.TotalQueueSizeForTenant(item.tenantID)
 	if tenantQueueSize+1 > qb.maxTenantQueueSize {
 		return ErrTooManyRequests
 	}
 
-	return qb.tree.EnqueueBackByPath(qb.queuePath(request), request)
+	return qb.tree.EnqueueBackByPath(qb.queuePath(item), item)
 }
 
-// enqueueItemFront should only be used for re-enqueueing previously dequeued requests
+// enqueueItemFront should only be used for re-enqueueing previously dequeued items
 // to the front of the queue when there was a failure in dispatching to a querier.
 //
 // max tenant queue size checks are skipped even though queue size violations
-// are not expected to occur when re-enqueuing a previously dequeued request.
-func (qb *queueBroker) enqueueItemFront(request *tenantItem, tenantMaxQueriers int) error {
-	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
+// are not expected to occur when re-enqueuing a previously dequeued item.
+func (qb *queueBroker) enqueueItemFront(item *tenantItem, tenantMaxQueriers int) error {
+	err := qb.tenantQuerierAssignments.createOrUpdateTenant(item.tenantID, tenantMaxQueriers)
 	if err != nil {
 		return err
 	}
-	return qb.tree.EnqueueFrontByPath(qb.queuePath(request), request)
+	return qb.tree.EnqueueFrontByPath(qb.queuePath(item), item)
 }
 
 // queuePath returns the two-level queue path for an enqueued tenantItem:
 // the first-layer queue dimension (typically a query component name)
 // supplied by the caller, followed by the tenantID.
-func (qb *queueBroker) queuePath(request *tenantItem) tree.QueuePath {
-	dim := request.queueDimension
+func (qb *queueBroker) queuePath(item *tenantItem) tree.QueuePath {
+	dim := item.queueDimension
 	if dim == "" {
 		dim = UnknownDimension
 	}
-	return tree.QueuePath{dim, request.tenantID}
+	return tree.QueuePath{dim, item.tenantID}
 }
 
 func (qb *queueBroker) dequeueItemForQuerier(
@@ -151,8 +151,8 @@ func (qb *queueBroker) dequeueItemForQuerier(
 	}
 
 	// re-casting to same type it was enqueued as; panic would indicate a bug
-	request := queueElement.(*tenantItem)
-	tenantID := request.tenantID
+	item := queueElement.(*tenantItem)
+	tenantID := item.tenantID
 
 	var tenant *queueTenant
 	if tenantID != "" {
@@ -165,7 +165,7 @@ func (qb *queueBroker) dequeueItemForQuerier(
 		qb.tenantQuerierAssignments.removeTenant(tenantID)
 	}
 
-	return request, tenant, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), nil
+	return item, tenant, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), nil
 }
 
 // below methods simply pass through to the queueBroker's tenantQuerierShards; this layering could be skipped
