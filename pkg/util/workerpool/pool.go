@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -54,6 +55,7 @@ type Pool struct {
 	queue   *queue.Queue
 	workers int
 	name    string
+	logger  log.Logger
 
 	workersWg sync.WaitGroup
 }
@@ -111,6 +113,7 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		queue:   rq,
 		workers: size,
 		name:    name,
+		logger:  logger,
 	}
 	p.Service = services.NewBasicService(p.starting, p.running, p.stopping)
 	return p, nil
@@ -179,7 +182,19 @@ func (p *Pool) workerLoop(workerID string, ready chan<- error) {
 		item, idx, err := p.queue.AwaitItemForQuerier(dequeueReq)
 		lastTenantIdx = idx
 		if err != nil {
-			return
+			// The queue only errors when it is shutting down (ErrStopped) or when
+			// the worker connection's context is cancelled. The pool gives workers
+			// a background context, so in practice this is always a shutdown, and
+			// the worker should exit; stopping() waits for all of them.
+			if errors.Is(err, queue.ErrStopped) || errors.Is(err, context.Canceled) {
+				return
+			}
+			// Any other error is unexpected. Do not exit: a worker that retired on
+			// a transient error would silently shrink the pool, and if every worker
+			// did so the pool would report Running with zero workers and quietly
+			// stop making progress. Log and keep serving instead.
+			level.Warn(p.logger).Log("msg", "worker pool worker received unexpected error from queue; continuing", "pool", p.name, "worker", workerID, "err", err)
+			continue
 		}
 		// Submit's signature guarantees func(), so the assertion is total. A
 		// failure here means an internal invariant has been broken; panic so
