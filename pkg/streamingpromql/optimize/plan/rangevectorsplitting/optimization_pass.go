@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -194,6 +195,12 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 	}
 	if !hasCacheable {
 		return nil, "no_cacheable_blocks_after_ooo_filter", nil
+	}
+
+	if requestoptions.OptionsFromContext(ctx).CacheDisabled {
+		for i := range splitRanges {
+			splitRanges[i].Cacheable = false
+		}
 	}
 
 	n := &SplitFunctionCall{
