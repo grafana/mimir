@@ -311,16 +311,16 @@ func (q *Queue) dispatcherLoop() {
 	}
 }
 
-// enqueueItemInternal processes a request into the Queue's internal queue structure.
+// enqueueItemInternal processes an item into the Queue's internal queue structure.
 //
-// If request is enqueued successFn is called before the request can be dispatched to a querier.
+// If the item is enqueued successFn is called before the item can be dispatched to a querier.
 func (q *Queue) enqueueItemInternal(r itemToEnqueue) error {
-	tr := tenantItem{
+	ti := tenantItem{
 		tenantID:       r.tenantID,
 		queueDimension: r.queueDimension,
 		item:           r.item,
 	}
-	err := q.queueBroker.enqueueItemBack(&tr, r.maxQueriers)
+	err := q.queueBroker.enqueueItemBack(&ti, r.maxQueriers)
 	if err != nil {
 		if errors.Is(err, ErrTooManyRequests) {
 			q.discardedRequests.WithLabelValues(r.tenantID).Inc()
