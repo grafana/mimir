@@ -626,7 +626,7 @@ func TestBlockLabelValues(t *testing.T) {
 				if testLabel.expectedValues == nil {
 					require.Empty(t, values)
 				} else {
-					require.Equal(t, testLabel.expectedValues, values, fmt.Sprintf("unexpected values for label %s and matchers %+v", testLabel.name, testLabel.matcher))
+					require.Equal(t, testLabel.expectedValues, values)
 				}
 
 				// we break the indexHeaderReader to ensure that results come from a cache on a second call
@@ -636,7 +636,7 @@ func TestBlockLabelValues(t *testing.T) {
 				if testLabel.expectedValues == nil {
 					require.Empty(t, values)
 				} else {
-					require.Equal(t, testLabel.expectedValues, values, fmt.Sprintf("unexpected values for label %s and matchers %+v", testLabel.name, testLabel.matcher))
+					require.Equal(t, testLabel.expectedValues, values)
 				}
 			})
 		}
