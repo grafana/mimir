@@ -100,6 +100,11 @@ func (h *recordHeap) Pop() any {
 
 // HeapMergerConfig holds tunables for HeapMerger.
 type HeapMergerConfig struct {
+	// Enabled controls whether records from all VCs are merged by Kafka record timestamp
+	// before being pushed downstream. When disabled, each VC's records are pushed independently
+	// and cross-VC ordering relies entirely on the TSDB out-of-order window.
+	Enabled bool `yaml:"enabled"`
+
 	// MaxBatchRecords is the soft upper bound on records buffered in the heap
 	// before forcing a flush. A larger value gives the heap more cross-VC mixing
 	// at the cost of memory and per-flush latency.
@@ -118,6 +123,7 @@ type HeapMergerConfig struct {
 
 // RegisterFlagsWithPrefix registers HeapMergerConfig flags under the given prefix.
 func (cfg *HeapMergerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", true, "Whether records from all write compartment VCs are merged by Kafka record timestamp before being pushed. When disabled, each VC is pushed independently and cross-VC ordering relies on the TSDB out-of-order window.")
 	f.IntVar(&cfg.MaxBatchRecords, prefix+"max-batch-records", 1024, "Soft upper bound on records buffered in the heap merger before forcing a flush. Larger values give the merger more cross-VC mixing at the cost of memory and per-flush latency.")
 	f.DurationVar(&cfg.MaxBatchWait, prefix+"max-batch-wait", 50*time.Millisecond, "Maximum time records sit in the heap merger before being flushed even if max-batch-records has not been reached.")
 	f.IntVar(&cfg.InputBufferSize, prefix+"input-buffer-size", 0, "Buffer size of the channel into which per-VC submitting consumers push records. When 0, defaults to 2x max-batch-records.")

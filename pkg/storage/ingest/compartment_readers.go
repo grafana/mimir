@@ -19,10 +19,11 @@ import (
 )
 
 // CompartmentReaders runs one PartitionReader per write compartment VC, all consuming the
-// same read compartment topic. Records from every VC are funneled through a shared
-// HeapMerger that orders them by Kafka record timestamp before forwarding to the supplied
-// Pusher. CompartmentReaders presents itself as a single services.Service so callers can
-// manage it like a regular PartitionReader.
+// same read compartment topic. When merging is enabled (HeapMerger.Enabled), records from
+// every VC are funneled through a shared HeapMerger that orders them by Kafka record timestamp
+// before forwarding to the supplied Pusher; otherwise each VC pushes independently and cross-VC
+// ordering relies on the TSDB out-of-order window. CompartmentReaders presents itself as a
+// single services.Service so callers can manage it like a regular PartitionReader.
 //
 // Each reader has its own consumer group, offset file, and Kafka connection. The partition
 // ID is shared across all VCs (e.g. "ingester-0" reads partition 0 from every VC).
@@ -31,7 +32,7 @@ type CompartmentReaders struct {
 
 	logger  log.Logger
 	readers []*PartitionReader
-	merger  *HeapMerger
+	merger  *HeapMerger // nil when merging is disabled
 	manager *services.Manager
 	watcher *services.FailureWatcher
 }
@@ -62,16 +63,21 @@ func NewCompartmentReaders(
 	router := NewCompartmentRouter(cfg)
 	readTopic := router.Topic(cfg.ReadCompartmentID)
 
-	// The merger's downstream consumer is a PusherConsumer that turns the merged record
-	// stream into per-tenant WriteRequests and pushes them to the real Pusher. Metrics are
-	// registered once at the CompartmentReaders level (not per-VC) since all VCs share this
-	// downstream path.
+	// When merging is enabled, all VCs feed a shared HeapMerger whose downstream consumer is a
+	// PusherConsumer that turns the merged record stream into per-tenant WriteRequests. When
+	// disabled, each VC gets its own PusherConsumer and pushes independently (cross-VC ordering
+	// then relies on the TSDB out-of-order window). PusherConsumer metrics are registered once
+	// at the CompartmentReaders level since the downstream push path is shared either way.
 	mergerLogger := log.With(logger, "component", "compartment_merger")
 	pusherMetrics := NewPusherConsumerMetrics(reg)
-	mergerDownstream := consumerFactoryFunc(func() RecordConsumer {
+	pusherFactory := consumerFactoryFunc(func() RecordConsumer {
 		return NewPusherConsumer(pusher, kafkaCfg, pusherMetrics, mergerLogger)
 	})
-	merger := NewHeapMerger(cfg.HeapMerger, mergerDownstream, NewHeapMergerMetrics(reg), mergerLogger)
+
+	var merger *HeapMerger
+	if cfg.HeapMerger.Enabled {
+		merger = NewHeapMerger(cfg.HeapMerger, pusherFactory, NewHeapMergerMetrics(reg), mergerLogger)
+	}
 
 	readers := make([]*PartitionReader, cfg.NumCompartments)
 	for writeCompartmentID := 0; writeCompartmentID < cfg.NumCompartments; writeCompartmentID++ {
@@ -90,13 +96,19 @@ func NewCompartmentReaders(
 		vcReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(writeCompartmentID)}, reg)
 		vcLogger := log.With(logger, "component", "compartment_reader", "write_compartment", writeCompartmentID)
 
-		// The per-VC PartitionReader's RecordConsumer streams records into the shared merger;
-		// the real Pusher remains the PreCommitNotifier so offset commits still notify it directly.
-		vcID := writeCompartmentID
-		submitterFactory := consumerFactoryFunc(func() RecordConsumer {
-			return merger.NewSubmittingConsumer(vcID)
-		})
-		reader, err := newPartitionReader(vcKafkaCfg, partitionID, readerInstanceID, offsetFilePath, submitterFactory, pusher, vcLogger, vcReg)
+		// When merging, the per-VC reader streams records into the shared merger; otherwise it
+		// pushes directly. The real Pusher is always the PreCommitNotifier so offset commits
+		// still notify it directly.
+		var consumerFactory consumerFactory
+		if merger != nil {
+			vcID := writeCompartmentID
+			consumerFactory = consumerFactoryFunc(func() RecordConsumer {
+				return merger.NewSubmittingConsumer(vcID)
+			})
+		} else {
+			consumerFactory = pusherFactory
+		}
+		reader, err := newPartitionReader(vcKafkaCfg, partitionID, readerInstanceID, offsetFilePath, consumerFactory, pusher, vcLogger, vcReg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "creating partition reader for write compartment VC %d", writeCompartmentID)
 		}
@@ -114,7 +126,9 @@ func NewCompartmentReaders(
 
 func (cr *CompartmentReaders) starting(ctx context.Context) error {
 	svcs := make([]services.Service, 0, len(cr.readers)+1)
-	svcs = append(svcs, cr.merger)
+	if cr.merger != nil {
+		svcs = append(svcs, cr.merger)
+	}
 	for _, r := range cr.readers {
 		svcs = append(svcs, r)
 	}
