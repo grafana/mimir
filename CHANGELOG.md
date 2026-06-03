@@ -4,10 +4,9 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Ingester: The experimental `-ingester.label-values-count-max-concurrency` flag is deprecated and has no effect. Label-values-cardinality work now runs through a shared tenant-fair worker pool configured via `-ingester.label-values-count-workers` and `-ingester.label-values-count-chunk-size`. Setting the deprecated flag to a non-default value logs a warning at ingester startup. #15493
 * [CHANGE] Alertmanager: Upgraded the embedded `prometheus/alertmanager` library to v0.32.0. The per-tenant alertmanager web UI and the `/-/healthy`, `/-/ready`, `/-/reload`, `/script.js`, and `/favicon.ico` endpoints under the alertmanager prefix are no longer served because upstream removed the embeddable UI package. The v2 API endpoints and request/response shapes are unchanged, but a few error message strings from the upstream parser have been reformatted (for example, matcher-validation errors now include `in set N`). #15144
 * [CHANGE] Alertmanager: The `cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total` counter is now best-effort under concurrent alert ingest. The upstream alertmanager v0.32.0 ingests alerts via worker goroutines and the group-limit check is a racy check-then-act, so the configured limit can be exceeded under burst load. #15144
-* [FEATURE] Ingester: Tenant-fair shared worker pool for the label-values-cardinality endpoint. Replaces the previous per-request fanout (which could let a heavy tenant occupy all CPU) with a fixed pool of workers backed by a round-robin per-tenant queue. New experimental flags: `-ingester.label-values-count-workers` (default 0 = GOMAXPROCS) and `-ingester.label-values-count-chunk-size` (default 32). #15493
+* [FEATURE] Ingester: Shared tenant-fair query worker pool. Replaces the previous per-request fanout (which could let a heavy tenant occupy all CPU) with a fixed pool of workers backed by a round-robin per-tenant queue. The label-values-cardinality endpoint is the first consumer. New experimental flags: `-ingester.query-workers` (default 0 = GOMAXPROCS) and `-ingester.label-values-count-chunk-size` (default 32). #15493
 * [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
 * [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
@@ -20,7 +19,6 @@
 * [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
 * [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
 * [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
-* [ENHANCEMENT] Ingester: Make max concurrency for label values count endpoint configurable with `-ingester.label-values-count-max-concurrency`. #15299
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
 * [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147 #15270 #14878
