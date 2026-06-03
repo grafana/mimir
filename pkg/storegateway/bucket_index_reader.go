@@ -205,7 +205,9 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
 	logSelectedPostingGroups(ctx, r.block.logger, r.block.meta.ULID, postingGroups, omittedPostingGroups)
 
-	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), nil, stats)
+	// Reuse the byte ranges resolved while building the posting groups instead of
+	// re-resolving each key with a separate PostingsOffset read against the bucket.
+	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), extractOffsets(postingGroups), stats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "get postings")
 	}
@@ -302,6 +304,29 @@ func extractLabels(groups []postingGroup) []labels.Label {
 		keys = append(keys, pg.keys...)
 	}
 	return keys
+}
+
+// extractOffsets returns the known posting-list byte ranges aligned with the
+// keys returned by extractLabels (same group order, same per-group order). A
+// zero-value index.Range marks a key whose offset isn't known ahead of time
+// (e.g. the synthetic all-postings group); fetchPostings resolves those with a
+// PostingsOffset call.
+func extractOffsets(groups []postingGroup) []index.Range {
+	numKeys := 0
+	for _, pg := range groups {
+		numKeys += len(pg.keys)
+	}
+	offsets := make([]index.Range, 0, numKeys)
+	for _, pg := range groups {
+		if len(pg.offsets) == len(pg.keys) {
+			offsets = append(offsets, pg.offsets...)
+		} else {
+			// Offsets unknown for this group: emit zero ranges to stay aligned
+			// with extractLabels so fetchPostings falls back to PostingsOffset.
+			offsets = append(offsets, make([]index.Range, len(pg.keys))...)
+		}
+	}
+	return offsets
 }
 
 func extractLabelValues(offsets []streamindex.PostingListOffset) []string {
@@ -489,10 +514,11 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
 		var ptr index.Range
-		if knownOffsets != nil {
+		if knownOffsets != nil && knownOffsets[ix] != (index.Range{}) {
 			// The caller already resolved this key's byte range (e.g. from
 			// LabelValuesOffsets), so reuse it instead of issuing another
-			// PostingsOffset read against object storage.
+			// PostingsOffset read against object storage. A zero-value range means
+			// the offset is unknown for this key, so fall back to resolving it.
 			ptr = knownOffsets[ix]
 		} else {
 			var err error

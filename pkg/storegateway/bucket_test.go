@@ -756,6 +756,41 @@ func BenchmarkBlockLabelValuesPostingsPath(b *testing.B) {
 	b.ReportMetric(float64(postingsOffsetCalls.Load())/float64(b.N), "PostingsOffset-calls/op")
 }
 
+func TestExpandedPostingsReusesResolvedOffsets(t *testing.T) {
+	const series = 100_000
+
+	tb := test.NewTB(t)
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+
+	b := newTestBucketBlock()
+	postingsOffsetCallsByName := map[string]int{}
+	b.indexHeaderReader = &interceptedIndexReader{
+		Reader: b.indexHeaderReader,
+		onPostingsOffsetCalled: func(name, _ string) error {
+			postingsOffsetCallsByName[name]++
+			return nil
+		},
+	}
+	// Cold cache, so any cache miss would otherwise resolve its offset via PostingsOffset.
+	b.indexCache = noopCache{}
+
+	// `i=~".+"` is a lazy posting group: the matching values of "i" and their byte
+	// ranges are resolved by LabelValuesOffsets while building the group. Expanding
+	// the postings must reuse those ranges rather than calling PostingsOffset again
+	// for each of the ~2000 values of "i".
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", ".+")}
+	indexr := newBucketIndexReader(b, selectAllStrategy{})
+	refs, pendingMatchers, err := indexr.ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
+	require.NoError(t, err)
+	require.Empty(t, pendingMatchers)
+	require.NotEmpty(t, refs)
+
+	require.Zerof(t, postingsOffsetCallsByName["i"],
+		"expected no PostingsOffset calls for label \"i\"; offsets should be reused from LabelValuesOffsets, got %d",
+		postingsOffsetCallsByName["i"])
+}
+
 func TestCachedLabelValues_NoGobDecodeLimit(t *testing.T) {
 	// storeCachedLabelValues previously skipped caching above a specific value count
 	// as a workaround for panics in decoding large responses - see https://github.com/golang/go/issues/59172.
