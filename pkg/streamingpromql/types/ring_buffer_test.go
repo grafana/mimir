@@ -1575,3 +1575,76 @@ func TestHPointRingBuffer_EquivalentFloatSampleCountBetween(t *testing.T) {
 	require.Equal(t, 0*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(40, 40))
 	require.Equal(t, 0*equivalentSampleCount, buff.EquivalentFloatSampleCountBetween(41, 100))
 }
+
+func TestHPointRingBuffer_CountUntil(t *testing.T) {
+	buff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+	// Should work with empty buffer.
+	require.Zero(t, buff.CountUntil(0))
+	require.Zero(t, buff.CountUntil(100))
+
+	h := &histogram.FloatHistogram{}
+	mustAppend(t, buff, promql.HPoint{T: 10, H: h})
+	mustAppend(t, buff, promql.HPoint{T: 20, H: h})
+	mustAppend(t, buff, promql.HPoint{T: 30, H: h})
+	mustAppend(t, buff, promql.HPoint{T: 40, H: h})
+
+	require.Equal(t, 0, buff.CountUntil(0))
+	require.Equal(t, 0, buff.CountUntil(5))
+	require.Equal(t, 1, buff.CountUntil(10))
+	require.Equal(t, 1, buff.CountUntil(15))
+	require.Equal(t, 2, buff.CountUntil(20))
+	require.Equal(t, 2, buff.CountUntil(25))
+	require.Equal(t, 3, buff.CountUntil(30))
+	require.Equal(t, 3, buff.CountUntil(35))
+	require.Equal(t, 4, buff.CountUntil(40))
+	require.Equal(t, 4, buff.CountUntil(45))
+}
+
+func TestHPointRingBuffer_CountBetween(t *testing.T) {
+	buff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+	// Should work with empty buffer.
+	require.Zero(t, buff.CountBetween(0, 0))
+	require.Zero(t, buff.CountBetween(0, 100))
+
+	h := &histogram.FloatHistogram{}
+	mustAppend(t, buff, promql.HPoint{T: 10, H: h})
+	mustAppend(t, buff, promql.HPoint{T: 20, H: h})
+	mustAppend(t, buff, promql.HPoint{T: 30, H: h})
+	mustAppend(t, buff, promql.HPoint{T: 40, H: h})
+
+	require.Equal(t, 0, buff.CountBetween(0, 0))
+	require.Equal(t, 4, buff.CountBetween(0, 100))
+	require.Equal(t, 4, buff.CountBetween(0, 40))
+	require.Equal(t, 4, buff.CountBetween(9, 40))
+	require.Equal(t, 3, buff.CountBetween(10, 40))
+	require.Equal(t, 1, buff.CountBetween(5, 10))
+	require.Equal(t, 2, buff.CountBetween(5, 20))
+	require.Equal(t, 1, buff.CountBetween(15, 20))
+	require.Equal(t, 1, buff.CountBetween(31, 40))
+	require.Equal(t, 0, buff.CountBetween(40, 40))
+	require.Equal(t, 0, buff.CountBetween(41, 100))
+}
+
+func TestHPointRingBuffer_CountAndLast(t *testing.T) {
+	buff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+	require.Zero(t, buff.Count())
+
+	h := &histogram.FloatHistogram{}
+	points := []promql.HPoint{
+		{T: 10, H: h},
+		{T: 20, H: h},
+		{T: 30, H: h},
+		{T: 40, H: h},
+	}
+
+	for i, p := range points {
+		mustAppend(t, buff, p)
+		require.Equal(t, i+1, buff.Count())
+		require.Equal(t, p, buff.Last())
+	}
+
+	require.Equal(t, points[len(points)-1], buff.Last())
+}

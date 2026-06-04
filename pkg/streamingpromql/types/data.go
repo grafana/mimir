@@ -139,18 +139,10 @@ type RangeVectorStepData struct {
 	// FloatHistogram instances in the buffer must not be modified as they may be returned for subsequent steps.
 	// FloatHistogram instances that are retained after the next call to NextStepSamples must be copied, as they
 	// may be modified on subsequent calls to NextStepSamples.
-	//
-	// Under the Anchored or Smoothed modifier this view spans the extended look-back/look-ahead
-	// window so that boundary interpolation by extendedHistogramRate has access to samples outside
-	// the original [RangeStart, RangeEnd] window. Other histogram-aware functions see the same
-	// wider window, matching upstream Prometheus where the engine uniformly extends the range
-	// buffer for the modifier.
 	Histograms *HPointRingBufferView
 
 	// MixedInExtendedRange is set to true when the extended look-back/look-ahead window of an
-	// Anchored or Smoothed range vector contains both floats and histograms. Downstream functions
-	// must drop the sample and emit MixedFloatsHistogramsWarning in this case, mirroring upstream
-	// Prometheus's extendedRate / extendedHistogramRate dispatch.
+	// Anchored or Smoothed range vector contains both floats and histograms.
 	MixedInExtendedRange bool
 
 	// StepT is the timestamp of this time step.
