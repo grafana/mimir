@@ -47,14 +47,6 @@ func (b *HPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
 	}
 }
 
-// RemoveLast will remove the last point from the buffer.
-// It is safe to call this function on an empty buffer.
-func (b *HPointRingBuffer) RemoveLast() {
-	if b.size > 0 {
-		b.size--
-	}
-}
-
 func (b *HPointRingBuffer) RemoveFirst() {
 	if b.size > 0 {
 		b.firstIndex++
