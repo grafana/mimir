@@ -519,6 +519,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items int
+    	[experimental] Maximum number of individual attributes items to keep in a first level in-memory LRU cache. Attributes will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 10000)
   -blocks-storage.bucket-store.index-header-cache.attributes-ttl duration
     	[experimental] TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.index-header-cache.backend string
