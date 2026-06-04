@@ -16,10 +16,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// schedulerQueue wraps the generic queue.RequestQueue with scheduler-flavored
-// ergonomics: it owns dimension extraction and per-tenant max-queriers lookup
-// so call sites in the scheduler don't have to thread either value through,
-// and bundles in the QueryComponentUtilization tracking sidecar.
+// schedulerQueue wraps the generic queue.RequestQueue with scheduler-specific queue logic:
+//   - the first queue dimension is the query component,
+//     determined from the annotation that the query-frontend attaches to the request.
+//   - the per-tenant max-queriers limit is looked up from the configured Limits.
+//   - the QueryComponentUtilization tracker, and its periodic inflight observation,
+//     live here rather than in the generic queue.
 type schedulerQueue struct {
 	services.Service
 
