@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+// Architecture: see docs/internal/streaming-label-value-search/README.md.
+
 package storegateway
 
 import (
@@ -111,6 +113,13 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 		return status.Error(codes.Internal, err.Error())
 	}
 
+	// Single-set fast path: no merge wrapper. The per-block search already
+	// honoured per-block limit/order via applyPerBlockSearchHints, so a
+	// one-input merge would just pass results through with extra alloc.
+	if len(sets) == 1 {
+		defer sets[0].Close()
+		return streamBucketSearchResults(ctx, sets[0], queriedBlocks, srv.Send)
+	}
 	merged := storage.MergeSearchResultSets(sets, &storage.SearchHints{OrderBy: order, Limit: limit})
 	defer merged.Close()
 	return streamBucketSearchResults(ctx, merged, queriedBlocks, srv.Send)
@@ -195,6 +204,11 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 		return status.Error(codes.Internal, err.Error())
 	}
 
+	// Single-set fast path: see SearchLabelNames above.
+	if len(sets) == 1 {
+		defer sets[0].Close()
+		return streamBucketSearchResults(ctx, sets[0], queriedBlocks, srv.Send)
+	}
 	merged := storage.MergeSearchResultSets(sets, &storage.SearchHints{OrderBy: order, Limit: limit})
 	defer merged.Close()
 	return streamBucketSearchResults(ctx, merged, queriedBlocks, srv.Send)
