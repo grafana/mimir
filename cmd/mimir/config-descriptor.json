@@ -11042,6 +11042,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "attributes_in_memory_max_items",
+                  "required": false,
+                  "desc": "Maximum number of individual attributes items to keep in a first level in-memory LRU cache. Attributes will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "subrange_ttl",
                   "required": false,
                   "desc": "TTL for caching individual index-header subranges.",
