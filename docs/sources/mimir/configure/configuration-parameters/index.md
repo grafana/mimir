@@ -2331,6 +2331,12 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
 
+# (experimental) Enable the cortex_query_scheduler_inflight_max_age_seconds
+# metric, which reports the age of the oldest inflight request. Disabling it
+# skips the per-tick scan over inflight requests.
+# CLI flag: -query-scheduler.inflight-max-age-metric-enabled
+[inflight_max_age_metric_enabled: <boolean> | default = true]
+
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
 # The CLI flags prefix for this block configuration is:
