@@ -1716,12 +1716,17 @@ func TestDistributor_Push_WithCompartments(t *testing.T) {
 		return []kfake.Opt{kfake.SeedTopics(3, compartmentTopics...)}
 	})
 
+	// Each compartment ring gets a different single active partition (compartment c -> partition c).
+	compartmentActivePartitions := map[int][]int32{0: {0}, 1: {1}, 2: {2}}
+
 	testConfig := prepConfig{
-		numDistributors:         1,
-		ingestStorageEnabled:    true,
-		ingestStoragePartitions: 3,
-		ingestStorageKafka:      kafkaCluster,
-		limits:                  limits,
+		numDistributors:                          1,
+		ingestStorageEnabled:                     true,
+		ingestStoragePartitions:                  3,
+		ingestStorageKafka:                       kafkaCluster,
+		limits:                                   limits,
+		ingestStorageCompartments:                numCompartments,
+		ingestStorageCompartmentActivePartitions: compartmentActivePartitions,
 		configure: func(cfg *Config) {
 			cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
 			cfg.IngestStorageConfig.Compartments.Enabled = true
@@ -1745,14 +1750,16 @@ func TestDistributor_Push_WithCompartments(t *testing.T) {
 		TopicFormat:     "comp-<compartment-id>",
 	})
 
-	// Collect metric names per topic.
+	// Collect metric names per topic and assert each compartment's records land only on its ring's partition.
 	metricsByTopic := map[string][]string{}
-	for _, topic := range compartmentTopics {
+	for compartmentID, topic := range compartmentTopics {
 		records := readAllRecordsFromKafkaTopics(t, kafkaCluster.ListenAddrs(), []string{topic}, 3, time.Second)
 		for _, record := range records {
-			req := &mimirpb.WriteRequest{}
-			require.NoError(t, req.Unmarshal(record.Value))
-			for _, ts := range req.Timeseries {
+			assert.Equal(t, int32(compartmentID), record.Partition, "topic %s records must land on partition %d (its own ring's only active partition)", topic, compartmentID)
+
+			parsed := mimirpb.PreallocWriteRequest{}
+			require.NoError(t, ingest.DeserializeRecordContent(record.Value, &parsed, ingest.ParseRecordVersion(record)))
+			for _, ts := range parsed.Timeseries {
 				metricName, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 				require.NoError(t, err)
 				metricsByTopic[topic] = append(metricsByTopic[topic], metricName)

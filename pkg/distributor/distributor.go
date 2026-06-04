@@ -2111,17 +2111,20 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	var (
 		ingestersSubring  ring.DoBatchRing
-		partitionsSubring *ring.ActivePartitionBatchRing
+		partitionSubrings []*ring.ActivePartitionBatchRing
 	)
 
-	// Get the tenant's subring to use to either write to ingesters or partitions.
+	// Shuffle-shard each compartment's partition ring (a single ring at index 0 when compartments are disabled).
 	if d.cfg.IngestStorageConfig.Enabled {
-		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID))
-		if err != nil {
-			return err
+		shardSize := d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID)
+		partitionSubrings = make([]*ring.ActivePartitionBatchRing, len(d.partitionsRings))
+		for c := range d.partitionsRings {
+			subring, err := d.partitionsRings[c].PartitionRing().ShuffleShard(userID, shardSize)
+			if err != nil {
+				return err
+			}
+			partitionSubrings[c] = ring.NewActivePartitionBatchRing(subring)
 		}
-
-		partitionsSubring = ring.NewActivePartitionBatchRing(subring.PartitionRing())
 	}
 
 	if !d.cfg.IngestStorageConfig.Enabled || d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled {
@@ -2133,15 +2136,15 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionsSubring, pushReq.CleanUp)
+	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, pushReq.CleanUp)
 }
 
 // sendWriteRequestToBackends sends the input req data to backends. The backends could be:
 // - Ingesters, when ingestersSubring is not nil
-// - Ingest storage partitions, when partitionsSubring is not nil
+// - Ingest storage partitions, when partitionSubrings is not empty (one subring per compartment)
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2149,7 +2152,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	)
 
 	// Ensure at least one ring has been provided.
-	if ingestersSubring == nil && partitionsSubring == nil {
+	if ingestersSubring == nil && len(partitionSubrings) == 0 {
 		// It should never happen. If it happens, it's a logic bug.
 		panic("no tenant subring has been provided to sendWriteRequestToBackends()")
 	}
@@ -2205,14 +2208,14 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	}
 
 	// Keep it easy if there's only 1 backend to write to.
-	if partitionsSubring == nil {
+	if len(partitionSubrings) == 0 {
 		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
 	if ingestersSubring == nil {
 		defaultTopic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
 		ct, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, defaultTopic, tenantID, req)
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}
 
 	// Prepare a callback function that will call the input cleanup callback function only after
@@ -2240,7 +2243,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}()
 
 	// Wait until all backends have done.
@@ -2284,7 +2287,7 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 	return errors.Wrap(err, "send data to ingesters")
 }
 
-func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, cts []compartmentTokens, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, partitionSubrings []*ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, cts []compartmentTokens, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	// Ensure cleanup is called exactly once after all work completes.
 	cleanup := batchOptions.Cleanup
 	if cleanup == nil {
@@ -2302,7 +2305,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	for _, ct := range cts {
 		g.Go(func() error {
 			// Split keys by partition without spawning per-partition goroutines.
-			instanceKeys, err := SplitKeysByInstance(ctx, ring.WriteNoExtend, tenantRing, ct.tokens)
+			instanceKeys, err := SplitKeysByInstance(ctx, ring.WriteNoExtend, partitionSubrings[ct.compartmentID], ct.tokens)
 			if err != nil {
 				return err
 			}

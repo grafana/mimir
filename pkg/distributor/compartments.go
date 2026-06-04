@@ -11,9 +11,10 @@ import (
 // compartmentTokens holds the partition-ring tokens for all series/metadata
 // items that belong to a single compartment.
 type compartmentTokens struct {
-	topic   string   // Kafka topic for this compartment.
-	indexes []int    // Indexes into the combined series+metadata of the WriteRequest.
-	tokens  []uint32 // Parallel to indexes: partition-ring tokens.
+	compartmentID int      // Compartment index; selects the per-compartment partition ring.
+	topic         string   // Kafka topic for this compartment.
+	indexes       []int    // Indexes into the combined series+metadata of the WriteRequest.
+	tokens        []uint32 // Parallel to indexes: partition-ring tokens.
 }
 
 // writeRequestIndexes maps token-level indexes (as returned by ring.DoBatchWithOptions callback)
@@ -45,9 +46,10 @@ func getCompartmentTokensForWriteRequest(
 		}
 
 		return []compartmentTokens{{
-			topic:   defaultTopic,
-			indexes: indexes,
-			tokens:  tokens,
+			compartmentID: 0,
+			topic:         defaultTopic,
+			indexes:       indexes,
+			tokens:        tokens,
 		}}, initialMetadataIndex
 	}
 
@@ -57,6 +59,7 @@ func getCompartmentTokensForWriteRequest(
 	numCompartments := router.NumCompartments()
 	byCompartment := make([]compartmentTokens, numCompartments)
 	for c := 0; c < numCompartments; c++ {
+		byCompartment[c].compartmentID = c
 		byCompartment[c].topic = router.Topic(c)
 	}
 

@@ -6171,6 +6171,13 @@ type prepConfig struct {
 	ingestStorageMigrationEnabled bool
 	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka            *kfake.Cluster
+
+	// ingestStorageCompartments, when > 0, builds one partition ring per compartment (keyed by
+	// ingester.CompartmentPartitionRingKey) instead of a single shared ring.
+	ingestStorageCompartments int
+	// ingestStorageCompartmentActivePartitions optionally overrides the active partition IDs for each
+	// compartment ring (compartmentID -> partition IDs). Compartments missing from the map get all partitions.
+	ingestStorageCompartmentActivePartitions map[int][]int32
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -6388,7 +6395,10 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 	return &ring.Desc{Ingesters: ingesterDescs}
 }
 
-func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.PartitionRingDesc {
+// preparePartitionsRing builds a partition ring descriptor. When activePartitions is nil, all
+// partitions (0..ingestStoragePartitions-1) are added as ACTIVE; otherwise only the given partition
+// IDs are added, which lets tests give each compartment ring a different active partition set.
+func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester, activePartitions []int32) *ring.PartitionRingDesc {
 	desc := ring.NewPartitionRingDesc()
 
 	// When we add partitions we simulate the case they were switched to ACTIVE before
@@ -6396,14 +6406,24 @@ func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.Part
 	// when shuffle sharding is in use.
 	timeBeforeShuffleShardingLookbackPeriod := time.Now().Add(-2 * time.Hour)
 
-	// Add all partitions.
-	for partitionID := int32(0); partitionID < cfg.ingestStoragePartitions; partitionID++ {
-		desc.AddPartition(partitionID, ring.PartitionActive, timeBeforeShuffleShardingLookbackPeriod)
+	if activePartitions == nil {
+		activePartitions = make([]int32, 0, cfg.ingestStoragePartitions)
+		for partitionID := int32(0); partitionID < cfg.ingestStoragePartitions; partitionID++ {
+			activePartitions = append(activePartitions, partitionID)
+		}
 	}
 
-	// Add all ingesters are partition owners.
+	active := make(map[int32]struct{}, len(activePartitions))
+	for _, partitionID := range activePartitions {
+		desc.AddPartition(partitionID, ring.PartitionActive, timeBeforeShuffleShardingLookbackPeriod)
+		active[partitionID] = struct{}{}
+	}
+
+	// Add ingesters owning an active partition as partition owners.
 	for _, ingester := range ingesters {
-		desc.AddOrUpdateOwner(ingester.instanceID(), ring.OwnerActive, ingester.partitionID(), timeBeforeShuffleShardingLookbackPeriod)
+		if _, ok := active[ingester.partitionID()]; ok {
+			desc.AddOrUpdateOwner(ingester.instanceID(), ring.OwnerActive, ingester.partitionID(), timeBeforeShuffleShardingLookbackPeriod)
+		}
 	}
 
 	return desc
@@ -6486,21 +6506,33 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	var partitionsRing *ring.PartitionInstanceRing
 	var partitionsRings []*ring.PartitionRingWatcher
 	if cfg.ingestStorageEnabled {
-		// Init the partitions ring.
 		partitionsStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
-		require.NoError(t, partitionsStore.CAS(ctx, ingester.PartitionRingKey, func(_ interface{}) (interface{}, bool, error) {
-			return preparePartitionsRing(cfg, ingesters), true, nil
-		}))
 
-		// Init the watcher.
-		watcher := ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, logger, prometheus.NewPedanticRegistry())
-		require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
-		})
+		startWatcher := func(name, key string, desc *ring.PartitionRingDesc) *ring.PartitionRingWatcher {
+			require.NoError(t, partitionsStore.CAS(ctx, key, func(_ interface{}) (interface{}, bool, error) {
+				return desc, true, nil
+			}))
+			watcher := ring.NewPartitionRingWatcher(name, key, partitionsStore, logger, prometheus.NewPedanticRegistry())
+			require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
+			})
+			return watcher
+		}
 
-		partitionsRing = ring.NewPartitionInstanceRing(watcher, ingestersRing, ingestersHeartbeatTimeout)
-		partitionsRings = []*ring.PartitionRingWatcher{watcher}
+		// The legacy single ring is always built; it backs the instance ring used by the read path.
+		legacyWatcher := startWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, preparePartitionsRing(cfg, ingesters, nil))
+		partitionsRing = ring.NewPartitionInstanceRing(legacyWatcher, ingestersRing, ingestersHeartbeatTimeout)
+
+		if cfg.ingestStorageCompartments > 0 {
+			partitionsRings = make([]*ring.PartitionRingWatcher, cfg.ingestStorageCompartments)
+			for c := 0; c < cfg.ingestStorageCompartments; c++ {
+				key := ingester.CompartmentPartitionRingKey(c)
+				partitionsRings[c] = startWatcher(key, key, preparePartitionsRing(cfg, ingesters, cfg.ingestStorageCompartmentActivePartitions[c]))
+			}
+		} else {
+			partitionsRings = []*ring.PartitionRingWatcher{legacyWatcher}
+		}
 	}
 
 	if cfg.limits == nil {
