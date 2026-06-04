@@ -227,6 +227,11 @@ type Distributor struct {
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
 
+	// partitionsRings holds the partition ring watchers indexed by read compartment, used by the write
+	// path. It has length >= 1 when ingest storage is enabled (size 1 holding the legacy watcher when
+	// compartments are disabled) and is empty when ingest storage is disabled.
+	partitionsRings []*ring.PartitionRingWatcher
+
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
 	// is disabled.
@@ -494,7 +499,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, partitionsRings []*ring.PartitionRingWatcher, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -512,6 +517,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingestersRing:               ingestersRing,
 		RequestBufferPool:           requestBufferPool,
 		partitionsRing:              partitionsRing,
+		partitionsRings:             partitionsRings,
 		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount:       atomic.NewUint32(0),
 		healthyInstancesInZoneCount: atomic.NewUint32(0),

@@ -558,7 +558,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
 		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
-		canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
+		t.IngesterPartitionRingWatchers, canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
