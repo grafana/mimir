@@ -864,11 +864,19 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                              *api.API
-	Server                           *server.Server
-	ServerMetrics                    *server.Metrics
-	IngesterRing                     *ring.Ring
-	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
+	API           *api.API
+	Server        *server.Server
+	ServerMetrics *server.Metrics
+	IngesterRing  *ring.Ring
+	// IngesterPartitionRingWatcher watches the legacy single partition ring.
+	// FIXME(per-compartment-rings): with compartments enabled this single ring is kept only for the read
+	// path (query.go, admin page) and adjustQueryRequestLimit. It needs revisiting once the read path
+	// consumes the per-compartment rings: at that point partitions register into the per-compartment
+	// rings and this ring is empty when compartments are enabled.
+	IngesterPartitionRingWatcher *ring.PartitionRingWatcher
+	// IngesterPartitionRingWatchers holds the partition ring watchers indexed by read compartment, used
+	// by the distributor write path. With compartments disabled it holds just the legacy single watcher.
+	IngesterPartitionRingWatchers    []*ring.PartitionRingWatcher
 	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
 	TenantLimits                     validation.TenantLimits
 	Overrides                        *validation.Overrides

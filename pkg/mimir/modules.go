@@ -385,7 +385,7 @@ func (t *Mimir) initIngesterRing() (serv services.Service, err error) {
 	return t.IngesterRing, nil
 }
 
-func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
+func (t *Mimir) initIngesterPartitionRings() (services.Service, error) {
 	if !t.Cfg.IngestStorage.Enabled {
 		return nil, nil
 	}
@@ -399,12 +399,52 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
 
 	// Expose a web page to view the partitions ring state.
+	// FIXME(per-compartment-rings): this only exposes the legacy single ring. With compartments enabled,
+	// the per-compartment rings (t.IngesterPartitionRingWatchers) have no status page. Expose one handler
+	// per compartment in the admin UI.
 	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
 
 	// Track anonymous usage statistics.
 	usagestats.SetMode(usagestats.ModeIngestStorage)
 
-	return t.IngesterPartitionRingWatcher, nil
+	if !t.Cfg.IngestStorage.Compartments.Enabled {
+		t.IngesterPartitionRingWatchers = []*ring.PartitionRingWatcher{t.IngesterPartitionRingWatcher}
+		return t.IngesterPartitionRingWatcher, nil
+	}
+
+	// Compartments enabled: build one partition ring watcher per compartment, each watching its own KV
+	// key. Run them under a single service manager together with the legacy watcher, which the read path
+	// (query.go, adjustQueryRequestLimit, admin page) still consults and which only keeps its in-memory
+	// ring current while its service is running.
+	numCompartments := t.Cfg.IngestStorage.Compartments.NumCompartments
+	t.IngesterPartitionRingWatchers = make([]*ring.PartitionRingWatcher, numCompartments)
+	allWatchers := make([]services.Service, 0, numCompartments+1)
+	allWatchers = append(allWatchers, t.IngesterPartitionRingWatcher)
+	for c := 0; c < numCompartments; c++ {
+		key := ingester.CompartmentPartitionRingKey(c)
+		watcher := ring.NewPartitionRingWatcher(key, key, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+		t.IngesterPartitionRingWatchers[c] = watcher
+		allWatchers = append(allWatchers, watcher)
+	}
+
+	manager, err := services.NewManager(allWatchers...)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating service manager for ingester partition ring watchers")
+	}
+	w := services.NewFailureWatcher()
+	return services.NewBasicService(func(ctx context.Context) error {
+		w.WatchManager(manager)
+		return services.StartManagerAndAwaitHealthy(ctx, manager)
+	}, func(serviceContext context.Context) error {
+		select {
+		case <-serviceContext.Done():
+			return nil
+		case err := <-w.Chan():
+			return err
+		}
+	}, func(_ error) error {
+		return services.StopManagerAndAwaitStopped(context.Background(), manager)
+	}), nil
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
@@ -1500,7 +1540,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
 	mm.RegisterModule(Ingester, t.initIngester)
-	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
+	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRings, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
 	mm.RegisterModule(NullIngester, t.initNullIngester)
